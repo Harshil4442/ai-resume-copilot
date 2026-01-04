@@ -8,6 +8,7 @@ from ..security import get_current_user
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
+
 @router.post("/match", response_model=dict)
 def match_job(
     payload: schemas.JobMatchRequest,
@@ -22,38 +23,36 @@ def match_job(
     if not resume:
         raise HTTPException(status_code=404, detail="Resume not found for this user")
 
-    # Normalize JD to string for saving (and robustness)
-    jd = payload.job_description
-    if isinstance(jd, list):
-        jd_text = "\n".join([str(x) for x in jd])
-    else:
-        jd_text = str(jd or "")
+    # Extract required skills from the JD (robust even if JD text is messy)
+    required_skills = extract_required_skills_from_jd(payload.job_description)
 
-    required_skills = extract_required_skills_from_jd(jd_text)
-
-    # compute_match_score returns: (score, required_skills, missing_skills)
+    # compute_match_score returns (score, required_skills, missing_skills)
     score, req, missing = compute_match_score(
         resume.skills or [],
-        jd_text,
+        payload.job_description,
         required_skills=required_skills,
     )
+
+    # Store JD as a string (schema says str, but keeping this safe)
+    jd_text = payload.job_description if isinstance(payload.job_description, str) else str(payload.job_description)
 
     match = models.JobMatch(
         user_id=current_user.id,
         resume_id=resume.id,
-        job_title=getattr(payload, "job_title", "") or "",
-        company=getattr(payload, "company", "") or "",
+        job_title=payload.job_title,
+        company=payload.company or "",
         job_description=jd_text,
-        match_score=float(score or 0.0),
-        extracted_skills=required_skills,
-        missing_skills=missing,
+        match_score=float(score),
+        required_skills=req,          # ✅ correct column name
+        missing_skills=missing,       # ✅ correct column name
     )
+
     db.add(match)
     db.commit()
     db.refresh(match)
 
     return {
-        "match_score": float(score or 0.0),
+        "match_score": float(score),
         "required_skills": req,
         "missing_skills": missing,
     }
