@@ -15,25 +15,18 @@ export type ResumeParseResponse = {
   sections: Record<string, any>;
 };
 
+export type RecommendedCourse = {
+  title: string;
+  platform: string;
+  skill: string;
+  url?: string;
+  level?: string;
+};
+
 export type GapAnalysisResponse = {
-  // skills user already has (from resume parsing)
   current_skills?: string[];
-
-  // what user is missing for the target role/job
-  missing_skills?: string[];
-
-  // optional extras depending on your backend implementation
-  suggested_learning?: Array<{
-    skill: string;
-    resources: Array<{
-      title: string;
-      url: string;
-      provider?: string;
-      level?: string;
-    }>;
-  }>;
-
-  // allow additional fields without breaking builds if backend adds more keys
+  skill_gaps: string[];
+  recommended_courses: RecommendedCourse[]; // ✅ add this
   [key: string]: any;
 };
 
