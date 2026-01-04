@@ -12,15 +12,21 @@ export default function DashboardPage() {
 
   useEffect(() => {
     let mounted = true;
-    apiGet<AnalyticsSummary>("/analytics/summary")
-      .then((d) => mounted && setData(d))
+    apiGet<any>("/analytics/summary")
+      .then((d) => mounted && setData(d as AnalyticsSummary))
       .catch((e) => mounted && setError(e?.message || "Failed to load dashboard"));
     return () => {
       mounted = false;
     };
   }, []);
 
-  const avg = Number((data as any)?.average_match_score);
+  const avg =
+    data && typeof (data as any).average_match_score === "number"
+      ? (data as any).average_match_score
+      : data && typeof (data as any).avg_match_score === "number"
+      ? (data as any).avg_match_score
+      : NaN;
+
   const avgText = Number.isFinite(avg) ? `${avg.toFixed(1)} / 100` : "—";
 
   return (
@@ -33,17 +39,12 @@ export default function DashboardPage() {
       {data && (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <ScoreCard title="Profile completeness" value={`${(data as any)?.profile_completeness ?? 0}%`} />
+            <ScoreCard title="Profile completeness" value={`${data.profile_completeness ?? 0}%`} />
             <ScoreCard title="Average match score" value={avgText} />
-            <ScoreCard title="Resumes parsed" value={`${(data as any)?.resume_count ?? 0}`} />
+            <ScoreCard title="Resumes parsed" value={`${data.resume_count ?? 0}`} />
           </div>
 
-          <MatchHistoryChart
-            data={((data as any)?.match_history || []).map((h: any) => ({
-              timestamp: h.created_at || h.timestamp || new Date().toISOString(),
-              match_score: Number(h.score ?? h.match_score ?? 0),
-            }))}
-          />
+          <MatchHistoryChart data={(data as any).match_history || []} />
         </>
       )}
     </main>

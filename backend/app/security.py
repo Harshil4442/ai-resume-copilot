@@ -11,31 +11,23 @@ from sqlalchemy.orm import Session
 from .database import get_db
 from .models import User
 
-# -------------------------------
-# Password hashing
-# -------------------------------
 pwd_context = CryptContext(
     schemes=["pbkdf2_sha256", "bcrypt_sha256", "bcrypt"],
     deprecated="auto",
 )
 
 def hash_password(password: str) -> str:
-    # Force PBKDF2 so bcrypt's 72-byte limit can never break registration
     try:
         return pwd_context.hash(str(password), scheme="pbkdf2_sha256")
     except Exception as e:
-        # return clean error instead of 500
         raise HTTPException(status_code=400, detail=str(e))
 
 def verify_password(plain_password: str, password_hash: str) -> bool:
-    return pwd_context.verify(plain_password, password_hash)
+    return pwd_context.verify(str(plain_password), password_hash)
 
-# -------------------------------
-# JWT config
-# -------------------------------
 JWT_SECRET = os.getenv("JWT_SECRET", "dev-secret-change-me")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "10080"))  # 7 days default
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "10080"))
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
