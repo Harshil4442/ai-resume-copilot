@@ -11,12 +11,12 @@ Designed to deploy as:
 
 ## Features
 
-### ✅ Authentication (per-user data)
+### Authentication (per-user data)
 - User **register / login**
 - JWT-based auth
 - Every resume, match, and dashboard stat is **scoped to the logged-in user**
 
-### ✅ Resume parsing (PDF)
+### Resume parsing (PDF)
 - Upload resume as PDF
 - Extract:
   - raw text
@@ -25,7 +25,7 @@ Designed to deploy as:
   - estimated experience years
 - Stores parsed resume in database under the authenticated user
 
-### ✅ Job matching
+### Job matching
 - Paste a job description + select a resume ID
 - Extracts required skills from the JD
 - Computes match score and missing skills
@@ -33,12 +33,12 @@ Designed to deploy as:
 
 > Matching runs in a **fast overlap mode** by default to be stable on free tiers.
 
-### ✅ Learning / Gap recommendations
+### Learning / Gap recommendations
 - Runs gap analysis: current skills vs required skills for a role
 - Returns recommended learning resources (courses/links) from a curated dataset
 - Shows skill gaps clearly
 
-### ✅ Dashboard analytics
+### Dashboard analytics
 - Profile completeness heuristic (based on unique skills extracted)
 - Average match score
 - Resume count / application count
