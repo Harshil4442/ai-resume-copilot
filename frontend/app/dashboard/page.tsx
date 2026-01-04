@@ -44,7 +44,7 @@ export default function DashboardPage() {
             <ScoreCard title="Resumes parsed" value={`${data.resume_count ?? 0}`} />
           </div>
 
-          <MatchHistoryChart data={(data as any).match_history || []} />
+          <MatchHistoryChart data={data.match_history || []} />
         </>
       )}
     </main>

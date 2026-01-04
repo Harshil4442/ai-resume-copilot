@@ -37,18 +37,9 @@ export type JobMatchResponse = {
   missing_skills: string[];
 };
 
-// Analytics
 export type MatchHistoryItem = {
-  // backend uses created_at + score
-  created_at?: string;
-  score?: number;
-
-  // some older frontend versions used timestamp + match_score
-  timestamp?: string;
-  match_score?: number;
-
-  // some very old versions used day + score
-  day?: string;
+  timestamp: string;
+  match_score: number;
 };
 
 export type AnalyticsSummary = {
