@@ -59,7 +59,7 @@ export default function LearningPage() {
           <div className="border rounded p-4 bg-white space-y-2">
             <div className="text-sm font-semibold">Skill gaps</div>
             <div className="flex flex-wrap gap-2">
-              {data.skill_gaps.map((s) => (
+              {(data.skill_gaps as string[]).map((s: string) => (
                 <span key={s} className="px-2 py-1 rounded bg-yellow-50 text-xs">{s}</span>
               ))}
               {!data.skill_gaps.length && <span className="text-xs text-gray-500">No gaps found.</span>}
