@@ -22,22 +22,29 @@ def match_job(
     if not resume:
         raise HTTPException(status_code=404, detail="Resume not found for this user")
 
-    required_skills = extract_required_skills_from_jd(payload.job_description)
-    score, missing = compute_match_score(resume.skills or [], required_skills)
-    
+    # Normalize JD to string for saving (and robustness)
     jd = payload.job_description
     if isinstance(jd, list):
         jd_text = "\n".join([str(x) for x in jd])
     else:
-        jd_text = str(jd)
+        jd_text = str(jd or "")
+
+    required_skills = extract_required_skills_from_jd(jd_text)
+
+    # compute_match_score returns: (score, required_skills, missing_skills)
+    score, req, missing = compute_match_score(
+        resume.skills or [],
+        jd_text,
+        required_skills=required_skills,
+    )
 
     match = models.JobMatch(
         user_id=current_user.id,
         resume_id=resume.id,
-        job_title=payload.job_title,
-        company=payload.company or "",
+        job_title=getattr(payload, "job_title", "") or "",
+        company=getattr(payload, "company", "") or "",
         job_description=jd_text,
-        match_score=score,
+        match_score=float(score or 0.0),
         extracted_skills=required_skills,
         missing_skills=missing,
     )
@@ -46,8 +53,7 @@ def match_job(
     db.refresh(match)
 
     return {
-        "match_id": match.id,
-        "match_score": match.match_score,
-        "required_skills": required_skills,
+        "match_score": float(score or 0.0),
+        "required_skills": req,
         "missing_skills": missing,
     }
