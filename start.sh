@@ -13,7 +13,7 @@ cd /app/backend
 python create_tables.py || true
 
 # Seed user id=1 to avoid FK errors in demo flows
-python - <<'PY'
+python - <<'PY' || true
 from dotenv import load_dotenv
 load_dotenv(".env")
 
@@ -35,7 +35,7 @@ try:
         print(f"Error: {e}\n")
 finally:
     db.close()
-PY || true
+PY
 
 # Start FastAPI (internal)
 uvicorn app.main:app --host 127.0.0.1 --port 8000 &
