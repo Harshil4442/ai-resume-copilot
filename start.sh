@@ -37,11 +37,6 @@ finally:
     db.close()
 PY
 
-# Start FastAPI (internal)
-uvicorn app.main:app --host 127.0.0.1 --port 8000 &
-echo "[INFO] Backend started on 127.0.0.1:8000"
-
-# Frontend (public)
-cd /app/frontend
-echo "[INFO] Frontend starting on 0.0.0.0:${PORT}"
-exec ./node_modules/.bin/next start -H 0.0.0.0 -p "${PORT}"
+# Start FastAPI (public)
+echo "[INFO] Backend starting on 0.0.0.0:${PORT}"
+exec uvicorn app.main:app --host 0.0.0.0 --port "${PORT}"
