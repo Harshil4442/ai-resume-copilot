@@ -31,7 +31,7 @@ try:
         print("[OK] users.id=1 already exists")
 finally:
     db.close()
-PY
+PY || true
 
 # Start FastAPI (internal)
 uvicorn app.main:app --host 127.0.0.1 --port 8000 &
