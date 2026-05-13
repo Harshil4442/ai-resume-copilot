@@ -11,70 +11,111 @@ type ResumeItem = {
 
 type PartialMatch = {
   skill:    string;
-  coverage: number;  // 0-100
+  coverage: number;
   via:      string;
 };
 
+type DimensionScore = {
+  name:     string;
+  score:    number;
+  feedback: string;
+};
+
 type MatchResponse = {
-  match_id:        number;
-  match_score:     number;
-  required_skills: string[];
-  full_matches:    string[];
-  partial_matches: PartialMatch[];
-  true_gaps:       string[];
-  fit_summary:     string;
+  match_id:                number;
+  match_score:             number;
+  grade:                   string;
+  required_skills:         string[];
+  full_matches:            string[];
+  partial_matches:         PartialMatch[];
+  true_gaps:               string[];
+  skill_verification_rate: number;
+  dimensions:              DimensionScore[];
+  fit_summary:             string;
+  improvement_tips:        string[];
 };
 
 type HistoryItem = {
-  match_id: number;
-  job_title: string;
-  company: string;
+  match_id:    number;
+  job_title:   string;
+  company:     string;
   match_score: number;
-  created_at: string;
+  created_at:  string;
 };
 
-function ScoreBadge({ score }: { score: number }) {
-  const color =
-    score >= 70 ? "text-green-600 bg-green-50 border-green-200"
-    : score >= 40 ? "text-yellow-600 bg-yellow-50 border-yellow-200"
-    : "text-red-600 bg-red-50 border-red-200";
-  const label = score >= 70 ? "Strong Match" : score >= 40 ? "Moderate Match" : "Weak Match";
-  return (
-    <div className={`inline-flex flex-col items-center px-5 py-3 rounded-xl border-2 ${color}`}>
-      <span className="text-3xl font-bold">{score.toFixed(1)}</span>
-      <span className="text-xs font-semibold uppercase tracking-wide">{label}</span>
-    </div>
-  );
-}
-
-function SkillTag({ label, variant }: { label: string; variant: "required" | "missing" | "weak" }) {
-  const styles = {
-    required: "bg-blue-50 text-blue-700 border border-blue-200",
-    missing:  "bg-red-50  text-red-700  border border-red-200",
-    weak:     "bg-amber-50 text-amber-700 border border-amber-200",
+// ── Skill tag component ───────────────────────────────────────────────────
+type SkillVariant = "required" | "missing" | "weak";
+function SkillTag({ label, variant }: { label: string; variant: SkillVariant }) {
+  const cls = {
+    required: "bg-green-50 text-green-700 border-green-200",
+    missing:  "bg-red-50 text-red-600 border-red-200",
+    weak:     "bg-amber-50 text-amber-700 border-amber-200",
   }[variant];
   return (
-    <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${styles}`}>
+    <span className={`px-2.5 py-1 rounded-full text-xs font-medium border ${cls}`}>
       {label}
     </span>
   );
 }
 
-export default function JobsPage() {
-  const [resumes, setResumes]           = useState<ResumeItem[]>([]);
-  const [resumesLoading, setResumesLoading] = useState(true);
-  const [selectedResumeId, setSelectedResumeId] = useState<string>("");
-  const [jobTitle, setJobTitle]         = useState("Software Engineer");
-  const [company, setCompany]           = useState("");
-  const [jobDescription, setJobDescription] = useState("");
-  const [data, setData]                 = useState<MatchResponse | null>(null);
-  const [history, setHistory]           = useState<HistoryItem[]>([]);
-  const [error, setError]               = useState<string | null>(null);
-  const [resumeError, setResumeError]   = useState<string | null>(null);
-  const [loading, setLoading]           = useState(false);
-  const [showHistory, setShowHistory]   = useState(false);
+// ── Score badge ───────────────────────────────────────────────────────────
+function ScoreBadge({ score }: { score: number }) {
+  const color =
+    score >= 75 ? "bg-green-500"
+    : score >= 55 ? "bg-yellow-500"
+    : score >= 35 ? "bg-orange-500"
+    : "bg-red-500";
+  return (
+    <div className={`w-16 h-16 rounded-full ${color} flex items-center justify-center text-white font-bold text-lg shadow`}>
+      {score.toFixed(0)}
+    </div>
+  );
+}
 
-  // Load user's parsed resumes for dropdown
+// ── Dimension bar ─────────────────────────────────────────────────────────
+function DimBar({ dim }: { dim: DimensionScore }) {
+  const barColor =
+    dim.score >= 75 ? "bg-green-500"
+    : dim.score >= 50 ? "bg-yellow-400"
+    : "bg-red-400";
+  const textColor =
+    dim.score >= 75 ? "text-green-600"
+    : dim.score >= 50 ? "text-yellow-600"
+    : "text-red-500";
+  return (
+    <div>
+      <div className="flex justify-between items-center mb-1">
+        <span className="text-xs font-medium text-gray-700">{dim.name}</span>
+        <span className={`text-xs font-bold ${textColor}`}>{dim.score.toFixed(0)}/100</span>
+      </div>
+      <div className="w-full bg-gray-100 rounded-full h-1.5">
+        <div
+          className={`h-1.5 rounded-full transition-all duration-500 ${barColor}`}
+          style={{ width: `${Math.max(2, dim.score)}%` }}
+        />
+      </div>
+      <p className="text-xs text-gray-500 mt-0.5 leading-snug">{dim.feedback}</p>
+    </div>
+  );
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────
+export default function JobsPage() {
+  const [resumes,          setResumes]          = useState<ResumeItem[]>([]);
+  const [resumesLoading,   setResumesLoading]   = useState(true);
+  const [resumeError,      setResumeError]      = useState<string | null>(null);
+  const [selectedResumeId, setSelectedResumeId] = useState<string>("");
+
+  const [jobTitle,         setJobTitle]         = useState("");
+  const [company,          setCompany]          = useState("");
+  const [jobDescription,   setJobDescription]   = useState("");
+  const [data,             setData]             = useState<MatchResponse | null>(null);
+  const [history,          setHistory]          = useState<HistoryItem[]>([]);
+  const [error,            setError]            = useState<string | null>(null);
+  const [loading,          setLoading]          = useState(false);
+  const [showHistory,      setShowHistory]      = useState(false);
+
+  // Load parsed resumes for dropdown
   useEffect(() => {
     apiGet<{ resumes: ResumeItem[] }>("/resume/list")
       .then((res) => {
@@ -92,48 +133,55 @@ export default function JobsPage() {
     apiGet<{ matches: HistoryItem[] }>("/jobs/matches")
       .then((res) => setHistory(res.matches))
       .catch(() => {});
-  }, [data]); // refresh after each new match
+  }, [data]);
 
   const canSubmit = useMemo(
     () => selectedResumeId && jobTitle.trim() && jobDescription.trim(),
-    [selectedResumeId, jobTitle, jobDescription]
+    [selectedResumeId, jobTitle, jobDescription],
   );
 
-  async function onSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!canSubmit) return;
+    setLoading(true);
     setError(null);
     setData(null);
-    setLoading(true);
     try {
-      const res = await apiPostJson<MatchResponse>("/jobs/match", {
-        resume_id: Number(selectedResumeId),
-        job_title: jobTitle,
-        company,
-        job_description: jobDescription,
+      const result = await apiPostJson<MatchResponse>("/jobs/match", {
+        resume_id:       Number(selectedResumeId),
+        job_title:       jobTitle.trim(),
+        company:         company.trim() || undefined,
+        job_description: jobDescription.trim(),
       });
-      setData(res);
+      setData(result);
     } catch (err: any) {
-      setError(err?.message || "Match failed");
+      setError(err?.message || "Something went wrong.");
     } finally {
       setLoading(false);
     }
   }
 
+  const gradeColor = (g: string) =>
+    g.startsWith("A") ? "bg-green-100 text-green-700"
+    : g.startsWith("B") ? "bg-blue-100 text-blue-700"
+    : g.startsWith("C") ? "bg-yellow-100 text-yellow-700"
+    : "bg-red-100 text-red-600";
+
   return (
-    <main className="max-w-3xl mx-auto py-10 px-4 space-y-8">
+    <main className="max-w-3xl mx-auto px-4 py-10 space-y-8">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Job Match</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Job Match Analyzer</h1>
         <p className="text-sm text-gray-500 mt-1">
-          Select your resume, paste a job description, and get an AI-powered fit analysis.
+          Deep multi-dimensional analysis — skills coverage, experience fit, domain match,
+          achievements, career trajectory, and more.
         </p>
       </div>
 
-      <form onSubmit={onSubmit} className="space-y-4">
-        {/* Resume dropdown */}
+      <form onSubmit={handleSubmit} className="space-y-4 bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
+
+        {/* Resume selector */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Select Resume
-          </label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Resume</label>
           {resumesLoading ? (
             <div className="w-full border rounded-lg px-3 py-2 text-sm text-gray-400 bg-gray-50">
               Loading resumes…
@@ -143,15 +191,15 @@ export default function JobsPage() {
               <p className="text-red-600 font-medium">Failed to load resumes</p>
               <p className="text-red-500 text-xs mt-1">{resumeError}</p>
               <a href="/resume" className="text-blue-600 underline text-xs mt-2 inline-block">
-                → Go to Resume page to upload and parse your resume
+                Go to Resume page to upload and parse
               </a>
             </div>
           ) : resumes.length === 0 ? (
             <div className="w-full border border-amber-200 rounded-lg px-3 py-3 text-sm bg-amber-50">
               <p className="text-amber-700 font-medium">No parsed resumes found</p>
-              <p className="text-amber-600 text-xs mt-1">Upload and parse a resume before matching jobs.</p>
+              <p className="text-amber-600 text-xs mt-1">Upload and parse a resume first.</p>
               <a href="/resume" className="text-blue-600 underline text-xs mt-2 inline-block">
-                → Upload your resume here
+                Upload here
               </a>
             </div>
           ) : (
@@ -210,7 +258,7 @@ export default function JobsPage() {
           disabled={!canSubmit || loading}
           className="w-full py-2.5 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {loading ? "Analyzing match…" : "Analyze Match"}
+          {loading ? "Deep analyzing… (may take 10–20s)" : "Analyze Match"}
         </button>
       </form>
 
@@ -222,73 +270,118 @@ export default function JobsPage() {
 
       {/* Match Results */}
       {data && (
-        <div className="border border-gray-200 rounded-xl p-6 bg-white space-y-5 shadow-sm">
-          <div className="flex items-center gap-4">
+        <div className="border border-gray-200 rounded-xl p-6 bg-white space-y-6 shadow-sm">
+
+          {/* Header: score + grade + verification rate */}
+          <div className="flex items-start gap-4 flex-wrap">
             <ScoreBadge score={data.match_score} />
-            <div>
-              <div className="text-sm font-semibold text-gray-900">
+            <div className="flex-1 min-w-0">
+              <div className="text-base font-semibold text-gray-900">
                 {jobTitle}{company ? ` @ ${company}` : ""}
               </div>
               <div className="text-xs text-gray-400 mt-0.5">Match #{data.match_id}</div>
+              <div className="flex items-center gap-3 mt-2 flex-wrap">
+                <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full border ${gradeColor(data.grade)}`}>
+                  Grade: {data.grade}
+                </span>
+                <span className="text-xs text-gray-500">
+                  Skill verification:{" "}
+                  <span className={`font-semibold ${
+                    data.skill_verification_rate >= 70 ? "text-green-600"
+                    : data.skill_verification_rate >= 40 ? "text-yellow-600"
+                    : "text-red-500"
+                  }`}>
+                    {data.skill_verification_rate}%
+                  </span>
+                  {" "}evidenced in work/projects
+                </span>
+              </div>
             </div>
           </div>
 
-          {/* Fit summary */}
+          {/* AI Fit summary */}
           {data.fit_summary && (
-            <div className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-3">
-              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+            <div className="bg-blue-50 border border-blue-100 rounded-lg px-4 py-3">
+              <div className="text-xs font-semibold text-blue-500 uppercase tracking-wide mb-1">
                 AI Fit Analysis
               </div>
               <p className="text-sm text-gray-700 leading-relaxed">{data.fit_summary}</p>
             </div>
           )}
 
-          {/* Full matches */}
-          {data.full_matches.length > 0 && (
+          {/* Recruiter dimension breakdown */}
+          {data.dimensions.length > 0 && (
             <div>
-              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                Full Matches ({data.full_matches.length})
+              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
+                Recruiter Dimension Analysis
               </div>
-              <div className="flex flex-wrap gap-2">
-                {data.full_matches.map((s) => (
-                  <SkillTag key={s} label={s} variant="required" />
+              <div className="space-y-4">
+                {data.dimensions.map((dim) => (
+                  <DimBar key={dim.name} dim={dim} />
                 ))}
               </div>
             </div>
           )}
 
-          {/* Partial matches */}
-          {data.partial_matches.length > 0 && (
-            <div>
-              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                Partial Coverage ({data.partial_matches.length}) — you have related skills
+          {/* Skill sections */}
+          <div className="space-y-4">
+            {data.full_matches.length > 0 && (
+              <div>
+                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                  Full Matches ({data.full_matches.length})
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {data.full_matches.map((s) => <SkillTag key={s} label={s} variant="required" />)}
+                </div>
               </div>
-              <div className="flex flex-wrap gap-2">
-                {data.partial_matches.map((p) => (
-                  <span
-                    key={p.skill}
-                    title={`Your '${p.via}' covers ${p.coverage}% of '${p.skill}'`}
-                    className="px-2.5 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200 cursor-default"
-                  >
-                    {p.skill}{" "}
-                    <span className="opacity-70">({p.coverage}% via {p.via})</span>
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
+            )}
 
-          {/* True gaps */}
-          {data.true_gaps.length > 0 && (
-            <div>
-              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                True Gaps ({data.true_gaps.length})
+            {data.partial_matches.length > 0 && (
+              <div>
+                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                  Partial Coverage ({data.partial_matches.length}) — related skills cover these
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {data.partial_matches.map((p) => (
+                    <span
+                      key={p.skill}
+                      title={`Your '${p.via}' covers ${p.coverage}% of '${p.skill}'`}
+                      className="px-2.5 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200 cursor-default"
+                    >
+                      {p.skill}{" "}
+                      <span className="opacity-70">({p.coverage}% via {p.via})</span>
+                    </span>
+                  ))}
+                </div>
               </div>
-              <div className="flex flex-wrap gap-2">
-                {data.true_gaps.map((s) => (
-                  <SkillTag key={s} label={s} variant="missing" />
+            )}
+
+            {data.true_gaps.length > 0 && (
+              <div>
+                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                  True Gaps ({data.true_gaps.length})
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {data.true_gaps.map((s) => <SkillTag key={s} label={s} variant="missing" />)}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Improvement tips */}
+          {data.improvement_tips.length > 0 && (
+            <div className="bg-amber-50 border border-amber-100 rounded-lg px-4 py-4">
+              <div className="text-xs font-semibold text-amber-600 uppercase tracking-wide mb-2">
+                How to Improve Your Match
+              </div>
+              <ul className="space-y-1.5">
+                {data.improvement_tips.map((tip, i) => (
+                  <li key={i} className="text-xs text-gray-700 flex gap-2">
+                    <span className="text-amber-500 flex-shrink-0 font-bold">&#x2022;</span>
+                    {tip}
+                  </li>
                 ))}
-              </div>
+              </ul>
             </div>
           )}
         </div>
@@ -303,7 +396,6 @@ export default function JobsPage() {
           >
             {showHistory ? "Hide" : "Show"} match history ({history.length})
           </button>
-
           {showHistory && (
             <div className="mt-3 border border-gray-200 rounded-xl overflow-hidden">
               <table className="w-full text-sm">
@@ -321,13 +413,11 @@ export default function JobsPage() {
                       <td className="px-4 py-2 font-medium text-gray-800">{h.job_title}</td>
                       <td className="px-4 py-2 text-gray-500">{h.company || "—"}</td>
                       <td className="px-4 py-2 text-right">
-                        <span
-                          className={`font-semibold ${
-                            h.match_score >= 70 ? "text-green-600"
-                            : h.match_score >= 40 ? "text-yellow-600"
-                            : "text-red-500"
-                          }`}
-                        >
+                        <span className={`font-semibold ${
+                          h.match_score >= 70 ? "text-green-600"
+                          : h.match_score >= 40 ? "text-yellow-600"
+                          : "text-red-500"
+                        }`}>
                           {h.match_score.toFixed(1)}
                         </span>
                       </td>

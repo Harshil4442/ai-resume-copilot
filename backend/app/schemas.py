@@ -63,17 +63,26 @@ class JobMatchRequest(BaseModel):
 
 class PartialMatch(BaseModel):
     skill:    str
-    coverage: int   # 0-100 percentage
-    via:      str   # which resume skill provides this coverage
+    coverage: int
+    via:      str
+
+class DimensionScore(BaseModel):
+    name:     str
+    score:    float
+    feedback: str
 
 class JobMatchResponse(BaseModel):
-    match_id:        int
-    match_score:     float
-    required_skills: List[str]
-    full_matches:    List[str]
-    partial_matches: List[PartialMatch]
-    true_gaps:       List[str]
-    fit_summary:     str
+    match_id:                int
+    match_score:             float
+    grade:                   str
+    required_skills:         List[str]
+    full_matches:            List[str]
+    partial_matches:         List[PartialMatch]
+    true_gaps:               List[str]
+    skill_verification_rate: int
+    dimensions:              List[DimensionScore]
+    fit_summary:             str
+    improvement_tips:        List[str]
 
 class JobMatchHistoryItem(BaseModel):
     match_id: int

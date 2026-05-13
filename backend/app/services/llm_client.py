@@ -197,3 +197,82 @@ def get_skill_coverage_llm(skill_from: str, skill_to: str) -> float:
     ])
     score = float(raw.strip())
     return max(0.0, min(1.0, score))
+
+
+def compute_holistic_match_llm(
+    experience_text: str,
+    projects_text: str,
+    education_text: str,
+    resume_skills: List[str],
+    experience_years: float,
+    jd_text: str,
+    job_title: str,
+    applied_skills_score: float,
+    claimed_skills_score: float,
+    skill_verification_rate: int,
+) -> dict:
+    """
+    Score all non-skill dimensions as a senior hiring manager would.
+    Returns: {dimensions: [{name, score, feedback}], improvement_tips: [str]}
+    """
+    system_prompt = (
+        "You are a senior hiring manager and technical recruiter with 15+ years of experience "
+        "across software engineering, data science, and product roles. "
+        "Analyze the candidate\'s resume against the job description and score each dimension "
+        "exactly as a real hiring manager would — be honest, specific, and practical.\n\n"
+        "Return a valid JSON object with this exact structure:\n"
+        "{\n"
+        "  \"dimensions\": [\n"
+        "    {\"name\": \"Experience Level Fit\", \"score\": 0-100, \"feedback\": \"2-sentence specific feedback\"},\n"
+        "    {\"name\": \"Role Relevance\", \"score\": 0-100, \"feedback\": \"..\"},\n"
+        "    {\"name\": \"Domain / Industry Fit\", \"score\": 0-100, \"feedback\": \"..\"},\n"
+        "    {\"name\": \"Project Relevance\", \"score\": 0-100, \"feedback\": \"..\"},\n"
+        "    {\"name\": \"Achievement Quality\", \"score\": 0-100, \"feedback\": \"..\"},\n"
+        "    {\"name\": \"Career Trajectory\", \"score\": 0-100, \"feedback\": \"..\"},\n"
+        "    {\"name\": \"Education Fit\", \"score\": 0-100, \"feedback\": \"..\"},\n"
+        "    {\"name\": \"Employment Stability\", \"score\": 0-100, \"feedback\": \"..\"}\n"
+        "  ],\n"
+        "  \"improvement_tips\": [\"tip1\", \"tip2\", \"tip3\"]\n"
+        "}\n\n"
+        "SCORING GUIDELINES per dimension:\n"
+        "Experience Level Fit: Compare candidate years of experience and seniority signals "
+        "(title history, scope) against the JD requirement. Penalise over- and under-qualification.\n"
+        "Role Relevance: How similar are past job titles and actual responsibilities to the target role?\n"
+        "Domain / Industry Fit: Has candidate worked in the same industry/domain (fintech, health, SaaS)?\n"
+        "Project Relevance: Do personal/side projects align with the JD stack and problem domain?\n"
+        "Achievement Quality: Are there quantified, impactful statements (%, $, scale) or only vague duties?\n"
+        "Career Trajectory: Is there clear upward progression, or lateral moves/regression?\n"
+        "Education Fit: Does the degree/field/certifications meet JD requirements?\n"
+        "Employment Stability: Is average tenure reasonable (2+ years preferred in engineering)?\n\n"
+        "Return ONLY the JSON object. No markdown, no explanation outside the JSON."
+    )
+    user_content = (
+        f"TARGET ROLE: {job_title}\n\n"
+        f"JOB DESCRIPTION:\n{jd_text[:2000]}\n\n"
+        f"CANDIDATE — WORK EXPERIENCE:\n{experience_text[:2000]}\n\n"
+        f"CANDIDATE — PROJECTS:\n{projects_text[:1000]}\n\n"
+        f"CANDIDATE — EDUCATION:\n{education_text[:500]}\n\n"
+        f"CANDIDATE OVERVIEW:\n"
+        f"  Total experience: {experience_years:.1f} years\n"
+        f"  All skills: {', '.join(resume_skills[:30])}\n"
+        f"  Applied skills score (skills used in work/projects): {applied_skills_score:.0f}/100\n"
+        f"  Claimed-only skills score (listed but not evidenced): {claimed_skills_score:.0f}/100\n"
+        f"  Skill verification rate: {skill_verification_rate}% of skills have evidence"
+    )
+    raw = _chat([
+        {"role": "system", "content": system_prompt},
+        {"role": "user",   "content": user_content},
+    ])
+    # Strip markdown fences if present
+    cleaned = raw.strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.split("```")[1]
+        if cleaned.startswith("json"):
+            cleaned = cleaned[4:]
+    result = json.loads(cleaned.strip())
+    # Ensure required keys exist
+    if "dimensions" not in result:
+        result["dimensions"] = []
+    if "improvement_tips" not in result:
+        result["improvement_tips"] = []
+    return result

@@ -44,7 +44,10 @@ class JobMatch(Base):
     partial_matches  = Column(JSON, default=list)  # [{skill, coverage, via}]
     true_gaps        = Column(JSON, default=list)  # no meaningful coverage
     match_score      = Column(Float, default=0.0)
-    fit_summary      = Column(Text, default="")
+    fit_summary           = Column(Text, default="")
+    dimension_scores      = Column(JSON, default=list)  # [{name,score,feedback}]
+    skill_verification_rate = Column(Float, default=0.0)
+    improvement_tips      = Column(JSON, default=list)
 
     user   = relationship("User", back_populates="job_matches")
     resume = relationship("Resume")
