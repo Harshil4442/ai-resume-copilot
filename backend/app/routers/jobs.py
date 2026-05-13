@@ -29,7 +29,7 @@ def match_job(
         else str(payload.job_description)
     )
 
-    # Step 1: Extract JD skills — LLM preferred, regex heuristic fallback
+    # Step 1: Extract JD skills — LLM preferred, regex fallback
     required_skills = []
     try:
         from ..services.llm_client import extract_jd_skills_llm
@@ -37,14 +37,18 @@ def match_job(
     except Exception:
         required_skills = extract_required_skills_from_jd(jd_text)
 
-    # Step 2: Compute score, missing skills, weak skills
-    score, req, missing, weak = compute_match_score(
-        resume.skills or [],
-        jd_text,
+    # Step 2: Coverage-weighted score (DB → LLM per skill pair)
+    score, req_all, full_matches, partial_matches, true_gaps = compute_match_score(
+        resume_skills=resume.skills or [],
+        job_description=jd_text,
         required_skills=required_skills,
+        db=db,
     )
 
-    # Step 3: Generate LLM fit summary — template fallback if LLM unavailable
+    # Step 3: LLM fit summary — template fallback if unavailable
+    true_gap_names = true_gaps
+    partial_names  = [p["via"] for p in partial_matches]
+
     fit_summary = ""
     try:
         from ..services.llm_client import generate_fit_summary_llm
@@ -53,8 +57,8 @@ def match_job(
             job_title=payload.job_title,
             jd_text=jd_text,
             match_score=score,
-            missing_skills=missing,
-            weak_skills=weak,
+            missing_skills=true_gap_names,
+            weak_skills=partial_names,
         )
     except Exception:
         if score >= 70:
@@ -62,15 +66,15 @@ def match_job(
         elif score >= 40:
             fit_summary = (
                 f"Moderate match ({score:.0f}/100). "
-                f"Consider upskilling in: {', '.join(missing[:3])}."
+                f"Key gaps to address: {', '.join(true_gap_names[:3])}."
             )
         else:
             fit_summary = (
                 f"Partial match ({score:.0f}/100) for {payload.job_title}. "
-                f"Key gaps: {', '.join(missing[:5])}."
+                f"Significant gaps: {', '.join(true_gap_names[:5])}."
             )
 
-    # Step 4: Persist to DB
+    # Step 4: Persist
     match = models.JobMatch(
         user_id=current_user.id,
         resume_id=resume.id,
@@ -78,9 +82,10 @@ def match_job(
         company=payload.company or "",
         job_description=jd_text,
         match_score=float(score),
-        required_skills=req,
-        missing_skills=missing,
-        weak_skills=weak,
+        required_skills=req_all,
+        full_matches=full_matches,
+        partial_matches=partial_matches,
+        true_gaps=true_gap_names,
         fit_summary=fit_summary,
     )
     db.add(match)
@@ -90,9 +95,10 @@ def match_job(
     return schemas.JobMatchResponse(
         match_id=match.id,
         match_score=score,
-        required_skills=req,
-        missing_skills=missing,
-        weak_skills=weak,
+        required_skills=req_all,
+        full_matches=full_matches,
+        partial_matches=[schemas.PartialMatch(**p) for p in partial_matches],
+        true_gaps=true_gap_names,
         fit_summary=fit_summary,
     )
 
@@ -102,7 +108,6 @@ def get_match_history(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    """Return the last 50 job matches for the current user."""
     matches = (
         db.query(models.JobMatch)
         .filter(models.JobMatch.user_id == current_user.id)

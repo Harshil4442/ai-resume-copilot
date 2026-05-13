@@ -61,13 +61,19 @@ class JobMatchRequest(BaseModel):
     company: Optional[str] = None
     job_description: Union[str, List[str]]
 
+class PartialMatch(BaseModel):
+    skill:    str
+    coverage: int   # 0-100 percentage
+    via:      str   # which resume skill provides this coverage
+
 class JobMatchResponse(BaseModel):
-    match_id: int
-    match_score: float
+    match_id:        int
+    match_score:     float
     required_skills: List[str]
-    missing_skills: List[str]
-    weak_skills: List[str]
-    fit_summary: str
+    full_matches:    List[str]
+    partial_matches: List[PartialMatch]
+    true_gaps:       List[str]
+    fit_summary:     str
 
 class JobMatchHistoryItem(BaseModel):
     match_id: int

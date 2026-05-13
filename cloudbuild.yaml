@@ -1,8 +1,9 @@
 steps:
-  # Step 1: Build the Docker image
+  # Step 1: Build the Docker image (--no-cache ensures fresh pip install)
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'build'
+      - '--no-cache'
       - '-t'
       - 'us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/ai-resume-parser:$COMMIT_SHA'
       - '-t'

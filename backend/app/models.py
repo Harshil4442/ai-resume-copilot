@@ -21,10 +21,10 @@ class Resume(Base):
     original_filename = Column(String, default="")
     raw_text = Column(Text, default="")
 
-    skills = Column(JSON, default=list)          # list[str]
+    skills = Column(JSON, default=list)
     experience_years = Column(Float, default=0.0)
-    sections = Column(JSON, default=dict)        # dict section_name -> text
-    contact_info = Column(JSON, default=dict)    # {name, email, phone, linkedin, github}
+    sections = Column(JSON, default=dict)
+    contact_info = Column(JSON, default=dict)
 
     user = relationship("User", back_populates="resumes")
 
@@ -35,15 +35,30 @@ class JobMatch(Base):
     resume_id = Column(Integer, ForeignKey("resumes.id"))
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    job_title = Column(String, default="")
-    company = Column(String, default="")
-    job_description = Column(Text, default="")
+    job_title        = Column(String, default="")
+    company          = Column(String, default="")
+    job_description  = Column(Text, default="")
 
-    required_skills = Column(JSON, default=list)
-    match_score = Column(Float, default=0.0)
-    missing_skills = Column(JSON, default=list)
-    weak_skills = Column(JSON, default=list)
-    fit_summary = Column(Text, default="")
+    required_skills  = Column(JSON, default=list)
+    full_matches     = Column(JSON, default=list)  # direct + full coverage skills
+    partial_matches  = Column(JSON, default=list)  # [{skill, coverage, via}]
+    true_gaps        = Column(JSON, default=list)  # no meaningful coverage
+    match_score      = Column(Float, default=0.0)
+    fit_summary      = Column(Text, default="")
 
-    user = relationship("User", back_populates="job_matches")
+    user   = relationship("User", back_populates="job_matches")
     resume = relationship("Resume")
+
+
+class SkillCoverage(Base):
+    """
+    Persistent DB cache for LLM-computed pairwise skill coverage weights.
+    Written once per unique (skill_from, skill_to) pair, read on every subsequent request.
+    """
+    __tablename__ = "skill_coverage"
+
+    skill_from = Column(String(120), primary_key=True)
+    skill_to   = Column(String(120), primary_key=True)
+    weight     = Column(Float, nullable=False)   # 0.0 to 1.0
+    source     = Column(String(20), default="llm")
+    created_at = Column(DateTime, default=datetime.utcnow)

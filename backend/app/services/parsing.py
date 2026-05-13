@@ -204,23 +204,100 @@ def extract_contact_info(text: str) -> Dict[str, Optional[str]]:
 # Experience year estimation
 # ---------------------------------------------------------------------------
 
-def estimate_experience_years(text: str) -> float:
-    # Strategy 1: explicit "X years"
-    explicit = re.findall(r"(\d+)\+?\s+years?", text.lower())
-    if explicit:
-        return float(max(int(m) for m in explicit))
+# ---------------------------------------------------------------------------
+# Experience year estimation — section-aware + deduplication
+# ---------------------------------------------------------------------------
 
-    # Strategy 2: date ranges like "2019 - 2023", "Jan 2018 – Present"
+_MONTH_PAT = (
+    r"(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?"
+    r"|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?"
+    r"|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)"
+)
+_YEAR_PAT   = r"(20\d{2}|19\d{2})"
+_END_PAT    = r"(20\d{2}|19\d{2}|present|current|now)"
+_DATE_RANGE = re.compile(
+    rf"(?:{_MONTH_PAT}\s+)?{_YEAR_PAT}\s*[-\u2013\u2014/to]+\s*(?:{_MONTH_PAT}\s+)?{_END_PAT}",
+    re.IGNORECASE,
+)
+
+
+def _extract_intervals(text: str) -> List[Tuple[int, int]]:
+    """Pull (start_year, end_year) pairs from a text block."""
     current_year = datetime.datetime.now().year
-    ranges = re.findall(
-        r"(20\d{2}|19\d{2})\s*[-–—]\s*(20\d{2}|19\d{2}|present|current|now)",
-        text.lower()
-    )
-    total = sum(
-        max(0, (current_year if end in ("present", "current", "now") else int(end)) - int(start))
-        for start, end in ranges
-    )
-    return min(float(total), 40.0) if total else 0.0
+    intervals: List[Tuple[int, int]] = []
+    for m in _DATE_RANGE.finditer(text):
+        start_raw, end_raw = m.group(1), m.group(2)
+        try:
+            start = int(start_raw)
+            end   = current_year if end_raw.lower() in ("present", "current", "now") else int(end_raw)
+        except (ValueError, AttributeError):
+            continue
+        if 1970 <= start <= end <= current_year + 1:
+            intervals.append((start, end))
+    return intervals
+
+
+def _merge_and_sum(intervals: List[Tuple[int, int]]) -> float:
+    """Merge overlapping job periods so concurrent jobs aren't double-counted."""
+    if not intervals:
+        return 0.0
+    intervals = sorted(set(intervals))
+    merged = [list(intervals[0])]
+    for start, end in intervals[1:]:
+        if start <= merged[-1][1]:          # overlapping — extend
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end])
+    return min(float(sum(e - s for s, e in merged)), 40.0)
+
+
+# Work-context phrases for explicit "X years" fallback
+_WORK_YEAR_RE = re.compile(
+    r"(\d+)\+?\s+years?\s+(?:of\s+)?(?:professional\s+|industry\s+|work\s+|total\s+)?experience",
+    re.IGNORECASE,
+)
+
+
+def estimate_experience_years(
+    text: str,
+    sections: Optional[Dict[str, str]] = None,
+) -> float:
+    """
+    Estimate WORK experience years only.
+
+    Priority:
+    1. Date ranges extracted solely from the 'experience' section
+       → overlapping periods merged (no double-counting concurrent jobs)
+    2. Date ranges from full text minus any dates found in 'education' section
+    3. Explicit 'X years of experience' phrases (work-context filtered)
+    """
+    # --- 1. Experience section only (best signal) ---
+    if sections:
+        exp_text = sections.get("experience", "")
+        if exp_text:
+            intervals = _extract_intervals(exp_text)
+            if intervals:
+                return _merge_and_sum(intervals)
+
+    # --- 2. Full text minus education dates ---
+    edu_intervals: set = set()
+    if sections:
+        edu_text = sections.get("education", "")
+        if edu_text:
+            edu_intervals = set(_extract_intervals(edu_text))
+
+    all_intervals = _extract_intervals(text)
+    work_intervals = [iv for iv in all_intervals if iv not in edu_intervals]
+    if work_intervals:
+        return _merge_and_sum(work_intervals)
+
+    # --- 3. Explicit mention (context-filtered, last resort) ---
+    matches = _WORK_YEAR_RE.findall(text)
+    if matches:
+        return float(max(int(m) for m in matches))
+
+    return 0.0
+
 
 
 # ---------------------------------------------------------------------------
@@ -283,7 +360,7 @@ def parse_resume_file(
         except Exception:
             pass  # silently use heuristic
 
-    # Step 4: Experience years
-    exp_years = estimate_experience_years(raw_text)
+    # Step 4: Experience years — pass sections so we only count work dates
+    exp_years = estimate_experience_years(raw_text, sections=sections)
 
     return raw_text, sections, skills, exp_years, contact_info

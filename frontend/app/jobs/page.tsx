@@ -9,13 +9,20 @@ type ResumeItem = {
   created_at: string;
 };
 
+type PartialMatch = {
+  skill:    string;
+  coverage: number;  // 0-100
+  via:      string;
+};
+
 type MatchResponse = {
-  match_id: number;
-  match_score: number;
+  match_id:        number;
+  match_score:     number;
   required_skills: string[];
-  missing_skills: string[];
-  weak_skills: string[];
-  fit_summary: string;
+  full_matches:    string[];
+  partial_matches: PartialMatch[];
+  true_gaps:       string[];
+  fit_summary:     string;
 };
 
 type HistoryItem = {
@@ -236,43 +243,50 @@ export default function JobsPage() {
             </div>
           )}
 
-          {/* Required skills */}
-          {data.required_skills.length > 0 && (
+          {/* Full matches */}
+          {data.full_matches.length > 0 && (
             <div>
               <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                Required Skills ({data.required_skills.length})
+                Full Matches ({data.full_matches.length})
               </div>
               <div className="flex flex-wrap gap-2">
-                {data.required_skills.map((s) => (
+                {data.full_matches.map((s) => (
                   <SkillTag key={s} label={s} variant="required" />
                 ))}
               </div>
             </div>
           )}
 
-          {/* Missing skills */}
-          {data.missing_skills.length > 0 && (
+          {/* Partial matches */}
+          {data.partial_matches.length > 0 && (
             <div>
               <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                Missing Skills ({data.missing_skills.length})
+                Partial Coverage ({data.partial_matches.length}) — you have related skills
               </div>
               <div className="flex flex-wrap gap-2">
-                {data.missing_skills.map((s) => (
-                  <SkillTag key={s} label={s} variant="missing" />
+                {data.partial_matches.map((p) => (
+                  <span
+                    key={p.skill}
+                    title={`Your '${p.via}' covers ${p.coverage}% of '${p.skill}'`}
+                    className="px-2.5 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200 cursor-default"
+                  >
+                    {p.skill}{" "}
+                    <span className="opacity-70">({p.coverage}% via {p.via})</span>
+                  </span>
                 ))}
               </div>
             </div>
           )}
 
-          {/* Weak / partial skills */}
-          {data.weak_skills.length > 0 && (
+          {/* True gaps */}
+          {data.true_gaps.length > 0 && (
             <div>
               <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                Partial Matches — you have related skills ({data.weak_skills.length})
+                True Gaps ({data.true_gaps.length})
               </div>
               <div className="flex flex-wrap gap-2">
-                {data.weak_skills.map((s) => (
-                  <SkillTag key={s} label={s} variant="weak" />
+                {data.true_gaps.map((s) => (
+                  <SkillTag key={s} label={s} variant="missing" />
                 ))}
               </div>
             </div>
