@@ -63,6 +63,7 @@ export default function JobsPage() {
   const [data, setData]                 = useState<MatchResponse | null>(null);
   const [history, setHistory]           = useState<HistoryItem[]>([]);
   const [error, setError]               = useState<string | null>(null);
+  const [resumeError, setResumeError]   = useState<string | null>(null);
   const [loading, setLoading]           = useState(false);
   const [showHistory, setShowHistory]   = useState(false);
 
@@ -73,7 +74,9 @@ export default function JobsPage() {
         setResumes(res.resumes);
         if (res.resumes.length > 0) setSelectedResumeId(String(res.resumes[0].id));
       })
-      .catch(() => {})
+      .catch((err: any) => {
+        setResumeError(err?.message || "Failed to load resumes. Are you logged in?");
+      })
       .finally(() => setResumesLoading(false));
   }, []);
 
@@ -128,9 +131,21 @@ export default function JobsPage() {
             <div className="w-full border rounded-lg px-3 py-2 text-sm text-gray-400 bg-gray-50">
               Loading resumes…
             </div>
+          ) : resumeError ? (
+            <div className="w-full border border-red-200 rounded-lg px-3 py-3 text-sm bg-red-50">
+              <p className="text-red-600 font-medium">Failed to load resumes</p>
+              <p className="text-red-500 text-xs mt-1">{resumeError}</p>
+              <a href="/resume" className="text-blue-600 underline text-xs mt-2 inline-block">
+                → Go to Resume page to upload and parse your resume
+              </a>
+            </div>
           ) : resumes.length === 0 ? (
-            <div className="w-full border rounded-lg px-3 py-2 text-sm text-amber-600 bg-amber-50">
-              No parsed resumes found. Upload a resume first.
+            <div className="w-full border border-amber-200 rounded-lg px-3 py-3 text-sm bg-amber-50">
+              <p className="text-amber-700 font-medium">No parsed resumes found</p>
+              <p className="text-amber-600 text-xs mt-1">Upload and parse a resume before matching jobs.</p>
+              <a href="/resume" className="text-blue-600 underline text-xs mt-2 inline-block">
+                → Upload your resume here
+              </a>
             </div>
           ) : (
             <select
