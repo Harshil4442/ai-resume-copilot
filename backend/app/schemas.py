@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Dict, List, Optional, Union
 from pydantic import BaseModel, EmailStr, Field
 
@@ -38,6 +39,20 @@ class ResumeParseResponse(BaseModel):
     contact_info: ContactInfo
 
 # -------------------------
+# Resume list (for dropdown)
+# -------------------------
+class ResumeListItem(BaseModel):
+    id: int
+    filename: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class ResumeListResponse(BaseModel):
+    resumes: List[ResumeListItem]
+
+# -------------------------
 # Job matching
 # -------------------------
 class JobMatchRequest(BaseModel):
@@ -45,6 +60,27 @@ class JobMatchRequest(BaseModel):
     job_title: str
     company: Optional[str] = None
     job_description: Union[str, List[str]]
+
+class JobMatchResponse(BaseModel):
+    match_id: int
+    match_score: float
+    required_skills: List[str]
+    missing_skills: List[str]
+    weak_skills: List[str]
+    fit_summary: str
+
+class JobMatchHistoryItem(BaseModel):
+    match_id: int
+    job_title: str
+    company: str
+    match_score: float
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class JobMatchHistoryResponse(BaseModel):
+    matches: List[JobMatchHistoryItem]
 
 # -------------------------
 # LLM helpers

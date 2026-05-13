@@ -8,6 +8,30 @@ from ..security import get_current_user
 
 router = APIRouter(prefix="/resume", tags=["resume"])
 
+
+@router.get("/list", response_model=schemas.ResumeListResponse)
+def list_resumes(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Return all parsed resumes for the current user (used for dropdown selection)."""
+    resumes = (
+        db.query(models.Resume)
+        .filter(models.Resume.user_id == current_user.id)
+        .order_by(models.Resume.created_at.desc())
+        .all()
+    )
+    return schemas.ResumeListResponse(
+        resumes=[
+            schemas.ResumeListItem(
+                id=r.id,
+                filename=r.original_filename or f"Resume #{r.id}",
+                created_at=r.created_at,
+            )
+            for r in resumes
+        ]
+    )
+
 ALLOWED_TYPES = {
     "application/pdf",
     "application/octet-stream",                                          # generic binary (some browsers)

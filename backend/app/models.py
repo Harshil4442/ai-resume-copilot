@@ -43,6 +43,7 @@ class JobMatch(Base):
     match_score = Column(Float, default=0.0)
     missing_skills = Column(JSON, default=list)
     weak_skills = Column(JSON, default=list)
+    fit_summary = Column(Text, default="")
 
     user = relationship("User", back_populates="job_matches")
     resume = relationship("Resume")

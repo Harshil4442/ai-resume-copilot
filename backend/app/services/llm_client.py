@@ -67,6 +67,61 @@ def generate_interview_questions(job_title: str, jd_text: str, num_questions: in
         return [{"question": "Explain your relevant experience.", "answer": content[:800]}]
 
 
+def extract_jd_skills_llm(jd_text: str) -> List[str]:
+    """
+    Extract required + preferred skills from a job description using LLM.
+    No hardcoded vocabulary — works for any industry or tech stack.
+    Raises on failure so callers can fall back to regex heuristic.
+    """
+    system_prompt = (
+        "You are a job description analyst. Extract ALL technical skills, tools, "
+        "frameworks, programming languages, and platforms from this job description. "
+        "Include both required and preferred skills. "
+        "Return ONLY a valid JSON array of lowercase strings. "
+        'Example: ["python", "aws", "docker", "rest apis"]. '
+        "Do not include soft skills like communication or teamwork."
+    )
+    content = _chat([
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": jd_text[:3000]},
+    ])
+    parsed = json.loads(content)
+    if isinstance(parsed, list):
+        return sorted(str(s).lower() for s in parsed)
+    raise ValueError("LLM did not return a JSON list")
+
+
+def generate_fit_summary_llm(
+    resume_skills: List[str],
+    job_title: str,
+    jd_text: str,
+    match_score: float,
+    missing_skills: List[str],
+    weak_skills: List[str],
+) -> str:
+    """
+    Generate a concise 2-3 sentence fit summary explaining how well
+    the candidate matches the role, with specific strengths and gaps.
+    """
+    system_prompt = (
+        "You are an expert career coach. Write a 2-3 sentence fit analysis for a candidate "
+        "based on their skills and a job description. Be specific, honest, and actionable. "
+        "Mention their strongest matching skills and their most critical gaps."
+    )
+    user_content = (
+        f"Role: {job_title}\n"
+        f"Match Score: {match_score:.1f}/100\n"
+        f"Candidate Skills: {', '.join(resume_skills[:30])}\n"
+        f"Missing Skills: {', '.join(missing_skills[:8])}\n"
+        f"Partial Matches: {', '.join(weak_skills[:8])}\n\n"
+        f"Job Description (excerpt):\n{jd_text[:1500]}"
+    )
+    return _chat([
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_content},
+    ])
+
+
 def extract_skills_llm(resume_text: str) -> List[str]:
     """
     Use the LLM to extract skills dynamically from resume text.
