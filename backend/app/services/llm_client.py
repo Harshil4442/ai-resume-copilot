@@ -199,6 +199,7 @@ def get_skill_coverage_llm(skill_from: str, skill_to: str) -> float:
     return max(0.0, min(1.0, score))
 
 
+
 def compute_holistic_match_llm(
     experience_text: str,
     projects_text: str,
@@ -214,65 +215,79 @@ def compute_holistic_match_llm(
     """
     Score all non-skill dimensions as a senior hiring manager would.
     Returns: {dimensions: [{name, score, feedback}], improvement_tips: [str]}
+    Bug fix: prompt now uses concrete integers (not ranges) so LLM returns valid JSON.
     """
+    # Use json.dumps to safely embed the example structure in the prompt
+    example = json.dumps({
+        "dimensions": [
+            {"name": "Experience Level Fit",  "score": 75, "feedback": "Replace with real feedback."},
+            {"name": "Role Relevance",         "score": 80, "feedback": "Replace with real feedback."},
+            {"name": "Domain / Industry Fit",  "score": 60, "feedback": "Replace with real feedback."},
+            {"name": "Project Relevance",      "score": 70, "feedback": "Replace with real feedback."},
+            {"name": "Achievement Quality",    "score": 65, "feedback": "Replace with real feedback."},
+            {"name": "Career Trajectory",      "score": 85, "feedback": "Replace with real feedback."},
+            {"name": "Education Fit",          "score": 90, "feedback": "Replace with real feedback."},
+            {"name": "Employment Stability",   "score": 75, "feedback": "Replace with real feedback."},
+        ],
+        "improvement_tips": ["Tip 1", "Tip 2", "Tip 3"],
+    }, indent=2)
+
     system_prompt = (
         "You are a senior hiring manager and technical recruiter with 15+ years of experience "
-        "across software engineering, data science, and product roles. "
-        "Analyze the candidate\'s resume against the job description and score each dimension "
+        "across software engineering, data science, and product roles.\n\n"
+        "Analyze the candidate resume against the job description and score each dimension "
         "exactly as a real hiring manager would — be honest, specific, and practical.\n\n"
-        "Return a valid JSON object with this exact structure:\n"
-        "{\n"
-        "  \"dimensions\": [\n"
-        "    {\"name\": \"Experience Level Fit\", \"score\": 0-100, \"feedback\": \"2-sentence specific feedback\"},\n"
-        "    {\"name\": \"Role Relevance\", \"score\": 0-100, \"feedback\": \"..\"},\n"
-        "    {\"name\": \"Domain / Industry Fit\", \"score\": 0-100, \"feedback\": \"..\"},\n"
-        "    {\"name\": \"Project Relevance\", \"score\": 0-100, \"feedback\": \"..\"},\n"
-        "    {\"name\": \"Achievement Quality\", \"score\": 0-100, \"feedback\": \"..\"},\n"
-        "    {\"name\": \"Career Trajectory\", \"score\": 0-100, \"feedback\": \"..\"},\n"
-        "    {\"name\": \"Education Fit\", \"score\": 0-100, \"feedback\": \"..\"},\n"
-        "    {\"name\": \"Employment Stability\", \"score\": 0-100, \"feedback\": \"..\"}\n"
-        "  ],\n"
-        "  \"improvement_tips\": [\"tip1\", \"tip2\", \"tip3\"]\n"
-        "}\n\n"
-        "SCORING GUIDELINES per dimension:\n"
-        "Experience Level Fit: Compare candidate years of experience and seniority signals "
-        "(title history, scope) against the JD requirement. Penalise over- and under-qualification.\n"
-        "Role Relevance: How similar are past job titles and actual responsibilities to the target role?\n"
-        "Domain / Industry Fit: Has candidate worked in the same industry/domain (fintech, health, SaaS)?\n"
-        "Project Relevance: Do personal/side projects align with the JD stack and problem domain?\n"
-        "Achievement Quality: Are there quantified, impactful statements (%, $, scale) or only vague duties?\n"
-        "Career Trajectory: Is there clear upward progression, or lateral moves/regression?\n"
-        "Education Fit: Does the degree/field/certifications meet JD requirements?\n"
-        "Employment Stability: Is average tenure reasonable (2+ years preferred in engineering)?\n\n"
-        "Return ONLY the JSON object. No markdown, no explanation outside the JSON."
+        "Return a JSON object with this EXACT structure (replace example scores and feedback):\n"
+        + example + "\n\n"
+        "RULES:\n"
+        "- score MUST be a plain integer between 0 and 100 (NOT a range like 0-100).\n"
+        "- feedback MUST be 1-2 specific sentences referencing actual resume content.\n"
+        "- Return ONLY the raw JSON — no markdown fences, no extra text.\n\n"
+        "DIMENSION SCORING GUIDELINES:\n"
+        "Experience Level Fit: Years of experience + seniority signals vs JD requirement.\n"
+        "Role Relevance: Similarity of past job titles and responsibilities to target role.\n"
+        "Domain / Industry Fit: Has candidate worked in the same industry/domain?\n"
+        "Project Relevance: Do projects align with the JD tech stack and problem domain?\n"
+        "Achievement Quality: Quantified metrics (%, $, scale numbers) vs vague duties.\n"
+        "Career Trajectory: Upward progression, lateral moves, or regression?\n"
+        "Education Fit: Degree/field/certifications match JD requirements?\n"
+        "Employment Stability: Average tenure per company (2+ years preferred)."
     )
     user_content = (
         f"TARGET ROLE: {job_title}\n\n"
         f"JOB DESCRIPTION:\n{jd_text[:2000]}\n\n"
-        f"CANDIDATE — WORK EXPERIENCE:\n{experience_text[:2000]}\n\n"
-        f"CANDIDATE — PROJECTS:\n{projects_text[:1000]}\n\n"
-        f"CANDIDATE — EDUCATION:\n{education_text[:500]}\n\n"
-        f"CANDIDATE OVERVIEW:\n"
-        f"  Total experience: {experience_years:.1f} years\n"
-        f"  All skills: {', '.join(resume_skills[:30])}\n"
-        f"  Applied skills score (skills used in work/projects): {applied_skills_score:.0f}/100\n"
-        f"  Claimed-only skills score (listed but not evidenced): {claimed_skills_score:.0f}/100\n"
-        f"  Skill verification rate: {skill_verification_rate}% of skills have evidence"
+        f"WORK EXPERIENCE:\n{experience_text[:2000]}\n\n"
+        f"PROJECTS:\n{projects_text[:1000]}\n\n"
+        f"EDUCATION:\n{education_text[:500]}\n\n"
+        f"SKILL SUMMARY:\n"
+        f"Total experience: {experience_years:.1f} years | "
+        f"Skills: {', '.join(resume_skills[:25])} | "
+        f"Applied score: {applied_skills_score:.0f}/100 | "
+        f"Claimed score: {claimed_skills_score:.0f}/100 | "
+        f"Verification rate: {skill_verification_rate}%"
     )
     raw = _chat([
         {"role": "system", "content": system_prompt},
         {"role": "user",   "content": user_content},
     ])
-    # Strip markdown fences if present
+
+    # Robustly strip markdown fences
     cleaned = raw.strip()
-    if cleaned.startswith("```"):
-        cleaned = cleaned.split("```")[1]
-        if cleaned.startswith("json"):
-            cleaned = cleaned[4:]
+    if "```" in cleaned:
+        for part in cleaned.split("```"):
+            part = part.strip()
+            if part.lower().startswith("json"):
+                part = part[4:].strip()
+            if part.startswith("{"):
+                cleaned = part
+                break
+
     result = json.loads(cleaned.strip())
-    # Ensure required keys exist
     if "dimensions" not in result:
         result["dimensions"] = []
     if "improvement_tips" not in result:
         result["improvement_tips"] = []
+    # Coerce scores to float in case LLM returns strings
+    for dim in result["dimensions"]:
+        dim["score"] = float(dim.get("score", 50))
     return result

@@ -1,5 +1,8 @@
+import logging
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+
+log = logging.getLogger(__name__)
 
 from ..database import get_db
 from .. import models, schemas
@@ -82,10 +85,10 @@ def match_job(
         )
         holistic_dimensions = holistic_result.get("dimensions", [])
         improvement_tips    = holistic_result.get("improvement_tips", [])
-    except Exception:
-        # Graceful fallback: neutral dimension scores
+    except Exception as e:
+        log.error("compute_holistic_match_llm failed: %s", e, exc_info=True)
         holistic_dimensions = [
-            {"name": d, "score": 50, "feedback": "Analysis unavailable — LLM unreachable."}
+            {"name": d, "score": 50, "feedback": f"Analysis unavailable ({type(e).__name__}: {str(e)[:80]})"}
             for d in get_dynamic_weights(exp_years)[0].keys()
         ]
 
