@@ -1,5 +1,7 @@
 import os
 import json
+import time
+import random
 import requests
 from typing import List, Dict
 
@@ -25,10 +27,27 @@ def _chat(messages: List[Dict]) -> str:
         "messages": messages,
         "temperature": 0.3,
     }
-    resp = requests.post(url, json=payload, headers=headers, timeout=60)
-    resp.raise_for_status()
-    data = resp.json()
-    return data["choices"][0]["message"]["content"]
+
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            resp = requests.post(url, json=payload, headers=headers, timeout=60)
+            
+            if resp.status_code == 429:
+                if attempt < max_retries - 1:
+                    sleep_time = (2 ** attempt) + random.random()
+                    time.sleep(sleep_time)
+                    continue
+            
+            resp.raise_for_status()
+            data = resp.json()
+            return data["choices"][0]["message"]["content"]
+        except requests.exceptions.RequestException as e:
+            if attempt == max_retries - 1:
+                raise e
+            time.sleep(1)
+    
+    return ""
 
 def rewrite_bullets(resume_text: str, jd_text: str, tone: str) -> Dict:
     system_prompt = (
@@ -291,3 +310,77 @@ def compute_holistic_match_llm(
     for dim in result["dimensions"]:
         dim["score"] = float(dim.get("score", 50))
     return result
+
+
+def analyze_job_match_mega_llm(
+    resume_sections: dict,
+    resume_skills: List[str],
+    experience_years: float,
+    jd_text: str,
+    job_title: str
+) -> dict:
+    """
+    All-in-one analysis prompt. Combines:
+    1. JD Skill Extraction
+    2. Skill Match/Coverage Analysis
+    3. Holistic Dimension Scoring
+    4. Fit Summary & Tips
+    """
+    system_prompt = (
+        "You are a senior hiring manager and expert technical recruiter. Your task is to perform a "
+        "deep, multi-dimensional analysis of a candidate resume against a job description.\n\n"
+        "### DIMENSION SCORING GUIDELINES (0-100):\n"
+        "1. Experience Level Fit: Years/seniority vs JD requirements.\n"
+        "2. Role Relevance: Past titles/duties similarity to target role.\n"
+        "3. Domain/Industry Fit: Sector overlap (e.g., Fintech, AI, SaaS).\n"
+        "4. Project Relevance: Side projects alignment with role tech/domain.\n"
+        "5. Achievement Quality: Quantified impact statements (%, $, scale).\n"
+        "6. Career Trajectory: Progression, growth, and stability signal.\n"
+        "7. Education Fit: Degree/field match.\n"
+        "8. Employment Stability: Average tenure (2+ years is green).\n\n"
+        "### OUTPUT JSON FORMAT:\n"
+        "Return ONLY a JSON object with this structure:\n"
+        "{\n"
+        "  \"extracted_jd_skills\": [\"python\", \"docker\", ...],\n"
+        "  \"skill_analysis\": [\n"
+        "    {\n"
+        "      \"jd_skill\": \"javascript\",\n"
+        "      \"match_type\": \"full\" | \"partial\" | \"gap\",\n"
+        "      \"coverage\": 0.0-1.0,\n"
+        "      \"via_skill\": \"typescript\" (if partial/full), \n"
+        "      \"explanation\": \"Short note on why this match/gap exists\"\n"
+        "    }\n"
+        "  ],\n"
+        "  \"dimensions\": [ {\"name\": \"Experience Level Fit\", \"score\": 85, \"feedback\": \"...\"}, ... ],\n"
+        "  \"fit_summary\": \"High-level 3-sentence executive summary...\",\n"
+        "  \"improvement_tips\": [\"tip1\", \"tip2\"]\n"
+        "}"
+    )
+
+    user_content = (
+        f"JOB TITLE: {job_title}\n"
+        f"JOB DESCRIPTION:\n{jd_text[:3000]}\n\n"
+        f"CANDIDATE INFO:\n"
+        f"Total Experience: {experience_years:.1f} years\n"
+        f"Skills Section: {', '.join(resume_skills)}\n"
+        f"Work Experience:\n{resume_sections.get('experience', '')[:2500]}\n"
+        f"Projects:\n{resume_sections.get('projects', '')[:1500]}\n"
+        f"Education:\n{resume_sections.get('education', '')[:500]}"
+    )
+
+    raw = _chat([
+        {"role": "system", "content": system_prompt},
+        {"role": "user",   "content": user_content},
+    ])
+    
+    # Robust JSON extraction
+    cleaned = raw.strip()
+    if "```" in cleaned:
+        for part in cleaned.split("```"):
+            part = part.strip()
+            if part.lower().startswith("json"): part = part[4:].strip()
+            if part.startswith("{"):
+                cleaned = part
+                break
+                
+    return json.loads(cleaned)

@@ -7,9 +7,7 @@ log = logging.getLogger(__name__)
 from ..database import get_db
 from .. import models, schemas
 from ..services.matching import (
-    extract_required_skills_from_jd,
     build_skill_confidence_map,
-    _batch_get_coverages,
     _normalize_skill_list,
     compute_skill_scores,
     combine_scores,
@@ -19,7 +17,6 @@ from ..services.matching import (
 from ..security import get_current_user
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
-
 
 @router.post("/match", response_model=schemas.JobMatchResponse)
 def match_job(
@@ -44,79 +41,52 @@ def match_job(
     sections      = resume.sections or {}
     exp_years     = resume.experience_years or 0.0
     resume_skills = resume.skills or []
+    rs_norm       = _normalize_skill_list(resume_skills)
 
-    # ── Step 1: Extract JD skills ────────────────────────────────────────────
-    required_skills: list = []
+    # ── SINGLE MEGA PROMPT CALL ──────────────────────────────────────────────
+    # This replaces ~15 small calls with 1 large call to avoid 429 errors.
     try:
-        from ..services.llm_client import extract_jd_skills_llm
-        required_skills = extract_jd_skills_llm(jd_text)
-    except Exception:
-        required_skills = extract_required_skills_from_jd(jd_text)
+        from ..services.llm_client import analyze_job_match_mega_llm
+        mega_result = analyze_job_match_mega_llm(
+            resume_sections  = sections,
+            resume_skills    = resume_skills,
+            experience_years = exp_years,
+            jd_text          = jd_text,
+            job_title        = payload.job_title
+        )
+    except Exception as e:
+        log.error("Mega-Match LLM failed: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"AI Analysis failed: {str(e)}")
 
-    # ── Step 2: Skill confidence map (no LLM — purely section-based) ─────────
+    # ── Step 2: Post-processing LLM results ──────────────────────────────────
+    req_norm = [s.lower() for s in mega_result.get("extracted_jd_skills", [])]
+    
+    # Transform skill_analysis into a coverage map for the existing compute_skill_scores
+    coverage_map = {}
+    for item in mega_result.get("skill_analysis", []):
+        rs_skill = item.get("via_skill", "").lower()
+        jd_skill = item.get("jd_skill", "").lower()
+        if rs_skill and jd_skill:
+            coverage_map[(rs_skill, jd_skill)] = float(item.get("coverage", 0.0))
+
+    # ── Step 3: Skill confidence & weighted scoring ──────────────────────────
     confidence_map = build_skill_confidence_map(resume_skills, sections)
-
-    # ── Step 3: Pairwise coverage (DB → LLM) ─────────────────────────────────
-    rs_norm  = _normalize_skill_list(resume_skills)
-    req_norm = [s.lower() for s in required_skills]
-    coverage_map = _batch_get_coverages(rs_norm, req_norm, db)
-
-    # ── Step 4: Evidence-weighted skill scoring ───────────────────────────────
+    
     applied_score, claimed_score, verif_rate, full_matches, partial_matches, true_gaps = (
         compute_skill_scores(rs_norm, req_norm, coverage_map, confidence_map, jd_text)
     )
 
-    # ── Step 5: Holistic multi-dimensional scoring (LLM) ─────────────────────
-    holistic_dimensions: list = []
-    improvement_tips:    list = []
-    try:
-        from ..services.llm_client import compute_holistic_match_llm
-        holistic_result = compute_holistic_match_llm(
-            experience_text       = sections.get("experience", ""),
-            projects_text         = sections.get("projects",   ""),
-            education_text        = sections.get("education",  ""),
-            resume_skills         = resume_skills,
-            experience_years      = exp_years,
-            jd_text               = jd_text,
-            job_title             = payload.job_title,
-            applied_skills_score  = applied_score,
-            claimed_skills_score  = claimed_score,
-            skill_verification_rate = verif_rate,
-        )
-        holistic_dimensions = holistic_result.get("dimensions", [])
-        improvement_tips    = holistic_result.get("improvement_tips", [])
-    except Exception as e:
-        log.error("compute_holistic_match_llm failed: %s", e, exc_info=True)
-        holistic_dimensions = [
-            {"name": d, "score": 50, "feedback": f"Analysis unavailable ({type(e).__name__}: {str(e)[:80]})"}
-            for d in get_dynamic_weights(exp_years)[0].keys()
-        ]
-
-    # ── Step 6: Combine all dimensions into one overall score ─────────────────
+    # ── Step 4: Final combined score ─────────────────────────────────────────
+    holistic_dimensions = mega_result.get("dimensions", [])
     overall_score = combine_scores(
         applied_score, claimed_score, verif_rate, holistic_dimensions, exp_years
     )
     grade = score_to_grade(overall_score)
+    
+    fit_summary      = mega_result.get("fit_summary", "")
+    improvement_tips = mega_result.get("improvement_tips", [])
 
-    # ── Step 7: Fit summary ───────────────────────────────────────────────────
-    fit_summary = ""
-    try:
-        from ..services.llm_client import generate_fit_summary_llm
-        fit_summary = generate_fit_summary_llm(
-            resume_skills  = resume_skills,
-            job_title      = payload.job_title,
-            jd_text        = jd_text,
-            match_score    = overall_score,
-            missing_skills = true_gaps,
-            weak_skills    = [p["via"] for p in partial_matches],
-        )
-    except Exception:
-        fit_summary = (
-            f"{grade} match ({overall_score:.0f}/100) for {payload.job_title}. "
-            + (f"Key gaps: {', '.join(true_gaps[:3])}." if true_gaps else "Strong overall fit.")
-        )
-
-    # ── Step 8: Persist ───────────────────────────────────────────────────────
+    # ── Step 5: Persist ───────────────────────────────────────────────────────
     match = models.JobMatch(
         user_id                 = current_user.id,
         resume_id               = resume.id,
@@ -150,7 +120,6 @@ def match_job(
         fit_summary             = fit_summary,
         improvement_tips        = improvement_tips,
     )
-
 
 @router.get("/matches", response_model=schemas.JobMatchHistoryResponse)
 def get_match_history(
