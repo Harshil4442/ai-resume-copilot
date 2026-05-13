@@ -15,7 +15,7 @@ LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini")
 def _chat(messages: List[Dict]) -> str:
     key = _api_key()
     if not key:
-        raise RuntimeError("LLM_API_KEY is not set. Put it in backend/.env (copy from .env.example).")
+        raise RuntimeError("LLM_API_KEY is not set.")
 
     url = f"{LLM_API_BASE}/chat/completions"
     headers = {
@@ -28,24 +28,33 @@ def _chat(messages: List[Dict]) -> str:
         "temperature": 0.3,
     }
 
-    max_retries = 3
+    max_retries = 5
     for attempt in range(max_retries):
         try:
-            resp = requests.post(url, json=payload, headers=headers, timeout=60)
+            resp = requests.post(url, json=payload, headers=headers, timeout=90)
             
             if resp.status_code == 429:
+                # 429 is the rate limit error. Wait longer each time.
                 if attempt < max_retries - 1:
-                    sleep_time = (2 ** attempt) + random.random()
+                    sleep_time = (5 * (attempt + 1)) + random.random()
+                    print(f"Rate limited (429). Retrying in {sleep_time:.1f}s... (Attempt {attempt+1}/{max_retries})")
                     time.sleep(sleep_time)
                     continue
             
             resp.raise_for_status()
             data = resp.json()
             return data["choices"][0]["message"]["content"]
-        except requests.exceptions.RequestException as e:
+            
+        except requests.exceptions.HTTPError as e:
+            if resp.status_code == 429 and attempt < max_retries - 1:
+                continue # Already handled above, but just in case
             if attempt == max_retries - 1:
                 raise e
-            time.sleep(1)
+            time.sleep(2)
+        except Exception as e:
+            if attempt == max_retries - 1:
+                raise e
+            time.sleep(2)
     
     return ""
 
