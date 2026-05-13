@@ -5,10 +5,11 @@ psycopg2-binary
 python-dotenv
 pydantic
 spacy
-sentence-transformers
 pdfplumber
 python-multipart
 requests
 passlib[bcrypt]
 python-jose[cryptography]
 email-validator
+rapidfuzz
+python-docx

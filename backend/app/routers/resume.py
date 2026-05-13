@@ -8,25 +8,46 @@ from ..security import get_current_user
 
 router = APIRouter(prefix="/resume", tags=["resume"])
 
+ALLOWED_TYPES = {
+    "application/pdf",
+    "application/octet-stream",                                          # generic binary (some browsers)
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",  # .docx
+    "application/msword",                                                # .doc (we'll reject gracefully)
+}
+
+
 @router.post("/parse", response_model=schemas.ResumeParseResponse)
 async def parse_resume(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    if file.content_type not in ("application/pdf", "application/octet-stream"):
-        raise HTTPException(status_code=400, detail="Only PDF supported in this starter template.")
+    filename = file.filename or ""
+    content_type = file.content_type or ""
+
+    # Validate file type
+    is_pdf = filename.lower().endswith(".pdf") or "pdf" in content_type
+    is_docx = filename.lower().endswith(".docx") or "wordprocessingml" in content_type
+
+    if not (is_pdf or is_docx):
+        raise HTTPException(
+            status_code=400,
+            detail="Only PDF and DOCX files are supported.",
+        )
 
     file_bytes = await file.read()
-    raw_text, sections, skills, exp_years = parse_resume_file(file_bytes)
+    raw_text, sections, skills, exp_years, contact_info = parse_resume_file(
+        file_bytes, filename=filename, use_llm=True
+    )
 
     resume = models.Resume(
         user_id=current_user.id,
-        original_filename=file.filename or "",
+        original_filename=filename,
         raw_text=raw_text,
         skills=skills,
         experience_years=exp_years,
         sections=sections,
+        contact_info=contact_info,
     )
     db.add(resume)
     db.commit()
@@ -37,4 +58,5 @@ async def parse_resume(
         skills=skills,
         experience_years=exp_years,
         sections=sections,
+        contact_info=schemas.ContactInfo(**contact_info),
     )

@@ -24,6 +24,7 @@ class Resume(Base):
     skills = Column(JSON, default=list)          # list[str]
     experience_years = Column(Float, default=0.0)
     sections = Column(JSON, default=dict)        # dict section_name -> text
+    contact_info = Column(JSON, default=dict)    # {name, email, phone, linkedin, github}
 
     user = relationship("User", back_populates="resumes")
 

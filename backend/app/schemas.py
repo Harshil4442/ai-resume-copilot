@@ -23,11 +23,19 @@ class UserMeResponse(BaseModel):
 # -------------------------
 # Resume parsing
 # -------------------------
+class ContactInfo(BaseModel):
+    name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    linkedin: Optional[str] = None
+    github: Optional[str] = None
+
 class ResumeParseResponse(BaseModel):
     resume_id: int
     skills: List[str]
     experience_years: float
     sections: Dict[str, str]
+    contact_info: ContactInfo
 
 # -------------------------
 # Job matching
