@@ -61,13 +61,34 @@ def match_job(
     # ── Step 2: Post-processing LLM results ──────────────────────────────────
     req_norm = [s.lower() for s in mega_result.get("extracted_jd_skills", [])]
     
-    # Transform skill_analysis into a coverage map for the existing compute_skill_scores
+    # Transform skill_analysis into a coverage map and persist to DB
     coverage_map = {}
+    new_coverage_records = []
     for item in mega_result.get("skill_analysis", []):
-        rs_skill = item.get("via_skill", "").lower()
-        jd_skill = item.get("jd_skill", "").lower()
+        rs_skill = item.get("via_skill", "").lower().strip()
+        jd_skill = item.get("jd_skill", "").lower().strip()
+        weight   = float(item.get("coverage", 0.0))
+        
         if rs_skill and jd_skill:
-            coverage_map[(rs_skill, jd_skill)] = float(item.get("coverage", 0.0))
+            coverage_map[(rs_skill, jd_skill)] = weight
+            # Prepare for DB persistence
+            if weight > 0:
+                new_coverage_records.append(models.SkillCoverage(
+                    skill_from=rs_skill,
+                    skill_to=jd_skill,
+                    weight=weight,
+                    source="llm_mega"
+                ))
+
+    # Bulk persist to Neon
+    if new_coverage_records:
+        try:
+            for rec in new_coverage_records:
+                db.merge(rec) # handles existing pairs gracefully
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            log.warning("Could not persist mega-coverage to DB: %s", e)
 
     # ── Step 3: Skill confidence & weighted scoring ──────────────────────────
     confidence_map = build_skill_confidence_map(resume_skills, sections)
