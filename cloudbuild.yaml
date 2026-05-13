@@ -1,0 +1,41 @@
+steps:
+  # Step 1: Build the Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/ai-resume-parser:$COMMIT_SHA'
+      - '-t'
+      - 'us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/ai-resume-parser:latest'
+      - '.'
+
+  # Step 2: Push image to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/ai-resume-parser:$COMMIT_SHA'
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/ai-resume-parser:latest'
+
+  # Step 3: Deploy to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'ai-resume-parser'
+      - '--image=us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/ai-resume-parser:$COMMIT_SHA'
+      - '--region=us-central1'
+      - '--platform=managed'
+      - '--quiet'
+
+# Store images in Artifact Registry
+images:
+  - 'us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/ai-resume-parser:$COMMIT_SHA'
+  - 'us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/ai-resume-parser:latest'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
