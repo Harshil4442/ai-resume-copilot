@@ -7,17 +7,20 @@ from typing import List, Dict
 
 # Read lazily so tests / local dev without a key still import cleanly
 def _api_key() -> str:
-    return os.getenv("LLM_API_KEY", "")
+    return os.getenv("LLM_API_KEY", "").strip()
 
-LLM_API_BASE = os.getenv("LLM_API_BASE", "https://api.openai.com/v1")
-LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini")
+LLM_API_BASE = os.getenv("LLM_API_BASE", "https://api.openai.com/v1").strip()
+LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini").strip()
 
 def _chat(messages: List[Dict]) -> str:
     key = _api_key()
     if not key:
         raise RuntimeError("LLM_API_KEY is not set.")
 
-    url = f"{LLM_API_BASE}/chat/completions"
+    # Strip trailing slash to prevent 404 double-slash errors (e.g., //chat/completions)
+    base_url = LLM_API_BASE.rstrip("/")
+    url = f"{base_url}/chat/completions"
+    
     headers = {
         "Authorization": f"Bearer {key}",
         "Content-Type": "application/json",
