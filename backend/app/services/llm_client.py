@@ -367,14 +367,12 @@ def analyze_job_match_mega_llm(
     )
 
     user_content = (
-        f"JOB TITLE: {job_title}\n"
-        f"JOB DESCRIPTION:\n{jd_text[:3000]}\n\n"
-        f"CANDIDATE INFO:\n"
-        f"Total Experience: {experience_years:.1f} years\n"
-        f"Skills Section: {', '.join(resume_skills)}\n"
-        f"Work Experience:\n{resume_sections.get('experience', '')[:2500]}\n"
-        f"Projects:\n{resume_sections.get('projects', '')[:1500]}\n"
-        f"Education:\n{resume_sections.get('education', '')[:500]}"
+        f"JOB: {job_title}\n"
+        f"JD: {jd_text[:1000]}\n\n"
+        f"EXP: {experience_years:.1f}y\n"
+        f"SKILLS: {', '.join(resume_skills[:20])}\n"
+        f"WORK: {resume_sections.get('experience', '')[:1000]}\n"
+        f"PROJ: {resume_sections.get('projects', '')[:500]}"
     )
 
     raw = _chat([
