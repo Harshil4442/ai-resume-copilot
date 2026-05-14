@@ -11,20 +11,21 @@ export default function Nav() {
   }, []);
 
   return (
-    <header className="border-b bg-white">
-      <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
-        <a href="/" className="font-bold">AI Resume CoPilot</a>
-        <nav className="flex gap-4 text-sm items-center">
-          <a className="hover:underline" href="/resume">Resume</a>
-          <a className="hover:underline" href="/jobs">Match</a>
-          <a className="hover:underline" href="/learning">Learning</a>
-          <a className="hover:underline" href="/dashboard">Dashboard</a>
-          <a className="hover:underline" href="/profile">Profile</a>
+    <header className="sticky top-0 z-30 border-b border-gray-200 bg-white/90 backdrop-blur">
+      <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
+        <a href="/" className="font-black tracking-tight text-gray-950">AI Resume CoPilot</a>
+        <nav className="flex gap-1 text-sm items-center overflow-x-auto">
+          <a className="px-3 py-1.5 rounded-lg hover:bg-gray-100" href="/dashboard">Dashboard</a>
+          <a className="px-3 py-1.5 rounded-lg hover:bg-gray-100" href="/resume">Resume</a>
+          <a className="px-3 py-1.5 rounded-lg hover:bg-gray-100" href="/jobs">Match</a>
+          <a className="px-3 py-1.5 rounded-lg hover:bg-gray-100" href="/market">Market</a>
+          <a className="px-3 py-1.5 rounded-lg hover:bg-gray-100" href="/learning">Learning</a>
+          <a className="px-3 py-1.5 rounded-lg hover:bg-gray-100" href="/profile">Profile</a>
 
           {loggedIn ? (
-            <a className="hover:underline" href="/logout">Logout</a>
+            <a className="px-3 py-1.5 rounded-lg bg-gray-950 text-white hover:bg-black" href="/logout">Logout</a>
           ) : (
-            <a className="hover:underline" href="/login">Login</a>
+            <a className="px-3 py-1.5 rounded-lg bg-gray-950 text-white hover:bg-black" href="/login">Login</a>
           )}
         </nav>
       </div>

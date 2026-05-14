@@ -166,3 +166,67 @@ export type LearningStrategyResponse = {
   timeline: LearningTimelineItem[];
   generated_by: string;
 };
+
+export type MarketTopSkill = {
+  skill: string;
+  count: number;
+  percentage: number;
+  category: string;
+  importance: "critical" | "high" | "medium" | "low";
+};
+
+export type MarketSkillCategory = {
+  category: string;
+  skills: Array<{
+    skill: string;
+    count: number;
+    percentage: number;
+  }>;
+};
+
+export type MarketResumeGap = {
+  skill: string;
+  market_demand_percentage: number;
+  resume_status: "proven" | "claimed" | "missing";
+  priority: "critical" | "high" | "medium" | "low";
+  reason: string;
+};
+
+export type MarketProjectRecommendation = {
+  title: string;
+  skills_covered: string[];
+  difficulty: "beginner" | "intermediate" | "advanced";
+  description: string;
+  resume_bullets: string[];
+};
+
+export type MarketAnalyzeResponse = {
+  target_role: string;
+  location: string;
+  country_code: string;
+  experience_level: string;
+  remote?: boolean | null;
+  source_provider: string;
+  from_cache: boolean;
+  sample_size: number;
+  confidence: "high" | "medium" | "low";
+  top_skills: MarketTopSkill[];
+  skill_categories: MarketSkillCategory[];
+  resume_gap_analysis: MarketResumeGap[];
+  recommended_projects: MarketProjectRecommendation[];
+  learning_priorities: Array<{
+    skill: string;
+    priority: "critical" | "high" | "medium" | "low";
+    why: string;
+  }>;
+  summary: string;
+  warnings: string[];
+  sample_jobs: Array<{
+    title: string;
+    company: string;
+    location: string;
+    posted_at: string;
+    url: string;
+    source: string;
+  }>;
+};

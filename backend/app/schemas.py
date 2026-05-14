@@ -192,6 +192,81 @@ class RagAskResponse(BaseModel):
     suggested_followups: List[str] = Field(default_factory=list)
 
 # -------------------------
+# Market skill trends
+# -------------------------
+class MarketAnalyzeRequest(BaseModel):
+    target_role: str = Field(min_length=2, max_length=120)
+    location: Optional[str] = Field(default="", max_length=120)
+    country_code: Optional[str] = Field(default="", max_length=2)
+    experience_level: Optional[str] = Field(default="", max_length=40)
+    remote: Optional[bool] = None
+    resume_id: Optional[int] = None
+    max_results: int = Field(default=50, ge=5, le=100)
+    posted_within_days: int = Field(default=30, ge=1, le=365)
+
+class MarketTopSkill(BaseModel):
+    skill: str
+    count: int
+    percentage: float
+    category: str
+    importance: Literal["critical", "high", "medium", "low"]
+
+class MarketCategorySkill(BaseModel):
+    skill: str
+    count: int
+    percentage: float
+
+class MarketSkillCategory(BaseModel):
+    category: str
+    skills: List[MarketCategorySkill]
+
+class MarketResumeGap(BaseModel):
+    skill: str
+    market_demand_percentage: float
+    resume_status: Literal["proven", "claimed", "missing"]
+    priority: Literal["critical", "high", "medium", "low"]
+    reason: str
+
+class MarketProjectRecommendation(BaseModel):
+    title: str
+    skills_covered: List[str]
+    difficulty: Literal["beginner", "intermediate", "advanced"]
+    description: str
+    resume_bullets: List[str]
+
+class MarketLearningPriority(BaseModel):
+    skill: str
+    priority: Literal["critical", "high", "medium", "low"]
+    why: str
+
+class MarketSampleJob(BaseModel):
+    title: str
+    company: str
+    location: str
+    posted_at: str
+    url: str
+    source: str
+
+class MarketAnalyzeResponse(BaseModel):
+    target_role: str
+    location: str = ""
+    country_code: str = ""
+    experience_level: str = ""
+    remote: Optional[bool] = None
+    source_provider: str
+    from_cache: bool = False
+    sample_size: int
+    confidence: Literal["high", "medium", "low"]
+    top_skills: List[MarketTopSkill]
+    skill_categories: List[MarketSkillCategory]
+    resume_gap_analysis: List[MarketResumeGap]
+    recommended_projects: List[MarketProjectRecommendation]
+    learning_priorities: List[MarketLearningPriority]
+    summary: str
+    warnings: List[str] = Field(default_factory=list)
+    sample_jobs: List[MarketSampleJob] = Field(default_factory=list)
+
+# -------------------------
 # LLM helpers
 # -------------------------
 class RewriteBulletsRequest(BaseModel):

@@ -13,3 +13,5 @@ python-jose[cryptography]
 email-validator
 rapidfuzz>=3.0.0
 python-docx>=1.1.0
+redis>=5.0.0
+pytest>=8.0.0
