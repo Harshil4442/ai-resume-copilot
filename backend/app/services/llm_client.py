@@ -61,6 +61,29 @@ def _chat(messages: List[Dict]) -> str:
     
     return ""
 
+
+def _extract_json_object(raw: str) -> Dict:
+    cleaned = (raw or "").strip()
+    if "```" in cleaned:
+        for part in cleaned.split("```"):
+            part = part.strip()
+            if part.lower().startswith("json"):
+                part = part[4:].strip()
+            if part.startswith("{"):
+                cleaned = part
+                break
+    if not cleaned.startswith("{"):
+        start = cleaned.find("{")
+        end = cleaned.rfind("}")
+        if start >= 0 and end > start:
+            cleaned = cleaned[start:end + 1]
+    return json.loads(cleaned)
+
+
+def chat_json(messages: List[Dict]) -> Dict:
+    """Run a chat-completions request and parse a JSON object response."""
+    return _extract_json_object(_chat(messages))
+
 def rewrite_bullets(resume_text: str, jd_text: str, tone: str) -> Dict:
     system_prompt = (
         "You are an expert resume writer. Rewrite the candidate's bullet points using STAR format, "

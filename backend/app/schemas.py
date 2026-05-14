@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Literal, Optional, Union
 from pydantic import BaseModel, EmailStr, Field
 
 # -------------------------
@@ -172,6 +172,24 @@ class LearningStrategyResponse(BaseModel):
     project_recommendations: List[ProjectRecommendation]
     timeline: List[LearningTimelineItem]
     generated_by: str = "llm"
+
+# -------------------------
+# Stateless Ask AI / RAG
+# -------------------------
+class RagMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+
+class RagAskRequest(BaseModel):
+    job_match_id: int
+    question: str = Field(min_length=2, max_length=1000)
+    resume_id: Optional[int] = None
+    recent_messages: List[RagMessage] = Field(default_factory=list)
+
+class RagAskResponse(BaseModel):
+    answer: str
+    confidence: Literal["high", "medium", "low"] = "medium"
+    suggested_followups: List[str] = Field(default_factory=list)
 
 # -------------------------
 # LLM helpers

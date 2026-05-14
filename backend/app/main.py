@@ -12,7 +12,7 @@ try:
 except Exception:
     pass
 
-from .routers import auth, resume, jobs, recommendations, llm, analytics  # noqa: E402
+from .routers import auth, resume, jobs, recommendations, llm, analytics, rag  # noqa: E402
 from .database import engine  # noqa: E402
 from .models import Base  # noqa: E402
 
@@ -44,6 +44,7 @@ app.include_router(jobs.router, prefix="/api")
 app.include_router(recommendations.router, prefix="/api")
 app.include_router(llm.router, prefix="/api")
 app.include_router(analytics.router, prefix="/api")
+app.include_router(rag.router, prefix="/api")
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
