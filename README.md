@@ -14,12 +14,6 @@ The project is designed for a split production deployment:
 
 ## Current Features
 
-### Premium Web UI
-
-- Modern Apple/Lucien-inspired product UI.
-- Responsive dashboard, resume, jobs, market trends, learning, profile, login, and register pages.
-- Tailwind-based visual system with premium cards, product-stage sections, glass navigation, smooth hover states, and clean typography.
-
 ### Authentication And Profile
 
 - User registration and login.
