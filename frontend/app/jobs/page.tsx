@@ -102,8 +102,8 @@ function SkillTag({ label, variant }: { label: string; variant: "match" | "gap" 
 
 function ScoreRing({ score }: { score: number }) {
   return (
-    <div className={classNames("w-24 h-24 rounded-2xl bg-gradient-to-br text-white shadow-sm flex flex-col items-center justify-center", scoreColor(score))}>
-      <span className="text-3xl font-black leading-none">{score.toFixed(0)}</span>
+    <div className={classNames("w-28 h-28 rounded-lg bg-gradient-to-br text-white shadow-[0_20px_50px_rgba(15,23,42,0.22)] flex flex-col items-center justify-center kinetic-border", scoreColor(score))}>
+      <span className="text-4xl font-black leading-none">{score.toFixed(0)}</span>
       <span className="text-[11px] uppercase tracking-wide opacity-90 mt-1">score</span>
     </div>
   );
@@ -112,7 +112,7 @@ function ScoreRing({ score }: { score: number }) {
 function DimBar({ dim }: { dim: DimensionScore }) {
   const barColor = dim.score >= 75 ? "bg-green-500" : dim.score >= 50 ? "bg-amber-400" : "bg-red-400";
   return (
-    <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+    <div className="rounded-lg border border-white/80 bg-white/75 p-3 shadow-sm">
       <div className="flex justify-between items-center gap-3 mb-2">
         <span className="text-xs font-semibold text-gray-800">{dim.name}</span>
         <span className="text-xs font-bold text-gray-700">{dim.score.toFixed(0)}/100</span>
@@ -185,12 +185,13 @@ function AskAiPanel({
   const latestAssistant = [...messages].reverse().find((msg) => msg.role === "assistant");
 
   return (
-    <section className="border border-blue-100 rounded-2xl bg-white shadow-sm overflow-hidden">
-      <div className="bg-gradient-to-r from-blue-50 via-white to-emerald-50 px-5 py-4 border-b border-blue-100">
+    <section className="panel kinetic-border overflow-hidden">
+      <div className="bg-gradient-to-r from-slate-950 via-blue-950 to-slate-950 px-5 py-4 border-b border-blue-100 text-white">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
-            <h2 className="text-lg font-bold text-gray-900">Ask AI about this match</h2>
-            <p className="text-sm text-gray-500 mt-1">Answers are grounded in this resume, JD, score breakdown, and match analysis.</p>
+            <div className="label-kicker text-blue-200">Grounded Copilot</div>
+            <h2 className="text-2xl font-black mt-1">Ask AI about this match</h2>
+            <p className="text-sm text-blue-100 mt-1">Answers are grounded in this resume, JD, score breakdown, and match analysis.</p>
           </div>
           {latestAssistant?.confidence && (
             <span className={`px-2.5 py-1 rounded-full border text-xs font-semibold ${confidenceClass(latestAssistant.confidence)}`}>
@@ -208,7 +209,7 @@ function AskAiPanel({
                 key={q}
                 type="button"
                 onClick={() => ask(q)}
-                className="text-left rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-700 hover:border-blue-200 hover:bg-blue-50 transition"
+                className="text-left rounded-lg border border-slate-200 bg-white/80 px-3 py-2 text-sm font-semibold text-slate-700 hover:border-blue-200 hover:bg-blue-50 hover:-translate-y-0.5 transition"
               >
                 {q}
               </button>
@@ -221,7 +222,7 @@ function AskAiPanel({
             {messages.map((msg, idx) => (
               <div key={idx} className={classNames("flex", msg.role === "user" ? "justify-end" : "justify-start")}>
                 <div className={classNames(
-                  "max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed",
+                  "max-w-[85%] rounded-lg px-4 py-3 text-sm leading-relaxed shadow-sm",
                   msg.role === "user" ? "bg-blue-600 text-white" : "bg-gray-50 text-gray-800 border border-gray-200",
                 )}>
                   <div className="whitespace-pre-wrap">{msg.content}</div>
@@ -237,7 +238,7 @@ function AskAiPanel({
             ))}
             {loading && (
               <div className="flex justify-start">
-                <div className="rounded-2xl px-4 py-3 text-sm bg-gray-50 text-gray-500 border border-gray-200">Thinking through the match context...</div>
+                <div className="rounded-lg px-4 py-3 text-sm bg-gray-50 text-gray-500 border border-gray-200">Thinking through the match context...</div>
               </div>
             )}
           </div>
@@ -266,7 +267,7 @@ function AskAiPanel({
           className="flex gap-2"
         >
           <input
-            className="flex-1 border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="field flex-1"
             placeholder="Ask about score, gaps, evidence, interview prep..."
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -274,7 +275,7 @@ function AskAiPanel({
           <button
             type="submit"
             disabled={!input.trim() || loading}
-            className="px-4 py-2 rounded-xl bg-gray-900 text-white text-sm font-semibold hover:bg-black disabled:opacity-50"
+            className="btn-primary"
           >
             Ask
           </button>
@@ -345,30 +346,30 @@ export default function JobsPage() {
   }
 
   return (
-    <main className="max-w-6xl mx-auto px-4 py-10 space-y-8">
-      <section className="rounded-3xl bg-gradient-to-br from-slate-950 via-blue-950 to-slate-900 text-white p-6 md:p-8 shadow-sm">
+    <main className="app-shell space-y-8">
+      <section className="product-hero text-left p-7 md:p-10">
         <div className="max-w-3xl">
-          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-200">Job intelligence</div>
-          <h1 className="text-3xl md:text-4xl font-black mt-3">Match a resume, then interrogate the result.</h1>
-          <p className="text-sm md:text-base text-blue-100 mt-3 leading-relaxed">
+          <div className="label-kicker flex items-center gap-3"><span className="pulse-dot" />Job intelligence</div>
+          <h1 className="text-5xl md:text-7xl font-black mt-3 leading-[0.88] text-slate-950">Match a resume, then interrogate the result.</h1>
+          <p className="text-sm md:text-base text-slate-600 mt-3 leading-relaxed">
             Run a multidimensional match analysis and ask follow-up questions grounded in the resume, job description, gaps, and recruiter scoring.
           </p>
         </div>
       </section>
 
       <div className="grid grid-cols-1 lg:grid-cols-[420px_1fr] gap-6 items-start">
-        <form onSubmit={handleSubmit} className="space-y-5 bg-white border border-gray-200 rounded-2xl p-5 shadow-sm lg:sticky lg:top-4">
+        <form onSubmit={handleSubmit} className="space-y-5 panel kinetic-border p-5 lg:sticky lg:top-24">
           <div>
-            <h2 className="text-lg font-bold text-gray-900">Analyze a target job</h2>
+            <h2 className="text-2xl font-black text-slate-950 ink-gradient">Analyze a target job</h2>
             <p className="text-sm text-gray-500 mt-1">Choose a parsed resume and paste the JD.</p>
           </div>
 
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1">Resume</label>
             {resumesLoading ? (
-              <div className="w-full border rounded-xl px-3 py-2 text-sm text-gray-400 bg-gray-50">Loading resumes...</div>
+              <div className="w-full border rounded-lg px-3 py-2 text-sm text-gray-400 bg-gray-50">Loading resumes...</div>
             ) : resumeError ? (
-              <div className="w-full border border-red-200 rounded-xl px-3 py-3 text-sm bg-red-50">
+              <div className="w-full border border-red-200 rounded-lg px-3 py-3 text-sm bg-red-50">
                 <p className="text-red-600 font-medium">Failed to load resumes</p>
                 <p className="text-red-500 text-xs mt-1">{resumeError}</p>
               </div>
@@ -376,7 +377,7 @@ export default function JobsPage() {
               <EmptyState title="No parsed resumes found" body="Upload and parse a resume first." href="/resume" />
             ) : (
               <select
-                className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="field"
                 value={selectedResumeId}
                 onChange={(e) => setSelectedResumeId(e.target.value)}
               >
@@ -393,7 +394,7 @@ export default function JobsPage() {
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1">Job Title</label>
               <input
-                className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="field"
                 placeholder="Senior Backend Engineer"
                 value={jobTitle}
                 onChange={(e) => setJobTitle(e.target.value)}
@@ -402,7 +403,7 @@ export default function JobsPage() {
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1">Company <span className="text-gray-400">(optional)</span></label>
               <input
-                className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="field"
                 placeholder="Acme Corp"
                 value={company}
                 onChange={(e) => setCompany(e.target.value)}
@@ -413,7 +414,7 @@ export default function JobsPage() {
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1">Job Description</label>
             <textarea
-              className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm min-h-[260px] focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="field min-h-[260px]"
               placeholder="Paste the full job description here..."
               value={jobDescription}
               onChange={(e) => setJobDescription(e.target.value)}
@@ -423,19 +424,19 @@ export default function JobsPage() {
           <button
             type="submit"
             disabled={!canSubmit || loading}
-            className="w-full py-3 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+            className="btn-primary w-full py-3"
           >
             {loading ? "Analyzing match..." : "Analyze Match"}
           </button>
 
-          {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-4 py-3">{error}</div>}
+          {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-3">{error}</div>}
         </form>
 
         <div className="space-y-6">
           {!data && (
-            <section className="border border-dashed border-gray-300 rounded-2xl bg-white p-8 text-center">
-              <div className="mx-auto w-14 h-14 rounded-2xl bg-blue-50 text-blue-700 flex items-center justify-center font-black text-xl">AI</div>
-              <h2 className="text-xl font-bold text-gray-900 mt-4">Your match analysis will appear here</h2>
+            <section className="panel kinetic-border border-dashed border-slate-300 p-8 text-center">
+              <div className="mx-auto w-14 h-14 rounded-lg bg-slate-950 text-white flex items-center justify-center font-black text-xl kinetic-border">AI</div>
+              <h2 className="text-2xl font-black text-slate-950 mt-4">Your match analysis will appear here</h2>
               <p className="text-sm text-gray-500 mt-2 max-w-md mx-auto">
                 After the score is generated, you can ask AI questions about gaps, proof, score reasoning, and interview prep.
               </p>
@@ -444,7 +445,7 @@ export default function JobsPage() {
 
           {data && (
             <>
-              <section className="border border-gray-200 rounded-2xl p-5 bg-white shadow-sm space-y-6">
+              <section className="panel kinetic-border p-5 space-y-6">
                 <div className="flex items-start gap-5 flex-wrap">
                   <ScoreRing score={data.match_score} />
                   <div className="flex-1 min-w-0">
@@ -456,15 +457,15 @@ export default function JobsPage() {
                     </div>
                     <div className="text-xs text-gray-400 mt-1">Match #{data.match_id}</div>
                     <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      <div className="rounded-xl bg-gray-50 border border-gray-100 px-3 py-2">
+                        <div className="metric-card p-3">
                         <div className="text-xs text-gray-500">Required skills</div>
                         <div className="text-lg font-bold">{data.required_skills.length}</div>
                       </div>
-                      <div className="rounded-xl bg-gray-50 border border-gray-100 px-3 py-2">
+                        <div className="metric-card p-3">
                         <div className="text-xs text-gray-500">True gaps</div>
                         <div className="text-lg font-bold">{data.true_gaps.length}</div>
                       </div>
-                      <div className="rounded-xl bg-gray-50 border border-gray-100 px-3 py-2">
+                        <div className="metric-card p-3">
                         <div className="text-xs text-gray-500">Skill verification</div>
                         <div className="text-lg font-bold">{data.skill_verification_rate}%</div>
                       </div>
@@ -473,7 +474,7 @@ export default function JobsPage() {
                 </div>
 
                 {data.fit_summary && (
-                  <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3">
+                  <div className="bg-blue-50 border border-blue-100 rounded-lg px-4 py-3">
                     <div className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-1">AI Fit Analysis</div>
                     <p className="text-sm text-gray-700 leading-relaxed">{data.fit_summary}</p>
                   </div>
@@ -515,7 +516,7 @@ export default function JobsPage() {
                 </div>
 
                 {data.improvement_tips.length > 0 && (
-                  <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-4">
+                  <div className="bg-amber-50 border border-amber-100 rounded-lg px-4 py-4">
                     <div className="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-2">How to Improve Your Match</div>
                     <ul className="space-y-1.5">
                       {data.improvement_tips.map((tip, i) => (
@@ -534,7 +535,7 @@ export default function JobsPage() {
           )}
 
           {history.length > 0 && (
-            <section className="border border-gray-200 rounded-2xl bg-white shadow-sm overflow-hidden">
+            <section className="panel kinetic-border overflow-hidden">
               <button
                 onClick={() => setShowHistory((v) => !v)}
                 className="w-full px-5 py-4 text-left text-sm font-bold text-gray-900 hover:bg-gray-50 flex items-center justify-between"

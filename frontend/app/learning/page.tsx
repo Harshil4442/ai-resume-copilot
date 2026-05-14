@@ -19,9 +19,9 @@ function badgeClass(value: string) {
 
 function SignalCard({ signal }: { signal: MissingHiringSignal }) {
   return (
-    <div className="border border-gray-200 rounded-lg p-4 bg-white">
+    <div className="panel kinetic-border tilt-lift p-4">
       <div className="flex items-start justify-between gap-3">
-        <div className="text-sm font-semibold text-gray-900">{signal.signal}</div>
+        <div className="text-sm font-black text-slate-950">{signal.signal}</div>
         <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${badgeClass(signal.severity)}`}>
           {signal.severity}
         </span>
@@ -33,10 +33,10 @@ function SignalCard({ signal }: { signal: MissingHiringSignal }) {
 
 function PriorityCard({ priority }: { priority: LearningPriority }) {
   return (
-    <div className="border border-gray-200 rounded-lg p-4 bg-white space-y-3">
+    <div className="panel kinetic-border tilt-lift p-4 space-y-3">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-sm font-semibold text-gray-900">{priority.skill}</div>
+          <div className="text-sm font-black text-slate-950">{priority.skill}</div>
           <div className="text-xs text-gray-500 mt-0.5">{priority.current_status.replaceAll("_", " ")}</div>
         </div>
         <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${badgeClass(priority.priority)}`}>
@@ -72,9 +72,9 @@ function PriorityCard({ priority }: { priority: LearningPriority }) {
 
 function ProjectCard({ project }: { project: ProjectRecommendation }) {
   return (
-    <div className="border border-gray-200 rounded-xl p-5 bg-white space-y-4 shadow-sm">
+    <div className="panel kinetic-border p-5 space-y-4">
       <div>
-        <h2 className="text-lg font-bold text-gray-900">{project.title}</h2>
+        <h2 className="text-xl font-black text-slate-950 ink-gradient">{project.title}</h2>
         <p className="text-sm text-gray-600 mt-1 leading-relaxed">{project.description}</p>
       </div>
 
@@ -157,15 +157,16 @@ export default function LearningPage() {
   }
 
   return (
-    <main className="max-w-5xl mx-auto py-10 space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Learning Strategy</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Select a previous job match and generate a project-centered plan to close the most valuable gaps.
+    <main className="app-shell space-y-8">
+      <section className="product-hero text-left p-7 md:p-10">
+        <div className="label-kicker flex items-center gap-3"><span className="pulse-dot" />Learning Strategy</div>
+        <h1 className="text-5xl md:text-7xl font-black leading-[0.88] mt-4 text-slate-950">Convert match gaps into portfolio proof.</h1>
+        <p className="text-slate-600 mt-4 max-w-2xl leading-relaxed">
+          Select a previous job match and generate a project-centered strategy with resume bullets and interview talking points.
         </p>
-      </div>
+      </section>
 
-      <section className="border border-gray-200 rounded-xl p-5 bg-white shadow-sm space-y-4">
+      <section className="panel kinetic-border p-5 space-y-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Job match</label>
           {loadingMatches ? (
@@ -178,7 +179,7 @@ export default function LearningPage() {
             </div>
           ) : (
             <select
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="field"
               value={selectedMatchId}
               onChange={(e) => setSelectedMatchId(e.target.value)}
             >
@@ -203,7 +204,7 @@ export default function LearningPage() {
         <button
           onClick={generateStrategy}
           disabled={!selectedMatchId || loadingStrategy || loadingMatches}
-          className="px-4 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+          className="btn-primary"
         >
           {loadingStrategy ? "Generating strategy..." : "Generate Learning Strategy"}
         </button>
@@ -213,17 +214,17 @@ export default function LearningPage() {
 
       {strategy && (
         <div className="space-y-8">
-          <section className="border border-blue-100 rounded-xl p-5 bg-blue-50">
+          <section className="panel kinetic-border p-5 bg-blue-50/80 border-blue-100">
             <div className="flex items-start justify-between gap-4 flex-wrap">
               <div>
-                <div className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Readiness plan</div>
-                <h2 className="text-xl font-bold text-gray-900 mt-1">
+                <div className="label-kicker">Readiness plan</div>
+                <h2 className="text-2xl font-black text-slate-950 mt-1">
                   {strategy.job_title}{strategy.company ? ` @ ${strategy.company}` : ""}
                 </h2>
               </div>
               <div className="text-right">
                 <div className="text-xs text-gray-500">Current match</div>
-                <div className="text-2xl font-bold text-blue-700">{strategy.current_score.toFixed(1)}</div>
+                <div className="text-4xl font-black ink-gradient">{strategy.current_score.toFixed(1)}</div>
               </div>
             </div>
             <p className="text-sm text-gray-700 leading-relaxed mt-4">{strategy.readiness_summary}</p>
@@ -235,7 +236,7 @@ export default function LearningPage() {
           </section>
 
           <section>
-            <h2 className="text-sm font-bold text-gray-900 mb-3">Missing Hiring Signals</h2>
+            <h2 className="text-2xl font-black text-slate-950 mb-3">Missing Hiring Signals</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {strategy.missing_hiring_signals.map((signal, idx) => (
                 <SignalCard key={`${signal.signal}-${idx}`} signal={signal} />
@@ -244,7 +245,7 @@ export default function LearningPage() {
           </section>
 
           <section>
-            <h2 className="text-sm font-bold text-gray-900 mb-3">Learning Priorities</h2>
+            <h2 className="text-2xl font-black text-slate-950 mb-3">Learning Priorities</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {strategy.learning_priorities.map((priority, idx) => (
                 <PriorityCard key={`${priority.skill}-${idx}`} priority={priority} />
@@ -253,13 +254,13 @@ export default function LearningPage() {
           </section>
 
           <section className="space-y-4">
-            <h2 className="text-sm font-bold text-gray-900">Project Recommendations</h2>
+            <h2 className="text-2xl font-black text-slate-950">Project Recommendations</h2>
             {strategy.project_recommendations.map((project, idx) => (
               <ProjectCard key={`${project.title}-${idx}`} project={project} />
             ))}
           </section>
 
-          <section className="border border-gray-200 rounded-xl p-5 bg-white shadow-sm">
+          <section className="panel p-5">
             <h2 className="text-sm font-bold text-gray-900 mb-4">Suggested Timeline</h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {strategy.timeline.map((item, idx) => (

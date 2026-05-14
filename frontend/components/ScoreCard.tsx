@@ -4,10 +4,13 @@ export default function ScoreCard({
   subtitle,
 }: { title: string; value: string; subtitle?: string }) {
   return (
-    <div className="border rounded p-4 bg-white shadow-sm">
-      <div className="text-xs text-gray-500">{title}</div>
-      <div className="text-2xl font-bold mt-1">{value}</div>
-      {subtitle && <div className="text-xs text-gray-500 mt-1">{subtitle}</div>}
+    <div className="metric-card kinetic-border tilt-lift overflow-hidden">
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">{title}</div>
+        <span className="pulse-dot" />
+      </div>
+      <div className="text-4xl font-black mt-3 text-slate-950 ink-gradient">{value}</div>
+      {subtitle && <div className="text-xs font-medium text-slate-500 mt-2 leading-relaxed">{subtitle}</div>}
     </div>
   );
 }

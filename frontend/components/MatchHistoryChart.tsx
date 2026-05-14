@@ -22,15 +22,21 @@ export default function MatchHistoryChart({ data }: { data: AnyHistoryItem[] }) 
     .filter((d) => d.day);
 
   return (
-    <div className="border rounded p-4 bg-white shadow-sm">
-      <div className="text-sm font-semibold mb-3">Match Score Trend</div>
+    <div className="panel kinetic-border p-5">
+      <div className="flex items-center justify-between gap-3 mb-3">
+        <div>
+          <div className="label-kicker">Trajectory</div>
+          <div className="text-xl font-black text-slate-950 mt-1">Match Score Trend</div>
+        </div>
+        <span className="signal-chip">Live history</span>
+      </div>
       <div className="h-64">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={formatted}>
             <XAxis dataKey="day" />
             <YAxis domain={[0, 100]} />
             <Tooltip />
-            <Line type="monotone" dataKey="match_score" dot={false} />
+            <Line type="monotone" dataKey="match_score" stroke="#2563eb" strokeWidth={4} dot={{ r: 4 }} activeDot={{ r: 7 }} />
           </LineChart>
         </ResponsiveContainer>
       </div>
