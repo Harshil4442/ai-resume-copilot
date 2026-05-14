@@ -44,7 +44,6 @@ def match_job(
     rs_norm       = _normalize_skill_list(resume_skills)
 
     # ── SINGLE MEGA PROMPT CALL ──────────────────────────────────────────────
-    # This replaces ~15 small calls with 1 large call to avoid 429 errors.
     try:
         from ..services.llm_client import analyze_job_match_mega_llm
         mega_result = analyze_job_match_mega_llm(
@@ -56,39 +55,46 @@ def match_job(
         )
     except Exception as e:
         log.error("Mega-Match LLM failed: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail=f"AI Analysis failed: {str(e)}")
+        # Check if it was a 429
+        err_msg = str(e)
+        if "429" in err_msg:
+            detail = "OpenAI Rate Limit (429) hit. Please check your OpenAI Billing/Balance."
+        else:
+            detail = f"Step 1 (LLM Call) failed: {err_msg}"
+        raise HTTPException(status_code=500, detail=detail)
 
     # ── Step 2: Post-processing LLM results ──────────────────────────────────
-    req_norm = [s.lower() for s in mega_result.get("extracted_jd_skills", [])]
-    
-    # Transform skill_analysis into a coverage map and persist to DB
-    coverage_map = {}
-    new_coverage_records = []
-    for item in mega_result.get("skill_analysis", []):
-        rs_skill = item.get("via_skill", "").lower().strip()
-        jd_skill = item.get("jd_skill", "").lower().strip()
-        weight   = float(item.get("coverage", 0.0))
+    try:
+        req_norm = [s.lower() for s in mega_result.get("extracted_jd_skills", [])]
         
-        if rs_skill and jd_skill:
-            coverage_map[(rs_skill, jd_skill)] = weight
-            # Prepare for DB persistence
-            if weight > 0:
-                new_coverage_records.append(models.SkillCoverage(
-                    skill_from=rs_skill,
-                    skill_to=jd_skill,
-                    weight=weight,
-                    source="llm_mega"
-                ))
+        coverage_map = {}
+        new_coverage_records = []
+        for item in mega_result.get("skill_analysis", []):
+            rs_skill = (item.get("via_skill") or "").lower().strip()
+            jd_skill = (item.get("jd_skill") or "").lower().strip()
+            weight   = float(item.get("coverage", 0.0))
+            
+            if rs_skill and jd_skill:
+                coverage_map[(rs_skill, jd_skill)] = weight
+                if weight > 0:
+                    new_coverage_records.append(models.SkillCoverage(
+                        skill_from=rs_skill, skill_to=jd_skill, weight=weight, source="llm_mega"
+                    ))
+    except Exception as e:
+        log.error("JSON Post-processing failed: %s", e)
+        raise HTTPException(status_code=500, detail=f"Step 2 (Data Processing) failed: {str(e)}")
 
     # Bulk persist to Neon
     if new_coverage_records:
         try:
             for rec in new_coverage_records:
-                db.merge(rec) # handles existing pairs gracefully
+                db.merge(rec)
             db.commit()
         except Exception as e:
             db.rollback()
             log.warning("Could not persist mega-coverage to DB: %s", e)
+            # We don't raise 500 here so the user still sees their match results 
+            # even if the cache save fails.
 
     # ── Step 3: Skill confidence & weighted scoring ──────────────────────────
     confidence_map = build_skill_confidence_map(resume_skills, sections)
