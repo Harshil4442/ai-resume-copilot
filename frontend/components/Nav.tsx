@@ -19,6 +19,7 @@ export default function Nav() {
           <a className="hover:underline" href="/jobs">Match</a>
           <a className="hover:underline" href="/learning">Learning</a>
           <a className="hover:underline" href="/dashboard">Dashboard</a>
+          <a className="hover:underline" href="/profile">Profile</a>
 
           {loggedIn ? (
             <a className="hover:underline" href="/logout">Logout</a>

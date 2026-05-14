@@ -9,8 +9,33 @@ class User(Base):
     email = Column(String, unique=True, index=True)
     password_hash = Column(String, default="")
 
+    profile = relationship("UserProfile", back_populates="user", uselist=False)
     resumes = relationship("Resume", back_populates="user")
     job_matches = relationship("JobMatch", back_populates="user")
+
+class UserProfile(Base):
+    __tablename__ = "user_profiles"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), unique=True, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    full_name = Column(String, default="")
+    headline = Column(String, default="")
+    phone = Column(String, default="")
+    location = Column(String, default="")
+    linkedin = Column(String, default="")
+    github = Column(String, default="")
+    portfolio = Column(String, default="")
+    target_role = Column(String, default="")
+    preferred_job_type = Column(String, default="")
+    preferred_location = Column(String, default="")
+    years_experience = Column(Float, default=0.0)
+    bio = Column(Text, default="")
+    skills = Column(JSON, default=list)
+    education = Column(Text, default="")
+    certifications = Column(Text, default="")
+
+    user = relationship("User", back_populates="profile")
 
 class Resume(Base):
     __tablename__ = "resumes"

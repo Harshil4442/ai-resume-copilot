@@ -21,6 +21,31 @@ class UserMeResponse(BaseModel):
     id: int
     email: EmailStr
 
+class UserProfileBase(BaseModel):
+    full_name: Optional[str] = None
+    headline: Optional[str] = None
+    phone: Optional[str] = None
+    location: Optional[str] = None
+    linkedin: Optional[str] = None
+    github: Optional[str] = None
+    portfolio: Optional[str] = None
+    target_role: Optional[str] = None
+    preferred_job_type: Optional[str] = None
+    preferred_location: Optional[str] = None
+    years_experience: Optional[float] = None
+    bio: Optional[str] = None
+    skills: List[str] = Field(default_factory=list)
+    education: Optional[str] = None
+    certifications: Optional[str] = None
+
+class UserProfileResponse(UserProfileBase):
+    email: EmailStr
+    profile_completeness: int
+    missing_fields: List[str] = Field(default_factory=list)
+
+class UserProfileUpdate(UserProfileBase):
+    pass
+
 # -------------------------
 # Resume parsing
 # -------------------------

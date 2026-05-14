@@ -45,6 +45,17 @@ export async function apiPostJson<T>(path: string, body: unknown): Promise<T> {
   return data as T;
 }
 
+export async function apiPutJson<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "PUT",
+    headers: withAuth({ "Content-Type": "application/json" }),
+    body: JSON.stringify(body),
+  });
+  const data = await parseResponse(res);
+  if (!res.ok) throw new Error((data as any)?.detail || `PUT ${path} failed (${res.status})`);
+  return data as T;
+}
+
 export async function apiPostForm<T>(path: string, form: FormData): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     method: "POST",

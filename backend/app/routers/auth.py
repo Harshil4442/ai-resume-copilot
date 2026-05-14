@@ -2,11 +2,85 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import User
-from ..schemas import AuthLoginRequest, AuthRegisterRequest, AuthTokenResponse, UserMeResponse
+from ..models import User, UserProfile
+from ..schemas import (
+    AuthLoginRequest,
+    AuthRegisterRequest,
+    AuthTokenResponse,
+    UserMeResponse,
+    UserProfileResponse,
+    UserProfileUpdate,
+)
 from ..security import create_access_token, get_current_user, hash_password, verify_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+PROFILE_FIELDS = [
+    ("full_name", "Full name"),
+    ("headline", "Professional headline"),
+    ("phone", "Phone"),
+    ("location", "Location"),
+    ("linkedin", "LinkedIn"),
+    ("github", "GitHub"),
+    ("portfolio", "Portfolio"),
+    ("target_role", "Target role"),
+    ("preferred_job_type", "Preferred job type"),
+    ("preferred_location", "Preferred location"),
+    ("years_experience", "Years of experience"),
+    ("bio", "Short bio"),
+    ("skills", "Skills"),
+    ("education", "Education"),
+    ("certifications", "Certifications"),
+]
+
+def _get_or_create_profile(db: Session, user: User) -> UserProfile:
+    profile = db.query(UserProfile).filter(UserProfile.user_id == user.id).first()
+    if profile:
+        return profile
+    profile = UserProfile(user_id=user.id)
+    db.add(profile)
+    db.commit()
+    db.refresh(profile)
+    return profile
+
+def _is_filled(value) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, list):
+        return len([v for v in value if str(v).strip()]) > 0
+    if isinstance(value, (int, float)):
+        return value > 0
+    return bool(str(value).strip())
+
+def _profile_response(profile: UserProfile, email: str) -> UserProfileResponse:
+    missing = []
+    filled = 0
+    for field, label in PROFILE_FIELDS:
+        if _is_filled(getattr(profile, field, None)):
+            filled += 1
+        else:
+            missing.append(label)
+    completeness = round(filled / len(PROFILE_FIELDS) * 100)
+    return UserProfileResponse(
+        email=email,
+        profile_completeness=completeness,
+        missing_fields=missing,
+        full_name=profile.full_name or None,
+        headline=profile.headline or None,
+        phone=profile.phone or None,
+        location=profile.location or None,
+        linkedin=profile.linkedin or None,
+        github=profile.github or None,
+        portfolio=profile.portfolio or None,
+        target_role=profile.target_role or None,
+        preferred_job_type=profile.preferred_job_type or None,
+        preferred_location=profile.preferred_location or None,
+        years_experience=float(profile.years_experience or 0.0),
+        bio=profile.bio or None,
+        skills=profile.skills or [],
+        education=profile.education or None,
+        certifications=profile.certifications or None,
+    )
 
 @router.post("/register", response_model=UserMeResponse)
 def register(payload: AuthRegisterRequest, db: Session = Depends(get_db)):
@@ -20,6 +94,8 @@ def register(payload: AuthRegisterRequest, db: Session = Depends(get_db)):
     db.add(u)
     db.commit()
     db.refresh(u)
+    db.add(UserProfile(user_id=u.id))
+    db.commit()
     return UserMeResponse(id=u.id, email=u.email)
 
 @router.post("/login", response_model=AuthTokenResponse)
@@ -36,3 +112,32 @@ def login(payload: AuthLoginRequest, db: Session = Depends(get_db)):
 @router.get("/me", response_model=UserMeResponse)
 def me(current_user: User = Depends(get_current_user)):
     return UserMeResponse(id=current_user.id, email=current_user.email)
+
+@router.get("/profile", response_model=UserProfileResponse)
+def get_profile(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    profile = _get_or_create_profile(db, current_user)
+    return _profile_response(profile, current_user.email)
+
+@router.put("/profile", response_model=UserProfileResponse)
+def update_profile(
+    payload: UserProfileUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    profile = _get_or_create_profile(db, current_user)
+    data = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
+    for key, value in data.items():
+        if hasattr(profile, key):
+            if isinstance(value, str):
+                value = value.strip()
+            if key == "skills" and value is None:
+                value = []
+            setattr(profile, key, value)
+
+    db.add(profile)
+    db.commit()
+    db.refresh(profile)
+    return _profile_response(profile, current_user.email)

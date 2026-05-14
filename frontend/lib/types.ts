@@ -3,6 +3,27 @@ export type UserMeResponse = {
   email: string;
 };
 
+export type UserProfile = {
+  email: string;
+  profile_completeness: number;
+  missing_fields: string[];
+  full_name?: string | null;
+  headline?: string | null;
+  phone?: string | null;
+  location?: string | null;
+  linkedin?: string | null;
+  github?: string | null;
+  portfolio?: string | null;
+  target_role?: string | null;
+  preferred_job_type?: string | null;
+  preferred_location?: string | null;
+  years_experience?: number | null;
+  bio?: string | null;
+  skills: string[];
+  education?: string | null;
+  certifications?: string | null;
+};
+
 export type AuthTokenResponse = {
   access_token: string;
   token_type: "bearer";
@@ -40,6 +61,17 @@ export type JobMatchResponse = {
 export type MatchHistoryItem = {
   timestamp: string;
   match_score: number;
+  job_title?: string;
+  company?: string;
+  match_id?: number;
+};
+
+export type DashboardMatchCard = {
+  match_id: number;
+  job_title: string;
+  company: string;
+  match_score: number;
+  created_at?: string | null;
 };
 
 export type AnalyticsSummary = {
@@ -48,6 +80,32 @@ export type AnalyticsSummary = {
   resume_count: number;
   applications_count: number;
   match_history: MatchHistoryItem[];
+  profile_health?: {
+    score: number;
+    missing_items: string[];
+  };
+  resume_quality?: {
+    latest_resume_id?: number | null;
+    latest_resume_filename: string;
+    latest_resume_date?: string | null;
+    total_unique_skills: number;
+    evidenced_skills: number;
+    claimed_only_skills: number;
+    verification_rate: number;
+    quantified_achievements: number;
+    missing_sections: string[];
+  };
+  match_overview?: {
+    best_match?: DashboardMatchCard | null;
+    weakest_match?: DashboardMatchCard | null;
+    latest_match?: DashboardMatchCard | null;
+  };
+  activity_summary?: {
+    resumes_parsed: number;
+    job_matches_run: number;
+    last_activity_at?: string | null;
+  };
+  recurring_gaps?: Array<{ skill: string; count: number }>;
 };
 
 export type JobMatchHistoryItem = {
