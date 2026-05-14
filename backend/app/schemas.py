@@ -98,6 +98,57 @@ class JobMatchHistoryResponse(BaseModel):
     matches: List[JobMatchHistoryItem]
 
 # -------------------------
+# Match-specific learning strategy
+# -------------------------
+class LearningStrategyRequest(BaseModel):
+    match_id: int
+
+class LearningResource(BaseModel):
+    title: str
+    platform: str
+    url: Optional[str] = None
+    skill: str
+    level: Optional[str] = None
+
+class MissingHiringSignal(BaseModel):
+    signal: str
+    why_it_matters: str
+    severity: str = "medium"
+
+class LearningPriority(BaseModel):
+    skill: str
+    priority: str = "medium"
+    current_status: str = "gap"
+    reason: str
+    expected_outcome: str
+    resources: List[LearningResource] = Field(default_factory=list)
+
+class ProjectRecommendation(BaseModel):
+    title: str
+    covers_gaps: List[str]
+    description: str
+    implementation_steps: List[str]
+    resume_bullets: List[str]
+    interview_talking_points: List[str]
+
+class LearningTimelineItem(BaseModel):
+    phase: str
+    focus: str
+    deliverable: str
+
+class LearningStrategyResponse(BaseModel):
+    match_id: int
+    job_title: str
+    company: str
+    current_score: float
+    readiness_summary: str
+    missing_hiring_signals: List[MissingHiringSignal]
+    learning_priorities: List[LearningPriority]
+    project_recommendations: List[ProjectRecommendation]
+    timeline: List[LearningTimelineItem]
+    generated_by: str = "llm"
+
+# -------------------------
 # LLM helpers
 # -------------------------
 class RewriteBulletsRequest(BaseModel):

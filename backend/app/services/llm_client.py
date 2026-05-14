@@ -394,3 +394,108 @@ def analyze_job_match_mega_llm(
                 break
                 
     return json.loads(cleaned)
+
+
+def generate_learning_strategy_llm(
+    *,
+    job_title: str,
+    company: str,
+    jd_text: str,
+    resume_skills: List[str],
+    experience_years: float,
+    true_gaps: List[str],
+    partial_matches: List[Dict],
+    required_skills: List[str],
+    match_score: float,
+    fit_summary: str,
+    dimension_scores: List[Dict],
+    improvement_tips: List[str],
+) -> Dict:
+    """
+    Generate a match-specific learning strategy. This intentionally focuses on
+    hiring signals and project proof, not just course links.
+    """
+    example = {
+        "readiness_summary": "2-3 sentences on the candidate's readiness and the highest-leverage learning focus.",
+        "missing_hiring_signals": [
+            {
+                "signal": "Production deployment experience",
+                "why_it_matters": "The job expects deployed services, but the resume does not show evidence of shipping or operating them.",
+                "severity": "high"
+            }
+        ],
+        "learning_priorities": [
+            {
+                "skill": "docker",
+                "priority": "high",
+                "current_status": "true_gap",
+                "reason": "Required by the JD and not evidenced in the resume.",
+                "expected_outcome": "Can package and run backend services consistently across environments."
+            }
+        ],
+        "project_recommendations": [
+            {
+                "title": "Production-style backend deployment project",
+                "covers_gaps": ["docker", "postgresql", "ci/cd"],
+                "description": "Build a small but realistic backend service that proves the missing hiring signals.",
+                "implementation_steps": ["Define the API and schema", "Containerize it", "Deploy it", "Document tradeoffs"],
+                "resume_bullets": ["Built and deployed a containerized backend API with persistent storage and automated checks."],
+                "interview_talking_points": ["Why you chose the deployment target", "How you handled configuration and secrets"]
+            }
+        ],
+        "timeline": [
+            {
+                "phase": "Week 1",
+                "focus": "Core missing skill",
+                "deliverable": "A working artifact that can be shown in GitHub or a demo."
+            }
+        ]
+    }
+    system_prompt = (
+        "You are a senior hiring manager and career strategist. Create a practical learning strategy "
+        "for a candidate targeting one specific job match.\n\n"
+        "Do NOT recommend a generic course list. Recommend high-leverage learning priorities and "
+        "project work that would create credible hiring evidence for this exact job.\n\n"
+        "Return ONLY valid JSON with this exact structure:\n"
+        f"{json.dumps(example, indent=2)}\n\n"
+        "Rules:\n"
+        "- Prioritize 3-6 skills or hiring signals at most.\n"
+        "- Prefer projects that cover multiple gaps at once.\n"
+        "- Make resume bullets concrete and achievement-oriented.\n"
+        "- Keep implementation steps specific enough to act on.\n"
+        "- Severity and priority must be one of: high, medium, low.\n"
+        "- current_status should be true_gap, partial_coverage, weak_evidence, or improvement.\n"
+        "- Return raw JSON only. No markdown fences."
+    )
+
+    user_content = (
+        f"JOB TITLE: {job_title}\n"
+        f"COMPANY: {company or 'Unknown'}\n"
+        f"MATCH SCORE: {match_score:.1f}/100\n"
+        f"EXPERIENCE YEARS: {experience_years:.1f}\n\n"
+        f"JOB DESCRIPTION EXCERPT:\n{jd_text[:2500]}\n\n"
+        f"RESUME SKILLS:\n{', '.join(resume_skills[:60])}\n\n"
+        f"JD REQUIRED SKILLS:\n{', '.join(required_skills[:60])}\n\n"
+        f"TRUE GAPS:\n{', '.join(true_gaps[:30])}\n\n"
+        f"PARTIAL MATCHES:\n{json.dumps(partial_matches[:20])}\n\n"
+        f"FIT SUMMARY:\n{fit_summary[:1200]}\n\n"
+        f"DIMENSION SCORES:\n{json.dumps(dimension_scores[:12])}\n\n"
+        f"EXISTING IMPROVEMENT TIPS:\n{json.dumps(improvement_tips[:8])}"
+    )
+
+    raw = _chat([
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_content},
+    ])
+
+    cleaned = raw.strip()
+    if "```" in cleaned:
+        for part in cleaned.split("```"):
+            part = part.strip()
+            if part.lower().startswith("json"):
+                part = part[4:].strip()
+            if part.startswith("{"):
+                cleaned = part
+                break
+
+    return json.loads(cleaned)
