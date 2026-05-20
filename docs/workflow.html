@@ -1,0 +1,606 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AI Resume CoPilot Workflow</title>
+  <style>
+    :root {
+      --bg: #f5f5f7;
+      --ink: #111827;
+      --muted: #667085;
+      --line: #d9dee8;
+      --blue: #0071e3;
+      --green: #0f9f6e;
+      --dark: #0a0a0b;
+      --card: rgba(255, 255, 255, 0.86);
+      --shadow: 0 24px 80px rgba(15, 23, 42, 0.08);
+      --radius: 14px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background:
+        linear-gradient(180deg, rgba(255,255,255,0.9), rgba(245,245,247,1) 34%, #fff),
+        linear-gradient(120deg, rgba(0,113,227,0.11), transparent 42%),
+        linear-gradient(240deg, rgba(15,159,110,0.10), transparent 36%);
+      line-height: 1.5;
+    }
+
+    header {
+      padding: 64px 24px 32px;
+      text-align: center;
+    }
+
+    header .eyebrow {
+      color: var(--blue);
+      font-size: 12px;
+      font-weight: 900;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      max-width: 980px;
+      margin: 16px auto 0;
+      font-size: clamp(44px, 7vw, 86px);
+      line-height: 0.9;
+      letter-spacing: -0.055em;
+    }
+
+    header p {
+      max-width: 760px;
+      margin: 22px auto 0;
+      color: var(--muted);
+      font-size: clamp(16px, 2vw, 20px);
+      font-weight: 550;
+    }
+
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      padding: 12px 16px;
+      border-top: 1px solid rgba(255,255,255,0.8);
+      border-bottom: 1px solid rgba(217,222,232,0.8);
+      background: rgba(255,255,255,0.78);
+      backdrop-filter: blur(18px);
+    }
+
+    nav a {
+      padding: 8px 13px;
+      border-radius: 999px;
+      color: var(--ink);
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 800;
+      border: 1px solid transparent;
+    }
+
+    nav a:hover {
+      border-color: var(--line);
+      background: white;
+    }
+
+    main {
+      width: min(1240px, calc(100% - 32px));
+      margin: 0 auto 80px;
+    }
+
+    section {
+      margin-top: 28px;
+      padding: 28px;
+      border: 1px solid rgba(255,255,255,0.9);
+      border-radius: var(--radius);
+      background: var(--card);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(16px);
+    }
+
+    section.dark {
+      color: white;
+      background: var(--dark);
+      border-color: #20222a;
+      overflow: hidden;
+      position: relative;
+    }
+
+    section.dark:before {
+      content: "resume skill gap market score parse match rag api redis cloud run vercel postgres";
+      position: absolute;
+      inset: 0;
+      opacity: 0.16;
+      color: #93c5fd;
+      font-size: 11px;
+      letter-spacing: 0.25em;
+      line-height: 2.4;
+      padding: 18px;
+      pointer-events: none;
+      word-spacing: 18px;
+    }
+
+    section > * {
+      position: relative;
+    }
+
+    h2 {
+      margin: 0;
+      font-size: clamp(28px, 4vw, 52px);
+      line-height: 0.95;
+      letter-spacing: -0.04em;
+    }
+
+    .section-copy {
+      max-width: 760px;
+      margin: 12px 0 0;
+      color: var(--muted);
+      font-weight: 550;
+    }
+
+    .dark .section-copy { color: #bfdbfe; }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 24px;
+    }
+
+    .metric {
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: white;
+    }
+
+    .metric strong {
+      display: block;
+      font-size: 30px;
+      line-height: 1;
+      letter-spacing: -0.04em;
+    }
+
+    .metric span {
+      display: block;
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 24px;
+    }
+
+    .step, .card {
+      position: relative;
+      min-height: 138px;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: white;
+      box-shadow: 0 10px 30px rgba(15,23,42,0.05);
+    }
+
+    .step:after {
+      content: "to";
+      position: absolute;
+      right: -17px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 32px;
+      height: 32px;
+      display: grid;
+      place-items: center;
+      border-radius: 999px;
+      background: var(--blue);
+      color: white;
+      font-size: 10px;
+      font-weight: 900;
+      z-index: 2;
+    }
+
+    .step:nth-child(4n):after,
+    .step:last-child:after {
+      display: none;
+    }
+
+    .num {
+      display: inline-grid;
+      place-items: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 999px;
+      color: white;
+      background: var(--blue);
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .step h3, .card h3 {
+      margin: 12px 0 6px;
+      font-size: 17px;
+      line-height: 1.15;
+    }
+
+    .step p, .card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 550;
+    }
+
+    .architecture {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 24px;
+    }
+
+    .layer {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: #fff;
+      overflow: hidden;
+    }
+
+    .layer-title {
+      padding: 13px 14px;
+      color: white;
+      background: var(--ink);
+      font-size: 12px;
+      font-weight: 900;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    .layer-body {
+      padding: 12px;
+      display: grid;
+      gap: 9px;
+    }
+
+    .pill {
+      padding: 10px 11px;
+      border: 1px solid #e6eaf1;
+      border-radius: 10px;
+      background: #f8fafc;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .details {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 24px;
+    }
+
+    .details .card {
+      min-height: 230px;
+    }
+
+    ul {
+      margin: 12px 0 0;
+      padding-left: 18px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 550;
+    }
+
+    li + li { margin-top: 7px; }
+
+    .dark .card {
+      background: rgba(255,255,255,0.08);
+      border-color: rgba(255,255,255,0.12);
+      color: white;
+    }
+
+    .dark .card p,
+    .dark ul {
+      color: #c7d2fe;
+    }
+
+    table {
+      width: 100%;
+      margin-top: 22px;
+      border-collapse: collapse;
+      overflow: hidden;
+      border-radius: 12px;
+      background: white;
+    }
+
+    th, td {
+      padding: 13px 14px;
+      border-bottom: 1px solid #eef2f7;
+      text-align: left;
+      vertical-align: top;
+      font-size: 13px;
+    }
+
+    th {
+      color: #475467;
+      background: #f8fafc;
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    code {
+      padding: 2px 5px;
+      border-radius: 6px;
+      background: #eef2ff;
+      color: #1d4ed8;
+      font-weight: 800;
+    }
+
+    footer {
+      margin: 34px 0 0;
+      text-align: center;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 650;
+    }
+
+    @media (max-width: 1050px) {
+      .metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .flow, .architecture, .details { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .step:nth-child(4n):after { display: grid; }
+      .step:nth-child(2n):after { display: none; }
+    }
+
+    @media (max-width: 680px) {
+      header { padding-top: 42px; }
+      section { padding: 20px; }
+      .metrics, .flow, .architecture, .details { grid-template-columns: 1fr; }
+      .step:after { display: none !important; }
+      table { display: block; overflow-x: auto; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="eyebrow">AI Resume CoPilot</div>
+    <h1>Complete Project Workflow</h1>
+    <p>A visual map of how the resume parser, job matcher, Ask AI, learning strategy, market analyzer, dashboard, and deployment pipeline work together.</p>
+  </header>
+
+  <nav>
+    <a href="#workflow">Product Workflow</a>
+    <a href="#architecture">Architecture</a>
+    <a href="#features">Features</a>
+    <a href="#technical">Technical Flows</a>
+    <a href="#routes">Routes</a>
+    <a href="#metrics">Metrics</a>
+  </nav>
+
+  <main>
+    <section id="metrics">
+      <h2>System at a glance.</h2>
+      <p class="section-copy">These numbers are taken from the current repository and are useful for project explanation and resume impact.</p>
+      <div class="metrics">
+        <div class="metric"><strong>16</strong><span>Backend APIs</span></div>
+        <div class="metric"><strong>10</strong><span>Frontend Pages</span></div>
+        <div class="metric"><strong>5</strong><span>DB Models</span></div>
+        <div class="metric"><strong>38</strong><span>API Schemas</span></div>
+        <div class="metric"><strong>132</strong><span>Skills</span></div>
+        <div class="metric"><strong>3</strong><span>Job Providers</span></div>
+      </div>
+    </section>
+
+    <section id="workflow">
+      <h2>End-to-end product workflow.</h2>
+      <p class="section-copy">The user moves from account setup to resume parsing, job matching, grounded AI explanations, learning strategy, market trend analysis, and dashboard tracking.</p>
+      <div class="flow">
+        <div class="step"><span class="num">1</span><h3>Authenticate</h3><p>User registers or logs in. JWT token is stored in browser and sent with protected API calls.</p></div>
+        <div class="step"><span class="num">2</span><h3>Build Profile</h3><p>User adds optional career context such as target role, location, links, skills, education, and bio.</p></div>
+        <div class="step"><span class="num">3</span><h3>Upload Resume</h3><p>PDF or DOCX is parsed into raw text, sections, contact info, skills, and experience years.</p></div>
+        <div class="step"><span class="num">4</span><h3>Run Job Match</h3><p>Resume evidence is compared with the job description to produce score, gaps, and recruiter dimensions.</p></div>
+        <div class="step"><span class="num">5</span><h3>Ask AI</h3><p>Stateless RAG builds temporary evidence chunks and answers grounded questions about the selected match.</p></div>
+        <div class="step"><span class="num">6</span><h3>Generate Learning</h3><p>Match gaps are converted into learning priorities, projects, resume bullets, and interview talking points.</p></div>
+        <div class="step"><span class="num">7</span><h3>Analyze Market</h3><p>Live job providers are searched to find repeated skills and compare them with resume evidence.</p></div>
+        <div class="step"><span class="num">8</span><h3>Track Dashboard</h3><p>Dashboard summarizes profile health, resume quality, match performance, recurring gaps, and activity.</p></div>
+      </div>
+    </section>
+
+    <section id="architecture">
+      <h2>Architecture workflow.</h2>
+      <p class="section-copy">The frontend is deployed on Vercel, the backend runs on Google Cloud Run, persistent data lives in PostgreSQL, and external intelligence comes from Groq plus job-provider APIs.</p>
+      <div class="architecture">
+        <div class="layer">
+          <div class="layer-title">Frontend - Vercel</div>
+          <div class="layer-body">
+            <div class="pill">Landing</div>
+            <div class="pill">Login / Register</div>
+            <div class="pill">Profile</div>
+            <div class="pill">Resume</div>
+            <div class="pill">Jobs + Ask AI</div>
+            <div class="pill">Learning</div>
+            <div class="pill">Market</div>
+            <div class="pill">Dashboard</div>
+          </div>
+        </div>
+
+        <div class="layer">
+          <div class="layer-title">FastAPI Routers</div>
+          <div class="layer-body">
+            <div class="pill">Auth</div>
+            <div class="pill">Resume</div>
+            <div class="pill">Jobs</div>
+            <div class="pill">RAG</div>
+            <div class="pill">Recommendations</div>
+            <div class="pill">Market</div>
+            <div class="pill">Analytics</div>
+            <div class="pill">LLM helpers</div>
+          </div>
+        </div>
+
+        <div class="layer">
+          <div class="layer-title">Services</div>
+          <div class="layer-body">
+            <div class="pill">Resume parsing</div>
+            <div class="pill">Skill extraction</div>
+            <div class="pill">Job matching</div>
+            <div class="pill">Stateless RAG</div>
+            <div class="pill">Learning strategy</div>
+            <div class="pill">Market analyzer</div>
+            <div class="pill">Provider registry</div>
+            <div class="pill">LLM client</div>
+          </div>
+        </div>
+
+        <div class="layer">
+          <div class="layer-title">Data + External</div>
+          <div class="layer-body">
+            <div class="pill">PostgreSQL on Render</div>
+            <div class="pill">Redis cache</div>
+            <div class="pill">Groq LLM</div>
+            <div class="pill">TheirStack</div>
+            <div class="pill">Adzuna</div>
+            <div class="pill">Jooble</div>
+            <div class="pill">Cloud Run</div>
+            <div class="pill">GitHub Actions</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="features" class="dark">
+      <h2>Explained functionalities.</h2>
+      <p class="section-copy">Each module is designed to feed the next one, so the app behaves like a connected career intelligence system instead of isolated tools.</p>
+      <div class="details">
+        <div class="card">
+          <h3>Resume Parsing</h3>
+          <p>Converts uploaded files into structured career data.</p>
+          <ul>
+            <li>Supports PDF and DOCX.</li>
+            <li>Extracts contact info, sections, skills, and experience.</li>
+            <li>Stores parsed data per authenticated user.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Job Matching</h3>
+          <p>Compares resume evidence with job requirements.</p>
+          <ul>
+            <li>Extracts JD skills.</li>
+            <li>Classifies full matches, partial matches, and true gaps.</li>
+            <li>Returns score, grade, dimensions, summary, and tips.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Ask AI</h3>
+          <p>Answers questions about a specific resume and match.</p>
+          <ul>
+            <li>Builds temporary evidence chunks.</li>
+            <li>Ranks context with TF-IDF and rule boosts.</li>
+            <li>Does not store chat, chunks, embeddings, or vector indexes.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Learning Strategy</h3>
+          <p>Turns gaps into a practical improvement plan.</p>
+          <ul>
+            <li>Uses selected match history.</li>
+            <li>Creates priorities, projects, resume bullets, and interview points.</li>
+            <li>Falls back to deterministic generation if LLM fails.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Market Analyzer</h3>
+          <p>Reads external job demand and compares it with the resume.</p>
+          <ul>
+            <li>Integrates TheirStack, Adzuna, and Jooble.</li>
+            <li>Uses Redis cache when configured.</li>
+            <li>Normalizes 132 skills across 14 categories.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Dashboard</h3>
+          <p>Shows progress and system-level career signals.</p>
+          <ul>
+            <li>Profile completeness and resume quality.</li>
+            <li>Match trends and best/latest/weakest match.</li>
+            <li>Recurring skill gaps and next actions.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="technical">
+      <h2>Technical sub-workflows.</h2>
+      <p class="section-copy">These are the highest-value internal flows to explain in interviews or project walkthroughs.</p>
+      <div class="details">
+        <div class="card">
+          <h3>Stateless RAG</h3>
+          <p>Question -> load resume and match -> build 15 evidence sources -> classify one of 7 intents -> rank context -> LLM JSON answer.</p>
+          <ul>
+            <li>No server-side chat persistence.</li>
+            <li>No vector database required.</li>
+            <li>Uses deterministic retrieval before LLM generation.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Market Trends</h3>
+          <p>Role query -> provider registry -> Redis check -> live job search -> dedupe -> skill extraction -> resume gap analysis.</p>
+          <ul>
+            <li>Counts each skill once per job.</li>
+            <li>Maps aliases such as JS, Postgres, K8s, and RESTful APIs.</li>
+            <li>Generates project recommendations from high-priority gaps.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Deployment</h3>
+          <p>GitHub push -> CI checks -> frontend build -> backend container -> Cloud Run -> Vercel frontend calls Cloud Run API.</p>
+          <ul>
+            <li>Cloud Build and Docker support backend deploys.</li>
+            <li>Vercel hosts Next.js frontend.</li>
+            <li>Render PostgreSQL stores persistent data.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="routes">
+      <h2>Feature to route map.</h2>
+      <p class="section-copy">This table connects each user-facing feature with its frontend page, backend route, and main service.</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Feature</th>
+            <th>Frontend</th>
+            <th>Backend</th>
+            <th>Core logic</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>Auth</td><td><code>/login</code>, <code>/register</code></td><td><code>/api/auth/login</code>, <code>/api/auth/register</code></td><td>JWT and password security</td></tr>
+          <tr><td>Profile</td><td><code>/profile</code></td><td><code>/api/auth/profile</code></td><td>User profile model</td></tr>
+          <tr><td>Resume parsing</td><td><code>/resume</code></td><td><code>/api/resume/parse</code></td><td>Parsing service</td></tr>
+          <tr><td>Job matching</td><td><code>/jobs</code></td><td><code>/api/jobs/match</code></td><td>Matching service</td></tr>
+          <tr><td>Ask AI</td><td><code>/jobs</code></td><td><code>/api/rag/ask</code></td><td>RAG services</td></tr>
+          <tr><td>Learning</td><td><code>/learning</code></td><td><code>/api/recommendations/match_strategy</code></td><td>Recommender and LLM client</td></tr>
+          <tr><td>Market trends</td><td><code>/market</code></td><td><code>/api/market/analyze</code></td><td>Market analyzer and providers</td></tr>
+          <tr><td>Dashboard</td><td><code>/dashboard</code></td><td><code>/api/analytics/summary</code></td><td>Analytics router</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <footer>
+      Open docs/WORKFLOW.md for Mermaid diagrams that render directly on GitHub.
+    </footer>
+  </main>
+</body>
+</html>

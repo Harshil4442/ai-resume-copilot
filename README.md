@@ -10,6 +10,11 @@ The project is designed for a split production deployment:
 - LLM: Groq or any OpenAI-compatible chat-completions API
 - Optional cache: Redis for market provider responses
 
+Project workflow diagrams:
+
+- Mermaid diagrams and explanations: [docs/WORKFLOW.md](docs/WORKFLOW.md)
+- Standalone browser diagram: [docs/workflow.html](docs/workflow.html)
+
 ---
 
 ## Current Features
