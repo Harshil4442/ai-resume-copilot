@@ -1,6 +1,7 @@
 import "./globals.css";
 import Script from "next/script";
 import Nav from "../components/Nav";
+import SessionProviderWrapper from "../components/SessionProviderWrapper";
 
 export const metadata = {
   title: "AI Resume CoPilot",
@@ -35,9 +36,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         ) : null}
       </head>
       <body>
-        <Nav />
-        <div>{children}</div>
+        <SessionProviderWrapper>
+          <Nav />
+          <div>{children}</div>
+        </SessionProviderWrapper>
       </body>
     </html>
   );
 }
+

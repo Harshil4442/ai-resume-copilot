@@ -133,6 +133,9 @@ async def match_learning_strategy(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
+    from ..services.guardrails import verify_and_deduct_credit
+    verify_and_deduct_credit(current_user.id, db)
+
     match = (
         db.query(models.JobMatch)
         .filter(models.JobMatch.id == payload.match_id, models.JobMatch.user_id == current_user.id)

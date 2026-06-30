@@ -24,6 +24,9 @@ def match_job(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
+    from ..services.guardrails import verify_and_deduct_credit
+    verify_and_deduct_credit(current_user.id, db)
+
     resume = (
         db.query(models.Resume)
         .filter(models.Resume.id == payload.resume_id,

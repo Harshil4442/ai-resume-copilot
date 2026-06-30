@@ -34,6 +34,13 @@ export type ResumeParseResponse = {
   skills: string[];
   experience_years: number;
   sections: Record<string, any>;
+  contact_info?: {
+    name?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    linkedin?: string | null;
+    github?: string | null;
+  } | null;
 };
 
 export type RecommendedCourse = {

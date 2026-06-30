@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
-import { isLoggedIn } from "../lib/auth";
+import { useSession } from "next-auth/react";
 
 const links = [
   { href: "/dashboard", label: "Dashboard" },
@@ -16,13 +16,18 @@ const links = [
 export default function Nav() {
   const [loggedIn, setLoggedIn] = useState<boolean>(false);
   const pathname = usePathname();
+  const { data: session, status } = useSession();
 
   useEffect(() => {
-    setLoggedIn(isLoggedIn());
-    // `isLoggedIn` is a stable module-level import and `setLoggedIn` is a
-    // stable React setter — they never change between renders.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (status === "authenticated" && (session as any)?.user?.accessToken) {
+      localStorage.setItem("access_token", (session as any).user.accessToken);
+      setLoggedIn(true);
+    } else if (status === "unauthenticated") {
+      localStorage.removeItem("access_token");
+      setLoggedIn(false);
+    }
+  }, [session, status]);
+
 
   return (
     <header className="sticky top-0 z-30 glass-nav">

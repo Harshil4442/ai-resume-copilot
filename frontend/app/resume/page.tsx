@@ -91,7 +91,8 @@ export default function ResumePage() {
               {data.skills.map((s) => <span key={s} className="signal-chip">{s}</span>)}
             </div>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <a className="btn-secondary" href="/resume/preview">Preview Document</a>
             <a className="btn-secondary" href="/jobs">Run job match</a>
             <a className="btn-secondary" href="/market">Compare market</a>
             <a className="btn-secondary" href="/dashboard">View dashboard</a>

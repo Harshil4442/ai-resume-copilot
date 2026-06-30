@@ -1,3 +1,5 @@
+import BulletOptimizer from "../components/BulletOptimizer";
+
 const features = [
   {
     href: "/resume",
@@ -96,6 +98,8 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+
+      <BulletOptimizer />
 
       <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {features.map((feature) => (

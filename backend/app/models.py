@@ -12,6 +12,10 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True)
     password_hash = Column(String, default="")
+    tier = Column(String, default="free")
+    ai_credits = Column(Integer, default=5, nullable=False)
+    stripe_customer_id = Column(String, nullable=True)
+    stripe_subscription_id = Column(String, nullable=True)
 
     profile = relationship("UserProfile", back_populates="user", uselist=False)
     resumes = relationship("Resume", back_populates="user")

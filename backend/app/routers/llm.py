@@ -14,6 +14,9 @@ async def rewrite_bullets_endpoint(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
+    from ..services.guardrails import verify_and_deduct_credit
+    verify_and_deduct_credit(current_user.id, db)
+
     resume = (
         db.query(models.Resume)
         .filter(models.Resume.id == payload.resume_id, models.Resume.user_id == current_user.id)
@@ -31,7 +34,11 @@ async def rewrite_bullets_endpoint(
 @router.post("/interview_questions", response_model=schemas.InterviewQuestionsResponse)
 async def interview_questions_endpoint(
     payload: schemas.InterviewQuestionsRequest,
+    db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
+    from ..services.guardrails import verify_and_deduct_credit
+    verify_and_deduct_credit(current_user.id, db)
+
     questions = generate_interview_questions(payload.job_title, payload.job_description)
     return schemas.InterviewQuestionsResponse(questions=questions)

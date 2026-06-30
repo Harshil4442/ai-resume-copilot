@@ -32,6 +32,36 @@ def list_resumes(
         ]
     )
 
+
+@router.get("/{resume_id}", response_model=schemas.ResumeParseResponse)
+def get_resume(
+    resume_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    resume = (
+        db.query(models.Resume)
+        .filter(models.Resume.id == resume_id, models.Resume.user_id == current_user.id)
+        .first()
+    )
+    if not resume:
+        raise HTTPException(status_code=404, detail="Resume not found")
+        
+    contact = resume.contact_info or {}
+    return schemas.ResumeParseResponse(
+        resume_id=resume.id,
+        skills=resume.skills or [],
+        experience_years=resume.experience_years or 0.0,
+        sections=resume.sections or {},
+        contact_info=schemas.ContactInfo(
+            name=contact.get("name"),
+            email=contact.get("email"),
+            phone=contact.get("phone"),
+            linkedin=contact.get("linkedin"),
+            github=contact.get("github"),
+        ),
+    )
+
 ALLOWED_TYPES = {
     "application/pdf",
     "application/octet-stream",                                          # generic binary (some browsers)
@@ -49,6 +79,9 @@ async def parse_resume(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
+    from ..services.guardrails import verify_and_deduct_credit
+    verify_and_deduct_credit(current_user.id, db)
+
     filename = file.filename or ""
     content_type = file.content_type or ""
 
