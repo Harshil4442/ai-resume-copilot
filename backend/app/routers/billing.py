@@ -32,7 +32,7 @@ def create_checkout_session(
     Supports Credit/Debit Cards, UPI (for INR), and Wallet (GPay/ApplePay auto-enabled via Stripe).
     """
     frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
-    frontend_url = frontend_url.replace(/\/+$/, "")
+    frontend_url = frontend_url.rstrip("/")
     
     currency_lower = payload.currency.lower() if payload.currency else "usd"
     
