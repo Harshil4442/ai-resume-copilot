@@ -36,8 +36,11 @@ ALLOWED_TYPES = {
     "application/pdf",
     "application/octet-stream",                                          # generic binary (some browsers)
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",  # .docx
-    "application/msword",                                                # .doc (we'll reject gracefully)
 }
+
+# Upload size cap (bytes). Resumes >5MB are almost always images-as-PDF
+# and would blow up DB storage + LLM context.
+MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 
 
 @router.post("/parse", response_model=schemas.ResumeParseResponse)
@@ -60,6 +63,11 @@ async def parse_resume(
         )
 
     file_bytes = await file.read()
+    if len(file_bytes) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File is larger than {MAX_UPLOAD_BYTES // (1024 * 1024)}MB limit.",
+        )
     raw_text, sections, skills, exp_years, contact_info = parse_resume_file(
         file_bytes, filename=filename, use_llm=True
     )

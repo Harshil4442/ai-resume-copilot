@@ -10,7 +10,18 @@ def _api_key() -> str:
     return os.getenv("LLM_API_KEY", "").strip()
 
 LLM_API_BASE = os.getenv("LLM_API_BASE", "https://api.openai.com/v1").strip()
-LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini").strip()
+LLM_MODEL = os.getenv("LLM_MODEL", "").strip()
+if not LLM_MODEL:
+    # Heuristic warning: gpt-4o-mini does not exist on Groq, so if no model is
+    # set but the base looks non-OpenAI, warn loudly instead of silently 404ing.
+    import warnings as _warnings
+    if "openai.com" not in LLM_API_BASE:
+        _warnings.warn(
+            f"LLM_MODEL is not set and LLM_API_BASE={LLM_API_BASE!r} is not OpenAI. "
+            "Set LLM_MODEL explicitly (e.g. a Groq model name) to avoid 404s.",
+            stacklevel=2,
+        )
+    LLM_MODEL = "gpt-4o-mini"
 
 def _chat(messages: List[Dict]) -> str:
     key = _api_key()
@@ -411,7 +422,8 @@ def analyze_job_match_mega_llm(
     if "```" in cleaned:
         for part in cleaned.split("```"):
             part = part.strip()
-            if part.lower().startswith("json"): part = part[4:].strip()
+            if part.lower().startswith("json"):
+                part = part[4:].strip()
             if part.startswith("{"):
                 cleaned = part
                 break

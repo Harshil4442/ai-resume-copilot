@@ -1,9 +1,13 @@
+import logging
 import os
+import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+
+log = logging.getLogger("ai_resume_copilot")
 
 # Optional: load backend/.env for local dev
 try:
@@ -49,5 +53,16 @@ app.include_router(market.router, prefix="/api")
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
-    # Ensure frontend always gets JSON (prevents "Unexpected end of JSON input")
-    return JSONResponse(status_code=500, content={"detail": str(exc)})
+    # Log full traceback server-side, never leak it to the client.
+    correlation_id = uuid.uuid4().hex[:12]
+    log.exception(
+        "Unhandled error [%s] on %s %s: %s",
+        correlation_id, request.method, request.url.path, exc,
+    )
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": "Internal server error",
+            "correlation_id": correlation_id,
+        },
+    )

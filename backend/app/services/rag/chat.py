@@ -1,10 +1,16 @@
+import json
+import logging
 from typing import List
+
+import requests
 
 from ...schemas import RagAskResponse, RagMessage
 from ..llm_client import chat_json
 from .chunking import EvidenceChunk, build_match_chunks
 from .prompts import build_ask_ai_messages
 from .retrieval import rank_chunks
+
+log = logging.getLogger(__name__)
 
 
 def _fallback_response(question: str, chunks: List[EvidenceChunk]) -> RagAskResponse:
@@ -64,6 +70,13 @@ def ask_match_ai(*, resume, match, question: str, recent_messages: List[RagMessa
             confidence=confidence,
             suggested_followups=followups,
         )
-    except Exception:
-        # Keep the endpoint useful in local dev, invalid JSON cases, or provider outages.
+    except (json.JSONDecodeError, ValueError, KeyError, TypeError) as exc:
+        # JSON-shape problems → use the deterministic fallback so the UX
+        # stays useful. Transport/provider errors (below) are surfaced.
+        log.warning("RAG fallback (parse error): %s", exc)
         return _fallback_response(question, top_chunks)
+    except requests.exceptions.RequestException as exc:
+        # Network / 429 / 5xx errors should be visible to the user instead
+        # of silently degraded.
+        log.error("RAG provider error: %s", exc)
+        raise
