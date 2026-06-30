@@ -69,16 +69,24 @@ def build_skill_confidence_map(
       1.0 → appears in work experience (production use)
       0.7 → appears in projects (demonstrated use)
       0.3 → skills section only (claimed, unverified)
+
+    Uses word-boundary matching to avoid false positives
+    (e.g. "go" matching "google", "ai" matching "training").
     """
     exp_text  = (sections.get("experience", "") or "").lower()
     proj_text = (sections.get("projects", "")   or "").lower()
     confidence: Dict[str, float] = {}
 
     for skill in resume_skills:
-        s = skill.lower()
-        if s in exp_text:
+        s = skill.lower().strip()
+        if not s:
+            continue
+        # Build a word-boundary regex; allow internal . + # for skills like
+        # "next.js", "c++", "c#".
+        pattern = re.compile(rf"(?<![a-z0-9]){re.escape(s)}(?![a-z0-9])")
+        if pattern.search(exp_text):
             confidence[s] = CONFIDENCE_PRODUCTION
-        elif s in proj_text:
+        elif pattern.search(proj_text):
             confidence[s] = CONFIDENCE_PROJECT
         else:
             confidence[s] = CONFIDENCE_CLAIMED
@@ -161,13 +169,19 @@ def _batch_get_coverages(
 # ---------------------------------------------------------------------------
 
 def _to_text(x: Any) -> str:
-    if x is None:             return ""
-    if isinstance(x, str):    return x
+    if x is None:
+        return ""
+    if isinstance(x, str):
+        return x
     if isinstance(x, bytes):
-        try:    return x.decode("utf-8", errors="ignore")
-        except: return ""
-    if isinstance(x, dict):                return " ".join(_to_text(v) for v in x.values())
-    if isinstance(x, (list, tuple, set)):  return " ".join(_to_text(v) for v in x)
+        try:
+            return x.decode("utf-8", errors="ignore")
+        except Exception:
+            return ""
+    if isinstance(x, dict):
+        return " ".join(_to_text(v) for v in x.values())
+    if isinstance(x, (list, tuple, set)):
+        return " ".join(_to_text(v) for v in x)
     return str(x)
 
 
@@ -180,7 +194,8 @@ def _normalize_skill_list(skills: Any) -> List[str]:
     for it in items:
         v = it.strip().lower()
         if v and v not in seen:
-            seen.add(v); out.append(v)
+            seen.add(v)
+            out.append(v)
     return out
 
 
@@ -212,7 +227,8 @@ def extract_required_skills_from_jd(job_description: Any) -> List[str]:
     seen, out = set(), []
     for f in found:
         if f not in seen:
-            seen.add(f); out.append(f)
+            seen.add(f)
+            out.append(f)
     return out
 
 
@@ -232,7 +248,8 @@ def parse_required_vs_preferred(jd_text: str, skills: List[str]) -> Tuple[List[s
     for skill in skills:
         positions = [m.start() for m in re.finditer(re.escape(skill), text_lower)]
         if not positions:
-            req.append(skill); continue
+            req.append(skill)
+            continue
         pos = positions[0]
         nr = min((abs(pos - p) for p in required_positions),  default=float("inf"))
         np = min((abs(pos - p) for p in preferred_positions), default=float("inf"))
@@ -408,19 +425,28 @@ def combine_scores(
         sum(holistic_weights.values())
     )
     raw = (skill_total + holistic_total) / max(total_weight, 1)
-    return round(min(raw, 100.0), 1)
+    return round(max(0.0, min(raw, 100.0)), 1)
 
 
 def score_to_grade(score: float) -> str:
-    if score >= 90: return "A+"
-    if score >= 85: return "A"
-    if score >= 80: return "A-"
-    if score >= 75: return "B+"
-    if score >= 70: return "B"
-    if score >= 65: return "B-"
-    if score >= 55: return "C+"
-    if score >= 45: return "C"
-    if score >= 35: return "D"
+    if score >= 90:
+        return "A+"
+    if score >= 85:
+        return "A"
+    if score >= 80:
+        return "A-"
+    if score >= 75:
+        return "B+"
+    if score >= 70:
+        return "B"
+    if score >= 65:
+        return "B-"
+    if score >= 55:
+        return "C+"
+    if score >= 45:
+        return "C"
+    if score >= 35:
+        return "D"
     return "F"
 
 

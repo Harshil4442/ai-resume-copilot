@@ -12,30 +12,34 @@ cd /app/backend
 # Create tables (safe for demo; if DB is down, don't crash hard)
 python create_tables.py || true
 
-# Seed user id=1 to avoid FK errors in demo flows
-python - <<'PY' || true
+# Optional demo seeding — DISABLED by default. Only runs when SEED_DEMO=true.
+# This previously seeded a passwordless user with id=1 unconditionally, which
+# is unsafe for any environment with real users.
+if [ "${SEED_DEMO:-false}" = "true" ]; then
+  echo "[INFO] SEED_DEMO=true — seeding demo user."
+  python - <<'PY' || true
 from dotenv import load_dotenv
 load_dotenv(".env")
 
 from app.database import SessionLocal
 from app.models import User
+from app.security import hash_password
 
 db = SessionLocal()
 try:
-    try:
-        u = db.query(User).filter(User.id == 1).first()
-        if not u:
-            db.add(User(id=1, email="demo@local", password_hash=""))
-            db.commit()
-            print("[OK] Seeded users.id=1")
-        else:
-            print("[OK] users.id=1 already exists")
-    except Exception as e:
-        print("\n❌ INLINE SCRIPT DB ERROR: Could not connect to database.")
-        print(f"Error: {e}\n")
+    u = db.query(User).filter(User.email == "demo@local").first()
+    if not u:
+        db.add(User(email="demo@local", password_hash=hash_password("demo-password-change-me")))
+        db.commit()
+        print("[OK] Seeded demo@local user (password: demo-password-change-me)")
+    else:
+        print("[OK] demo@local already exists")
+except Exception as e:
+    print(f"[WARN] Demo seed failed: {e}")
 finally:
     db.close()
 PY
+fi
 
 # Start FastAPI (public)
 echo "[INFO] Backend starting on 0.0.0.0:${PORT}"

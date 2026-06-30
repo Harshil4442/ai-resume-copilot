@@ -1,7 +1,11 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, String, DateTime, Text, JSON, Float, ForeignKey
 from sqlalchemy.orm import relationship
 from .database import Base
+
+
+def _utcnow():
+    return datetime.now(timezone.utc)
 
 class User(Base):
     __tablename__ = "users"
@@ -17,7 +21,7 @@ class UserProfile(Base):
     __tablename__ = "user_profiles"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), unique=True, index=True)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
     full_name = Column(String, default="")
     headline = Column(String, default="")
@@ -41,7 +45,7 @@ class Resume(Base):
     __tablename__ = "resumes"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
     original_filename = Column(String, default="")
     raw_text = Column(Text, default="")
@@ -58,7 +62,7 @@ class JobMatch(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     resume_id = Column(Integer, ForeignKey("resumes.id"))
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
     job_title        = Column(String, default="")
     company          = Column(String, default="")
@@ -89,4 +93,4 @@ class SkillCoverage(Base):
     skill_to   = Column(String(120), primary_key=True)
     weight     = Column(Float, nullable=False)   # 0.0 to 1.0
     source     = Column(String(20), default="llm")
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
