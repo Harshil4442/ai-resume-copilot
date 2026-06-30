@@ -13,7 +13,7 @@ const links = [
   { href: "/profile", label: "Profile" },
 ];
 
-export default function Nav(): JSX.Element {
+export default function Nav() {
   const [loggedIn, setLoggedIn] = useState<boolean>(false);
   const pathname = usePathname();
 
