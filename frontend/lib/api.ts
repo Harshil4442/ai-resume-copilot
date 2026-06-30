@@ -1,19 +1,20 @@
-// SECURITY NOTE: JWT is stored in localStorage for now. This makes the token
-// readable by any script that runs on the page (XSS risk). The proper fix is
-// to move to an httpOnly cookie set by the backend on /api/auth/login; that
-// migration is tracked in PRD.md (P1). Mitigations in place:
-//   - Strict same-origin via Next.js /api rewrite (no third-party origin gets the token)
-//   - No `eval`/dangerouslySetInnerHTML in this codebase
-//   - All user-supplied content rendered as text, not HTML
+import { getSession } from "next-auth/react";
+
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "/api";
 
-function getToken(): string | null {
+async function getToken(): Promise<string | null> {
   if (typeof window === "undefined") return null;
+  // Try to get token from NextAuth session first
+  const session = await getSession();
+  if ((session as any)?.user?.accessToken) {
+    return (session as any).user.accessToken;
+  }
+  // Fallback to localStorage
   return localStorage.getItem("access_token");
 }
 
-function withAuth(headers: Record<string, string> = {}): Record<string, string> {
-  const token = getToken();
+async function withAuth(headers: Record<string, string> = {}): Promise<Record<string, string>> {
+  const token = await getToken();
   if (token) headers["Authorization"] = `Bearer ${token}`;
   return headers;
 }
@@ -32,9 +33,10 @@ async function parseResponse(res: Response) {
 }
 
 export async function apiGet<T>(path: string): Promise<T> {
+  const headers = await withAuth();
   const res = await fetch(`${API_BASE}${path}`, {
     cache: "no-store",
-    headers: withAuth(),
+    headers,
   });
   const data = await parseResponse(res);
   if (!res.ok) throw new Error((data as any)?.detail || `GET ${path} failed (${res.status})`);
@@ -42,9 +44,10 @@ export async function apiGet<T>(path: string): Promise<T> {
 }
 
 export async function apiPostJson<T>(path: string, body: unknown): Promise<T> {
+  const headers = await withAuth({ "Content-Type": "application/json" });
   const res = await fetch(`${API_BASE}${path}`, {
     method: "POST",
-    headers: withAuth({ "Content-Type": "application/json" }),
+    headers,
     body: JSON.stringify(body),
   });
   const data = await parseResponse(res);
@@ -53,9 +56,10 @@ export async function apiPostJson<T>(path: string, body: unknown): Promise<T> {
 }
 
 export async function apiPutJson<T>(path: string, body: unknown): Promise<T> {
+  const headers = await withAuth({ "Content-Type": "application/json" });
   const res = await fetch(`${API_BASE}${path}`, {
     method: "PUT",
-    headers: withAuth({ "Content-Type": "application/json" }),
+    headers,
     body: JSON.stringify(body),
   });
   const data = await parseResponse(res);
@@ -64,12 +68,14 @@ export async function apiPutJson<T>(path: string, body: unknown): Promise<T> {
 }
 
 export async function apiPostForm<T>(path: string, form: FormData): Promise<T> {
+  const headers = await withAuth(); // don't set Content-Type; browser sets boundary
   const res = await fetch(`${API_BASE}${path}`, {
     method: "POST",
-    headers: withAuth(), // don't set Content-Type; browser sets boundary
+    headers,
     body: form,
   });
   const data = await parseResponse(res);
   if (!res.ok) throw new Error((data as any)?.detail || `POST ${path} failed (${res.status})`);
   return data as T;
 }
+
