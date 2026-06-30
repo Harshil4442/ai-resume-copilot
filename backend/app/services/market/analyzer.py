@@ -199,14 +199,14 @@ def analyze_market(
         "warnings": sorted(set(warnings)),
         "sample_jobs": [
             {
-                "title": job.title,
-                "company": job.company,
-                "location": job.location,
-                "posted_at": job.posted_at,
-                "url": job.url,
-                "source": job.source,
+                "title": j.title,
+                "company": j.company,
+                "location": j.location,
+                "posted_at": j.posted_at,
+                "url": j.url,
+                "source": j.source,
             }
-            for job in jobs[:10]
+            for j in jobs[:10]
         ],
     }
 

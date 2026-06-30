@@ -69,6 +69,9 @@ export default function ProfilePage() {
       })
       .catch((e: any) => setError(e?.message || "Failed to load profile"))
       .finally(() => setLoading(false));
+    // Effect runs once on mount. `apiGet` is a stable module-level import,
+    // setters are stable React refs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const skills = useMemo(() => splitSkills(form.skills_text), [form.skills_text]);

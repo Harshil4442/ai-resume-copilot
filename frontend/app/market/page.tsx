@@ -108,6 +108,8 @@ export default function MarketPage() {
         if (res.resumes.length > 0) setResumeId(String(res.resumes[0].id));
       })
       .catch(() => {});
+    // Mount-only fetch; `apiGet` is a stable module import.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const chartData = useMemo(

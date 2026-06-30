@@ -13,12 +13,15 @@ const links = [
   { href: "/profile", label: "Profile" },
 ];
 
-export default function Nav() {
-  const [loggedIn, setLoggedIn] = useState(false);
+export default function Nav(): JSX.Element {
+  const [loggedIn, setLoggedIn] = useState<boolean>(false);
   const pathname = usePathname();
 
   useEffect(() => {
     setLoggedIn(isLoggedIn());
+    // `isLoggedIn` is a stable module-level import and `setLoggedIn` is a
+    // stable React setter — they never change between renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (

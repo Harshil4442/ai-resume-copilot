@@ -38,7 +38,7 @@ resume proof skill gap market fit signal
 FastAPI React Redis Groq GCP Vercel
 match score verified evidence learning`;
 
-export default function HomePage() {
+export default function HomePage(): JSX.Element {
   return (
     <main className="app-shell space-y-6 md:space-y-8">
       <section className="product-hero">

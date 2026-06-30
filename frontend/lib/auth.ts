@@ -1,3 +1,5 @@
+// SECURITY NOTE: see lib/api.ts for the localStorage / httpOnly-cookie
+// migration backlog item (PRD.md P1).
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "/api";
 
 export function getToken(): string | null {

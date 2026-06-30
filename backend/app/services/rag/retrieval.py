@@ -112,11 +112,13 @@ def _tfidf_similarity(question_terms: List[str], chunk_terms: List[str], idf: Di
 
 def rank_chunks(question: str, chunks: List[EvidenceChunk], top_k: int = 7) -> Tuple[Intent, List[EvidenceChunk]]:
     intent = classify_intent(question)
+    if not chunks:
+        return intent, []
     idf = _idf(chunks)
     q_terms = tokenize(question)
     boosts = SOURCE_BOOSTS.get(intent, SOURCE_BOOSTS["general"])
 
-    scored = []
+    scored: List[Tuple[float, EvidenceChunk]] = []
     for chunk in chunks:
         terms = tokenize(f"{chunk.title} {chunk.text}")
         lexical = _tfidf_similarity(q_terms, terms, idf)
@@ -125,5 +127,5 @@ def rank_chunks(question: str, chunks: List[EvidenceChunk], top_k: int = 7) -> T
         scored.append((final, chunk))
 
     scored.sort(key=lambda item: item[0], reverse=True)
-    return intent, [chunk for _, chunk in scored[:top_k]]
+    return intent, [item[1] for item in scored[:top_k]]
 

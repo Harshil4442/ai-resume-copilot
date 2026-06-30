@@ -56,6 +56,8 @@ export default function DashboardPage() {
     return () => {
       mounted = false;
     };
+    // Mount-only fetch; `apiGet` is a stable module import.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const avg = data?.average_match_score ?? 0;
