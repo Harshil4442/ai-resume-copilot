@@ -1,3 +1,10 @@
+// SECURITY NOTE: JWT is stored in localStorage for now. This makes the token
+// readable by any script that runs on the page (XSS risk). The proper fix is
+// to move to an httpOnly cookie set by the backend on /api/auth/login; that
+// migration is tracked in PRD.md (P1). Mitigations in place:
+//   - Strict same-origin via Next.js /api rewrite (no third-party origin gets the token)
+//   - No `eval`/dangerouslySetInnerHTML in this codebase
+//   - All user-supplied content rendered as text, not HTML
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "/api";
 
 function getToken(): string | null {

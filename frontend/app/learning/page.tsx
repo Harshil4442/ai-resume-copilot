@@ -91,7 +91,7 @@ function ProjectCard({ project }: { project: ProjectRecommendation }) {
           <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Build steps</div>
           <ul className="space-y-2">
             {project.implementation_steps.map((step, idx) => (
-              <li key={idx} className="text-sm text-gray-700 leading-snug">{step}</li>
+              <li key={`step-${idx}-${step.slice(0, 24)}`} className="text-sm text-gray-700 leading-snug">{step}</li>
             ))}
           </ul>
         </div>
@@ -99,7 +99,7 @@ function ProjectCard({ project }: { project: ProjectRecommendation }) {
           <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Resume bullets</div>
           <ul className="space-y-2">
             {project.resume_bullets.map((bullet, idx) => (
-              <li key={idx} className="text-sm text-gray-700 leading-snug">{bullet}</li>
+              <li key={`bullet-${idx}-${bullet.slice(0, 24)}`} className="text-sm text-gray-700 leading-snug">{bullet}</li>
             ))}
           </ul>
         </div>
@@ -107,7 +107,7 @@ function ProjectCard({ project }: { project: ProjectRecommendation }) {
           <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Interview talking points</div>
           <ul className="space-y-2">
             {project.interview_talking_points.map((point, idx) => (
-              <li key={idx} className="text-sm text-gray-700 leading-snug">{point}</li>
+              <li key={`point-${idx}-${point.slice(0, 24)}`} className="text-sm text-gray-700 leading-snug">{point}</li>
             ))}
           </ul>
         </div>
@@ -132,6 +132,8 @@ export default function LearningPage() {
       })
       .catch((e: any) => setError(e?.message || "Failed to load job matches"))
       .finally(() => setLoadingMatches(false));
+    // Mount-only fetch; `apiGet` is a stable module import.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const selectedMatch = useMemo(

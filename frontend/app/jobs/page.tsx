@@ -220,7 +220,10 @@ function AskAiPanel({
         {messages.length > 0 && (
           <div className="max-h-[460px] overflow-y-auto space-y-3 pr-1">
             {messages.map((msg, idx) => (
-              <div key={idx} className={classNames("flex", msg.role === "user" ? "justify-end" : "justify-start")}>
+              <div
+                key={`${msg.role}-${idx}-${msg.content.slice(0, 24)}`}
+                className={classNames("flex", msg.role === "user" ? "justify-end" : "justify-start")}
+              >
                 <div className={classNames(
                   "max-w-[85%] rounded-lg px-4 py-3 text-sm leading-relaxed shadow-sm",
                   msg.role === "user" ? "bg-blue-600 text-white" : "bg-gray-50 text-gray-800 border border-gray-200",
@@ -311,12 +314,16 @@ export default function JobsPage() {
         setResumeError(err?.message || "Failed to load resumes. Are you logged in?");
       })
       .finally(() => setResumesLoading(false));
+    // Mount-only fetch; `apiGet` is a stable module import.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     apiGet<{ matches: HistoryItem[] }>("/jobs/matches")
       .then((res) => setHistory(res.matches))
       .catch(() => {});
+    // Re-fetch whenever a new match is created. `apiGet` is stable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
 
   const canSubmit = useMemo(
@@ -520,7 +527,7 @@ export default function JobsPage() {
                     <div className="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-2">How to Improve Your Match</div>
                     <ul className="space-y-1.5">
                       {data.improvement_tips.map((tip, i) => (
-                        <li key={i} className="text-sm text-gray-700 flex gap-2">
+                        <li key={`tip-${i}-${tip.slice(0, 24)}`} className="text-sm text-gray-700 flex gap-2">
                           <span className="text-amber-500 flex-shrink-0 font-bold">-</span>
                           {tip}
                         </li>

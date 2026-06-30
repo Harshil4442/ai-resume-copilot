@@ -43,6 +43,10 @@ def match_job(
     resume_skills = resume.skills or []
     rs_norm       = _normalize_skill_list(resume_skills)
 
+    # Initialise outside the try so the variable is unambiguously defined even
+    # if a future edit moves the assignment into a conditional branch.
+    req_norm: list[str] = []
+
     # ── SINGLE MEGA PROMPT CALL ──────────────────────────────────────────────
     try:
         from ..services.llm_client import analyze_job_match_mega_llm

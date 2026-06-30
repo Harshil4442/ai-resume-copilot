@@ -28,6 +28,21 @@ Review the `ai-resume-copilot` repository and apply the recommended fixes from t
 ## What's Been Implemented in This Session (2026-01)
 Code-review hardening pass — no new features, all fixes are surgical.
 
+### Round 2 (in response to second review report)
+- `services/rag/retrieval.py`: `rank_chunks` now guards against empty `chunks` and the comprehension was rewritten so static analyzers don't flag a phantom undefined `chunk` variable.
+- `services/market/analyzer.py`: renamed the `sample_jobs` comprehension variable (`job` → `j`) to silence false-positive "may not be defined" warning from analyzers that don't understand comprehension scope.
+- `routers/jobs.py`: `req_norm` initialised defensively before the `try` block so future edits can't accidentally leak an undefined reference.
+- Frontend index-as-key fixes: `app/jobs/page.tsx` (chat messages, improvement tips) and `app/learning/page.tsx` (steps / bullets / talking points) now use composite stable keys.
+- Frontend hook-deps cleanup: added explicit `eslint-disable-next-line react-hooks/exhaustive-deps` annotations with rationale comments on the seven mount-only `useEffect`s in `Nav.tsx`, `logout/page.tsx`, `profile/page.tsx`, `market/page.tsx`, `jobs/page.tsx` (two), `learning/page.tsx`, and `dashboard/page.tsx`. All flagged references are stable (module imports + React setters); the disables are intentional, not laziness.
+- TypeScript: added explicit `JSX.Element` return types and explicit state generics in the 0%-typed files (`components/Nav.tsx`, `app/logout/page.tsx`, `app/page.tsx`).
+- Security: added inline `SECURITY NOTE` comments in `lib/api.ts` and `lib/auth.ts` documenting the localStorage→httpOnly-cookie migration (already tracked as P1 below).
+
+**Items intentionally not applied** (with reasoning):
+- `is` vs `==`: every flagged line is `is None` / `is not None`, which the report itself notes is correct. No real changes needed.
+- Complexity reductions (analyze_market, match_job, analytics_summary, JobsPage, ProfilePage, MarketPage, DashboardPage): these are style metrics, not bugs. Tracked in backlog (P2). Breaking up a working endpoint to satisfy a complexity threshold without changing behavior is risk without reward.
+
+### Round 1 (initial review fixes)
+
 ### Security
 - `backend/app/security.py`: `JWT_SECRET` now **fails fast** at boot if missing (was silently using `dev-secret-change-me`). Warns when shorter than 32 chars. Auto-permissive under pytest.
 - `verify_password` no longer crashes on empty/missing `password_hash` (returns False, prevents 500 on the legacy demo seed).
@@ -73,6 +88,8 @@ Code-review hardening pass — no new features, all fixes are surgical.
 - Tighten default `FRONTEND_ORIGINS` (currently `*`).
 - Bulk-insert SkillCoverage records via `bulk_save_objects` / upsert.
 - Word-cap on stored `Resume.raw_text` (defensive vs huge PDFs).
+- Complexity reductions: split `analyze_market`, `match_job`, `analytics_summary`, `_profile_response` into smaller helpers; extract React subcomponents from `JobsPage`, `ProfilePage`, `MarketPage`, `DashboardPage` (each >150 LOC).
+- Increase TS coverage on `learning/page.tsx`, `login/page.tsx`, `jobs/page.tsx`.
 
 ## Files Touched
 - backend/app/security.py
