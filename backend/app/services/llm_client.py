@@ -84,8 +84,8 @@ def _chat(messages: List[Dict]) -> str:
             except Exception as e:
                 last_error = e
                 error_str = str(e).lower()
-                # If the error is about the model not being found, try the next fallback
-                if "not found" in error_str or "404" in error_str or "is not supported" in error_str:
+                # Try next fallback if model not found OR if we hit a rate limit (quota exhausted)
+                if "not found" in error_str or "404" in error_str or "is not supported" in error_str or "429" in error_str or "quota" in error_str or "resource exhausted" in error_str:
                     continue
                 else:
                     raise e
