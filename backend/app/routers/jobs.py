@@ -65,7 +65,7 @@ def match_job(
         # Check if it was a 429
         err_msg = str(e)
         if "429" in err_msg:
-            detail = "OpenAI Rate Limit (429) hit. Please check your OpenAI Billing/Balance."
+            detail = "API Rate Limit (429) hit. Please wait a minute before trying again, or check your API Billing/Balance."
         else:
             detail = f"Step 1 (LLM Call) failed: {err_msg}"
         raise HTTPException(status_code=500, detail=detail)
