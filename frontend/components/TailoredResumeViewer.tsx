@@ -15,7 +15,7 @@ export default function TailoredResumeViewer({ markdownContent }: { markdownCont
       // Dynamically import html2pdf so it doesn't break SSR
       const html2pdf = (await import("html2pdf.js")).default;
       
-      const opt = {
+      const opt: any = {
         margin:       10, // mm
         filename:     'Tailored_Resume.pdf',
         image:        { type: 'jpeg', quality: 0.98 },
