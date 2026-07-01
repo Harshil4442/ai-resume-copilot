@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { apiGet } from "../lib/api";
 
 const links = [
   { href: "/dashboard", label: "Dashboard" },
@@ -16,6 +17,8 @@ const links = [
 
 export default function Nav() {
   const [loggedIn, setLoggedIn] = useState<boolean>(false);
+  const [credits, setCredits] = useState<number | null>(null);
+  const [tier, setTier] = useState<string>("free");
   const pathname = usePathname();
   const { data: session, status } = useSession();
 
@@ -26,8 +29,21 @@ export default function Nav() {
     } else if (status === "unauthenticated") {
       localStorage.removeItem("access_token");
       setLoggedIn(false);
+      setCredits(null);
+      setTier("free");
     }
   }, [session, status]);
+
+  useEffect(() => {
+    if (loggedIn) {
+      apiGet<any>("/auth/profile")
+        .then(data => {
+          setCredits(data.ai_credits ?? 0);
+          setTier(data.tier ?? "free");
+        })
+        .catch(console.error);
+    }
+  }, [loggedIn, pathname]);
 
 
   return (
@@ -58,6 +74,17 @@ export default function Nav() {
             );
           })}
 
+          {loggedIn && credits !== null && (
+            <div className="flex items-center gap-1.5 px-3 py-1 bg-slate-100 rounded-full border border-slate-200/60 mr-1 cursor-help group relative">
+              <span className="text-xs font-black text-slate-700">⚡</span>
+              <span className="text-xs font-bold text-slate-800">
+                {tier === "premium" ? "∞" : credits}
+              </span>
+              <div className="absolute top-full mt-2 right-0 w-48 p-2 bg-slate-900 text-white text-[10px] rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
+                {tier === "premium" ? "Premium Active: Unlimited AI Operations" : `${credits} AI Operations Remaining`}
+              </div>
+            </div>
+          )}
           {loggedIn ? (
             <a className="px-3.5 py-1.5 rounded-full bg-neutral-950 text-white font-bold hover:bg-black transition" href="/logout">Logout</a>
           ) : (
