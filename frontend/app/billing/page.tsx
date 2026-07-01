@@ -99,6 +99,24 @@ export default function BillingPage() {
         name: "AI Resume CoPilot",
         description: planDetails[selectedPlan].title,
         order_id: res.order_id,
+        config: {
+          display: {
+            blocks: {
+              upi: {
+                name: "Pay via UPI",
+                instruments: [{ method: "upi" }],
+              },
+              other: {
+                name: "Other Payment Modes",
+                instruments: [{ method: "card" }, { method: "netbanking" }, { method: "wallet" }],
+              }
+            },
+            sequence: ["block.upi", "block.other"],
+            preferences: {
+              show_default_blocks: false
+            }
+          }
+        },
         handler: async function (response: any) {
           try {
             await apiPostJson("/billing/razorpay/verify-payment", {
