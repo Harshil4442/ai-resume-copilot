@@ -78,10 +78,6 @@ async def parse_resume(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
-):
-    from ..services.guardrails import verify_and_deduct_credit
-    verify_and_deduct_credit(current_user.id, db)
-
     filename = file.filename or ""
     content_type = file.content_type or ""
 

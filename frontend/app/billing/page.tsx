@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Script from "next/script";
 import { PayPalScriptProvider, PayPalButtons } from "@paypal/react-paypal-js";
-import { apiPostJson } from "../../lib/api";
+import { apiGet, apiPostJson } from "../../lib/api";
 
 const PAYPAL_CLIENT_ID = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID || "test"; // fallback to sandbox test client
 const RAZORPAY_KEY_ID = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "rzp_test_mock";
@@ -16,6 +16,25 @@ export default function BillingPage() {
   const [paymentSuccess, setPaymentSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [currentTier, setCurrentTier] = useState<string>("free");
+  const [creditBalance, setCreditBalance] = useState<number>(0);
+
+  useEffect(() => {
+    let mounted = true;
+    apiGet<any>("/auth/profile")
+      .then((data) => {
+        if (mounted) {
+          setCurrentTier(data.tier || "free");
+          setCreditBalance(data.ai_credits ?? 0);
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to load profile for billing page:", err);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const planDetails = {
     subscription: {
@@ -23,7 +42,6 @@ export default function BillingPage() {
       price: region === "india" ? "₹999" : "$15.00",
       period: "monthly",
       features: [
-        "Unlimited resume parses (PDF & DOCX)",
         "Unlimited job match reports",
         "Unlimited Ask AI (RAG) assistant queries",
         "Full market skill gap analyses",
@@ -37,7 +55,7 @@ export default function BillingPage() {
       features: [
         "10 AI Operation credits added instantly",
         "Credits do not expire",
-        "Use on parses, matches, and optimizations",
+        "Use on matches, chats, and learning tools",
         "Perfect for casual job hunters",
       ],
     },
@@ -166,6 +184,32 @@ export default function BillingPage() {
         </p>
       </section>
 
+      {/* Current Subscription Status */}
+      <section className="panel p-6 bg-slate-900 text-white rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-xl">
+        <div>
+          <span className="text-xs uppercase tracking-widest font-black text-slate-400">Current Plan</span>
+          <h2 className="text-3xl font-black mt-1">
+            {currentTier === "premium" ? "👑 Premium Plan" : "Free Plan"}
+          </h2>
+          <p className="text-sm text-slate-400 mt-1">
+            {currentTier === "premium" 
+              ? "Enjoying unlimited access to all AI features." 
+              : "Pay-As-You-Go with operation credits."}
+          </p>
+        </div>
+        <div className="bg-slate-800 border border-slate-700/80 px-6 py-4 rounded-xl flex items-center gap-4">
+          <div>
+            <div className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Available Balance</div>
+            <div className="text-2xl font-black mt-0.5 text-blue-400">
+              {currentTier === "premium" ? "∞" : `${creditBalance}`}
+            </div>
+          </div>
+          <div className="text-xs text-slate-400 font-semibold border-l border-slate-700 pl-4">
+            {currentTier === "premium" ? "Unlimited Operations" : "AI Operations Credits"}
+          </div>
+        </div>
+      </section>
+
       {paymentSuccess && (
         <div className="panel kinetic-border p-8 text-center bg-green-50 border-green-200">
           <div className="text-4xl">🎉</div>
@@ -216,11 +260,13 @@ export default function BillingPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Subscription Option */}
               <div
-                onClick={() => setSelectedPlan("subscription")}
-                className={`panel p-6 cursor-pointer transition tilt-lift flex flex-col justify-between min-h-[320px] ${
-                  selectedPlan === "subscription"
-                    ? "kinetic-border ring-2 ring-neutral-950 bg-white"
-                    : "border-slate-200 bg-slate-50/50 hover:bg-white"
+                onClick={() => currentTier !== "premium" && setSelectedPlan("subscription")}
+                className={`panel p-6 transition tilt-lift flex flex-col justify-between min-h-[320px] ${
+                  currentTier === "premium"
+                    ? "opacity-60 cursor-not-allowed border-slate-200 bg-slate-50"
+                    : selectedPlan === "subscription"
+                    ? "kinetic-border ring-2 ring-neutral-950 bg-white cursor-pointer"
+                    : "border-slate-200 bg-slate-50/50 hover:bg-white cursor-pointer"
                 }`}
               >
                 <div>
@@ -241,11 +287,13 @@ export default function BillingPage() {
 
               {/* Credits Top-up Option */}
               <div
-                onClick={() => setSelectedPlan("topup")}
-                className={`panel p-6 cursor-pointer transition tilt-lift flex flex-col justify-between min-h-[320px] ${
-                  selectedPlan === "topup"
-                    ? "kinetic-border ring-2 ring-neutral-950 bg-white"
-                    : "border-slate-200 bg-slate-50/50 hover:bg-white"
+                onClick={() => currentTier !== "premium" && setSelectedPlan("topup")}
+                className={`panel p-6 transition tilt-lift flex flex-col justify-between min-h-[320px] ${
+                  currentTier === "premium"
+                    ? "opacity-60 cursor-not-allowed border-slate-200 bg-slate-50"
+                    : selectedPlan === "topup"
+                    ? "kinetic-border ring-2 ring-neutral-950 bg-white cursor-pointer"
+                    : "border-slate-200 bg-slate-50/50 hover:bg-white cursor-pointer"
                 }`}
               >
                 <div>
@@ -276,64 +324,116 @@ export default function BillingPage() {
               </p>
             </div>
 
-            <div className="premium-card p-4 bg-slate-50 flex justify-between items-center">
-              <div>
-                <div className="text-xs text-slate-400 font-bold uppercase tracking-wider">Total Amount</div>
-                <div className="text-lg font-black text-slate-900 mt-1">
-                  {selectedPlan === "subscription" ? planDetails.subscription.title : planDetails.topup.title}
-                </div>
-              </div>
-              <div className="text-3xl font-black text-slate-950">
-                {selectedPlan === "subscription" ? planDetails.subscription.price : planDetails.topup.price}
-              </div>
-            </div>
-
-            {loading && <div className="text-center py-4 text-sm text-slate-500">Capturing checkout session details...</div>}
-
-            {!loading && region === "global" && (
-              <div className="relative z-10">
-                <PayPalScriptProvider
-                  options={{
-                    clientId: PAYPAL_CLIENT_ID,
-                    currency: "USD",
-                    intent: "capture",
-                    components: "buttons",
-                  }}
-                >
-                  <PayPalButtons
-                    style={{
-                      layout: "vertical",
-                      shape: "pill",
-                      color: "gold",
-                    }}
-                    forceReRender={[selectedPlan]}
-                    createOrder={createOrder}
-                    onApprove={onApprove}
-                    onError={(err) => {
-                      console.error("PayPal buttons error:", err);
-                      setError("Unable to render payment options. Check environment credentials.");
-                    }}
-                  />
-                </PayPalScriptProvider>
-              </div>
-            )}
-
-            {!loading && region === "india" && (
-              <div className="relative z-10 flex flex-col space-y-3">
-                <button
-                  onClick={handleRazorpayCheckout}
-                  className="w-full bg-[#02042b] hover:bg-slate-800 text-white font-bold py-4 px-6 rounded-full shadow-lg transition transform hover:-translate-y-0.5"
-                >
-                  Pay with Razorpay
-                </button>
-                <p className="text-center text-xs font-semibold text-slate-500">
-                  Supports Google Pay, PhonePe, Paytm, UPI, and Cards.
+            {currentTier === "premium" ? (
+              <div className="bg-slate-900/5 p-6 rounded-2xl border border-slate-200/60 text-center space-y-4">
+                <div className="text-4xl">👑</div>
+                <h4 className="text-lg font-black text-slate-950">Premium Plan Active</h4>
+                <p className="text-xs text-slate-600 leading-relaxed max-w-sm mx-auto">
+                  You already have unlimited access to all AI Resume CoPilot features. Additional credit purchases and subscription activations are currently disabled.
                 </p>
+                <button
+                  disabled
+                  className="w-full bg-slate-200 text-slate-400 font-bold py-4 px-6 rounded-full cursor-not-allowed"
+                >
+                  Purchases Locked
+                </button>
               </div>
+            ) : (
+              <>
+                <div className="premium-card p-4 bg-slate-50 flex justify-between items-center">
+                  <div>
+                    <div className="text-xs text-slate-400 font-bold uppercase tracking-wider">Total Amount</div>
+                    <div className="text-lg font-black text-slate-900 mt-1">
+                      {selectedPlan === "subscription" ? planDetails.subscription.title : planDetails.topup.title}
+                    </div>
+                  </div>
+                  <div className="text-3xl font-black text-slate-950">
+                    {selectedPlan === "subscription" ? planDetails.subscription.price : planDetails.topup.price}
+                  </div>
+                </div>
+
+                {loading && <div className="text-center py-4 text-sm text-slate-500">Capturing checkout session details...</div>}
+
+                {!loading && region === "global" && (
+                  <div className="relative z-10">
+                    <PayPalScriptProvider
+                      options={{
+                        clientId: PAYPAL_CLIENT_ID,
+                        currency: "USD",
+                        intent: "capture",
+                        components: "buttons",
+                      }}
+                    >
+                      <PayPalButtons
+                        style={{
+                          layout: "vertical",
+                          shape: "pill",
+                          color: "gold",
+                        }}
+                        forceReRender={[selectedPlan]}
+                        createOrder={createOrder}
+                        onApprove={onApprove}
+                        onError={(err) => {
+                          console.error("PayPal buttons error:", err);
+                          setError("Unable to render payment options. Check environment credentials.");
+                        }}
+                      />
+                    </PayPalScriptProvider>
+                  </div>
+                )}
+
+                {!loading && region === "india" && (
+                  <div className="relative z-10 flex flex-col space-y-3">
+                    <button
+                      onClick={handleRazorpayCheckout}
+                      className="w-full bg-[#02042b] hover:bg-slate-800 text-white font-bold py-4 px-6 rounded-full shadow-lg transition transform hover:-translate-y-0.5"
+                    >
+                      Pay with Razorpay
+                    </button>
+                    <p className="text-center text-xs font-semibold text-slate-500">
+                      Supports Google Pay, PhonePe, Paytm, UPI, and Cards.
+                    </p>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
       )}
+
+      {/* How Operations Credits Work */}
+      <section className="panel kinetic-border p-6 bg-white/70 backdrop-blur-xl space-y-4">
+        <h3 className="text-xl font-black text-slate-950">How Operations Credits Work</h3>
+        <p className="text-slate-500 text-xs leading-relaxed">
+          On the Free Plan, advanced AI operations consume credits. On the Premium Plan, all AI features are completely free and unlimited.
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
+          <div className="space-y-3 bg-red-50/30 p-4 rounded-xl border border-red-100/60">
+            <h4 className="text-sm font-bold text-red-950 flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-red-500" />
+              Requires 1 Credit
+            </h4>
+            <ul className="space-y-2 text-xs font-semibold text-slate-600">
+              <li>⚡ Job matching & skill gap analysis</li>
+              <li>⚡ Generating personalized learning paths</li>
+              <li>⚡ Real-time market trends & salary insights</li>
+              <li>⚡ Asking AI (RAG Chat) questions</li>
+            </ul>
+          </div>
+          <div className="space-y-3 bg-emerald-50/30 p-4 rounded-xl border border-emerald-100/60">
+            <h4 className="text-sm font-bold text-emerald-950 flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-emerald-500" />
+              Always Free (0 Credits)
+            </h4>
+            <ul className="space-y-2 text-xs font-semibold text-slate-600">
+              <li>✓ Uploading & parsing resumes</li>
+              <li>✓ Editing your career profile details</li>
+              <li>✓ Viewing dashboard analytics & history</li>
+              <li>✓ Browsing course & recommendation library</li>
+            </ul>
+          </div>
+        </div>
+      </section>
     </main>
   );
 }

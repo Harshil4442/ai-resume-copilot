@@ -1,6 +1,8 @@
 export type UserMeResponse = {
   id: number;
   email: string;
+  tier: string;
+  ai_credits: number;
 };
 
 export type UserProfile = {
@@ -22,6 +24,8 @@ export type UserProfile = {
   skills: string[];
   education?: string | null;
   certifications?: string | null;
+  tier: string;
+  ai_credits: number;
 };
 
 export type AuthTokenResponse = {

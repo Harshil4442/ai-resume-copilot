@@ -81,6 +81,8 @@ def _profile_response(profile: UserProfile, email: str) -> UserProfileResponse:
         skills=profile.skills or [],
         education=profile.education or None,
         certifications=profile.certifications or None,
+        tier=profile.user.tier,
+        ai_credits=profile.user.ai_credits,
     )
 
 @router.post("/register", response_model=UserMeResponse)
@@ -97,7 +99,7 @@ def register(payload: AuthRegisterRequest, db: Session = Depends(get_db)):
     db.refresh(u)
     db.add(UserProfile(user_id=u.id))
     db.commit()
-    return UserMeResponse(id=u.id, email=u.email)
+    return UserMeResponse(id=u.id, email=u.email, tier=u.tier, ai_credits=u.ai_credits)
 
 @router.post("/login", response_model=AuthTokenResponse)
 def login(payload: AuthLoginRequest, db: Session = Depends(get_db)):
@@ -139,7 +141,7 @@ def google_login(payload: AuthGoogleLoginRequest, db: Session = Depends(get_db))
 
 @router.get("/me", response_model=UserMeResponse)
 def me(current_user: User = Depends(get_current_user)):
-    return UserMeResponse(id=current_user.id, email=current_user.email)
+    return UserMeResponse(id=current_user.id, email=current_user.email, tier=current_user.tier, ai_credits=current_user.ai_credits)
 
 @router.get("/profile", response_model=UserProfileResponse)
 def get_profile(

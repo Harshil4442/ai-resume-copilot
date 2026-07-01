@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { apiGet, apiPutJson } from "../../lib/api";
 import type { UserProfile } from "../../lib/types";
 
-type ProfileForm = Omit<UserProfile, "email" | "profile_completeness" | "missing_fields" | "skills"> & {
+type ProfileForm = Omit<UserProfile, "email" | "profile_completeness" | "missing_fields" | "skills" | "tier" | "ai_credits"> & {
   skills_text: string;
 };
 

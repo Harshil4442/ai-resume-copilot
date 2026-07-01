@@ -24,6 +24,8 @@ class AuthTokenResponse(BaseModel):
 class UserMeResponse(BaseModel):
     id: int
     email: EmailStr
+    tier: str
+    ai_credits: int
 
 class UserProfileBase(BaseModel):
     full_name: Optional[str] = None
@@ -46,6 +48,8 @@ class UserProfileResponse(UserProfileBase):
     email: EmailStr
     profile_completeness: int
     missing_fields: List[str] = Field(default_factory=list)
+    tier: str
+    ai_credits: int
 
 class UserProfileUpdate(UserProfileBase):
     pass
