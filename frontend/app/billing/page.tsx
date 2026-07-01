@@ -247,6 +247,7 @@ export default function BillingPage() {
               </div>
             </div>
           </div>
+        </div>
 
           {/* PayPal Payment Area */}
           <div className="panel kinetic-border p-6 flex flex-col justify-center space-y-6 bg-white/70 backdrop-blur-xl">
