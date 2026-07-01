@@ -20,7 +20,8 @@ export default function TailoredResumeViewer({ markdownContent }: { markdownCont
         filename:     'Tailored_Resume.pdf',
         image:        { type: 'jpeg', quality: 0.98 },
         html2canvas:  { scale: 2, useCORS: true, logging: false },
-        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        enableLinks:  true
       };
 
       await html2pdf().set(opt).from(resumeRef.current).save();
@@ -69,7 +70,7 @@ export default function TailoredResumeViewer({ markdownContent }: { markdownCont
       <div className="p-6 md:p-8 bg-gray-100 max-h-[700px] overflow-y-auto">
         <div 
           ref={resumeRef} 
-          className="resume-preview bg-white shadow-md mx-auto max-w-[800px] p-8 md:p-12 prose prose-sm md:prose-base prose-slate text-gray-800"
+          className="resume-preview bg-white shadow-md mx-auto max-w-[800px] p-8 md:p-12 resume-print-style"
           style={{ minHeight: "1056px" /* Approx A4 aspect ratio height at 800px width */ }}
         >
           <ReactMarkdown>{markdownContent}</ReactMarkdown>

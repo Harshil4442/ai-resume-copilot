@@ -568,7 +568,8 @@ def tailor_resume_mega_llm(
         "Creatively weave these keywords into the experience bullets ONLY if the context of their past jobs makes it believable.\n"
         "4. **Metrics Placeholders:** If you see a major achievement without numbers, inject a clear placeholder like `[Increased revenue by X%]` so the user can fill it in.\n"
         "5. **Aggressive Reordering:** Reorder the bullet points under each job so the achievements most relevant to the JD appear first.\n"
-        f"6. **Tone & Style:** {chosen_tone}\n\n"
+        "6. **Preserve Links:** You MUST retain any URLs, LinkedIn profiles, GitHub links, and portfolios exactly as they appear in the original resume. Format them as Markdown links if possible.\n"
+        f"7. **Tone & Style:** {chosen_tone}\n\n"
         "### OUTPUT FORMAT:\n"
         "You must return ONLY a beautifully formatted Markdown document. Do not include any conversational filler."
     )

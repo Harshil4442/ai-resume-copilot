@@ -286,6 +286,48 @@ body::before {
   .line-link {
     @apply inline-flex items-center gap-1 text-sm font-bold text-[#0071e3] transition hover:text-blue-700;
   }
+
+  .resume-print-style {
+    font-size: 11px;
+    line-height: 1.35;
+    color: #000;
+  }
+  .resume-print-style h1 {
+    font-size: 18px;
+    font-weight: bold;
+    margin-bottom: 2px;
+    text-align: center;
+  }
+  .resume-print-style p {
+    margin-bottom: 4px;
+  }
+  .resume-print-style h2 {
+    font-size: 13px;
+    font-weight: bold;
+    margin-top: 10px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid #000;
+    text-transform: uppercase;
+  }
+  .resume-print-style h3 {
+    font-size: 11.5px;
+    font-weight: bold;
+    margin-top: 6px;
+    margin-bottom: 2px;
+  }
+  .resume-print-style ul {
+    list-style-type: disc;
+    padding-left: 20px;
+    margin-top: 2px;
+    margin-bottom: 6px;
+  }
+  .resume-print-style li {
+    margin-bottom: 2px;
+  }
+  .resume-print-style a {
+    color: #0071e3;
+    text-decoration: none;
+  }
 }
 
 @keyframes scan {
