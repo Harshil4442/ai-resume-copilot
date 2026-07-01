@@ -56,12 +56,41 @@ def _chat(messages: List[Dict]) -> str:
             temperature=0.3,
         )
             
-        response = client.models.generate_content(
-            model=LLM_MODEL.strip('"\' \r\n'),
-            contents=gemini_messages,
-            config=config
-        )
-        return response.text
+        target_model = LLM_MODEL.strip('"\' \r\n')
+        models_to_try = [
+            target_model,
+            'gemini-2.5-flash',
+            'gemini-1.5-pro-latest',
+            'gemini-1.5-pro-002',
+            'gemini-1.5-pro',
+            'gemini-1.5-flash'
+        ]
+        
+        # Deduplicate list while preserving order
+        seen = set()
+        models_to_try = [x for x in models_to_try if not (x in seen or seen.add(x))]
+        
+        last_error = None
+        for attempt_model in models_to_try:
+            try:
+                response = client.models.generate_content(
+                    model=attempt_model,
+                    contents=gemini_messages,
+                    config=config
+                )
+                if response and hasattr(response, "text"):
+                    return response.text
+                return ""
+            except Exception as e:
+                last_error = e
+                error_str = str(e).lower()
+                # If the error is about the model not being found, try the next fallback
+                if "not found" in error_str or "404" in error_str or "is not supported" in error_str:
+                    continue
+                else:
+                    raise e
+                    
+        raise last_error
 
     # Strip trailing slash to prevent 404 double-slash errors (e.g., //chat/completions)
     base_url = LLM_API_BASE.rstrip("/")
