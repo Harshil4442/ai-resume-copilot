@@ -197,6 +197,7 @@ export default function BillingPage() {
                     currency: "USD",
                     intent: "capture",
                     components: "buttons",
+                    "enable-funding": "googlepay",
                   }}
                 >
                   <PayPalButtons
