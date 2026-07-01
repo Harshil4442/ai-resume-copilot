@@ -175,6 +175,7 @@ function AskAiPanel({
           suggested_followups: res.suggested_followups,
         },
       ]);
+      window.dispatchEvent(new Event("refresh_credits"));
     } catch (e: any) {
       setError(e?.message || "Ask AI failed");
     } finally {
@@ -345,6 +346,7 @@ export default function JobsPage() {
         job_description: jobDescription.trim(),
       });
       setData(result);
+      window.dispatchEvent(new Event("refresh_credits"));
     } catch (err: any) {
       setError(err?.message || "Something went wrong.");
     } finally {

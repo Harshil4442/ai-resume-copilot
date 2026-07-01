@@ -35,14 +35,20 @@ export default function Nav() {
   }, [session, status]);
 
   useEffect(() => {
-    if (loggedIn) {
-      apiGet<any>("/auth/profile")
-        .then(data => {
-          setCredits(data.ai_credits ?? 0);
-          setTier(data.tier ?? "free");
-        })
-        .catch(console.error);
-    }
+    const fetchProfile = () => {
+      if (loggedIn) {
+        apiGet<any>("/auth/profile")
+          .then(data => {
+            setCredits(data.ai_credits ?? 0);
+            setTier(data.tier ?? "free");
+          })
+          .catch(console.error);
+      }
+    };
+    fetchProfile();
+    
+    window.addEventListener("refresh_credits", fetchProfile);
+    return () => window.removeEventListener("refresh_credits", fetchProfile);
   }, [loggedIn, pathname]);
 
 
