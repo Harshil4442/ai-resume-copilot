@@ -10,3 +10,15 @@ credentials.json
 *.pem
 *.key
 .credentials
+
+# Python compiled files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+.pytest_cache/
+.db
+app.db
+
