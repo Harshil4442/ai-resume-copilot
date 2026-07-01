@@ -21,7 +21,14 @@ def debug_env():
     import os
     pid = os.getenv("PAYPAL_CLIENT_ID", "")
     paypal_keys = [k for k in os.environ.keys() if "PAYPAL" in k]
-    return {"length": len(pid), "value_starts": pid[:5], "in_environ": "PAYPAL_CLIENT_ID" in os.environ, "paypal_keys": paypal_keys}
+    razorpay_keys = [k for k in os.environ.keys() if "RAZORPAY" in k]
+    return {
+        "length": len(pid), 
+        "value_starts": pid[:5], 
+        "in_environ": "PAYPAL_CLIENT_ID" in os.environ, 
+        "paypal_keys": paypal_keys,
+        "razorpay_keys": razorpay_keys
+    }
 
 
 PAYPAL_CLIENT_ID = os.getenv("PAYPAL_CLIENT_ID", "")
