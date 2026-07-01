@@ -60,31 +60,39 @@ def _chat(messages: List[Dict]) -> str:
         models_to_try = [
             target_model,
             'gemini-2.5-flash',
+            'gemini-2.0-flash',
+            'gemini-2.0-flash-lite',
             'gemini-1.5-pro-latest',
             'gemini-1.5-pro-002',
             'gemini-1.5-pro',
-            'gemini-1.5-flash'
+            'gemini-1.5-flash',
+            'gemini-1.5-flash-latest',
         ]
         
         # Deduplicate list while preserving order
         seen = set()
         models_to_try = [x for x in models_to_try if not (x in seen or seen.add(x))]
         
+        print(f"[LLM_CLIENT] Gemini path entered. target_model={target_model!r}, will try: {models_to_try}", flush=True)
+        
         last_error = None
         for attempt_model in models_to_try:
             try:
+                print(f"[LLM_CLIENT] Attempting model: {attempt_model!r}", flush=True)
                 response = client.models.generate_content(
                     model=attempt_model,
                     contents=gemini_messages,
                     config=config
                 )
                 if response and hasattr(response, "text"):
+                    print(f"[LLM_CLIENT] SUCCESS with model: {attempt_model!r}", flush=True)
                     return response.text
                 return ""
             except Exception as e:
                 last_error = e
                 error_str = str(e).lower()
-                # Try next fallback if model not found OR if we hit a rate limit (quota exhausted)
+                print(f"[LLM_CLIENT] FAILED model {attempt_model!r}: {e}", flush=True)
+                # Try next fallback if model not found OR rate limited
                 if "not found" in error_str or "404" in error_str or "is not supported" in error_str or "429" in error_str or "quota" in error_str or "resource exhausted" in error_str:
                     continue
                 else:
