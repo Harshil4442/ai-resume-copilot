@@ -301,3 +301,4 @@ class ResumeTailorRequest(BaseModel):
 
 class ResumeTailorResponse(BaseModel):
     tailored_resume_markdown: str
+    pdf_base64: str | None = None

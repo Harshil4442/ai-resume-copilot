@@ -1,41 +1,44 @@
 "use client";
 
-import { useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
+import { useEffect, useState } from "react";
 
-export default function TailoredResumeViewer({ markdownContent }: { markdownContent: string }) {
-  const resumeRef = useRef<HTMLDivElement>(null);
-  const [downloading, setDownloading] = useState(false);
+export default function TailoredResumeViewer({ markdownContent, pdfBase64 }: { markdownContent: string, pdfBase64?: string | null }) {
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
 
-  const handleDownloadPdf = async () => {
-    if (!resumeRef.current) return;
-    setDownloading(true);
-    
-    try {
-      // Dynamically import html2pdf so it doesn't break SSR
-      const html2pdf = (await import("html2pdf.js")).default;
-      
-      const opt: any = {
-        margin:       10, // mm
-        filename:     'Tailored_Resume.pdf',
-        image:        { type: 'jpeg', quality: 0.98 },
-        html2canvas:  { scale: 2, useCORS: true, logging: false },
-        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' },
-        enableLinks:  true
-      };
+  useEffect(() => {
+    if (pdfBase64) {
+      try {
+        const byteCharacters = atob(pdfBase64);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], { type: 'application/pdf' });
+        const url = URL.createObjectURL(blob);
+        setPdfUrl(url);
+        
+        return () => URL.revokeObjectURL(url);
+      } catch (e) {
+        console.error("Failed to parse PDF", e);
+      }
+    }
+  }, [pdfBase64]);
 
-      await html2pdf().set(opt).from(resumeRef.current).save();
-    } catch (err) {
-      console.error("PDF generation failed:", err);
-      alert("Failed to generate PDF. Please try copying the text instead.");
-    } finally {
-      setDownloading(false);
+  const handleDownloadPdf = () => {
+    if (pdfUrl) {
+      const link = document.createElement("a");
+      link.href = pdfUrl;
+      link.download = "Tailored_Resume.pdf";
+      link.click();
+    } else {
+      alert("PDF not available. Compilation may have failed.");
     }
   };
 
   const handleCopy = () => {
     navigator.clipboard.writeText(markdownContent);
-    alert("Copied Markdown to clipboard!");
+    alert("Copied raw LaTeX to clipboard!");
   };
 
   return (
@@ -49,32 +52,32 @@ export default function TailoredResumeViewer({ markdownContent }: { markdownCont
             onClick={handleCopy}
             className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
           >
-            Copy Markdown
+            Copy Raw LaTeX
           </button>
           <button 
             onClick={handleDownloadPdf}
-            disabled={downloading}
+            disabled={!pdfUrl}
             className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
           >
-            {downloading ? (
-              <>
-                <span className="animate-spin inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full"></span>
-                Generating...
-              </>
-            ) : "Download PDF"}
+            Download PDF
           </button>
         </div>
       </div>
       
       {/* Scrollable Viewer Area */}
-      <div className="p-6 md:p-8 bg-gray-100 max-h-[700px] overflow-y-auto">
-        <div 
-          ref={resumeRef} 
-          className="resume-preview bg-white shadow-md mx-auto max-w-[800px] p-8 md:p-12 resume-print-style"
-          style={{ minHeight: "1056px" /* Approx A4 aspect ratio height at 800px width */ }}
-        >
-          <ReactMarkdown>{markdownContent}</ReactMarkdown>
-        </div>
+      <div className="p-6 md:p-8 bg-gray-100 h-[800px]">
+        {pdfUrl ? (
+          <iframe 
+            src={`${pdfUrl}#view=FitH`}
+            className="w-full h-full shadow-md bg-white border-0 rounded-md"
+            title="Tailored Resume PDF"
+          />
+        ) : (
+          <div className="w-full h-full flex flex-col items-center justify-center text-gray-500 bg-white shadow-sm rounded-md p-8">
+            <span className="text-sm font-semibold mb-2">PDF Compilation Failed or Pending</span>
+            <span className="text-xs text-center max-w-md">The server was unable to return a compiled PDF. You can still copy the raw LaTeX and compile it yourself (e.g. on Overleaf).</span>
+          </div>
+        )}
       </div>
     </div>
   );

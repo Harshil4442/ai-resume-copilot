@@ -8,6 +8,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl ca-certificates gnupg \
     build-essential \
     libpq-dev \
+    texlive-latex-base \
+    texlive-fonts-recommended \
+    texlive-latex-extra \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Node.js 20 LTS

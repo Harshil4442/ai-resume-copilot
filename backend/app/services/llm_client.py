@@ -28,6 +28,39 @@ def _chat(messages: List[Dict]) -> str:
     if not key:
         raise RuntimeError("LLM_API_KEY is not set.")
 
+    if LLM_MODEL.startswith("gemini"):
+        try:
+            from google import genai
+            from google.genai import types
+        except ImportError:
+            raise RuntimeError("google-genai package is not installed. Run pip install google-genai.")
+            
+        client = genai.Client(api_key=key)
+        
+        gemini_messages = []
+        system_instruction = None
+        
+        for m in messages:
+            if m["role"] == "system":
+                system_instruction = m["content"]
+            elif m["role"] == "user":
+                gemini_messages.append({"role": "user", "parts": [{"text": m["content"]}]})
+            elif m["role"] == "assistant":
+                gemini_messages.append({"role": "model", "parts": [{"text": m["content"]}]})
+                
+        config = types.GenerateContentConfig(
+            temperature=0.3,
+        )
+        if system_instruction:
+            config.system_instruction = system_instruction
+            
+        response = client.models.generate_content(
+            model=LLM_MODEL,
+            contents=gemini_messages,
+            config=config
+        )
+        return response.text
+
     # Strip trailing slash to prevent 404 double-slash errors (e.g., //chat/completions)
     base_url = LLM_API_BASE.rstrip("/")
     url = f"{base_url}/chat/completions"
@@ -560,18 +593,54 @@ def tailor_resume_mega_llm(
         "You are an expert executive resume writer and career coach. Your task is to rewrite the "
         "provided resume to perfectly match the provided Job Description.\n\n"
         "### STRICT RULES:\n"
-        "1. **Markdown Formatting:** You MUST use proper Markdown. Use `#` for the main header (Candidate Name), `##` for sections (Professional Summary, Skills, Work Experience, Education). Use `-` for ALL bullet points.\n"
-        "2. **The STAR Method:** Rewrite every single bullet point into Situation/Task, Action, and Result. "
+        "1. **LaTeX Formatting:** You MUST output raw, valid LaTeX code. Use the standard article class. Do not use markdown.\n"
+        "2. **1-Page Constraint:** The content MUST fit on a single A4 page. Be extremely concise.\n"
+        "3. **The STAR Method:** Rewrite every single bullet point into Situation/Task, Action, and Result. "
         "Every bullet MUST start with a strong action verb (e.g., Spearheaded, Architected, Orchestrated).\n"
-        "3. **Keyword Injection:** The user is missing these skills: " + ", ".join(true_gaps[:15]) + ".\n"
+        "4. **Keyword Injection:** The user is missing these skills: " + ", ".join(true_gaps[:15]) + ".\n"
         "They have partial matches for: " + ", ".join([p.get('skill', '') for p in partial_matches[:10]]) + ".\n"
         "Creatively weave these keywords into the experience bullets ONLY if the context of their past jobs makes it believable.\n"
-        "4. **Metrics Placeholders:** If you see a major achievement without numbers, inject a clear placeholder like `[Increased revenue by X%]` so the user can fill it in.\n"
-        "5. **Aggressive Reordering:** Reorder the bullet points under each job so the achievements most relevant to the JD appear first.\n"
-        "6. **Preserve Links:** You MUST retain any URLs, LinkedIn profiles, GitHub links, and portfolios exactly as they appear in the original resume. Format them as Markdown links if possible.\n"
-        f"7. **Tone & Style:** {chosen_tone}\n\n"
+        "5. **Metrics Placeholders:** If you see a major achievement without numbers, inject a clear placeholder like `[Increased revenue by X%]`.\n"
+        "6. **Aggressive Reordering:** Reorder the bullet points under each job so the achievements most relevant to the JD appear first.\n"
+        "7. **Preserve Links:** You MUST retain any URLs, LinkedIn profiles, GitHub links, and portfolios exactly as they appear in the original resume. Use \\href{url}{text}.\n"
+        f"8. **Tone & Style:** {chosen_tone}\n\n"
+        "### LATEX TEMPLATE TO USE:\n"
+        "```latex\n"
+        "\\documentclass[10pt,a4paper]{article}\n"
+        "\\usepackage[left=0.5in,top=0.5in,right=0.5in,bottom=0.5in]{geometry}\n"
+        "\\usepackage{enumitem}\n"
+        "\\usepackage{hyperref}\n"
+        "\\usepackage{titlesec}\n"
+        "\\titleformat{\\section}{\\large\\bfseries\\uppercase}{}{0em}{}[\\titlerule]\n"
+        "\\titlespacing*{\\section}{0pt}{1.5ex plus 1ex minus .2ex}{1ex plus .2ex}\n"
+        "\\begin{document}\n"
+        "\\begin{center}\n"
+        "    {\\huge \\textbf{CANDIDATE NAME}} \\\\\n"
+        "    \\vspace{1mm}\n"
+        "    EMAIL $|$ PHONE $|$ \\href{LINKEDIN URL}{LinkedIn} $|$ \\href{GITHUB URL}{GitHub}\n"
+        "\\end{center}\n"
+        "\n"
+        "\\section*{Professional Summary}\n"
+        "Short paragraph highlighting alignment with the target role.\n"
+        "\n"
+        "\\section*{Skills}\n"
+        "\\textbf{Languages:} ... \\\\\n"
+        "\\textbf{Technologies:} ...\n"
+        "\n"
+        "\\section*{Experience}\n"
+        "\\textbf{Job Title} \\hfill Start Date -- End Date \\\\\n"
+        "\\textit{Company Name} \\hfill Location \\\\\n"
+        "\\begin{itemize}[leftmargin=*,noitemsep]\n"
+        "    \\item Spearheaded...\n"
+        "\\end{itemize}\n"
+        "\n"
+        "\\section*{Education}\n"
+        "\\textbf{Degree} \\hfill Year \\\\\n"
+        "\\textit{University}\n"
+        "\\end{document}\n"
+        "```\n\n"
         "### OUTPUT FORMAT:\n"
-        "You must return ONLY a beautifully formatted Markdown document. Do not include any conversational filler."
+        "You must return ONLY the raw LaTeX string starting with \\documentclass and ending with \\end{document}. Do not include markdown code blocks (```latex) in the final output string. Just the raw LaTeX code."
     )
     
     user_content = (
@@ -579,27 +648,18 @@ def tailor_resume_mega_llm(
         f"CANDIDATE'S ORIGINAL RESUME:\n{resume_text[:4000]}"
     )
     
-    # Use a higher temperature for creative rewriting
-    key = _api_key()
-    if not key:
-        raise RuntimeError("LLM_API_KEY is not set.")
-
-    base_url = LLM_API_BASE.rstrip("/")
-    url = f"{base_url}/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {key}",
-        "Content-Type": "application/json",
-    }
-    payload = {
-        "model": LLM_MODEL,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_content}
-        ],
-        "temperature": 0.5,
-    }
-
-    resp = requests.post(url, json=payload, headers=headers, timeout=90)
-    resp.raise_for_status()
-    data = resp.json()
-    return data["choices"][0]["message"]["content"].strip()
+    raw = _chat([
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_content}
+    ])
+    
+    # Strip markdown formatting just in case the LLM disobeys
+    cleaned = raw.strip()
+    if cleaned.startswith("```latex"):
+        cleaned = cleaned[8:]
+    elif cleaned.startswith("```"):
+        cleaned = cleaned[3:]
+    if cleaned.endswith("```"):
+        cleaned = cleaned[:-3]
+        
+    return cleaned.strip()

@@ -311,6 +311,7 @@ export default function JobsPage() {
   const [templateType, setTemplateType] = useState("ats");
   const [tailoring, setTailoring] = useState(false);
   const [tailoredResume, setTailoredResume] = useState<string | null>(null);
+  const [tailoredPdfBase64, setTailoredPdfBase64] = useState<string | null>(null);
   const [tailorError, setTailorError] = useState<string | null>(null);
 
   async function handleTailor() {
@@ -318,10 +319,11 @@ export default function JobsPage() {
     setTailoring(true);
     setTailorError(null);
     try {
-      const res = await apiPostJson<{ tailored_resume_markdown: string }>(`/jobs/match/${data.match_id}/tailor`, {
+      const res = await apiPostJson<{ tailored_resume_markdown: string, pdf_base64?: string }>(`/jobs/match/${data.match_id}/tailor`, {
         template_type: templateType
       });
       setTailoredResume(res.tailored_resume_markdown);
+      setTailoredPdfBase64(res.pdf_base64 || null);
       setTailorModalOpen(false);
       window.dispatchEvent(new Event("refresh_credits"));
     } catch (err: any) {
@@ -577,7 +579,7 @@ export default function JobsPage() {
               <AskAiPanel match={data} resumeId={selectedResumeId} />
               
               {tailoredResume && (
-                <TailoredResumeViewer markdownContent={tailoredResume} />
+                <TailoredResumeViewer markdownContent={tailoredResume} pdfBase64={tailoredPdfBase64} />
               )}
             </>
           )}

@@ -212,7 +212,7 @@ def tailor_resume(
         partial_matches = match.partial_matches or []
         true_gaps = match.true_gaps or []
         
-        tailored_markdown = tailor_resume_mega_llm(
+        tailored_latex = tailor_resume_mega_llm(
             resume_text=resume.raw_text,
             jd_text=match.job_description,
             template_type=payload.template_type,
@@ -220,7 +220,37 @@ def tailor_resume(
             partial_matches=partial_matches
         )
         
-        return schemas.ResumeTailorResponse(tailored_resume_markdown=tailored_markdown)
+        pdf_b64 = None
+        import tempfile
+        import subprocess
+        import os
+        import base64
+        
+        with tempfile.TemporaryDirectory() as tempdir:
+            tex_path = os.path.join(tempdir, "resume.tex")
+            with open(tex_path, "w", encoding="utf-8") as f:
+                f.write(tailored_latex)
+            
+            try:
+                subprocess.run(
+                    ["pdflatex", "-interaction=nonstopmode", "resume.tex"],
+                    cwd=tempdir,
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=15
+                )
+                pdf_path = os.path.join(tempdir, "resume.pdf")
+                if os.path.exists(pdf_path):
+                    with open(pdf_path, "rb") as pdf_file:
+                        pdf_b64 = base64.b64encode(pdf_file.read()).decode("utf-8")
+            except Exception as latex_err:
+                log.warning(f"Failed to compile LaTeX: {latex_err}")
+        
+        return schemas.ResumeTailorResponse(
+            tailored_resume_markdown=tailored_latex,
+            pdf_base64=pdf_b64
+        )
         
     except Exception as e:
         log.error(f"Tailoring failed: {e}", exc_info=True)
