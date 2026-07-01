@@ -13,6 +13,10 @@ class AuthLoginRequest(BaseModel):
     email: EmailStr
     password: str
 
+class AuthGoogleLoginRequest(BaseModel):
+    email: EmailStr
+    name: Optional[str] = ""
+
 class AuthTokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"

@@ -5,6 +5,7 @@ from ..database import get_db
 from ..models import User, UserProfile
 from ..schemas import (
     AuthLoginRequest,
+    AuthGoogleLoginRequest,
     AuthRegisterRequest,
     AuthTokenResponse,
     UserMeResponse,
@@ -105,6 +106,33 @@ def login(payload: AuthLoginRequest, db: Session = Depends(get_db)):
     u = db.query(User).filter(User.email == email).first()
     if not u or not verify_password(payload.password, u.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    token = create_access_token(subject=str(u.id))
+    return AuthTokenResponse(access_token=token, token_type="bearer")
+
+@router.post("/google-login", response_model=AuthTokenResponse)
+def google_login(payload: AuthGoogleLoginRequest, db: Session = Depends(get_db)):
+    email = payload.email.strip().lower()
+
+    # Find existing user
+    u = db.query(User).filter(User.email == email).first()
+    
+    if not u:
+        # Register new user seamlessly with a placeholder hash (they can only login via Google, or reset password later)
+        # Grant 5 initial credits as a standard signup bonus
+        u = User(
+            email=email,
+            password_hash=hash_password(payload.email + "_google_placeholder"),
+            ai_credits=5
+        )
+        db.add(u)
+        db.commit()
+        db.refresh(u)
+        
+        # Create standard profile
+        profile = UserProfile(user_id=u.id, full_name=payload.name)
+        db.add(profile)
+        db.commit()
 
     token = create_access_token(subject=str(u.id))
     return AuthTokenResponse(access_token=token, token_type="bearer")
