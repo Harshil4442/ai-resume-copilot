@@ -68,12 +68,12 @@ def create_paypal_order(
     currency = (payload.currency or "USD").upper()
     
     if payload.type == "subscription":
-        amount_value = "19.00"
+        amount_value = "15.00"
         desc = "AI Resume CoPilot Premium Subscription (Monthly)"
         custom_id = f"user:{current_user.id}|type:subscription"
     elif payload.type == "topup":
         credits_to_add = payload.credits or 10
-        unit_price = 1.00  # $1 per credit
+        unit_price = 0.50  # $0.50 per credit ($5.00 for 10 credits)
         amount_value = f"{unit_price * credits_to_add:.2f}"
         desc = f"AI Resume CoPilot - {credits_to_add} Operation Credits"
         custom_id = f"user:{current_user.id}|type:topup|credits:{credits_to_add}"

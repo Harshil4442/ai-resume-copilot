@@ -17,7 +17,7 @@ export default function BillingPage() {
   const planDetails = {
     subscription: {
       title: "Premium Plan",
-      price: "$19.00",
+      price: "$15.00",
       period: "monthly",
       features: [
         "Unlimited resume parses (PDF & DOCX)",
@@ -29,7 +29,7 @@ export default function BillingPage() {
     },
     topup: {
       title: "10 Operations Credits",
-      price: "$10.00",
+      price: "$5.00",
       period: "one-time",
       features: [
         "10 AI Operation credits added instantly",
