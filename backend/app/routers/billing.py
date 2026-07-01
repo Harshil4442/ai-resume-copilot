@@ -61,7 +61,7 @@ def create_paypal_order(
     # Check if we should use Mock Billing (when credentials are unset or fake)
     is_mock = not PAYPAL_CLIENT_ID or PAYPAL_CLIENT_SECRET.startswith("mock")
     if is_mock:
-        mock_id = f"mock_order_{uuid.uuid4().hex[:8]}"
+        mock_id = f"mock_order_{uuid.uuid4().hex[:8]}_len{len(PAYPAL_CLIENT_ID)}"
         log.info("Creating mock PayPal order: %s", mock_id)
         return {"order_id": mock_id}
 
