@@ -16,7 +16,7 @@ export default function TailoredResumeViewer({ markdownContent }: { markdownCont
       const html2pdf = (await import("html2pdf.js")).default;
       
       const opt = {
-        margin:       [10, 10, 10, 10], // mm
+        margin:       10, // mm
         filename:     'Tailored_Resume.pdf',
         image:        { type: 'jpeg', quality: 0.98 },
         html2canvas:  { scale: 2, useCORS: true, logging: false },
