@@ -35,7 +35,10 @@ def _chat(messages: List[Dict]) -> str:
         except ImportError:
             raise RuntimeError("google-genai package is not installed. Run pip install google-genai.")
             
-        client = genai.Client(api_key=key)
+        client = genai.Client(
+            api_key=key,
+            http_options={'api_version': 'v1'}
+        )
         
         gemini_messages = []
         system_instruction = None
@@ -55,7 +58,7 @@ def _chat(messages: List[Dict]) -> str:
             config.system_instruction = system_instruction
             
         response = client.models.generate_content(
-            model=LLM_MODEL,
+            model=LLM_MODEL.strip(),
             contents=gemini_messages,
             config=config
         )
