@@ -176,6 +176,53 @@ def get_match_history(
                 match_score= m.match_score,
                 created_at = m.created_at,
             )
-            for m in matches
         ]
     )
+
+@router.post("/match/{match_id}/tailor", response_model=schemas.ResumeTailorResponse)
+def tailor_resume(
+    match_id: int,
+    payload: schemas.ResumeTailorRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    from ..services.guardrails import verify_and_deduct_credit
+    
+    # 1. Fetch JobMatch
+    match = db.query(models.JobMatch).filter(
+        models.JobMatch.id == match_id,
+        models.JobMatch.user_id == current_user.id
+    ).first()
+    
+    if not match:
+        raise HTTPException(status_code=404, detail="Job match not found")
+        
+    resume = match.resume
+    if not resume:
+        raise HTTPException(status_code=404, detail="Associated resume not found")
+
+    # 2. Verify and Deduct 10 Credits
+    verify_and_deduct_credit(current_user.id, db, amount=10)
+
+    # 3. Call LLM
+    try:
+        from ..services.llm_client import tailor_resume_mega_llm
+        
+        # Convert partial_matches (which is a list of dicts in DB) to what LLM expects
+        partial_matches = match.partial_matches or []
+        true_gaps = match.true_gaps or []
+        
+        tailored_markdown = tailor_resume_mega_llm(
+            resume_text=resume.raw_text,
+            jd_text=match.job_description,
+            template_type=payload.template_type,
+            true_gaps=true_gaps,
+            partial_matches=partial_matches
+        )
+        
+        return schemas.ResumeTailorResponse(tailored_resume_markdown=tailored_markdown)
+        
+    except Exception as e:
+        log.error(f"Tailoring failed: {e}", exc_info=True)
+        # Refund credits if it fails? (optional, skipping for now to keep simple)
+        raise HTTPException(status_code=500, detail=f"Failed to tailor resume: {str(e)}")

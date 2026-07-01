@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { apiGet, apiPostJson } from "../../lib/api";
+import TailoredResumeViewer from "../../components/TailoredResumeViewer";
 
 type ResumeItem = {
   id: number;
@@ -305,6 +306,31 @@ export default function JobsPage() {
   const [loading, setLoading] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
 
+  // Tailoring states
+  const [tailorModalOpen, setTailorModalOpen] = useState(false);
+  const [templateType, setTemplateType] = useState("ats");
+  const [tailoring, setTailoring] = useState(false);
+  const [tailoredResume, setTailoredResume] = useState<string | null>(null);
+  const [tailorError, setTailorError] = useState<string | null>(null);
+
+  async function handleTailor() {
+    if (!data) return;
+    setTailoring(true);
+    setTailorError(null);
+    try {
+      const res = await apiPostJson<{ tailored_resume_markdown: string }>(`/jobs/match/${data.match_id}/tailor`, {
+        template_type: templateType
+      });
+      setTailoredResume(res.tailored_resume_markdown);
+      setTailorModalOpen(false);
+      window.dispatchEvent(new Event("refresh_credits"));
+    } catch (err: any) {
+      setTailorError(err?.message || "Failed to tailor resume.");
+    } finally {
+      setTailoring(false);
+    }
+  }
+
   useEffect(() => {
     apiGet<{ resumes: ResumeItem[] }>("/resume/list")
       .then((res) => {
@@ -465,6 +491,7 @@ export default function JobsPage() {
                       <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${gradeColor(data.grade)}`}>Grade {data.grade}</span>
                     </div>
                     <div className="text-xs text-gray-400 mt-1">Match #{data.match_id}</div>
+                    
                     <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <div className="metric-card p-3">
                         <div className="text-xs text-gray-500">Required skills</div>
@@ -479,6 +506,14 @@ export default function JobsPage() {
                         <div className="text-lg font-bold">{data.skill_verification_rate}%</div>
                       </div>
                     </div>
+                  </div>
+                  <div className="flex-shrink-0">
+                    <button
+                      onClick={() => setTailorModalOpen(true)}
+                      className="btn-primary flex items-center gap-2 whitespace-nowrap"
+                    >
+                      🪄 Tailor Resume (Costs 10 ⚡)
+                    </button>
                   </div>
                 </div>
 
@@ -540,6 +575,10 @@ export default function JobsPage() {
               </section>
 
               <AskAiPanel match={data} resumeId={selectedResumeId} />
+              
+              {tailoredResume && (
+                <TailoredResumeViewer markdownContent={tailoredResume} />
+              )}
             </>
           )}
 
@@ -580,6 +619,79 @@ export default function JobsPage() {
           )}
         </div>
       </div>
+
+      {tailorModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+            <h3 className="text-xl font-bold text-gray-900">Tailor your resume</h3>
+            <p className="text-sm text-gray-500 mt-1">
+              Our AI will rewrite your entire resume to perfectly target this job description.
+            </p>
+            <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 mt-4 mb-5">
+              <p className="text-sm text-blue-800 font-medium">⚡ This action costs 10 AI Credits.</p>
+            </div>
+            
+            <div className="space-y-3">
+              <label className="block text-sm font-semibold text-gray-700">Choose a Template / Tone</label>
+              
+              <label className="flex items-start gap-3 p-3 border rounded-lg cursor-pointer hover:bg-slate-50">
+                <input type="radio" name="template" value="ats" checked={templateType === "ats"} onChange={(e) => setTemplateType(e.target.value)} className="mt-1" />
+                <div>
+                  <div className="text-sm font-bold text-gray-800">ATS-Optimized (Standard)</div>
+                  <div className="text-xs text-gray-500 leading-snug">Focuses on keywords and clean structure. Great for large companies.</div>
+                </div>
+              </label>
+
+              <label className="flex items-start gap-3 p-3 border rounded-lg cursor-pointer hover:bg-slate-50">
+                <input type="radio" name="template" value="executive" checked={templateType === "executive"} onChange={(e) => setTemplateType(e.target.value)} className="mt-1" />
+                <div>
+                  <div className="text-sm font-bold text-gray-800">Executive & Leadership</div>
+                  <div className="text-xs text-gray-500 leading-snug">Focuses on business impact, metrics, team sizes, and strategy.</div>
+                </div>
+              </label>
+
+              <label className="flex items-start gap-3 p-3 border rounded-lg cursor-pointer hover:bg-slate-50">
+                <input type="radio" name="template" value="technical" checked={templateType === "technical"} onChange={(e) => setTemplateType(e.target.value)} className="mt-1" />
+                <div>
+                  <div className="text-sm font-bold text-gray-800">Technical / Engineering</div>
+                  <div className="text-xs text-gray-500 leading-snug">Heavy emphasis on tech stack, architecture, and methodologies.</div>
+                </div>
+              </label>
+
+              <label className="flex items-start gap-3 p-3 border rounded-lg cursor-pointer hover:bg-slate-50">
+                <input type="radio" name="template" value="creative" checked={templateType === "creative"} onChange={(e) => setTemplateType(e.target.value)} className="mt-1" />
+                <div>
+                  <div className="text-sm font-bold text-gray-800">Outcome-Driven (Creative)</div>
+                  <div className="text-xs text-gray-500 leading-snug">Highlights campaigns, portfolios, and direct measurable outcomes.</div>
+                </div>
+              </label>
+            </div>
+
+            {tailorError && (
+              <div className="mt-4 p-3 bg-red-50 text-red-700 border border-red-200 rounded-lg text-sm">
+                {tailorError}
+              </div>
+            )}
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button 
+                onClick={() => setTailorModalOpen(false)}
+                disabled={tailoring}
+                className="px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-100 rounded-lg"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleTailor}
+                disabled={tailoring}
+                className="btn-primary"
+              >
+                {tailoring ? "Generating..." : "Generate Resume"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

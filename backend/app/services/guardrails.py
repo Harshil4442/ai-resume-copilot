@@ -3,10 +3,10 @@ from sqlalchemy import update
 from sqlalchemy.orm import Session
 from ..models import User
 
-def verify_and_deduct_credit(user_id: int, db: Session) -> bool:
+def verify_and_deduct_credit(user_id: int, db: Session, amount: int = 1) -> bool:
     """
     Checks if a user has sufficient credits or is on a premium plan.
-    Deducts 1 credit atomically if they are on a free tier.
+    Deducts `amount` credits atomically if they are on a free tier.
     Raises a 402 Payment Required exception if they are out of credits.
     """
     user = db.query(User).filter(User.id == user_id).first()
@@ -20,17 +20,17 @@ def verify_and_deduct_credit(user_id: int, db: Session) -> bool:
         # Premium subscription gets unlimited AI operations
         return True
         
-    if user.ai_credits < 1:
+    if user.ai_credits < amount:
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail="Operation requires credits. Your balance is 0. Please upgrade to premium or top-up your credits."
+            detail=f"Operation requires {amount} credit(s). Your balance is {user.ai_credits}. Please upgrade to premium or top-up your credits."
         )
         
-    # Atomically decrement 1 credit to prevent race conditions
+    # Atomically decrement credits to prevent race conditions
     db.execute(
         update(User)
         .where(User.id == user_id)
-        .values(ai_credits=User.ai_credits - 1)
+        .values(ai_credits=User.ai_credits - amount)
     )
     db.commit()
     return True

@@ -292,3 +292,12 @@ class InterviewQuestionsRequest(BaseModel):
 
 class InterviewQuestionsResponse(BaseModel):
     questions: List[Dict[str, str]]  # {question, answer}
+
+# -------------------------
+# Resume Tailoring
+# -------------------------
+class ResumeTailorRequest(BaseModel):
+    template_type: str = Field(default="ats", description="ats, executive, technical, or creative")
+
+class ResumeTailorResponse(BaseModel):
+    tailored_resume_markdown: str

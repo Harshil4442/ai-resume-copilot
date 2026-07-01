@@ -534,3 +534,70 @@ def generate_learning_strategy_llm(
                 break
 
     return json.loads(cleaned)
+
+def tailor_resume_mega_llm(
+    resume_text: str,
+    jd_text: str,
+    template_type: str,
+    true_gaps: List[str],
+    partial_matches: List[Dict],
+) -> str:
+    """
+    Completely rewrite and tailor the resume for a specific job match based on a template.
+    Returns a beautifully formatted Markdown string.
+    """
+    
+    tone_instructions = {
+        "ats": "Focus heavily on exact keyword matching and a traditional, clean structure. Make it dense with relevant terms.",
+        "executive": "Shift the tone to focus on business impact, metrics, team sizes, budgets, and strategic vision rather than just technical execution.",
+        "technical": "Place heavy emphasis on the tech stack, architectural decisions, methodologies (e.g., Agile, TDD), and complex problem-solving.",
+        "creative": "Highlight specific campaigns, portfolio-style achievements, and direct measurable outcomes (e.g., conversion rates, client satisfaction)."
+    }
+    
+    chosen_tone = tone_instructions.get(template_type.lower(), tone_instructions["ats"])
+    
+    system_prompt = (
+        "You are an expert executive resume writer and career coach. Your task is to rewrite the "
+        "provided resume to perfectly match the provided Job Description.\n\n"
+        "### STRICT RULES:\n"
+        "1. **The STAR Method:** Rewrite every single bullet point into Situation/Task, Action, and Result. "
+        "Every bullet MUST start with a strong action verb (e.g., Spearheaded, Architected, Orchestrated).\n"
+        "2. **Keyword Injection:** The user is missing these skills: " + ", ".join(true_gaps[:15]) + ".\n"
+        "They have partial matches for: " + ", ".join([p.get('skill', '') for p in partial_matches[:10]]) + ".\n"
+        "Creatively weave these keywords into the experience bullets ONLY if the context of their past jobs makes it believable.\n"
+        "3. **Metrics Placeholders:** If you see a major achievement without numbers, inject a clear placeholder like `[Increased revenue by X%]` so the user can fill it in.\n"
+        "4. **Aggressive Reordering:** Reorder the bullet points under each job so the achievements most relevant to the JD appear first.\n"
+        f"5. **Tone & Style:** {chosen_tone}\n\n"
+        "### OUTPUT FORMAT:\n"
+        "You must return ONLY a beautifully formatted Markdown document. Start with the candidate's contact info, then a Professional Summary, then Skills, then Work Experience, then Education. Do not include any conversational filler."
+    )
+    
+    user_content = (
+        f"JOB DESCRIPTION:\n{jd_text[:3000]}\n\n"
+        f"CANDIDATE'S ORIGINAL RESUME:\n{resume_text[:4000]}"
+    )
+    
+    # Use a higher temperature for creative rewriting
+    key = _api_key()
+    if not key:
+        raise RuntimeError("LLM_API_KEY is not set.")
+
+    base_url = LLM_API_BASE.rstrip("/")
+    url = f"{base_url}/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": LLM_MODEL,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_content}
+        ],
+        "temperature": 0.5,
+    }
+
+    resp = requests.post(url, json=payload, headers=headers, timeout=90)
+    resp.raise_for_status()
+    data = resp.json()
+    return data["choices"][0]["message"]["content"].strip()
