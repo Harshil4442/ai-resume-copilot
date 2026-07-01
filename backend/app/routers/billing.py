@@ -1,11 +1,12 @@
 import os
 import logging
+import requests
+import uuid
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Request, Header
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import update
 from sqlalchemy.orm import Session
-import stripe
 
 from ..database import get_db
 from ..models import User
@@ -14,182 +15,222 @@ from ..security import get_current_user
 router = APIRouter(prefix="/billing", tags=["billing"])
 log = logging.getLogger("ai_resume_copilot.billing")
 
-stripe.api_key = os.getenv("STRIPE_API_KEY", "sk_test_51MockKeyForSaaSTransitionOnly")
-STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "whsec_mock")
+PAYPAL_CLIENT_ID = os.getenv("PAYPAL_CLIENT_ID", "")
+PAYPAL_CLIENT_SECRET = os.getenv("PAYPAL_CLIENT_SECRET", "")
+PAYPAL_MODE = os.getenv("PAYPAL_MODE", "sandbox").lower()
 
-class CheckoutRequest(BaseModel):
+if PAYPAL_MODE == "live":
+    PAYPAL_BASE_URL = "https://api-m.paypal.com"
+else:
+    PAYPAL_BASE_URL = "https://api-m.sandbox.paypal.com"
+
+class PayPalCreateRequest(BaseModel):
     type: str  # "subscription" or "topup"
-    currency: Optional[str] = "usd"
+    currency: Optional[str] = "USD"
     credits: Optional[int] = 10  # for topup
 
-@router.post("/checkout")
-def create_checkout_session(
-    payload: CheckoutRequest,
+class PayPalCaptureRequest(BaseModel):
+    order_id: str
+    type: str  # "subscription" or "topup"
+    credits: Optional[int] = 10  # for topup
+
+def _get_paypal_token() -> str:
+    """Helper to request OAuth2 access token from PayPal REST API."""
+    if not PAYPAL_CLIENT_ID or not PAYPAL_CLIENT_SECRET:
+        raise ValueError("PayPal Client ID or Secret is not configured.")
+        
+    url = f"{PAYPAL_BASE_URL}/v1/oauth2/token"
+    res = requests.post(
+        url,
+        data={"grant_type": "client_credentials"},
+        auth=(PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET),
+        timeout=15,
+    )
+    res.raise_for_status()
+    return res.json()["access_token"]
+
+@router.post("/paypal/create-order")
+def create_paypal_order(
+    payload: PayPalCreateRequest,
     current_user: User = Depends(get_current_user),
 ):
     """
-    Creates a Stripe Checkout Session for Premium Subscriptions or Credit Top-ups.
-    Supports Credit/Debit Cards, UPI (for INR), and Wallet (GPay/ApplePay auto-enabled via Stripe).
+    Creates a PayPal Checkout Order for Premium Subscriptions or Top-ups.
+    Encodes metadata inside custom_id field.
     """
-    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
-    frontend_url = frontend_url.rstrip("/")
+    # Check if we should use Mock Billing (when credentials are unset or fake)
+    is_mock = not PAYPAL_CLIENT_ID or PAYPAL_CLIENT_SECRET.startswith("mock")
+    if is_mock:
+        mock_id = f"mock_order_{uuid.uuid4().hex[:8]}"
+        log.info("Creating mock PayPal order: %s", mock_id)
+        return {"order_id": mock_id}
+
+    currency = (payload.currency or "USD").upper()
     
-    currency_lower = payload.currency.lower() if payload.currency else "usd"
-    
-    # Configure payment method types based on currency (UPI requires INR)
-    payment_types = ["card"]
-    if currency_lower == "inr":
-        payment_types.append("upi")
-        
+    if payload.type == "subscription":
+        amount_value = "19.00"
+        desc = "AI Resume CoPilot Premium Subscription (Monthly)"
+        custom_id = f"user:{current_user.id}|type:subscription"
+    elif payload.type == "topup":
+        credits_to_add = payload.credits or 10
+        unit_price = 1.00  # $1 per credit
+        amount_value = f"{unit_price * credits_to_add:.2f}"
+        desc = f"AI Resume CoPilot - {credits_to_add} Operation Credits"
+        custom_id = f"user:{current_user.id}|type:topup|credits:{credits_to_add}"
+    else:
+        raise HTTPException(status_code=400, detail="Invalid billing type")
+
     try:
-        if payload.type == "subscription":
-            # monthly subscription
-            session_data = {
-                "payment_method_types": payment_types,
-                "mode": "subscription",
-                "line_items": [
-                    {
-                        "price_data": {
-                            "currency": currency_lower,
-                            "product_data": {
-                                "name": "AI Resume CoPilot Premium",
-                                "description": "Unlimited resume parsing, job matching, learning strategy generation, and RAG chat.",
-                            },
-                            "unit_amount": 1900 if currency_lower == "usd" else 99900,  # $19/mo or ₹999/mo
-                            "recurring": {"interval": "month"},
-                        },
-                        "quantity": 1,
+        token = _get_paypal_token()
+        url = f"{PAYPAL_BASE_URL}/v2/checkout/orders"
+        
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
+        
+        order_payload = {
+            "intent": "CAPTURE",
+            "purchase_units": [
+                {
+                    "description": desc,
+                    "custom_id": custom_id,
+                    "amount": {
+                        "currency_code": currency,
+                        "value": amount_value,
                     }
-                ],
-                "metadata": {
-                    "user_id": str(current_user.id),
-                    "type": "subscription",
-                },
-                "success_url": f"{frontend_url}/dashboard?stripe=success",
-                "cancel_url": f"{frontend_url}/dashboard?stripe=cancel",
+                }
+            ],
+            "application_context": {
+                "shipping_preference": "NO_SHIPPING",
+                "user_action": "PAY_NOW",
             }
-        elif payload.type == "topup":
-            # one-time credit top-up
-            credits_to_add = payload.credits or 10
-            unit_price = 100 if currency_lower == "usd" else 5000  # $1.00 or ₹50 per credit
-            
-            session_data = {
-                "payment_method_types": payment_types,
-                "mode": "payment",
-                "line_items": [
-                    {
-                        "price_data": {
-                            "currency": currency_lower,
-                            "product_data": {
-                                "name": f"{credits_to_add} AI Operation Credits",
-                                "description": "Top-up operations balance for parsing, matching, and bullet optimizations.",
-                            },
-                            "unit_amount": unit_price * credits_to_add,
-                        },
-                        "quantity": 1,
-                    }
-                ],
-                "metadata": {
-                    "user_id": str(current_user.id),
-                    "type": "topup",
-                    "credits": str(credits_to_add),
-                },
-                "success_url": f"{frontend_url}/dashboard?stripe=success",
-                "cancel_url": f"{frontend_url}/dashboard?stripe=cancel",
-            }
-        else:
-            raise HTTPException(status_code=400, detail="Invalid checkout type")
-
-        session = stripe.checkout.Session.create(**session_data)
-        return {"checkout_url": session.url}
-
+        }
+        
+        res = requests.post(url, json=order_payload, headers=headers, timeout=15)
+        res.raise_for_status()
+        order_data = res.json()
+        
+        return {"order_id": order_data["id"]}
+        
     except Exception as e:
-        log.exception("Stripe session creation failed")
-        raise HTTPException(status_code=500, detail=f"Stripe Integration Error: {str(e)}")
+        log.exception("PayPal order creation failed")
+        raise HTTPException(
+            status_code=500,
+            detail=f"PayPal Integration Error: {str(e)}"
+        )
 
-@router.post("/webhook")
-async def stripe_webhook(
-    request: Request,
-    stripe_signature: Optional[str] = Header(None, alias="Stripe-Signature"),
+@router.post("/paypal/capture-order")
+def capture_paypal_order(
+    payload: PayPalCaptureRequest,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
-    Verifies raw Stripe webhook calls and provisions or revokes commercial tiers and credits.
+    Captures the authorized PayPal order payment. On completion, provisions 
+    premium tier privileges or credit packages.
     """
-    payload = await request.body()
+    order_id = payload.order_id
     
-    # Handle local testing or missing signature verification
-    if not STRIPE_WEBHOOK_SECRET or STRIPE_WEBHOOK_SECRET == "whsec_mock":
-        # Decode without verification for mock testing if configured
-        import json
-        try:
-            event = json.loads(payload)
-        except Exception:
-            raise HTTPException(status_code=400, detail="Invalid JSON payload")
-    else:
-        if not stripe_signature:
-            raise HTTPException(status_code=400, detail="Missing Stripe-Signature header")
-        try:
-            event = stripe.Webhook.construct_event(
-                payload, stripe_signature, STRIPE_WEBHOOK_SECRET
+    # Handle mock local verification
+    if order_id.startswith("mock_order_"):
+        log.info("Processing mock capture verification for order: %s", order_id)
+        if payload.type == "subscription":
+            db.execute(
+                update(User)
+                .where(User.id == current_user.id)
+                .values(
+                    tier="premium",
+                    stripe_customer_id="mock_paypal_cust",
+                    stripe_subscription_id=f"mock_pp_sub_{order_id}",
+                )
             )
-        except stripe.error.SignatureVerificationError as e:
-            log.warning("Stripe signature verification failed: %s", e)
-            raise HTTPException(status_code=400, detail="Invalid signature")
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=str(e))
+            db.commit()
+            return {"status": "success", "tier": "premium"}
+        elif payload.type == "topup":
+            credits_to_add = payload.credits or 10
+            db.execute(
+                update(User)
+                .where(User.id == current_user.id)
+                .values(ai_credits=User.ai_credits + credits_to_add)
+            )
+            db.commit()
+            return {"status": "success", "added_credits": credits_to_add}
+        else:
+            raise HTTPException(status_code=400, detail="Invalid mock billing type")
 
-    event_type = event.get("type")
-    data_obj = event.get("data", {}).get("object", {})
-
-    log.info("Processing Stripe webhook event: %s", event_type)
-
-    if event_type == "checkout.session.completed":
-        metadata = data_obj.get("metadata", {})
-        user_id_str = metadata.get("user_id")
-        tx_type = metadata.get("type")
+    try:
+        token = _get_paypal_token()
+        url = f"{PAYPAL_BASE_URL}/v2/checkout/orders/{order_id}/capture"
         
-        if not user_id_str:
-            log.warning("No user_id found in session metadata")
-            return {"status": "ignored"}
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
+        
+        res = requests.post(url, json={}, headers=headers, timeout=15)
+        res.raise_for_status()
+        capture_data = res.json()
+        
+        # Verify payment is COMPLETED
+        if capture_data.get("status") != "COMPLETED":
+            raise HTTPException(
+                status_code=400,
+                detail=f"Payment capture state: {capture_data.get('status')}"
+            )
             
-        user_id = int(user_id_str)
+        # Parse purchase unit information
+        purchase_unit = capture_data.get("purchase_units", [{}])[0]
+        payments = purchase_unit.get("payments", {})
+        captures = payments.get("captures", [{}])[0]
         
+        custom_id = purchase_unit.get("custom_id", "")
+        if not custom_id:
+            custom_id = captures.get("custom_id", "")
+            
+        # Parse user meta claims
+        user_id = current_user.id
+        tx_type = payload.type
+        credits_to_add = payload.credits or 10
+        
+        if custom_id:
+            # e.g., user:1|type:subscription
+            parts = dict(item.split(":") for item in custom_id.split("|") if ":" in item)
+            if "user" in parts:
+                user_id = int(parts["user"])
+            if "type" in parts:
+                tx_type = parts["type"]
+            if "credits" in parts:
+                credits_to_add = int(parts["credits"])
+
         if tx_type == "subscription":
-            customer_id = data_obj.get("customer")
-            subscription_id = data_obj.get("subscription")
-            
-            log.info("Provisioning premium tier for user %d", user_id)
+            capture_id = captures.get("id", f"pp_cap_{order_id}")
             db.execute(
                 update(User)
                 .where(User.id == user_id)
                 .values(
                     tier="premium",
-                    stripe_customer_id=customer_id,
-                    stripe_subscription_id=subscription_id,
+                    stripe_customer_id=capture_data.get("payer", {}).get("payer_id"),
+                    stripe_subscription_id=capture_id,
                 )
             )
             db.commit()
+            log.info("PayPal Subscription provisioned for User %d", user_id)
+            return {"status": "success", "tier": "premium"}
             
         elif tx_type == "topup":
-            credits_to_add = int(metadata.get("credits", "10"))
-            log.info("Adding %d credits to user %d", credits_to_add, user_id)
             db.execute(
                 update(User)
                 .where(User.id == user_id)
                 .values(ai_credits=User.ai_credits + credits_to_add)
             )
             db.commit()
-
-    elif event_type == "customer.subscription.deleted":
-        subscription_id = data_obj.get("id")
-        if subscription_id:
-            log.info("Revoking premium tier for subscription: %s", subscription_id)
-            db.execute(
-                update(User)
-                .where(User.stripe_subscription_id == subscription_id)
-                .values(tier="free", stripe_subscription_id=None)
-            )
-            db.commit()
-
-    return {"status": "success"}
+            log.info("PayPal Topup of %d credits provisioned for User %d", credits_to_add, user_id)
+            return {"status": "success", "added_credits": credits_to_add}
+            
+    except Exception as e:
+        log.exception("PayPal payment capture failed")
+        raise HTTPException(
+            status_code=500,
+            detail=f"PayPal Capture Failure: {str(e)}"
+        )

@@ -7,5 +7,6 @@ export const config = {
     "/jobs/:path*",
     "/learning/:path*",
     "/profile/:path*",
+    "/billing/:path*",
   ],
 };
