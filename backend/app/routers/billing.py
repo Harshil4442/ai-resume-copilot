@@ -2,6 +2,7 @@ import os
 import logging
 import requests
 import uuid
+import razorpay
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
@@ -27,6 +28,11 @@ PAYPAL_CLIENT_ID = os.getenv("PAYPAL_CLIENT_ID", "")
 PAYPAL_CLIENT_SECRET = os.getenv("PAYPAL_CLIENT_SECRET", "")
 PAYPAL_MODE = os.getenv("PAYPAL_MODE", "sandbox").lower()
 
+RAZORPAY_KEY_ID = os.getenv("RAZORPAY_KEY_ID", "")
+RAZORPAY_KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET", "")
+
+razorpay_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET)) if RAZORPAY_KEY_ID else None
+
 if PAYPAL_MODE == "live":
     PAYPAL_BASE_URL = "https://api-m.paypal.com"
 else:
@@ -41,6 +47,17 @@ class PayPalCaptureRequest(BaseModel):
     order_id: str
     type: str  # "subscription" or "topup"
     credits: Optional[int] = 10  # for topup
+
+class RazorpayCreateRequest(BaseModel):
+    type: str
+    credits: Optional[int] = 10
+
+class RazorpayVerifyRequest(BaseModel):
+    razorpay_order_id: str
+    razorpay_payment_id: str
+    razorpay_signature: str
+    type: str
+    credits: Optional[int] = 10
 
 def _get_paypal_token() -> str:
     """Helper to request OAuth2 access token from PayPal REST API."""
@@ -243,3 +260,105 @@ def capture_paypal_order(
             status_code=500,
             detail=f"PayPal Capture Failure: {str(e)}"
         )
+
+@router.post("/razorpay/create-order")
+def create_razorpay_order(
+    payload: RazorpayCreateRequest,
+    current_user: User = Depends(get_current_user),
+):
+    if not razorpay_client:
+        # Mock mode fallback
+        mock_id = f"mock_rzp_{uuid.uuid4().hex[:8]}"
+        return {"order_id": mock_id, "amount": 99900 if payload.type == "subscription" else 19900}
+
+    if payload.type == "subscription":
+        amount_paise = 99900  # ₹999.00
+        receipt = f"rcpt_{current_user.id}_sub"
+    elif payload.type == "topup":
+        credits_to_add = payload.credits or 10
+        # For simplicity, ₹199 flat for 10 credits.
+        amount_paise = 19900 
+        receipt = f"rcpt_{current_user.id}_top_{credits_to_add}"
+    else:
+        raise HTTPException(status_code=400, detail="Invalid billing type")
+
+    try:
+        order_data = razorpay_client.order.create({
+            "amount": amount_paise,
+            "currency": "INR",
+            "receipt": receipt,
+            "notes": {
+                "user_id": current_user.id,
+                "type": payload.type,
+                "credits": payload.credits or 10
+            }
+        })
+        return {"order_id": order_data["id"], "amount": amount_paise}
+    except Exception as e:
+        log.exception("Razorpay order creation failed")
+        raise HTTPException(status_code=500, detail=f"Razorpay Error: {str(e)}")
+
+@router.post("/razorpay/verify-payment")
+def verify_razorpay_payment(
+    payload: RazorpayVerifyRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    # Handle mock local verification
+    if payload.razorpay_order_id.startswith("mock_rzp_"):
+        if payload.type == "subscription":
+            db.execute(
+                update(User)
+                .where(User.id == current_user.id)
+                .values(tier="premium", stripe_subscription_id=f"mock_rzp_sub_{payload.razorpay_order_id}")
+            )
+            db.commit()
+            return {"status": "success", "tier": "premium"}
+        elif payload.type == "topup":
+            db.execute(
+                update(User)
+                .where(User.id == current_user.id)
+                .values(ai_credits=User.ai_credits + (payload.credits or 10))
+            )
+            db.commit()
+            return {"status": "success", "added_credits": payload.credits or 10}
+
+    if not razorpay_client:
+        raise HTTPException(status_code=500, detail="Razorpay is not configured.")
+
+    try:
+        # Verify Signature
+        razorpay_client.utility.verify_payment_signature({
+            'razorpay_order_id': payload.razorpay_order_id,
+            'razorpay_payment_id': payload.razorpay_payment_id,
+            'razorpay_signature': payload.razorpay_signature
+        })
+        
+        # Provision Access
+        if payload.type == "subscription":
+            db.execute(
+                update(User)
+                .where(User.id == current_user.id)
+                .values(
+                    tier="premium",
+                    stripe_customer_id=payload.razorpay_payment_id,
+                    stripe_subscription_id=payload.razorpay_order_id,
+                )
+            )
+            db.commit()
+            return {"status": "success", "tier": "premium"}
+        elif payload.type == "topup":
+            credits_to_add = payload.credits or 10
+            db.execute(
+                update(User)
+                .where(User.id == current_user.id)
+                .values(ai_credits=User.ai_credits + credits_to_add)
+            )
+            db.commit()
+            return {"status": "success", "added_credits": credits_to_add}
+
+    except razorpay.errors.SignatureVerificationError:
+        raise HTTPException(status_code=400, detail="Invalid payment signature")
+    except Exception as e:
+        log.exception("Razorpay payment verification failed")
+        raise HTTPException(status_code=500, detail=str(e))

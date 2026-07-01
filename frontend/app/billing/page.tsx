@@ -2,13 +2,16 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Script from "next/script";
 import { PayPalScriptProvider, PayPalButtons } from "@paypal/react-paypal-js";
 import { apiPostJson } from "../../lib/api";
 
 const PAYPAL_CLIENT_ID = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID || "test"; // fallback to sandbox test client
+const RAZORPAY_KEY_ID = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "rzp_test_mock";
 
 export default function BillingPage() {
   const router = useRouter();
+  const [region, setRegion] = useState<"global" | "india">("global");
   const [selectedPlan, setSelectedPlan] = useState<"subscription" | "topup">("subscription");
   const [paymentSuccess, setPaymentSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -17,7 +20,7 @@ export default function BillingPage() {
   const planDetails = {
     subscription: {
       title: "Premium Plan",
-      price: "$15.00",
+      price: region === "india" ? "₹999" : "$15.00",
       period: "monthly",
       features: [
         "Unlimited resume parses (PDF & DOCX)",
@@ -29,7 +32,7 @@ export default function BillingPage() {
     },
     topup: {
       title: "10 Operations Credits",
-      price: "$5.00",
+      price: region === "india" ? "₹199" : "$5.00",
       period: "one-time",
       features: [
         "10 AI Operation credits added instantly",
@@ -79,8 +82,60 @@ export default function BillingPage() {
     }
   }
 
+  async function handleRazorpayCheckout() {
+    setLoading(true);
+    setError(null);
+    try {
+      const payload = {
+        type: selectedPlan,
+        credits: selectedPlan === "topup" ? 10 : 0,
+      };
+      const res = await apiPostJson<{ order_id: string, amount: number }>("/billing/razorpay/create-order", payload);
+
+      const options = {
+        key: RAZORPAY_KEY_ID,
+        amount: res.amount,
+        currency: "INR",
+        name: "AI Resume CoPilot",
+        description: planDetails[selectedPlan].title,
+        order_id: res.order_id,
+        handler: async function (response: any) {
+          try {
+            await apiPostJson("/billing/razorpay/verify-payment", {
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+              type: selectedPlan,
+              credits: selectedPlan === "topup" ? 10 : 0,
+            });
+            setPaymentSuccess(true);
+            setTimeout(() => {
+              router.push("/dashboard");
+            }, 3000);
+          } catch (verifyErr: any) {
+            setError(verifyErr.message || "Payment verification failed.");
+          }
+        },
+        theme: {
+          color: "#0f172a",
+        },
+      };
+
+      const rzp = new (window as any).Razorpay(options);
+      rzp.on("payment.failed", function (response: any) {
+        setError(response.error.description || "Razorpay payment failed.");
+      });
+      rzp.open();
+    } catch (err: any) {
+      setError(err.message || "Failed to initialize Razorpay order.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <main className="app-shell max-w-5xl mx-auto py-10 px-4 space-y-8">
+      <Script src="https://checkout.razorpay.com/v1/checkout.js" strategy="lazyOnload" />
       <section className="product-hero text-left p-7 md:p-10">
         <div className="label-kicker flex items-center gap-3">
           <span className="pulse-dot bg-blue-500" /> Commercial Account
@@ -110,8 +165,35 @@ export default function BillingPage() {
       {!paymentSuccess && (
         <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_0.8fr] gap-6">
           {/* Plan Selection Cards */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-black text-slate-950">1. Select Package</h3>
+          <div className="space-y-6">
+            
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-100 p-4 rounded-2xl border border-slate-200">
+              <div>
+                <h3 className="font-black text-slate-900">Select Region</h3>
+                <p className="text-xs text-slate-500">Pricing adjusts automatically to your location.</p>
+              </div>
+              <div className="flex bg-white p-1 rounded-xl shadow-sm border border-slate-200">
+                <button
+                  onClick={() => setRegion("global")}
+                  className={`px-4 py-2 rounded-lg text-sm font-bold transition ${
+                    region === "global" ? "bg-slate-950 text-white shadow" : "text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  🌍 Global (USD)
+                </button>
+                <button
+                  onClick={() => setRegion("india")}
+                  className={`px-4 py-2 rounded-lg text-sm font-bold transition ${
+                    region === "india" ? "bg-slate-950 text-white shadow" : "text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  🇮🇳 India (INR)
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <h3 className="text-lg font-black text-slate-950">1. Select Package</h3>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Subscription Option */}
@@ -189,7 +271,7 @@ export default function BillingPage() {
 
             {loading && <div className="text-center py-4 text-sm text-slate-500">Capturing checkout session details...</div>}
 
-            {!loading && (
+            {!loading && region === "global" && (
               <div className="relative z-10">
                 <PayPalScriptProvider
                   options={{
@@ -214,6 +296,20 @@ export default function BillingPage() {
                     }}
                   />
                 </PayPalScriptProvider>
+              </div>
+            )}
+
+            {!loading && region === "india" && (
+              <div className="relative z-10 flex flex-col space-y-3">
+                <button
+                  onClick={handleRazorpayCheckout}
+                  className="w-full bg-[#02042b] hover:bg-slate-800 text-white font-bold py-4 px-6 rounded-full shadow-lg transition transform hover:-translate-y-0.5"
+                >
+                  Pay with Razorpay
+                </button>
+                <p className="text-center text-xs font-semibold text-slate-500">
+                  Supports Google Pay, PhonePe, Paytm, UPI, and Cards.
+                </p>
               </div>
             )}
           </div>
