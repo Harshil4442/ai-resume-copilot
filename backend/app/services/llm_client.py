@@ -560,16 +560,17 @@ def tailor_resume_mega_llm(
         "You are an expert executive resume writer and career coach. Your task is to rewrite the "
         "provided resume to perfectly match the provided Job Description.\n\n"
         "### STRICT RULES:\n"
-        "1. **The STAR Method:** Rewrite every single bullet point into Situation/Task, Action, and Result. "
+        "1. **Markdown Formatting:** You MUST use proper Markdown. Use `#` for the main header (Candidate Name), `##` for sections (Professional Summary, Skills, Work Experience, Education). Use `-` for ALL bullet points.\n"
+        "2. **The STAR Method:** Rewrite every single bullet point into Situation/Task, Action, and Result. "
         "Every bullet MUST start with a strong action verb (e.g., Spearheaded, Architected, Orchestrated).\n"
-        "2. **Keyword Injection:** The user is missing these skills: " + ", ".join(true_gaps[:15]) + ".\n"
+        "3. **Keyword Injection:** The user is missing these skills: " + ", ".join(true_gaps[:15]) + ".\n"
         "They have partial matches for: " + ", ".join([p.get('skill', '') for p in partial_matches[:10]]) + ".\n"
         "Creatively weave these keywords into the experience bullets ONLY if the context of their past jobs makes it believable.\n"
-        "3. **Metrics Placeholders:** If you see a major achievement without numbers, inject a clear placeholder like `[Increased revenue by X%]` so the user can fill it in.\n"
-        "4. **Aggressive Reordering:** Reorder the bullet points under each job so the achievements most relevant to the JD appear first.\n"
-        f"5. **Tone & Style:** {chosen_tone}\n\n"
+        "4. **Metrics Placeholders:** If you see a major achievement without numbers, inject a clear placeholder like `[Increased revenue by X%]` so the user can fill it in.\n"
+        "5. **Aggressive Reordering:** Reorder the bullet points under each job so the achievements most relevant to the JD appear first.\n"
+        f"6. **Tone & Style:** {chosen_tone}\n\n"
         "### OUTPUT FORMAT:\n"
-        "You must return ONLY a beautifully formatted Markdown document. Start with the candidate's contact info, then a Professional Summary, then Skills, then Work Experience, then Education. Do not include any conversational filler."
+        "You must return ONLY a beautifully formatted Markdown document. Do not include any conversational filler."
     )
     
     user_content = (

@@ -23,26 +23,7 @@ export default function TailoredResumeViewer({ markdownContent }: { markdownCont
         jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
       };
 
-      // Wrap the content in a container that forces standard A4 styling for PDF
-      const container = document.createElement('div');
-      container.innerHTML = resumeRef.current.innerHTML;
-      
-      // Apply strict styling for the PDF generation so it looks like a real resume
-      container.style.padding = '20px';
-      container.style.fontFamily = 'Arial, sans-serif';
-      container.style.color = '#000';
-      container.style.lineHeight = '1.4';
-      container.style.fontSize = '12px';
-      
-      // Hide the container from the viewport
-      container.style.position = 'absolute';
-      container.style.top = '-9999px';
-      document.body.appendChild(container);
-      
-      await html2pdf().set(opt).from(container).save();
-      
-      // Cleanup
-      document.body.removeChild(container);
+      await html2pdf().set(opt).from(resumeRef.current).save();
     } catch (err) {
       console.error("PDF generation failed:", err);
       alert("Failed to generate PDF. Please try copying the text instead.");
