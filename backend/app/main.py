@@ -55,6 +55,7 @@ async def jwt_validation_middleware(request: Request, call_next):
     if path.startswith("/api") and not (
         path == "/api/health" or
         path.startswith("/api/auth/login") or
+        path.startswith("/api/auth/google-login") or
         path.startswith("/api/auth/register") or
         path.startswith("/api/public") or
         path.startswith("/api/v1/billing/webhook") or

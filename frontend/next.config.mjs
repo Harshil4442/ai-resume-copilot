@@ -12,7 +12,8 @@ const nextConfig = {
 
     return [
       {
-        source: "/api/:path*",
+        // Exclude NextAuth specific paths from being proxied to the FastAPI backend
+        source: "/api/:path((?!auth/callback|auth/signin|auth/signout|auth/session|auth/providers|auth/csrf|auth/error).*)",
         destination: `${backend}/api/:path*`,
       },
     ];
