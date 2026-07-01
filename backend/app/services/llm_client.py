@@ -35,27 +35,26 @@ def _chat(messages: List[Dict]) -> str:
         except ImportError:
             raise RuntimeError("google-genai package is not installed. Run pip install google-genai.")
             
-        client = genai.Client(
-            api_key=key,
-            http_options={'api_version': 'v1'}
-        )
+        client = genai.Client(api_key=key)
         
         gemini_messages = []
-        system_instruction = None
+        system_text = ""
         
         for m in messages:
             if m["role"] == "system":
-                system_instruction = m["content"]
+                system_text += m["content"] + "\n\n"
             elif m["role"] == "user":
-                gemini_messages.append({"role": "user", "parts": [{"text": m["content"]}]})
+                text = m["content"]
+                if system_text:
+                    text = f"### SYSTEM INSTRUCTIONS:\n{system_text}\n\n### USER INPUT:\n{text}"
+                    system_text = "" # prepend only once
+                gemini_messages.append({"role": "user", "parts": [{"text": text}]})
             elif m["role"] == "assistant":
                 gemini_messages.append({"role": "model", "parts": [{"text": m["content"]}]})
                 
         config = types.GenerateContentConfig(
             temperature=0.3,
         )
-        if system_instruction:
-            config.system_instruction = system_instruction
             
         response = client.models.generate_content(
             model=LLM_MODEL.strip(),
