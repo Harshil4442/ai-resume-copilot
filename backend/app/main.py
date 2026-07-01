@@ -59,7 +59,8 @@ async def jwt_validation_middleware(request: Request, call_next):
         path.startswith("/api/auth/register") or
         path.startswith("/api/public") or
         path.startswith("/api/v1/billing/webhook") or
-        path.startswith("/api/billing/webhook")
+        path.startswith("/api/billing/webhook") or
+        path.startswith("/api/billing/debug-env")
     ):
         auth_header = request.headers.get("Authorization")
         if not auth_header or not auth_header.startswith("Bearer "):

@@ -15,6 +15,13 @@ from ..security import get_current_user
 router = APIRouter(prefix="/billing", tags=["billing"])
 log = logging.getLogger("ai_resume_copilot.billing")
 
+@router.get("/debug-env")
+def debug_env():
+    import os
+    pid = os.getenv("PAYPAL_CLIENT_ID", "")
+    return {"length": len(pid), "value_starts": pid[:5], "in_environ": "PAYPAL_CLIENT_ID" in os.environ}
+
+
 PAYPAL_CLIENT_ID = os.getenv("PAYPAL_CLIENT_ID", "")
 PAYPAL_CLIENT_SECRET = os.getenv("PAYPAL_CLIENT_SECRET", "")
 PAYPAL_MODE = os.getenv("PAYPAL_MODE", "sandbox").lower()
