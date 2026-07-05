@@ -1,0 +1,29 @@
+"use client";
+
+import { ReactNode } from "react";
+import { twMerge } from "tailwind-merge";
+import clsx from "clsx";
+
+interface GradientHeadingProps {
+  children: ReactNode;
+  className?: string;
+  element?: "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
+}
+
+export default function GradientHeading({ 
+  children, 
+  className, 
+  element: Element = "h1" 
+}: GradientHeadingProps) {
+  
+  return (
+    <Element
+      className={twMerge(clsx(
+        "bg-gradient-to-br from-slate-900 from-30% to-slate-500 bg-clip-text text-transparent text-balance tracking-tighter leading-[0.95] font-black",
+        className
+      ))}
+    >
+      {children}
+    </Element>
+  );
+}

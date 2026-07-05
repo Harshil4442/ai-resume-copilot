@@ -1,16 +1,39 @@
+"use client";
+
+import GlassCard from "./ui/GlassCard";
+import { LucideIcon } from "lucide-react";
+import { twMerge } from "tailwind-merge";
+import clsx from "clsx";
+
 export default function ScoreCard({
   title,
   value,
   subtitle,
-}: { title: string; value: string; subtitle?: string }) {
+  icon: Icon,
+  className,
+  valueClassName
+}: { 
+  title: string; 
+  value: string | React.ReactNode; 
+  subtitle?: string;
+  icon?: LucideIcon;
+  className?: string;
+  valueClassName?: string;
+}) {
   return (
-    <div className="metric-card kinetic-border tilt-lift overflow-hidden">
-      <div className="flex items-center justify-between gap-3">
-        <div className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">{title}</div>
-        <span className="pulse-dot" />
+    <GlassCard className={twMerge(clsx("flex flex-col p-5", className))}>
+      <div className="flex items-center gap-2 mb-3 text-slate-500">
+        {Icon && <Icon size={16} className="text-primary" />}
+        <div className="text-xs font-bold uppercase tracking-wider">{title}</div>
       </div>
-      <div className="text-4xl font-black mt-3 text-slate-950 ink-gradient">{value}</div>
-      {subtitle && <div className="text-xs font-medium text-slate-500 mt-2 leading-relaxed">{subtitle}</div>}
-    </div>
+      <div className={twMerge(clsx("text-3xl font-black text-slate-900 tracking-tighter mb-2", valueClassName))}>
+        {value}
+      </div>
+      {subtitle && (
+        <div className="text-sm font-medium text-slate-500 leading-relaxed">
+          {subtitle}
+        </div>
+      )}
+    </GlassCard>
   );
 }

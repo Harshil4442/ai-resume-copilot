@@ -5,8 +5,14 @@ import { useRouter } from "next/navigation";
 import Script from "next/script";
 import { PayPalScriptProvider, PayPalButtons } from "@paypal/react-paypal-js";
 import { apiGet, apiPostJson } from "../../lib/api";
+import PageHeader from "../../components/ui/PageHeader";
+import GlassCard from "../../components/ui/GlassCard";
+import AnimatedButton from "../../components/ui/AnimatedButton";
+import FadeIn from "../../components/ui/FadeIn";
+import StaggerContainer, { StaggerItem } from "../../components/ui/StaggerContainer";
+import { CreditCard, Zap, CheckCircle2, Shield, Globe, MapPin, AlertCircle, Crown, Lock } from "lucide-react";
 
-const PAYPAL_CLIENT_ID = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID || "test"; // fallback to sandbox test client
+const PAYPAL_CLIENT_ID = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID || "test";
 const RAZORPAY_KEY_ID = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "rzp_test_mock";
 
 export default function BillingPage() {
@@ -39,23 +45,23 @@ export default function BillingPage() {
   const planDetails = {
     subscription: {
       title: "Premium Plan",
-      price: region === "india" ? "₹999" : "$15.00",
+      price: region === "india" ? "₹999" : "$15",
       period: "monthly",
       features: [
         "Unlimited job match reports",
-        "Unlimited Ask AI (RAG) assistant queries",
+        "Unlimited Ask AI assistant queries",
         "Full market skill gap analyses",
-        "Custom learning recommendations & project paths",
+        "Custom learning paths & projects",
       ],
     },
     topup: {
-      title: "10 Operations Credits",
-      price: region === "india" ? "₹199" : "$5.00",
+      title: "Credits Pack",
+      price: region === "india" ? "₹199" : "$5",
       period: "one-time",
       features: [
-        "10 AI Operation credits added instantly",
-        "Credits do not expire",
-        "Use on matches, chats, and learning tools",
+        "10 AI Operation credits instantly",
+        "Credits never expire",
+        "Use on matches, chats, and learning",
         "Perfect for casual job hunters",
       ],
     },
@@ -69,7 +75,6 @@ export default function BillingPage() {
         currency: "USD",
         credits: selectedPlan === "topup" ? 10 : 0,
       };
-      // Trigger backend PayPal order generation
       const res = await apiPostJson<{ order_id: string }>("/billing/paypal/create-order", payload);
       return res.order_id;
     } catch (err: any) {
@@ -87,9 +92,9 @@ export default function BillingPage() {
         type: selectedPlan,
         credits: selectedPlan === "topup" ? 10 : 0,
       };
-      // Trigger backend capture and DB updates
       await apiPostJson("/billing/paypal/capture-order", payload);
       setPaymentSuccess(true);
+      window.dispatchEvent(new Event("refresh_credits"));
       setTimeout(() => {
         router.push("/dashboard");
       }, 3000);
@@ -120,19 +125,11 @@ export default function BillingPage() {
         config: {
           display: {
             blocks: {
-              upi: {
-                name: "Pay via UPI",
-                instruments: [{ method: "upi" }],
-              },
-              other: {
-                name: "Other Payment Modes",
-                instruments: [{ method: "card" }, { method: "netbanking" }, { method: "wallet" }],
-              }
+              upi: { name: "Pay via UPI", instruments: [{ method: "upi" }] },
+              other: { name: "Other Modes", instruments: [{ method: "card" }, { method: "netbanking" }, { method: "wallet" }] }
             },
             sequence: ["block.upi", "block.other"],
-            preferences: {
-              show_default_blocks: false
-            }
+            preferences: { show_default_blocks: false }
           }
         },
         handler: async function (response: any) {
@@ -145,6 +142,7 @@ export default function BillingPage() {
               credits: selectedPlan === "topup" ? 10 : 0,
             });
             setPaymentSuccess(true);
+            window.dispatchEvent(new Event("refresh_credits"));
             setTimeout(() => {
               router.push("/dashboard");
             }, 3000);
@@ -152,9 +150,7 @@ export default function BillingPage() {
             setError(verifyErr.message || "Payment verification failed.");
           }
         },
-        theme: {
-          color: "#0f172a",
-        },
+        theme: { color: "#0f172a" },
       };
 
       const rzp = new (window as any).Razorpay(options);
@@ -170,270 +166,296 @@ export default function BillingPage() {
   }
 
   return (
-    <main className="app-shell max-w-5xl mx-auto py-10 px-4 space-y-8">
+    <main className="w-full max-w-[80rem] mx-auto px-4 sm:px-6 md:px-8 py-8 space-y-10">
       <Script src="https://checkout.razorpay.com/v1/checkout.js" strategy="lazyOnload" />
-      <section className="product-hero text-left p-7 md:p-10">
-        <div className="label-kicker flex items-center gap-3">
-          <span className="pulse-dot bg-blue-500" /> Commercial Account
-        </div>
-        <h1 className="text-5xl md:text-7xl font-black leading-[0.88] mt-4 text-slate-950">
-          Upgrade your Career Command Center.
-        </h1>
-        <p className="text-slate-600 mt-4 max-w-2xl leading-relaxed">
-          Select a commercial tier to unlock advanced AI parsing, job matches, and market trend tracking.
-        </p>
-      </section>
+      
+      <PageHeader 
+        badge="Commercial Account"
+        title="Upgrade your Career Command Center."
+        subtitle="Select a commercial tier to unlock advanced AI parsing, job matches, and market trend tracking."
+      />
 
-      {/* Current Subscription Status */}
-      <section className="panel p-6 bg-slate-900 text-white rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-xl">
-        <div>
-          <span className="text-xs uppercase tracking-widest font-black text-slate-400">Current Plan</span>
-          <h2 className="text-3xl font-black mt-1">
-            {currentTier === "premium" ? "👑 Premium Plan" : "Free Plan"}
-          </h2>
-          <p className="text-sm text-slate-400 mt-1">
-            {currentTier === "premium" 
-              ? "Enjoying unlimited access to all AI features." 
-              : "Pay-As-You-Go with operation credits."}
-          </p>
-        </div>
-        <div className="bg-slate-800 border border-slate-700/80 px-6 py-4 rounded-xl flex items-center gap-4">
+      {/* Current Status Bar */}
+      <GlassCard className="p-6 md:p-8 bg-gradient-to-r from-slate-900 to-blue-950 border-slate-800 text-white flex flex-col md:flex-row items-start md:items-center justify-between gap-6 overflow-hidden relative" hoverEffect={false}>
+        <div className="absolute top-0 right-0 w-64 h-64 bg-primary/20 blur-3xl rounded-full -mr-20 -mt-20 pointer-events-none"></div>
+        
+        <div className="relative z-10 flex items-center gap-5">
+          <div className="w-14 h-14 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center backdrop-blur-sm">
+            {currentTier === "premium" ? <Crown className="text-amber-400" size={28} /> : <Zap className="text-blue-400" size={28} />}
+          </div>
           <div>
-            <div className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Available Balance</div>
-            <div className="text-2xl font-black mt-0.5 text-blue-400">
-              {currentTier === "premium" ? "∞" : `${creditBalance}`}
+            <div className="text-[10px] uppercase tracking-widest font-bold text-slate-400 mb-1">Current Plan</div>
+            <h2 className="text-2xl font-black tracking-tight text-white flex items-center gap-2">
+              {currentTier === "premium" ? "Premium Access Active" : "Free Tier Active"}
+            </h2>
+          </div>
+        </div>
+        
+        <div className="relative z-10 bg-black/30 border border-white/10 px-6 py-4 rounded-2xl flex items-center gap-6 w-full md:w-auto">
+          <div>
+            <div className="text-[10px] uppercase tracking-wider font-bold text-slate-400 mb-1">Available Credits</div>
+            <div className="text-3xl font-black text-white">
+              {currentTier === "premium" ? "∞" : creditBalance}
             </div>
           </div>
-          <div className="text-xs text-slate-400 font-semibold border-l border-slate-700 pl-4">
-            {currentTier === "premium" ? "Unlimited Operations" : "AI Operations Credits"}
+          <div className="w-px h-10 bg-white/10"></div>
+          <div className="text-xs text-slate-400 font-bold max-w-[120px] leading-snug">
+            {currentTier === "premium" ? "Unlimited Operations" : "Pay-As-You-Go Operations"}
           </div>
         </div>
-      </section>
+      </GlassCard>
 
       {paymentSuccess && (
-        <div className="panel kinetic-border p-8 text-center bg-green-50 border-green-200">
-          <div className="text-4xl">🎉</div>
-          <h2 className="text-2xl font-black text-green-950 mt-4">Payment Completed Successfully!</h2>
-          <p className="text-green-700 mt-2">Your tier and credit privileges are active. Redirecting to workspace...</p>
-        </div>
+        <FadeIn>
+          <GlassCard className="p-10 text-center bg-emerald-50/50 border-emerald-200" hoverEffect={false}>
+            <div className="w-20 h-20 mx-auto rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 mb-6">
+              <CheckCircle2 size={40} />
+            </div>
+            <h2 className="text-3xl font-black text-slate-900 tracking-tighter mb-2">Payment Completed!</h2>
+            <p className="text-slate-600 font-medium max-w-md mx-auto">Your tier and credit privileges have been successfully activated. We are redirecting you to your dashboard...</p>
+          </GlassCard>
+        </FadeIn>
       )}
 
       {error && (
-        <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-4 py-3">
-          {error}
-        </div>
+        <FadeIn>
+          <div className="flex items-center gap-2 text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-4 py-3 shadow-sm max-w-4xl mx-auto">
+            <AlertCircle size={16} /> {error}
+          </div>
+        </FadeIn>
       )}
 
       {!paymentSuccess && (
-        <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_0.8fr] gap-6">
-          {/* Plan Selection Cards */}
-          <div className="space-y-6">
-            
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-100 p-4 rounded-2xl border border-slate-200">
+        <div className="grid grid-cols-1 lg:grid-cols-[1.3fr_1fr] gap-8">
+          <div className="space-y-8">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <h3 className="font-black text-slate-900">Select Region</h3>
-                <p className="text-xs text-slate-500">Pricing adjusts automatically to your location.</p>
+                <h3 className="text-xl font-black text-slate-900 tracking-tighter">1. Select Package</h3>
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mt-1">Pricing adjusts automatically to your location</p>
               </div>
-              <div className="flex bg-white p-1 rounded-xl shadow-sm border border-slate-200">
+              <div className="flex bg-slate-100 p-1 rounded-xl shadow-inner border border-slate-200">
                 <button
                   onClick={() => setRegion("global")}
-                  className={`px-4 py-2 rounded-lg text-sm font-bold transition ${
-                    region === "global" ? "bg-slate-950 text-white shadow" : "text-slate-600 hover:bg-slate-50"
+                  className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition-all ${
+                    region === "global" ? "bg-white text-slate-900 shadow-sm border border-slate-200/50" : "text-slate-500 hover:text-slate-700"
                   }`}
                 >
-                  🌍 Global (USD)
+                  <Globe size={14} /> Global (USD)
                 </button>
                 <button
                   onClick={() => setRegion("india")}
-                  className={`px-4 py-2 rounded-lg text-sm font-bold transition ${
-                    region === "india" ? "bg-slate-950 text-white shadow" : "text-slate-600 hover:bg-slate-50"
+                  className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition-all ${
+                    region === "india" ? "bg-white text-slate-900 shadow-sm border border-slate-200/50" : "text-slate-500 hover:text-slate-700"
                   }`}
                 >
-                  🇮🇳 India (INR)
+                  <MapPin size={14} /> India (INR)
                 </button>
               </div>
             </div>
 
-            <div className="space-y-4">
-              <h3 className="text-lg font-black text-slate-950">1. Select Package</h3>
-            
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Subscription Option */}
-              <div
-                onClick={() => currentTier !== "premium" && setSelectedPlan("subscription")}
-                className={`panel p-6 transition tilt-lift flex flex-col justify-between min-h-[320px] ${
-                  currentTier === "premium"
-                    ? "opacity-60 cursor-not-allowed border-slate-200 bg-slate-50"
+              {/* Premium Plan Card */}
+              <GlassCard 
+                className={`p-6 md:p-8 flex flex-col justify-between h-[380px] transition-all cursor-pointer relative overflow-hidden ${
+                  currentTier === "premium" 
+                    ? "opacity-60 grayscale cursor-not-allowed border-slate-200" 
                     : selectedPlan === "subscription"
-                    ? "kinetic-border ring-2 ring-neutral-950 bg-white cursor-pointer"
-                    : "border-slate-200 bg-slate-50/50 hover:bg-white cursor-pointer"
+                      ? "ring-2 ring-primary border-primary shadow-xl scale-[1.02] bg-blue-50/20"
+                      : "hover:border-primary/50 hover:shadow-lg hover:-translate-y-1"
                 }`}
+                hoverEffect={false}
+                onClick={() => currentTier !== "premium" && setSelectedPlan("subscription")}
               >
+                {selectedPlan === "subscription" && currentTier !== "premium" && (
+                  <div className="absolute top-0 right-0 bg-primary text-white text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-bl-xl">Selected</div>
+                )}
+                
                 <div>
-                  <div className="label-kicker text-blue-500">Subscription</div>
-                  <h4 className="text-2xl font-black text-slate-900 mt-2">{planDetails.subscription.title}</h4>
-                  <div className="mt-4 flex items-baseline">
-                    <span className="text-4xl font-black text-slate-950">{planDetails.subscription.price}</span>
-                    <span className="text-sm text-slate-500 ml-1">/ {planDetails.subscription.period}</span>
+                  <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center text-blue-600 mb-4">
+                    <Crown size={20} />
                   </div>
-                  <ul className="mt-6 space-y-2 text-xs font-semibold text-slate-600">
-                    {planDetails.subscription.features.map((f) => (
-                      <li key={f}>✓ {f}</li>
+                  <h4 className="text-xl font-black text-slate-900">{planDetails.subscription.title}</h4>
+                  <div className="mt-3 flex items-baseline gap-1">
+                    <span className="text-4xl font-black text-slate-900 tracking-tighter">{planDetails.subscription.price}</span>
+                    <span className="text-sm font-bold text-slate-400">/ {planDetails.subscription.period}</span>
+                  </div>
+                  <ul className="mt-6 space-y-3">
+                    {planDetails.subscription.features.map((f, i) => (
+                      <li key={i} className="flex items-start gap-2 text-sm text-slate-700 font-medium leading-tight">
+                        <CheckCircle2 size={16} className="text-emerald-500 flex-shrink-0 mt-0.5" /> {f}
+                      </li>
                     ))}
                   </ul>
                 </div>
-                <div className="mt-6 text-sm font-black text-blue-600">Best for active search</div>
-              </div>
+              </GlassCard>
 
               {/* Credits Top-up Option */}
-              <div
-                onClick={() => currentTier !== "premium" && setSelectedPlan("topup")}
-                className={`panel p-6 transition tilt-lift flex flex-col justify-between min-h-[320px] ${
-                  currentTier === "premium"
-                    ? "opacity-60 cursor-not-allowed border-slate-200 bg-slate-50"
+              <GlassCard 
+                className={`p-6 md:p-8 flex flex-col justify-between h-[380px] transition-all cursor-pointer relative overflow-hidden ${
+                  currentTier === "premium" 
+                    ? "opacity-60 grayscale cursor-not-allowed border-slate-200" 
                     : selectedPlan === "topup"
-                    ? "kinetic-border ring-2 ring-neutral-950 bg-white cursor-pointer"
-                    : "border-slate-200 bg-slate-50/50 hover:bg-white cursor-pointer"
+                      ? "ring-2 ring-primary border-primary shadow-xl scale-[1.02] bg-blue-50/20"
+                      : "hover:border-primary/50 hover:shadow-lg hover:-translate-y-1"
                 }`}
+                hoverEffect={false}
+                onClick={() => currentTier !== "premium" && setSelectedPlan("topup")}
               >
+                {selectedPlan === "topup" && currentTier !== "premium" && (
+                  <div className="absolute top-0 right-0 bg-primary text-white text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-bl-xl">Selected</div>
+                )}
+                
                 <div>
-                  <div className="label-kicker text-slate-500">Top-Up Packs</div>
-                  <h4 className="text-2xl font-black text-slate-900 mt-2">{planDetails.topup.title}</h4>
-                  <div className="mt-4 flex items-baseline">
-                    <span className="text-4xl font-black text-slate-950">{planDetails.topup.price}</span>
-                    <span className="text-sm text-slate-500 ml-1">/ {planDetails.topup.period}</span>
+                  <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-600 mb-4">
+                    <Zap size={20} />
                   </div>
-                  <ul className="mt-6 space-y-2 text-xs font-semibold text-slate-600">
-                    {planDetails.topup.features.map((f) => (
-                      <li key={f}>✓ {f}</li>
+                  <h4 className="text-xl font-black text-slate-900">{planDetails.topup.title}</h4>
+                  <div className="mt-3 flex items-baseline gap-1">
+                    <span className="text-4xl font-black text-slate-900 tracking-tighter">{planDetails.topup.price}</span>
+                    <span className="text-sm font-bold text-slate-400">/ {planDetails.topup.period}</span>
+                  </div>
+                  <ul className="mt-6 space-y-3">
+                    {planDetails.topup.features.map((f, i) => (
+                      <li key={i} className="flex items-start gap-2 text-sm text-slate-700 font-medium leading-tight">
+                        <CheckCircle2 size={16} className="text-emerald-500 flex-shrink-0 mt-0.5" /> {f}
+                      </li>
                     ))}
                   </ul>
                 </div>
-                <div className="mt-6 text-sm font-black text-slate-600">Pay as you go</div>
-              </div>
+              </GlassCard>
             </div>
           </div>
-        </div>
 
-          {/* PayPal Payment Area */}
-          <div className="panel kinetic-border p-6 flex flex-col justify-center space-y-6 bg-white/70 backdrop-blur-xl">
+          <div className="space-y-6">
             <div>
-              <h3 className="text-lg font-black text-slate-950">2. Complete Checkout</h3>
-              <p className="text-xs text-slate-500 mt-1">
-                Supports PayPal account, Debit/Credit Card (Visa & Mastercard), and Google Pay (GPay).
-              </p>
+              <h3 className="text-xl font-black text-slate-900 tracking-tighter">2. Secure Checkout</h3>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mt-1">100% Encrypted transactions</p>
             </div>
 
-            {currentTier === "premium" ? (
-              <div className="bg-slate-900/5 p-6 rounded-2xl border border-slate-200/60 text-center space-y-4">
-                <div className="text-4xl">👑</div>
-                <h4 className="text-lg font-black text-slate-950">Premium Plan Active</h4>
-                <p className="text-xs text-slate-600 leading-relaxed max-w-sm mx-auto">
-                  You already have unlimited access to all AI Resume CoPilot features. Additional credit purchases and subscription activations are currently disabled.
-                </p>
-                <button
-                  disabled
-                  className="w-full bg-slate-200 text-slate-400 font-bold py-4 px-6 rounded-full cursor-not-allowed"
-                >
-                  Purchases Locked
-                </button>
-              </div>
-            ) : (
-              <>
-                <div className="premium-card p-4 bg-slate-50 flex justify-between items-center">
-                  <div>
-                    <div className="text-xs text-slate-400 font-bold uppercase tracking-wider">Total Amount</div>
-                    <div className="text-lg font-black text-slate-900 mt-1">
-                      {selectedPlan === "subscription" ? planDetails.subscription.title : planDetails.topup.title}
+            <GlassCard className="p-6 md:p-8" hoverEffect={false}>
+              {currentTier === "premium" ? (
+                <div className="text-center py-8">
+                  <div className="w-16 h-16 rounded-full bg-slate-100 text-slate-400 mx-auto flex items-center justify-center mb-6">
+                    <Lock size={24} />
+                  </div>
+                  <h4 className="text-xl font-black text-slate-900 mb-2">Purchases Locked</h4>
+                  <p className="text-sm text-slate-500 font-medium max-w-[250px] mx-auto mb-8">
+                    You already have unlimited access. Additional purchases are disabled.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <div className="bg-slate-50 rounded-2xl p-5 border border-slate-200 flex justify-between items-center mb-8 shadow-inner">
+                    <div>
+                      <div className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-1">Total Due Today</div>
+                      <div className="text-sm font-bold text-slate-900">
+                        {selectedPlan === "subscription" ? planDetails.subscription.title : planDetails.topup.title}
+                      </div>
+                    </div>
+                    <div className="text-3xl font-black text-primary tracking-tighter">
+                      {selectedPlan === "subscription" ? planDetails.subscription.price : planDetails.topup.price}
                     </div>
                   </div>
-                  <div className="text-3xl font-black text-slate-950">
-                    {selectedPlan === "subscription" ? planDetails.subscription.price : planDetails.topup.price}
-                  </div>
-                </div>
 
-                {loading && <div className="text-center py-4 text-sm text-slate-500">Capturing checkout session details...</div>}
+                  {loading && (
+                    <div className="flex flex-col items-center justify-center py-8 space-y-4">
+                      <div className="w-8 h-8 rounded-full border-2 border-slate-200 border-t-primary animate-spin"></div>
+                      <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">Processing...</div>
+                    </div>
+                  )}
 
-                {!loading && region === "global" && (
-                  <div className="relative z-10">
-                    <PayPalScriptProvider
-                      options={{
-                        clientId: PAYPAL_CLIENT_ID,
-                        currency: "USD",
-                        intent: "capture",
-                        components: "buttons",
-                      }}
-                    >
-                      <PayPalButtons
-                        style={{
-                          layout: "vertical",
-                          shape: "pill",
-                          color: "gold",
+                  {!loading && region === "global" && (
+                    <div className="relative z-10 min-h-[150px]">
+                      <PayPalScriptProvider
+                        options={{
+                          clientId: PAYPAL_CLIENT_ID,
+                          currency: "USD",
+                          intent: "capture",
+                          components: "buttons",
                         }}
-                        forceReRender={[selectedPlan]}
-                        createOrder={createOrder}
-                        onApprove={onApprove}
-                        onError={(err) => {
-                          console.error("PayPal buttons error:", err);
-                          setError("Unable to render payment options. Check environment credentials.");
-                        }}
-                      />
-                    </PayPalScriptProvider>
-                  </div>
-                )}
+                      >
+                        <PayPalButtons
+                          style={{ layout: "vertical", shape: "rect", color: "blue" }}
+                          forceReRender={[selectedPlan]}
+                          createOrder={createOrder}
+                          onApprove={onApprove}
+                          onError={(err) => {
+                            console.error("PayPal buttons error:", err);
+                            setError("Unable to render payment options. Check environment credentials.");
+                          }}
+                        />
+                      </PayPalScriptProvider>
+                    </div>
+                  )}
 
-                {!loading && region === "india" && (
-                  <div className="relative z-10 flex flex-col space-y-3">
-                    <button
-                      onClick={handleRazorpayCheckout}
-                      className="w-full bg-[#02042b] hover:bg-slate-800 text-white font-bold py-4 px-6 rounded-full shadow-lg transition transform hover:-translate-y-0.5"
-                    >
-                      Pay with Razorpay
-                    </button>
-                    <p className="text-center text-xs font-semibold text-slate-500">
-                      Supports Google Pay, PhonePe, Paytm, UPI, and Cards.
-                    </p>
+                  {!loading && region === "india" && (
+                    <div className="relative z-10">
+                      <button
+                        onClick={handleRazorpayCheckout}
+                        className="w-full bg-[#02042b] hover:bg-slate-800 text-white font-bold py-4 px-6 rounded-xl shadow-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                      >
+                        <CreditCard size={18} /> Pay with Razorpay
+                      </button>
+                      <div className="flex items-center justify-center gap-4 mt-6 grayscale opacity-60">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Supports UPI, Cards, NetBanking</span>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-center gap-2 mt-8 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    <Shield size={14} /> 256-bit Secure Encryption
                   </div>
-                )}
-              </>
-            )}
+                </>
+              )}
+            </GlassCard>
           </div>
         </div>
       )}
 
-      {/* How Operations Credits Work */}
-      <section className="panel kinetic-border p-6 bg-white/70 backdrop-blur-xl space-y-4">
-        <h3 className="text-xl font-black text-slate-950">How Operations Credits Work</h3>
-        <p className="text-slate-500 text-xs leading-relaxed">
-          On the Free Plan, advanced AI operations consume credits. On the Premium Plan, all AI features are completely free and unlimited.
-        </p>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
-          <div className="space-y-3 bg-red-50/30 p-4 rounded-xl border border-red-100/60">
-            <h4 className="text-sm font-bold text-red-950 flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full bg-red-500" />
-              Requires 1 Credit
-            </h4>
-            <ul className="space-y-2 text-xs font-semibold text-slate-600">
-              <li>⚡ Job matching & skill gap analysis</li>
-              <li>⚡ Generating personalized learning paths</li>
-              <li>⚡ Real-time market trends & salary insights</li>
-              <li>⚡ Asking AI (RAG Chat) questions</li>
+      {/* Credit System Explainer */}
+      <StaggerContainer className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-12">
+        <StaggerItem>
+          <GlassCard className="p-6 md:p-8 h-full bg-blue-50/30 border-blue-100" hoverEffect={false}>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600"><Zap size={16} /></div>
+              <h4 className="text-sm font-black text-slate-900 tracking-tight uppercase tracking-wider">Uses 1 Credit</h4>
+            </div>
+            <ul className="space-y-3">
+              {[
+                "Job matching & skill gap analysis",
+                "Generating personalized learning paths",
+                "Real-time market trends & salary insights",
+                "Asking AI (RAG Chat) questions"
+              ].map((item, i) => (
+                <li key={i} className="flex items-start gap-2 text-sm text-slate-700 font-medium">
+                  <span className="text-blue-500 font-black mt-0.5">•</span> {item}
+                </li>
+              ))}
             </ul>
-          </div>
-          <div className="space-y-3 bg-emerald-50/30 p-4 rounded-xl border border-emerald-100/60">
-            <h4 className="text-sm font-bold text-emerald-950 flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full bg-emerald-500" />
-              Always Free (0 Credits)
-            </h4>
-            <ul className="space-y-2 text-xs font-semibold text-slate-600">
-              <li>✓ Uploading & parsing resumes</li>
-              <li>✓ Editing your career profile details</li>
-              <li>✓ Viewing dashboard analytics & history</li>
-              <li>✓ Browsing course & recommendation library</li>
+          </GlassCard>
+        </StaggerItem>
+
+        <StaggerItem>
+          <GlassCard className="p-6 md:p-8 h-full bg-emerald-50/30 border-emerald-100" hoverEffect={false}>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center text-emerald-600"><CheckCircle2 size={16} /></div>
+              <h4 className="text-sm font-black text-slate-900 tracking-tight uppercase tracking-wider">Always Free</h4>
+            </div>
+            <ul className="space-y-3">
+              {[
+                "Uploading & parsing resumes",
+                "Editing your career profile details",
+                "Viewing dashboard analytics & history",
+                "Browsing course & recommendation library"
+              ].map((item, i) => (
+                <li key={i} className="flex items-start gap-2 text-sm text-slate-700 font-medium">
+                  <span className="text-emerald-500 font-black mt-0.5">✓</span> {item}
+                </li>
+              ))}
             </ul>
-          </div>
-        </div>
-      </section>
+          </GlassCard>
+        </StaggerItem>
+      </StaggerContainer>
     </main>
   );
 }

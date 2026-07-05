@@ -1,133 +1,225 @@
+import Link from "next/link";
+import { FileText, Target, TrendingUp, BookOpen, PenTool, BarChart3, CheckCircle2, Shield, Zap } from "lucide-react";
+import ShimmerBadge from "../components/ui/ShimmerBadge";
+import GradientHeading from "../components/ui/GradientHeading";
+import AnimatedButton from "../components/ui/AnimatedButton";
+import FadeIn from "../components/ui/FadeIn";
+import StaggerContainer, { StaggerItem } from "../components/ui/StaggerContainer";
+import Marquee from "../components/ui/Marquee";
+import GlassCard from "../components/ui/GlassCard";
 import BulletOptimizer from "../components/BulletOptimizer";
 
-const features = [
-  {
-    href: "/resume",
-    eyebrow: "Resume Intelligence",
-    title: "A parser that sees evidence, not just keywords.",
-    text: "Upload your resume and turn messy career history into structured skills, sections, experience, and proof signals.",
-  },
-  {
-    href: "/jobs",
-    eyebrow: "Match Analysis",
-    title: "Recruiter-style fit, explained in plain English.",
-    text: "Compare a resume to a target job, inspect the gaps, and ask grounded AI questions about the match.",
-  },
-  {
-    href: "/market",
-    eyebrow: "Market Trends",
-    title: "Live demand, mapped back to your profile.",
-    text: "Search current roles, extract repeated skill demand, and see which market gaps matter most.",
-  },
-  {
-    href: "/learning",
-    eyebrow: "Learning Strategy",
-    title: "Projects that prove the missing skills.",
-    text: "Turn each gap into practical build ideas, resume bullets, and interview talking points.",
-  },
-];
-
-const screenRows = [
-  ["Profile signal", "82%", "Improving"],
-  ["Backend Engineer", "91", "Strong match"],
-  ["Docker", "High", "Market gap"],
-  ["RAG Assistant", "Build", "Proof project"],
-];
-
-const numberField = `01 10 94 82 17 03 59 21 88 04
-resume proof skill gap market fit signal
-100 011 001 111 010 101 011 100
-FastAPI React Redis Groq GCP Vercel
-match score verified evidence learning`;
-
-export default function HomePage() {
+export default function Home() {
   return (
-    <main className="app-shell space-y-6 md:space-y-8">
-      <section className="product-hero">
-        <div className="label-kicker">AI Resume CoPilot</div>
-        <h1 className="product-title mt-5">
-          A career workspace that feels as sharp as your ambition.
-        </h1>
-        <p className="product-subtitle">
-          Parse resumes. Match jobs. Read the market. Build proof. One beautifully connected system for making better career moves.
-        </p>
-        <div className="mt-7 flex flex-wrap justify-center gap-3">
-          <a className="btn-primary" href="/dashboard">Open Dashboard</a>
-          <a className="btn-secondary" href="/market">Explore Market Trends</a>
-        </div>
+    <main className="flex min-h-screen flex-col items-center justify-between pt-14 pb-20">
+      
+      {/* Hero Section */}
+      <section className="w-full max-w-[80rem] mx-auto px-6 md:px-8 pt-24 pb-16 md:pt-32 md:pb-24 text-center">
+        <StaggerContainer staggerDelay={0.15}>
+          <StaggerItem className="flex justify-center mb-6">
+            <ShimmerBadge href="/register">✨ Introducing AI-Powered Career OS</ShimmerBadge>
+          </StaggerItem>
+          
+          <StaggerItem>
+            <GradientHeading className="mb-6 max-w-4xl mx-auto">
+              Your career signal,<br className="hidden sm:block" /> measured and amplified.
+            </GradientHeading>
+          </StaggerItem>
+          
+          <StaggerItem>
+            <p className="text-lg md:text-xl text-slate-500 max-w-2xl mx-auto mb-10 text-balance tracking-tight leading-relaxed">
+              Resume CoPilot offers instant, AI-powered insights into your career trajectory. Parse your resume, match against job descriptions, and unlock personalized learning strategies.
+            </p>
+          </StaggerItem>
+          
+          <StaggerItem className="flex flex-col sm:flex-row items-center justify-center gap-4">
+            <AnimatedButton href="/register" showArrow>Start your transformation</AnimatedButton>
+            <AnimatedButton href="/dashboard" variant="secondary">Go to Dashboard</AnimatedButton>
+          </StaggerItem>
+        </StaggerContainer>
+      </section>
 
-        <div className="product-stage">
-          <div className="number-field">{numberField}</div>
-          <div className="device-frame relative z-10">
-            <div className="screen-glass">
-              <div className="border-b border-slate-200 bg-white/80 px-4 py-3 flex items-center gap-2">
-                <span className="h-2.5 w-2.5 rounded-full bg-red-400" />
-                <span className="h-2.5 w-2.5 rounded-full bg-amber-300" />
-                <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
-                <span className="ml-auto text-[11px] font-black uppercase tracking-[0.22em] text-slate-400">Career OS</span>
+      {/* Marquee Section */}
+      <section className="w-full max-w-[80rem] mx-auto px-6 md:px-8 mb-32">
+        <FadeIn delay={0.4}>
+          <div className="relative rounded-2xl bg-white/40 border border-slate-200/50 backdrop-blur-sm p-4 md:shadow-xl">
+            {/* Fade overlays */}
+            <div className="pointer-events-none absolute inset-y-0 left-0 w-1/3 bg-gradient-to-r from-background to-transparent z-10 rounded-l-2xl"></div>
+            <div className="pointer-events-none absolute inset-y-0 right-0 w-1/3 bg-gradient-to-l from-background to-transparent z-10 rounded-r-2xl"></div>
+            
+            <Marquee pauseOnHover={true}>
+              <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-slate-100 shadow-sm">
+                <FileText className="text-blue-500" size={18} />
+                <span className="text-sm font-semibold text-slate-700">Parse resumes instantly</span>
               </div>
-              <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] min-h-[430px]">
-                <div className="p-5 md:p-7">
-                  <div className="label-kicker">Live Career Signal</div>
-                  <h2 className="mt-3 text-4xl md:text-6xl font-black tracking-tight leading-[0.88] text-slate-950">
-                    Everything important, in focus.
-                  </h2>
-                  <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {screenRows.map(([name, value, state]) => (
-                      <div key={name} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                        <div className="text-xs font-bold uppercase tracking-[0.16em] text-slate-500">{name}</div>
-                        <div className="mt-3 text-4xl font-black text-slate-950">{value}</div>
-                        <div className="mt-1 text-sm font-semibold text-[#0071e3]">{state}</div>
-                      </div>
-                    ))}
-                  </div>
+              <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-slate-100 shadow-sm">
+                <Target className="text-amber-500" size={18} />
+                <span className="text-sm font-semibold text-slate-700">Match job descriptions</span>
+              </div>
+              <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-slate-100 shadow-sm">
+                <TrendingUp className="text-emerald-500" size={18} />
+                <span className="text-sm font-semibold text-slate-700">Analyze market trends</span>
+              </div>
+              <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-slate-100 shadow-sm">
+                <BookOpen className="text-purple-500" size={18} />
+                <span className="text-sm font-semibold text-slate-700">AI learning strategies</span>
+              </div>
+              <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-slate-100 shadow-sm">
+                <PenTool className="text-rose-500" size={18} />
+                <span className="text-sm font-semibold text-slate-700">Tailor resumes automatically</span>
+              </div>
+            </Marquee>
+          </div>
+        </FadeIn>
+      </section>
+
+      {/* Bullet Optimizer Preview */}
+      <section className="w-full max-w-[80rem] mx-auto px-6 md:px-8 mb-32">
+        <div className="grid lg:grid-cols-2 gap-16 items-center">
+          <div>
+            <FadeIn>
+              <h2 className="text-3xl md:text-4xl font-bold tracking-tight text-slate-900 mb-4">
+                Write bullets that actually convert.
+              </h2>
+              <p className="text-lg text-slate-500 mb-8 leading-relaxed">
+                Our AI analyzes your resume bullets against thousands of successful tech resumes to suggest high-impact verbs and quantifiable metrics.
+              </p>
+              <ul className="space-y-4 mb-8">
+                <li className="flex items-start gap-3">
+                  <CheckCircle2 className="text-emerald-500 mt-1" size={20} />
+                  <span className="text-slate-700 font-medium">Detect weak action verbs automatically</span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <CheckCircle2 className="text-emerald-500 mt-1" size={20} />
+                  <span className="text-slate-700 font-medium">Identify missing quantifiable metrics</span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <CheckCircle2 className="text-emerald-500 mt-1" size={20} />
+                  <span className="text-slate-700 font-medium">Generate rewritten alternatives instantly</span>
+                </li>
+              </ul>
+              <AnimatedButton href="/register" variant="outline" showArrow>Try the full tool</AnimatedButton>
+            </FadeIn>
+          </div>
+          <FadeIn direction="left" delay={0.2}>
+            <div className="relative">
+              <div className="absolute -inset-4 bg-primary/5 rounded-3xl blur-2xl -z-10"></div>
+              <GlassCard className="p-1 md:p-1 border-white/80 shadow-2xl">
+                <div className="bg-slate-50/50 rounded-[14px] overflow-hidden">
+                  <BulletOptimizer />
                 </div>
-                <div className="border-t lg:border-l lg:border-t-0 border-slate-200 bg-[#f5f5f7] p-5 md:p-7">
-                  <div className="rounded-lg bg-neutral-950 p-4 text-white shadow-[0_22px_70px_rgba(15,23,42,0.22)]">
-                    <div className="label-kicker text-blue-200">Ask AI</div>
-                    <p className="mt-4 text-2xl font-black leading-tight">Why is this match not higher?</p>
-                    <div className="mt-5 space-y-3 text-sm text-blue-100">
-                      <div className="rounded-lg border border-white/10 bg-white/10 p-3">Evidence is strong for APIs and Python.</div>
-                      <div className="rounded-lg border border-white/10 bg-white/10 p-3">Docker and cloud deployment are not proven enough.</div>
-                      <div className="rounded-lg border border-white/10 bg-white/10 p-3">Build one deployment project to close the gap.</div>
-                    </div>
-                  </div>
+              </GlassCard>
+            </div>
+          </FadeIn>
+        </div>
+      </section>
+
+      {/* Bento Grid Features */}
+      <section className="w-full max-w-[80rem] mx-auto px-6 md:px-8 mb-32">
+        <FadeIn className="text-center mb-16">
+          <h2 className="text-3xl md:text-5xl font-bold tracking-tight text-slate-900 mb-4">Everything you need to land the job.</h2>
+          <p className="text-lg text-slate-500">Powerful tools designed for the modern job seeker.</p>
+        </FadeIn>
+
+        <StaggerContainer className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <StaggerItem className="lg:col-span-2">
+            <GlassCard className="h-full flex flex-col p-8">
+              <div className="h-12 w-12 rounded-xl bg-blue-100 flex items-center justify-center text-blue-600 mb-6">
+                <Target size={24} />
+              </div>
+              <h3 className="text-2xl font-bold text-slate-900 mb-3">Precision Job Matching</h3>
+              <p className="text-slate-500 leading-relaxed mb-6 flex-grow">
+                Paste any job description and let our AI compare it against your parsed resume. Instantly see your match score, missing skills, and a breakdown of how a recruiter views your profile.
+              </p>
+              <Link href="/jobs" className="text-sm font-bold text-primary hover:text-blue-700 flex items-center gap-1 group">
+                Explore Job Match <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+              </Link>
+            </GlassCard>
+          </StaggerItem>
+
+          <StaggerItem>
+            <GlassCard className="h-full flex flex-col p-8">
+              <div className="h-12 w-12 rounded-xl bg-amber-100 flex items-center justify-center text-amber-600 mb-6">
+                <TrendingUp size={24} />
+              </div>
+              <h3 className="text-xl font-bold text-slate-900 mb-3">Market Trends</h3>
+              <p className="text-slate-500 leading-relaxed mb-6 flex-grow text-sm">
+                Analyze thousands of recent job postings for your target role to discover which skills are actually in demand right now.
+              </p>
+              <Link href="/market" className="text-sm font-bold text-primary hover:text-blue-700 flex items-center gap-1 group">
+                View Trends <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+              </Link>
+            </GlassCard>
+          </StaggerItem>
+
+          <StaggerItem>
+            <GlassCard className="h-full flex flex-col p-8">
+              <div className="h-12 w-12 rounded-xl bg-purple-100 flex items-center justify-center text-purple-600 mb-6">
+                <BookOpen size={24} />
+              </div>
+              <h3 className="text-xl font-bold text-slate-900 mb-3">Learning Strategies</h3>
+              <p className="text-slate-500 leading-relaxed mb-6 flex-grow text-sm">
+                Get a personalized study plan based on your exact skill gaps. We recommend specific projects to build that prove you know what you're doing.
+              </p>
+              <Link href="/learning" className="text-sm font-bold text-primary hover:text-blue-700 flex items-center gap-1 group">
+                Plan Strategy <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+              </Link>
+            </GlassCard>
+          </StaggerItem>
+
+          <StaggerItem className="lg:col-span-2">
+            <GlassCard className="h-full flex flex-col p-8 relative overflow-hidden group">
+              <div className="absolute right-0 top-0 w-64 h-64 bg-emerald-100/50 rounded-full blur-3xl -mr-20 -mt-20 transition-transform group-hover:scale-110"></div>
+              <div className="relative z-10">
+                <div className="h-12 w-12 rounded-xl bg-emerald-100 flex items-center justify-center text-emerald-600 mb-6">
+                  <Shield size={24} />
                 </div>
+                <h3 className="text-2xl font-bold text-slate-900 mb-3">Enterprise-Grade Parsing</h3>
+                <p className="text-slate-500 leading-relaxed mb-6 max-w-xl">
+                  Upload your PDF and our extraction engine structures your experience precisely how an ATS sees it. Verify that your formatting isn't costing you interviews.
+                </p>
+                <Link href="/resume" className="text-sm font-bold text-primary hover:text-blue-700 flex items-center gap-1 group/link">
+                  Parse Resume <ArrowRight className="h-4 w-4 transition-transform group-hover/link:translate-x-1" />
+                </Link>
+              </div>
+            </GlassCard>
+          </StaggerItem>
+        </StaggerContainer>
+      </section>
+
+      {/* CTA Section */}
+      <section className="w-full max-w-[80rem] mx-auto px-6 md:px-8">
+        <FadeIn>
+          <div className="relative rounded-3xl overflow-hidden bg-slate-950 p-10 md:p-20 text-center border border-slate-800 shadow-2xl">
+            <div className="absolute inset-0 bg-[linear-gradient(to_right,#4f4f4f2e_1px,transparent_1px),linear-gradient(to_bottom,#4f4f4f2e_1px,transparent_1px)] bg-[size:24px_24px] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_50%,#000_70%,transparent_100%)]"></div>
+            
+            <div className="relative z-10 max-w-2xl mx-auto">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 border border-white/10 text-white text-xs font-semibold mb-6">
+                <Zap size={14} className="text-amber-400" /> Start free today
+              </div>
+              <h2 className="text-3xl md:text-5xl font-black tracking-tight text-white mb-6">
+                Ready to level up your career?
+              </h2>
+              <p className="text-lg text-slate-400 mb-10 text-balance">
+                Join thousands of engineers who are using AI to build better resumes and land their dream roles.
+              </p>
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+                <AnimatedButton href="/register" showArrow>Create free account</AnimatedButton>
               </div>
             </div>
           </div>
-        </div>
+        </FadeIn>
       </section>
-
-      <BulletOptimizer />
-
-      <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {features.map((feature) => (
-          <a key={feature.href} href={feature.href} className="premium-card p-6 md:p-8 min-h-[300px] flex flex-col justify-between">
-            <div>
-              <div className="label-kicker">{feature.eyebrow}</div>
-              <h2 className="mt-4 text-3xl md:text-5xl font-black tracking-tight leading-[0.94] text-slate-950">
-                {feature.title}
-              </h2>
-              <p className="mt-4 text-sm md:text-base font-medium leading-relaxed text-slate-600">{feature.text}</p>
-            </div>
-            <div className="mt-8 line-link">Open feature</div>
-          </a>
-        ))}
-      </section>
-
-      <section className="dark-panel hero-stage live-grid p-7 md:p-10 overflow-hidden">
-        <div className="number-field">{numberField}</div>
-        <div className="relative max-w-4xl">
-          <div className="label-kicker text-blue-200">Real-time career intelligence</div>
-          <h2 className="mt-4 text-5xl md:text-7xl font-black tracking-tight leading-[0.86] holo-text">
-            Less noise. More signal.
-          </h2>
-          <p className="mt-5 max-w-2xl text-base md:text-lg font-medium leading-relaxed text-blue-100">
-            The interface stays calm while the system does the heavy lifting: parsing, scoring, trend extraction, gap analysis, and project planning.
-          </p>
-        </div>
-      </section>
+      
     </main>
+  );
+}
+
+function ArrowRight({ className }: { className?: string }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M5 12h14" />
+      <path d="m12 5 7 7-7 7" />
+    </svg>
   );
 }

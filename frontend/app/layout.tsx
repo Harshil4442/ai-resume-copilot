@@ -1,7 +1,11 @@
+import { Inter } from 'next/font/google';
 import "./globals.css";
 import Script from "next/script";
 import Nav from "../components/Nav";
+import Footer from "../components/Footer";
 import SessionProviderWrapper from "../components/SessionProviderWrapper";
+
+const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
 
 export const metadata = {
   title: "AI Resume CoPilot",
@@ -15,7 +19,7 @@ const GA_MEASUREMENT_ID =
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" className={`${inter.variable} font-sans`}>
       <head>
         {GA_MEASUREMENT_ID ? (
           <>
@@ -35,10 +39,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </>
         ) : null}
       </head>
-      <body>
+      <body className="flex flex-col min-h-screen bg-background text-slate-900 selection:bg-primary/20 selection:text-primary">
         <SessionProviderWrapper>
           <Nav />
-          <div>{children}</div>
+          <div className="flex-grow flex flex-col">{children}</div>
+          <Footer />
         </SessionProviderWrapper>
       </body>
     </html>
