@@ -62,7 +62,7 @@ export default function Nav() {
             <span className="block text-[10px] font-bold uppercase tracking-[0.22em] text-slate-400">Career OS</span>
           </span>
         </a>
-        <nav className="flex gap-1 text-sm items-center overflow-x-auto rounded-full border border-slate-200/70 bg-white/70 p-1 backdrop-blur-xl">
+        <nav className="flex gap-1 text-sm items-center overflow-x-auto overflow-y-hidden [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] rounded-full border border-slate-200/70 bg-white/70 p-1 backdrop-blur-xl">
           {links.map((link) => {
             const active = pathname === link.href;
             return (
