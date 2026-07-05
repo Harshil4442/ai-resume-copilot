@@ -46,7 +46,7 @@ export default function Home() {
         
         {/* LTR Marquee */}
         <Marquee className="[--duration:60s]" reverse>
-          <div className="flex items-center gap-12 whitespace-nowrap text-5xl md:text-7xl font-black text-slate-800 uppercase tracking-tighter px-6 opacity-60">
+          <div className="flex items-center gap-12 whitespace-nowrap text-5xl md:text-7xl font-black text-slate-600 uppercase tracking-tighter px-6">
             <span>AI Resume CoPilot</span>
             <span className="text-primary">•</span>
             <span>Hyper-Tailored</span>
