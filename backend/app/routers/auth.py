@@ -121,11 +121,11 @@ def google_login(payload: AuthGoogleLoginRequest, db: Session = Depends(get_db))
     
     if not u:
         # Register new user seamlessly with a placeholder hash (they can only login via Google, or reset password later)
-        # Grant 5 initial credits as a standard signup bonus
+        # Grant 20 initial credits as a standard signup bonus
         u = User(
             email=email,
             password_hash=hash_password(payload.email + "_google_placeholder"),
-            ai_credits=5
+            ai_credits=20
         )
         db.add(u)
         db.commit()

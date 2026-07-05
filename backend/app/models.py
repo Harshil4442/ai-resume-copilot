@@ -13,7 +13,7 @@ class User(Base):
     email = Column(String, unique=True, index=True)
     password_hash = Column(String, default="")
     tier = Column(String, default="free")
-    ai_credits = Column(Integer, default=5, nullable=False)
+    ai_credits = Column(Integer, default=20, nullable=False)
     stripe_customer_id = Column(String, nullable=True)
     stripe_subscription_id = Column(String, nullable=True)
 

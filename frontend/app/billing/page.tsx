@@ -17,7 +17,7 @@ const RAZORPAY_KEY_ID = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "rzp_test_moc
 
 export default function BillingPage() {
   const router = useRouter();
-  const [region, setRegion] = useState<"global" | "india">("global");
+  const [region, setRegion] = useState<"global" | "india">("india");
   const [selectedPlan, setSelectedPlan] = useState<"subscription" | "topup">("subscription");
   const [paymentSuccess, setPaymentSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -56,10 +56,10 @@ export default function BillingPage() {
     },
     topup: {
       title: "Credits Pack",
-      price: region === "india" ? "₹199" : "$5",
+      price: region === "india" ? "₹99" : "$3.99",
       period: "one-time",
       features: [
-        "10 AI Operation credits instantly",
+        "25 AI Operation credits instantly",
         "Credits never expire",
         "Use on matches, chats, and learning",
         "Perfect for casual job hunters",
@@ -73,7 +73,7 @@ export default function BillingPage() {
       const payload = {
         type: selectedPlan,
         currency: "USD",
-        credits: selectedPlan === "topup" ? 10 : 0,
+        credits: selectedPlan === "topup" ? 25 : 0,
       };
       const res = await apiPostJson<{ order_id: string }>("/billing/paypal/create-order", payload);
       return res.order_id;
@@ -90,7 +90,7 @@ export default function BillingPage() {
       const payload = {
         order_id: data.orderID,
         type: selectedPlan,
-        credits: selectedPlan === "topup" ? 10 : 0,
+        credits: selectedPlan === "topup" ? 25 : 0,
       };
       await apiPostJson("/billing/paypal/capture-order", payload);
       setPaymentSuccess(true);
@@ -111,7 +111,7 @@ export default function BillingPage() {
     try {
       const payload = {
         type: selectedPlan,
-        credits: selectedPlan === "topup" ? 10 : 0,
+        credits: selectedPlan === "topup" ? 25 : 0,
       };
       const res = await apiPostJson<{ order_id: string, amount: number }>("/billing/razorpay/create-order", payload);
 
@@ -139,7 +139,7 @@ export default function BillingPage() {
               razorpay_payment_id: response.razorpay_payment_id,
               razorpay_signature: response.razorpay_signature,
               type: selectedPlan,
-              credits: selectedPlan === "topup" ? 10 : 0,
+              credits: selectedPlan === "topup" ? 25 : 0,
             });
             setPaymentSuccess(true);
             window.dispatchEvent(new Event("refresh_credits"));

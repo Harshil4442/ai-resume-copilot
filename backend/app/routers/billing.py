@@ -105,9 +105,8 @@ def create_paypal_order(
         desc = "AI Resume CoPilot Premium Subscription (Monthly)"
         custom_id = f"user:{current_user.id}|type:subscription"
     elif payload.type == "topup":
-        credits_to_add = payload.credits or 10
-        unit_price = 0.50  # $0.50 per credit ($5.00 for 10 credits)
-        amount_value = f"{unit_price * credits_to_add:.2f}"
+        credits_to_add = payload.credits or 25
+        amount_value = "3.99"
         desc = f"AI Resume CoPilot - {credits_to_add} Operation Credits"
         custom_id = f"user:{current_user.id}|type:topup|credits:{credits_to_add}"
     else:
@@ -181,7 +180,7 @@ def capture_paypal_order(
             db.commit()
             return {"status": "success", "tier": "premium"}
         elif payload.type == "topup":
-            credits_to_add = payload.credits or 10
+            credits_to_add = payload.credits or 25
             db.execute(
                 update(User)
                 .where(User.id == current_user.id)
@@ -224,7 +223,7 @@ def capture_paypal_order(
         # Parse user meta claims
         user_id = current_user.id
         tx_type = payload.type
-        credits_to_add = payload.credits or 10
+        credits_to_add = payload.credits or 25
         
         if custom_id:
             # e.g., user:1|type:subscription
@@ -282,9 +281,9 @@ def create_razorpay_order(
         amount_paise = 99900  # ₹999.00
         receipt = f"rcpt_{current_user.id}_sub"
     elif payload.type == "topup":
-        credits_to_add = payload.credits or 10
-        # For simplicity, ₹199 flat for 10 credits.
-        amount_paise = 19900 
+        credits_to_add = payload.credits or 25
+        # For simplicity, ₹99 flat for 25 credits.
+        amount_paise = 9900 
         receipt = f"rcpt_{current_user.id}_top_{credits_to_add}"
     else:
         raise HTTPException(status_code=400, detail="Invalid billing type")
@@ -297,7 +296,7 @@ def create_razorpay_order(
             "notes": {
                 "user_id": current_user.id,
                 "type": payload.type,
-                "credits": payload.credits or 10
+                "credits": payload.credits or 25
             }
         })
         return {"order_id": order_data["id"], "amount": amount_paise}
@@ -355,7 +354,7 @@ def verify_razorpay_payment(
             db.commit()
             return {"status": "success", "tier": "premium"}
         elif payload.type == "topup":
-            credits_to_add = payload.credits or 10
+            credits_to_add = payload.credits or 25
             db.execute(
                 update(User)
                 .where(User.id == current_user.id)
