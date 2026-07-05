@@ -41,19 +41,35 @@ export default function Home() {
         </StaggerContainer>
       </section>
 
-      {/* Animated Text Banner */}
-      <div className="w-full bg-primary/10 border-y border-primary/20 py-4 mb-32 overflow-hidden flex items-center relative">
-        <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent,rgba(59,130,246,0.2),transparent)] pointer-events-none mix-blend-screen" />
-        <Marquee>
-          <div className="flex items-center gap-12 whitespace-nowrap text-lg md:text-2xl font-black text-primary/80 uppercase tracking-[0.2em] px-6">
-            <span>🚀 Hyper-Tailored Resumes</span>
-            <span className="text-white/20">•</span>
-            <span>⚡ Instant ATS Match Scoring</span>
-            <span className="text-white/20">•</span>
-            <span>🧠 Grounded Copilot</span>
-            <span className="text-white/20">•</span>
-            <span>🎯 Recurring Gap Analysis</span>
-            <span className="text-white/20">•</span>
+      {/* Animated Text Banner (Uber Style Dual Marquee) */}
+      <div className="w-full bg-[#020617] border-y border-slate-800/60 py-16 mb-32 overflow-hidden flex flex-col gap-6 relative shadow-[inset_0_0_100px_rgba(0,0,0,0.5)]">
+        <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent,rgba(59,130,246,0.03),transparent)] pointer-events-none mix-blend-screen" />
+        
+        {/* LTR Marquee */}
+        <Marquee className="[--duration:60s]" reverse>
+          <div className="flex items-center gap-12 whitespace-nowrap text-5xl md:text-7xl font-black text-slate-800 uppercase tracking-tighter px-6 opacity-60">
+            <span>AI Resume CoPilot</span>
+            <span className="text-primary">•</span>
+            <span>Hyper-Tailored</span>
+            <span className="text-primary">•</span>
+            <span>Instant ATS Match</span>
+            <span className="text-primary">•</span>
+            <span>Beat the Bots</span>
+            <span className="text-primary">•</span>
+          </div>
+        </Marquee>
+
+        {/* RTL Marquee */}
+        <Marquee className="[--duration:70s]">
+          <div className="flex items-center gap-12 whitespace-nowrap text-5xl md:text-7xl font-black text-white uppercase tracking-tighter px-6 text-glow">
+            <span>Gap Analysis</span>
+            <span className="text-blue-500">•</span>
+            <span>Grounded Insights</span>
+            <span className="text-blue-500">•</span>
+            <span>Project Proofs</span>
+            <span className="text-blue-500">•</span>
+            <span>Interview Prep</span>
+            <span className="text-blue-500">•</span>
           </div>
         </Marquee>
       </div>

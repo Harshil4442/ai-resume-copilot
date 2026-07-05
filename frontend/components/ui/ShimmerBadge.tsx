@@ -24,14 +24,14 @@ export default function ShimmerBadge({ children, href, className, showArrow = tr
       ))}
     >
       <p 
-        className="mx-auto max-w-md animate-shimmer bg-clip-text bg-no-repeat bg-gradient-to-r from-slate-500 via-slate-950 via-50% to-slate-500 inline-flex items-center justify-center font-medium"
+        className="mx-auto max-w-md animate-shimmer bg-clip-text bg-no-repeat bg-gradient-to-r from-slate-400 via-white via-50% to-slate-400 inline-flex items-center justify-center font-medium"
         style={{
           backgroundSize: "200% 100%",
         }}
       >
         <span>{children}</span>
         {showArrow && (
-          <ArrowRight className="ml-1 h-3 w-3 transition-transform duration-300 ease-in-out group-hover:translate-x-0.5 text-slate-950" />
+          <ArrowRight className="ml-1 h-3 w-3 transition-transform duration-300 ease-in-out group-hover:translate-x-0.5 text-white" />
         )}
       </p>
     </Component>

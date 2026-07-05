@@ -14,8 +14,8 @@ export default function Footer() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-12 mb-12">
             <div>
               <Link href="/" className="flex items-center gap-2 mb-6">
-                <span className="grid h-8 w-8 place-items-center rounded-lg bg-neutral-950 text-white text-xs font-black shadow-md">AI</span>
-                <span className="text-sm font-black tracking-tight text-slate-950">Resume CoPilot</span>
+                <span className="grid h-8 w-8 place-items-center rounded-lg bg-neutral-950 border border-slate-700/50 text-white text-xs font-black shadow-md">AI</span>
+                <span className="text-sm font-black tracking-tight text-white">Resume CoPilot</span>
               </Link>
               <p className="text-sm text-slate-400 leading-relaxed mb-6">
                 Your career signal, measured. Elevate your resume with AI-driven insights and land your dream job faster.

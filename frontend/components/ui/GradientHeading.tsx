@@ -19,7 +19,7 @@ export default function GradientHeading({
   return (
     <Element
       className={twMerge(clsx(
-        "bg-gradient-to-br from-slate-900 from-30% to-slate-500 bg-clip-text text-transparent text-balance tracking-tighter leading-[0.95] font-black",
+        "bg-gradient-to-br from-white from-30% to-slate-400 bg-clip-text text-transparent text-balance tracking-tighter leading-[0.95] font-black",
         className
       ))}
     >
