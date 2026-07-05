@@ -4,6 +4,7 @@ import Script from "next/script";
 import Nav from "../components/Nav";
 import Footer from "../components/Footer";
 import SessionProviderWrapper from "../components/SessionProviderWrapper";
+import AnimatedBackground from "../components/ui/AnimatedBackground";
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
 
@@ -39,8 +40,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </>
         ) : null}
       </head>
-      <body className="flex flex-col min-h-screen bg-background text-slate-900 selection:bg-primary/20 selection:text-primary">
+      <body className="flex flex-col min-h-screen text-slate-900 selection:bg-primary/20 selection:text-primary">
         <SessionProviderWrapper>
+          <AnimatedBackground />
           <Nav />
           <div className="flex-grow flex flex-col pt-14">{children}</div>
           <Footer />

@@ -9,6 +9,7 @@ import ScoreRing from "../../components/ui/ScoreRing";
 import AnimatedButton from "../../components/ui/AnimatedButton";
 import FadeIn from "../../components/ui/FadeIn";
 import StaggerContainer, { StaggerItem } from "../../components/ui/StaggerContainer";
+import ScrollReveal from "../../components/ui/ScrollReveal";
 import { Target, AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Sparkles, User, FileText, ChevronRight } from "lucide-react";
 import { twMerge } from "tailwind-merge";
 import clsx from "clsx";
@@ -387,7 +388,8 @@ export default function JobsPage() {
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-[400px_1fr] xl:grid-cols-[440px_1fr] gap-8 items-start">
-        <GlassCard className="lg:sticky lg:top-24 p-6 md:p-8 flex flex-col space-y-6">
+        <ScrollReveal direction="left">
+          <GlassCard className="lg:sticky lg:top-24 p-6 md:p-8 flex flex-col space-y-6">
           <div>
             <h2 className="text-2xl font-black text-slate-900 tracking-tighter">Analyze a target job</h2>
             <p className="text-sm text-slate-500 mt-1 font-medium">Choose a parsed resume and paste the JD.</p>
@@ -463,7 +465,9 @@ export default function JobsPage() {
             {error && <div className="text-sm text-rose-600 bg-rose-50 border border-rose-200 rounded-xl px-4 py-3 shadow-sm">{error}</div>}
           </form>
         </GlassCard>
+        </ScrollReveal>
 
+        <ScrollReveal direction="right">
         <div className="space-y-6">
           {!data && !loading && (
             <FadeIn delay={0.2}>
@@ -664,6 +668,7 @@ export default function JobsPage() {
             </GlassCard>
           )}
         </div>
+        </ScrollReveal>
       </div>
 
       {tailorModalOpen && (

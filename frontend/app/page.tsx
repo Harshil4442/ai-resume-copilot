@@ -8,6 +8,8 @@ import StaggerContainer, { StaggerItem } from "../components/ui/StaggerContainer
 import Marquee from "../components/ui/Marquee";
 import GlassCard from "../components/ui/GlassCard";
 import BulletOptimizer from "../components/BulletOptimizer";
+import ScrollReveal from "../components/ui/ScrollReveal";
+import FloatingElement from "../components/ui/FloatingElement";
 
 export default function Home() {
   return (
@@ -41,7 +43,7 @@ export default function Home() {
 
       {/* Marquee Section */}
       <section className="w-full max-w-[80rem] mx-auto px-6 md:px-8 mb-32">
-        <FadeIn delay={0.4}>
+        <ScrollReveal delay={0.2} direction="up">
           <div className="relative rounded-2xl bg-white/40 border border-slate-200/50 backdrop-blur-sm p-4 md:shadow-xl">
             {/* Fade overlays */}
             <div className="pointer-events-none absolute inset-y-0 left-0 w-1/3 bg-gradient-to-r from-background to-transparent z-10 rounded-l-2xl"></div>
@@ -70,14 +72,14 @@ export default function Home() {
               </div>
             </Marquee>
           </div>
-        </FadeIn>
+        </ScrollReveal>
       </section>
 
       {/* Bullet Optimizer Preview */}
       <section className="w-full max-w-[80rem] mx-auto px-6 md:px-8 mb-32">
         <div className="grid lg:grid-cols-2 gap-16 items-center">
           <div>
-            <FadeIn>
+            <ScrollReveal direction="left">
               <h2 className="text-3xl md:text-4xl font-bold tracking-tight text-slate-900 mb-4">
                 Write bullets that actually convert.
               </h2>
@@ -99,27 +101,27 @@ export default function Home() {
                 </li>
               </ul>
               <AnimatedButton href="/register" variant="outline" showArrow>Try the full tool</AnimatedButton>
-            </FadeIn>
+            </ScrollReveal>
           </div>
-          <FadeIn direction="left" delay={0.2}>
-            <div className="relative">
+          <ScrollReveal direction="right" delay={0.2}>
+            <FloatingElement yOffset={10} duration={6}>
               <div className="absolute -inset-4 bg-primary/5 rounded-3xl blur-2xl -z-10"></div>
               <GlassCard className="p-1 md:p-1 border-white/80 shadow-2xl">
                 <div className="bg-slate-50/50 rounded-[14px] overflow-hidden">
                   <BulletOptimizer />
                 </div>
               </GlassCard>
-            </div>
-          </FadeIn>
+            </FloatingElement>
+          </ScrollReveal>
         </div>
       </section>
 
       {/* Bento Grid Features */}
       <section className="w-full max-w-[80rem] mx-auto px-6 md:px-8 mb-32">
-        <FadeIn className="text-center mb-16">
+        <ScrollReveal className="text-center mb-16">
           <h2 className="text-3xl md:text-5xl font-bold tracking-tight text-slate-900 mb-4">Everything you need to land the job.</h2>
           <p className="text-lg text-slate-500">Powerful tools designed for the modern job seeker.</p>
-        </FadeIn>
+        </ScrollReveal>
 
         <StaggerContainer className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
           <StaggerItem className="lg:col-span-2">
@@ -189,7 +191,7 @@ export default function Home() {
 
       {/* CTA Section */}
       <section className="w-full max-w-[80rem] mx-auto px-6 md:px-8">
-        <FadeIn>
+        <ScrollReveal direction="up">
           <div className="relative rounded-3xl overflow-hidden bg-slate-950 p-10 md:p-20 text-center border border-slate-800 shadow-2xl">
             <div className="absolute inset-0 bg-[linear-gradient(to_right,#4f4f4f2e_1px,transparent_1px),linear-gradient(to_bottom,#4f4f4f2e_1px,transparent_1px)] bg-[size:24px_24px] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_50%,#000_70%,transparent_100%)]"></div>
             
@@ -208,7 +210,7 @@ export default function Home() {
               </div>
             </div>
           </div>
-        </FadeIn>
+        </ScrollReveal>
       </section>
       
     </main>
