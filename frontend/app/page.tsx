@@ -23,7 +23,7 @@ export default function Home() {
           </StaggerItem>
           
           <StaggerItem>
-            <GradientHeading className="mb-6 max-w-4xl mx-auto">
+            <GradientHeading className="mb-6 max-w-4xl mx-auto text-5xl md:text-6xl lg:text-7xl">
               Your career signal,<br className="hidden sm:block" /> measured and amplified.
             </GradientHeading>
           </StaggerItem>
@@ -46,29 +46,53 @@ export default function Home() {
         
         {/* LTR Marquee */}
         <Marquee className="[--duration:60s]" reverse>
-          <div className="flex items-center gap-12 whitespace-nowrap text-5xl md:text-7xl font-black text-slate-600 uppercase tracking-tighter px-6">
-            <span>AI Resume CoPilot</span>
-            <span className="text-primary">•</span>
-            <span>Hyper-Tailored</span>
-            <span className="text-primary">•</span>
-            <span>Instant ATS Match</span>
-            <span className="text-primary">•</span>
-            <span>Beat the Bots</span>
-            <span className="text-primary">•</span>
+          <div className="flex items-center gap-4 px-2">
+            {[
+              { user: "@sarah", role: "Senior Frontend Engineer", text: "Landed a role at Stripe after optimizing my bullet points." },
+              { user: "@mike_dev", role: "Full Stack Developer", text: "Increased my ATS match score from 45% to 92% instantly." },
+              { user: "@alex_c", role: "Data Scientist", text: "The Bullet Optimizer completely transformed my experience section." },
+              { user: "@jessica", role: "DevOps Engineer", text: "Found exactly which AWS skills I was missing for target roles." },
+              { user: "@david_tech", role: "Backend Engineer", text: "Used the gap analysis to target my next promotion." },
+            ].map((item, i) => (
+              <div key={i} className="w-[340px] p-5 rounded-2xl bg-slate-900/50 border border-slate-800/80 flex flex-col gap-3 hover:bg-slate-800/50 transition">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center font-bold text-sm">
+                    {item.user[1].toUpperCase()}
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-sm font-bold text-slate-200">{item.user}</span>
+                    <span className="text-xs text-slate-500">{item.role}</span>
+                  </div>
+                </div>
+                <p className="text-sm text-slate-400 leading-relaxed">"{item.text}"</p>
+              </div>
+            ))}
           </div>
         </Marquee>
 
         {/* RTL Marquee */}
         <Marquee className="[--duration:70s]">
-          <div className="flex items-center gap-12 whitespace-nowrap text-5xl md:text-7xl font-black text-white uppercase tracking-tighter px-6 text-glow">
-            <span>Gap Analysis</span>
-            <span className="text-blue-500">•</span>
-            <span>Grounded Insights</span>
-            <span className="text-blue-500">•</span>
-            <span>Project Proofs</span>
-            <span className="text-blue-500">•</span>
-            <span>Interview Prep</span>
-            <span className="text-blue-500">•</span>
+          <div className="flex items-center gap-4 px-2">
+            {[
+              { user: "@emily", role: "Product Manager", text: "Structured my messy PDF into a perfect ATS-friendly template." },
+              { user: "@chris", role: "iOS Developer", text: "Market trends showed me exactly what frameworks to focus on." },
+              { user: "@ryan_m", role: "Software Engineer", text: "Got 3 interviews in a week after tailoring my resume here." },
+              { user: "@nina", role: "UX Designer", text: "The learning strategy gave me a clear path for my portfolio." },
+              { user: "@taylor", role: "System Admin", text: "Finally beat the automated screening bots! Highly recommend." },
+            ].map((item, i) => (
+              <div key={i} className="w-[340px] p-5 rounded-2xl bg-slate-900/50 border border-slate-800/80 flex flex-col gap-3 hover:bg-slate-800/50 transition">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-purple-500/20 text-purple-400 flex items-center justify-center font-bold text-sm">
+                    {item.user[1].toUpperCase()}
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-sm font-bold text-slate-200">{item.user}</span>
+                    <span className="text-xs text-slate-500">{item.role}</span>
+                  </div>
+                </div>
+                <p className="text-sm text-slate-400 leading-relaxed">"{item.text}"</p>
+              </div>
+            ))}
           </div>
         </Marquee>
       </div>
