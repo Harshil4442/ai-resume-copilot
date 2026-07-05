@@ -8,6 +8,7 @@ import AnimatedButton from "../../components/ui/AnimatedButton";
 import FadeIn from "../../components/ui/FadeIn";
 import StaggerContainer, { StaggerItem } from "../../components/ui/StaggerContainer";
 import { Sparkles, ArrowRight, Code, LayoutDashboard } from "lucide-react";
+import ScaleIn from "../../components/ui/ScaleIn";
 import Link from "next/link";
 
 export default function LoginPage() {
@@ -42,8 +43,9 @@ export default function LoginPage() {
   return (
     <main className="w-full min-h-[calc(100vh-80px)] flex items-center justify-center p-4 md:p-8">
       <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-[1fr_450px] gap-6 lg:gap-8 items-stretch">
-        <GlassCard className="hidden lg:flex flex-col justify-between p-10 bg-slate-900 border-slate-800 text-white overflow-hidden relative" hoverEffect={false}>
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_right,_var(--tw-gradient-stops))] from-primary/20 via-slate-900 to-slate-900 pointer-events-none"></div>
+        <ScaleIn delay={0.1} className="h-full">
+          <GlassCard className="hidden lg:flex flex-col justify-between p-10 bg-slate-900 border-slate-800 text-white overflow-hidden relative h-full" hoverEffect={false}>
+            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_right,_var(--tw-gradient-stops))] from-primary/20 via-slate-900 to-slate-900 pointer-events-none"></div>
           
           <div className="relative z-10">
             <div className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-6 flex items-center gap-2">
@@ -72,7 +74,8 @@ export default function LoginPage() {
               </StaggerItem>
             ))}
           </StaggerContainer>
-        </GlassCard>
+          </GlassCard>
+        </ScaleIn>
 
         <FadeIn>
           <GlassCard className="p-8 md:p-10 h-full flex flex-col justify-center bg-white/70 backdrop-blur-xl border-white" hoverEffect={false}>
@@ -84,11 +87,11 @@ export default function LoginPage() {
               <div className="space-y-4">
                 <div>
                   <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-700 mb-1.5 px-1">Email Address</label>
-                  <input className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-sm outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10 font-medium" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} required />
+                  <input className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-sm outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10 font-medium placeholder:text-slate-300/80" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" />
                 </div>
                 <div>
                   <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-700 mb-1.5 px-1">Password</label>
-                  <input className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-sm outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10 font-medium" placeholder="••••••••" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+                  <input className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-sm outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10 font-medium placeholder:text-slate-300/80" placeholder="••••••••" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete="current-password" />
                 </div>
               </div>
 

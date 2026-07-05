@@ -61,9 +61,6 @@ export default function Footer() {
             <p className="text-sm text-slate-500">
               © {currentYear} AI Resume CoPilot. All rights reserved.
             </p>
-            <p className="text-sm text-slate-400 mt-4 md:mt-0 flex items-center gap-1">
-              Built with <span className="text-red-500 animate-pulse">❤️</span> by QueryLab
-            </p>
           </div>
         </FadeIn>
       </div>

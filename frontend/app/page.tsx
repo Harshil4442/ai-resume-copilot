@@ -11,7 +11,7 @@ import BulletOptimizer from "../components/BulletOptimizer";
 
 export default function Home() {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-between pt-14 pb-20">
+    <main className="flex min-h-screen flex-col items-center justify-between pb-20">
       
       {/* Hero Section */}
       <section className="w-full max-w-[80rem] mx-auto px-6 md:px-8 pt-24 pb-16 md:pt-32 md:pb-24 text-center">
