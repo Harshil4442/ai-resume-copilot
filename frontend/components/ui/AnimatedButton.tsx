@@ -33,7 +33,7 @@ export default function AnimatedButton({
   
   const variants = {
     primary: "bg-primary text-white hover:bg-primary/90 shadow-md hover:shadow-lg shadow-primary/20",
-    secondary: "bg-slate-800 text-white hover:bg-slate-200 shadow-sm",
+    secondary: "bg-slate-800 text-white hover:bg-slate-200 hover:text-slate-900 shadow-sm",
     outline: "border border-slate-700 bg-transparent hover:bg-slate-900/50 text-white",
   };
 
