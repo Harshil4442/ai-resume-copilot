@@ -9,9 +9,9 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        background: "#F8FAFC",
-        surface: "#FFFFFF",
-        primary: "#0071e3",
+        background: "#020617",
+        surface: "#0f172a",
+        primary: "#3b82f6",
       },
       transitionTimingFunction: {
         'spring': 'cubic-bezier(0.32, 0.72, 0, 1)',

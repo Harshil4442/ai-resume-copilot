@@ -19,7 +19,7 @@ export default function ShimmerBadge({ children, href, className, showArrow = tr
     <Component
       href={href}
       className={twMerge(clsx(
-        "inline-flex h-7 items-center justify-between rounded-full border border-slate-200 bg-white px-3 text-xs text-slate-900 transition-all ease-in hover:cursor-pointer hover:bg-slate-50 group gap-1 shadow-sm",
+        "inline-flex h-7 items-center justify-between rounded-full border border-slate-700 bg-slate-950 px-3 text-xs text-white transition-all ease-in hover:cursor-pointer hover:bg-slate-900/50 group gap-1 shadow-sm",
         className
       ))}
     >

@@ -39,7 +39,7 @@ export default function PageHeader({
         
         {subtitle && (
           <StaggerItem>
-            <p className="text-lg md:text-xl text-slate-500 text-balance tracking-tight max-w-2xl mx-auto leading-relaxed">
+            <p className="text-lg md:text-xl text-slate-400 text-balance tracking-tight max-w-2xl mx-auto leading-relaxed">
               {subtitle}
             </p>
           </StaggerItem>

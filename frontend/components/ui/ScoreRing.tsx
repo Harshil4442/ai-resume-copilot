@@ -62,7 +62,7 @@ export default function ScoreRing({
       </svg>
       {showText && (
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-2xl font-black text-slate-900 tracking-tighter leading-none">{score}</span>
+          <span className="text-2xl font-black text-white tracking-tighter leading-none">{score}</span>
         </div>
       )}
     </div>

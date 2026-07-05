@@ -22,15 +22,15 @@ export default function ScoreCard({
 }) {
   return (
     <GlassCard className={twMerge(clsx("flex flex-col p-5", className))}>
-      <div className="flex items-center gap-2 mb-3 text-slate-500">
+      <div className="flex items-center gap-2 mb-3 text-slate-400">
         {Icon && <Icon size={16} className="text-primary" />}
         <div className="text-xs font-bold uppercase tracking-wider">{title}</div>
       </div>
-      <div className={twMerge(clsx("text-3xl font-black text-slate-900 tracking-tighter mb-2", valueClassName))}>
+      <div className={twMerge(clsx("text-3xl font-black text-white tracking-tighter mb-2", valueClassName))}>
         {value}
       </div>
       {subtitle && (
-        <div className="text-sm font-medium text-slate-500 leading-relaxed">
+        <div className="text-sm font-medium text-slate-400 leading-relaxed">
           {subtitle}
         </div>
       )}

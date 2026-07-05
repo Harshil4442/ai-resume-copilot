@@ -63,7 +63,7 @@ export default function Nav() {
 
   return (
     <>
-      <header className="fixed left-0 top-0 z-50 w-full h-14 bg-white/70 backdrop-blur-[12px] border-b border-slate-200/50 animate-fade-in [--animation-delay:600ms] translate-y-[-1rem] opacity-0 shadow-sm">
+      <header className="fixed left-0 top-0 z-50 w-full h-14 bg-slate-900/70 backdrop-blur-[12px] border-b border-slate-700/50 animate-fade-in [--animation-delay:600ms] translate-y-[-1rem] opacity-0 shadow-sm">
         <div className="max-w-[80rem] mx-auto px-4 md:px-8 h-full flex items-center justify-between">
           <Link href="/" className="group flex items-center gap-2">
             <span className="grid h-8 w-8 place-items-center rounded-lg bg-neutral-950 text-white text-xs font-black shadow-md">AI</span>
@@ -71,7 +71,7 @@ export default function Nav() {
           </Link>
           
           {/* Desktop Nav */}
-          <nav className="hidden md:flex items-center gap-1 text-sm bg-slate-50/50 rounded-full border border-slate-200/50 p-1">
+          <nav className="hidden md:flex items-center gap-1 text-sm bg-slate-900/50 rounded-full border border-slate-700/50 p-1">
             {links.map((link) => {
               const active = pathname === link.href;
               return (
@@ -80,8 +80,8 @@ export default function Nav() {
                   href={link.href}
                   className={`relative px-3 py-1.5 rounded-full font-semibold transition-colors duration-200 flex items-center gap-1.5 ${
                     active
-                      ? "bg-white text-slate-900 shadow-sm border border-slate-200/50"
-                      : "text-slate-500 hover:text-slate-900 hover:bg-slate-100/50"
+                      ? "bg-slate-950 text-white shadow-sm border border-slate-700/50"
+                      : "text-slate-400 hover:text-white hover:bg-slate-800/50"
                   }`}
                 >
                   <link.icon size={14} className={active ? "text-primary" : ""} />
@@ -93,9 +93,9 @@ export default function Nav() {
 
           <div className="flex items-center gap-3">
             {loggedIn && credits !== null && (
-              <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 rounded-full border border-slate-200/60 cursor-help group relative">
+              <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 rounded-full border border-slate-700/60 cursor-help group relative">
                 <span className="text-xs font-black text-amber-500">⚡</span>
-                <span className="text-xs font-bold text-slate-700">
+                <span className="text-xs font-bold text-slate-200">
                   {tier === "premium" ? "∞" : credits}
                 </span>
                 <div className="absolute top-full mt-2 right-0 w-48 p-2 bg-slate-900 text-white text-[10px] rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
@@ -112,7 +112,7 @@ export default function Nav() {
 
             {/* Mobile Menu Toggle */}
             <button 
-              className="md:hidden p-2 text-slate-600 hover:text-slate-900 transition-colors rounded-md hover:bg-slate-100"
+              className="md:hidden p-2 text-slate-300 hover:text-white transition-colors rounded-md hover:bg-slate-800"
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
             >
               {isMobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
@@ -137,7 +137,7 @@ export default function Nav() {
               animate={{ x: 0 }}
               exit={{ x: "100%" }}
               transition={{ type: "spring", bounce: 0, duration: 0.4 }}
-              className="fixed top-14 right-0 bottom-0 w-64 bg-white border-l border-slate-200 z-40 md:hidden shadow-2xl flex flex-col"
+              className="fixed top-14 right-0 bottom-0 w-64 bg-slate-950 border-l border-slate-700 z-40 md:hidden shadow-2xl flex flex-col"
             >
               <div className="p-4 flex-1 overflow-y-auto">
                 <div className="flex flex-col gap-1">
@@ -149,8 +149,8 @@ export default function Nav() {
                         href={link.href}
                         className={`flex items-center gap-3 px-4 py-3 rounded-xl font-semibold transition-colors ${
                           active 
-                            ? "bg-slate-50 text-slate-900" 
-                            : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                            ? "bg-slate-900/50 text-white" 
+                            : "text-slate-400 hover:bg-slate-900/50 hover:text-white"
                         }`}
                       >
                         <link.icon size={18} className={active ? "text-primary" : ""} />
@@ -161,13 +161,13 @@ export default function Nav() {
                 </div>
               </div>
               
-              <div className="p-4 border-t border-slate-100">
+              <div className="p-4 border-t border-slate-800">
                 {loggedIn && credits !== null && (
-                  <div className="flex items-center justify-between px-4 py-3 bg-slate-50 rounded-xl mb-4">
-                    <span className="text-sm font-semibold text-slate-600 flex items-center gap-2">
+                  <div className="flex items-center justify-between px-4 py-3 bg-slate-900/50 rounded-xl mb-4">
+                    <span className="text-sm font-semibold text-slate-300 flex items-center gap-2">
                       <span className="text-amber-500">⚡</span> Credits
                     </span>
-                    <span className="font-bold text-slate-900">{tier === "premium" ? "∞" : credits}</span>
+                    <span className="font-bold text-white">{tier === "premium" ? "∞" : credits}</span>
                   </div>
                 )}
                 {loggedIn ? (

@@ -43,14 +43,14 @@ export default function BulletOptimizer() {
   }
 
   return (
-    <div className="panel kinetic-border p-6 md:p-8 max-w-4xl mx-auto my-12 bg-white/70 backdrop-blur-xl">
+    <div className="panel kinetic-border p-6 md:p-8 max-w-4xl mx-auto my-12 bg-slate-900/70 backdrop-blur-xl">
       <div className="label-kicker flex items-center gap-3">
-        <span className="pulse-dot bg-blue-500" /> Public Micro-Tool
+        <span className="pulse-dot bg-blue-900/300" /> Public Micro-Tool
       </div>
       <h2 className="text-3xl md:text-4xl font-black text-slate-950 mt-2 ink-gradient">
         ATS Resume Bullet Optimizer
       </h2>
-      <p className="text-sm text-slate-500 mt-2">
+      <p className="text-sm text-slate-400 mt-2">
         Test a single resume accomplishment bullet. We'll score its action verbs and metrics density instantly.
       </p>
 
@@ -78,7 +78,7 @@ export default function BulletOptimizer() {
       )}
 
       {result && (
-        <div className="mt-8 pt-6 border-t border-slate-200/60 space-y-6 animate-rise-fade">
+        <div className="mt-8 pt-6 border-t border-slate-700/60 space-y-6 animate-rise-fade">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="premium-card p-4 flex items-center justify-between">
               <div>
@@ -98,9 +98,9 @@ export default function BulletOptimizer() {
             </div>
           </div>
 
-          <div className="rounded-lg border border-blue-100 bg-blue-50/40 p-5">
+          <div className="rounded-lg border border-blue-800 bg-blue-900/30/40 p-5">
             <div className="text-xs font-bold uppercase tracking-wider text-blue-500">AI-Optimized Alternative</div>
-            <p className="mt-2 text-base font-semibold text-slate-900 leading-relaxed italic">
+            <p className="mt-2 text-base font-semibold text-white leading-relaxed italic">
               "{result.recommended_bullet}"
             </p>
           </div>
@@ -114,7 +114,7 @@ export default function BulletOptimizer() {
             </div>
             <a
               href="/register"
-              className="btn-primary bg-white text-neutral-950 hover:bg-slate-200 transition text-center px-6 py-2.5 rounded-full font-black text-sm whitespace-nowrap shadow-none self-start md:self-auto"
+              className="btn-primary bg-slate-950 text-neutral-950 hover:bg-slate-200 transition text-center px-6 py-2.5 rounded-full font-black text-sm whitespace-nowrap shadow-none self-start md:self-auto"
             >
               Sign Up For Free
             </a>

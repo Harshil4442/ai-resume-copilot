@@ -62,8 +62,8 @@ export default function ResumePreviewPage() {
     return (
       <main className="app-shell max-w-4xl mx-auto py-12 px-4 text-center">
         <div className="panel p-8 kinetic-border">
-          <h2 className="text-2xl font-black text-slate-900">No Resumes Found</h2>
-          <p className="text-slate-500 mt-2">Please upload a resume first to preview and print it.</p>
+          <h2 className="text-2xl font-black text-white">No Resumes Found</h2>
+          <p className="text-slate-400 mt-2">Please upload a resume first to preview and print it.</p>
           <a href="/resume" className="btn-primary mt-4 inline-block">Go to Upload</a>
         </div>
       </main>
@@ -73,9 +73,9 @@ export default function ResumePreviewPage() {
   return (
     <main className="app-shell max-w-4xl mx-auto py-6 px-4">
       {/* Control panel (not printed) */}
-      <div className="no-print panel p-4 mb-6 kinetic-border flex flex-wrap items-center justify-between gap-4 bg-white/70 backdrop-blur-xl">
+      <div className="no-print panel p-4 mb-6 kinetic-border flex flex-wrap items-center justify-between gap-4 bg-slate-900/70 backdrop-blur-xl">
         <div className="flex items-center gap-3">
-          <label className="text-sm font-bold text-slate-700">Select Resume:</label>
+          <label className="text-sm font-bold text-slate-200">Select Resume:</label>
           <select
             className="field py-1.5 px-3 min-w-[200px]"
             value={selectedId || ""}
@@ -93,19 +93,19 @@ export default function ResumePreviewPage() {
         </button>
       </div>
 
-      {loading && <div className="text-center py-12 text-slate-500">Loading resume document...</div>}
+      {loading && <div className="text-center py-12 text-slate-400">Loading resume document...</div>}
       {error && <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-4 py-3 mb-6">{error}</div>}
 
       {/* Printable resume container */}
       {resumeData && !loading && (
-        <div className="resume-container panel p-8 md:p-12 bg-white text-slate-900 border border-slate-200 shadow-md min-h-[1100px] flex flex-col justify-between">
+        <div className="resume-container panel p-8 md:p-12 bg-slate-950 text-white border border-slate-700 shadow-md min-h-[1100px] flex flex-col justify-between">
           <div className="space-y-6">
             {/* Header / Contact Info */}
-            <div className="text-center border-b border-slate-200 pb-6">
-              <h1 className="text-3xl font-bold tracking-tight text-slate-900">
+            <div className="text-center border-b border-slate-700 pb-6">
+              <h1 className="text-3xl font-bold tracking-tight text-white">
                 {resumeData.contact_info?.name || "Professional Candidate"}
               </h1>
-              <div className="flex flex-wrap justify-center gap-x-4 gap-y-1 text-sm text-slate-600 mt-2 font-medium">
+              <div className="flex flex-wrap justify-center gap-x-4 gap-y-1 text-sm text-slate-300 mt-2 font-medium">
                 {resumeData.contact_info?.email && (
                   <span>✉️ {resumeData.contact_info.email}</span>
                 )}
@@ -126,10 +126,10 @@ export default function ResumePreviewPage() {
               if (!secText || secName === "other") return null;
               return (
                 <div key={secName} className="space-y-2">
-                  <h2 className="text-lg font-bold uppercase tracking-wider text-slate-800 border-b border-slate-100 pb-1">
+                  <h2 className="text-lg font-bold uppercase tracking-wider text-slate-100 border-b border-slate-800 pb-1">
                     {formatTitle(secName)}
                   </h2>
-                  <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap font-normal">
+                  <div className="text-sm text-slate-200 leading-relaxed whitespace-pre-wrap font-normal">
                     {secText}
                   </div>
                 </div>
@@ -139,10 +139,10 @@ export default function ResumePreviewPage() {
             {/* Fallback for other section */}
             {resumeData.sections?.other && (
               <div className="space-y-2">
-                <h2 className="text-lg font-bold uppercase tracking-wider text-slate-800 border-b border-slate-100 pb-1">
+                <h2 className="text-lg font-bold uppercase tracking-wider text-slate-100 border-b border-slate-800 pb-1">
                   Additional Details
                 </h2>
-                <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap font-normal">
+                <div className="text-sm text-slate-200 leading-relaxed whitespace-pre-wrap font-normal">
                   {resumeData.sections.other}
                 </div>
               </div>
@@ -150,7 +150,7 @@ export default function ResumePreviewPage() {
           </div>
 
           {/* Viral PLG Footer Hook */}
-          <div className="mt-12 pt-4 border-t border-slate-100 text-center flex justify-center items-center">
+          <div className="mt-12 pt-4 border-t border-slate-800 text-center flex justify-center items-center">
             <a
               href="https://ai-resume-copilot-three.vercel.app/?ref=user_resume_share"
               target="_blank"

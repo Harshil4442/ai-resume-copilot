@@ -40,7 +40,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </>
         ) : null}
       </head>
-      <body className="flex flex-col min-h-screen text-slate-900 selection:bg-primary/20 selection:text-primary">
+      <body className="flex flex-col min-h-screen text-white selection:bg-primary/20 selection:text-primary">
         <SessionProviderWrapper>
           <AnimatedBackground />
           <Nav />

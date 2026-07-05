@@ -78,51 +78,51 @@ const starterQuestions = [
 
 function confidenceClass(value: string) {
   const v = value.toLowerCase();
-  if (v === "high") return "bg-emerald-50 text-emerald-700 border-emerald-200";
-  if (v === "low") return "bg-rose-50 text-rose-700 border-rose-200";
-  return "bg-amber-50 text-amber-700 border-amber-200";
+  if (v === "high") return "bg-emerald-900/30 text-emerald-400 border-emerald-800";
+  if (v === "low") return "bg-rose-900/30 text-rose-400 border-rose-800";
+  return "bg-amber-900/30 text-amber-400 border-amber-800";
 }
 
 function gradeColor(g: string) {
-  if (g.startsWith("A")) return "bg-emerald-50 text-emerald-700 border-emerald-200";
-  if (g.startsWith("B")) return "bg-blue-50 text-blue-700 border-blue-200";
-  if (g.startsWith("C")) return "bg-amber-50 text-amber-700 border-amber-200";
-  return "bg-rose-50 text-rose-700 border-rose-200";
+  if (g.startsWith("A")) return "bg-emerald-900/30 text-emerald-400 border-emerald-800";
+  if (g.startsWith("B")) return "bg-blue-900/30 text-blue-400 border-blue-700";
+  if (g.startsWith("C")) return "bg-amber-900/30 text-amber-400 border-amber-800";
+  return "bg-rose-900/30 text-rose-400 border-rose-800";
 }
 
 function SkillTag({ label, variant }: { label: string; variant: "match" | "gap" | "partial" | "neutral" }) {
   const cls = {
-    match: "bg-emerald-50 text-emerald-700 border-emerald-200 shadow-sm",
-    gap: "bg-rose-50 text-rose-700 border-rose-200 shadow-sm",
-    partial: "bg-amber-50 text-amber-700 border-amber-200 shadow-sm",
-    neutral: "bg-slate-50 text-slate-700 border-slate-200 shadow-sm",
+    match: "bg-emerald-900/30 text-emerald-400 border-emerald-800 shadow-sm",
+    gap: "bg-rose-900/30 text-rose-400 border-rose-800 shadow-sm",
+    partial: "bg-amber-900/30 text-amber-400 border-amber-800 shadow-sm",
+    neutral: "bg-slate-900/50 text-slate-200 border-slate-700 shadow-sm",
   }[variant];
   return <span className={twMerge(clsx("px-3 py-1 rounded-full text-xs font-bold border transition-transform hover:-translate-y-0.5", cls))}>{label}</span>;
 }
 
 function DimBar({ dim }: { dim: DimensionScore }) {
-  const barColor = dim.score >= 75 ? "bg-emerald-500" : dim.score >= 50 ? "bg-amber-400" : "bg-rose-400";
+  const barColor = dim.score >= 75 ? "bg-emerald-900/300" : dim.score >= 50 ? "bg-amber-400" : "bg-rose-400";
   return (
     <GlassCard className="p-4" hoverEffect={false}>
       <div className="flex justify-between items-center gap-3 mb-2">
-        <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">{dim.name}</span>
-        <span className="text-sm font-black text-slate-900">{dim.score.toFixed(0)}/100</span>
+        <span className="text-xs font-bold text-slate-200 uppercase tracking-wider">{dim.name}</span>
+        <span className="text-sm font-black text-white">{dim.score.toFixed(0)}/100</span>
       </div>
-      <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden mb-3">
+      <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden mb-3">
         <div className={twMerge(clsx("h-2 rounded-full", barColor))} style={{ width: `${Math.max(3, Math.min(100, dim.score))}%` }} />
       </div>
-      <p className="text-xs text-slate-500 leading-relaxed font-medium">{dim.feedback}</p>
+      <p className="text-xs text-slate-400 leading-relaxed font-medium">{dim.feedback}</p>
     </GlassCard>
   );
 }
 
 function EmptyState({ title, body, href }: { title: string; body: string; href?: string }) {
   return (
-    <div className="border border-amber-200 rounded-xl px-5 py-4 text-sm bg-amber-50/80 backdrop-blur-sm flex items-start gap-3">
+    <div className="border border-amber-800 rounded-xl px-5 py-4 text-sm bg-amber-900/30/80 backdrop-blur-sm flex items-start gap-3">
       <AlertTriangle className="text-amber-500 mt-0.5" size={18} />
       <div>
         <p className="text-amber-900 font-bold">{title}</p>
-        <p className="text-amber-700 text-xs mt-1 leading-relaxed">{body}</p>
+        <p className="text-amber-400 text-xs mt-1 leading-relaxed">{body}</p>
         {href && (
           <a href={href} className="text-amber-800 font-bold flex items-center gap-1 hover:underline text-xs mt-3">
             Open resume page <ChevronRight size={14} />
@@ -202,7 +202,7 @@ function AskAiPanel({
         </div>
       </div>
 
-      <div className="p-6 space-y-5 bg-white/50 flex-grow">
+      <div className="p-6 space-y-5 bg-slate-900/50 flex-grow">
         {messages.length === 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {starterQuestions.map((q) => (
@@ -210,7 +210,7 @@ function AskAiPanel({
                 key={q}
                 type="button"
                 onClick={() => ask(q)}
-                className="text-left rounded-xl border border-slate-200 bg-white p-3 text-sm font-semibold text-slate-700 hover:border-primary/30 hover:bg-primary/5 hover:text-primary transition-all shadow-sm"
+                className="text-left rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm font-semibold text-slate-200 hover:border-primary/30 hover:bg-primary/5 hover:text-primary transition-all shadow-sm"
               >
                 {q}
               </button>
@@ -227,7 +227,7 @@ function AskAiPanel({
               >
                 <div className={twMerge(clsx(
                   "max-w-[85%] rounded-2xl px-5 py-3.5 text-sm leading-relaxed shadow-sm",
-                  msg.role === "user" ? "bg-primary text-white" : "bg-white text-slate-800 border border-slate-200",
+                  msg.role === "user" ? "bg-primary text-white" : "bg-slate-950 text-slate-100 border border-slate-700",
                 ))}>
                   <div className="whitespace-pre-wrap">{msg.content}</div>
                   {msg.role === "assistant" && msg.confidence && (
@@ -242,8 +242,8 @@ function AskAiPanel({
             ))}
             {loading && (
               <div className="flex justify-start">
-                <div className="rounded-2xl px-5 py-3.5 text-sm bg-white text-slate-500 border border-slate-200 flex items-center gap-2 shadow-sm">
-                  <div className="w-4 h-4 rounded-full border-2 border-slate-300 border-t-primary animate-spin" />
+                <div className="rounded-2xl px-5 py-3.5 text-sm bg-slate-950 text-slate-400 border border-slate-700 flex items-center gap-2 shadow-sm">
+                  <div className="w-4 h-4 rounded-full border-2 border-slate-600 border-t-primary animate-spin" />
                   Thinking through the match context...
                 </div>
               </div>
@@ -258,7 +258,7 @@ function AskAiPanel({
                 key={q}
                 type="button"
                 onClick={() => ask(q)}
-                className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700 hover:bg-blue-100 transition-colors"
+                className="rounded-full border border-blue-700 bg-blue-900/30 px-3 py-1.5 text-xs font-bold text-blue-400 hover:bg-blue-100 transition-colors"
               >
                 {q}
               </button>
@@ -274,7 +274,7 @@ function AskAiPanel({
           className="flex gap-3 pt-2"
         >
           <input
-            className="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10 shadow-sm"
+            className="flex-1 rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10 shadow-sm"
             placeholder="Ask about score, gaps, evidence, interview prep..."
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -286,7 +286,7 @@ function AskAiPanel({
             Ask
           </AnimatedButton>
         </form>
-        {error && <div className="text-sm text-rose-600 bg-rose-50 border border-rose-200 rounded-xl px-4 py-3 shadow-sm">{error}</div>}
+        {error && <div className="text-sm text-rose-400 bg-rose-900/30 border border-rose-800 rounded-xl px-4 py-3 shadow-sm">{error}</div>}
       </div>
     </GlassCard>
   );
@@ -391,25 +391,25 @@ export default function JobsPage() {
         <ScrollReveal direction="left">
           <GlassCard className="lg:sticky lg:top-24 p-6 md:p-8 flex flex-col space-y-6">
           <div>
-            <h2 className="text-2xl font-black text-slate-900 tracking-tighter">Analyze a target job</h2>
-            <p className="text-sm text-slate-500 mt-1 font-medium">Choose a parsed resume and paste the JD.</p>
+            <h2 className="text-2xl font-black text-white tracking-tighter">Analyze a target job</h2>
+            <p className="text-sm text-slate-400 mt-1 font-medium">Choose a parsed resume and paste the JD.</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-5 flex-grow">
             <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2">Resume</label>
+              <label className="block text-sm font-bold text-slate-200 mb-2">Resume</label>
               {resumesLoading ? (
-                <div className="w-full border rounded-xl px-4 py-3 text-sm text-slate-400 bg-slate-50 animate-pulse">Loading resumes...</div>
+                <div className="w-full border rounded-xl px-4 py-3 text-sm text-slate-400 bg-slate-900/50 animate-pulse">Loading resumes...</div>
               ) : resumeError ? (
-                <div className="w-full border border-rose-200 rounded-xl px-4 py-3 text-sm bg-rose-50 shadow-sm">
-                  <p className="text-rose-700 font-bold flex items-center gap-1.5"><AlertTriangle size={14} /> Failed to load resumes</p>
-                  <p className="text-rose-600 text-xs mt-1">{resumeError}</p>
+                <div className="w-full border border-rose-800 rounded-xl px-4 py-3 text-sm bg-rose-900/30 shadow-sm">
+                  <p className="text-rose-400 font-bold flex items-center gap-1.5"><AlertTriangle size={14} /> Failed to load resumes</p>
+                  <p className="text-rose-400 text-xs mt-1">{resumeError}</p>
                 </div>
               ) : resumes.length === 0 ? (
                 <EmptyState title="No parsed resumes found" body="Upload and parse a resume first to run a match." href="/resume" />
               ) : (
                 <select
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10 shadow-sm"
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10 shadow-sm"
                   value={selectedResumeId}
                   onChange={(e) => setSelectedResumeId(e.target.value)}
                 >
@@ -424,18 +424,18 @@ export default function JobsPage() {
 
             <div className="grid grid-cols-1 gap-5">
               <div>
-                <label className="block text-sm font-bold text-slate-700 mb-2">Job Title</label>
+                <label className="block text-sm font-bold text-slate-200 mb-2">Job Title</label>
                 <input
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10 shadow-sm"
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10 shadow-sm"
                   placeholder="Senior Backend Engineer"
                   value={jobTitle}
                   onChange={(e) => setJobTitle(e.target.value)}
                 />
               </div>
               <div>
-                <label className="block text-sm font-bold text-slate-700 mb-2">Company <span className="text-slate-400 font-normal">(optional)</span></label>
+                <label className="block text-sm font-bold text-slate-200 mb-2">Company <span className="text-slate-400 font-normal">(optional)</span></label>
                 <input
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10 shadow-sm"
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10 shadow-sm"
                   placeholder="Acme Corp"
                   value={company}
                   onChange={(e) => setCompany(e.target.value)}
@@ -444,9 +444,9 @@ export default function JobsPage() {
             </div>
 
             <div className="flex-grow">
-              <label className="block text-sm font-bold text-slate-700 mb-2">Job Description</label>
+              <label className="block text-sm font-bold text-slate-200 mb-2">Job Description</label>
               <textarea
-                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10 shadow-sm min-h-[220px] resize-y"
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10 shadow-sm min-h-[220px] resize-y"
                 placeholder="Paste the full job description here..."
                 value={jobDescription}
                 onChange={(e) => setJobDescription(e.target.value)}
@@ -462,7 +462,7 @@ export default function JobsPage() {
               {loading ? "Analyzing match..." : "Analyze Match"}
             </AnimatedButton>
 
-            {error && <div className="text-sm text-rose-600 bg-rose-50 border border-rose-200 rounded-xl px-4 py-3 shadow-sm">{error}</div>}
+            {error && <div className="text-sm text-rose-400 bg-rose-900/30 border border-rose-800 rounded-xl px-4 py-3 shadow-sm">{error}</div>}
           </form>
         </GlassCard>
         </ScrollReveal>
@@ -471,10 +471,10 @@ export default function JobsPage() {
         <div className="space-y-6">
           {!data && !loading && (
             <FadeIn delay={0.2}>
-              <GlassCard className="p-12 text-center border-dashed border-slate-300 border-2" hoverEffect={false}>
+              <GlassCard className="p-12 text-center border-dashed border-slate-600 border-2" hoverEffect={false}>
                 <div className="mx-auto w-16 h-16 rounded-2xl bg-slate-900 text-white flex items-center justify-center font-black text-2xl shadow-lg mb-6">AI</div>
-                <h2 className="text-2xl font-black text-slate-900 tracking-tighter">Your match analysis will appear here</h2>
-                <p className="text-slate-500 mt-3 max-w-md mx-auto leading-relaxed">
+                <h2 className="text-2xl font-black text-white tracking-tighter">Your match analysis will appear here</h2>
+                <p className="text-slate-400 mt-3 max-w-md mx-auto leading-relaxed">
                   After the score is generated, you can ask AI questions about gaps, proof, score reasoning, and interview prep.
                 </p>
               </GlassCard>
@@ -484,9 +484,9 @@ export default function JobsPage() {
           {loading && (
             <FadeIn>
               <GlassCard className="p-12 text-center" hoverEffect={false}>
-                <div className="mx-auto w-12 h-12 rounded-full border-4 border-slate-200 border-t-primary animate-spin mb-6"></div>
-                <h2 className="text-xl font-bold text-slate-900 tracking-tight">Analyzing resume against job description...</h2>
-                <p className="text-sm text-slate-500 mt-2">Extracting requirements, computing verification rates, and scoring dimensions.</p>
+                <div className="mx-auto w-12 h-12 rounded-full border-4 border-slate-700 border-t-primary animate-spin mb-6"></div>
+                <h2 className="text-xl font-bold text-white tracking-tight">Analyzing resume against job description...</h2>
+                <p className="text-sm text-slate-400 mt-2">Extracting requirements, computing verification rates, and scoring dimensions.</p>
               </GlassCard>
             </FadeIn>
           )}
@@ -499,7 +499,7 @@ export default function JobsPage() {
                     <ScoreRing score={data.match_score} size={110} strokeWidth={8} />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-3 flex-wrap mb-2">
-                        <h2 className="text-2xl font-black text-slate-900 tracking-tighter">
+                        <h2 className="text-2xl font-black text-white tracking-tighter">
                           {jobTitle}{company ? ` @ ${company}` : ""}
                         </h2>
                         <span className={twMerge(clsx("text-xs font-bold px-3 py-1 rounded-full border shadow-sm", gradeColor(data.grade)))}>Grade {data.grade}</span>
@@ -509,17 +509,17 @@ export default function JobsPage() {
                       </div>
                       
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
-                          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Required skills</div>
-                          <div className="text-2xl font-black text-slate-900">{data.required_skills.length}</div>
+                        <div className="bg-slate-900/50 rounded-xl p-4 border border-slate-800">
+                          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Required skills</div>
+                          <div className="text-2xl font-black text-white">{data.required_skills.length}</div>
                         </div>
-                        <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
-                          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">True gaps</div>
-                          <div className="text-2xl font-black text-slate-900">{data.true_gaps.length}</div>
+                        <div className="bg-slate-900/50 rounded-xl p-4 border border-slate-800">
+                          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">True gaps</div>
+                          <div className="text-2xl font-black text-white">{data.true_gaps.length}</div>
                         </div>
-                        <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
-                          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Skill verification</div>
-                          <div className="text-2xl font-black text-slate-900">{data.skill_verification_rate}%</div>
+                        <div className="bg-slate-900/50 rounded-xl p-4 border border-slate-800">
+                          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Skill verification</div>
+                          <div className="text-2xl font-black text-white">{data.skill_verification_rate}%</div>
                         </div>
                       </div>
                     </div>
@@ -529,34 +529,34 @@ export default function JobsPage() {
 
               {data.fit_summary && (
                 <StaggerItem>
-                  <div className="bg-blue-50/80 backdrop-blur-sm border border-blue-200 rounded-2xl p-5 shadow-sm">
+                  <div className="bg-blue-900/30/80 backdrop-blur-sm border border-blue-700 rounded-2xl p-5 shadow-sm">
                     <div className="text-xs font-black text-blue-600 uppercase tracking-wider mb-2 flex items-center gap-2">
                       <Sparkles size={14} /> AI Fit Analysis
                     </div>
-                    <p className="text-sm text-slate-700 leading-relaxed font-medium">{data.fit_summary}</p>
+                    <p className="text-sm text-slate-200 leading-relaxed font-medium">{data.fit_summary}</p>
                   </div>
                 </StaggerItem>
               )}
 
               <StaggerItem className="grid grid-cols-1 xl:grid-cols-2 gap-6">
                 <GlassCard className="p-6 md:p-8" hoverEffect={false}>
-                  <div className="text-[10px] font-black uppercase tracking-wider text-slate-500 mb-6 flex items-center gap-2">
+                  <div className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-6 flex items-center gap-2">
                     <CheckCircle2 size={14} className="text-emerald-500" /> Skill Coverage
                   </div>
                   <div className="space-y-6">
                     <div>
-                      <div className="text-xs font-bold text-slate-800 mb-3 flex justify-between">
+                      <div className="text-xs font-bold text-slate-100 mb-3 flex justify-between">
                         <span>Full Matches</span>
-                        <span className="text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">{data.full_matches.length}</span>
+                        <span className="text-slate-400 bg-slate-800 px-2 py-0.5 rounded-full">{data.full_matches.length}</span>
                       </div>
                       <div className="flex flex-wrap gap-2">
                         {data.full_matches.length ? data.full_matches.map((s) => <SkillTag key={s} label={s} variant="match" />) : <SkillTag label="No full matches yet" variant="neutral" />}
                       </div>
                     </div>
                     <div>
-                      <div className="text-xs font-bold text-slate-800 mb-3 flex justify-between">
+                      <div className="text-xs font-bold text-slate-100 mb-3 flex justify-between">
                         <span>Partial Coverage</span>
-                        <span className="text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">{data.partial_matches.length}</span>
+                        <span className="text-slate-400 bg-slate-800 px-2 py-0.5 rounded-full">{data.partial_matches.length}</span>
                       </div>
                       <div className="flex flex-wrap gap-2">
                         {data.partial_matches.length ? data.partial_matches.map((p) => (
@@ -565,9 +565,9 @@ export default function JobsPage() {
                       </div>
                     </div>
                     <div>
-                      <div className="text-xs font-bold text-slate-800 mb-3 flex justify-between">
+                      <div className="text-xs font-bold text-slate-100 mb-3 flex justify-between">
                         <span>True Gaps</span>
-                        <span className="text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">{data.true_gaps.length}</span>
+                        <span className="text-slate-400 bg-slate-800 px-2 py-0.5 rounded-full">{data.true_gaps.length}</span>
                       </div>
                       <div className="flex flex-wrap gap-2">
                         {data.true_gaps.length ? data.true_gaps.map((s) => <SkillTag key={s} label={s} variant="gap" />) : <SkillTag label="No true gaps found" variant="match" />}
@@ -576,8 +576,8 @@ export default function JobsPage() {
                   </div>
                 </GlassCard>
 
-                <GlassCard className="p-6 md:p-8 bg-slate-50/50" hoverEffect={false}>
-                  <div className="text-[10px] font-black uppercase tracking-wider text-slate-500 mb-6 flex items-center gap-2">
+                <GlassCard className="p-6 md:p-8 bg-slate-900/50" hoverEffect={false}>
+                  <div className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-6 flex items-center gap-2">
                     <User size={14} className="text-primary" /> Recruiter Dimensions
                   </div>
                   <div className="space-y-4">
@@ -588,13 +588,13 @@ export default function JobsPage() {
 
               {data.improvement_tips.length > 0 && (
                 <StaggerItem>
-                  <GlassCard className="p-6 md:p-8 border-amber-200 bg-amber-50/50" hoverEffect={false}>
+                  <GlassCard className="p-6 md:p-8 border-amber-800 bg-amber-900/30/50" hoverEffect={false}>
                     <div className="text-[10px] font-black text-amber-600 uppercase tracking-wider mb-4 flex items-center gap-2">
                       <AlertTriangle size={14} /> How to Improve Your Match
                     </div>
                     <ul className="space-y-3">
                       {data.improvement_tips.map((tip, i) => (
-                        <li key={`tip-${i}-${tip.slice(0, 24)}`} className="text-sm text-slate-700 flex gap-3 font-medium leading-relaxed">
+                        <li key={`tip-${i}-${tip.slice(0, 24)}`} className="text-sm text-slate-200 flex gap-3 font-medium leading-relaxed">
                           <span className="text-amber-500 font-bold mt-0.5"><CheckCircle2 size={16} /></span>
                           {tip}
                         </li>
@@ -630,17 +630,17 @@ export default function JobsPage() {
             <GlassCard className="p-0 overflow-hidden" hoverEffect={false}>
               <button
                 onClick={() => setShowHistory((v) => !v)}
-                className="w-full px-6 py-5 text-left text-sm font-bold text-slate-900 hover:bg-slate-50 flex items-center justify-between transition-colors"
+                className="w-full px-6 py-5 text-left text-sm font-bold text-white hover:bg-slate-900/50 flex items-center justify-between transition-colors"
               >
                 <span className="flex items-center gap-2"><FileText size={16} className="text-slate-400" /> Match history ({history.length})</span>
-                <span className="text-slate-400 bg-white border border-slate-200 p-1 rounded-full shadow-sm">
+                <span className="text-slate-400 bg-slate-950 border border-slate-700 p-1 rounded-full shadow-sm">
                   {showHistory ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                 </span>
               </button>
               {showHistory && (
-                <div className="overflow-x-auto border-t border-slate-100 bg-white">
+                <div className="overflow-x-auto border-t border-slate-800 bg-slate-950">
                   <table className="w-full text-sm">
-                    <thead className="bg-slate-50 text-[10px] text-slate-500 font-black uppercase tracking-wider border-b border-slate-100">
+                    <thead className="bg-slate-900/50 text-[10px] text-slate-400 font-black uppercase tracking-wider border-b border-slate-800">
                       <tr>
                         <th className="px-6 py-3 text-left">Role</th>
                         <th className="px-6 py-3 text-left">Company</th>
@@ -650,11 +650,11 @@ export default function JobsPage() {
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {history.map((h) => (
-                        <tr key={h.match_id} className="hover:bg-slate-50/80 transition-colors">
-                          <td className="px-6 py-4 font-bold text-slate-800">{h.job_title}</td>
-                          <td className="px-6 py-4 text-slate-500 font-medium">{h.company || "-"}</td>
+                        <tr key={h.match_id} className="hover:bg-slate-900/50/80 transition-colors">
+                          <td className="px-6 py-4 font-bold text-slate-100">{h.job_title}</td>
+                          <td className="px-6 py-4 text-slate-400 font-medium">{h.company || "-"}</td>
                           <td className="px-6 py-4 text-right">
-                            <span className={twMerge(clsx("px-2 py-1 rounded-md text-xs font-bold", h.match_score >= 75 ? "bg-emerald-50 text-emerald-700" : h.match_score >= 50 ? "bg-amber-50 text-amber-700" : "bg-rose-50 text-rose-700"))}>
+                            <span className={twMerge(clsx("px-2 py-1 rounded-md text-xs font-bold", h.match_score >= 75 ? "bg-emerald-900/30 text-emerald-400" : h.match_score >= 50 ? "bg-amber-900/30 text-amber-400" : "bg-rose-900/30 text-rose-400"))}>
                               {h.match_score.toFixed(1)}
                             </span>
                           </td>
@@ -673,57 +673,57 @@ export default function JobsPage() {
 
       {tailorModalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-8 border border-slate-200 animate-fade-in [--animation-delay:0ms]">
-            <h3 className="text-2xl font-black text-slate-900 tracking-tighter">Tailor your resume</h3>
-            <p className="text-sm text-slate-500 mt-2 font-medium leading-relaxed">
+          <div className="bg-slate-950 rounded-3xl shadow-2xl w-full max-w-md p-8 border border-slate-700 animate-fade-in [--animation-delay:0ms]">
+            <h3 className="text-2xl font-black text-white tracking-tighter">Tailor your resume</h3>
+            <p className="text-sm text-slate-400 mt-2 font-medium leading-relaxed">
               Our AI will rewrite your entire resume to perfectly target this job description.
             </p>
-            <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 mt-6 mb-6">
-              <p className="text-sm text-blue-800 font-bold flex items-center gap-2">
+            <div className="bg-blue-900/30 border border-blue-800 rounded-xl p-4 mt-6 mb-6">
+              <p className="text-sm text-blue-300 font-bold flex items-center gap-2">
                 <span className="text-amber-500">⚡</span> This action costs 10 AI Credits.
               </p>
             </div>
             
             <div className="space-y-4">
-              <label className="block text-sm font-bold text-slate-700">Choose a Template / Tone</label>
+              <label className="block text-sm font-bold text-slate-200">Choose a Template / Tone</label>
               
               <div className="space-y-2">
-                <label className={twMerge(clsx("flex items-start gap-4 p-4 border rounded-xl cursor-pointer transition-all", templateType === "ats" ? "bg-blue-50/50 border-primary shadow-sm" : "hover:bg-slate-50 border-slate-200"))}>
+                <label className={twMerge(clsx("flex items-start gap-4 p-4 border rounded-xl cursor-pointer transition-all", templateType === "ats" ? "bg-blue-900/30/50 border-primary shadow-sm" : "hover:bg-slate-900/50 border-slate-700"))}>
                   <input type="radio" name="template" value="ats" checked={templateType === "ats"} onChange={(e) => setTemplateType(e.target.value)} className="mt-1" />
                   <div>
-                    <div className="text-sm font-bold text-slate-900">ATS-Optimized (Standard)</div>
-                    <div className="text-xs text-slate-500 leading-snug mt-1 font-medium">Focuses on keywords and clean structure. Great for large companies.</div>
+                    <div className="text-sm font-bold text-white">ATS-Optimized (Standard)</div>
+                    <div className="text-xs text-slate-400 leading-snug mt-1 font-medium">Focuses on keywords and clean structure. Great for large companies.</div>
                   </div>
                 </label>
 
-                <label className={twMerge(clsx("flex items-start gap-4 p-4 border rounded-xl cursor-pointer transition-all", templateType === "executive" ? "bg-blue-50/50 border-primary shadow-sm" : "hover:bg-slate-50 border-slate-200"))}>
+                <label className={twMerge(clsx("flex items-start gap-4 p-4 border rounded-xl cursor-pointer transition-all", templateType === "executive" ? "bg-blue-900/30/50 border-primary shadow-sm" : "hover:bg-slate-900/50 border-slate-700"))}>
                   <input type="radio" name="template" value="executive" checked={templateType === "executive"} onChange={(e) => setTemplateType(e.target.value)} className="mt-1" />
                   <div>
-                    <div className="text-sm font-bold text-slate-900">Executive & Leadership</div>
-                    <div className="text-xs text-slate-500 leading-snug mt-1 font-medium">Focuses on business impact, metrics, team sizes, and strategy.</div>
+                    <div className="text-sm font-bold text-white">Executive & Leadership</div>
+                    <div className="text-xs text-slate-400 leading-snug mt-1 font-medium">Focuses on business impact, metrics, team sizes, and strategy.</div>
                   </div>
                 </label>
 
-                <label className={twMerge(clsx("flex items-start gap-4 p-4 border rounded-xl cursor-pointer transition-all", templateType === "technical" ? "bg-blue-50/50 border-primary shadow-sm" : "hover:bg-slate-50 border-slate-200"))}>
+                <label className={twMerge(clsx("flex items-start gap-4 p-4 border rounded-xl cursor-pointer transition-all", templateType === "technical" ? "bg-blue-900/30/50 border-primary shadow-sm" : "hover:bg-slate-900/50 border-slate-700"))}>
                   <input type="radio" name="template" value="technical" checked={templateType === "technical"} onChange={(e) => setTemplateType(e.target.value)} className="mt-1" />
                   <div>
-                    <div className="text-sm font-bold text-slate-900">Technical / Engineering</div>
-                    <div className="text-xs text-slate-500 leading-snug mt-1 font-medium">Heavy emphasis on tech stack, architecture, and methodologies.</div>
+                    <div className="text-sm font-bold text-white">Technical / Engineering</div>
+                    <div className="text-xs text-slate-400 leading-snug mt-1 font-medium">Heavy emphasis on tech stack, architecture, and methodologies.</div>
                   </div>
                 </label>
 
-                <label className={twMerge(clsx("flex items-start gap-4 p-4 border rounded-xl cursor-pointer transition-all", templateType === "creative" ? "bg-blue-50/50 border-primary shadow-sm" : "hover:bg-slate-50 border-slate-200"))}>
+                <label className={twMerge(clsx("flex items-start gap-4 p-4 border rounded-xl cursor-pointer transition-all", templateType === "creative" ? "bg-blue-900/30/50 border-primary shadow-sm" : "hover:bg-slate-900/50 border-slate-700"))}>
                   <input type="radio" name="template" value="creative" checked={templateType === "creative"} onChange={(e) => setTemplateType(e.target.value)} className="mt-1" />
                   <div>
-                    <div className="text-sm font-bold text-slate-900">Outcome-Driven (Creative)</div>
-                    <div className="text-xs text-slate-500 leading-snug mt-1 font-medium">Highlights campaigns, portfolios, and direct measurable outcomes.</div>
+                    <div className="text-sm font-bold text-white">Outcome-Driven (Creative)</div>
+                    <div className="text-xs text-slate-400 leading-snug mt-1 font-medium">Highlights campaigns, portfolios, and direct measurable outcomes.</div>
                   </div>
                 </label>
               </div>
             </div>
 
             {tailorError && (
-              <div className="mt-5 p-4 bg-rose-50 text-rose-700 border border-rose-200 rounded-xl text-sm font-medium">
+              <div className="mt-5 p-4 bg-rose-900/30 text-rose-400 border border-rose-800 rounded-xl text-sm font-medium">
                 {tailorError}
               </div>
             )}
@@ -732,7 +732,7 @@ export default function JobsPage() {
               <button 
                 onClick={() => setTailorModalOpen(false)}
                 disabled={tailoring}
-                className="px-5 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+                className="px-5 py-2.5 text-sm font-bold text-slate-300 hover:bg-slate-800 rounded-xl transition-colors"
               >
                 Cancel
               </button>
