@@ -44,7 +44,7 @@ export default function Home() {
       {/* Animated Text Banner */}
       <div className="w-full bg-primary/10 border-y border-primary/20 py-4 mb-32 overflow-hidden flex items-center relative">
         <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent,rgba(59,130,246,0.2),transparent)] pointer-events-none mix-blend-screen" />
-        <Marquee speed={40}>
+        <Marquee>
           <div className="flex items-center gap-12 whitespace-nowrap text-lg md:text-2xl font-black text-primary/80 uppercase tracking-[0.2em] px-6">
             <span>🚀 Hyper-Tailored Resumes</span>
             <span className="text-white/20">•</span>
