@@ -43,7 +43,7 @@ export default function BulletOptimizer() {
   }
 
   return (
-    <div className="panel kinetic-border p-6 md:p-8 max-w-4xl mx-auto my-12 bg-slate-900/70 backdrop-blur-xl">
+    <div className="p-6 md:p-8 max-w-4xl mx-auto my-4 bg-transparent">
       <div className="label-kicker flex items-center gap-3">
         <span className="pulse-dot bg-blue-900/300" /> Public Micro-Tool
       </div>

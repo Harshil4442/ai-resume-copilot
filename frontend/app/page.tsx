@@ -42,8 +42,7 @@ export default function Home() {
       </section>
 
       {/* Animated Text Banner (Uber Style Dual Marquee) */}
-      <div className="w-full max-w-[1200px] mx-auto py-16 mb-32 overflow-hidden flex flex-col gap-6 relative [mask-image:linear-gradient(to_right,transparent,black_15%,black_85%,transparent)]">
-        <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent,rgba(59,130,246,0.03),transparent)] pointer-events-none mix-blend-screen" />
+      <div className="w-full max-w-[1000px] mx-auto py-8 mb-32 overflow-hidden flex flex-col gap-4 relative [mask-image:linear-gradient(to_right,transparent,black_15%,black_85%,transparent)]">
         
         {/* LTR Marquee */}
         <Marquee className="[--duration:60s]" reverse>
@@ -138,12 +137,12 @@ export default function Home() {
           </div>
           <ScrollReveal direction="right" delay={0.2}>
             <FloatingElement yOffset={10} duration={6}>
-              <div className="absolute -inset-4 bg-primary/5 rounded-3xl blur-2xl -z-10"></div>
-              <GlassCard className="p-1 md:p-1 border-white/80 shadow-2xl">
-                <div className="bg-slate-900/50 rounded-[14px] overflow-hidden">
+              <div className="absolute -inset-8 bg-blue-500/10 rounded-full blur-3xl -z-10"></div>
+              <div className="relative p-[1px] rounded-3xl bg-gradient-to-br from-blue-400/40 via-slate-800/10 to-purple-400/40 shadow-[0_0_40px_rgba(59,130,246,0.1)]">
+                <div className="bg-[#020617]/80 backdrop-blur-2xl rounded-[23px] overflow-hidden">
                   <BulletOptimizer />
                 </div>
-              </GlassCard>
+              </div>
             </FloatingElement>
           </ScrollReveal>
         </div>
