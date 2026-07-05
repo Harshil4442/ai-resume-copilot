@@ -42,7 +42,7 @@ export default function Home() {
       </section>
 
       {/* Animated Text Banner (Uber Style Dual Marquee) */}
-      <div className="w-full bg-[#020617] border-y border-slate-800/60 py-16 mb-32 overflow-hidden flex flex-col gap-6 relative shadow-[inset_0_0_100px_rgba(0,0,0,0.5)]">
+      <div className="w-full max-w-[1200px] mx-auto py-16 mb-32 overflow-hidden flex flex-col gap-6 relative [mask-image:linear-gradient(to_right,transparent,black_15%,black_85%,transparent)]">
         <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent,rgba(59,130,246,0.03),transparent)] pointer-events-none mix-blend-screen" />
         
         {/* LTR Marquee */}
