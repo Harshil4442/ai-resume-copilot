@@ -93,9 +93,9 @@ def _chat(messages: List[Dict]) -> str:
                 if "not found" in error_str or "404" in error_str or "is not supported" in error_str or "429" in error_str or "quota" in error_str or "resource exhausted" in error_str:
                     continue
                 else:
-                    raise e
+                    raise Exception(f"Failed with {attempt_model}: {e}") from e
                     
-        raise last_error
+        raise Exception(f"All fallback models failed. Last error from {models_to_try[-1]}: {last_error}") from last_error
 
     # Strip trailing slash to prevent 404 double-slash errors (e.g., //chat/completions)
     base_url = LLM_API_BASE.rstrip("/")
@@ -132,14 +132,14 @@ def _chat(messages: List[Dict]) -> str:
             if resp.status_code == 429 and attempt < max_retries - 1:
                 continue # Already handled above, but just in case
             if attempt == max_retries - 1:
-                raise e
+                raise Exception(f"OpenAI endpoint failed with HTTPError on model {LLM_MODEL}: {e}") from e
             time.sleep(2)
         except Exception as e:
             if attempt == max_retries - 1:
-                raise e
+                raise Exception(f"OpenAI endpoint failed on model {LLM_MODEL}: {e}") from e
             time.sleep(2)
     
-    return ""
+    raise Exception(f"All {max_retries} retries failed for OpenAI model {LLM_MODEL}.")
 
 
 def _extract_json_object(raw: str) -> Dict:

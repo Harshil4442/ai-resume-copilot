@@ -65,7 +65,7 @@ def match_job(
         # Check if it was a 429
         err_msg = str(e)
         if "429" in err_msg:
-            detail = "API Rate Limit (429) hit. Please wait a minute before trying again, or check your API Billing/Balance."
+            detail = f"API Rate Limit (429) hit. Details: {err_msg}"
         else:
             detail = f"Step 1 (LLM Call) failed: {err_msg}"
         raise HTTPException(status_code=500, detail=detail)
@@ -175,7 +175,7 @@ def get_match_history(
                 company    = m.company,
                 match_score= m.match_score,
                 created_at = m.created_at,
-            )
+            ) for m in matches
         ]
     )
 
