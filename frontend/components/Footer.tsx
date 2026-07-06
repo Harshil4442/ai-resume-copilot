@@ -67,7 +67,9 @@ export default function Footer() {
               <ul className="space-y-4">
                 <li><Link href="/privacy" className="text-sm text-slate-400 hover:text-white transition-colors">Privacy Policy</Link></li>
                 <li><Link href="/terms" className="text-sm text-slate-400 hover:text-white transition-colors">Terms of Service</Link></li>
+                <li><Link href="/refund" className="text-sm text-slate-400 hover:text-white transition-colors">Refund & Cancellation</Link></li>
                 <li><Link href="/cookies" className="text-sm text-slate-400 hover:text-white transition-colors">Cookie Policy</Link></li>
+                <li><Link href="/contact" className="text-sm text-slate-400 hover:text-white transition-colors">Contact Us</Link></li>
               </ul>
             </div>
           </div>
