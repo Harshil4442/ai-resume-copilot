@@ -10,7 +10,7 @@ import GlassCard from "../../components/ui/GlassCard";
 import AnimatedButton from "../../components/ui/AnimatedButton";
 import FadeIn from "../../components/ui/FadeIn";
 import StaggerContainer, { StaggerItem } from "../../components/ui/StaggerContainer";
-import { CreditCard, Zap, CheckCircle2, Shield, Globe, MapPin, AlertCircle, Crown, Lock } from "lucide-react";
+import { CreditCard, Zap, CheckCircle2, Shield, Globe, MapPin, AlertCircle, Crown, Lock, Map, AlertTriangle } from "lucide-react";
 
 const PAYPAL_CLIENT_ID = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID || "test";
 const RAZORPAY_KEY_ID = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "rzp_test_mock";
@@ -18,12 +18,74 @@ const RAZORPAY_KEY_ID = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "rzp_test_moc
 export default function BillingPage() {
   const router = useRouter();
   const [region, setRegion] = useState<"global" | "india">("india");
+  const [selectedCountry, setSelectedCountry] = useState<string>("IN");
+  const [gpsCountry, setGpsCountry] = useState<string | null>(null);
+  const [countries, setCountries] = useState<{code: string, name: string}[]>([]);
+  const [showWarning, setShowWarning] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<"subscription" | "topup">("subscription");
   const [paymentSuccess, setPaymentSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentTier, setCurrentTier] = useState<string>("free");
   const [creditBalance, setCreditBalance] = useState<number>(0);
+
+  useEffect(() => {
+    // Fetch countries
+    fetch("https://restcountries.com/v3.1/all?fields=name,cca2")
+      .then(res => res.json())
+      .then(data => {
+        const formatted = data.map((d: any) => ({ code: d.cca2, name: d.name.common }))
+          .sort((a: any, b: any) => a.name.localeCompare(b.name));
+        setCountries(formatted);
+      })
+      .catch(console.error);
+
+    // Get GPS location
+    if ("geolocation" in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          try {
+            const { latitude, longitude } = position.coords;
+            const res = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=en`);
+            const data = await res.json();
+            if (data.countryCode) {
+              setGpsCountry(data.countryCode);
+              // Auto select if first time
+              setSelectedCountry(data.countryCode);
+              setRegion(data.countryCode === "IN" ? "india" : "global");
+            }
+          } catch (err) {
+            console.error("Geocoding failed", err);
+          }
+        },
+        (error) => {
+          console.error("GPS access denied or failed", error);
+        }
+      );
+    }
+  }, []);
+
+  const handleCountryChange = (code: string) => {
+    setSelectedCountry(code);
+    if (gpsCountry && code !== gpsCountry) {
+      setShowWarning(true);
+    } else {
+      setRegion(code === "IN" ? "india" : "global");
+    }
+  };
+
+  const confirmCountryMismatch = () => {
+    setShowWarning(false);
+    setRegion(selectedCountry === "IN" ? "india" : "global");
+  };
+
+  const cancelCountryMismatch = () => {
+    setShowWarning(false);
+    if (gpsCountry) {
+      setSelectedCountry(gpsCountry);
+      setRegion(gpsCountry === "IN" ? "india" : "global");
+    }
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -233,23 +295,39 @@ export default function BillingPage() {
                 <h3 className="text-xl font-black text-white tracking-tighter">1. Select Package</h3>
                 <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mt-1">Pricing adjusts automatically to your location</p>
               </div>
-              <div className="flex bg-slate-800 p-1 rounded-xl shadow-inner border border-slate-700">
-                <button
-                  onClick={() => setRegion("global")}
-                  className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition-all ${
-                    region === "global" ? "bg-slate-950 text-white shadow-sm border border-slate-700/50" : "text-slate-400 hover:text-slate-200"
-                  }`}
-                >
-                  <Globe size={14} /> Global (USD)
-                </button>
-                <button
-                  onClick={() => setRegion("india")}
-                  className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition-all ${
-                    region === "india" ? "bg-slate-950 text-white shadow-sm border border-slate-700/50" : "text-slate-400 hover:text-slate-200"
-                  }`}
-                >
-                  <MapPin size={14} /> India (INR)
-                </button>
+              
+              <div className="flex flex-col gap-2 relative z-20">
+                <div className="flex items-center gap-2 bg-slate-900 border border-slate-700 px-3 py-2 rounded-lg">
+                  <Map size={16} className="text-slate-400" />
+                  <select 
+                    value={selectedCountry}
+                    onChange={(e) => handleCountryChange(e.target.value)}
+                    className="bg-transparent text-white text-sm font-bold outline-none border-none appearance-none cursor-pointer pr-4"
+                  >
+                    <option value="US">Select Country...</option>
+                    {countries.map(c => (
+                      <option key={c.code} value={c.code}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+                
+                {showWarning && (
+                  <div className="absolute top-full mt-2 right-0 w-72 bg-slate-800 border border-amber-500/50 p-4 rounded-xl shadow-2xl z-50">
+                    <div className="flex items-start gap-3">
+                      <AlertTriangle size={20} className="text-amber-500 shrink-0 mt-0.5" />
+                      <div>
+                        <h4 className="text-sm font-bold text-white mb-1">Location Mismatch</h4>
+                        <p className="text-xs text-slate-300 mb-3 leading-relaxed">
+                          Your selected country doesn't match your physical GPS location. Proceeding may cause payment failures.
+                        </p>
+                        <div className="flex gap-2">
+                          <button onClick={confirmCountryMismatch} className="text-xs font-bold bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 px-3 py-1.5 rounded-lg transition-colors">Proceed Anyway</button>
+                          <button onClick={cancelCountryMismatch} className="text-xs font-bold bg-slate-700 text-slate-300 hover:bg-slate-600 px-3 py-1.5 rounded-lg transition-colors">Go Back</button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -392,9 +470,9 @@ export default function BillingPage() {
                     <div className="relative z-10">
                       <button
                         onClick={handleRazorpayCheckout}
-                        className="w-full bg-[#02042b] hover:bg-slate-800 text-white font-bold py-4 px-6 rounded-xl shadow-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                        className="w-full bg-[#3d2780] hover:bg-[#2b1b5a] text-white font-bold py-4 px-6 rounded-xl shadow-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2"
                       >
-                        <CreditCard size={18} /> Pay with Razorpay
+                        <CreditCard size={18} /> Pay with Cashfree
                       </button>
                       <div className="flex items-center justify-center gap-4 mt-6 grayscale opacity-60">
                         <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Supports UPI, Cards, NetBanking</span>
