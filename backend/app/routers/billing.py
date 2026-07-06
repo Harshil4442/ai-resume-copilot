@@ -377,10 +377,6 @@ class CashfreeCreateRequest(BaseModel):
     type: str
     credits: Optional[int] = 25
 
-class LemonSqueezyCreateRequest(BaseModel):
-    type: str
-    credits: Optional[int] = 25
-
 @router.post("/cashfree/create-order")
 def create_cashfree_order(
     payload: CashfreeCreateRequest,
@@ -417,19 +413,3 @@ def verify_cashfree_payment(
     )
     db.commit()
     return {"status": "success"}
-
-@router.post("/lemon/create-checkout")
-def create_lemon_checkout(
-    payload: LemonSqueezyCreateRequest,
-    current_user: User = Depends(get_current_user),
-):
-    """
-    Mock endpoint for Lemon Squeezy. In production, this calls the Lemon Squeezy API 
-    with LEMON_SQUEEZY_API_KEY to generate a unique checkout URL for the user.
-    """
-    # Mocking response
-    mock_checkout_url = f"https://hirewizhq.lemonsqueezy.com/checkout/buy/mock-variant?custom_user_id={current_user.id}"
-    return {
-        "checkout_url": mock_checkout_url
-    }
-
