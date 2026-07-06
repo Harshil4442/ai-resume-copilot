@@ -6,6 +6,7 @@ import { useSession } from "next-auth/react";
 import { apiGet } from "../lib/api";
 import Link from "next/link";
 import Logo from "./ui/Logo";
+import Image from "next/image";
 import { Menu, X, LayoutDashboard, FileText, Target, TrendingUp, BookOpen, User, CreditCard } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -67,7 +68,20 @@ export default function Nav() {
       <header className="fixed left-0 top-0 z-50 w-full h-14 bg-slate-900/70 backdrop-blur-[12px] border-b border-slate-700/50 animate-fade-in [--animation-delay:600ms] translate-y-[-1rem] opacity-0 shadow-sm">
         <div className="max-w-[80rem] mx-auto px-4 md:px-8 h-full flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2.5">
+            {/* SVG Logo (Recommended: sharp, lightweight, responsive) */}
             <Logo />
+            
+            {/* Alternative PNG Logo (Uncomment to use the uploaded image asset directly) */}
+            {/* 
+            <Image 
+              src="/logo.png" 
+              alt="HireWiz Logo" 
+              width={34} 
+              height={34} 
+              className="object-contain"
+            /> 
+            */}
+            
             <span className="text-sm font-black tracking-tight text-white">HireWiz</span>
           </Link>
           

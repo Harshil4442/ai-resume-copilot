@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Globe, Mail, MessageCircle } from "lucide-react";
 import FadeIn from "./ui/FadeIn";
 import Logo from "./ui/Logo";
+import Image from "next/image";
 
 export default function Footer() {
   const currentYear = new Date().getFullYear();
@@ -15,7 +16,20 @@ export default function Footer() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-12 mb-12">
             <div>
               <Link href="/" className="flex items-center gap-2.5 mb-6">
+                {/* SVG Logo */}
                 <Logo />
+                
+                {/* Alternative PNG Logo (Uncomment to use the uploaded image asset directly) */}
+                {/* 
+                <Image 
+                  src="/logo.png" 
+                  alt="HireWiz Logo" 
+                  width={34} 
+                  height={34} 
+                  className="object-contain"
+                /> 
+                */}
+                
                 <span className="text-sm font-black tracking-tight text-white">HireWiz</span>
               </Link>
               <p className="text-sm text-slate-400 leading-relaxed mb-6">

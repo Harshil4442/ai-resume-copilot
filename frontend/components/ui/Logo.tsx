@@ -3,54 +3,98 @@ import { SVGProps } from "react";
 export default function Logo({ className, ...props }: SVGProps<SVGSVGElement>) {
   return (
     <svg
-      width="32"
-      height="32"
-      viewBox="0 0 32 32"
+      width="34"
+      height="34"
+      viewBox="0 0 100 100"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       className={className}
       {...props}
     >
       <defs>
-        <linearGradient id="logo-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#3b82f6" /> {/* Electric Blue */}
-          <stop offset="50%" stopColor="#6366f1" />  {/* Indigo */}
-          <stop offset="100%" stopColor="#a855f7" /> {/* Purple */}
+        {/* Electric Blue -> Purple -> Cyan Gradient matching the uploaded logo */}
+        <linearGradient id="logo-grad" x1="0%" y1="100%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor="#4f46e5" />  {/* Deep Indigo/Purple */}
+          <stop offset="50%" stopColor="#2563eb" />  {/* Royal Blue */}
+          <stop offset="100%" stopColor="#06b6d4" /> {/* Bright Cyan */}
         </linearGradient>
         <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
-          <feGaussianBlur stdDeviation="2" result="blur" />
+          <feGaussianBlur stdDeviation="1.5" result="blur" />
           <feComposite in="SourceGraphic" in2="blur" operator="over" />
         </filter>
       </defs>
-      
-      {/* Outer Hexagon Shield */}
+
+      {/* 1. Left stem of H (Styled as a folded Document) */}
       <path
-        d="M16 2L28 9V23L16 30L4 23V9L16 2Z"
-        stroke="url(#logo-grad)"
-        strokeWidth="2.5"
-        strokeLinejoin="round"
-        className="opacity-80"
-      />
-      
-      {/* Wizard Hat Icon inside Shield */}
-      <path
-        d="M16 7L7 19H25L16 7Z"
-        fill="url(#logo-grad)"
-        filter="url(#glow)"
-        className="opacity-90"
-      />
-      
-      {/* Hat Brim */}
-      <path
-        d="M5 21C5 20.4477 5.44772 20 6 20H26C26.5523 20 27 20.4477 27 21C27 21.5523 26.5523 22 26 22H6C5.44772 22 5 21.5523 5 21Z"
+        d="M22 74V28L30 20H38V74H22Z"
         fill="url(#logo-grad)"
       />
-      
-      {/* Sparkle/Star representing magic insights */}
+      {/* Dog-ear fold highlight */}
       <path
-        d="M16 11.5L17 13.5L19 14.5L17 15.5L16 17.5L15 15.5L13 14.5L15 13.5L16 11.5Z"
+        d="M22 28H30V20L22 28Z"
         fill="white"
+        opacity="0.35"
       />
+
+      {/* 2. Right stem of H */}
+      <rect
+        x="54"
+        y="20"
+        width="16"
+        height="54"
+        rx="2"
+        fill="url(#logo-grad)"
+      />
+
+      {/* 3. Crossbar of H */}
+      <rect
+        x="38"
+        y="42"
+        width="16"
+        height="12"
+        fill="url(#logo-grad)"
+      />
+
+      {/* 4. Swooping Jet Stream */}
+      <path
+        d="M14 54C14 36, 44 30, 68 48"
+        stroke="url(#logo-grad)"
+        strokeWidth="4"
+        strokeLinecap="round"
+        fill="none"
+      />
+
+      {/* 5. Tilted Rocket (translated and rotated 45 degrees to match direction) */}
+      <g transform="translate(68, 38) rotate(45)">
+        {/* Rocket Flame */}
+        <path
+          d="M-3 12L0 22L3 12Z"
+          fill="#fb923c"
+          filter="url(#glow)"
+        />
+        {/* Left Fin */}
+        <path
+          d="M-6 4L-12 12L-4 10Z"
+          fill="url(#logo-grad)"
+        />
+        {/* Right Fin */}
+        <path
+          d="M6 4L12 12L4 10Z"
+          fill="url(#logo-grad)"
+        />
+        {/* Rocket Body */}
+        <path
+          d="M-6 0C-6 -10, 0 -18, 0 -18C0 -18, 6 -10, 6 0L4 12H-4L-6 0Z"
+          fill="url(#logo-grad)"
+        />
+        {/* Window */}
+        <circle
+          cx="0"
+          cy="-3"
+          r="2"
+          fill="white"
+        />
+      </g>
     </svg>
   );
 }
