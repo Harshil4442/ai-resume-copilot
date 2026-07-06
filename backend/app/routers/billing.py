@@ -368,3 +368,68 @@ def verify_razorpay_payment(
     except Exception as e:
         log.exception("Razorpay payment verification failed")
         raise HTTPException(status_code=500, detail=str(e))
+
+# ==========================================
+# NEW DUAL GATEWAY ARCHITECTURE PREP
+# ==========================================
+
+class CashfreeCreateRequest(BaseModel):
+    type: str
+    credits: Optional[int] = 25
+
+class LemonSqueezyCreateRequest(BaseModel):
+    type: str
+    credits: Optional[int] = 25
+
+@router.post("/cashfree/create-order")
+def create_cashfree_order(
+    payload: CashfreeCreateRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Mock endpoint for Cashfree. In production, this will call Cashfree's PG API 
+    using CASHFREE_APP_ID and CASHFREE_SECRET_KEY to generate a payment session_id.
+    """
+    # Mocking response
+    mock_session_id = f"mock_cf_session_{uuid.uuid4().hex[:8]}"
+    mock_order_id = f"mock_cf_order_{uuid.uuid4().hex[:8]}"
+    return {
+        "payment_session_id": mock_session_id,
+        "order_id": mock_order_id,
+        "amount": 999.00 if payload.type == "subscription" else 99.00
+    }
+
+@router.post("/cashfree/verify-payment")
+def verify_cashfree_payment(
+    order_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Mock endpoint for Cashfree verification. In production, this will fetch the 
+    order status from Cashfree and provision credits.
+    """
+    # Auto-approve for mock
+    db.execute(
+        update(User)
+        .where(User.id == current_user.id)
+        .values(tier="premium" if "sub" in order_id else User.tier)
+    )
+    db.commit()
+    return {"status": "success"}
+
+@router.post("/lemon/create-checkout")
+def create_lemon_checkout(
+    payload: LemonSqueezyCreateRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Mock endpoint for Lemon Squeezy. In production, this calls the Lemon Squeezy API 
+    with LEMON_SQUEEZY_API_KEY to generate a unique checkout URL for the user.
+    """
+    # Mocking response
+    mock_checkout_url = f"https://hirewizhq.lemonsqueezy.com/checkout/buy/mock-variant?custom_user_id={current_user.id}"
+    return {
+        "checkout_url": mock_checkout_url
+    }
+
