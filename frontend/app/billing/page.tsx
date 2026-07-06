@@ -22,6 +22,7 @@ export default function BillingPage() {
   const [selectedCountry, setSelectedCountry] = useState<string>("");
   const [gpsCountry, setGpsCountry] = useState<string | null>(null);
   const [showWarning, setShowWarning] = useState(false);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<"subscription" | "topup">("subscription");
   const [paymentSuccess, setPaymentSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -286,19 +287,48 @@ export default function BillingPage() {
                 <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mt-1">Pricing adjusts automatically to your location</p>
               </div>
               
-              <div className="flex flex-col gap-2 relative z-20">
-                <div className="flex items-center gap-2 bg-slate-900 border border-slate-700 px-3 py-2 rounded-lg">
-                  <Map size={16} className="text-slate-400" />
-                  <select 
-                    value={selectedCountry}
-                    onChange={(e) => handleCountryChange(e.target.value)}
-                    className="bg-transparent text-white text-sm font-bold outline-none border-none appearance-none cursor-pointer pr-4 [&>option]:bg-slate-900 [&>option]:text-white"
+              <div className="flex flex-col gap-2 relative z-40">
+                <div 
+                  className="relative"
+                  tabIndex={0}
+                  onBlur={(e) => {
+                    if (!e.currentTarget.contains(e.relatedTarget)) {
+                      setIsDropdownOpen(false);
+                    }
+                  }}
+                >
+                  <button 
+                    onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                    className="flex items-center justify-between w-full min-w-[240px] gap-3 bg-slate-900 border border-slate-700 hover:border-slate-600 px-4 py-3 rounded-xl transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
                   >
-                    <option value="" disabled>Select Country...</option>
-                    {COUNTRIES.map(c => (
-                      <option key={c.code} value={c.code} className="bg-slate-900 text-white">{c.name}</option>
-                    ))}
-                  </select>
+                    <div className="flex items-center gap-3">
+                      <Map size={16} className={selectedCountry ? "text-primary" : "text-slate-400"} />
+                      <span className={`text-sm font-bold ${selectedCountry ? "text-white" : "text-slate-400"}`}>
+                        {selectedCountry ? COUNTRIES.find(c => c.code === selectedCountry)?.name : "Select your country..."}
+                      </span>
+                    </div>
+                    <svg className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${isDropdownOpen ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+                  </button>
+
+                  {isDropdownOpen && (
+                    <div className="absolute top-full mt-2 w-full max-h-[280px] overflow-y-auto bg-slate-800 border border-slate-700 rounded-xl shadow-2xl z-50 py-2 scrollbar-thin">
+                      {COUNTRIES.map(c => (
+                        <button
+                          key={c.code}
+                          onClick={() => {
+                            handleCountryChange(c.code);
+                            setIsDropdownOpen(false);
+                          }}
+                          className={`w-full text-left px-4 py-2.5 text-sm transition-colors flex items-center justify-between
+                            ${selectedCountry === c.code ? 'bg-primary/20 text-white font-bold' : 'text-slate-300 hover:bg-slate-700 hover:text-white'}`
+                          }
+                        >
+                          {c.name}
+                          {selectedCountry === c.code && <CheckCircle2 size={14} className="text-primary" />}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 
                 {showWarning && (
