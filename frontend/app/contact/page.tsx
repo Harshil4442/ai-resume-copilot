@@ -59,7 +59,8 @@ export default function ContactPage() {
               This is our registered administrative office. Please note that we do not offer in-person support at this location. All support requests must be routed via email.
             </p>
             <address className="not-italic text-slate-300 leading-relaxed font-medium">
-              HireWiz Technologies<br />
+              Legal Entity: SAVALIYA HARSHIL YOGESHBHAI<br />
+              (Operating as HireWiz)<br />
               Surat, Gujarat<br />
               India, 395010
             </address>

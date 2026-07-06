@@ -12,7 +12,7 @@ export default function TermsOfService() {
         <section>
           <h2 className="text-2xl font-bold text-white mb-4">1. Acceptance of Terms</h2>
           <p>
-            By accessing or using HireWiz, you agree to be bound by these Terms of Service. If you do not agree, you may not use the platform.
+            By accessing or using HireWiz (operated by SAVALIYA HARSHIL YOGESHBHAI), you agree to be bound by these Terms of Service. If you do not agree, you may not use the platform.
           </p>
         </section>
 

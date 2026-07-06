@@ -12,7 +12,7 @@ export default function PrivacyPolicy() {
         <section>
           <h2 className="text-2xl font-bold text-white mb-4">1. Information We Collect</h2>
           <p>
-            When you use HireWiz, we collect information that you provide to us directly, including:
+            When you use HireWiz (operated by SAVALIYA HARSHIL YOGESHBHAI), we collect information that you provide to us directly, including:
           </p>
           <ul className="list-disc pl-6 mt-4 space-y-2">
             <li><strong>Account Information:</strong> Name, email address, and authentication credentials.</li>
