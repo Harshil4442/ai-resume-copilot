@@ -51,6 +51,9 @@ from .security import JWT_SECRET, JWT_ALGORITHM
 @app.middleware("http")
 async def jwt_validation_middleware(request: Request, call_next):
     path = request.url.path
+    if request.method == "OPTIONS":
+        return await call_next(request)
+        
     # Protect all /api endpoints except health, login, register, webhook, and public end points
     if path.startswith("/api") and not (
         path == "/api/health" or
