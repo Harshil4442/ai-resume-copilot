@@ -11,6 +11,7 @@ import AnimatedButton from "../../components/ui/AnimatedButton";
 import FadeIn from "../../components/ui/FadeIn";
 import StaggerContainer, { StaggerItem } from "../../components/ui/StaggerContainer";
 import { CreditCard, Zap, CheckCircle2, Shield, Globe, MapPin, AlertCircle, Crown, Lock, Map, AlertTriangle } from "lucide-react";
+import { COUNTRIES } from "../../lib/countries";
 
 const PAYPAL_CLIENT_ID = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID || "test";
 const RAZORPAY_KEY_ID = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "rzp_test_mock";
@@ -18,9 +19,8 @@ const RAZORPAY_KEY_ID = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "rzp_test_moc
 export default function BillingPage() {
   const router = useRouter();
   const [region, setRegion] = useState<"global" | "india">("india");
-  const [selectedCountry, setSelectedCountry] = useState<string>("IN");
+  const [selectedCountry, setSelectedCountry] = useState<string>("");
   const [gpsCountry, setGpsCountry] = useState<string | null>(null);
-  const [countries, setCountries] = useState<{code: string, name: string}[]>([]);
   const [showWarning, setShowWarning] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<"subscription" | "topup">("subscription");
   const [paymentSuccess, setPaymentSuccess] = useState(false);
@@ -30,16 +30,6 @@ export default function BillingPage() {
   const [creditBalance, setCreditBalance] = useState<number>(0);
 
   useEffect(() => {
-    // Fetch countries
-    fetch("https://restcountries.com/v3.1/all?fields=name,cca2")
-      .then(res => res.json())
-      .then(data => {
-        const formatted = data.map((d: any) => ({ code: d.cca2, name: d.name.common }))
-          .sort((a: any, b: any) => a.name.localeCompare(b.name));
-        setCountries(formatted);
-      })
-      .catch(console.error);
-
     // Get GPS location
     if ("geolocation" in navigator) {
       navigator.geolocation.getCurrentPosition(
@@ -302,11 +292,11 @@ export default function BillingPage() {
                   <select 
                     value={selectedCountry}
                     onChange={(e) => handleCountryChange(e.target.value)}
-                    className="bg-transparent text-white text-sm font-bold outline-none border-none appearance-none cursor-pointer pr-4"
+                    className="bg-transparent text-white text-sm font-bold outline-none border-none appearance-none cursor-pointer pr-4 [&>option]:bg-slate-900 [&>option]:text-white"
                   >
-                    <option value="US">Select Country...</option>
-                    {countries.map(c => (
-                      <option key={c.code} value={c.code}>{c.name}</option>
+                    <option value="" disabled>Select Country...</option>
+                    {COUNTRIES.map(c => (
+                      <option key={c.code} value={c.code} className="bg-slate-900 text-white">{c.name}</option>
                     ))}
                   </select>
                 </div>
