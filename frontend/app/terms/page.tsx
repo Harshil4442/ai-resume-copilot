@@ -6,20 +6,20 @@ export default function TermsOfService() {
       <PageHeader 
         badge="Legal"
         title="Terms of Service" 
-        subtitle="The rules and guidelines for using AI Resume CoPilot." 
+        subtitle="The rules and guidelines for using HireWiz." 
       />
       <div className="w-full max-w-4xl mx-auto px-6 md:px-8 mt-12 text-slate-300 space-y-8 leading-relaxed">
         <section>
           <h2 className="text-2xl font-bold text-white mb-4">1. Acceptance of Terms</h2>
           <p>
-            By accessing or using AI Resume CoPilot, you agree to be bound by these Terms of Service. If you do not agree, you may not use the platform.
+            By accessing or using HireWiz, you agree to be bound by these Terms of Service. If you do not agree, you may not use the platform.
           </p>
         </section>
 
         <section>
           <h2 className="text-2xl font-bold text-white mb-4">2. Description of Service</h2>
           <p>
-            AI Resume CoPilot provides AI-driven career tools, including resume parsing, job matching, and learning strategy generation. The output provided by our AI models is intended for guidance and informational purposes only.
+            HireWiz provides AI-driven career tools, including resume parsing, job matching, and learning strategy generation. The output provided by our AI models is intended for guidance and informational purposes only.
           </p>
         </section>
 
@@ -46,7 +46,7 @@ export default function TermsOfService() {
         <section>
           <h2 className="text-2xl font-bold text-white mb-4">5. Intellectual Property</h2>
           <p>
-            You retain all ownership rights to the content you upload (your resume). AI Resume CoPilot retains all intellectual property rights to the platform, its code, design, and proprietary algorithms.
+            You retain all ownership rights to the content you upload (your resume). HireWiz retains all intellectual property rights to the platform, its code, design, and proprietary algorithms.
           </p>
         </section>
       </div>

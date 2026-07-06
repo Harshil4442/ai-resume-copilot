@@ -119,7 +119,7 @@ export default function BillingPage() {
         key: RAZORPAY_KEY_ID,
         amount: res.amount,
         currency: "INR",
-        name: "AI Resume CoPilot",
+        name: "HireWiz",
         description: planDetails[selectedPlan].title,
         order_id: res.order_id,
         config: {

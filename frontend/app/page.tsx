@@ -29,8 +29,8 @@ export default function Home() {
           </StaggerItem>
           
           <StaggerItem>
-            <p className="text-lg md:text-xl text-slate-400 max-w-2xl mx-auto mb-10 text-balance tracking-tight leading-relaxed">
-              Resume CoPilot offers instant, AI-powered insights into your career trajectory. Parse your resume, match against job descriptions, and unlock personalized learning strategies.
+            <p className="text-lg md:text-xl text-slate-400 text-balance tracking-tight max-w-2xl mx-auto leading-relaxed mb-10">
+              HireWiz offers instant, AI-powered insights into your career trajectory. Parse your resume, match against job descriptions, and unlock personalized learning strategies.
             </p>
           </StaggerItem>
           

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Globe, Mail, MessageCircle } from "lucide-react";
 import FadeIn from "./ui/FadeIn";
+import Logo from "./ui/Logo";
 
 export default function Footer() {
   const currentYear = new Date().getFullYear();
@@ -13,9 +14,9 @@ export default function Footer() {
         <FadeIn direction="up" delay={0.1}>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-12 mb-12">
             <div>
-              <Link href="/" className="flex items-center gap-2 mb-6">
-                <span className="grid h-8 w-8 place-items-center rounded-lg bg-neutral-950 border border-slate-700/50 text-white text-xs font-black shadow-md">AI</span>
-                <span className="text-sm font-black tracking-tight text-white">Resume CoPilot</span>
+              <Link href="/" className="flex items-center gap-2.5 mb-6">
+                <Logo />
+                <span className="text-sm font-black tracking-tight text-white">HireWiz</span>
               </Link>
               <p className="text-sm text-slate-400 leading-relaxed mb-6">
                 Your career signal, measured. Elevate your resume with AI-driven insights and land your dream job faster.
@@ -59,7 +60,7 @@ export default function Footer() {
           
           <div className="flex flex-col md:flex-row items-center justify-between pt-8 border-t border-slate-700/60">
             <p className="text-sm text-slate-400">
-              © {currentYear} AI Resume CoPilot. All rights reserved.
+              © {currentYear} HireWiz. All rights reserved.
             </p>
           </div>
         </FadeIn>

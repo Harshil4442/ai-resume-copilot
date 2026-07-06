@@ -164,7 +164,7 @@ export default function ResumePreviewPage() {
                 backgroundColor: "#f8fafc",
               }}
             >
-              Built with AI Resume CoPilot
+              Built with HireWiz
             </a>
           </div>
         </div>

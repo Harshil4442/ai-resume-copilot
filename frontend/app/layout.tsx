@@ -5,12 +5,13 @@ import Nav from "../components/Nav";
 import Footer from "../components/Footer";
 import SessionProviderWrapper from "../components/SessionProviderWrapper";
 import AnimatedBackground from "../components/ui/AnimatedBackground";
+import { Metadata } from 'next';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
 
-export const metadata = {
-  title: "AI Resume CoPilot",
-  description: "Parse resumes, match JDs, learn skill gaps, and prep interviews.",
+export const metadata: Metadata = {
+  title: "HireWiz",
+  description: "AI-powered resume optimizer and job matching platform, learn skill gaps, and prep interviews.",
 };
 
 // Google Analytics 4 measurement ID. Override via env in deployments where

@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { apiGet } from "../lib/api";
 import Link from "next/link";
+import Logo from "./ui/Logo";
 import { Menu, X, LayoutDashboard, FileText, Target, TrendingUp, BookOpen, User, CreditCard } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -65,9 +66,9 @@ export default function Nav() {
     <>
       <header className="fixed left-0 top-0 z-50 w-full h-14 bg-slate-900/70 backdrop-blur-[12px] border-b border-slate-700/50 animate-fade-in [--animation-delay:600ms] translate-y-[-1rem] opacity-0 shadow-sm">
         <div className="max-w-[80rem] mx-auto px-4 md:px-8 h-full flex items-center justify-between">
-          <Link href="/" className="group flex items-center gap-2">
-            <span className="grid h-8 w-8 place-items-center rounded-lg bg-neutral-950 border border-slate-700/50 text-white text-xs font-black shadow-md">AI</span>
-            <span className="text-sm font-black tracking-tight text-white">Resume CoPilot</span>
+          <Link href="/" className="flex items-center gap-2.5">
+            <Logo />
+            <span className="text-sm font-black tracking-tight text-white">HireWiz</span>
           </Link>
           
           {/* Desktop Nav */}
