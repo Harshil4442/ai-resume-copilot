@@ -45,8 +45,8 @@ export default function ContactPage() {
               Our support team is available during standard business hours in Indian Standard Time (IST).
             </p>
             <div className="text-slate-300 font-semibold">
-              Monday - Friday<br/>
-              10:00 AM - 6:00 PM IST
+              Monday - Sunday<br/>
+              10:00 AM - 10:00 PM IST
             </div>
           </GlassCard>
 
@@ -60,8 +60,8 @@ export default function ContactPage() {
             </p>
             <address className="not-italic text-slate-300 leading-relaxed font-medium">
               HireWiz Technologies<br />
-              Bangalore, Karnataka<br />
-              India, 560001
+              Surat, Gujarat<br />
+              India, 395010
             </address>
           </GlassCard>
         </div>
