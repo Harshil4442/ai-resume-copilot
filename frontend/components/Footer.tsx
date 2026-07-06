@@ -33,12 +33,12 @@ export default function Footer() {
                 <span className="text-sm font-black tracking-tight text-white">HireWiz</span>
               </Link>
               <p className="text-sm text-slate-400 leading-relaxed mb-6">
-                Your career signal, measured. Elevate your resume with AI-driven insights and land your dream job faster.
+                Transform your resume into a high-impact career signal. Beat the ATS screening bots, optimize your professional profile, and land interviews faster with AI-powered matching and tailored learning paths.
               </p>
               <div className="flex gap-4">
-                <a href="#" className="text-slate-400 hover:text-primary transition-colors"><Globe size={20} /></a>
-                <a href="#" className="text-slate-400 hover:text-primary transition-colors"><Mail size={20} /></a>
-                <a href="#" className="text-slate-400 hover:text-primary transition-colors"><MessageCircle size={20} /></a>
+                <a href="https://hirewizhq.com" target="_blank" rel="noopener noreferrer" className="text-slate-400 hover:text-primary transition-colors"><Globe size={20} /></a>
+                <a href="mailto:work@hirewizhq.com" className="text-slate-400 hover:text-primary transition-colors"><Mail size={20} /></a>
+                <a href="mailto:work@hirewizhq.com" className="text-slate-400 hover:text-primary transition-colors"><MessageCircle size={20} /></a>
               </div>
             </div>
 
