@@ -7,10 +7,10 @@ import { apiGet } from "../lib/api";
 import Link from "next/link";
 import Logo from "./ui/Logo";
 import Image from "next/image";
-import { Menu, X, LayoutDashboard, FileText, Target, TrendingUp, BookOpen, User, CreditCard } from "lucide-react";
+import { Menu, X, LayoutDashboard, FileText, Target, TrendingUp, BookOpen, User, CreditCard, Info, Mail } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
-const links = [
+const appLinks = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/resume", label: "Resume", icon: FileText },
   { href: "/jobs", label: "Match", icon: Target },
@@ -18,6 +18,14 @@ const links = [
   { href: "/learning", label: "Learning", icon: BookOpen },
   { href: "/profile", label: "Profile", icon: User },
   { href: "/billing", label: "Billing", icon: CreditCard },
+];
+
+// Signed-out visitors see public, non-authenticated destinations only.
+const publicLinks = [
+  { href: "/pricing", label: "Pricing", icon: CreditCard },
+  { href: "/about", label: "How It Works", icon: Info },
+  { href: "/market", label: "Market", icon: TrendingUp },
+  { href: "/contact", label: "Contact", icon: Mail },
 ];
 
 export default function Nav() {
@@ -62,6 +70,8 @@ export default function Nav() {
   useEffect(() => {
     setIsMobileMenuOpen(false);
   }, [pathname]);
+
+  const links = loggedIn ? appLinks : publicLinks;
 
   return (
     <>
@@ -122,7 +132,10 @@ export default function Nav() {
             {loggedIn ? (
               <Link className="hidden md:inline-flex px-4 py-1.5 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 transition shadow-sm" href="/logout">Logout</Link>
             ) : (
-              <Link className="hidden md:inline-flex px-4 py-1.5 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary/90 transition shadow-sm" href="/login">Login</Link>
+              <div className="hidden md:flex items-center gap-2">
+                <Link className="px-4 py-1.5 rounded-xl text-slate-300 text-sm font-semibold hover:text-white transition" href="/login">Login</Link>
+                <Link className="px-4 py-1.5 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary/90 transition shadow-sm" href="/register">Sign Up</Link>
+              </div>
             )}
 
             {/* Mobile Menu Toggle */}
@@ -188,7 +201,10 @@ export default function Nav() {
                 {loggedIn ? (
                   <Link className="flex w-full justify-center px-4 py-2.5 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 transition" href="/logout">Logout</Link>
                 ) : (
-                  <Link className="flex w-full justify-center px-4 py-2.5 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary/90 transition" href="/login">Login</Link>
+                  <div className="flex flex-col gap-2">
+                    <Link className="flex w-full justify-center px-4 py-2.5 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 transition" href="/login">Login</Link>
+                    <Link className="flex w-full justify-center px-4 py-2.5 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary/90 transition" href="/register">Sign Up</Link>
+                  </div>
                 )}
               </div>
             </motion.div>

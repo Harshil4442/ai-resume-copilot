@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import User, UserProfile
+from ..models import User, UserProfile, Resume, JobMatch, PaymentOrder
 from ..schemas import (
     AuthLoginRequest,
     AuthGoogleLoginRequest,
@@ -62,6 +62,8 @@ def _profile_response(profile: UserProfile, email: str) -> UserProfileResponse:
         else:
             missing.append(label)
     completeness = round(filled / len(PROFILE_FIELDS) * 100)
+    # Report the *effective* tier: an expired premium grant reads as free.
+    effective_tier = "premium" if profile.user.is_premium_active() else "free"
     return UserProfileResponse(
         email=email,
         profile_completeness=completeness,
@@ -81,8 +83,9 @@ def _profile_response(profile: UserProfile, email: str) -> UserProfileResponse:
         skills=profile.skills or [],
         education=profile.education or None,
         certifications=profile.certifications or None,
-        tier=profile.user.tier,
+        tier=effective_tier,
         ai_credits=profile.user.ai_credits,
+        premium_until=profile.user.premium_until,
     )
 
 @router.post("/register", response_model=UserMeResponse)
@@ -171,3 +174,22 @@ def update_profile(
     db.commit()
     db.refresh(profile)
     return _profile_response(profile, current_user.email)
+
+
+@router.post("/delete-account")
+def delete_account(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Permanently deletes the current user's account and all associated data
+    (profile, resumes, job matches, and payment order records).
+    """
+    uid = current_user.id
+    db.query(JobMatch).filter(JobMatch.user_id == uid).delete(synchronize_session=False)
+    db.query(Resume).filter(Resume.user_id == uid).delete(synchronize_session=False)
+    db.query(UserProfile).filter(UserProfile.user_id == uid).delete(synchronize_session=False)
+    db.query(PaymentOrder).filter(PaymentOrder.user_id == uid).delete(synchronize_session=False)
+    db.query(User).filter(User.id == uid).delete(synchronize_session=False)
+    db.commit()
+    return {"status": "deleted"}

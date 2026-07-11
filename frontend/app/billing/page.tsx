@@ -14,7 +14,10 @@ import { CreditCard, Zap, CheckCircle2, Shield, Globe, MapPin, AlertCircle, Crow
 import { COUNTRIES } from "../../lib/countries";
 
 const PAYPAL_CLIENT_ID = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID || "test";
-const RAZORPAY_KEY_ID = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "rzp_test_mock";
+const CASHFREE_MODE = process.env.NEXT_PUBLIC_CASHFREE_MODE || "sandbox";
+// The global (USD/PayPal) lane stays hidden until an international provider is
+// approved and activated for production.
+const ENABLE_GLOBAL_PAYPAL = false;
 
 export default function BillingPage() {
   const router = useRouter();
@@ -29,6 +32,7 @@ export default function BillingPage() {
   const [error, setError] = useState<string | null>(null);
   const [currentTier, setCurrentTier] = useState<string>("free");
   const [creditBalance, setCreditBalance] = useState<number>(0);
+  const [phone, setPhone] = useState<string>("");
 
   useEffect(() => {
     // Get GPS location
@@ -85,6 +89,7 @@ export default function BillingPage() {
         if (mounted) {
           setCurrentTier(data.tier || "free");
           setCreditBalance(data.ai_credits ?? 0);
+          setPhone(data.phone || "");
         }
       })
       .catch((err) => {
@@ -93,6 +98,31 @@ export default function BillingPage() {
     return () => {
       mounted = false;
     };
+  }, []);
+
+  // When the customer returns from Cashfree checkout, confirm the payment.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const returnedOrderId = params.get("order_id");
+    if (!returnedOrderId) return;
+
+    setLoading(true);
+    apiPostJson<{ status: string; type?: string }>("/billing/cashfree/verify-payment", { order_id: returnedOrderId })
+      .then((r) => {
+        if (r.status === "success") {
+          setPaymentSuccess(true);
+          window.dispatchEvent(new Event("refresh_credits"));
+          setTimeout(() => router.push("/dashboard"), 3000);
+        } else {
+          setError("Your payment is still processing. If you were charged, your access will activate shortly.");
+        }
+      })
+      .catch((err: any) => setError(err.message || "Could not verify your payment. Please contact support with your order ID."))
+      .finally(() => {
+        setLoading(false);
+        window.history.replaceState({}, "", "/billing");
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const planDetails = {
@@ -158,61 +188,34 @@ export default function BillingPage() {
     }
   }
 
-  async function handleRazorpayCheckout() {
+  async function handleCashfreeCheckout() {
     setLoading(true);
     setError(null);
     try {
-      const payload = {
-        type: selectedPlan,
-        credits: selectedPlan === "topup" ? 25 : 0,
-      };
-      const res = await apiPostJson<{ order_id: string, amount: number }>("/billing/razorpay/create-order", payload);
+      const res = await apiPostJson<{ payment_session_id: string; order_id: string; mode: string }>(
+        "/billing/cashfree/create-order",
+        { type: selectedPlan, customer_phone: phone || undefined }
+      );
 
-      const options = {
-        key: RAZORPAY_KEY_ID,
-        amount: res.amount,
-        currency: "INR",
-        name: "HireWiz",
-        description: planDetails[selectedPlan].title,
-        order_id: res.order_id,
-        config: {
-          display: {
-            blocks: {
-              upi: { name: "Pay via UPI", instruments: [{ method: "upi" }] },
-              other: { name: "Other Modes", instruments: [{ method: "card" }, { method: "netbanking" }, { method: "wallet" }] }
-            },
-            sequence: ["block.upi", "block.other"],
-            preferences: { show_default_blocks: false }
-          }
-        },
-        handler: async function (response: any) {
-          try {
-            await apiPostJson("/billing/razorpay/verify-payment", {
-              razorpay_order_id: response.razorpay_order_id,
-              razorpay_payment_id: response.razorpay_payment_id,
-              razorpay_signature: response.razorpay_signature,
-              type: selectedPlan,
-              credits: selectedPlan === "topup" ? 25 : 0,
-            });
-            setPaymentSuccess(true);
-            window.dispatchEvent(new Event("refresh_credits"));
-            setTimeout(() => {
-              router.push("/dashboard");
-            }, 3000);
-          } catch (verifyErr: any) {
-            setError(verifyErr.message || "Payment verification failed.");
-          }
-        },
-        theme: { color: "#0f172a" },
-      };
+      // Mock mode (no live Cashfree keys yet): confirm directly so the flow is testable.
+      if (res.mode === "mock" || res.payment_session_id.startsWith("mock_")) {
+        await apiPostJson("/billing/cashfree/verify-payment", { order_id: res.order_id });
+        setPaymentSuccess(true);
+        window.dispatchEvent(new Event("refresh_credits"));
+        setTimeout(() => router.push("/dashboard"), 3000);
+        return;
+      }
 
-      const rzp = new (window as any).Razorpay(options);
-      rzp.on("payment.failed", function (response: any) {
-        setError(response.error.description || "Razorpay payment failed.");
-      });
-      rzp.open();
+      const cashfreeFactory = (window as any).Cashfree;
+      if (!cashfreeFactory) {
+        setError("Payment library is still loading. Please wait a moment and try again.");
+        return;
+      }
+      const cashfree = cashfreeFactory({ mode: CASHFREE_MODE });
+      // Redirects to Cashfree, then back to /billing?order_id=... where we verify.
+      await cashfree.checkout({ paymentSessionId: res.payment_session_id, redirectTarget: "_self" });
     } catch (err: any) {
-      setError(err.message || "Failed to initialize Razorpay order.");
+      setError(err.message || "Failed to start checkout. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -220,7 +223,7 @@ export default function BillingPage() {
 
   return (
     <main className="w-full max-w-[80rem] mx-auto px-4 sm:px-6 md:px-8 py-8 space-y-10">
-      <Script src="https://checkout.razorpay.com/v1/checkout.js" strategy="lazyOnload" />
+      <Script src="https://sdk.cashfree.com/js/v3/cashfree.js" strategy="afterInteractive" />
       
       <PageHeader 
         badge="Commercial Account"
@@ -462,42 +465,60 @@ export default function BillingPage() {
                     </div>
                   )}
 
-                  {!loading && region === "global" && (
-                    <div className="relative z-10 min-h-[150px]">
-                      <PayPalScriptProvider
-                        options={{
-                          clientId: PAYPAL_CLIENT_ID,
-                          currency: "USD",
-                          intent: "capture",
-                          components: "buttons",
-                        }}
-                      >
-                        <PayPalButtons
-                          style={{ layout: "vertical", shape: "rect", color: "blue" }}
-                          forceReRender={[selectedPlan]}
-                          createOrder={createOrder}
-                          onApprove={onApprove}
-                          onError={(err) => {
-                            console.error("PayPal buttons error:", err);
-                            setError("Unable to render payment options. Check environment credentials.");
-                          }}
+                  {!loading && region === "india" && (
+                    <div className="relative z-10 space-y-4">
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5 px-1">Mobile Number (for payment receipt)</label>
+                        <input
+                          value={phone}
+                          onChange={(e) => setPhone(e.target.value)}
+                          inputMode="tel"
+                          placeholder="10-digit mobile number"
+                          className="w-full rounded-xl border border-slate-700 bg-slate-900/50 px-4 py-3 text-sm outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10"
                         />
-                      </PayPalScriptProvider>
+                      </div>
+                      <button
+                        onClick={handleCashfreeCheckout}
+                        className="w-full bg-primary hover:bg-primary/90 text-white font-bold py-4 px-6 rounded-xl shadow-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                      >
+                        <CreditCard size={18} /> Pay Securely (Cashfree)
+                      </button>
+                      <div className="flex items-center justify-center gap-4 grayscale opacity-60">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">UPI · Cards · NetBanking · Wallets</span>
+                      </div>
                     </div>
                   )}
 
-                  {!loading && region === "india" && (
-                    <div className="relative z-10">
-                      <button
-                        onClick={handleRazorpayCheckout}
-                        className="w-full bg-[#3d2780] hover:bg-[#2b1b5a] text-white font-bold py-4 px-6 rounded-xl shadow-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2"
-                      >
-                        <CreditCard size={18} /> Pay with Cashfree
-                      </button>
-                      <div className="flex items-center justify-center gap-4 mt-6 grayscale opacity-60">
-                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Supports UPI, Cards, NetBanking</span>
+                  {!loading && region === "global" && (
+                    ENABLE_GLOBAL_PAYPAL ? (
+                      <div className="relative z-10 min-h-[150px]">
+                        <PayPalScriptProvider
+                          options={{
+                            clientId: PAYPAL_CLIENT_ID,
+                            currency: "USD",
+                            intent: "capture",
+                            components: "buttons",
+                          }}
+                        >
+                          <PayPalButtons
+                            style={{ layout: "vertical", shape: "rect", color: "blue" }}
+                            forceReRender={[selectedPlan]}
+                            createOrder={createOrder}
+                            onApprove={onApprove}
+                            onError={(err) => {
+                              console.error("PayPal buttons error:", err);
+                              setError("Unable to render payment options. Check environment credentials.");
+                            }}
+                          />
+                        </PayPalScriptProvider>
                       </div>
-                    </div>
+                    ) : (
+                      <div className="relative z-10 rounded-xl border border-slate-700 bg-slate-900/50 p-5 text-center">
+                        <Globe size={20} className="mx-auto text-slate-400 mb-2" />
+                        <p className="text-sm font-semibold text-white mb-1">International checkout coming soon</p>
+                        <p className="text-xs text-slate-400">Paid plans are currently available for customers in India. Please check back soon.</p>
+                      </div>
+                    )
                   )}
 
                   <div className="flex items-center justify-center gap-2 mt-8 text-[10px] font-bold text-slate-400 uppercase tracking-wider">

@@ -117,10 +117,17 @@ export default function LoginPage() {
               Google
             </button>
 
+            <p className="mt-4 text-center text-[11px] leading-relaxed text-slate-500">
+              By continuing with Google, you agree to our{" "}
+              <Link href="/terms" className="text-slate-400 hover:text-primary underline">Terms of Service</Link>{" "}
+              and acknowledge our{" "}
+              <Link href="/privacy" className="text-slate-400 hover:text-primary underline">Privacy Policy</Link>.
+            </p>
+
             {error && <div className="mt-6 text-sm text-rose-400 font-bold bg-rose-900/30 border border-rose-800 rounded-xl px-4 py-3">{error}</div>}
 
             <div className="mt-auto pt-8 text-center text-sm text-slate-400 font-medium">
-              New to AI Resume CoPilot? <Link className="font-bold text-primary hover:underline transition-all" href="/register">Create an account</Link>
+              New to HireWiz? <Link className="font-bold text-primary hover:underline transition-all" href="/register">Create an account</Link>
             </div>
           </GlassCard>
         </FadeIn>

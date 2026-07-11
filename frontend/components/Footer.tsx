@@ -33,10 +33,10 @@ export default function Footer() {
                 <span className="text-sm font-black tracking-tight text-white">HireWiz</span>
               </Link>
               <p className="text-sm text-slate-400 leading-relaxed mb-6">
-                Transform your resume into a high-impact career signal. Beat the ATS screening bots, optimize your professional profile, and land interviews faster with AI-powered matching and tailored learning paths.
+                Self-service, AI-assisted software that helps you review, structure, and improve your own resume — with compatibility estimates, skill-gap analysis, and tailored learning suggestions you stay in control of.
               </p>
               <div className="flex gap-4">
-                <a href="https://hirewizhq.com" target="_blank" rel="noopener noreferrer" className="text-slate-400 hover:text-primary transition-colors"><Globe size={20} /></a>
+                <a href="https://www.hirewizhq.com" target="_blank" rel="noopener noreferrer" className="text-slate-400 hover:text-primary transition-colors"><Globe size={20} /></a>
                 <a href="mailto:work@hirewizhq.com" className="text-slate-400 hover:text-primary transition-colors"><Mail size={20} /></a>
                 <a href="mailto:work@hirewizhq.com" className="text-slate-400 hover:text-primary transition-colors"><MessageCircle size={20} /></a>
               </div>
@@ -53,12 +53,12 @@ export default function Footer() {
             </div>
 
             <div>
-              <h3 className="font-bold text-white mb-6">Resources</h3>
+              <h3 className="font-bold text-white mb-6">Company</h3>
               <ul className="space-y-4">
-                <li><Link href="/learning" className="text-sm text-slate-400 hover:text-white transition-colors">Learning Strategy</Link></li>
-                <li><Link href="/billing" className="text-sm text-slate-400 hover:text-white transition-colors">Pricing</Link></li>
-                <li><a href="#" className="text-sm text-slate-400 hover:text-white transition-colors">Documentation</a></li>
-                <li><a href="#" className="text-sm text-slate-400 hover:text-white transition-colors">API References</a></li>
+                <li><Link href="/pricing" className="text-sm text-slate-400 hover:text-white transition-colors">Pricing</Link></li>
+                <li><Link href="/about" className="text-sm text-slate-400 hover:text-white transition-colors">About & How It Works</Link></li>
+                <li><Link href="/subprocessors" className="text-sm text-slate-400 hover:text-white transition-colors">Service Providers</Link></li>
+                <li><Link href="/contact" className="text-sm text-slate-400 hover:text-white transition-colors">Contact Us</Link></li>
               </ul>
             </div>
 
@@ -68,8 +68,8 @@ export default function Footer() {
                 <li><Link href="/privacy" className="text-sm text-slate-400 hover:text-white transition-colors">Privacy Policy</Link></li>
                 <li><Link href="/terms" className="text-sm text-slate-400 hover:text-white transition-colors">Terms of Service</Link></li>
                 <li><Link href="/refund" className="text-sm text-slate-400 hover:text-white transition-colors">Refund & Cancellation</Link></li>
+                <li><Link href="/digital-delivery" className="text-sm text-slate-400 hover:text-white transition-colors">Digital Delivery</Link></li>
                 <li><Link href="/cookies" className="text-sm text-slate-400 hover:text-white transition-colors">Cookie Policy</Link></li>
-                <li><Link href="/contact" className="text-sm text-slate-400 hover:text-white transition-colors">Contact Us</Link></li>
               </ul>
             </div>
           </div>

@@ -169,21 +169,21 @@ export default function MarketPage() {
     <main className="w-full max-w-[80rem] mx-auto px-4 sm:px-6 md:px-8 py-8 space-y-10">
       <PageHeader 
         badge="Market Intelligence"
-        title="See what the job market is asking for right now."
-        subtitle="Search worldwide job APIs, extract repeated skills, compare demand against your resume evidence, and pick projects that close high-value gaps."
+        title="See which skills a sample of job postings is asking for."
+        subtitle="Analyze recent postings from third-party job-data providers, extract frequently repeated skills, compare them against your resume, and pick projects that close high-value gaps. Results are informational estimates based on the sample analyzed."
       />
 
       <GlassCard className="p-0 overflow-hidden" hoverEffect={false}>
         <div className="grid grid-cols-1 lg:grid-cols-[1.3fr_1fr] bg-slate-900/50">
           <div className="p-8 lg:p-10 flex flex-col justify-center">
-            <h2 className="text-3xl font-black tracking-tighter text-white mb-4">Live Market Snapshot</h2>
+            <h2 className="text-3xl font-black tracking-tighter text-white mb-4">Market Snapshot</h2>
             <p className="text-slate-300 leading-relaxed font-medium mb-10 max-w-lg">
-              We aggregate data from thousands of fresh job postings to figure out what skills are actually in demand today, not last year.
+              We analyze a sample of recent job postings from third-party job-data providers to estimate which skills are frequently requested for your target role.
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-auto">
-              <Stat label="Mode" value="Live API" sub="Real-time fetching" icon={Zap} />
+              <Stat label="Mode" value="On-demand" sub="Third-party job APIs" icon={Zap} />
               <Stat label="Extraction" value="LLM NLP" sub="Semantic deduplication" icon={Sparkles} />
-              <Stat label="Targeting" value="Global" sub="Across 50+ countries" icon={Globe} />
+              <Stat label="Coverage" value="Multi-region" sub="Subject to provider data" icon={Globe} />
             </div>
           </div>
           
@@ -261,7 +261,7 @@ export default function MarketPage() {
                 className="w-full py-4 text-base mt-2 shadow-lg"
                 showArrow
               >
-                {loading ? "Analyzing Live Market..." : "Analyze Market Demand (15 ⚡)"}
+                {loading ? "Analyzing Market..." : "Analyze Market Demand (5 units)"}
               </AnimatedButton>
             </form>
           </div>
@@ -280,8 +280,8 @@ export default function MarketPage() {
         <FadeIn>
           <GlassCard className="p-16 text-center border-dashed border-slate-600 border-2" hoverEffect={false}>
             <div className="mx-auto w-12 h-12 rounded-full border-4 border-slate-700 border-t-primary animate-spin mb-6"></div>
-            <h2 className="text-xl font-bold text-white tracking-tight">Scraping the job market...</h2>
-            <p className="text-sm text-slate-400 mt-2">Fetching live postings, extracting skills with AI, and cross-referencing your resume.</p>
+            <h2 className="text-xl font-bold text-white tracking-tight">Analyzing the job market...</h2>
+            <p className="text-sm text-slate-400 mt-2">Fetching recent postings from job-data providers, extracting skills with AI, and cross-referencing your resume.</p>
           </GlassCard>
         </FadeIn>
       )}
