@@ -1,79 +1,374 @@
 import os
+import json
+import base64
+import hmac
+import hashlib
 import logging
-import requests
 import uuid
-import razorpay
+from datetime import datetime, timedelta, timezone
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+
+import requests
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import User
+from ..models import User, UserProfile, PaymentOrder
 from ..security import get_current_user
 
 router = APIRouter(prefix="/billing", tags=["billing"])
 log = logging.getLogger("ai_resume_copilot.billing")
 
-@router.get("/debug-env")
-def debug_env():
-    import os
-    pid = os.getenv("PAYPAL_CLIENT_ID", "")
-    paypal_keys = [k for k in os.environ.keys() if "PAYPAL" in k]
-    razorpay_keys = [k for k in os.environ.keys() if "RAZORPAY" in k]
+# ==========================================================================
+# Server-owned pricing. The client never sends an amount or currency — it
+# only names the product ("subscription" or "topup"), and the server maps
+# that to a fixed price. This prevents client-side price tampering.
+# ==========================================================================
+PREMIUM_DAYS = 30
+
+PRICES = {
+    # Premium: one payment unlocks premium for PREMIUM_DAYS. No stored mandate.
+    "subscription": {"amount": 999.00, "currency": "INR", "credits": None},
+    # Analysis-units pack: one-time top-up of credits.
+    "topup": {"amount": 99.00, "currency": "INR", "credits": 25},
+}
+
+
+def _price_for(order_type: str) -> dict:
+    price = PRICES.get(order_type)
+    if not price:
+        raise HTTPException(status_code=400, detail="Invalid billing type")
+    return price
+
+
+# ---------------------------------------------------------------------------
+# Provisioning helpers — shared by every provider and by the mock path so that
+# access is always granted the same way and exactly once (idempotent).
+# ---------------------------------------------------------------------------
+def _grant_premium(db: Session, user_id: int, days: int = PREMIUM_DAYS) -> datetime:
+    """Extends premium by `days`, stacking on any remaining unexpired time."""
+    now = datetime.now(timezone.utc)
+    user = db.query(User).filter(User.id == user_id).first()
+    base = now
+    if user and user.premium_until:
+        current = user.premium_until
+        if current.tzinfo is None:
+            current = current.replace(tzinfo=timezone.utc)
+        if current > now:
+            base = current
+    new_until = base + timedelta(days=days)
+    db.execute(
+        update(User).where(User.id == user_id).values(tier="premium", premium_until=new_until)
+    )
+    db.commit()
+    log.info("Granted premium to user %s until %s", user_id, new_until.isoformat())
+    return new_until
+
+
+def _add_credits(db: Session, user_id: int, amount: int) -> None:
+    db.execute(
+        update(User).where(User.id == user_id).values(ai_credits=User.ai_credits + amount)
+    )
+    db.commit()
+    log.info("Added %s credits to user %s", amount, user_id)
+
+
+def _provision_order(db: Session, order: PaymentOrder) -> None:
+    """Fulfils a paid order once. Safe to call from both webhook and verify."""
+    if order.provisioned:
+        return
+    if order.order_type == "subscription":
+        _grant_premium(db, order.user_id)
+    elif order.order_type == "topup":
+        _add_credits(db, order.user_id, order.credits or 25)
+    order.status = "paid"
+    order.provisioned = 1
+    db.add(order)
+    db.commit()
+
+
+# ==========================================================================
+# Cashfree (India / INR) — primary gateway
+# ==========================================================================
+CASHFREE_APP_ID = os.getenv("CASHFREE_APP_ID", "")
+CASHFREE_SECRET_KEY = os.getenv("CASHFREE_SECRET_KEY", "")
+CASHFREE_MODE = os.getenv("CASHFREE_MODE", "sandbox").lower()
+CASHFREE_API_VERSION = os.getenv("CASHFREE_API_VERSION", "2023-08-01")
+CASHFREE_BASE_URL = (
+    "https://api.cashfree.com/pg"
+    if CASHFREE_MODE == "production"
+    else "https://sandbox.cashfree.com/pg"
+)
+
+FRONTEND_URL = os.getenv("FRONTEND_URL", "https://www.hirewizhq.com").rstrip("/")
+BACKEND_PUBLIC_URL = os.getenv("BACKEND_PUBLIC_URL", "").rstrip("/")
+
+
+def _cashfree_configured() -> bool:
+    return bool(CASHFREE_APP_ID and CASHFREE_SECRET_KEY)
+
+
+def _cashfree_headers() -> dict:
     return {
-        "length": len(pid), 
-        "value_starts": pid[:5], 
-        "in_environ": "PAYPAL_CLIENT_ID" in os.environ, 
-        "paypal_keys": paypal_keys,
-        "razorpay_keys": razorpay_keys
+        "x-client-id": CASHFREE_APP_ID,
+        "x-client-secret": CASHFREE_SECRET_KEY,
+        "x-api-version": CASHFREE_API_VERSION,
+        "Content-Type": "application/json",
     }
 
 
+class CashfreeCreateRequest(BaseModel):
+    type: str  # "subscription" or "topup"
+    customer_phone: Optional[str] = None
+
+
+class CashfreeVerifyRequest(BaseModel):
+    order_id: str
+
+
+@router.post("/cashfree/create-order")
+def create_cashfree_order(
+    payload: CashfreeCreateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Creates a Cashfree order from server-owned pricing and returns a
+    payment_session_id the browser SDK uses to open checkout.
+    """
+    price = _price_for(payload.type)
+    amount = price["amount"]
+    currency = price["currency"]
+    credits = price["credits"]
+    order_id = f"hw_{uuid.uuid4().hex}"
+
+    # Record the pending order (also our idempotency anchor).
+    order = PaymentOrder(
+        user_id=current_user.id,
+        provider="cashfree",
+        provider_order_id=order_id,
+        order_type=payload.type,
+        credits=credits,
+        amount=amount,
+        currency=currency,
+        status="created",
+    )
+    db.add(order)
+    db.commit()
+
+    # Mock fallback so the flow is testable before live keys exist.
+    if not _cashfree_configured():
+        session = f"mock_cf_session_{uuid.uuid4().hex[:8]}"
+        log.info("Cashfree not configured; returning mock session for %s", order_id)
+        return {"payment_session_id": session, "order_id": order_id, "mode": "mock", "amount": amount}
+
+    # Resolve a usable 10-digit phone (Cashfree requires customer_phone).
+    phone = (payload.customer_phone or "").strip()
+    if not phone:
+        prof = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+        if prof and prof.phone:
+            phone = prof.phone
+    phone_digits = "".join(ch for ch in phone if ch.isdigit())[-10:]
+    if len(phone_digits) < 10:
+        phone_digits = "9999999999"  # placeholder; real phone should be collected
+
+    order_meta = {"return_url": f"{FRONTEND_URL}/billing?order_id={order_id}"}
+    if BACKEND_PUBLIC_URL:
+        order_meta["notify_url"] = f"{BACKEND_PUBLIC_URL}/api/billing/cashfree/webhook"
+
+    body = {
+        "order_id": order_id,
+        "order_amount": amount,
+        "order_currency": currency,
+        "customer_details": {
+            "customer_id": f"user_{current_user.id}",
+            "customer_email": current_user.email,
+            "customer_phone": phone_digits,
+        },
+        "order_meta": order_meta,
+        "order_note": payload.type,
+        "order_tags": {
+            "user_id": str(current_user.id),
+            "type": payload.type,
+            "credits": str(credits or 0),
+        },
+    }
+
+    try:
+        res = requests.post(
+            f"{CASHFREE_BASE_URL}/orders",
+            json=body,
+            headers=_cashfree_headers(),
+            timeout=20,
+        )
+        res.raise_for_status()
+        data = res.json()
+        return {
+            "payment_session_id": data["payment_session_id"],
+            "order_id": data.get("order_id", order_id),
+            "mode": CASHFREE_MODE,
+            "amount": amount,
+        }
+    except requests.HTTPError as e:
+        detail = getattr(e.response, "text", "")
+        log.error("Cashfree order creation failed: %s", detail)
+        raise HTTPException(status_code=502, detail="Could not start Cashfree checkout. Please try again.")
+    except Exception:
+        log.exception("Cashfree order creation error")
+        raise HTTPException(status_code=502, detail="Could not start Cashfree checkout. Please try again.")
+
+
+@router.post("/cashfree/verify-payment")
+def verify_cashfree_payment(
+    payload: CashfreeVerifyRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Browser-side confirmation after the user returns from checkout. The webhook
+    is the authoritative source; this gives immediate feedback and is idempotent.
+    """
+    order = (
+        db.query(PaymentOrder)
+        .filter(PaymentOrder.provider_order_id == payload.order_id)
+        .first()
+    )
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if order.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="This order does not belong to you")
+    if order.provisioned:
+        return {"status": "success", "type": order.order_type, "already": True}
+
+    # Mock fallback auto-approves so the flow is testable without live keys.
+    if not _cashfree_configured():
+        _provision_order(db, order)
+        return {"status": "success", "type": order.order_type, "mock": True}
+
+    try:
+        res = requests.get(
+            f"{CASHFREE_BASE_URL}/orders/{payload.order_id}",
+            headers=_cashfree_headers(),
+            timeout=20,
+        )
+        res.raise_for_status()
+        data = res.json()
+    except Exception:
+        log.exception("Cashfree verify failed")
+        raise HTTPException(status_code=502, detail="Could not verify payment status.")
+
+    if data.get("order_status") == "PAID":
+        _provision_order(db, order)
+        return {"status": "success", "type": order.order_type}
+    return {"status": "pending", "order_status": data.get("order_status")}
+
+
+@router.post("/cashfree/webhook")
+async def cashfree_webhook(request: Request, db: Session = Depends(get_db)):
+    """
+    Authoritative payment confirmation from Cashfree. Verifies the signature
+    against the raw body, then provisions the order idempotently.
+    """
+    raw = await request.body()
+    signature = request.headers.get("x-webhook-signature", "")
+    timestamp = request.headers.get("x-webhook-timestamp", "")
+
+    if CASHFREE_SECRET_KEY:
+        signed_payload = f"{timestamp}{raw.decode('utf-8')}"
+        expected = base64.b64encode(
+            hmac.new(
+                CASHFREE_SECRET_KEY.encode("utf-8"),
+                signed_payload.encode("utf-8"),
+                hashlib.sha256,
+            ).digest()
+        ).decode("utf-8")
+        if not hmac.compare_digest(expected, signature):
+            log.warning("Cashfree webhook signature verification failed")
+            raise HTTPException(status_code=400, detail="Invalid signature")
+
+    try:
+        event = json.loads(raw.decode("utf-8"))
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid payload")
+
+    data = event.get("data", {})
+    order_info = data.get("order", {}) or {}
+    payment_info = data.get("payment", {}) or {}
+    order_id = order_info.get("order_id")
+    status = payment_info.get("payment_status") or order_info.get("order_status")
+
+    if not order_id:
+        return {"ok": True}
+
+    order = (
+        db.query(PaymentOrder)
+        .filter(PaymentOrder.provider_order_id == order_id)
+        .first()
+    )
+    if not order:
+        return {"ok": True}
+
+    if status in ("SUCCESS", "PAID"):
+        _provision_order(db, order)
+    elif status in ("FAILED", "USER_DROPPED", "CANCELLED"):
+        order.status = "failed"
+        db.add(order)
+        db.commit()
+
+    return {"ok": True}
+
+
+# ==========================================================================
+# Subscription management
+# ==========================================================================
+@router.post("/cancel-subscription")
+def cancel_subscription(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Ends the user's Premium access. Because Premium is a one-time timed grant
+    (no stored mandate), there is never an automatic future charge; this simply
+    ends access now at the user's request.
+    """
+    db.execute(
+        update(User).where(User.id == current_user.id).values(tier="free", premium_until=None)
+    )
+    db.commit()
+    return {"status": "cancelled"}
+
+
+# ==========================================================================
+# PayPal (global / USD) — currently hidden in the UI; kept for the future
+# international lane. Provisions via the same shared helpers (30-day premium).
+# ==========================================================================
 PAYPAL_CLIENT_ID = os.getenv("PAYPAL_CLIENT_ID", "")
 PAYPAL_CLIENT_SECRET = os.getenv("PAYPAL_CLIENT_SECRET", "")
 PAYPAL_MODE = os.getenv("PAYPAL_MODE", "sandbox").lower()
+PAYPAL_BASE_URL = (
+    "https://api-m.paypal.com" if PAYPAL_MODE == "live" else "https://api-m.sandbox.paypal.com"
+)
 
-RAZORPAY_KEY_ID = os.getenv("RAZORPAY_KEY_ID", "")
-RAZORPAY_KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET", "")
-
-razorpay_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET)) if RAZORPAY_KEY_ID else None
-
-if PAYPAL_MODE == "live":
-    PAYPAL_BASE_URL = "https://api-m.paypal.com"
-else:
-    PAYPAL_BASE_URL = "https://api-m.sandbox.paypal.com"
 
 class PayPalCreateRequest(BaseModel):
-    type: str  # "subscription" or "topup"
+    type: str
     currency: Optional[str] = "USD"
-    credits: Optional[int] = 10  # for topup
+    credits: Optional[int] = 10
+
 
 class PayPalCaptureRequest(BaseModel):
     order_id: str
-    type: str  # "subscription" or "topup"
-    credits: Optional[int] = 10  # for topup
-
-class RazorpayCreateRequest(BaseModel):
     type: str
     credits: Optional[int] = 10
 
-class RazorpayVerifyRequest(BaseModel):
-    razorpay_order_id: str
-    razorpay_payment_id: str
-    razorpay_signature: str
-    type: str
-    credits: Optional[int] = 10
 
 def _get_paypal_token() -> str:
-    """Helper to request OAuth2 access token from PayPal REST API."""
     if not PAYPAL_CLIENT_ID or not PAYPAL_CLIENT_SECRET:
         raise ValueError("PayPal Client ID or Secret is not configured.")
-        
-    url = f"{PAYPAL_BASE_URL}/v1/oauth2/token"
     res = requests.post(
-        url,
+        f"{PAYPAL_BASE_URL}/v1/oauth2/token",
         data={"grant_type": "client_credentials"},
         auth=(PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET),
         timeout=15,
@@ -81,76 +376,53 @@ def _get_paypal_token() -> str:
     res.raise_for_status()
     return res.json()["access_token"]
 
+
 @router.post("/paypal/create-order")
 def create_paypal_order(
     payload: PayPalCreateRequest,
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Creates a PayPal Checkout Order for Premium Subscriptions or Top-ups.
-    Encodes metadata inside custom_id field.
-    """
-    # Check if we should use Mock Billing (when credentials are unset or fake)
     is_mock = not PAYPAL_CLIENT_ID or PAYPAL_CLIENT_SECRET.startswith("mock")
     if is_mock:
-        has_key = "PAYPAL_CLIENT_ID" in os.environ
-        mock_id = f"mock_order_{uuid.uuid4().hex[:8]}_haskey_{has_key}"
-        log.info("Creating mock PayPal order: %s", mock_id)
-        return {"order_id": mock_id}
+        return {"order_id": f"mock_order_{uuid.uuid4().hex[:8]}"}
 
     currency = (payload.currency or "USD").upper()
-    
     if payload.type == "subscription":
-        amount_value = "15.00"
-        desc = "AI Resume CoPilot Premium Subscription (Monthly)"
+        amount_value, desc = "15.00", "HireWiz Premium (30 days)"
         custom_id = f"user:{current_user.id}|type:subscription"
     elif payload.type == "topup":
         credits_to_add = payload.credits or 25
         amount_value = "3.99"
-        desc = f"AI Resume CoPilot - {credits_to_add} Operation Credits"
+        desc = f"HireWiz - {credits_to_add} Analysis Units"
         custom_id = f"user:{current_user.id}|type:topup|credits:{credits_to_add}"
     else:
         raise HTTPException(status_code=400, detail="Invalid billing type")
 
     try:
         token = _get_paypal_token()
-        url = f"{PAYPAL_BASE_URL}/v2/checkout/orders"
-        
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-        }
-        
         order_payload = {
             "intent": "CAPTURE",
             "purchase_units": [
                 {
                     "description": desc,
                     "custom_id": custom_id,
-                    "amount": {
-                        "currency_code": currency,
-                        "value": amount_value,
-                    }
+                    "amount": {"currency_code": currency, "value": amount_value},
                 }
             ],
-            "application_context": {
-                "shipping_preference": "NO_SHIPPING",
-                "user_action": "PAY_NOW",
-            }
+            "application_context": {"shipping_preference": "NO_SHIPPING", "user_action": "PAY_NOW"},
         }
-        
-        res = requests.post(url, json=order_payload, headers=headers, timeout=15)
+        res = requests.post(
+            f"{PAYPAL_BASE_URL}/v2/checkout/orders",
+            json=order_payload,
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            timeout=15,
+        )
         res.raise_for_status()
-        order_data = res.json()
-        
-        return {"order_id": order_data["id"]}
-        
+        return {"order_id": res.json()["id"]}
     except Exception as e:
         log.exception("PayPal order creation failed")
-        raise HTTPException(
-            status_code=500,
-            detail=f"PayPal Integration Error: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"PayPal Integration Error: {str(e)}")
+
 
 @router.post("/paypal/capture-order")
 def capture_paypal_order(
@@ -158,258 +430,61 @@ def capture_paypal_order(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Captures the authorized PayPal order payment. On completion, provisions 
-    premium tier privileges or credit packages.
-    """
     order_id = payload.order_id
-    
-    # Handle mock local verification
+
     if order_id.startswith("mock_order_"):
-        log.info("Processing mock capture verification for order: %s", order_id)
         if payload.type == "subscription":
-            db.execute(
-                update(User)
-                .where(User.id == current_user.id)
-                .values(
-                    tier="premium",
-                    stripe_customer_id="mock_paypal_cust",
-                    stripe_subscription_id=f"mock_pp_sub_{order_id}",
-                )
-            )
-            db.commit()
+            _grant_premium(db, current_user.id)
             return {"status": "success", "tier": "premium"}
-        elif payload.type == "topup":
-            credits_to_add = payload.credits or 25
-            db.execute(
-                update(User)
-                .where(User.id == current_user.id)
-                .values(ai_credits=User.ai_credits + credits_to_add)
-            )
-            db.commit()
-            return {"status": "success", "added_credits": credits_to_add}
-        else:
-            raise HTTPException(status_code=400, detail="Invalid mock billing type")
+        _add_credits(db, current_user.id, payload.credits or 25)
+        return {"status": "success", "added_credits": payload.credits or 25}
 
     try:
         token = _get_paypal_token()
-        url = f"{PAYPAL_BASE_URL}/v2/checkout/orders/{order_id}/capture"
-        
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-        }
-        
-        res = requests.post(url, json={}, headers=headers, timeout=15)
+        res = requests.post(
+            f"{PAYPAL_BASE_URL}/v2/checkout/orders/{order_id}/capture",
+            json={},
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            timeout=15,
+        )
         res.raise_for_status()
         capture_data = res.json()
-        
-        # Verify payment is COMPLETED
+
         if capture_data.get("status") != "COMPLETED":
-            raise HTTPException(
-                status_code=400,
-                detail=f"Payment capture state: {capture_data.get('status')}"
-            )
-            
-        # Parse purchase unit information
+            raise HTTPException(status_code=400, detail=f"Payment state: {capture_data.get('status')}")
+
         purchase_unit = capture_data.get("purchase_units", [{}])[0]
-        payments = purchase_unit.get("payments", {})
-        captures = payments.get("captures", [{}])[0]
-        
         custom_id = purchase_unit.get("custom_id", "")
-        if not custom_id:
-            custom_id = captures.get("custom_id", "")
-            
-        # Parse user meta claims
+
         user_id = current_user.id
         tx_type = payload.type
         credits_to_add = payload.credits or 25
-        
         if custom_id:
-            # e.g., user:1|type:subscription
             parts = dict(item.split(":") for item in custom_id.split("|") if ":" in item)
-            if "user" in parts:
-                user_id = int(parts["user"])
-            if "type" in parts:
-                tx_type = parts["type"]
+            user_id = int(parts.get("user", user_id))
+            tx_type = parts.get("type", tx_type)
             if "credits" in parts:
                 credits_to_add = int(parts["credits"])
 
         if tx_type == "subscription":
-            capture_id = captures.get("id", f"pp_cap_{order_id}")
-            db.execute(
-                update(User)
-                .where(User.id == user_id)
-                .values(
-                    tier="premium",
-                    stripe_customer_id=capture_data.get("payer", {}).get("payer_id"),
-                    stripe_subscription_id=capture_id,
-                )
-            )
-            db.commit()
-            log.info("PayPal Subscription provisioned for User %d", user_id)
+            _grant_premium(db, user_id)
             return {"status": "success", "tier": "premium"}
-            
-        elif tx_type == "topup":
-            db.execute(
-                update(User)
-                .where(User.id == user_id)
-                .values(ai_credits=User.ai_credits + credits_to_add)
-            )
-            db.commit()
-            log.info("PayPal Topup of %d credits provisioned for User %d", credits_to_add, user_id)
-            return {"status": "success", "added_credits": credits_to_add}
-            
+        _add_credits(db, user_id, credits_to_add)
+        return {"status": "success", "added_credits": credits_to_add}
+    except HTTPException:
+        raise
     except Exception as e:
         log.exception("PayPal payment capture failed")
-        raise HTTPException(
-            status_code=500,
-            detail=f"PayPal Capture Failure: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"PayPal Capture Failure: {str(e)}")
 
-@router.post("/razorpay/create-order")
-def create_razorpay_order(
-    payload: RazorpayCreateRequest,
-    current_user: User = Depends(get_current_user),
-):
-    if not razorpay_client:
-        # Mock mode fallback
-        mock_id = f"mock_rzp_{uuid.uuid4().hex[:8]}"
-        return {"order_id": mock_id, "amount": 99900 if payload.type == "subscription" else 19900}
 
-    if payload.type == "subscription":
-        amount_paise = 99900  # ₹999.00
-        receipt = f"rcpt_{current_user.id}_sub"
-    elif payload.type == "topup":
-        credits_to_add = payload.credits or 25
-        # For simplicity, ₹99 flat for 25 credits.
-        amount_paise = 9900 
-        receipt = f"rcpt_{current_user.id}_top_{credits_to_add}"
-    else:
-        raise HTTPException(status_code=400, detail="Invalid billing type")
-
-    try:
-        order_data = razorpay_client.order.create({
-            "amount": amount_paise,
-            "currency": "INR",
-            "receipt": receipt,
-            "notes": {
-                "user_id": current_user.id,
-                "type": payload.type,
-                "credits": payload.credits or 25
-            }
-        })
-        return {"order_id": order_data["id"], "amount": amount_paise}
-    except Exception as e:
-        log.exception("Razorpay order creation failed")
-        raise HTTPException(status_code=500, detail=f"Razorpay Error: {str(e)}")
-
-@router.post("/razorpay/verify-payment")
-def verify_razorpay_payment(
-    payload: RazorpayVerifyRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    # Handle mock local verification
-    if payload.razorpay_order_id.startswith("mock_rzp_"):
-        if payload.type == "subscription":
-            db.execute(
-                update(User)
-                .where(User.id == current_user.id)
-                .values(tier="premium", stripe_subscription_id=f"mock_rzp_sub_{payload.razorpay_order_id}")
-            )
-            db.commit()
-            return {"status": "success", "tier": "premium"}
-        elif payload.type == "topup":
-            db.execute(
-                update(User)
-                .where(User.id == current_user.id)
-                .values(ai_credits=User.ai_credits + (payload.credits or 10))
-            )
-            db.commit()
-            return {"status": "success", "added_credits": payload.credits or 10}
-
-    if not razorpay_client:
-        raise HTTPException(status_code=500, detail="Razorpay is not configured.")
-
-    try:
-        # Verify Signature
-        razorpay_client.utility.verify_payment_signature({
-            'razorpay_order_id': payload.razorpay_order_id,
-            'razorpay_payment_id': payload.razorpay_payment_id,
-            'razorpay_signature': payload.razorpay_signature
-        })
-        
-        # Provision Access
-        if payload.type == "subscription":
-            db.execute(
-                update(User)
-                .where(User.id == current_user.id)
-                .values(
-                    tier="premium",
-                    stripe_customer_id=payload.razorpay_payment_id,
-                    stripe_subscription_id=payload.razorpay_order_id,
-                )
-            )
-            db.commit()
-            return {"status": "success", "tier": "premium"}
-        elif payload.type == "topup":
-            credits_to_add = payload.credits or 25
-            db.execute(
-                update(User)
-                .where(User.id == current_user.id)
-                .values(ai_credits=User.ai_credits + credits_to_add)
-            )
-            db.commit()
-            return {"status": "success", "added_credits": credits_to_add}
-
-    except razorpay.errors.SignatureVerificationError:
-        raise HTTPException(status_code=400, detail="Invalid payment signature")
-    except Exception as e:
-        log.exception("Razorpay payment verification failed")
-        raise HTTPException(status_code=500, detail=str(e))
-
-# ==========================================
-# NEW DUAL GATEWAY ARCHITECTURE PREP
-# ==========================================
-
-class CashfreeCreateRequest(BaseModel):
-    type: str
-    credits: Optional[int] = 25
-
-@router.post("/cashfree/create-order")
-def create_cashfree_order(
-    payload: CashfreeCreateRequest,
-    current_user: User = Depends(get_current_user),
-):
-    """
-    Mock endpoint for Cashfree. In production, this will call Cashfree's PG API 
-    using CASHFREE_APP_ID and CASHFREE_SECRET_KEY to generate a payment session_id.
-    """
-    # Mocking response
-    mock_session_id = f"mock_cf_session_{uuid.uuid4().hex[:8]}"
-    mock_order_id = f"mock_cf_order_{uuid.uuid4().hex[:8]}"
+@router.get("/debug-env")
+def debug_env():
+    """Non-sensitive config presence check (no secrets returned)."""
     return {
-        "payment_session_id": mock_session_id,
-        "order_id": mock_order_id,
-        "amount": 999.00 if payload.type == "subscription" else 99.00
+        "cashfree_configured": _cashfree_configured(),
+        "cashfree_mode": CASHFREE_MODE,
+        "paypal_configured": bool(PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET),
+        "paypal_mode": PAYPAL_MODE,
+        "backend_public_url_set": bool(BACKEND_PUBLIC_URL),
     }
-
-@router.post("/cashfree/verify-payment")
-def verify_cashfree_payment(
-    order_id: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """
-    Mock endpoint for Cashfree verification. In production, this will fetch the 
-    order status from Cashfree and provision credits.
-    """
-    # Auto-approve for mock
-    db.execute(
-        update(User)
-        .where(User.id == current_user.id)
-        .values(tier="premium" if "sub" in order_id else User.tier)
-    )
-    db.commit()
-    return {"status": "success"}

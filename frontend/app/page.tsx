@@ -41,30 +41,27 @@ export default function Home() {
         </StaggerContainer>
       </section>
 
-      {/* Animated Text Banner (Uber Style Dual Marquee) */}
+      {/* Capability Banner (feature-oriented, no unverified testimonials) */}
       <div className="w-full max-w-[1000px] mx-auto py-8 mb-32 overflow-hidden flex flex-col gap-4 relative [mask-image:linear-gradient(to_right,transparent,black_15%,black_85%,transparent)]">
-        
+
         {/* LTR Marquee */}
         <Marquee className="[--duration:60s]" reverse>
           <div className="flex items-center gap-4 px-2">
             {[
-              { user: "@sarah", role: "Senior Frontend Engineer", text: "Landed a role at Stripe after optimizing my bullet points." },
-              { user: "@mike_dev", role: "Full Stack Developer", text: "Increased my ATS match score from 45% to 92% instantly." },
-              { user: "@alex_c", role: "Data Scientist", text: "The Bullet Optimizer completely transformed my experience section." },
-              { user: "@jessica", role: "DevOps Engineer", text: "Found exactly which AWS skills I was missing for target roles." },
-              { user: "@david_tech", role: "Backend Engineer", text: "Used the gap analysis to target my next promotion." },
+              { title: "Bullet clarity", text: "Rewrite resume bullets to be clearer and evidence-based." },
+              { title: "Compatibility estimate", text: "Compare your resume with a job description using a HireWiz estimate." },
+              { title: "Skill signals", text: "See which skills appear most in the job-posting sample you analyze." },
+              { title: "Gap analysis", text: "Identify skills mentioned in a role that your resume doesn't cover yet." },
+              { title: "Learning suggestions", text: "Get study topics and project ideas mapped to your skill gaps." },
             ].map((item, i) => (
               <div key={i} className="w-[340px] p-5 rounded-2xl bg-slate-900/50 border border-slate-800/80 flex flex-col gap-3 hover:bg-slate-800/50 transition">
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center font-bold text-sm">
-                    {item.user[1].toUpperCase()}
+                  <div className="w-8 h-8 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center">
+                    <CheckCircle2 size={16} />
                   </div>
-                  <div className="flex flex-col">
-                    <span className="text-sm font-bold text-slate-200">{item.user}</span>
-                    <span className="text-xs text-slate-500">{item.role}</span>
-                  </div>
+                  <span className="text-sm font-bold text-slate-200">{item.title}</span>
                 </div>
-                <p className="text-sm text-slate-400 leading-relaxed">"{item.text}"</p>
+                <p className="text-sm text-slate-400 leading-relaxed">{item.text}</p>
               </div>
             ))}
           </div>
@@ -74,23 +71,20 @@ export default function Home() {
         <Marquee className="[--duration:70s]">
           <div className="flex items-center gap-4 px-2">
             {[
-              { user: "@emily", role: "Product Manager", text: "Structured my messy PDF into a perfect ATS-friendly template." },
-              { user: "@chris", role: "iOS Developer", text: "Market trends showed me exactly what frameworks to focus on." },
-              { user: "@ryan_m", role: "Software Engineer", text: "Got 3 interviews in a week after tailoring my resume here." },
-              { user: "@nina", role: "UX Designer", text: "The learning strategy gave me a clear path for my portfolio." },
-              { user: "@taylor", role: "System Admin", text: "Finally beat the automated screening bots! Highly recommend." },
+              { title: "Structured parsing", text: "Turn your uploaded PDF into structured, reviewable sections." },
+              { title: "Market snapshot", text: "Review in-demand skills from a sample of recent job postings." },
+              { title: "Tailoring help", text: "Draft tailored wording that you review before saving or exporting." },
+              { title: "Portfolio direction", text: "Plan projects that demonstrate the skills a target role asks for." },
+              { title: "You stay in control", text: "AI suggestions are informational and require your review." },
             ].map((item, i) => (
               <div key={i} className="w-[340px] p-5 rounded-2xl bg-slate-900/50 border border-slate-800/80 flex flex-col gap-3 hover:bg-slate-800/50 transition">
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-purple-500/20 text-purple-400 flex items-center justify-center font-bold text-sm">
-                    {item.user[1].toUpperCase()}
+                  <div className="w-8 h-8 rounded-full bg-purple-500/20 text-purple-400 flex items-center justify-center">
+                    <CheckCircle2 size={16} />
                   </div>
-                  <div className="flex flex-col">
-                    <span className="text-sm font-bold text-slate-200">{item.user}</span>
-                    <span className="text-xs text-slate-500">{item.role}</span>
-                  </div>
+                  <span className="text-sm font-bold text-slate-200">{item.title}</span>
                 </div>
-                <p className="text-sm text-slate-400 leading-relaxed">"{item.text}"</p>
+                <p className="text-sm text-slate-400 leading-relaxed">{item.text}</p>
               </div>
             ))}
           </div>
@@ -137,10 +131,10 @@ export default function Home() {
           <div>
             <ScrollReveal direction="left">
               <h2 className="text-3xl md:text-4xl font-bold tracking-tight text-white mb-4">
-                Write bullets that actually convert.
+                Write clearer, evidence-based bullets.
               </h2>
               <p className="text-lg text-slate-400 mb-8 leading-relaxed">
-                Our AI analyzes your resume bullets against thousands of successful tech resumes to suggest high-impact verbs and quantifiable metrics.
+                Our AI reviews your resume bullets and suggests stronger action verbs and places to add quantifiable metrics. Suggestions are informational and require your review.
               </p>
               <ul className="space-y-4 mb-8">
                 <li className="flex items-start gap-3">
@@ -175,8 +169,8 @@ export default function Home() {
       {/* Bento Grid Features */}
       <section className="w-full max-w-[80rem] mx-auto px-6 md:px-8 mb-32">
         <ScrollReveal className="text-center mb-16">
-          <h2 className="text-3xl md:text-5xl font-bold tracking-tight text-white mb-4">Everything you need to land the job.</h2>
-          <p className="text-lg text-slate-400">Powerful tools designed for the modern job seeker.</p>
+          <h2 className="text-3xl md:text-5xl font-bold tracking-tight text-white mb-4">Tools to help you present your experience.</h2>
+          <p className="text-lg text-slate-400">Self-service software for the modern job seeker.</p>
         </ScrollReveal>
 
         <StaggerContainer className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -187,7 +181,7 @@ export default function Home() {
               </div>
               <h3 className="text-2xl font-bold text-white mb-3">Precision Job Matching</h3>
               <p className="text-slate-400 leading-relaxed mb-6 flex-grow">
-                Paste any job description and let our AI compare it against your parsed resume. Instantly see your match score, missing skills, and a breakdown of how a recruiter views your profile.
+                Paste any job description and let our AI compare it against your parsed resume. See a HireWiz compatibility estimate, likely missing skills, and a breakdown of how your resume aligns with the role's requirements.
               </p>
               <Link href="/jobs" className="text-sm font-bold text-primary hover:text-blue-400 flex items-center gap-1 group">
                 Explore Job Match <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
@@ -202,7 +196,7 @@ export default function Home() {
               </div>
               <h3 className="text-xl font-bold text-white mb-3">Market Trends</h3>
               <p className="text-slate-400 leading-relaxed mb-6 flex-grow text-sm">
-                Analyze thousands of recent job postings for your target role to discover which skills are actually in demand right now.
+                Analyze a sample of recent job postings from third-party job-data providers to see which skills are frequently requested for your target role. Results are informational estimates.
               </p>
               <Link href="/market" className="text-sm font-bold text-primary hover:text-blue-400 flex items-center gap-1 group">
                 View Trends <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
@@ -232,9 +226,9 @@ export default function Home() {
                 <div className="h-12 w-12 rounded-xl bg-emerald-100 flex items-center justify-center text-emerald-400 mb-6">
                   <Shield size={24} />
                 </div>
-                <h3 className="text-2xl font-bold text-white mb-3">Enterprise-Grade Parsing</h3>
+                <h3 className="text-2xl font-bold text-white mb-3">Structured Resume Parsing</h3>
                 <p className="text-slate-400 leading-relaxed mb-6 max-w-xl">
-                  Upload your PDF and our extraction engine structures your experience precisely how an ATS sees it. Verify that your formatting isn't costing you interviews.
+                  Upload your PDF and our extraction engine structures your experience into clear, reviewable sections so you can check how your resume reads. HireWiz does not produce an official ATS score.
                 </p>
                 <Link href="/resume" className="text-sm font-bold text-primary hover:text-blue-400 flex items-center gap-1 group/link">
                   Parse Resume <ArrowRight className="h-4 w-4 transition-transform group-hover/link:translate-x-1" />
@@ -259,7 +253,7 @@ export default function Home() {
                 Ready to level up your career?
               </h2>
               <p className="text-lg text-slate-400 mb-10 text-balance">
-                Join thousands of engineers who are using AI to build better resumes and land their dream roles.
+                Create a free account and use AI-assisted tools to review, structure, and improve your resume — you stay in control of every change.
               </p>
               <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
                 <AnimatedButton href="/register" showArrow>Create free account</AnimatedButton>

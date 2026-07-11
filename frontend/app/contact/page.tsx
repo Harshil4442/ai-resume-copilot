@@ -2,7 +2,7 @@ import PageHeader from "../../components/ui/PageHeader";
 import GlassCard from "../../components/ui/GlassCard";
 import FadeIn from "../../components/ui/FadeIn";
 import Link from "next/link";
-import { ArrowLeft, Mail, MapPin, MessageCircle, Clock } from "lucide-react";
+import { ArrowLeft, Mail, MapPin, MessageCircle, Clock, Phone, ShieldCheck } from "lucide-react";
 
 export const metadata = {
   title: "Contact Us - HireWiz",
@@ -40,11 +40,14 @@ export default function ContactPage() {
             <div className="p-3 bg-purple-500/10 text-purple-400 w-fit rounded-lg mb-6">
               <Clock size={24} />
             </div>
-            <h3 className="text-xl font-bold text-white mb-2">Business Hours</h3>
-            <p className="text-sm text-slate-400 mb-6">
-              Our support team is available during standard business hours in Indian Standard Time (IST).
+            <h3 className="text-xl font-bold text-white mb-2">Phone & Business Hours</h3>
+            <p className="text-sm text-slate-400 mb-4">
+              Available during standard business hours, Indian Standard Time (IST). Email is the fastest way to reach us.
             </p>
-            <div className="text-slate-300 font-semibold">
+            <a href="tel:+917202910650" className="inline-flex items-center gap-2 text-primary font-semibold hover:underline mb-3">
+              <Phone size={16} /> +91 72029 10650
+            </a>
+            <div className="text-slate-300 font-semibold text-sm">
               Monday - Sunday<br/>
               10:00 AM - 10:00 PM IST
             </div>
@@ -54,16 +57,39 @@ export default function ContactPage() {
             <div className="p-3 bg-emerald-500/10 text-emerald-400 w-fit rounded-lg mb-6">
               <MapPin size={24} />
             </div>
-            <h3 className="text-xl font-bold text-white mb-2">Registered Address</h3>
+            <h3 className="text-xl font-bold text-white mb-2">Business Correspondence Address</h3>
             <p className="text-sm text-slate-400 mb-6 max-w-xl">
-              This is our registered administrative office. Please note that we do not offer in-person support at this location. All support requests must be routed via email.
+              This is our business correspondence address. Please note that we do not offer in-person support at this location. All support requests must be routed via email.
             </p>
             <address className="not-italic text-slate-300 leading-relaxed font-medium">
-              Legal Entity: SAVALIYA HARSHIL YOGESHBHAI<br />
-              (Operating as HireWiz)<br />
+              SAVALIYA HARSHIL YOGESHBHAI<br />
+              (an individual trading as HireWiz)<br />
               Surat, Gujarat<br />
               India, 395010
             </address>
+          </GlassCard>
+
+          <GlassCard className="p-8 md:col-span-2">
+            <div className="p-3 bg-blue-500/10 text-blue-400 w-fit rounded-lg mb-6">
+              <ShieldCheck size={24} />
+            </div>
+            <h3 className="text-xl font-bold text-white mb-2">Grievance Officer</h3>
+            <p className="text-sm text-slate-400 mb-6 max-w-xl">
+              In line with applicable Indian law, you may raise any complaint or data-protection request with our
+              Grievance Officer. We acknowledge complaints within 48 hours and aim to resolve them within 30 days.
+            </p>
+            <div className="text-slate-300 leading-relaxed font-medium text-sm">
+              <div className="font-bold text-white">Harshil Yogeshbhai Savaliya</div>
+              <div className="text-slate-400">Grievance Officer, HireWiz</div>
+              <div className="mt-2 flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4">
+                <a href="mailto:work@hirewizhq.com" className="inline-flex items-center gap-2 text-primary hover:underline">
+                  <Mail size={14} /> work@hirewizhq.com
+                </a>
+                <a href="tel:+917202910650" className="inline-flex items-center gap-2 text-primary hover:underline">
+                  <Phone size={14} /> +91 72029 10650
+                </a>
+              </div>
+            </div>
           </GlassCard>
         </div>
 

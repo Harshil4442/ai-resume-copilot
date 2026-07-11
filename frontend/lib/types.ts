@@ -26,6 +26,7 @@ export type UserProfile = {
   certifications?: string | null;
   tier: string;
   ai_credits: number;
+  premium_until?: string | null;
 };
 
 export type AuthTokenResponse = {

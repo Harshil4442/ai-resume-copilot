@@ -1,14 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { apiGet, apiPutJson } from "../../lib/api";
+import { useRouter } from "next/navigation";
+import { signOut } from "next-auth/react";
+import { apiGet, apiPutJson, apiPostJson } from "../../lib/api";
 import type { UserProfile } from "../../lib/types";
 import PageHeader from "../../components/ui/PageHeader";
 import GlassCard from "../../components/ui/GlassCard";
 import AnimatedButton from "../../components/ui/AnimatedButton";
 import FadeIn from "../../components/ui/FadeIn";
 import StaggerContainer, { StaggerItem } from "../../components/ui/StaggerContainer";
-import { User, Link as LinkIcon, Briefcase, FileText, CheckCircle2, AlertTriangle, AlertCircle, Save } from "lucide-react";
+import { User, Link as LinkIcon, Briefcase, FileText, CheckCircle2, AlertTriangle, AlertCircle, Save, Crown, Trash2, ShieldOff } from "lucide-react";
 
 type ProfileForm = Omit<UserProfile, "email" | "profile_completeness" | "missing_fields" | "skills" | "tier" | "ai_credits"> & {
   skills_text: string;
@@ -60,12 +62,45 @@ function splitSkills(text: string) {
 }
 
 export default function ProfilePage() {
+  const router = useRouter();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [form, setForm] = useState<ProfileForm>(emptyForm);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState(false);
+  const [acctBusy, setAcctBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  async function cancelPremium() {
+    if (!confirm("End your Premium access now? You will return to the free plan immediately.")) return;
+    setAcctBusy(true);
+    setError(null);
+    try {
+      await apiPostJson("/billing/cancel-subscription", {});
+      const refreshed = await apiGet<UserProfile>("/auth/profile");
+      setProfile(refreshed);
+      window.dispatchEvent(new Event("refresh_credits"));
+    } catch (e: any) {
+      setError(e?.message || "Could not cancel Premium.");
+    } finally {
+      setAcctBusy(false);
+    }
+  }
+
+  async function deleteAccount() {
+    setAcctBusy(true);
+    setError(null);
+    try {
+      await apiPostJson("/auth/delete-account", {});
+      localStorage.removeItem("access_token");
+      await signOut({ redirect: false });
+      router.push("/register");
+    } catch (e: any) {
+      setError(e?.message || "Could not delete account.");
+      setAcctBusy(false);
+    }
+  }
 
   useEffect(() => {
     apiGet<UserProfile>("/auth/profile")
@@ -312,6 +347,83 @@ export default function ProfilePage() {
           </div>
         </div>
       </form>
+
+      {/* Account & Subscription */}
+      <StaggerContainer className="space-y-6">
+        <StaggerItem>
+          <GlassCard className="p-6 md:p-8" hoverEffect={false}>
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center"><Crown size={20} /></div>
+              <h2 className="text-xl font-black text-white tracking-tighter">Subscription</h2>
+            </div>
+            {profile?.tier === "premium" ? (
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <div className="text-sm font-bold text-white">Premium is active</div>
+                  <div className="text-xs text-slate-400 mt-1">
+                    {profile.premium_until
+                      ? `Access valid until ${new Date(profile.premium_until).toLocaleDateString()}. Premium does not auto-charge.`
+                      : "Unlimited AI operations."}
+                  </div>
+                </div>
+                <button
+                  onClick={cancelPremium}
+                  disabled={acctBusy}
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-slate-800 border border-slate-600 text-slate-200 text-sm font-semibold hover:bg-slate-700 transition disabled:opacity-50"
+                >
+                  <ShieldOff size={16} /> End Premium now
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="text-sm text-slate-400">
+                  You are on the free plan. Upgrade for unlimited AI operations.
+                </div>
+                <a href="/billing" className="inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary/90 transition">
+                  View plans
+                </a>
+              </div>
+            )}
+          </GlassCard>
+        </StaggerItem>
+
+        <StaggerItem>
+          <GlassCard className="p-6 md:p-8 border-rose-900/60" hoverEffect={false}>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-rose-500/10 text-rose-400 flex items-center justify-center"><Trash2 size={20} /></div>
+              <h2 className="text-xl font-black text-white tracking-tighter">Delete Account</h2>
+            </div>
+            <p className="text-sm text-slate-400 mb-5 max-w-2xl">
+              Permanently delete your account and all associated data — profile, resumes, match history, and payment records. This cannot be undone.
+            </p>
+            {!confirmDelete ? (
+              <button
+                onClick={() => setConfirmDelete(true)}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-rose-950/60 border border-rose-800 text-rose-300 text-sm font-semibold hover:bg-rose-900/60 transition"
+              >
+                <Trash2 size={16} /> Delete my account
+              </button>
+            ) : (
+              <div className="flex flex-col sm:flex-row gap-3">
+                <button
+                  onClick={deleteAccount}
+                  disabled={acctBusy}
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-rose-600 text-white text-sm font-bold hover:bg-rose-500 transition disabled:opacity-50"
+                >
+                  {acctBusy ? "Deleting..." : "Yes, permanently delete everything"}
+                </button>
+                <button
+                  onClick={() => setConfirmDelete(false)}
+                  disabled={acctBusy}
+                  className="inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-slate-800 border border-slate-600 text-slate-200 text-sm font-semibold hover:bg-slate-700 transition"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+          </GlassCard>
+        </StaggerItem>
+      </StaggerContainer>
     </main>
   );
 }

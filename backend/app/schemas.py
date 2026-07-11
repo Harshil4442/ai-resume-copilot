@@ -50,6 +50,7 @@ class UserProfileResponse(UserProfileBase):
     missing_fields: List[str] = Field(default_factory=list)
     tier: str
     ai_credits: int
+    premium_until: Optional[datetime] = None
 
 class UserProfileUpdate(UserProfileBase):
     pass

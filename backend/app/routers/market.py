@@ -16,7 +16,7 @@ def analyze_market_trends(
     current_user: models.User = Depends(get_current_user),
 ):
     from ..services.guardrails import verify_and_deduct_credit
-    verify_and_deduct_credit(current_user.id, db)
+    verify_and_deduct_credit(current_user.id, db, amount=5)
 
     resume = None
     if payload.resume_id:

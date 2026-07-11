@@ -9,6 +9,11 @@ export default function CookiePolicy() {
         subtitle="How we use cookies to improve your experience." 
       />
       <div className="w-full max-w-4xl mx-auto px-6 md:px-8 mt-12 text-slate-300 space-y-8 leading-relaxed">
+        <p className="text-sm text-slate-400">
+          Last updated: 11 July 2026. HireWiz is operated by SAVALIYA HARSHIL YOGESHBHAI, an
+          individual trading as HireWiz. Questions about this policy:{" "}
+          <a href="mailto:work@hirewizhq.com" className="text-primary hover:underline">work@hirewizhq.com</a>.
+        </p>
         <section>
           <h2 className="text-2xl font-bold text-white mb-4">1. What Are Cookies?</h2>
           <p>
@@ -22,14 +27,14 @@ export default function CookiePolicy() {
           <ul className="list-disc pl-6 mt-4 space-y-2">
             <li><strong>Essential Cookies:</strong> These are required for the platform to function. They handle user authentication, secure your session, and allow you to access your dashboard. You cannot opt out of these if you wish to use the service.</li>
             <li><strong>Functional Cookies:</strong> These remember your preferences, such as your dark/light theme choices and your last accessed job match, to provide a smoother user experience.</li>
-            <li><strong>Analytics Cookies:</strong> We use minimal analytics to understand how users interact with our tools (e.g., which micro-tools are most popular) so we can prioritize new features. This data is anonymized.</li>
+            <li><strong>Analytics Cookies:</strong> We use Google Analytics 4 to understand how visitors interact with our tools (e.g., which pages and features are used) so we can prioritize improvements. Google may set cookies to measure usage; see Google's own privacy documentation for details of the data it processes.</li>
           </ul>
         </section>
 
         <section>
           <h2 className="text-2xl font-bold text-white mb-4">3. Third-Party Cookies</h2>
           <p>
-            We do not sell your data to advertisers. We do not use third-party tracking cookies for targeted advertising. Any third-party cookies present are strictly related to secure authentication providers or necessary infrastructure services.
+            We do not sell your data to advertisers, and we do not use third-party cookies for targeted advertising. Third-party cookies that may be present are limited to Google Analytics (usage measurement) and our authentication provider (secure sign-in and session management). A detailed, itemized inventory of the specific cookies and local-storage keys we use will be published on this page.
           </p>
         </section>
 

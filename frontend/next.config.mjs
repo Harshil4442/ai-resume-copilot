@@ -14,6 +14,18 @@ const nextConfig = {
         destination: 'https://www.hirewizhq.com/:path*',
         permanent: true,
       },
+      {
+        // Canonicalize the apex domain to the www host.
+        source: '/:path*',
+        has: [
+          {
+            type: 'host',
+            value: 'hirewizhq.com',
+          },
+        ],
+        destination: 'https://www.hirewizhq.com/:path*',
+        permanent: true,
+      },
     ];
   },
   async rewrites() {

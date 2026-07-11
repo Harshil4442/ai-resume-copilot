@@ -16,10 +16,18 @@ def verify_and_deduct_credit(user_id: int, db: Session, amount: int = 1) -> bool
             detail="User not found"
         )
         
-    if user.tier == "premium":
-        # Premium subscription gets unlimited AI operations
+    if user.is_premium_active():
+        # Active premium gets unlimited AI operations
         return True
-        
+
+    # Premium grant has lapsed — fall back to the free/credit tier.
+    if user.tier == "premium" and not user.is_premium_active():
+        db.execute(
+            update(User).where(User.id == user_id).values(tier="free", premium_until=None)
+        )
+        db.commit()
+        user.tier = "free"
+
     if user.ai_credits < amount:
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,

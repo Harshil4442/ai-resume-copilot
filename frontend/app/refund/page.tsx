@@ -29,8 +29,11 @@ export default function RefundPolicyPage() {
             <h2 className="text-xl font-bold text-white m-0">Overview</h2>
           </div>
           
+          <p className="text-sm text-slate-400 m-0">
+            Last updated: 11 July 2026. HireWiz is operated by SAVALIYA HARSHIL YOGESHBHAI, an individual trading as HireWiz.
+          </p>
           <p>
-            At HireWiz ("we", "our", or "us"), we are committed to providing a transparent and fair experience for our users. This Refund and Cancellation Policy outlines the conditions under which refunds are provided and how you can cancel your subscription or digital purchases.
+            At HireWiz ("we", "our", or "us"), we are committed to providing a transparent and fair experience for our users. This Refund and Cancellation Policy outlines the conditions under which refunds are provided and how you can cancel your subscription or digital purchases. It does not limit any non-waivable rights you may have under applicable consumer-protection law.
           </p>
 
           <h3 className="text-lg font-bold text-white mt-8 mb-4">1. Digital Goods and Services</h3>
@@ -38,14 +41,14 @@ export default function RefundPolicyPage() {
             HireWiz provides digital products, SaaS (Software as a Service) subscriptions, and AI-generated content (including resume parsing, job matching, and analytics). Because these are digital goods that are instantly accessed and consumed upon purchase, they are generally non-refundable unless otherwise specified by law or within this policy.
           </p>
 
-          <h3 className="text-lg font-bold text-white mt-8 mb-4">2. Cancellation of Subscriptions</h3>
+          <h3 className="text-lg font-bold text-white mt-8 mb-4">2. Plans and Cancellation</h3>
           <p>
-            You may cancel your HireWiz subscription or recurring billing plan at any time through your account dashboard or by contacting our support team. 
+            HireWiz offers a <strong>Premium plan</strong> (a one-time payment that unlocks Premium for 30 days) and a one-time <strong>analysis-units pack</strong>. Premium does <strong>not</strong> store a card or mandate and does <strong>not</strong> charge you automatically — it simply expires after 30 days unless you choose to pay again.
           </p>
           <ul className="list-disc pl-6 space-y-2 mt-4 text-slate-400">
-            <li>Cancellations will take effect at the end of your current paid billing cycle.</li>
-            <li>You will retain access to the paid features until the billing cycle expires.</li>
-            <li>We do not provide prorated refunds for mid-cycle cancellations.</li>
+            <li>Because there is no automatic renewal, there is no recurring charge to cancel.</li>
+            <li>You may end Premium access at any time from your Profile page, or by emailing <a href="mailto:work@hirewizhq.com" className="text-primary hover:underline">work@hirewizhq.com</a>. Ending it early does not by itself create a refund entitlement.</li>
+            <li>Analysis units are consumed as you use AI operations; used units are not refundable.</li>
           </ul>
 
           <h3 className="text-lg font-bold text-white mt-8 mb-4">3. Eligibility for Refunds</h3>
@@ -55,7 +58,7 @@ export default function RefundPolicyPage() {
           <ul className="list-disc pl-6 space-y-2 mt-4 text-slate-400">
             <li><strong>Duplicate Charges:</strong> If you were accidentally charged twice for the same transaction due to a technical error.</li>
             <li><strong>Service Unavailability:</strong> If our core services were completely inaccessible for an extended period (exceeding 72 hours) immediately following your purchase.</li>
-            <li><strong>Fraudulent Charges:</strong> If a purchase was made using your payment method without your authorization. (This will also be investigated by your bank and our payment processor, Razorpay).</li>
+            <li><strong>Fraudulent Charges:</strong> If a purchase was made using your payment method without your authorization. (This may also be investigated by your bank and the payment processor used for your checkout.)</li>
           </ul>
 
           <h3 className="text-lg font-bold text-white mt-8 mb-4">4. How to Request a Refund</h3>
@@ -74,9 +77,9 @@ export default function RefundPolicyPage() {
             Our team will review your request within 3-5 business days. If approved, the refund will be processed back to your original method of payment within 5-7 business days, depending on your bank's processing times.
           </p>
 
-          <h3 className="text-lg font-bold text-white mt-8 mb-4">5. Chargebacks</h3>
+          <h3 className="text-lg font-bold text-white mt-8 mb-4">5. Payment Disputes and Chargebacks</h3>
           <p>
-            If you initiate a chargeback or payment dispute with your credit card company or bank, we reserve the right to immediately suspend or terminate your account pending the resolution of the dispute. We highly encourage reaching out to us directly first so we can resolve any issues amicably.
+            If a chargeback or payment dispute is raised on your account, we may temporarily pause the affected paid features while the dispute is reviewed with you and the payment provider, and we will cooperate with that process in good faith. This does not affect your statutory dispute rights. We encourage you to contact us first at <a href="mailto:work@hirewizhq.com" className="text-primary hover:underline">work@hirewizhq.com</a> so we can resolve any issue directly.
           </p>
 
           <div className="mt-12 p-6 bg-slate-800/50 rounded-xl border border-slate-700/60">

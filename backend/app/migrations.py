@@ -40,5 +40,10 @@ def run_migrations():
         if "stripe_subscription_id" not in columns:
             log.info("Adding column 'stripe_subscription_id' to 'users' table")
             connection.execute(text("ALTER TABLE users ADD COLUMN stripe_subscription_id VARCHAR(255) NULL"))
-            
+
+        # Add 'premium_until' (expiry for time-limited premium grants)
+        if "premium_until" not in columns:
+            log.info("Adding column 'premium_until' to 'users' table")
+            connection.execute(text("ALTER TABLE users ADD COLUMN premium_until TIMESTAMP NULL"))
+
     log.info("Database migrations completed successfully.")

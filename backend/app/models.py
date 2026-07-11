@@ -14,12 +14,47 @@ class User(Base):
     password_hash = Column(String, default="")
     tier = Column(String, default="free")
     ai_credits = Column(Integer, default=20, nullable=False)
+    # When premium access expires. NULL while free; NULL on a legacy/lifetime
+    # premium grant is treated as still-active.
+    premium_until = Column(DateTime, nullable=True)
     stripe_customer_id = Column(String, nullable=True)
     stripe_subscription_id = Column(String, nullable=True)
 
     profile = relationship("UserProfile", back_populates="user", uselist=False)
     resumes = relationship("Resume", back_populates="user")
     job_matches = relationship("JobMatch", back_populates="user")
+
+    def is_premium_active(self) -> bool:
+        """True when the user has an unexpired premium grant."""
+        if self.tier != "premium":
+            return False
+        if self.premium_until is None:
+            return True  # legacy lifetime grant
+        expires = self.premium_until
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        return expires > datetime.now(timezone.utc)
+
+
+class PaymentOrder(Base):
+    """
+    Ledger of checkout orders across providers. Doubles as the idempotency
+    guard so a payment is provisioned exactly once, whether the confirmation
+    arrives via webhook or the browser-side verify call.
+    """
+    __tablename__ = "payment_orders"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True)
+    provider = Column(String(20), default="cashfree")       # cashfree | paypal
+    provider_order_id = Column(String(120), unique=True, index=True)
+    order_type = Column(String(20), default="subscription")  # subscription | topup
+    credits = Column(Integer, nullable=True)
+    amount = Column(Float, default=0.0)
+    currency = Column(String(8), default="INR")
+    status = Column(String(20), default="created")           # created | paid | failed
+    provisioned = Column(Integer, default=0)                 # 0/1 idempotency flag
+    created_at = Column(DateTime, default=_utcnow)
 
 class UserProfile(Base):
     __tablename__ = "user_profiles"

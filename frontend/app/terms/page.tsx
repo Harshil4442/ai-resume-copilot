@@ -9,17 +9,25 @@ export default function TermsOfService() {
         subtitle="The rules and guidelines for using HireWiz." 
       />
       <div className="w-full max-w-4xl mx-auto px-6 md:px-8 mt-12 text-slate-300 space-y-8 leading-relaxed">
+        <p className="text-sm text-slate-400">
+          Last updated: 11 July 2026. HireWiz is operated by SAVALIYA HARSHIL YOGESHBHAI, an
+          individual trading as HireWiz, based in Gujarat, India ("HireWiz", "we", "our", or "us").
+          You must be at least 18 years old to use the service.
+        </p>
         <section>
           <h2 className="text-2xl font-bold text-white mb-4">1. Acceptance of Terms</h2>
           <p>
-            By accessing or using HireWiz (operated by SAVALIYA HARSHIL YOGESHBHAI), you agree to be bound by these Terms of Service. If you do not agree, you may not use the platform.
+            By accessing or using HireWiz, you agree to be bound by these Terms of Service, together with our Privacy Policy, Cookie Policy, and Refund &amp; Cancellation Policy. If you do not agree, you may not use the platform.
           </p>
         </section>
 
         <section>
           <h2 className="text-2xl font-bold text-white mb-4">2. Description of Service</h2>
           <p>
-            HireWiz provides AI-driven career tools, including resume parsing, job matching, and learning strategy generation. The output provided by our AI models is intended for guidance and informational purposes only.
+            HireWiz is self-service, AI-assisted software. You upload your own resume and, optionally, a job description, and receive automated resume parsing, compatibility estimates, skill-gap observations, market insights, and learning suggestions. The output provided by our AI models is informational only and must be reviewed by you before you rely on it.
+          </p>
+          <p className="mt-4">
+            <strong>What HireWiz is not.</strong> HireWiz is not a recruitment agency, staffing company, job-placement or job-application service, job board, or human career-coaching service. We do not make employment decisions, submit applications on your behalf, or guarantee ATS acceptance, interviews, offers, or employment. Compatibility scores are HireWiz estimates, not scores produced by any employer or specific applicant-tracking system.
           </p>
         </section>
 
@@ -35,11 +43,13 @@ export default function TermsOfService() {
 
         <section>
           <h2 className="text-2xl font-bold text-white mb-4">4. Acceptable Use</h2>
-          <p>You agree not to use the platform to:</p>
+          <p>You agree that you will only upload your own resume or material you are authorized to process, and that you will not use the platform to:</p>
           <ul className="list-disc pl-6 mt-4 space-y-2">
             <li>Upload malicious files, viruses, or corrupted PDFs.</li>
-            <li>Generate fraudulent resumes or falsely claim qualifications you do not possess.</li>
-            <li>Attempt to reverse-engineer, scrape, or overwhelm our AI parsing infrastructure.</li>
+            <li>Upload another person's resume or personal data without their authorization.</li>
+            <li>Impersonate any person, or generate false credentials, fabricated achievements, or qualifications you do not possess.</li>
+            <li>Cheat on any exam, assessment, or hiring process, or otherwise use the service deceptively.</li>
+            <li>Attempt to reverse-engineer, scrape, or overwhelm our infrastructure, or interfere with the service.</li>
           </ul>
         </section>
 
