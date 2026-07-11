@@ -8,7 +8,6 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@paypal/react-paypal-js": "^10.1.1",
     "@tailwindcss/typography": "^0.5.20",
     "clsx": "^2.1.1",
     "framer-motion": "^12.42.2",

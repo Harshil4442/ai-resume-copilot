@@ -2,9 +2,7 @@ import type { MetadataRoute } from "next";
 
 const BASE_URL = "https://www.hirewizhq.com";
 
-// Only public, canonical pages belong in the sitemap. New public pages
-// (e.g. /pricing, /about, /digital-delivery, /subprocessors) should be added
-// here as they are built.
+// Only public, canonical pages belong in the sitemap.
 const PUBLIC_ROUTES = [
   "",
   "/pricing",
@@ -13,7 +11,6 @@ const PUBLIC_ROUTES = [
   "/subprocessors",
   "/login",
   "/register",
-  "/market",
   "/terms",
   "/privacy",
   "/refund",
@@ -22,7 +19,7 @@ const PUBLIC_ROUTES = [
 ];
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const lastModified = new Date();
+  const lastModified = new Date("2026-07-11T00:00:00.000Z");
   return PUBLIC_ROUTES.map((route) => ({
     url: `${BASE_URL}${route}`,
     lastModified,

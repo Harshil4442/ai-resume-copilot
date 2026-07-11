@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { Globe, Mail, MessageCircle } from "lucide-react";
+import { Globe, Mail, Phone } from "lucide-react";
 import FadeIn from "./ui/FadeIn";
 import Logo from "./ui/Logo";
-import Image from "next/image";
+import { SITE } from "../lib/site";
 
 export default function Footer() {
   const currentYear = new Date().getFullYear();
@@ -16,49 +16,36 @@ export default function Footer() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-12 mb-12">
             <div>
               <Link href="/" className="flex items-center gap-2.5 mb-6">
-                {/* SVG Logo */}
                 <Logo />
-                
-                {/* Alternative PNG Logo (Uncomment to use the uploaded image asset directly) */}
-                {/* 
-                <Image 
-                  src="/logo.png" 
-                  alt="HireWiz Logo" 
-                  width={34} 
-                  height={34} 
-                  className="object-contain"
-                /> 
-                */}
-                
                 <span className="text-sm font-black tracking-tight text-white">HireWiz</span>
               </Link>
               <p className="text-sm text-slate-400 leading-relaxed mb-6">
                 Self-service, AI-assisted software that helps you review, structure, and improve your own resume — with compatibility estimates, skill-gap analysis, and tailored learning suggestions you stay in control of.
               </p>
               <div className="flex gap-4">
-                <a href="https://www.hirewizhq.com" target="_blank" rel="noopener noreferrer" className="text-slate-400 hover:text-primary transition-colors"><Globe size={20} /></a>
-                <a href="mailto:work@hirewizhq.com" className="text-slate-400 hover:text-primary transition-colors"><Mail size={20} /></a>
-                <a href="mailto:work@hirewizhq.com" className="text-slate-400 hover:text-primary transition-colors"><MessageCircle size={20} /></a>
+                <a aria-label="HireWiz website" href={SITE.canonicalUrl} className="text-slate-400 hover:text-primary transition-colors"><Globe size={20} /></a>
+                <a aria-label="Email HireWiz support" href={`mailto:${SITE.supportEmail}`} className="text-slate-400 hover:text-primary transition-colors"><Mail size={20} /></a>
+                <a aria-label="Call HireWiz support" href={SITE.supportPhoneHref} className="text-slate-400 hover:text-primary transition-colors"><Phone size={20} /></a>
               </div>
             </div>
 
             <div>
               <h3 className="font-bold text-white mb-6">Product</h3>
               <ul className="space-y-4">
-                <li><Link href="/dashboard" className="text-sm text-slate-400 hover:text-white transition-colors">Dashboard</Link></li>
-                <li><Link href="/resume" className="text-sm text-slate-400 hover:text-white transition-colors">Resume Parser</Link></li>
-                <li><Link href="/jobs" className="text-sm text-slate-400 hover:text-white transition-colors">Job Match</Link></li>
-                <li><Link href="/market" className="text-sm text-slate-400 hover:text-white transition-colors">Market Trends</Link></li>
+                <li><Link href="/about" className="text-sm text-slate-400 hover:text-white transition-colors">How It Works</Link></li>
+                <li><Link href="/pricing" className="text-sm text-slate-400 hover:text-white transition-colors">Pricing</Link></li>
+                <li><Link href="/login" className="text-sm text-slate-400 hover:text-white transition-colors">Sign In</Link></li>
+                <li><Link href="/register" className="text-sm text-slate-400 hover:text-white transition-colors">Create Account</Link></li>
               </ul>
             </div>
 
             <div>
-              <h3 className="font-bold text-white mb-6">Company</h3>
+              <h3 className="font-bold text-white mb-6">Support</h3>
               <ul className="space-y-4">
-                <li><Link href="/pricing" className="text-sm text-slate-400 hover:text-white transition-colors">Pricing</Link></li>
-                <li><Link href="/about" className="text-sm text-slate-400 hover:text-white transition-colors">About & How It Works</Link></li>
-                <li><Link href="/subprocessors" className="text-sm text-slate-400 hover:text-white transition-colors">Service Providers</Link></li>
                 <li><Link href="/contact" className="text-sm text-slate-400 hover:text-white transition-colors">Contact Us</Link></li>
+                <li><Link href="/digital-delivery" className="text-sm text-slate-400 hover:text-white transition-colors">Delivery &amp; Shipping</Link></li>
+                <li><Link href="/refund" className="text-sm text-slate-400 hover:text-white transition-colors">Refund &amp; Cancellation</Link></li>
+                <li><Link href="/subprocessors" className="text-sm text-slate-400 hover:text-white transition-colors">Service Providers</Link></li>
               </ul>
             </div>
 
@@ -67,15 +54,26 @@ export default function Footer() {
               <ul className="space-y-4">
                 <li><Link href="/privacy" className="text-sm text-slate-400 hover:text-white transition-colors">Privacy Policy</Link></li>
                 <li><Link href="/terms" className="text-sm text-slate-400 hover:text-white transition-colors">Terms of Service</Link></li>
-                <li><Link href="/refund" className="text-sm text-slate-400 hover:text-white transition-colors">Refund & Cancellation</Link></li>
-                <li><Link href="/digital-delivery" className="text-sm text-slate-400 hover:text-white transition-colors">Digital Delivery</Link></li>
                 <li><Link href="/cookies" className="text-sm text-slate-400 hover:text-white transition-colors">Cookie Policy</Link></li>
+                <li>
+                  <button
+                    type="button"
+                    onClick={() => window.dispatchEvent(new Event("hirewiz:open-cookie-preferences"))}
+                    className="text-left text-sm text-slate-400 hover:text-white transition-colors"
+                  >
+                    Cookie Preferences
+                  </button>
+                </li>
               </ul>
             </div>
           </div>
           
-          <div className="flex flex-col md:flex-row items-center justify-between pt-8 border-t border-slate-700/60">
-            <p className="text-sm text-slate-400">
+          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between pt-8 border-t border-slate-700/60">
+            <div className="text-xs text-slate-400 leading-relaxed text-center md:text-left">
+              <p>HireWiz is operated by {SITE.operatorName}, trading as HireWiz.</p>
+              <p>{SITE.businessLocation} · <a href={`mailto:${SITE.supportEmail}`} className="hover:text-primary">{SITE.supportEmail}</a> · <a href={SITE.supportPhoneHref} className="hover:text-primary">{SITE.supportPhoneDisplay}</a></p>
+            </div>
+            <p className="text-sm text-slate-400 whitespace-nowrap">
               © {currentYear} HireWiz. All rights reserved.
             </p>
           </div>

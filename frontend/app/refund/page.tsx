@@ -1,11 +1,16 @@
-import PageHeader from "../../components/ui/PageHeader";
-import GlassCard from "../../components/ui/GlassCard";
-import FadeIn from "../../components/ui/FadeIn";
+import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowLeft, RefreshCcw } from "lucide-react";
 
-export const metadata = {
-  title: "Refund & Cancellation Policy - HireWiz",
+import PageHeader from "../../components/ui/PageHeader";
+import GlassCard from "../../components/ui/GlassCard";
+import FadeIn from "../../components/ui/FadeIn";
+import { SITE } from "../../lib/site";
+
+export const metadata: Metadata = {
+  title: "Refund & Cancellation Policy",
+  description: "Refund eligibility, cancellation, review, and payment-dispute information for HireWiz digital access.",
+  alternates: { canonical: "/refund" },
 };
 
 export default function RefundPolicyPage() {
@@ -14,81 +19,119 @@ export default function RefundPolicyPage() {
       <Link href="/" className="inline-flex items-center text-sm font-semibold text-slate-400 hover:text-primary transition-colors">
         <ArrowLeft size={16} className="mr-2" /> Back to Home
       </Link>
-      
-      <PageHeader 
+
+      <PageHeader
         badge="Legal & Compliance"
         title="Refund & Cancellation Policy"
-        subtitle="Last updated: July 2026"
+        subtitle={`Effective and last updated: ${SITE.policyEffectiveDate}`}
       />
 
       <FadeIn delay={0.1}>
-        <GlassCard className="p-8 md:p-10 text-slate-300 leading-relaxed space-y-8">
-          
-          <div className="flex items-center gap-3 text-primary border-b border-slate-700/60 pb-4 mb-6">
+        <GlassCard className="p-8 md:p-10 text-slate-300 leading-relaxed space-y-8" hoverEffect={false}>
+          <div className="flex items-center gap-3 text-primary border-b border-slate-700/60 pb-4">
             <RefreshCcw size={24} />
-            <h2 className="text-xl font-bold text-white m-0">Overview</h2>
+            <h2 className="text-xl font-bold text-white m-0">Transparent rules for digital access</h2>
           </div>
-          
+
           <p className="text-sm text-slate-400 m-0">
-            Last updated: 11 July 2026. HireWiz is operated by SAVALIYA HARSHIL YOGESHBHAI, an individual trading as HireWiz.
-          </p>
-          <p>
-            At HireWiz ("we", "our", or "us"), we are committed to providing a transparent and fair experience for our users. This Refund and Cancellation Policy outlines the conditions under which refunds are provided and how you can cancel your subscription or digital purchases. It does not limit any non-waivable rights you may have under applicable consumer-protection law.
+            Version {SITE.policyVersion}. HireWiz is operated by {SITE.operatorName}, trading as HireWiz. This Policy
+            does not limit any refund, dispute, or consumer right that cannot lawfully be waived.
           </p>
 
-          <h3 className="text-lg font-bold text-white mt-8 mb-4">1. Digital Goods and Services</h3>
-          <p>
-            HireWiz provides digital products, SaaS (Software as a Service) subscriptions, and AI-generated content (including resume parsing, job matching, and analytics). Because these are digital goods that are instantly accessed and consumed upon purchase, they are generally non-refundable unless otherwise specified by law or within this policy.
-          </p>
-
-          <h3 className="text-lg font-bold text-white mt-8 mb-4">2. Plans and Cancellation</h3>
-          <p>
-            HireWiz offers a <strong>Premium plan</strong> (a one-time payment that unlocks Premium for 30 days) and a one-time <strong>analysis-units pack</strong>. Premium does <strong>not</strong> store a card or mandate and does <strong>not</strong> charge you automatically — it simply expires after 30 days unless you choose to pay again.
-          </p>
-          <ul className="list-disc pl-6 space-y-2 mt-4 text-slate-400">
-            <li>Because there is no automatic renewal, there is no recurring charge to cancel.</li>
-            <li>You may end Premium access at any time from your Profile page, or by emailing <a href="mailto:work@hirewizhq.com" className="text-primary hover:underline">work@hirewizhq.com</a>. Ending it early does not by itself create a refund entitlement.</li>
-            <li>Analysis units are consumed as you use AI operations; used units are not refundable.</li>
-          </ul>
-
-          <h3 className="text-lg font-bold text-white mt-8 mb-4">3. Eligibility for Refunds</h3>
-          <p>
-            While digital goods are generally non-refundable, we may issue refunds in the following exceptional circumstances:
-          </p>
-          <ul className="list-disc pl-6 space-y-2 mt-4 text-slate-400">
-            <li><strong>Duplicate Charges:</strong> If you were accidentally charged twice for the same transaction due to a technical error.</li>
-            <li><strong>Service Unavailability:</strong> If our core services were completely inaccessible for an extended period (exceeding 72 hours) immediately following your purchase.</li>
-            <li><strong>Fraudulent Charges:</strong> If a purchase was made using your payment method without your authorization. (This may also be investigated by your bank and the payment processor used for your checkout.)</li>
-          </ul>
-
-          <h3 className="text-lg font-bold text-white mt-8 mb-4">4. How to Request a Refund</h3>
-          <p>
-            If you believe you are eligible for a refund based on the criteria above, you must submit a request within <strong>7 days</strong> of the original transaction date.
-          </p>
-          <p className="mt-4">
-            To request a refund, please email us at <strong>work@hirewizhq.com</strong> with the following information:
-          </p>
-          <ul className="list-disc pl-6 space-y-2 mt-4 text-slate-400">
-            <li>Your full name and registered email address.</li>
-            <li>Your order or transaction ID (provided in your receipt).</li>
-            <li>A detailed explanation of why you are requesting a refund.</li>
-          </ul>
-          <p className="mt-4">
-            Our team will review your request within 3-5 business days. If approved, the refund will be processed back to your original method of payment within 5-7 business days, depending on your bank's processing times.
-          </p>
-
-          <h3 className="text-lg font-bold text-white mt-8 mb-4">5. Payment Disputes and Chargebacks</h3>
-          <p>
-            If a chargeback or payment dispute is raised on your account, we may temporarily pause the affected paid features while the dispute is reviewed with you and the payment provider, and we will cooperate with that process in good faith. This does not affect your statutory dispute rights. We encourage you to contact us first at <a href="mailto:work@hirewizhq.com" className="text-primary hover:underline">work@hirewizhq.com</a> so we can resolve any issue directly.
-          </p>
-
-          <div className="mt-12 p-6 bg-slate-800/50 rounded-xl border border-slate-700/60">
-            <h4 className="text-white font-bold mb-2">Contact Us for Payment Issues</h4>
-            <p className="text-sm">
-              If you have any questions regarding this policy, or if you are having trouble with a recent transaction, please reach out to our billing team at <a href="mailto:work@hirewizhq.com" className="text-primary hover:underline">work@hirewizhq.com</a>.
+          <section>
+            <h3 className="text-lg font-bold text-white mb-4">1. Product covered</h3>
+            <p>
+              HireWiz currently sells one digital product for customers in India: a one-time Premium pass providing
+              30 days of access. It is not an automatically renewing subscription. HireWiz does not currently sell
+              standalone analysis-unit packs. Access is delivered to the purchasing account after confirmed payment;
+              no physical goods are shipped.
             </p>
-          </div>
+          </section>
 
+          <section>
+            <h3 className="text-lg font-bold text-white mb-4">2. Cancellation and expiry</h3>
+            <ul className="list-disc pl-6 space-y-2 text-slate-400">
+              <li>There is no recurring charge or renewal mandate to cancel. The pass expires at the end of its 30-day period unless you choose to buy another pass.</li>
+              <li>You can end Premium access early through Profile or by contacting support. Ending access early does not by itself create a refund entitlement.</li>
+              <li>Deleting your account ends access and removes active application data as described in the Privacy Policy; deletion does not automatically create a refund.</li>
+            </ul>
+          </section>
+
+          <section>
+            <h3 className="text-lg font-bold text-white mb-4">3. When a refund may be available</h3>
+            <p>We will review a refund request where:</p>
+            <ul className="list-disc pl-6 mt-4 space-y-2 text-slate-400">
+              <li>the same order was charged more than once because of a technical or processing error;</li>
+              <li>payment was confirmed but Premium access was not delivered, and support could not correct the activation;</li>
+              <li>a material HireWiz service failure substantially prevented use of the paid pass and support could not provide a reasonable remedy;</li>
+              <li>the payment was unauthorized, subject to reasonable identity, account, and payment-provider review; or</li>
+              <li>a refund is required by applicable law or expressly offered in the final order terms.</li>
+            </ul>
+            <p className="mt-4">
+              Because access is digital and begins after payment confirmation, a change of mind, unused time, or
+              dissatisfaction with informational AI output is generally not refundable after access is delivered,
+              except where applicable law or the circumstances above require otherwise.
+            </p>
+          </section>
+
+          <section>
+            <h3 className="text-lg font-bold text-white mb-4">4. How to request a refund</h3>
+            <p>
+              Email <a href={`mailto:${SITE.supportEmail}`} className="text-primary hover:underline">{SITE.supportEmail}</a>{" "}
+              from your registered email address within seven days of the charge, or as soon as reasonably possible
+              for an unauthorized charge or legal claim. Include:
+            </p>
+            <ul className="list-disc pl-6 mt-4 space-y-2 text-slate-400">
+              <li>your registered email address;</li>
+              <li>the order or transaction ID shown in the receipt or checkout confirmation;</li>
+              <li>the charge date and amount; and</li>
+              <li>a concise explanation and any relevant error details.</li>
+            </ul>
+            <p className="mt-4">
+              We aim to review a complete request and communicate a decision within three to five business days. We may
+              ask for limited additional information needed to verify the account, transaction, or claimed failure.
+            </p>
+          </section>
+
+          <section>
+            <h3 className="text-lg font-bold text-white mb-4">5. Approved refunds</h3>
+            <p>
+              An approved refund is initiated to the original payment method through the processor used for checkout.
+              HireWiz will communicate when it has initiated the refund; the bank, card network, UPI app, or processor
+              controls when the amount is finally posted. Their timing may vary and is outside HireWiz's control.
+            </p>
+            <p className="mt-4">
+              The refund amount will follow applicable law and the approved decision. Taxes and processing adjustments,
+              if any, will be handled according to the original transaction, applicable law, and processor rules.
+              HireWiz does not promise reimbursement of exchange-rate differences or third-party bank charges.
+            </p>
+          </section>
+
+          <section>
+            <h3 className="text-lg font-bold text-white mb-4">6. Payment disputes and chargebacks</h3>
+            <p>
+              You may use any bank, payment-provider, regulator, or consumer-dispute right available to you. If a
+              dispute is opened, we may temporarily pause the affected paid access while the transaction is reviewed
+              and provide relevant order, delivery, and account records to the payment provider. We will not suspend
+              unrelated rights in retaliation for a good-faith dispute. Contacting us first may allow a faster resolution.
+            </p>
+          </section>
+
+          <section>
+            <h3 className="text-lg font-bold text-white mb-4">7. Billing and grievance contact</h3>
+            <p>
+              Billing support: <a href={`mailto:${SITE.supportEmail}`} className="text-primary hover:underline">{SITE.supportEmail}</a>.
+              If the response does not resolve your concern, contact {SITE.grievanceContactName}, {SITE.grievanceContactRole},
+              using the details on the <Link href="/contact" className="text-primary hover:underline">Contact page</Link>.
+            </p>
+          </section>
+
+          <div className="pt-5 border-t border-slate-700/60 flex flex-wrap gap-4 text-xs font-semibold text-slate-400">
+            <Link href="/pricing" className="hover:text-primary">Pricing</Link>
+            <Link href="/digital-delivery" className="hover:text-primary">Digital Delivery &amp; Shipping</Link>
+            <Link href="/terms" className="hover:text-primary">Terms of Service</Link>
+            <Link href="/privacy" className="hover:text-primary">Privacy Policy</Link>
+          </div>
         </GlassCard>
       </FadeIn>
     </main>

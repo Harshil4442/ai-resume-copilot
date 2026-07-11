@@ -1,8 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException
+import os
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+from google.auth.transport import requests as google_requests
+from google.oauth2 import id_token as google_id_token
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import User, UserProfile, Resume, JobMatch, PaymentOrder
+from ..models import EntitlementLedger, User, UserProfile, Resume, JobMatch, PaymentOrder
 from ..schemas import (
     AuthLoginRequest,
     AuthGoogleLoginRequest,
@@ -13,8 +18,10 @@ from ..schemas import (
     UserProfileUpdate,
 )
 from ..security import create_access_token, get_current_user, hash_password, verify_password
+from ..rate_limiter import limiter
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+CURRENT_POLICY_VERSION = "2026-07-11"
 
 PROFILE_FIELDS = [
     ("full_name", "Full name"),
@@ -89,14 +96,23 @@ def _profile_response(profile: UserProfile, email: str) -> UserProfileResponse:
     )
 
 @router.post("/register", response_model=UserMeResponse)
-def register(payload: AuthRegisterRequest, db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+def register(request: Request, payload: AuthRegisterRequest, db: Session = Depends(get_db)):
     email = payload.email.strip().lower()
 
     exists = db.query(User).filter(User.email == email).first()
     if exists:
         raise HTTPException(status_code=409, detail="Email already registered")
 
-    u = User(email=email, password_hash=hash_password(payload.password))
+    accepted_at = datetime.now(timezone.utc)
+    u = User(
+        email=email,
+        password_hash=hash_password(payload.password),
+        terms_accepted_at=accepted_at,
+        terms_version=CURRENT_POLICY_VERSION,
+        privacy_version=CURRENT_POLICY_VERSION,
+        age_confirmed_at=accepted_at,
+    )
     db.add(u)
     db.commit()
     db.refresh(u)
@@ -105,7 +121,8 @@ def register(payload: AuthRegisterRequest, db: Session = Depends(get_db)):
     return UserMeResponse(id=u.id, email=u.email, tier=u.tier, ai_credits=u.ai_credits)
 
 @router.post("/login", response_model=AuthTokenResponse)
-def login(payload: AuthLoginRequest, db: Session = Depends(get_db)):
+@limiter.limit("10/minute")
+def login(request: Request, payload: AuthLoginRequest, db: Session = Depends(get_db)):
     email = payload.email.strip().lower()
 
     u = db.query(User).filter(User.email == email).first()
@@ -116,26 +133,60 @@ def login(payload: AuthLoginRequest, db: Session = Depends(get_db)):
     return AuthTokenResponse(access_token=token, token_type="bearer")
 
 @router.post("/google-login", response_model=AuthTokenResponse)
-def google_login(payload: AuthGoogleLoginRequest, db: Session = Depends(get_db)):
-    email = payload.email.strip().lower()
+@limiter.limit("10/minute")
+def google_login(request: Request, payload: AuthGoogleLoginRequest, db: Session = Depends(get_db)):
+    client_id = (os.getenv("GOOGLE_CLIENT_ID") or "").strip()
+    if not client_id:
+        raise HTTPException(status_code=503, detail="Google sign-in is not configured")
+
+    try:
+        claims = google_id_token.verify_oauth2_token(
+            payload.id_token,
+            google_requests.Request(),
+            client_id,
+        )
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=401, detail="Invalid Google identity token")
+
+    if claims.get("iss") not in {"accounts.google.com", "https://accounts.google.com"}:
+        raise HTTPException(status_code=401, detail="Invalid Google identity token")
+    if claims.get("email_verified") is not True:
+        raise HTTPException(status_code=401, detail="Google email is not verified")
+    email_claim = claims.get("email")
+    subject = claims.get("sub")
+    if not isinstance(email_claim, str) or not email_claim.strip() or not isinstance(subject, str):
+        raise HTTPException(status_code=401, detail="Invalid Google identity token")
+
+    email = email_claim.strip().lower()
+    name = claims.get("name") if isinstance(claims.get("name"), str) else ""
 
     # Find existing user
     u = db.query(User).filter(User.email == email).first()
     
     if not u:
-        # Register new user seamlessly with a placeholder hash (they can only login via Google, or reset password later)
-        # Grant 20 initial credits as a standard signup bonus
+        if not payload.registration_consent or payload.policy_version != CURRENT_POLICY_VERSION:
+            raise HTTPException(
+                status_code=403,
+                detail="Account registration consent is required before Google sign-in.",
+            )
+        # Google-only users have no usable local password. Their identity is
+        # re-verified by Google on every new OAuth sign-in.
+        accepted_at = datetime.now(timezone.utc)
         u = User(
             email=email,
-            password_hash=hash_password(payload.email + "_google_placeholder"),
-            ai_credits=20
+            password_hash="",
+            ai_credits=20,
+            terms_accepted_at=accepted_at,
+            terms_version=CURRENT_POLICY_VERSION,
+            privacy_version=CURRENT_POLICY_VERSION,
+            age_confirmed_at=accepted_at,
         )
         db.add(u)
         db.commit()
         db.refresh(u)
         
         # Create standard profile
-        profile = UserProfile(user_id=u.id, full_name=payload.name)
+        profile = UserProfile(user_id=u.id, full_name=name)
         db.add(profile)
         db.commit()
 
@@ -182,14 +233,42 @@ def delete_account(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Permanently deletes the current user's account and all associated data
-    (profile, resumes, job matches, and payment order records).
+    Deletes account/profile/resume/job data and unlinks retained financial
+    records. Payment, refund, and webhook audit rows are retained for fraud,
+    reconciliation, tax, and legal obligations without a live User foreign key.
     """
     uid = current_user.id
+    now = datetime.now(timezone.utc)
+
+    # End access before unlinking the ledger. This is an audit transition, not
+    # a refund and not a subscription cancellation.
+    active_entitlements = (
+        db.query(EntitlementLedger)
+        .filter(
+            EntitlementLedger.user_id == uid,
+            EntitlementLedger.status == "active",
+        )
+        .all()
+    )
+    for entitlement in active_entitlements:
+        entitlement.status = "ended_account_deleted"
+        entitlement.revoked_at = now
+        entitlement.user_id = None
+    db.query(EntitlementLedger).filter(EntitlementLedger.user_id == uid).update(
+        {EntitlementLedger.user_id: None}, synchronize_session=False
+    )
+
+    orders = db.query(PaymentOrder).filter(PaymentOrder.user_id == uid).all()
+    for order in orders:
+        if order.status in {"initializing", "created", "client_confirmed"}:
+            order.status = "customer_deleted"
+        order.active_attempt_key = None
+        order.customer_deleted_at = now
+        order.user_id = None
+
     db.query(JobMatch).filter(JobMatch.user_id == uid).delete(synchronize_session=False)
     db.query(Resume).filter(Resume.user_id == uid).delete(synchronize_session=False)
     db.query(UserProfile).filter(UserProfile.user_id == uid).delete(synchronize_session=False)
-    db.query(PaymentOrder).filter(PaymentOrder.user_id == uid).delete(synchronize_session=False)
     db.query(User).filter(User.id == uid).delete(synchronize_session=False)
     db.commit()
     return {"status": "deleted"}

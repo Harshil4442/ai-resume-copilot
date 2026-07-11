@@ -10,6 +10,14 @@ import GlassCard from "../components/ui/GlassCard";
 import BulletOptimizer from "../components/BulletOptimizer";
 import ScrollReveal from "../components/ui/ScrollReveal";
 import FloatingElement from "../components/ui/FloatingElement";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "AI-assisted resume analysis you review and control",
+  description:
+    "Compare your own resume with job-description text and review informational suggestions for wording, skills, market signals, and learning topics.",
+  alternates: { canonical: "/" },
+};
 
 export default function Home() {
   return (
@@ -19,24 +27,24 @@ export default function Home() {
       <section className="w-full max-w-[80rem] mx-auto px-6 md:px-8 pt-24 pb-16 md:pt-32 md:pb-24 text-center">
         <StaggerContainer staggerDelay={0.15}>
           <StaggerItem className="flex justify-center mb-6">
-            <ShimmerBadge href="/register">✨ Introducing AI-Powered Career OS</ShimmerBadge>
+            <ShimmerBadge href="/about">Self-service resume analysis</ShimmerBadge>
           </StaggerItem>
           
           <StaggerItem>
             <GradientHeading className="mb-6 max-w-4xl mx-auto text-5xl md:text-6xl lg:text-7xl">
-              Your career signal,<br className="hidden sm:block" /> measured and amplified.
+              Review your resume<br className="hidden sm:block" /> against the role you choose.
             </GradientHeading>
           </StaggerItem>
           
           <StaggerItem>
             <p className="text-lg md:text-xl text-slate-400 text-balance tracking-tight max-w-2xl mx-auto leading-relaxed mb-10">
-              HireWiz offers instant, AI-powered insights into your career trajectory. Parse your resume, match against job descriptions, and unlock personalized learning strategies.
+              Upload your own resume, compare it with job-description text, and review AI-assisted wording, skill-gap, market, and learning suggestions. You decide what is accurate and what to use.
             </p>
           </StaggerItem>
           
           <StaggerItem className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <AnimatedButton href="/register" showArrow>Start your transformation</AnimatedButton>
-            <AnimatedButton href="/dashboard" variant="secondary">Go to Dashboard</AnimatedButton>
+            <AnimatedButton href="/register" showArrow>Create a free account</AnimatedButton>
+            <AnimatedButton href="/pricing" variant="secondary">View public pricing</AnimatedButton>
           </StaggerItem>
         </StaggerContainer>
       </section>
@@ -102,7 +110,7 @@ export default function Home() {
             <Marquee pauseOnHover={true}>
               <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-950 border border-slate-800 shadow-sm">
                 <FileText className="text-blue-500" size={18} />
-                <span className="text-sm font-semibold text-slate-200">Parse resumes instantly</span>
+                <span className="text-sm font-semibold text-slate-200">Structure resume text</span>
               </div>
               <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-950 border border-slate-800 shadow-sm">
                 <Target className="text-amber-500" size={18} />
@@ -118,7 +126,7 @@ export default function Home() {
               </div>
               <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-950 border border-slate-800 shadow-sm">
                 <PenTool className="text-rose-500" size={18} />
-                <span className="text-sm font-semibold text-slate-200">Tailor resumes automatically</span>
+                <span className="text-sm font-semibold text-slate-200">Draft wording for your review</span>
               </div>
             </Marquee>
           </div>
@@ -139,7 +147,7 @@ export default function Home() {
               <ul className="space-y-4 mb-8">
                 <li className="flex items-start gap-3">
                   <CheckCircle2 className="text-emerald-500 mt-1" size={20} />
-                  <span className="text-slate-200 font-medium">Detect weak action verbs automatically</span>
+                  <span className="text-slate-200 font-medium">Identify weak action verbs for review</span>
                 </li>
                 <li className="flex items-start gap-3">
                   <CheckCircle2 className="text-emerald-500 mt-1" size={20} />
@@ -147,7 +155,7 @@ export default function Home() {
                 </li>
                 <li className="flex items-start gap-3">
                   <CheckCircle2 className="text-emerald-500 mt-1" size={20} />
-                  <span className="text-slate-200 font-medium">Generate rewritten alternatives instantly</span>
+                  <span className="text-slate-200 font-medium">Review AI-assisted wording alternatives</span>
                 </li>
               </ul>
               <AnimatedButton href="/register" variant="outline" showArrow>Try the full tool</AnimatedButton>
@@ -179,12 +187,12 @@ export default function Home() {
               <div className="h-12 w-12 rounded-xl bg-blue-100 flex items-center justify-center text-blue-600 mb-6">
                 <Target size={24} />
               </div>
-              <h3 className="text-2xl font-bold text-white mb-3">Precision Job Matching</h3>
+              <h3 className="text-2xl font-bold text-white mb-3">Job Description Comparison</h3>
               <p className="text-slate-400 leading-relaxed mb-6 flex-grow">
                 Paste any job description and let our AI compare it against your parsed resume. See a HireWiz compatibility estimate, likely missing skills, and a breakdown of how your resume aligns with the role's requirements.
               </p>
-              <Link href="/jobs" className="text-sm font-bold text-primary hover:text-blue-400 flex items-center gap-1 group">
-                Explore Job Match <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+              <Link href="/about" className="text-sm font-bold text-primary hover:text-blue-400 flex items-center gap-1 group">
+                See How It Works <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
               </Link>
             </GlassCard>
           </StaggerItem>
@@ -198,8 +206,8 @@ export default function Home() {
               <p className="text-slate-400 leading-relaxed mb-6 flex-grow text-sm">
                 Analyze a sample of recent job postings from third-party job-data providers to see which skills are frequently requested for your target role. Results are informational estimates.
               </p>
-              <Link href="/market" className="text-sm font-bold text-primary hover:text-blue-400 flex items-center gap-1 group">
-                View Trends <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+              <Link href="/about" className="text-sm font-bold text-primary hover:text-blue-400 flex items-center gap-1 group">
+                Read the Limitations <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
               </Link>
             </GlassCard>
           </StaggerItem>
@@ -211,10 +219,10 @@ export default function Home() {
               </div>
               <h3 className="text-xl font-bold text-white mb-3">Learning Strategies</h3>
               <p className="text-slate-400 leading-relaxed mb-6 flex-grow text-sm">
-                Get a personalized study plan based on your exact skill gaps. We recommend specific projects to build that prove you know what you're doing.
+                Review study topics and project ideas based on estimated gaps between your resume and a selected job description. Suggestions may be inaccurate and require your judgment.
               </p>
-              <Link href="/learning" className="text-sm font-bold text-primary hover:text-blue-400 flex items-center gap-1 group">
-                Plan Strategy <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+              <Link href="/about" className="text-sm font-bold text-primary hover:text-blue-400 flex items-center gap-1 group">
+                Learn About Suggestions <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
               </Link>
             </GlassCard>
           </StaggerItem>
@@ -230,8 +238,8 @@ export default function Home() {
                 <p className="text-slate-400 leading-relaxed mb-6 max-w-xl">
                   Upload your PDF and our extraction engine structures your experience into clear, reviewable sections so you can check how your resume reads. HireWiz does not produce an official ATS score.
                 </p>
-                <Link href="/resume" className="text-sm font-bold text-primary hover:text-blue-400 flex items-center gap-1 group/link">
-                  Parse Resume <ArrowRight className="h-4 w-4 transition-transform group-hover/link:translate-x-1" />
+                <Link href="/register" className="text-sm font-bold text-primary hover:text-blue-400 flex items-center gap-1 group/link">
+                  Create an Account <ArrowRight className="h-4 w-4 transition-transform group-hover/link:translate-x-1" />
                 </Link>
               </div>
             </GlassCard>
@@ -250,7 +258,7 @@ export default function Home() {
                 <Zap size={14} className="text-amber-400" /> Start free today
               </div>
               <h2 className="text-3xl md:text-5xl font-black tracking-tight text-white mb-6">
-                Ready to level up your career?
+                Ready to review your resume?
               </h2>
               <p className="text-lg text-slate-400 mb-10 text-balance">
                 Create a free account and use AI-assisted tools to review, structure, and improve your resume — you stay in control of every change.

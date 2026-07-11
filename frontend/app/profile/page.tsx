@@ -72,15 +72,15 @@ export default function ProfilePage() {
   const [acctBusy, setAcctBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  async function cancelPremium() {
-    if (!confirm("End your Premium access now? You will return to the free plan immediately.")) return;
+  async function endPremium() {
+    if (!confirm("End your current Premium access now? This pass does not renew automatically, and ending access early does not create a refund.")) return;
     setAcctBusy(true);
     setError(null);
     try {
-      await apiPostJson("/billing/cancel-subscription", {});
+      await apiPostJson("/billing/end-premium", {});
       const refreshed = await apiGet<UserProfile>("/auth/profile");
       setProfile(refreshed);
-      window.dispatchEvent(new Event("refresh_credits"));
+      window.dispatchEvent(new Event("refresh_analysis_units"));
     } catch (e: any) {
       setError(e?.message || "Could not cancel Premium.");
     } finally {
@@ -93,7 +93,6 @@ export default function ProfilePage() {
     setError(null);
     try {
       await apiPostJson("/auth/delete-account", {});
-      localStorage.removeItem("access_token");
       await signOut({ redirect: false });
       router.push("/register");
     } catch (e: any) {
@@ -341,20 +340,20 @@ export default function ProfilePage() {
                 <CheckCircle2 size={16} /> Saved
               </FadeIn>
             )}
-            <AnimatedButton disabled={saving} className="w-full md:w-48 py-3" showArrow={false}>
+            <AnimatedButton type="submit" disabled={saving} className="w-full md:w-48 py-3" showArrow={false}>
               {saving ? "Saving..." : <><Save size={18} className="mr-2 inline" /> Save Profile</>}
             </AnimatedButton>
           </div>
         </div>
       </form>
 
-      {/* Account & Subscription */}
+      {/* Account and paid access */}
       <StaggerContainer className="space-y-6">
         <StaggerItem>
           <GlassCard className="p-6 md:p-8" hoverEffect={false}>
             <div className="flex items-center gap-3 mb-6">
               <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center"><Crown size={20} /></div>
-              <h2 className="text-xl font-black text-white tracking-tighter">Subscription</h2>
+              <h2 className="text-xl font-black text-white tracking-tighter">Premium access</h2>
             </div>
             {profile?.tier === "premium" ? (
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -367,11 +366,11 @@ export default function ProfilePage() {
                   </div>
                 </div>
                 <button
-                  onClick={cancelPremium}
+                  onClick={endPremium}
                   disabled={acctBusy}
                   className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-slate-800 border border-slate-600 text-slate-200 text-sm font-semibold hover:bg-slate-700 transition disabled:opacity-50"
                 >
-                  <ShieldOff size={16} /> End Premium now
+                  <ShieldOff size={16} /> End current access
                 </button>
               </div>
             ) : (
@@ -394,7 +393,7 @@ export default function ProfilePage() {
               <h2 className="text-xl font-black text-white tracking-tighter">Delete Account</h2>
             </div>
             <p className="text-sm text-slate-400 mb-5 max-w-2xl">
-              Permanently delete your account and all associated data — profile, resumes, match history, and payment records. This cannot be undone.
+              Permanently delete your HireWiz profile, resumes, and match history. Limited payment records may be retained or pseudonymised where required for accounting, fraud prevention, disputes, or legal compliance. This cannot be undone.
             </p>
             {!confirmDelete ? (
               <button

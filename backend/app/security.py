@@ -1,4 +1,5 @@
 import os
+import sys
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -40,27 +41,25 @@ def _load_jwt_secret() -> str:
     the existing test suite keeps working without forcing every test to set
     an env var.
     """
+    is_test = bool(os.getenv("PYTEST_CURRENT_TEST")) or "pytest" in sys.modules
+    if is_test:
+        return (os.getenv("JWT_SECRET") or "test-only-secret-not-for-production").strip()
+
     secret = (os.getenv("JWT_SECRET") or "").strip()
+    app_env = (os.getenv("APP_ENV") or "production").strip().lower()
     if not secret:
-        if os.getenv("PYTEST_CURRENT_TEST"):
-            return "test-only-secret-not-for-production"
-        import logging
-        logging.warning("JWT_SECRET environment variable is not set. Using insecure default secret!")
-        return "default-insecure-secret-change-in-production-123456"
-    if len(secret) < 32 and not os.getenv("PYTEST_CURRENT_TEST"):
-        # Warn loudly but do not crash existing deployments using shorter
-        # secrets. Operators should rotate to a stronger value.
-        import warnings
-        warnings.warn(
-            "JWT_SECRET is shorter than 32 characters. "
-            "Rotate to a longer random secret for production security.",
-            stacklevel=2,
-        )
+        if app_env in {"development", "dev", "local"}:
+            return "hirewiz-local-development-secret-change-me"
+        raise RuntimeError("JWT_SECRET must be configured in non-development environments.")
+    if len(secret) < 32:
+        raise RuntimeError("JWT_SECRET must contain at least 32 characters.")
     return secret
 
 
 JWT_SECRET = _load_jwt_secret()
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
+if JWT_ALGORITHM not in {"HS256", "HS384", "HS512"}:
+    raise RuntimeError("JWT_ALGORITHM must be HS256, HS384, or HS512.")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "10080"))
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")

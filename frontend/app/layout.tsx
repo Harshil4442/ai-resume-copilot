@@ -1,21 +1,24 @@
 import { Inter } from 'next/font/google';
 import "./globals.css";
-import Script from "next/script";
 import Nav from "../components/Nav";
 import Footer from "../components/Footer";
 import SessionProviderWrapper from "../components/SessionProviderWrapper";
 import AnimatedBackground from "../components/ui/AnimatedBackground";
+import AnalyticsConsent from "../components/AnalyticsConsent";
 import { Metadata } from 'next';
+import { SITE } from "../lib/site";
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://www.hirewizhq.com"),
-  title: "HireWiz — AI-assisted resume analysis you review and control",
+  metadataBase: new URL(SITE.canonicalUrl),
+  title: {
+    default: "HireWiz — AI-assisted resume analysis you review and control",
+    template: "%s — HireWiz",
+  },
   description:
     "HireWiz is self-service, AI-assisted software to analyze and improve your own resume: compatibility estimates, skill-gap analysis, market insights, and learning suggestions. Results are informational.",
   applicationName: "HireWiz",
-  robots: { index: true, follow: true },
   openGraph: {
     type: "website",
     url: "https://www.hirewizhq.com",
@@ -32,32 +35,31 @@ export const metadata: Metadata = {
   },
 };
 
-// Google Analytics 4 measurement ID. Override via env in deployments where
-// you don't want analytics (e.g. staging) by setting NEXT_PUBLIC_GA_ID="".
-const GA_MEASUREMENT_ID =
-  process.env.NEXT_PUBLIC_GA_ID ?? "G-6N789ZRNER";
+const GA_MEASUREMENT_ID = process.env.NEXT_PUBLIC_GA_ID?.trim() || null;
+
+const softwareApplicationJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: SITE.name,
+  url: SITE.canonicalUrl,
+  applicationCategory: "BusinessApplication",
+  operatingSystem: "Web",
+  description:
+    "Self-service, AI-assisted software for reviewing a user's own resume, comparing it with job-description text, and generating informational suggestions.",
+  provider: {
+    "@type": "Person",
+    name: SITE.operatorName,
+  },
+};
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${inter.variable} font-sans`}>
       <head>
-        {GA_MEASUREMENT_ID ? (
-          <>
-            {/* Google tag (gtag.js) */}
-            <Script
-              src={`https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}`}
-              strategy="afterInteractive"
-            />
-            <Script id="gtag-init" strategy="afterInteractive">
-              {`
-                window.dataLayer = window.dataLayer || [];
-                function gtag(){dataLayer.push(arguments);}
-                gtag('js', new Date());
-                gtag('config', '${GA_MEASUREMENT_ID}');
-              `}
-            </Script>
-          </>
-        ) : null}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareApplicationJsonLd) }}
+        />
       </head>
       <body className="flex flex-col min-h-screen text-white selection:bg-primary/20 selection:text-primary">
         <SessionProviderWrapper>
@@ -65,6 +67,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <Nav />
           <div className="flex-grow flex flex-col pt-14">{children}</div>
           <Footer />
+          <AnalyticsConsent gaMeasurementId={GA_MEASUREMENT_ID} />
         </SessionProviderWrapper>
       </body>
     </html>

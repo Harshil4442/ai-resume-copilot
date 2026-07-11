@@ -1,580 +1,846 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import Script from "next/script";
-import { PayPalScriptProvider, PayPalButtons } from "@paypal/react-paypal-js";
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  AlertCircle,
+  CheckCircle2,
+  CircleGauge,
+  Clock3,
+  Crown,
+  ExternalLink,
+  FileText,
+  Lock,
+  RefreshCw,
+  Shield,
+  ShoppingBag,
+} from "lucide-react";
 import { apiGet, apiPostJson } from "../../lib/api";
 import PageHeader from "../../components/ui/PageHeader";
 import GlassCard from "../../components/ui/GlassCard";
-import AnimatedButton from "../../components/ui/AnimatedButton";
 import FadeIn from "../../components/ui/FadeIn";
-import StaggerContainer, { StaggerItem } from "../../components/ui/StaggerContainer";
-import { CreditCard, Zap, CheckCircle2, Shield, Globe, MapPin, AlertCircle, Crown, Lock, Map, AlertTriangle } from "lucide-react";
-import { COUNTRIES } from "../../lib/countries";
 
-const PAYPAL_CLIENT_ID = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID || "test";
-const CASHFREE_MODE = process.env.NEXT_PUBLIC_CASHFREE_MODE || "sandbox";
-// The global (USD/PayPal) lane stays hidden until an international provider is
-// approved and activated for production.
-const ENABLE_GLOBAL_PAYPAL = false;
+const RAZORPAY_CHECKOUT_SRC = "https://checkout.razorpay.com/v1/checkout.js";
+const SUPPORTED_SKUS = ["premium_30d"] as const;
+const CONFIRMATION_ATTEMPTS = 24;
+const CONFIRMATION_INTERVAL_MS = 2500;
+
+type SupportedSku = (typeof SUPPORTED_SKUS)[number];
+type CheckoutPhase = "idle" | "opening" | "confirming" | "pending" | "confirmed";
+
+interface BillingProduct {
+  sku: SupportedSku;
+  name: string;
+  description: string;
+  amount_minor: number;
+  amount_display: string;
+  currency: "INR";
+  billing_type: "one_time";
+  duration_days: number;
+  auto_renews: false;
+  catalog_visible: boolean;
+  enabled_for_purchase: boolean;
+}
+
+interface BillingCatalog {
+  catalog_version: string;
+  market: "IN";
+  checkout_enabled: boolean;
+  provider: "razorpay" | null;
+  products: BillingProduct[];
+}
+
+interface CreateOrderResponse {
+  order_id: string;
+  provider: "razorpay";
+  provider_order_id: string;
+  key_id: string;
+  amount_minor: number;
+  currency: "INR";
+  name: string;
+  description: string;
+  prefill?: {
+    email?: string;
+  };
+}
+
+interface BillingOrderStatus {
+  order_id: string;
+  payment_reference?: string | null;
+  sku: SupportedSku;
+  status: "pending" | "paid" | "failed" | "refunded";
+  fulfilled: boolean;
+  amount_minor: number;
+  currency: "INR";
+  created_at: string;
+  paid_at: string | null;
+  refunded_at: string | null;
+}
+
+interface RazorpaySuccessResponse {
+  razorpay_payment_id: string;
+  razorpay_order_id: string;
+  razorpay_signature: string;
+}
+
+interface RazorpayFailureResponse {
+  error?: {
+    description?: string;
+  };
+}
+
+interface RazorpayOptions {
+  key: string;
+  amount: number;
+  currency: string;
+  name: string;
+  description: string;
+  order_id: string;
+  prefill?: {
+    email?: string;
+  };
+  handler: (response: RazorpaySuccessResponse) => void;
+  modal: {
+    confirm_close: boolean;
+    ondismiss: () => void;
+  };
+  retry: {
+    enabled: boolean;
+  };
+  theme: {
+    color: string;
+  };
+}
+
+interface RazorpayCheckout {
+  open: () => void;
+  on: (event: "payment.failed", callback: (response: RazorpayFailureResponse) => void) => void;
+}
+
+declare global {
+  interface Window {
+    Razorpay?: new (options: RazorpayOptions) => RazorpayCheckout;
+  }
+}
+
+let checkoutScriptPromise: Promise<void> | null = null;
+
+function isSupportedSku(value: string): value is SupportedSku {
+  return SUPPORTED_SKUS.includes(value as SupportedSku);
+}
+
+function loadHostedCheckout(): Promise<void> {
+  if (typeof window === "undefined") {
+    return Promise.reject(new Error("Checkout is available only in a browser."));
+  }
+  if (window.Razorpay) return Promise.resolve();
+  if (checkoutScriptPromise) return checkoutScriptPromise;
+
+  checkoutScriptPromise = new Promise<void>((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = RAZORPAY_CHECKOUT_SRC;
+    script.async = true;
+    script.onload = () => {
+      if (window.Razorpay) {
+        resolve();
+      } else {
+        checkoutScriptPromise = null;
+        reject(new Error("The hosted checkout did not initialize."));
+      }
+    };
+    script.onerror = () => {
+      checkoutScriptPromise = null;
+      script.remove();
+      reject(new Error("The hosted checkout could not be loaded."));
+    };
+    document.body.appendChild(script);
+  });
+
+  return checkoutScriptPromise;
+}
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
+function formatPrice(amountMinor: number, currency: string): string {
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency,
+    maximumFractionDigits: amountMinor % 100 === 0 ? 0 : 2,
+  }).format(amountMinor / 100);
+}
+
+function productFacts(product: BillingProduct): string[] {
+  return [
+    `${product.duration_days} days of Premium access`,
+    "Unlimited AI-assisted operations during the access period",
+    "One-time payment with no automatic renewal",
+    "No free trial or stored payment mandate",
+  ];
+}
+
+function wait(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+}
 
 export default function BillingPage() {
-  const router = useRouter();
-  const [region, setRegion] = useState<"global" | "india">("india");
-  const [selectedCountry, setSelectedCountry] = useState<string>("");
-  const [gpsCountry, setGpsCountry] = useState<string | null>(null);
-  const [showWarning, setShowWarning] = useState(false);
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const [selectedPlan, setSelectedPlan] = useState<"subscription" | "topup">("subscription");
-  const [paymentSuccess, setPaymentSuccess] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const mountedRef = useRef(true);
+  const pollRunRef = useRef(0);
+  const [catalog, setCatalog] = useState<BillingCatalog | null>(null);
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [selectedSku, setSelectedSku] = useState<SupportedSku | null>(null);
+  const [currentTier, setCurrentTier] = useState<string | null>(null);
+  const [analysisUnits, setAnalysisUnits] = useState(0);
+  const [indiaBillingConfirmed, setIndiaBillingConfirmed] = useState(false);
+  const [phase, setPhase] = useState<CheckoutPhase>("idle");
+  const [currentOrder, setCurrentOrder] = useState<BillingOrderStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [currentTier, setCurrentTier] = useState<string>("free");
-  const [creditBalance, setCreditBalance] = useState<number>(0);
-  const [phone, setPhone] = useState<string>("");
 
-  useEffect(() => {
-    // Get GPS location
-    if ("geolocation" in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        async (position) => {
-          try {
-            const { latitude, longitude } = position.coords;
-            const res = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=en`);
-            const data = await res.json();
-            if (data.countryCode) {
-              setGpsCountry(data.countryCode);
-              // Auto select if first time
-              setSelectedCountry(data.countryCode);
-              setRegion(data.countryCode === "IN" ? "india" : "global");
-            }
-          } catch (err) {
-            console.error("Geocoding failed", err);
-          }
-        },
-        (error) => {
-          console.error("GPS access denied or failed", error);
-        }
-      );
-    }
+  const refreshProfile = useCallback(async () => {
+    const profile = await apiGet<{ tier?: string; ai_credits?: number }>("/auth/profile");
+    if (!mountedRef.current) return;
+    setCurrentTier(profile.tier || "free");
+    setAnalysisUnits(profile.ai_credits ?? 0);
   }, []);
 
-  const handleCountryChange = (code: string) => {
-    setSelectedCountry(code);
-    if (gpsCountry && code !== gpsCountry) {
-      setShowWarning(true);
-    } else {
-      setRegion(code === "IN" ? "india" : "global");
-    }
-  };
+  useEffect(() => {
+    mountedRef.current = true;
 
-  const confirmCountryMismatch = () => {
-    setShowWarning(false);
-    setRegion(selectedCountry === "IN" ? "india" : "global");
-  };
+    apiGet<BillingCatalog>("/public/billing/catalog")
+      .then((response) => {
+        if (!mountedRef.current) return;
+        if (response.market !== "IN" || typeof response.catalog_version !== "string") {
+          throw new Error("The India billing catalog is temporarily unavailable.");
+        }
+        const products = Array.isArray(response.products)
+          ? response.products.filter(
+              (product): product is BillingProduct =>
+                Boolean(product) &&
+                isSupportedSku(product.sku) &&
+                product.currency === "INR" &&
+                product.billing_type === "one_time" &&
+                product.auto_renews === false &&
+                Number.isInteger(product.amount_minor) &&
+                product.amount_minor > 0,
+            )
+          : [];
+        setCatalog({ ...response, products });
+      })
+      .catch((catalogError: unknown) => {
+        if (!mountedRef.current) return;
+        setError(
+          getErrorMessage(
+            catalogError,
+            "Billing information is temporarily unavailable. No checkout has been started.",
+          ),
+        );
+      })
+      .finally(() => {
+        if (mountedRef.current) setCatalogLoading(false);
+      });
 
-  const cancelCountryMismatch = () => {
-    setShowWarning(false);
-    if (gpsCountry) {
-      setSelectedCountry(gpsCountry);
-      setRegion(gpsCountry === "IN" ? "india" : "global");
-    }
-  };
+    refreshProfile().catch(() => {
+      // Authentication middleware owns signed-out navigation. A catalog can
+      // still be shown safely if profile refresh is momentarily unavailable.
+    });
+
+    return () => {
+      mountedRef.current = false;
+      pollRunRef.current += 1;
+    };
+  }, [refreshProfile]);
+
+  const visibleProducts = useMemo(() => {
+    if (!catalog) return [];
+    return catalog.products.filter((product) => product.catalog_visible);
+  }, [catalog]);
+
+  const selectedProduct = useMemo(
+    () => visibleProducts.find((product) => product.sku === selectedSku) ?? null,
+    [selectedSku, visibleProducts],
+  );
+
+  const checkoutEnabled = Boolean(
+    catalog?.checkout_enabled && catalog.provider === "razorpay",
+  );
+  const purchaseAllowed = Boolean(
+    checkoutEnabled &&
+      selectedProduct?.enabled_for_purchase &&
+      currentTier === "free" &&
+      indiaBillingConfirmed,
+  );
+  const checkoutBusy = phase === "opening" || phase === "confirming";
+
+  const markConfirmed = useCallback(
+    async (order: BillingOrderStatus) => {
+      if (!mountedRef.current) return;
+      setCurrentOrder(order);
+      setPhase("confirmed");
+      setError(null);
+      window.dispatchEvent(new Event("refresh_analysis_units"));
+      try {
+        await refreshProfile();
+      } catch {
+        // The verified order status is authoritative. A later profile refresh
+        // will pick up the entitlement if this request briefly fails.
+      }
+    },
+    [refreshProfile],
+  );
 
   useEffect(() => {
-    let mounted = true;
-    apiGet<any>("/auth/profile")
-      .then((data) => {
-        if (mounted) {
-          setCurrentTier(data.tier || "free");
-          setCreditBalance(data.ai_credits ?? 0);
-          setPhone(data.phone || "");
+    let cancelled = false;
+    apiGet<BillingOrderStatus>("/billing/recent-order")
+      .then(async (order) => {
+        if (cancelled || !mountedRef.current) return;
+        if (order.status === "paid" && order.fulfilled) {
+          await markConfirmed(order);
+          return;
         }
+        setCurrentOrder(order);
+        if (order.status === "pending") setPhase("pending");
       })
-      .catch((err) => {
-        console.error("Failed to load profile for billing page:", err);
+      .catch(() => {
+        // No recent order is the normal first-purchase state.
       });
     return () => {
-      mounted = false;
+      cancelled = true;
     };
-  }, []);
+  }, [markConfirmed]);
 
-  // When the customer returns from Cashfree checkout, confirm the payment.
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const returnedOrderId = params.get("order_id");
-    if (!returnedOrderId) return;
+  const pollOrder = useCallback(
+    async (orderId: string) => {
+      const run = ++pollRunRef.current;
+      setPhase("confirming");
+      setError(null);
 
-    setLoading(true);
-    apiPostJson<{ status: string; type?: string }>("/billing/cashfree/verify-payment", { order_id: returnedOrderId })
-      .then((r) => {
-        if (r.status === "success") {
-          setPaymentSuccess(true);
-          window.dispatchEvent(new Event("refresh_credits"));
-          setTimeout(() => router.push("/dashboard"), 3000);
-        } else {
-          setError("Your payment is still processing. If you were charged, your access will activate shortly.");
+      for (let attempt = 0; attempt < CONFIRMATION_ATTEMPTS; attempt += 1) {
+        if (!mountedRef.current || pollRunRef.current !== run) return;
+
+        try {
+          const order = await apiGet<BillingOrderStatus>(`/billing/orders/${encodeURIComponent(orderId)}`);
+          if (!mountedRef.current || pollRunRef.current !== run) return;
+          setCurrentOrder(order);
+
+          if (order.status === "paid" && order.fulfilled) {
+            await markConfirmed(order);
+            return;
+          }
+          if (order.status === "failed") {
+            setPhase("idle");
+            setError("The payment was not completed. Your HireWiz access was not changed.");
+            return;
+          }
+          if (order.status === "refunded") {
+            setPhase("idle");
+            setError("This order was refunded and did not activate paid access.");
+            return;
+          }
+        } catch (statusError: unknown) {
+          if (attempt === CONFIRMATION_ATTEMPTS - 1) {
+            setError(
+              getErrorMessage(
+                statusError,
+                "We could not read the order status. Contact support if your account is not updated.",
+              ),
+            );
+          }
         }
-      })
-      .catch((err: any) => setError(err.message || "Could not verify your payment. Please contact support with your order ID."))
-      .finally(() => {
-        setLoading(false);
-        window.history.replaceState({}, "", "/billing");
-      });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
-  const planDetails = {
-    subscription: {
-      title: "Premium Plan",
-      price: region === "india" ? "₹999" : "$15",
-      period: "monthly",
-      features: [
-        "Unlimited job match reports",
-        "Unlimited Ask AI assistant queries",
-        "Full market skill gap analyses",
-        "Custom learning paths & projects",
-      ],
-    },
-    topup: {
-      title: "Credits Pack",
-      price: region === "india" ? "₹99" : "$3.99",
-      period: "one-time",
-      features: [
-        "25 AI Operation credits instantly",
-        "Credits never expire",
-        "Use on matches, chats, and learning",
-        "Perfect for casual job hunters",
-      ],
-    },
-  };
+        await wait(CONFIRMATION_INTERVAL_MS);
+      }
 
-  async function createOrder() {
-    setError(null);
-    try {
-      const payload = {
-        type: selectedPlan,
-        currency: "USD",
-        credits: selectedPlan === "topup" ? 25 : 0,
-      };
-      const res = await apiPostJson<{ order_id: string }>("/billing/paypal/create-order", payload);
-      return res.order_id;
-    } catch (err: any) {
-      setError(err.message || "Failed to initialize PayPal order.");
-      throw err;
-    }
-  }
-
-  async function onApprove(data: any) {
-    setLoading(true);
-    setError(null);
-    try {
-      const payload = {
-        order_id: data.orderID,
-        type: selectedPlan,
-        credits: selectedPlan === "topup" ? 25 : 0,
-      };
-      await apiPostJson("/billing/paypal/capture-order", payload);
-      setPaymentSuccess(true);
-      window.dispatchEvent(new Event("refresh_credits"));
-      setTimeout(() => {
-        router.push("/dashboard");
-      }, 3000);
-    } catch (err: any) {
-      setError(err.message || "Payment capture failed. Contact support.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleCashfreeCheckout() {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await apiPostJson<{ payment_session_id: string; order_id: string; mode: string }>(
-        "/billing/cashfree/create-order",
-        { type: selectedPlan, customer_phone: phone || undefined }
+      if (!mountedRef.current || pollRunRef.current !== run) return;
+      setPhase("pending");
+      setError(
+        "Payment confirmation is taking longer than usual. If you were charged, do not pay again. Use “Check payment status” below or contact billing support with the order ID.",
       );
+    },
+    [markConfirmed],
+  );
 
-      // Mock mode (no live Cashfree keys yet): confirm directly so the flow is testable.
-      if (res.mode === "mock" || res.payment_session_id.startsWith("mock_")) {
-        await apiPostJson("/billing/cashfree/verify-payment", { order_id: res.order_id });
-        setPaymentSuccess(true);
-        window.dispatchEvent(new Event("refresh_credits"));
-        setTimeout(() => router.push("/dashboard"), 3000);
-        return;
+  const handleCheckout = useCallback(async () => {
+    if (!selectedProduct || !purchaseAllowed || checkoutBusy) return;
+
+    setPhase("opening");
+    setError(null);
+    setCurrentOrder(null);
+
+    try {
+      // The browser sends only an allowlisted SKU. Amount, currency and
+      // entitlements are selected and locked by the server.
+      const order = await apiPostJson<CreateOrderResponse>("/billing/orders", {
+        sku: selectedProduct.sku,
+        billing_country: "IN",
+      });
+
+      if (
+        order.provider !== "razorpay" ||
+        !order.order_id ||
+        !order.provider_order_id ||
+        !order.key_id ||
+        order.currency !== selectedProduct.currency ||
+        order.amount_minor !== selectedProduct.amount_minor
+      ) {
+        throw new Error("Checkout configuration changed. Refresh this page before trying again.");
       }
 
-      const cashfreeFactory = (window as any).Cashfree;
-      if (!cashfreeFactory) {
-        setError("Payment library is still loading. Please wait a moment and try again.");
-        return;
-      }
-      const cashfree = cashfreeFactory({ mode: CASHFREE_MODE });
-      // Redirects to Cashfree, then back to /billing?order_id=... where we verify.
-      await cashfree.checkout({ paymentSessionId: res.payment_session_id, redirectTarget: "_self" });
-    } catch (err: any) {
-      setError(err.message || "Failed to start checkout. Please try again.");
-    } finally {
-      setLoading(false);
+      setCurrentOrder({
+        order_id: order.order_id,
+        sku: selectedProduct.sku,
+        status: "pending",
+        fulfilled: false,
+        amount_minor: order.amount_minor,
+        currency: order.currency,
+        created_at: new Date().toISOString(),
+        paid_at: null,
+        refunded_at: null,
+      });
+
+      // The provider script is loaded only after the backend confirms that
+      // checkout is approved, enabled and configured, and creates an order.
+      await loadHostedCheckout();
+      if (!window.Razorpay) throw new Error("The hosted checkout is unavailable.");
+
+      let successReported = false;
+      const checkout = new window.Razorpay({
+        key: order.key_id,
+        amount: order.amount_minor,
+        currency: order.currency,
+        name: order.name,
+        description: order.description,
+        order_id: order.provider_order_id,
+        prefill: order.prefill?.email ? { email: order.prefill.email } : undefined,
+        handler: (response) => {
+          successReported = true;
+          setPhase("confirming");
+          // Send the provider callback fields for server-side HMAC verification,
+          // but never treat this browser callback as fulfilment authority. The
+          // verified webhook remains the only path that can grant access.
+          void apiPostJson(`/billing/orders/${encodeURIComponent(order.order_id)}/checkout-result`, {
+            razorpay_payment_id: response.razorpay_payment_id,
+            razorpay_order_id: response.razorpay_order_id,
+            razorpay_signature: response.razorpay_signature,
+          })
+            .catch(() => {
+              // A delayed callback-verification request must not tempt the user
+              // to pay twice. Status polling can still observe the webhook.
+              if (mountedRef.current) {
+                setError("Checkout returned successfully. Waiting for verified server confirmation…");
+              }
+            });
+          void pollOrder(order.order_id);
+        },
+        modal: {
+          confirm_close: true,
+          ondismiss: () => {
+            if (successReported) return;
+            setPhase("pending");
+            setError(
+              "Checkout was closed. No payment is assumed. If you completed a payment, check the server status before trying again.",
+            );
+          },
+        },
+        retry: { enabled: true },
+        theme: { color: "#2563eb" },
+      });
+
+      checkout.on("payment.failed", (response) => {
+        setPhase("pending");
+        setError(
+          response.error?.description ||
+            "The payment attempt was not completed. Your HireWiz access was not changed.",
+        );
+      });
+      checkout.open();
+    } catch (checkoutError: unknown) {
+      setPhase("idle");
+      setError(
+        getErrorMessage(
+          checkoutError,
+          "Checkout could not be started. No payment was initiated.",
+        ),
+      );
     }
+  }, [checkoutBusy, pollOrder, purchaseAllowed, selectedProduct]);
+
+  const checkCurrentOrder = useCallback(() => {
+    if (currentOrder?.order_id) void pollOrder(currentOrder.order_id);
+  }, [currentOrder?.order_id, pollOrder]);
+
+  if (phase === "confirmed" && currentOrder) {
+    return (
+      <main className="w-full max-w-[64rem] mx-auto px-4 sm:px-6 md:px-8 py-10">
+        <FadeIn>
+          <GlassCard
+            className="p-8 md:p-12 text-center border-emerald-800 bg-emerald-950/30"
+            hoverEffect={false}
+          >
+            <div className="w-16 h-16 mx-auto rounded-full bg-emerald-900/60 text-emerald-300 flex items-center justify-center mb-6">
+              <CheckCircle2 size={32} />
+            </div>
+            <h1 className="text-3xl font-black text-white tracking-tight">Payment confirmed</h1>
+            <p className="mt-3 text-slate-300 max-w-xl mx-auto">
+              The server received verified payment confirmation and activated the purchased HireWiz access.
+            </p>
+            <p className="mt-4 text-xs text-slate-400 break-all">
+              Order reference: {currentOrder.order_id}
+            </p>
+            {currentOrder.payment_reference ? (
+              <p className="mt-1 text-xs text-slate-400 break-all">
+                Payment reference: {currentOrder.payment_reference}
+              </p>
+            ) : null}
+            <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
+              <Link
+                href="/dashboard"
+                className="inline-flex items-center justify-center rounded-xl bg-primary px-5 py-3 text-sm font-bold text-white hover:bg-primary/90"
+              >
+                Continue to dashboard
+              </Link>
+              <Link
+                href="/contact"
+                className="inline-flex items-center justify-center rounded-xl border border-slate-700 px-5 py-3 text-sm font-bold text-slate-200 hover:bg-slate-800"
+              >
+                Billing support
+              </Link>
+            </div>
+          </GlassCard>
+        </FadeIn>
+      </main>
+    );
   }
 
   return (
-    <main className="w-full max-w-[80rem] mx-auto px-4 sm:px-6 md:px-8 py-8 space-y-10">
-      <Script src="https://sdk.cashfree.com/js/v3/cashfree.js" strategy="afterInteractive" />
-      
-      <PageHeader 
-        badge="Commercial Account"
-        title="Upgrade your Career Command Center."
-        subtitle="Select a commercial tier to unlock advanced AI parsing, job matches, and market trend tracking."
+    <main className="w-full max-w-[76rem] mx-auto px-4 sm:px-6 md:px-8 py-8 space-y-10">
+      <PageHeader
+        badge="Account billing"
+        title="Manage your HireWiz access."
+        subtitle="India-only pricing in INR. Purchases are one-time, do not auto-renew, and are delivered digitally after verified payment confirmation."
       />
 
-      {/* Current Status Bar */}
-      <GlassCard className="p-6 md:p-8 bg-gradient-to-r from-slate-900 to-blue-950 border-slate-800 text-white flex flex-col md:flex-row items-start md:items-center justify-between gap-6 overflow-hidden relative" hoverEffect={false}>
-        <div className="absolute top-0 right-0 w-64 h-64 bg-primary/20 blur-3xl rounded-full -mr-20 -mt-20 pointer-events-none"></div>
-        
-        <div className="relative z-10 flex items-center gap-5">
-          <div className="w-14 h-14 rounded-2xl bg-slate-950/10 border border-white/20 flex items-center justify-center backdrop-blur-sm">
-            {currentTier === "premium" ? <Crown className="text-amber-400" size={28} /> : <Zap className="text-blue-400" size={28} />}
+      <GlassCard
+        className="p-6 md:p-8 bg-gradient-to-r from-slate-900 to-blue-950 border-slate-800 text-white flex flex-col md:flex-row items-start md:items-center justify-between gap-6"
+        hoverEffect={false}
+      >
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center">
+            {currentTier === "premium" ? (
+              <Crown className="text-amber-400" size={24} />
+            ) : (
+              <CircleGauge className="text-blue-400" size={24} aria-hidden="true" />
+            )}
           </div>
           <div>
-            <div className="text-[10px] uppercase tracking-widest font-bold text-slate-400 mb-1">Current Plan</div>
-            <h2 className="text-2xl font-black tracking-tight text-white flex items-center gap-2">
-              {currentTier === "premium" ? "Premium Access Active" : "Free Tier Active"}
+            <div className="text-[10px] uppercase tracking-widest font-bold text-slate-400">Current access</div>
+            <h2 className="text-xl font-black tracking-tight text-white">
+              {currentTier === "premium"
+                ? "Premium active"
+                : currentTier === "free"
+                  ? "Free access"
+                  : "Checking account status…"}
             </h2>
           </div>
         </div>
-        
-        <div className="relative z-10 bg-black/30 border border-white/10 px-6 py-4 rounded-2xl flex items-center gap-6 w-full md:w-auto">
-          <div>
-            <div className="text-[10px] uppercase tracking-wider font-bold text-slate-400 mb-1">Available Credits</div>
-            <div className="text-3xl font-black text-white">
-              {currentTier === "premium" ? "∞" : creditBalance}
-            </div>
-          </div>
-          <div className="w-px h-10 bg-slate-950/10"></div>
-          <div className="text-xs text-slate-400 font-bold max-w-[120px] leading-snug">
-            {currentTier === "premium" ? "Unlimited Operations" : "Pay-As-You-Go Operations"}
+        <div className="rounded-xl border border-slate-700 bg-slate-950/40 px-5 py-3">
+          <div className="text-[10px] uppercase tracking-widest font-bold text-slate-400">Analysis units</div>
+          <div className="mt-1 text-xl font-black text-white">
+            {currentTier === "premium"
+              ? "Unlimited while active"
+              : currentTier === "free"
+                ? analysisUnits
+                : "—"}
           </div>
         </div>
       </GlassCard>
 
-      {paymentSuccess && (
-        <FadeIn>
-          <GlassCard className="p-10 text-center bg-emerald-900/30/50 border-emerald-800" hoverEffect={false}>
-            <div className="w-20 h-20 mx-auto rounded-full bg-emerald-100 flex items-center justify-center text-emerald-400 mb-6">
-              <CheckCircle2 size={40} />
-            </div>
-            <h2 className="text-3xl font-black text-white tracking-tighter mb-2">Payment Completed!</h2>
-            <p className="text-slate-300 font-medium max-w-md mx-auto">Your tier and credit privileges have been successfully activated. We are redirecting you to your dashboard...</p>
-          </GlassCard>
-        </FadeIn>
-      )}
-
       {error && (
-        <FadeIn>
-          <div className="flex items-center gap-2 text-sm text-rose-400 bg-rose-900/30 border border-rose-800 rounded-xl px-4 py-3 shadow-sm max-w-4xl mx-auto">
-            <AlertCircle size={16} /> {error}
-          </div>
-        </FadeIn>
-      )}
-
-      {!paymentSuccess && (
-        <div className="grid grid-cols-1 lg:grid-cols-[1.3fr_1fr] gap-8">
-          <div className="space-y-8">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <h3 className="text-xl font-black text-white tracking-tighter">1. Select Package</h3>
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mt-1">Pricing adjusts automatically to your location</p>
-              </div>
-              
-              <div className="flex flex-col gap-2 relative z-40">
-                <div 
-                  className="relative"
-                  tabIndex={0}
-                  onBlur={(e) => {
-                    if (!e.currentTarget.contains(e.relatedTarget)) {
-                      setIsDropdownOpen(false);
-                    }
-                  }}
-                >
-                  <button 
-                    onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                    className="flex items-center justify-between w-full min-w-[240px] gap-3 bg-slate-900 border border-slate-700 hover:border-slate-600 px-4 py-3 rounded-xl transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Map size={16} className={selectedCountry ? "text-primary" : "text-slate-400"} />
-                      <span className={`text-sm font-bold ${selectedCountry ? "text-white" : "text-slate-400"}`}>
-                        {selectedCountry ? COUNTRIES.find(c => c.code === selectedCountry)?.name : "Select your country..."}
-                      </span>
-                    </div>
-                    <svg className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${isDropdownOpen ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
-                  </button>
-
-                  {isDropdownOpen && (
-                    <div className="absolute top-full mt-2 w-full max-h-[280px] overflow-y-auto bg-slate-800 border border-slate-700 rounded-xl shadow-2xl z-50 py-2 scrollbar-thin">
-                      {COUNTRIES.map(c => (
-                        <button
-                          key={c.code}
-                          onClick={() => {
-                            handleCountryChange(c.code);
-                            setIsDropdownOpen(false);
-                          }}
-                          className={`w-full text-left px-4 py-2.5 text-sm transition-colors flex items-center justify-between
-                            ${selectedCountry === c.code ? 'bg-primary/20 text-white font-bold' : 'text-slate-300 hover:bg-slate-700 hover:text-white'}`
-                          }
-                        >
-                          {c.name}
-                          {selectedCountry === c.code && <CheckCircle2 size={14} className="text-primary" />}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                
-                {showWarning && (
-                  <div className="absolute top-full mt-2 right-0 w-72 bg-slate-800 border border-amber-500/50 p-4 rounded-xl shadow-2xl z-50">
-                    <div className="flex items-start gap-3">
-                      <AlertTriangle size={20} className="text-amber-500 shrink-0 mt-0.5" />
-                      <div>
-                        <h4 className="text-sm font-bold text-white mb-1">Location Mismatch</h4>
-                        <p className="text-xs text-slate-300 mb-3 leading-relaxed">
-                          Your selected country doesn't match your physical GPS location. Proceeding may cause payment failures.
-                        </p>
-                        <div className="flex gap-2">
-                          <button onClick={confirmCountryMismatch} className="text-xs font-bold bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 px-3 py-1.5 rounded-lg transition-colors">Proceed Anyway</button>
-                          <button onClick={cancelCountryMismatch} className="text-xs font-bold bg-slate-700 text-slate-300 hover:bg-slate-600 px-3 py-1.5 rounded-lg transition-colors">Go Back</button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Premium Plan Card */}
-              <GlassCard 
-                className={`p-6 md:p-8 flex flex-col justify-between h-[380px] transition-all cursor-pointer relative overflow-hidden ${
-                  currentTier === "premium" 
-                    ? "opacity-60 grayscale cursor-not-allowed border-slate-700" 
-                    : selectedPlan === "subscription"
-                      ? "ring-2 ring-primary border-primary shadow-xl scale-[1.02] bg-blue-900/30/20"
-                      : "hover:border-primary/50 hover:shadow-lg hover:-translate-y-1"
-                }`}
-                hoverEffect={false}
-                onClick={() => currentTier !== "premium" && setSelectedPlan("subscription")}
-              >
-                {selectedPlan === "subscription" && currentTier !== "premium" && (
-                  <div className="absolute top-0 right-0 bg-primary text-white text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-bl-xl">Selected</div>
-                )}
-                
-                <div>
-                  <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center text-blue-600 mb-4">
-                    <Crown size={20} />
-                  </div>
-                  <h4 className="text-xl font-black text-white">{planDetails.subscription.title}</h4>
-                  <div className="mt-3 flex items-baseline gap-1">
-                    <span className="text-4xl font-black text-white tracking-tighter">{planDetails.subscription.price}</span>
-                    <span className="text-sm font-bold text-slate-400">/ {planDetails.subscription.period}</span>
-                  </div>
-                  <ul className="mt-6 space-y-3">
-                    {planDetails.subscription.features.map((f, i) => (
-                      <li key={i} className="flex items-start gap-2 text-sm text-slate-200 font-medium leading-tight">
-                        <CheckCircle2 size={16} className="text-emerald-500 flex-shrink-0 mt-0.5" /> {f}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </GlassCard>
-
-              {/* Credits Top-up Option */}
-              <GlassCard 
-                className={`p-6 md:p-8 flex flex-col justify-between h-[380px] transition-all cursor-pointer relative overflow-hidden ${
-                  currentTier === "premium" 
-                    ? "opacity-60 grayscale cursor-not-allowed border-slate-700" 
-                    : selectedPlan === "topup"
-                      ? "ring-2 ring-primary border-primary shadow-xl scale-[1.02] bg-blue-900/30/20"
-                      : "hover:border-primary/50 hover:shadow-lg hover:-translate-y-1"
-                }`}
-                hoverEffect={false}
-                onClick={() => currentTier !== "premium" && setSelectedPlan("topup")}
-              >
-                {selectedPlan === "topup" && currentTier !== "premium" && (
-                  <div className="absolute top-0 right-0 bg-primary text-white text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-bl-xl">Selected</div>
-                )}
-                
-                <div>
-                  <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center text-slate-300 mb-4">
-                    <Zap size={20} />
-                  </div>
-                  <h4 className="text-xl font-black text-white">{planDetails.topup.title}</h4>
-                  <div className="mt-3 flex items-baseline gap-1">
-                    <span className="text-4xl font-black text-white tracking-tighter">{planDetails.topup.price}</span>
-                    <span className="text-sm font-bold text-slate-400">/ {planDetails.topup.period}</span>
-                  </div>
-                  <ul className="mt-6 space-y-3">
-                    {planDetails.topup.features.map((f, i) => (
-                      <li key={i} className="flex items-start gap-2 text-sm text-slate-200 font-medium leading-tight">
-                        <CheckCircle2 size={16} className="text-emerald-500 flex-shrink-0 mt-0.5" /> {f}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </GlassCard>
-            </div>
-          </div>
-
-          <div className="space-y-6">
-            <div>
-              <h3 className="text-xl font-black text-white tracking-tighter">2. Secure Checkout</h3>
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mt-1">100% Encrypted transactions</p>
-            </div>
-
-            <GlassCard className="p-6 md:p-8" hoverEffect={false}>
-              {currentTier === "premium" ? (
-                <div className="text-center py-8">
-                  <div className="w-16 h-16 rounded-full bg-slate-800 text-slate-400 mx-auto flex items-center justify-center mb-6">
-                    <Lock size={24} />
-                  </div>
-                  <h4 className="text-xl font-black text-white mb-2">Purchases Locked</h4>
-                  <p className="text-sm text-slate-400 font-medium max-w-[250px] mx-auto mb-8">
-                    You already have unlimited access. Additional purchases are disabled.
-                  </p>
-                </div>
-              ) : (
-                <>
-                  <div className="bg-slate-900/50 rounded-2xl p-5 border border-slate-700 flex justify-between items-center mb-8 shadow-inner">
-                    <div>
-                      <div className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1">Total Due Today</div>
-                      <div className="text-sm font-bold text-white">
-                        {selectedPlan === "subscription" ? planDetails.subscription.title : planDetails.topup.title}
-                      </div>
-                    </div>
-                    <div className="text-3xl font-black text-primary tracking-tighter">
-                      {selectedPlan === "subscription" ? planDetails.subscription.price : planDetails.topup.price}
-                    </div>
-                  </div>
-
-                  {loading && (
-                    <div className="flex flex-col items-center justify-center py-8 space-y-4">
-                      <div className="w-8 h-8 rounded-full border-2 border-slate-700 border-t-primary animate-spin"></div>
-                      <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Processing...</div>
-                    </div>
-                  )}
-
-                  {!loading && region === "india" && (
-                    <div className="relative z-10 space-y-4">
-                      <div>
-                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5 px-1">Mobile Number (for payment receipt)</label>
-                        <input
-                          value={phone}
-                          onChange={(e) => setPhone(e.target.value)}
-                          inputMode="tel"
-                          placeholder="10-digit mobile number"
-                          className="w-full rounded-xl border border-slate-700 bg-slate-900/50 px-4 py-3 text-sm outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10"
-                        />
-                      </div>
-                      <button
-                        onClick={handleCashfreeCheckout}
-                        className="w-full bg-primary hover:bg-primary/90 text-white font-bold py-4 px-6 rounded-xl shadow-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2"
-                      >
-                        <CreditCard size={18} /> Pay Securely (Cashfree)
-                      </button>
-                      <div className="flex items-center justify-center gap-4 grayscale opacity-60">
-                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">UPI · Cards · NetBanking · Wallets</span>
-                      </div>
-                    </div>
-                  )}
-
-                  {!loading && region === "global" && (
-                    ENABLE_GLOBAL_PAYPAL ? (
-                      <div className="relative z-10 min-h-[150px]">
-                        <PayPalScriptProvider
-                          options={{
-                            clientId: PAYPAL_CLIENT_ID,
-                            currency: "USD",
-                            intent: "capture",
-                            components: "buttons",
-                          }}
-                        >
-                          <PayPalButtons
-                            style={{ layout: "vertical", shape: "rect", color: "blue" }}
-                            forceReRender={[selectedPlan]}
-                            createOrder={createOrder}
-                            onApprove={onApprove}
-                            onError={(err) => {
-                              console.error("PayPal buttons error:", err);
-                              setError("Unable to render payment options. Check environment credentials.");
-                            }}
-                          />
-                        </PayPalScriptProvider>
-                      </div>
-                    ) : (
-                      <div className="relative z-10 rounded-xl border border-slate-700 bg-slate-900/50 p-5 text-center">
-                        <Globe size={20} className="mx-auto text-slate-400 mb-2" />
-                        <p className="text-sm font-semibold text-white mb-1">International checkout coming soon</p>
-                        <p className="text-xs text-slate-400">Paid plans are currently available for customers in India. Please check back soon.</p>
-                      </div>
-                    )
-                  )}
-
-                  <div className="flex items-center justify-center gap-2 mt-8 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                    <Shield size={14} /> 256-bit Secure Encryption
-                  </div>
-                </>
-              )}
-            </GlassCard>
-          </div>
+        <div
+          role="alert"
+          className="flex items-start gap-3 text-sm text-rose-200 bg-rose-950/40 border border-rose-800 rounded-xl px-4 py-3"
+        >
+          <AlertCircle size={18} className="mt-0.5 shrink-0" />
+          <span>{error}</span>
         </div>
       )}
 
-      {/* Credit System Explainer */}
-      <StaggerContainer className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-12">
-        <StaggerItem>
-          <GlassCard className="p-6 md:p-8 h-full bg-blue-900/30/30 border-blue-800" hoverEffect={false}>
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600"><Zap size={16} /></div>
-              <h4 className="text-sm font-black text-white tracking-tight uppercase tracking-wider">Uses 1 Credit</h4>
+      {catalogLoading ? (
+        <GlassCard className="p-12 text-center" hoverEffect={false}>
+          <RefreshCw className="mx-auto animate-spin text-primary" size={24} />
+          <p className="mt-3 text-sm font-semibold text-slate-300">Loading server-owned billing information…</p>
+        </GlassCard>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-[1.15fr_0.85fr] gap-8 items-start">
+          <section className="space-y-5" aria-labelledby="products-heading">
+            <div>
+              <h2 id="products-heading" className="text-xl font-black text-white tracking-tight">
+                Available products
+              </h2>
+              <p className="mt-1 text-sm text-slate-400">
+                Prices below come from the server catalog. Select a product to review the complete order summary.
+              </p>
             </div>
-            <ul className="space-y-3">
-              {[
-                "Job matching & skill gap analysis",
-                "Generating personalized learning paths",
-                "Real-time market trends & salary insights",
-                "Asking AI (RAG Chat) questions"
-              ].map((item, i) => (
-                <li key={i} className="flex items-start gap-2 text-sm text-slate-200 font-medium">
-                  <span className="text-blue-500 font-black mt-0.5">•</span> {item}
-                </li>
-              ))}
-            </ul>
-          </GlassCard>
-        </StaggerItem>
 
-        <StaggerItem>
-          <GlassCard className="p-6 md:p-8 h-full bg-emerald-900/30/30 border-emerald-800" hoverEffect={false}>
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center text-emerald-400"><CheckCircle2 size={16} /></div>
-              <h4 className="text-sm font-black text-white tracking-tight uppercase tracking-wider">Always Free</h4>
+            {visibleProducts.length === 0 ? (
+              <GlassCard className="p-8" hoverEffect={false}>
+                <p className="font-bold text-white">No paid product is currently available.</p>
+                <p className="mt-2 text-sm text-slate-400">
+                  No checkout will be loaded. View the public pricing information or contact billing support.
+                </p>
+              </GlassCard>
+            ) : (
+              <div className="grid grid-cols-1 gap-4">
+                {visibleProducts.map((product) => {
+                  const selected = product.sku === selectedSku;
+                  return (
+                    <GlassCard
+                      key={product.sku}
+                      className={`p-6 md:p-8 transition-colors ${
+                        selected ? "border-primary ring-2 ring-primary/40" : "border-slate-800"
+                      }`}
+                      hoverEffect={false}
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-5">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-blue-950 text-blue-300 flex items-center justify-center">
+                              <Crown size={20} />
+                            </div>
+                            <div>
+                              <h3 className="text-xl font-black text-white">{product.name}</h3>
+                              <p className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                                One-time purchase · no automatic renewal
+                              </p>
+                            </div>
+                          </div>
+                          <p className="mt-4 text-sm text-slate-300">{product.description}</p>
+                          <ul className="mt-5 space-y-2">
+                            {productFacts(product).map((fact) => (
+                              <li key={fact} className="flex items-start gap-2 text-sm text-slate-300">
+                                <CheckCircle2 size={15} className="text-emerald-400 mt-0.5 shrink-0" />
+                                <span>{fact}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                        <div className="sm:text-right shrink-0">
+                          <div className="text-3xl font-black text-white">
+                            {formatPrice(product.amount_minor, product.currency)}
+                          </div>
+                          <div className="text-xs font-bold text-slate-400 mt-1">INR total · one-time</div>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedSku(product.sku)}
+                            disabled={currentTier !== "free"}
+                            className="mt-4 w-full sm:w-auto rounded-xl border border-primary/60 px-4 py-2.5 text-sm font-bold text-blue-200 hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {currentTier === "premium"
+                              ? "Premium already active"
+                              : currentTier === null
+                                ? "Checking account status…"
+                                : selected
+                                  ? "Selected"
+                                  : "Review this purchase"}
+                          </button>
+                        </div>
+                      </div>
+                    </GlassCard>
+                  );
+                })}
+              </div>
+            )}
+
+            <GlassCard className="p-6 text-sm text-slate-300" hoverEffect={false}>
+              <h3 className="font-black text-white">About analysis units</h3>
+              <p className="mt-2 leading-relaxed">
+                Analysis units are usage allowances for specified HireWiz software functions. They are not money, a
+                wallet, or stored value; they cannot be withdrawn, resold, or transferred. Standalone unit packs are
+                not offered in this checkout.
+              </p>
+              <Link href="/pricing" className="mt-3 inline-flex items-center gap-1 text-primary font-bold hover:underline">
+                Read full pricing and usage details <ExternalLink size={13} />
+              </Link>
+            </GlassCard>
+          </section>
+
+          <section className="space-y-5" aria-labelledby="checkout-heading">
+            <div>
+              <h2 id="checkout-heading" className="text-xl font-black text-white tracking-tight">
+                Order summary
+              </h2>
+              <p className="mt-1 text-sm text-slate-400">Review the seller, amount, delivery and renewal terms.</p>
             </div>
-            <ul className="space-y-3">
-              {[
-                "Uploading & parsing resumes",
-                "Editing your career profile details",
-                "Viewing dashboard analytics & history",
-                "Browsing course & recommendation library"
-              ].map((item, i) => (
-                <li key={i} className="flex items-start gap-2 text-sm text-slate-200 font-medium">
-                  <span className="text-emerald-500 font-black mt-0.5">✓</span> {item}
-                </li>
-              ))}
-            </ul>
-          </GlassCard>
-        </StaggerItem>
-      </StaggerContainer>
+
+            {!checkoutEnabled && (
+              <GlassCard className="p-6 border-amber-800 bg-amber-950/20" hoverEffect={false}>
+                <div className="flex items-start gap-3">
+                  <Clock3 className="text-amber-300 mt-0.5 shrink-0" size={20} />
+                  <div>
+                    <h3 className="font-black text-white">Online payments are under review</h3>
+                    <p className="mt-2 text-sm text-slate-300 leading-relaxed">
+                      Purchases are not currently available. No checkout provider is advertised or loaded while
+                      payment activation is pending. You can continue using the free product features.
+                    </p>
+                  </div>
+                </div>
+              </GlassCard>
+            )}
+
+            <GlassCard className="p-6 md:p-8" hoverEffect={false}>
+              {selectedProduct ? (
+                <div className="space-y-5">
+                  <div className="flex items-start justify-between gap-4 pb-5 border-b border-slate-800">
+                    <div>
+                      <div className="text-xs font-bold uppercase tracking-wider text-slate-400">Product</div>
+                      <div className="mt-1 font-black text-white">{selectedProduct.name}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-xs font-bold uppercase tracking-wider text-slate-400">Total due today</div>
+                      <div className="mt-1 text-2xl font-black text-primary">
+                        {formatPrice(selectedProduct.amount_minor, selectedProduct.currency)}
+                      </div>
+                      <div className="text-xs text-slate-400">INR</div>
+                    </div>
+                  </div>
+
+                  <dl className="space-y-3 text-sm">
+                    <div className="flex justify-between gap-4">
+                      <dt className="text-slate-400">Purchase type</dt>
+                      <dd className="font-semibold text-white text-right">One-time payment</dd>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <dt className="text-slate-400">Automatic renewal</dt>
+                      <dd className="font-semibold text-white text-right">No</dd>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <dt className="text-slate-400">Trial</dt>
+                      <dd className="font-semibold text-white text-right">None</dd>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <dt className="text-slate-400">Billing country</dt>
+                      <dd className="font-semibold text-white text-right">India</dd>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <dt className="text-slate-400">Seller</dt>
+                      <dd className="font-semibold text-white text-right max-w-[16rem]">
+                        HireWiz, operated by SAVALIYA HARSHIL YOGESHBHAI
+                      </dd>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <dt className="text-slate-400">Delivery</dt>
+                      <dd className="font-semibold text-white text-right max-w-[16rem]">
+                        Digital access in your HireWiz account after verified payment confirmation
+                      </dd>
+                    </div>
+                  </dl>
+
+                  <div className="rounded-xl border border-slate-800 bg-slate-950/30 p-4 text-xs text-slate-300 leading-relaxed">
+                    The total shown is locked by the server for this product. No separate HireWiz fee or tax is added,
+                    and no optional paid add-on is selected. Check the same final amount in the hosted checkout before
+                    authorizing payment.
+                  </div>
+
+                  <label className="flex items-start gap-3 rounded-xl border border-slate-700 bg-slate-900/40 p-4 text-sm text-slate-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={indiaBillingConfirmed}
+                      onChange={(event) => setIndiaBillingConfirmed(event.target.checked)}
+                      disabled={currentTier !== "free" || !checkoutEnabled}
+                      className="mt-0.5 h-4 w-4 shrink-0 accent-primary"
+                    />
+                    <span>
+                      I confirm that my billing country is India and I am purchasing this INR pass for domestic use.
+                    </span>
+                  </label>
+
+                  {currentTier === "premium" ? (
+                    <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-4 text-sm text-slate-300 flex items-start gap-3">
+                      <Lock size={17} className="mt-0.5 shrink-0" />
+                      Additional purchases are disabled while your Premium access is active.
+                    </div>
+                  ) : currentTier === null ? (
+                    <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-4 text-sm text-slate-300 flex items-start gap-3">
+                      <Lock size={17} className="mt-0.5 shrink-0" />
+                      Checkout remains disabled until your current account status is confirmed.
+                    </div>
+                  ) : checkoutEnabled && selectedProduct.enabled_for_purchase ? (
+                    <button
+                      type="button"
+                      onClick={handleCheckout}
+                      disabled={!purchaseAllowed || checkoutBusy}
+                      className="w-full rounded-xl bg-primary hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60 text-white font-bold py-4 px-5 transition flex items-center justify-center gap-2"
+                    >
+                      {checkoutBusy ? (
+                        <>
+                          <RefreshCw size={17} className="animate-spin" />
+                          {phase === "confirming" ? "Waiting for verified confirmation…" : "Opening hosted checkout…"}
+                        </>
+                      ) : (
+                        <>
+                          <ShoppingBag size={17} />
+                          Continue to secure checkout · {formatPrice(selectedProduct.amount_minor, selectedProduct.currency)}
+                        </>
+                      )}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled
+                      className="w-full rounded-xl border border-slate-700 bg-slate-900 text-slate-400 font-bold py-4 px-5 cursor-not-allowed"
+                    >
+                      Purchase unavailable while payments are under review
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="py-8 text-center">
+                  <FileText className="mx-auto text-slate-500" size={28} />
+                  <p className="mt-3 font-bold text-white">Select a product to review its order summary.</p>
+                  <p className="mt-1 text-sm text-slate-400">Nothing is preselected and no checkout has been started.</p>
+                </div>
+              )}
+
+              {currentOrder && phase !== "confirmed" && (
+                <div className="mt-6 pt-5 border-t border-slate-800">
+                  <div className="text-xs text-slate-400 break-all">Order reference: {currentOrder.order_id}</div>
+                  {currentOrder.payment_reference ? (
+                    <div className="mt-1 text-xs text-slate-400 break-all">
+                      Payment reference: {currentOrder.payment_reference}
+                    </div>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={checkCurrentOrder}
+                    disabled={phase === "confirming"}
+                    className="mt-3 inline-flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-200 hover:bg-slate-800 disabled:opacity-60"
+                  >
+                    <RefreshCw size={13} className={phase === "confirming" ? "animate-spin" : ""} />
+                    Check payment status
+                  </button>
+                </div>
+              )}
+            </GlassCard>
+
+            <GlassCard className="p-6 text-sm text-slate-300 space-y-4" hoverEffect={false}>
+              <div className="flex items-start gap-3">
+                <Shield size={18} className="text-primary mt-0.5 shrink-0" />
+                <p>
+                  When checkout is available, card, UPI, bank and other payment credentials are entered only in the
+                  hosted payment page. HireWiz does not collect raw card details, CVV, UPI PINs or bank credentials.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-x-4 gap-y-2 pt-4 border-t border-slate-800 text-xs font-bold">
+                <Link href="/terms" className="text-primary hover:underline">Terms</Link>
+                <Link href="/privacy" className="text-primary hover:underline">Privacy</Link>
+                <Link href="/refund" className="text-primary hover:underline">Refund &amp; cancellation</Link>
+                <Link href="/digital-delivery" className="text-primary hover:underline">Digital delivery</Link>
+                <Link href="/contact" className="text-primary hover:underline">Billing support</Link>
+              </div>
+            </GlassCard>
+          </section>
+        </div>
+      )}
     </main>
   );
 }

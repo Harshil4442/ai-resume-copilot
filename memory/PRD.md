@@ -1,4 +1,4 @@
-# AI Resume CoPilot — PRD & Change Log
+# HireWiz — PRD & Change Log
 
 ## Original Problem Statement
 Review the `ai-resume-copilot` repository and apply the recommended fixes from the code review.

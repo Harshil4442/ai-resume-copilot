@@ -1,21 +1,32 @@
 from datetime import datetime
 from typing import Dict, List, Literal, Optional, Union
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 # -------------------------
 # Auth
 # -------------------------
 class AuthRegisterRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     email: EmailStr
-    password: str = Field(min_length=6, max_length=128)
+    password: str = Field(min_length=10, max_length=128)
+    accepted_terms: Literal[True]
+    confirmed_age_18: Literal[True]
 
 class AuthLoginRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     email: EmailStr
     password: str
 
 class AuthGoogleLoginRequest(BaseModel):
-    email: EmailStr
-    name: Optional[str] = ""
+    model_config = ConfigDict(extra="forbid")
+
+    # The backend derives identity from Google's signed claims. Never accept
+    # an email address from the browser/NextAuth bridge as proof of identity.
+    id_token: str = Field(min_length=100, max_length=4096)
+    registration_consent: bool = False
+    policy_version: Optional[str] = Field(default=None, max_length=32)
 
 class AuthTokenResponse(BaseModel):
     access_token: str

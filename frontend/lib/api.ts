@@ -4,13 +4,11 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "/api";
 
 async function getToken(): Promise<string | null> {
   if (typeof window === "undefined") return null;
-  // Try to get token from NextAuth session first
   const session = await getSession();
   if ((session as any)?.user?.accessToken) {
     return (session as any).user.accessToken;
   }
-  // Fallback to localStorage
-  return localStorage.getItem("access_token");
+  return null;
 }
 
 async function withAuth(headers: Record<string, string> = {}): Promise<Record<string, string>> {

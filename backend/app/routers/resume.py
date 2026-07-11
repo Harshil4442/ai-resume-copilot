@@ -1,10 +1,15 @@
-from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
+import io
+import zipfile
+from pathlib import Path
+
+from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from ..database import get_db
 from .. import models, schemas
 from ..services.parsing import parse_resume_file
 from ..security import get_current_user
+from ..rate_limiter import limiter
 
 router = APIRouter(prefix="/resume", tags=["resume"])
 
@@ -71,10 +76,49 @@ ALLOWED_TYPES = {
 # Upload size cap (bytes). Resumes >5MB are almost always images-as-PDF
 # and would blow up DB storage + LLM context.
 MAX_UPLOAD_BYTES = 5 * 1024 * 1024
+MAX_DOCX_UNCOMPRESSED_BYTES = 20 * 1024 * 1024
+MAX_DOCX_ENTRIES = 500
+
+
+def _validated_resume_upload(filename: str, content_type: str, data: bytes) -> tuple[str, str]:
+    safe_name = Path(filename.replace("\\", "/")).name.strip()[:255]
+    suffix = Path(safe_name).suffix.lower()
+    if suffix not in {".pdf", ".docx"} or content_type not in ALLOWED_TYPES:
+        raise HTTPException(status_code=400, detail="Only PDF and DOCX files are supported.")
+
+    if suffix == ".pdf":
+        if not data.startswith(b"%PDF-"):
+            raise HTTPException(status_code=400, detail="The uploaded file is not a valid PDF.")
+        return safe_name, "pdf"
+
+    if not zipfile.is_zipfile(io.BytesIO(data)):
+        raise HTTPException(status_code=400, detail="The uploaded file is not a valid DOCX document.")
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            entries = archive.infolist()
+            names = {entry.filename for entry in entries}
+            if len(entries) > MAX_DOCX_ENTRIES or not {
+                "[Content_Types].xml",
+                "word/document.xml",
+            }.issubset(names):
+                raise HTTPException(status_code=400, detail="The DOCX structure is not supported.")
+            total_size = 0
+            for entry in entries:
+                path = entry.filename.replace("\\", "/")
+                if path.startswith("/") or ".." in path.split("/") or entry.flag_bits & 0x1:
+                    raise HTTPException(status_code=400, detail="The DOCX archive is not supported.")
+                total_size += entry.file_size
+                if total_size > MAX_DOCX_UNCOMPRESSED_BYTES:
+                    raise HTTPException(status_code=413, detail="The DOCX expands beyond the safe limit.")
+    except zipfile.BadZipFile:
+        raise HTTPException(status_code=400, detail="The uploaded file is not a valid DOCX document.")
+    return safe_name, "docx"
 
 
 @router.post("/parse", response_model=schemas.ResumeParseResponse)
+@limiter.limit("5/minute")
 async def parse_resume(
+    request: Request,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
@@ -82,22 +126,15 @@ async def parse_resume(
     filename = file.filename or ""
     content_type = file.content_type or ""
 
-    # Validate file type
-    is_pdf = filename.lower().endswith(".pdf") or "pdf" in content_type
-    is_docx = filename.lower().endswith(".docx") or "wordprocessingml" in content_type
-
-    if not (is_pdf or is_docx):
-        raise HTTPException(
-            status_code=400,
-            detail="Only PDF and DOCX files are supported.",
-        )
-
-    file_bytes = await file.read()
+    # Read one byte beyond the cap so oversized uploads are rejected without
+    # buffering an unbounded request body in application memory.
+    file_bytes = await file.read(MAX_UPLOAD_BYTES + 1)
     if len(file_bytes) > MAX_UPLOAD_BYTES:
         raise HTTPException(
             status_code=413,
             detail=f"File is larger than {MAX_UPLOAD_BYTES // (1024 * 1024)}MB limit.",
         )
+    filename, _kind = _validated_resume_upload(filename, content_type, file_bytes)
     raw_text, sections, skills, exp_years, contact_info = parse_resume_file(
         file_bytes, filename=filename, use_llm=True
     )

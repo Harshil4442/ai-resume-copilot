@@ -157,7 +157,7 @@ export default function MarketPage() {
         posted_within_days: postedWithinDays,
       });
       setData(response);
-      window.dispatchEvent(new Event("refresh_credits"));
+      window.dispatchEvent(new Event("refresh_analysis_units"));
     } catch (err: any) {
       setError(err?.message || "Market analysis failed");
     } finally {
@@ -257,11 +257,12 @@ export default function MarketPage() {
               </div>
 
               <AnimatedButton 
+                type="submit"
                 disabled={loading || !targetRole.trim()} 
                 className="w-full py-4 text-base mt-2 shadow-lg"
                 showArrow
               >
-                {loading ? "Analyzing Market..." : "Analyze Market Demand (5 units)"}
+                {loading ? "Analyzing market..." : "Analyze market demand (Free: 5 analysis units)"}
               </AnimatedButton>
             </form>
           </div>

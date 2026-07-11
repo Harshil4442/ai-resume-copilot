@@ -1,6 +1,6 @@
-# AI Resume CoPilot Workflow
+# HireWiz Workflow
 
-This document explains the complete product and technical workflow for AI Resume CoPilot. It is written as a GitHub-friendly Mermaid diagram document, so the diagrams render automatically on GitHub and in most Markdown preview tools.
+This document explains the complete product and technical workflow for HireWiz. It is written as a GitHub-friendly Mermaid diagram document, so the diagrams render automatically on GitHub and in most Markdown preview tools.
 
 For a visual browser version, open:
 
@@ -14,7 +14,7 @@ docs/workflow.html
 
 ```mermaid
 flowchart TD
-    Start([User opens AI Resume CoPilot])
+    Start([User opens HireWiz])
     Auth{Logged in?}
     Register[Register account]
     Login[Login]
@@ -534,7 +534,7 @@ flowchart LR
 
 ## 12. High-Level Value
 
-AI Resume CoPilot turns a resume into a connected career intelligence workflow:
+HireWiz turns a resume into a connected career intelligence workflow:
 
 1. **Understand the candidate:** profile and resume parsing.
 2. **Understand the job:** skill extraction and match scoring.

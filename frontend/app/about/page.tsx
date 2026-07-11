@@ -3,11 +3,14 @@ import GlassCard from "../../components/ui/GlassCard";
 import FadeIn from "../../components/ui/FadeIn";
 import Link from "next/link";
 import { ArrowLeft, FileText, Target, TrendingUp, BookOpen, ShieldCheck, AlertTriangle } from "lucide-react";
+import type { Metadata } from "next";
+import { SITE } from "../../lib/site";
 
-export const metadata = {
-  title: "About & How It Works — HireWiz",
+export const metadata: Metadata = {
+  title: "About & How It Works",
   description:
     "HireWiz is self-service, AI-assisted resume-analysis software. What it does, what it does not do, and how the AI is meant to be used.",
+  alternates: { canonical: "/about" },
 };
 
 const STEPS = [
@@ -27,7 +30,7 @@ export default function AboutPage() {
       <PageHeader
         badge="About & How It Works"
         title="AI-assisted resume analysis you review and control."
-        subtitle="HireWiz is self-service software operated in India by SAVALIYA HARSHIL YOGESHBHAI, an individual trading as HireWiz."
+        subtitle={`HireWiz is self-service software operated in India by ${SITE.operatorName}, trading as HireWiz.`}
       />
 
       <FadeIn delay={0.1}>
@@ -65,6 +68,7 @@ export default function AboutPage() {
             <li className="flex items-start gap-2"><span className="text-amber-500 font-black mt-0.5">•</span> We do <strong>not</strong> make employment decisions, submit applications on your behalf, or recruit or place candidates.</li>
             <li className="flex items-start gap-2"><span className="text-amber-500 font-black mt-0.5">•</span> Compatibility scores are <strong>HireWiz estimates</strong>, not scores produced by any employer or a specific applicant-tracking system (ATS). We do not guarantee ATS acceptance, interviews, offers, or employment.</li>
             <li className="flex items-start gap-2"><span className="text-amber-500 font-black mt-0.5">•</span> The service must <strong>not</strong> be used for impersonation, false credentials, another person's resume without authorization, exam or hiring cheating, or fabricated achievements.</li>
+            <li className="flex items-start gap-2"><span className="text-amber-500 font-black mt-0.5">•</span> HireWiz does not authorize scraping or third-party data use that violates a data provider's terms or applicable law.</li>
           </ul>
         </GlassCard>
       </FadeIn>

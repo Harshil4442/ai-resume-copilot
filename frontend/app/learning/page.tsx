@@ -179,7 +179,7 @@ export default function LearningPage() {
         match_id: Number(selectedMatchId),
       });
       setStrategy(res);
-      window.dispatchEvent(new Event("refresh_credits"));
+      window.dispatchEvent(new Event("refresh_analysis_units"));
     } catch (e: any) {
       setError(e?.message || "Failed to generate learning strategy");
     } finally {
@@ -241,7 +241,7 @@ export default function LearningPage() {
             className="py-3 px-6 h-12 whitespace-nowrap"
             showArrow
           >
-            {loadingStrategy ? "Generating Strategy..." : "Generate Strategy (10 ⚡)"}
+            {loadingStrategy ? "Generating strategy..." : "Generate strategy (Free: 1 analysis unit)"}
           </AnimatedButton>
         </div>
 

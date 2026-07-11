@@ -48,10 +48,10 @@ export default function BulletOptimizer() {
         <span className="pulse-dot bg-blue-900/300" /> Public Micro-Tool
       </div>
       <h2 className="text-3xl md:text-4xl font-black text-white mt-2">
-        ATS Resume Bullet Optimizer
+        Resume Bullet Review
       </h2>
       <p className="text-sm text-slate-400 mt-2">
-        Test a single resume accomplishment bullet. We'll score its action verbs and metrics density instantly.
+        Test one resume bullet. HireWiz provides a simple writing-quality estimate and an AI-assisted alternative for you to verify.
       </p>
 
       <form onSubmit={handleOptimize} className="mt-6 space-y-4">
@@ -99,7 +99,7 @@ export default function BulletOptimizer() {
           </div>
 
           <div className="rounded-lg border border-blue-800 bg-blue-900/30/40 p-5">
-            <div className="text-xs font-bold uppercase tracking-wider text-blue-500">AI-Optimized Alternative</div>
+            <div className="text-xs font-bold uppercase tracking-wider text-blue-500">AI-Suggested Alternative</div>
             <p className="mt-2 text-base font-semibold text-white leading-relaxed italic">
               "{result.recommended_bullet}"
             </p>
@@ -107,9 +107,9 @@ export default function BulletOptimizer() {
 
           <div className="bg-slate-950/60 border border-slate-800 text-white p-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4 rounded-xl shadow-lg mt-8">
             <div>
-              <div className="text-xs font-bold uppercase tracking-wider text-blue-400">Ready to transform your career?</div>
+              <div className="text-xs font-bold uppercase tracking-wider text-blue-400">Continue reviewing your resume</div>
               <p className="text-sm text-slate-300 mt-1">
-                Upload your entire resume to automatically scan, match, and optimize for target roles.
+                Create an account to structure your resume, compare it with job-description text, and review suggestions. HireWiz does not guarantee employment outcomes.
               </p>
             </div>
             <a

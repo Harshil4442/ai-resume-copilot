@@ -1,5 +1,6 @@
 import logging
 import os
+import sys
 import uuid
 from pathlib import Path
 
@@ -25,7 +26,7 @@ from .rate_limiter import limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi import _rate_limit_exceeded_handler
 
-app = FastAPI(title="AI Resume CoPilot API")
+app = FastAPI(title="HireWiz API")
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
@@ -36,13 +37,19 @@ run_migrations()
 # CORS
 origins_env = os.getenv("FRONTEND_ORIGINS", "*")
 allow_origins = ["*"] if origins_env.strip() == "*" else [o.strip() for o in origins_env.split(",") if o.strip()]
+app_env = (os.getenv("APP_ENV") or "production").strip().lower()
+is_test_process = bool(os.getenv("PYTEST_CURRENT_TEST")) or "pytest" in sys.modules
+if not is_test_process and app_env not in {"development", "dev", "local", "test"} and (
+    not allow_origins or allow_origins == ["*"]
+):
+    raise RuntimeError("FRONTEND_ORIGINS must list explicit HTTPS origins in production.")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allow_origins,
     allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
 )
 
 from jose import JWTError, jwt
@@ -54,17 +61,15 @@ async def jwt_validation_middleware(request: Request, call_next):
     if request.method == "OPTIONS":
         return await call_next(request)
         
-    # Protect all /api endpoints except health, login, register, webhook, and public end points
+    # Protect all /api endpoints except the deliberately public surface and the
+    # signature-authenticated Razorpay webhook.
     if path.startswith("/api") and not (
         path == "/api/health" or
-        path.startswith("/api/auth/login") or
-        path.startswith("/api/auth/google-login") or
-        path.startswith("/api/auth/register") or
+        path == "/api/auth/login" or
+        path == "/api/auth/google-login" or
+        path == "/api/auth/register" or
         path.startswith("/api/public") or
-        path.startswith("/api/v1/billing/webhook") or
-        path.startswith("/api/billing/webhook") or
-        path.startswith("/api/billing/cashfree/webhook") or
-        path.startswith("/api/billing/debug-env")
+        path == "/api/billing/webhooks/razorpay"
     ):
         auth_header = request.headers.get("Authorization")
         if not auth_header or not auth_header.startswith("Bearer "):
@@ -89,6 +94,11 @@ async def jwt_validation_middleware(request: Request, call_next):
             )
 
     response = await call_next(request)
+    if path.startswith("/api") and not (
+        path == "/api/health" or path.startswith("/api/public")
+    ):
+        response.headers["Cache-Control"] = "no-store, private"
+        response.headers["Pragma"] = "no-cache"
     return response
 
 
@@ -106,6 +116,7 @@ app.include_router(analytics.router, prefix="/api")
 app.include_router(rag.router, prefix="/api")
 app.include_router(market.router, prefix="/api")
 app.include_router(billing.router, prefix="/api")
+app.include_router(billing.public_router, prefix="/api")
 app.include_router(public_endpoints.router, prefix="/api")
 
 @app.exception_handler(Exception)
@@ -123,5 +134,3 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
             "correlation_id": correlation_id,
         },
     )
-
-# Triggering Cloud Build for PayPal fixes

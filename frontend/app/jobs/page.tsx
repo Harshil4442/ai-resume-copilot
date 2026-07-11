@@ -173,7 +173,7 @@ function AskAiPanel({
           suggested_followups: res.suggested_followups,
         },
       ]);
-      window.dispatchEvent(new Event("refresh_credits"));
+      window.dispatchEvent(new Event("refresh_analysis_units"));
     } catch (e: any) {
       setError(e?.message || "Ask AI failed");
     } finally {
@@ -192,7 +192,10 @@ function AskAiPanel({
               <Sparkles size={12} /> Grounded Copilot
             </div>
             <h2 className="text-2xl font-black tracking-tighter text-white">Ask AI about this match</h2>
-            <p className="text-sm text-slate-400 mt-1">Answers are grounded in this resume, JD, score breakdown, and match analysis.</p>
+            <p className="text-sm text-slate-400 mt-1">
+              Answers are grounded in this resume, job description, score breakdown, and match analysis. Each question
+              uses 1 analysis unit on Free access.
+            </p>
           </div>
           {latestAssistant?.confidence && (
             <span className={twMerge(clsx("px-3 py-1 rounded-full border text-xs font-bold shadow-sm", confidenceClass(latestAssistant.confidence)))}>
@@ -283,7 +286,7 @@ function AskAiPanel({
             type="submit"
             disabled={!input.trim() || loading}
           >
-            Ask
+            Ask (Free: 1 analysis unit)
           </AnimatedButton>
         </form>
         {error && <div className="text-sm text-rose-400 bg-rose-900/30 border border-rose-800 rounded-xl px-4 py-3 shadow-sm">{error}</div>}
@@ -326,7 +329,7 @@ export default function JobsPage() {
       setTailoredResume(res.tailored_resume_markdown);
       setTailoredPdfBase64(res.pdf_base64 || null);
       setTailorModalOpen(false);
-      window.dispatchEvent(new Event("refresh_credits"));
+      window.dispatchEvent(new Event("refresh_analysis_units"));
     } catch (err: any) {
       setTailorError(err?.message || "Failed to tailor resume.");
     } finally {
@@ -371,7 +374,7 @@ export default function JobsPage() {
         job_description: jobDescription.trim(),
       });
       setData(result);
-      window.dispatchEvent(new Event("refresh_credits"));
+      window.dispatchEvent(new Event("refresh_analysis_units"));
     } catch (err: any) {
       setError(err?.message || "Something went wrong.");
     } finally {
@@ -459,7 +462,7 @@ export default function JobsPage() {
               className="w-full py-4 text-base mt-2"
               showArrow
             >
-              {loading ? "Analyzing match..." : "Analyze Match"}
+              {loading ? "Analyzing match..." : "Analyze match (Free: 1 analysis unit)"}
             </AnimatedButton>
 
             {error && <div className="text-sm text-rose-400 bg-rose-900/30 border border-rose-800 rounded-xl px-4 py-3 shadow-sm">{error}</div>}
@@ -610,7 +613,7 @@ export default function JobsPage() {
                   className="shadow-xl"
                   showArrow
                 >
-                  🪄 Tailor Resume (Costs 10 ⚡)
+                  Tailor resume (Free: 10 analysis units)
                 </AnimatedButton>
               </StaggerItem>
 
@@ -680,7 +683,7 @@ export default function JobsPage() {
             </p>
             <div className="bg-blue-900/30 border border-blue-800 rounded-xl p-4 mt-6 mb-6">
               <p className="text-sm text-blue-300 font-bold flex items-center gap-2">
-                <span className="text-amber-500">⚡</span> This action costs 10 AI Credits.
+                This action uses 10 analysis units on Free access.
               </p>
             </div>
             
@@ -741,7 +744,7 @@ export default function JobsPage() {
                 disabled={tailoring}
                 showArrow={!tailoring}
               >
-                {tailoring ? "Generating..." : "Generate Resume"}
+                {tailoring ? "Generating..." : "Generate resume (Free: 10 analysis units)"}
               </AnimatedButton>
             </div>
           </div>
