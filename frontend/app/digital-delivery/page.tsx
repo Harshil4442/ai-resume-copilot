@@ -46,7 +46,7 @@ export default function DigitalDeliveryPage() {
             <h3 className="text-lg font-bold text-white mb-3">1. What you receive</h3>
             <ul className="list-disc pl-6 space-y-2 text-slate-400">
               <li><strong>Premium 30-Day Pass:</strong> a one-time purchase that enables Premium access on the purchasing HireWiz account for 30 days.</li>
-              <li><strong>Free accounts:</strong> 20 complimentary analysis units are provided at account creation; HireWiz does not currently sell standalone unit packs.</li>
+              <li><strong>Free accounts:</strong> 50 complimentary analysis units are provided at account creation; HireWiz does not currently sell standalone unit packs.</li>
             </ul>
           </div>
 

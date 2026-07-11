@@ -88,7 +88,7 @@ export default function TermsOfService() {
         <section>
           <h2 className="text-2xl font-bold text-white mb-4">5. Analysis units</h2>
           <p>
-            New free accounts receive 20 complimentary analysis units for specified AI-assisted operations. The
+            New free accounts receive 50 complimentary analysis units for specified AI-assisted operations. The
             unit cost is displayed before a metered operation starts. Units are a feature-use allowance only: they are
             not money, stored value, virtual currency, or a payment instrument; they have no cash value and cannot be
             transferred, withdrawn, resold, or redeemed. They do not refresh or expire while the account remains open,

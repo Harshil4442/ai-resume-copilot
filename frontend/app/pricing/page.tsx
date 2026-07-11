@@ -101,7 +101,7 @@ export default async function PricingPage() {
         <GlassCard className="p-8 md:p-10 text-slate-300 leading-relaxed space-y-5" hoverEffect={false}>
           <h2 className="text-xl font-black text-white tracking-tight">Included analysis units</h2>
           <p>
-            New free accounts receive <strong>20 complimentary analysis units</strong> for metered AI-assisted
+            New free accounts receive <strong>50 complimentary analysis units</strong> for metered AI-assisted
             operations. They do not refresh on a schedule or expire while the account remains open; they are used
             until the balance reaches zero. An analysis unit is a feature-use allowance inside HireWiz. It is not
             money, a wallet, virtual currency, or stored value. Units are non-transferable, cannot be withdrawn or

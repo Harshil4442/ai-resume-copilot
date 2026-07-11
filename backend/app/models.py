@@ -15,6 +15,9 @@ from sqlalchemy.orm import relationship
 from .database import Base
 
 
+FREE_SIGNUP_ANALYSIS_UNITS = 50
+
+
 def _utcnow():
     return datetime.now(timezone.utc)
 
@@ -24,7 +27,7 @@ class User(Base):
     email = Column(String, unique=True, index=True)
     password_hash = Column(String, default="")
     tier = Column(String, default="free")
-    ai_credits = Column(Integer, default=20, nullable=False)
+    ai_credits = Column(Integer, default=FREE_SIGNUP_ANALYSIS_UNITS, nullable=False)
     # When premium access expires. NULL while free; NULL on a legacy/lifetime
     # premium grant is treated as still-active.
     premium_until = Column(DateTime, nullable=True)
