@@ -21,7 +21,7 @@ jobs:
       - name: Compile backend
         run: python -m compileall backend/app
       - name: Run tests
-        run: PYTHONPATH=backend pytest backend/tests tests -q
+        run: PYTHONPATH=.:backend pytest backend/tests tests -q
 
   frontend:
     runs-on: ubuntu-latest
