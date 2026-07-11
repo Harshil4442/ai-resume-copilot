@@ -1,105 +1,109 @@
-import PageHeader from "../../components/ui/PageHeader";
-import GlassCard from "../../components/ui/GlassCard";
-import FadeIn from "../../components/ui/FadeIn";
+import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 
-export const metadata = {
-  title: "Service Providers (Subprocessors) — HireWiz",
-  description:
-    "The third-party service providers HireWiz uses to operate the platform, the data they process, and where.",
+import PageHeader from "../../components/ui/PageHeader";
+import GlassCard from "../../components/ui/GlassCard";
+import FadeIn from "../../components/ui/FadeIn";
+import { SITE } from "../../lib/site";
+
+export const metadata: Metadata = {
+  title: "Service Providers & External Processing",
+  description: "External service-provider roles used or supported by the HireWiz application and the data involved.",
+  alternates: { canonical: "/subprocessors" },
 };
 
 type Row = {
   provider: string;
+  whenUsed: string;
   purpose: string;
   data: string;
   region: string;
 };
 
-const SUBPROCESSORS: Row[] = [
-  {
-    provider: "Google (Gemini AI)",
-    purpose: "AI resume parsing, compatibility estimates, skill extraction, and suggestions",
-    data: "Resume text and job-description text you submit for analysis",
-    region: "Google Cloud (global)",
-  },
-  {
-    provider: "Adzuna",
-    purpose: "Job-posting data used for market skill-demand analysis",
-    data: "Your search parameters (role, location, filters); no resume content",
-    region: "Provider infrastructure",
-  },
-  {
-    provider: "Jooble",
-    purpose: "Job-posting data used for market skill-demand analysis",
-    data: "Your search parameters (role, location, filters); no resume content",
-    region: "Provider infrastructure",
-  },
-  {
-    provider: "TheirStack",
-    purpose: "Job-posting data used for market skill-demand analysis",
-    data: "Your search parameters (role, location, filters); no resume content",
-    region: "Provider infrastructure",
-  },
-  {
-    provider: "Google Cloud Run",
-    purpose: "Hosting and running the HireWiz backend application",
-    data: "All application data in transit while requests are processed",
-    region: "Google Cloud",
-  },
-  {
-    provider: "Neon (PostgreSQL database)",
-    purpose: "Primary database storing your account, profile, resumes, and history",
-    data: "Account, profile, resume, and match data",
-    region: "Neon cloud",
-  },
+const PROVIDER_ROLES: Row[] = [
   {
     provider: "Vercel",
-    purpose: "Hosting and serving the HireWiz website (frontend)",
-    data: "Standard web request/log data",
-    region: "Vercel edge/cloud",
+    whenUsed: "Website hosting",
+    purpose: "Serve the HireWiz frontend and static assets",
+    data: "Standard web-request, device, network, and security-log data",
+    region: "Vercel edge/cloud infrastructure",
   },
   {
-    provider: "Google OAuth",
-    purpose: "Optional “Sign in with Google” authentication",
-    data: "Your Google account identifier and email (only if you use Google sign-in)",
-    region: "Google",
+    provider: "Google Cloud (Cloud Run)",
+    whenUsed: "Backend hosting",
+    purpose: "Run the HireWiz API and application processing",
+    data: "Application requests and data needed to perform the requested feature",
+    region: "Configured Google Cloud deployment region",
   },
   {
-    provider: "Google Analytics 4",
-    purpose: "Aggregate website usage measurement to improve the product",
-    data: "Usage events, approximate location, device/browser information",
-    region: "Google",
+    provider: "Production database host configured by HireWiz",
+    whenUsed: "Account and application storage",
+    purpose: "Store account, profile, resume text, match history, entitlement, and transaction records",
+    data: "The account and service data described in the Privacy Policy",
+    region: "Configured production database region",
   },
   {
-    provider: "PayPal",
-    purpose: "Payment processing for international (USD) checkout, where enabled",
-    data: "Payment and transaction metadata (payment credentials are handled by the provider, not HireWiz)",
-    region: "PayPal",
+    provider: "Configured AI API provider",
+    whenUsed: "When you request an AI-assisted feature",
+    purpose: "Resume parsing, text comparison, skill extraction, summaries, and suggestions",
+    data: "Relevant resume text, job-description text, prompts, and contextual output needed for the request",
+    region: "Provider infrastructure; may be outside India",
+  },
+  {
+    provider: "TheirStack, Adzuna, or Jooble",
+    whenUsed: "Only when the corresponding job-data API is configured for a market request",
+    purpose: "Return a sample of job postings for market skill-demand analysis",
+    data: "Role, location, country, experience, work-mode, recency, and result-count search parameters; resume content is not intended to be sent",
+    region: "Provider infrastructure",
+  },
+  {
+    provider: "Google",
+    whenUsed: "Only if you choose Google sign-in",
+    purpose: "Authenticate your Google account and return basic account information",
+    data: "Google account identifier, name, and email made available by the sign-in flow",
+    region: "Google infrastructure",
+  },
+  {
+    provider: "Google Analytics",
+    whenUsed: "Only when configured and after you accept analytics",
+    purpose: "Aggregate website-usage measurement",
+    data: "Page/usage events and browser, device, network, and approximate-location information",
+    region: "Google infrastructure",
+  },
+  {
+    provider: "Payment processor shown at checkout",
+    whenUsed: "Only after paid checkout is approved, enabled, and started by you",
+    purpose: "Hosted payment entry, payment confirmation, fraud screening, refunds, and disputes",
+    data: "Customer and transaction data needed for payment; raw payment credentials remain with the processor",
+    region: "Processor and banking/network infrastructure",
   },
 ];
 
 export default function SubprocessorsPage() {
   return (
-    <main className="w-full max-w-[64rem] mx-auto px-4 sm:px-6 md:px-8 py-12 space-y-8">
+    <main className="w-full max-w-[72rem] mx-auto px-4 sm:px-6 md:px-8 py-12 space-y-8">
       <Link href="/" className="inline-flex items-center text-sm font-semibold text-slate-400 hover:text-primary transition-colors">
         <ArrowLeft size={16} className="mr-2" /> Back to Home
       </Link>
 
       <PageHeader
         badge="Transparency"
-        title="Service Providers (Subprocessors)"
-        subtitle="Last updated: 11 July 2026"
+        title="Service Providers & External Processing"
+        subtitle={`Effective and last updated: ${SITE.policyEffectiveDate}`}
       />
 
       <FadeIn delay={0.1}>
         <GlassCard className="p-6 md:p-8 text-slate-300 leading-relaxed space-y-4" hoverEffect={false}>
           <p className="m-0">
-            To operate HireWiz, we rely on the third-party service providers below. We share only the data needed for
-            each provider's function, and we do not sell your personal data. Payment card details are collected and
-            handled by the payment provider at checkout — HireWiz does not receive or store raw card, UPI, or bank
-            credentials.
+            HireWiz uses external infrastructure and APIs to provide the functions below. Some integrations are
+            configurable and are used only when production credentials are enabled or you initiate that feature. We do
+            not present an inactive payment provider as available. The provider used for a market request is also shown
+            with the result.
+          </p>
+          <p className="text-sm text-slate-400 m-0">
+            Payment card details, CVV, UPI PINs, and bank-login credentials are entered with the checkout processor and
+            are not received or stored by HireWiz.
           </p>
         </GlassCard>
       </FadeIn>
@@ -107,22 +111,24 @@ export default function SubprocessorsPage() {
       <FadeIn delay={0.15}>
         <GlassCard className="p-0 overflow-hidden" hoverEffect={false}>
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+            <table className="w-full min-w-[1000px] text-left text-sm">
               <thead>
                 <tr className="border-b border-slate-700/60 text-[11px] uppercase tracking-wider text-slate-400">
-                  <th className="px-4 py-3 font-black">Provider</th>
+                  <th className="px-4 py-3 font-black">Provider / role</th>
+                  <th className="px-4 py-3 font-black">When used</th>
                   <th className="px-4 py-3 font-black">Purpose</th>
-                  <th className="px-4 py-3 font-black">Data processed</th>
-                  <th className="px-4 py-3 font-black">Region</th>
+                  <th className="px-4 py-3 font-black">Data involved</th>
+                  <th className="px-4 py-3 font-black">Processing region</th>
                 </tr>
               </thead>
               <tbody>
-                {SUBPROCESSORS.map((row, i) => (
-                  <tr key={i} className="border-b border-slate-800/60 last:border-0 align-top">
-                    <td className="px-4 py-4 font-bold text-white whitespace-nowrap">{row.provider}</td>
+                {PROVIDER_ROLES.map((row) => (
+                  <tr key={row.provider} className="border-b border-slate-800/60 last:border-0 align-top">
+                    <td className="px-4 py-4 font-bold text-white">{row.provider}</td>
+                    <td className="px-4 py-4 text-slate-300">{row.whenUsed}</td>
                     <td className="px-4 py-4 text-slate-300">{row.purpose}</td>
                     <td className="px-4 py-4 text-slate-400">{row.data}</td>
-                    <td className="px-4 py-4 text-slate-400 whitespace-nowrap">{row.region}</td>
+                    <td className="px-4 py-4 text-slate-400">{row.region}</td>
                   </tr>
                 ))}
               </tbody>
@@ -134,9 +140,10 @@ export default function SubprocessorsPage() {
       <FadeIn delay={0.2}>
         <GlassCard className="p-6 md:p-8 text-slate-300 leading-relaxed space-y-4" hoverEffect={false}>
           <p className="text-sm text-slate-400 m-0">
-            We update this list as our providers change. Questions about how your data is handled? See our{" "}
-            <Link href="/privacy" className="text-primary hover:underline">Privacy Policy</Link> or email{" "}
-            <a href="mailto:work@hirewizhq.com" className="text-primary hover:underline">work@hirewizhq.com</a>.
+            This page is updated when the production provider configuration changes. See the{" "}
+            <Link href="/privacy" className="text-primary hover:underline">Privacy Policy</Link> for purposes,
+            retention, choices, and rights. Questions may be sent to{" "}
+            <a href={`mailto:${SITE.supportEmail}`} className="text-primary hover:underline">{SITE.supportEmail}</a>.
           </p>
         </GlassCard>
       </FadeIn>

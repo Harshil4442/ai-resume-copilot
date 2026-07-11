@@ -3,9 +3,13 @@ import GlassCard from "../../components/ui/GlassCard";
 import FadeIn from "../../components/ui/FadeIn";
 import Link from "next/link";
 import { ArrowLeft, Mail, MapPin, MessageCircle, Clock, Phone, ShieldCheck } from "lucide-react";
+import type { Metadata } from "next";
+import { SITE } from "../../lib/site";
 
-export const metadata = {
-  title: "Contact Us - HireWiz",
+export const metadata: Metadata = {
+  title: "Contact, Billing Support & Grievance",
+  description: "HireWiz support, billing, privacy, business-location, and grievance contact details.",
+  alternates: { canonical: "/contact" },
 };
 
 export default function ContactPage() {
@@ -18,7 +22,7 @@ export default function ContactPage() {
       <PageHeader 
         badge="Get in Touch"
         title="Contact Us"
-        subtitle="We're here to help. Reach out to us for support, billing questions, or partnerships."
+        subtitle="Support for accounts, billing, payments, privacy requests, and grievances."
       />
 
       <FadeIn delay={0.1}>
@@ -29,10 +33,10 @@ export default function ContactPage() {
             </div>
             <h3 className="text-xl font-bold text-white mb-2">Email Support</h3>
             <p className="text-sm text-slate-400 mb-6">
-              Our primary method of support. We aim to respond to all inquiries within 24-48 business hours.
+              Our primary support channel. We aim to respond within 24–48 business hours.
             </p>
-            <a href="mailto:work@hirewizhq.com" className="text-primary font-semibold hover:underline text-lg">
-              work@hirewizhq.com
+            <a href={`mailto:${SITE.supportEmail}`} className="text-primary font-semibold hover:underline text-lg">
+              {SITE.supportEmail}
             </a>
           </GlassCard>
 
@@ -44,12 +48,11 @@ export default function ContactPage() {
             <p className="text-sm text-slate-400 mb-4">
               Available during standard business hours, Indian Standard Time (IST). Email is the fastest way to reach us.
             </p>
-            <a href="tel:+917202910650" className="inline-flex items-center gap-2 text-primary font-semibold hover:underline mb-3">
-              <Phone size={16} /> +91 72029 10650
+            <a href={SITE.supportPhoneHref} className="inline-flex items-center gap-2 text-primary font-semibold hover:underline mb-3">
+              <Phone size={16} /> {SITE.supportPhoneDisplay}
             </a>
             <div className="text-slate-300 font-semibold text-sm">
-              Monday - Sunday<br/>
-              10:00 AM - 10:00 PM IST
+              {SITE.supportHours}
             </div>
           </GlassCard>
 
@@ -57,15 +60,14 @@ export default function ContactPage() {
             <div className="p-3 bg-emerald-500/10 text-emerald-400 w-fit rounded-lg mb-6">
               <MapPin size={24} />
             </div>
-            <h3 className="text-xl font-bold text-white mb-2">Business Correspondence Address</h3>
+            <h3 className="text-xl font-bold text-white mb-2">Operator &amp; Business Location</h3>
             <p className="text-sm text-slate-400 mb-6 max-w-xl">
-              This is our business correspondence address. Please note that we do not offer in-person support at this location. All support requests must be routed via email.
+              HireWiz is operated by the person named below. Customer support is provided remotely; no walk-in or in-person support is offered.
             </p>
             <address className="not-italic text-slate-300 leading-relaxed font-medium">
-              SAVALIYA HARSHIL YOGESHBHAI<br />
-              (an individual trading as HireWiz)<br />
-              Surat, Gujarat<br />
-              India, 395010
+              {SITE.operatorName}<br />
+              trading as HireWiz<br />
+              {SITE.businessLocation}
             </address>
           </GlassCard>
 
@@ -75,18 +77,19 @@ export default function ContactPage() {
             </div>
             <h3 className="text-xl font-bold text-white mb-2">Grievance Officer</h3>
             <p className="text-sm text-slate-400 mb-6 max-w-xl">
-              In line with applicable Indian law, you may raise any complaint or data-protection request with our
-              Grievance Officer. We acknowledge complaints within 48 hours and aim to resolve them within 30 days.
+              You may raise an account, billing, privacy, or service complaint with the Grievance Officer. We aim to
+              acknowledge a complete complaint within 48 hours and resolve it within 30 days, subject to its complexity
+              and any information required from you or a payment provider.
             </p>
             <div className="text-slate-300 leading-relaxed font-medium text-sm">
-              <div className="font-bold text-white">Harshil Yogeshbhai Savaliya</div>
-              <div className="text-slate-400">Grievance Officer, HireWiz</div>
+              <div className="font-bold text-white">{SITE.grievanceContactName}</div>
+              <div className="text-slate-400">{SITE.grievanceContactRole}</div>
               <div className="mt-2 flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4">
-                <a href="mailto:work@hirewizhq.com" className="inline-flex items-center gap-2 text-primary hover:underline">
-                  <Mail size={14} /> work@hirewizhq.com
+                <a href={`mailto:${SITE.supportEmail}`} className="inline-flex items-center gap-2 text-primary hover:underline">
+                  <Mail size={14} /> {SITE.supportEmail}
                 </a>
-                <a href="tel:+917202910650" className="inline-flex items-center gap-2 text-primary hover:underline">
-                  <Phone size={14} /> +91 72029 10650
+                <a href={SITE.supportPhoneHref} className="inline-flex items-center gap-2 text-primary hover:underline">
+                  <Phone size={14} /> {SITE.supportPhoneDisplay}
                 </a>
               </div>
             </div>
@@ -102,7 +105,7 @@ export default function ContactPage() {
               If you have an urgent inquiry regarding a payment, failed transaction, or charge, please include your transaction ID in the subject line of your email.
             </p>
           </div>
-          <a href="mailto:work@hirewizhq.com?subject=Billing%20Support:%20[Insert%20Transaction%20ID]" className="whitespace-nowrap px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white text-sm font-semibold rounded-lg transition-colors border border-slate-600">
+          <a href={`mailto:${SITE.supportEmail}?subject=HireWiz%20billing%20support`} className="whitespace-nowrap px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white text-sm font-semibold rounded-lg transition-colors border border-slate-600">
             Email Billing
           </a>
         </div>

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "[INFO] Starting AI Resume CoPilot (frontend + backend) in one container..."
+echo "[INFO] Starting the HireWiz backend..."
 
 export PORT="${PORT:-10000}"
 

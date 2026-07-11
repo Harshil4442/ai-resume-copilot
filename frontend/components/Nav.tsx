@@ -6,8 +6,7 @@ import { useSession } from "next-auth/react";
 import { apiGet } from "../lib/api";
 import Link from "next/link";
 import Logo from "./ui/Logo";
-import Image from "next/image";
-import { Menu, X, LayoutDashboard, FileText, Target, TrendingUp, BookOpen, User, CreditCard, Info, Mail } from "lucide-react";
+import { Menu, X, LayoutDashboard, FileText, Target, TrendingUp, BookOpen, User, CreditCard, Info, Mail, CircleGauge } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 const appLinks = [
@@ -24,13 +23,12 @@ const appLinks = [
 const publicLinks = [
   { href: "/pricing", label: "Pricing", icon: CreditCard },
   { href: "/about", label: "How It Works", icon: Info },
-  { href: "/market", label: "Market", icon: TrendingUp },
   { href: "/contact", label: "Contact", icon: Mail },
 ];
 
 export default function Nav() {
   const [loggedIn, setLoggedIn] = useState<boolean>(false);
-  const [credits, setCredits] = useState<number | null>(null);
+  const [analysisUnits, setAnalysisUnits] = useState<number | null>(null);
   const [tier, setTier] = useState<string>("free");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   
@@ -38,13 +36,14 @@ export default function Nav() {
   const { data: session, status } = useSession();
 
   useEffect(() => {
+    // Remove tokens left by legacy builds. Authentication now stays inside
+    // NextAuth's protected session cookie and is read through getSession().
+    localStorage.removeItem("access_token");
     if (status === "authenticated" && (session as any)?.user?.accessToken) {
-      localStorage.setItem("access_token", (session as any).user.accessToken);
       setLoggedIn(true);
     } else if (status === "unauthenticated") {
-      localStorage.removeItem("access_token");
       setLoggedIn(false);
-      setCredits(null);
+      setAnalysisUnits(null);
       setTier("free");
     }
   }, [session, status]);
@@ -54,7 +53,7 @@ export default function Nav() {
       if (loggedIn) {
         apiGet<any>("/auth/profile")
           .then(data => {
-            setCredits(data.ai_credits ?? 0);
+            setAnalysisUnits(data.ai_credits ?? 0);
             setTier(data.tier ?? "free");
           })
           .catch(console.error);
@@ -62,8 +61,8 @@ export default function Nav() {
     };
     fetchProfile();
     
-    window.addEventListener("refresh_credits", fetchProfile);
-    return () => window.removeEventListener("refresh_credits", fetchProfile);
+    window.addEventListener("refresh_analysis_units", fetchProfile);
+    return () => window.removeEventListener("refresh_analysis_units", fetchProfile);
   }, [loggedIn, pathname]);
 
   // Close mobile menu on route change
@@ -78,20 +77,7 @@ export default function Nav() {
       <header className="fixed left-0 top-0 z-50 w-full h-14 bg-slate-900/70 backdrop-blur-[12px] border-b border-slate-700/50 animate-fade-in [--animation-delay:600ms] translate-y-[-1rem] opacity-0 shadow-sm">
         <div className="max-w-[80rem] mx-auto px-4 md:px-8 h-full flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2.5">
-            {/* SVG Logo (Recommended: sharp, lightweight, responsive) */}
             <Logo />
-            
-            {/* Alternative PNG Logo (Uncomment to use the uploaded image asset directly) */}
-            {/* 
-            <Image 
-              src="/logo.png" 
-              alt="HireWiz Logo" 
-              width={34} 
-              height={34} 
-              className="object-contain"
-            /> 
-            */}
-            
             <span className="text-sm font-black tracking-tight text-white">HireWiz</span>
           </Link>
           
@@ -117,14 +103,14 @@ export default function Nav() {
           </nav>
 
           <div className="flex items-center gap-3">
-            {loggedIn && credits !== null && (
+            {loggedIn && analysisUnits !== null && (
               <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 rounded-full border border-slate-700/60 cursor-help group relative">
-                <span className="text-xs font-black text-amber-500">⚡</span>
+                <CircleGauge size={13} className="text-blue-400" aria-hidden="true" />
                 <span className="text-xs font-bold text-slate-200">
-                  {tier === "premium" ? "∞" : credits}
+                  {tier === "premium" ? "∞" : analysisUnits}
                 </span>
                 <div className="absolute top-full mt-2 right-0 w-48 p-2 bg-slate-900 text-white text-[10px] rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                  {tier === "premium" ? "Premium Active: Unlimited AI Operations" : `${credits} AI Operations Remaining`}
+                  {tier === "premium" ? "Premium active: no analysis-unit deductions" : `${analysisUnits} analysis units remaining`}
                 </div>
               </div>
             )}
@@ -190,12 +176,12 @@ export default function Nav() {
               </div>
               
               <div className="p-4 border-t border-slate-800">
-                {loggedIn && credits !== null && (
+                {loggedIn && analysisUnits !== null && (
                   <div className="flex items-center justify-between px-4 py-3 bg-slate-900/50 rounded-xl mb-4">
                     <span className="text-sm font-semibold text-slate-300 flex items-center gap-2">
-                      <span className="text-amber-500">⚡</span> Credits
+                      <CircleGauge size={15} className="text-blue-400" aria-hidden="true" /> Analysis units
                     </span>
-                    <span className="font-bold text-white">{tier === "premium" ? "∞" : credits}</span>
+                    <span className="font-bold text-white">{tier === "premium" ? "∞" : analysisUnits}</span>
                   </div>
                 )}
                 {loggedIn ? (

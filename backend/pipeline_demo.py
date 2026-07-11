@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-End-to-end demo pipeline for AI Resume CoPilot.
+End-to-end demo pipeline for HireWiz.
 
 Usage:
     python pipeline_demo.py --resume data/resume_demo.pdf --jd data/jd_demo.txt --tone impactful
@@ -28,7 +28,7 @@ def load_text(path: Path) -> str:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="AI Resume CoPilot demo pipeline")
+    parser = argparse.ArgumentParser(description="HireWiz demo pipeline")
     parser.add_argument("--resume", type=str, required=True, help="Path to resume PDF")
     parser.add_argument("--jd", type=str, required=True, help="Path to job description txt file")
     parser.add_argument("--tone", type=str, default="concise", help="Tone for LLM rewrite")

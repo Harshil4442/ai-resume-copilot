@@ -3,11 +3,14 @@ import GlassCard from "../../components/ui/GlassCard";
 import FadeIn from "../../components/ui/FadeIn";
 import Link from "next/link";
 import { ArrowLeft, Package } from "lucide-react";
+import type { Metadata } from "next";
+import { SITE } from "../../lib/site";
 
-export const metadata = {
-  title: "Digital Service Delivery & Shipping Policy — HireWiz",
+export const metadata: Metadata = {
+  title: "Digital Service Delivery & Shipping Policy",
   description:
     "HireWiz delivers digital software access only; no physical goods are shipped. How and when access is delivered after payment.",
+  alternates: { canonical: "/digital-delivery" },
 };
 
 export default function DigitalDeliveryPage() {
@@ -20,7 +23,7 @@ export default function DigitalDeliveryPage() {
       <PageHeader
         badge="Legal & Compliance"
         title="Digital Service Delivery & Shipping Policy"
-        subtitle="Last updated: 11 July 2026"
+        subtitle={`Effective and last updated: ${SITE.policyEffectiveDate}`}
       />
 
       <FadeIn delay={0.1}>
@@ -31,7 +34,7 @@ export default function DigitalDeliveryPage() {
           </div>
 
           <p className="text-sm text-slate-400 m-0">
-            HireWiz is operated by SAVALIYA HARSHIL YOGESHBHAI, an individual trading as HireWiz.
+            Version {SITE.policyVersion}. HireWiz is operated by {SITE.operatorName}, trading as HireWiz.
           </p>
 
           <p>
@@ -42,34 +45,35 @@ export default function DigitalDeliveryPage() {
           <div>
             <h3 className="text-lg font-bold text-white mb-3">1. What you receive</h3>
             <ul className="list-disc pl-6 space-y-2 text-slate-400">
-              <li><strong>Premium subscription:</strong> your account is upgraded to Premium, unlocking unlimited AI-assisted operations for the billing month.</li>
-              <li><strong>Analysis Units Pack:</strong> the purchased analysis units are added to your account balance.</li>
+              <li><strong>Premium 30-Day Pass:</strong> a one-time purchase that enables Premium access on the purchasing HireWiz account for 30 days.</li>
+              <li><strong>Free accounts:</strong> 20 complimentary analysis units are provided at account creation; HireWiz does not currently sell standalone unit packs.</li>
             </ul>
           </div>
 
           <div>
             <h3 className="text-lg font-bold text-white mb-3">2. When access is delivered</h3>
             <p>
-              Access and unit allowances are activated <strong>only after your payment is confirmed</strong>. In normal
-              conditions this is immediate. If confirmation is delayed by the payment provider, activation typically
-              completes within a few minutes and, in rare cases, up to a few hours.
+              Premium access is activated <strong>only after confirmed payment</strong>. In normal conditions the
+              purchasing account is updated shortly after confirmation. A pending, failed, abandoned, disputed, or
+              unverified payment does not create paid access.
             </p>
           </div>
 
           <div>
             <h3 className="text-lg font-bold text-white mb-3">3. Where it is delivered</h3>
             <p>
-              Delivery is entirely online, inside your HireWiz account associated with your registered email address.
-              A payment confirmation is shown on-screen after checkout.
+              Delivery is entirely online, inside the HireWiz account associated with the purchase. Confirmation is
+              shown in the account after the payment event has been verified. No courier, shipping address, or physical delivery is involved.
             </p>
           </div>
 
           <div>
             <h3 className="text-lg font-bold text-white mb-3">4. If activation is delayed</h3>
             <p>
-              If you have paid but do not see your Premium status or units within a few hours, email{" "}
-              <a href="mailto:work@hirewizhq.com" className="text-primary hover:underline">work@hirewizhq.com</a>{" "}
-              from your registered email address with your transaction ID, and we will resolve it.
+              If your payment is confirmed but Premium is not visible in your account within a few hours, email{" "}
+              <a href={`mailto:${SITE.supportEmail}`} className="text-primary hover:underline">{SITE.supportEmail}</a>{" "}
+              from your registered email address with the transaction ID. We will investigate the payment status and
+              either correct eligible access or explain the next step under the Refund Policy.
             </p>
           </div>
 

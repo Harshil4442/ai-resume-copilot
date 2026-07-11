@@ -1,6 +1,6 @@
-# AI Resume CoPilot
+# HireWiz
 
-AI Resume CoPilot is a full-stack career intelligence app that helps job seekers turn a resume into measurable career signals. Users can create a profile, upload and parse resumes, match resumes against jobs, ask grounded AI questions about a match, generate learning strategies, and analyze live job-market skill trends.
+HireWiz is a full-stack, self-service resume-analysis application that helps users review their own resume against job descriptions and job-market samples. Users can create a profile, upload and parse resumes, generate informational compatibility estimates, ask grounded AI questions about a match, create learning strategies, and analyze sampled job-market skill trends. HireWiz is not a recruitment or placement service and does not guarantee ATS acceptance, interviews, offers, or employment.
 
 The project is designed for a split production deployment:
 
@@ -14,6 +14,8 @@ Project workflow diagrams:
 
 - Mermaid diagrams and explanations: [docs/WORKFLOW.md](docs/WORKFLOW.md)
 - Standalone browser diagram: [docs/workflow.html](docs/workflow.html)
+- Payment trust boundaries and ledgers: [docs/PAYMENTS_ARCHITECTURE.md](docs/PAYMENTS_ARCHITECTURE.md)
+- Razorpay activation and launch checklist: [docs/RAZORPAY_GO_LIVE.md](docs/RAZORPAY_GO_LIVE.md)
 
 ---
 
@@ -324,8 +326,9 @@ Create `backend/.env`.
 For quick local SQLite development:
 
 ```bash
+APP_ENV=development
 DATABASE_URL=sqlite:///./app.db
-JWT_SECRET=change-this-local-secret
+JWT_SECRET=hirewiz-local-development-secret-change-me
 FRONTEND_ORIGINS=http://localhost:3000
 ```
 
@@ -392,6 +395,8 @@ Option B: use Next.js same-origin rewrite:
 ```bash
 NEXT_PUBLIC_API_BASE_URL=/api
 BACKEND_URL=http://localhost:8000
+NEXTAUTH_SECRET=hirewiz-local-nextauth-secret-change-me
+NEXTAUTH_URL=http://localhost:3000
 ```
 
 ### 5. Run Frontend
@@ -416,11 +421,21 @@ http://localhost:3000
 
 | Variable | Required | Description |
 | --- | --- | --- |
+| `APP_ENV` | Production yes | Set to `production`. Development must opt in with `development`. |
 | `DATABASE_URL` | Production yes | Database connection string. Defaults to local SQLite if missing. |
 | `JWT_SECRET` | Production yes | Secret used to sign JWT access tokens. |
 | `JWT_ALGORITHM` | No | Defaults to `HS256`. |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | No | Defaults to `10080`. |
-| `FRONTEND_ORIGINS` | Recommended | Comma-separated allowed frontend origins or `*`. |
+| `FRONTEND_ORIGINS` | Production yes | Explicit comma-separated HTTPS frontend origins. Wildcard is rejected in production. |
+| `GOOGLE_CLIENT_ID` | If Google sign-in is enabled | Expected audience when the backend verifies Google's signed ID token. Must match the frontend OAuth client. |
+| `RAZORPAY_MODE` | Payments | `test` or `live`; must match the key-ID prefix. |
+| `RAZORPAY_KEY_ID` | Payments | Server API key ID; it is returned only for an approved checkout order. |
+| `RAZORPAY_KEY_SECRET` | Payments | Server-only Orders API and checkout-signature secret. |
+| `RAZORPAY_WEBHOOK_SECRET` | Payments | Unique server-only webhook signature secret. |
+| `RAZORPAY_WEBHOOK_SECRET_PREVIOUS` | Rotation only | Old webhook secret retained temporarily while provider retries drain. |
+| `RAZORPAY_ACCOUNT_APPROVED` | Payments | Must be exactly `true` only after written account activation for the real model. |
+| `PAYMENTS_GO_LIVE_REVIEW_COMPLETE` | Payments | Final owner switch after KYC identity, address, tax/invoice, support, policy, and staging checks are complete. |
+| `RAZORPAY_CHECKOUT_ENABLED` | Payments | Emergency/operator switch; defaults closed unless exactly `true`. |
 | `LLM_API_BASE` | For LLM features | OpenAI-compatible API base. Groq uses `https://api.groq.com/openai/v1`. |
 | `LLM_MODEL` | For LLM features | Chat model name. |
 | `LLM_API_KEY` | For LLM features | LLM provider API key. |
@@ -438,8 +453,13 @@ http://localhost:3000
 
 | Variable | Required | Description |
 | --- | --- | --- |
-| `NEXT_PUBLIC_API_BASE_URL` | Recommended | API base used by frontend fetch helpers. Example: `https://YOUR_CLOUD_RUN_URL/api`. |
-| `BACKEND_URL` | Optional | Backend base URL used by Next.js rewrites when frontend calls `/api`. Do not include `/api`. |
+| `NEXT_PUBLIC_API_BASE_URL` | Production yes | API base used by browser fetch helpers. Example: `https://YOUR_CLOUD_RUN_URL/api`. |
+| `BACKEND_URL` | Production yes | Backend origin used by NextAuth, rewrites, and public catalog rendering. Do not include `/api`. |
+| `NEXTAUTH_URL` | Production yes | Canonical frontend URL, for example `https://www.hirewizhq.com`. |
+| `NEXTAUTH_SECRET` | Production yes | Stable random secret of at least 32 characters. |
+| `GOOGLE_CLIENT_ID` | If Google sign-in is enabled | Google OAuth web client ID; must match the backend value. |
+| `GOOGLE_CLIENT_SECRET` | If Google sign-in is enabled | Google OAuth client secret; server-side only. |
+| `NEXT_PUBLIC_GA_ID` | Optional | Google Analytics measurement ID. Analytics still waits for explicit consent. |
 
 ---
 
@@ -454,7 +474,14 @@ Recommended Cloud Run environment variables:
 ```bash
 DATABASE_URL="postgresql://USER:PASSWORD@HOST:PORT/DBNAME"
 JWT_SECRET="YOUR_LONG_RANDOM_SECRET"
+APP_ENV="production"
 FRONTEND_ORIGINS="https://YOUR_VERCEL_DOMAIN"
+GOOGLE_CLIENT_ID="YOUR_GOOGLE_WEB_CLIENT_ID"
+
+RAZORPAY_MODE="live"
+RAZORPAY_ACCOUNT_APPROVED="false"
+PAYMENTS_GO_LIVE_REVIEW_COMPLETE="false"
+RAZORPAY_CHECKOUT_ENABLED="false"
 
 LLM_API_BASE="https://api.groq.com/openai/v1"
 LLM_MODEL="YOUR_GROQ_MODEL"
@@ -505,9 +532,15 @@ Set these environment variables in Vercel:
 ```bash
 NEXT_PUBLIC_API_BASE_URL=https://YOUR_CLOUD_RUN_SERVICE_URL/api
 BACKEND_URL=https://YOUR_CLOUD_RUN_SERVICE_URL
+NEXTAUTH_URL=https://www.hirewizhq.com
+NEXTAUTH_SECRET=YOUR_STABLE_RANDOM_32_PLUS_CHARACTER_SECRET
+GOOGLE_CLIENT_ID=YOUR_GOOGLE_WEB_CLIENT_ID
+GOOGLE_CLIENT_SECRET=YOUR_GOOGLE_WEB_CLIENT_SECRET
 ```
 
-`NEXT_PUBLIC_API_BASE_URL` is the main value used by the frontend fetch helpers. `BACKEND_URL` supports the Next.js rewrite fallback for `/api/*`.
+`NEXT_PUBLIC_API_BASE_URL` is used by browser fetch helpers. `BACKEND_URL` is
+also required server-side for NextAuth and the public pricing catalog; omitting
+it intentionally leaves pricing/checkout unavailable.
 
 After changing Vercel environment variables, redeploy the frontend.
 
@@ -632,7 +665,7 @@ Check:
 - `NEXT_PUBLIC_API_BASE_URL` in Vercel includes `/api`.
 - `BACKEND_URL` in Vercel does not include `/api` if using rewrites.
 - Cloud Run allows unauthenticated requests.
-- `FRONTEND_ORIGINS` includes the Vercel domain or is set to `*`.
+- `FRONTEND_ORIGINS` explicitly includes the canonical Vercel/custom domain.
 
 ### Login works locally but not in production
 
@@ -640,7 +673,9 @@ Check:
 
 - Same production backend is used by the frontend.
 - `JWT_SECRET` is stable across Cloud Run revisions.
-- Browser localStorage has `access_token`.
+- `NEXTAUTH_SECRET` is stable and at least 32 characters.
+- The secure NextAuth session cookie exists; auth bearer tokens are not stored in browser `localStorage`.
+- Google OAuth credentials and the backend `GOOGLE_CLIENT_ID` match, if Google sign-in is enabled.
 - HTTPS domain is correct in Vercel env vars.
 
 ### Resume parsing quality is weak

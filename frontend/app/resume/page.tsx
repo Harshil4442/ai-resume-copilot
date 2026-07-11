@@ -50,7 +50,7 @@ export default function ResumePage() {
     try {
       const json = await apiPostForm<ResumeParseResponse>("/resume/parse", form);
       setData(json);
-      window.dispatchEvent(new Event("refresh_credits"));
+      window.dispatchEvent(new Event("refresh_analysis_units"));
     } catch (err: any) {
       setError(err.message || "Failed to parse resume.");
     } finally {
@@ -110,7 +110,7 @@ export default function ResumePage() {
                 </div>
               </div>
 
-              <AnimatedButton disabled={!file || loading} className="w-full py-4 text-lg shadow-lg" showArrow>
+              <AnimatedButton type="submit" disabled={!file || loading} className="w-full py-4 text-lg shadow-lg" showArrow>
                 {loading ? "Extracting Data..." : "Upload & Parse"}
               </AnimatedButton>
 
