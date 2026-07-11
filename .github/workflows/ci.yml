@@ -21,7 +21,7 @@ jobs:
       - name: Compile backend
         run: python -m compileall backend/app
       - name: Run tests
-        run: PYTHONPATH=backend pytest -q
+        run: PYTHONPATH=backend pytest backend/tests tests -q
 
   frontend:
     runs-on: ubuntu-latest
@@ -37,4 +37,9 @@ jobs:
         run: npm ci
       - name: Build frontend
         working-directory: frontend
+        env:
+          NEXTAUTH_SECRET: ci-only-secret-at-least-thirty-two-characters
+          NEXTAUTH_URL: http://127.0.0.1:3000
+          BACKEND_URL: http://127.0.0.1:8000
+          NEXT_PUBLIC_API_BASE_URL: /api
         run: npm run build
