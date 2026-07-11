@@ -7,7 +7,15 @@ from google.oauth2 import id_token as google_id_token
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import EntitlementLedger, User, UserProfile, Resume, JobMatch, PaymentOrder
+from ..models import (
+    FREE_SIGNUP_ANALYSIS_UNITS,
+    EntitlementLedger,
+    User,
+    UserProfile,
+    Resume,
+    JobMatch,
+    PaymentOrder,
+)
 from ..schemas import (
     AuthLoginRequest,
     AuthGoogleLoginRequest,
@@ -108,6 +116,7 @@ def register(request: Request, payload: AuthRegisterRequest, db: Session = Depen
     u = User(
         email=email,
         password_hash=hash_password(payload.password),
+        ai_credits=FREE_SIGNUP_ANALYSIS_UNITS,
         terms_accepted_at=accepted_at,
         terms_version=CURRENT_POLICY_VERSION,
         privacy_version=CURRENT_POLICY_VERSION,
@@ -175,7 +184,7 @@ def google_login(request: Request, payload: AuthGoogleLoginRequest, db: Session 
         u = User(
             email=email,
             password_hash="",
-            ai_credits=20,
+            ai_credits=FREE_SIGNUP_ANALYSIS_UNITS,
             terms_accepted_at=accepted_at,
             terms_version=CURRENT_POLICY_VERSION,
             privacy_version=CURRENT_POLICY_VERSION,

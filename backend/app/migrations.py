@@ -3,6 +3,7 @@ import uuid
 from contextlib import contextmanager
 from sqlalchemy import inspect, text
 from .database import engine
+from .models import FREE_SIGNUP_ANALYSIS_UNITS
 
 log = logging.getLogger("ai_resume_copilot.migrations")
 
@@ -59,7 +60,19 @@ def _run_migrations_unlocked(bind):
         # Add 'ai_credits'
         if "ai_credits" not in columns:
             log.info("Adding column 'ai_credits' to 'users' table")
-            connection.execute(text("ALTER TABLE users ADD COLUMN ai_credits INTEGER DEFAULT 5 NOT NULL"))
+            connection.execute(
+                text(
+                    "ALTER TABLE users ADD COLUMN "
+                    f"ai_credits INTEGER DEFAULT {FREE_SIGNUP_ANALYSIS_UNITS} NOT NULL"
+                )
+            )
+        elif bind.dialect.name == "postgresql":
+            connection.execute(
+                text(
+                    "ALTER TABLE users ALTER COLUMN ai_credits "
+                    f"SET DEFAULT {FREE_SIGNUP_ANALYSIS_UNITS}"
+                )
+            )
             
         # Add 'premium_until' (expiry for time-limited premium grants)
         if "premium_until" not in columns:

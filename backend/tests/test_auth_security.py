@@ -37,6 +37,29 @@ def _client():
     return engine, factory, TestClient(app)
 
 
+def test_password_registration_grants_free_analysis_units():
+    limiter._storage.reset()
+    engine, factory, client = _client()
+    try:
+        response = client.post(
+            "/api/auth/register",
+            json={
+                "email": "new.user@example.com",
+                "password": "strong-password-123",
+                "accepted_terms": True,
+                "confirmed_age_18": True,
+            },
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["ai_credits"] == 50
+        with factory() as db:
+            user = db.query(User).one()
+            assert user.ai_credits == 50
+    finally:
+        client.close()
+        engine.dispose()
+
+
 def test_google_login_derives_identity_from_verified_token(monkeypatch):
     limiter._storage.reset()
     monkeypatch.setenv("GOOGLE_CLIENT_ID", "google-web-client.apps.exampleusercontent.com")
@@ -68,6 +91,7 @@ def test_google_login_derives_identity_from_verified_token(monkeypatch):
             user = db.query(User).one()
             assert user.email == "verified.user@example.com"
             assert user.password_hash == ""
+            assert user.ai_credits == 50
             assert user.terms_version == "2026-07-11"
             assert user.terms_accepted_at is not None
     finally:
