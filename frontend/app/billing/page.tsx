@@ -19,6 +19,7 @@ import { apiGet, apiPostJson } from "../../lib/api";
 import PageHeader from "../../components/ui/PageHeader";
 import GlassCard from "../../components/ui/GlassCard";
 import FadeIn from "../../components/ui/FadeIn";
+import { trackEvent } from "../../lib/analytics";
 
 const RAZORPAY_CHECKOUT_SRC = "https://checkout.razorpay.com/v1/checkout.js";
 const SUPPORTED_SKUS = ["premium_30d"] as const;
@@ -278,6 +279,12 @@ export default function BillingPage() {
       setCurrentOrder(order);
       setPhase("confirmed");
       setError(null);
+      trackEvent("payment_success", {
+        order_id: order.order_id,
+        sku: order.sku,
+        amount_minor: order.amount_minor,
+        currency: order.currency,
+      });
       window.dispatchEvent(new Event("refresh_analysis_units"));
       try {
         await refreshProfile();
@@ -366,6 +373,11 @@ export default function BillingPage() {
     setPhase("opening");
     setError(null);
     setCurrentOrder(null);
+    trackEvent("checkout_started", {
+      sku: selectedProduct.sku,
+      amount_minor: selectedProduct.amount_minor,
+      currency: selectedProduct.currency,
+    });
 
     try {
       // The browser sends only an allowlisted SKU. Amount, currency and
@@ -414,6 +426,11 @@ export default function BillingPage() {
         prefill: order.prefill?.email ? { email: order.prefill.email } : undefined,
         handler: (response) => {
           successReported = true;
+          trackEvent("checkout_client_success", {
+            sku: selectedProduct.sku,
+            order_id: order.order_id,
+            provider_order_id: response.razorpay_order_id,
+          });
           setPhase("confirming");
           // Send the provider callback fields for server-side HMAC verification,
           // but never treat this browser callback as fulfilment authority. The
@@ -436,6 +453,10 @@ export default function BillingPage() {
           confirm_close: true,
           ondismiss: () => {
             if (successReported) return;
+            trackEvent("checkout_dismissed", {
+              sku: selectedProduct.sku,
+              order_id: order.order_id,
+            });
             setPhase("pending");
             setError(
               "Checkout was closed. No payment is assumed. If you completed a payment, check the server status before trying again.",
@@ -447,6 +468,11 @@ export default function BillingPage() {
       });
 
       checkout.on("payment.failed", (response) => {
+        trackEvent("checkout_payment_failed", {
+          sku: selectedProduct.sku,
+          order_id: order.order_id,
+          error_description: response.error?.description || null,
+        });
         setPhase("pending");
         setError(
           response.error?.description ||

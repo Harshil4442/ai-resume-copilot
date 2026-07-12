@@ -6,7 +6,7 @@ import { useSession } from "next-auth/react";
 import { apiGet } from "../lib/api";
 import Link from "next/link";
 import Logo from "./ui/Logo";
-import { Menu, X, LayoutDashboard, FileText, Target, TrendingUp, BookOpen, User, CreditCard, Info, Mail, CircleGauge } from "lucide-react";
+import { Menu, X, LayoutDashboard, FileText, Target, TrendingUp, BookOpen, User, CreditCard, Info, Mail, CircleGauge, Wrench, Library } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 const appLinks = [
@@ -21,9 +21,10 @@ const appLinks = [
 
 // Signed-out visitors see public, non-authenticated destinations only.
 const publicLinks = [
+  { href: "/tools", label: "Tools", icon: Wrench },
+  { href: "/resources", label: "Resources", icon: Library },
   { href: "/pricing", label: "Pricing", icon: CreditCard },
   { href: "/about", label: "How It Works", icon: Info },
-  { href: "/contact", label: "Contact", icon: Mail },
 ];
 
 export default function Nav() {
