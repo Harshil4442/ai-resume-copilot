@@ -11,6 +11,7 @@ import BulletOptimizer from "../components/BulletOptimizer";
 import ScrollReveal from "../components/ui/ScrollReveal";
 import FloatingElement from "../components/ui/FloatingElement";
 import type { Metadata } from "next";
+import { blogPosts, toolPages } from "../lib/seoContent";
 
 export const metadata: Metadata = {
   title: "AI-assisted resume analysis you review and control",
@@ -245,6 +246,83 @@ export default function Home() {
             </GlassCard>
           </StaggerItem>
         </StaggerContainer>
+      </section>
+
+      {/* Public Learning Funnel */}
+      <section className="w-full max-w-[80rem] mx-auto px-6 md:px-8 mb-32">
+        <ScrollReveal className="text-center mb-12">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-950/50 border border-blue-800/60 text-blue-200 text-xs font-bold mb-5">
+            <BookOpen size={14} /> New public guides and tools
+          </div>
+          <h2 className="text-3xl md:text-5xl font-bold tracking-tight text-white mb-4">
+            Learn first, then apply it with a tool.
+          </h2>
+          <p className="text-lg text-slate-400 max-w-2xl mx-auto leading-relaxed">
+            Browse resume guides, use quick public tools, and create a free account when you want deeper analysis.
+          </p>
+        </ScrollReveal>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <GlassCard className="p-7" hoverEffect={false}>
+            <div className="text-xs font-bold uppercase tracking-wider text-purple-300">Resume guides</div>
+            <h3 className="mt-2 text-2xl font-black text-white">Read practical resume advice</h3>
+            <p className="mt-3 text-sm text-slate-400 leading-relaxed">
+              Guides for keywords, job-description matching, fresher formats, and role-specific resume signals.
+            </p>
+            <div className="mt-5 space-y-3">
+              {blogPosts.slice(0, 3).map((post) => (
+                <Link
+                  key={post.slug}
+                  href={`/blog/${post.slug}`}
+                  className="block rounded-xl border border-slate-800 bg-slate-950/40 p-3 text-sm font-bold text-slate-200 hover:border-primary/70 hover:text-primary"
+                >
+                  {post.title}
+                </Link>
+              ))}
+            </div>
+            <Link href="/blog" className="mt-6 inline-flex items-center gap-1 text-sm font-bold text-primary hover:text-blue-300">
+              View all guides <ArrowRight className="h-4 w-4" />
+            </Link>
+          </GlassCard>
+
+          <GlassCard className="p-7" hoverEffect={false}>
+            <div className="text-xs font-bold uppercase tracking-wider text-blue-300">Free tools</div>
+            <h3 className="mt-2 text-2xl font-black text-white">Turn advice into action</h3>
+            <p className="mt-3 text-sm text-slate-400 leading-relaxed">
+              Start with a public checklist or one-bullet optimizer before signing up for full resume parsing.
+            </p>
+            <div className="mt-5 space-y-3">
+              {toolPages.slice(0, 3).map((tool) => (
+                <Link
+                  key={tool.slug}
+                  href={`/tools/${tool.slug}`}
+                  className="block rounded-xl border border-slate-800 bg-slate-950/40 p-3 text-sm font-bold text-slate-200 hover:border-primary/70 hover:text-primary"
+                >
+                  {tool.title}
+                </Link>
+              ))}
+            </div>
+            <Link href="/tools" className="mt-6 inline-flex items-center gap-1 text-sm font-bold text-primary hover:text-blue-300">
+              Open free tools <ArrowRight className="h-4 w-4" />
+            </Link>
+          </GlassCard>
+
+          <GlassCard className="p-7 bg-gradient-to-br from-slate-950/70 to-blue-950/40" hoverEffect={false}>
+            <div className="text-xs font-bold uppercase tracking-wider text-emerald-300">Learning resources</div>
+            <h3 className="mt-2 text-2xl font-black text-white">Close skill gaps honestly</h3>
+            <p className="mt-3 text-sm text-slate-400 leading-relaxed">
+              Use curated official/free learning resources to build real evidence for skills your target roles mention.
+            </p>
+            <ul className="mt-5 space-y-3 text-sm text-slate-300">
+              <li className="flex items-start gap-2"><CheckCircle2 size={16} className="text-emerald-400 mt-0.5 shrink-0" /> Official and free-first resources</li>
+              <li className="flex items-start gap-2"><CheckCircle2 size={16} className="text-emerald-400 mt-0.5 shrink-0" /> Affiliate-ready disclosure for future monetization</li>
+              <li className="flex items-start gap-2"><CheckCircle2 size={16} className="text-emerald-400 mt-0.5 shrink-0" /> Tracks outbound resource clicks after analytics consent</li>
+            </ul>
+            <Link href="/resources" className="mt-6 inline-flex items-center gap-1 text-sm font-bold text-primary hover:text-blue-300">
+              Browse resources <ArrowRight className="h-4 w-4" />
+            </Link>
+          </GlassCard>
+        </div>
       </section>
 
       {/* CTA Section */}
