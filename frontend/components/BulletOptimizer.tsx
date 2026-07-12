@@ -1,6 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
+import { trackEvent } from "../lib/analytics";
 
 type OptimizationResult = {
   action_verb_score: number;
@@ -35,6 +37,10 @@ export default function BulletOptimizer() {
       }
       const data = await res.json();
       setResult(data);
+      trackEvent("bullet_optimizer_used", {
+        action_verb_score: data.action_verb_score,
+        metrics_present: Boolean(data.metrics_present),
+      });
     } catch (err: any) {
       setError(err.message || "Failed to connect to parser service.");
     } finally {
@@ -112,12 +118,22 @@ export default function BulletOptimizer() {
                 Create an account to structure your resume, compare it with job-description text, and review suggestions. HireWiz does not guarantee employment outcomes.
               </p>
             </div>
-            <a
+            <div className="flex flex-col sm:flex-row gap-3">
+            <Link
               href="/register"
+              onClick={() => trackEvent("signup_cta_clicked", { source: "bullet_optimizer" })}
               className="bg-white text-slate-950 hover:bg-slate-200 transition text-center px-6 py-2.5 rounded-full font-black text-sm whitespace-nowrap"
             >
               Sign Up For Free
-            </a>
+            </Link>
+            <Link
+              href="/pricing"
+              onClick={() => trackEvent("premium_cta_clicked", { source: "bullet_optimizer" })}
+              className="border border-slate-700 text-white hover:bg-slate-800 transition text-center px-6 py-2.5 rounded-full font-black text-sm whitespace-nowrap"
+            >
+              View Premium
+            </Link>
+            </div>
           </div>
         </div>
       )}

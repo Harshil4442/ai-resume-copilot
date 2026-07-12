@@ -5,6 +5,7 @@ import { AlertCircle, ArrowLeft, CheckCircle2, Crown, Shield } from "lucide-reac
 import PageHeader from "../../components/ui/PageHeader";
 import GlassCard from "../../components/ui/GlassCard";
 import FadeIn from "../../components/ui/FadeIn";
+import TrackEventOnView from "../../components/TrackEventOnView";
 import { getPublicBillingCatalog } from "../../lib/billingCatalog";
 import { SITE } from "../../lib/site";
 
@@ -34,6 +35,7 @@ export default async function PricingPage() {
 
   return (
     <main className="w-full max-w-[64rem] mx-auto px-4 sm:px-6 md:px-8 py-12 space-y-10">
+      <TrackEventOnView eventName="pricing_viewed" />
       <Link href="/" className="inline-flex items-center text-sm font-semibold text-slate-400 hover:text-primary transition-colors">
         <ArrowLeft size={16} className="mr-2" /> Back to Home
       </Link>

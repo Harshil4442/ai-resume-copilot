@@ -32,38 +32,31 @@ export default function Footer() {
             <div>
               <h3 className="font-bold text-white mb-6">Product</h3>
               <ul className="space-y-4">
+                <li><Link href="/tools" className="text-sm text-slate-400 hover:text-white transition-colors">Free Tools</Link></li>
+                <li><Link href="/tools/resume-bullet-optimizer" className="text-sm text-slate-400 hover:text-white transition-colors">Bullet Optimizer</Link></li>
                 <li><Link href="/about" className="text-sm text-slate-400 hover:text-white transition-colors">How It Works</Link></li>
                 <li><Link href="/pricing" className="text-sm text-slate-400 hover:text-white transition-colors">Pricing</Link></li>
-                <li><Link href="/login" className="text-sm text-slate-400 hover:text-white transition-colors">Sign In</Link></li>
-                <li><Link href="/register" className="text-sm text-slate-400 hover:text-white transition-colors">Create Account</Link></li>
               </ul>
             </div>
 
             <div>
-              <h3 className="font-bold text-white mb-6">Support</h3>
+              <h3 className="font-bold text-white mb-6">Guides</h3>
               <ul className="space-y-4">
-                <li><Link href="/contact" className="text-sm text-slate-400 hover:text-white transition-colors">Contact Us</Link></li>
-                <li><Link href="/digital-delivery" className="text-sm text-slate-400 hover:text-white transition-colors">Delivery &amp; Shipping</Link></li>
-                <li><Link href="/refund" className="text-sm text-slate-400 hover:text-white transition-colors">Refund &amp; Cancellation</Link></li>
-                <li><Link href="/subprocessors" className="text-sm text-slate-400 hover:text-white transition-colors">Service Providers</Link></li>
+                <li><Link href="/blog" className="text-sm text-slate-400 hover:text-white transition-colors">Resume Guides</Link></li>
+                <li><Link href="/blog/ats-resume-format-for-freshers" className="text-sm text-slate-400 hover:text-white transition-colors">Fresher Resume Format</Link></li>
+                <li><Link href="/blog/how-to-match-resume-with-job-description" className="text-sm text-slate-400 hover:text-white transition-colors">JD Match Guide</Link></li>
+                <li><Link href="/resources" className="text-sm text-slate-400 hover:text-white transition-colors">Learning Resources</Link></li>
               </ul>
             </div>
 
             <div>
               <h3 className="font-bold text-white mb-6">Legal</h3>
               <ul className="space-y-4">
+                <li><Link href="/contact" className="text-sm text-slate-400 hover:text-white transition-colors">Contact Us</Link></li>
+                <li><Link href="/digital-delivery" className="text-sm text-slate-400 hover:text-white transition-colors">Delivery &amp; Shipping</Link></li>
+                <li><Link href="/refund" className="text-sm text-slate-400 hover:text-white transition-colors">Refund &amp; Cancellation</Link></li>
                 <li><Link href="/privacy" className="text-sm text-slate-400 hover:text-white transition-colors">Privacy Policy</Link></li>
                 <li><Link href="/terms" className="text-sm text-slate-400 hover:text-white transition-colors">Terms of Service</Link></li>
-                <li><Link href="/cookies" className="text-sm text-slate-400 hover:text-white transition-colors">Cookie Policy</Link></li>
-                <li>
-                  <button
-                    type="button"
-                    onClick={() => window.dispatchEvent(new Event("hirewiz:open-cookie-preferences"))}
-                    className="text-left text-sm text-slate-400 hover:text-white transition-colors"
-                  >
-                    Cookie Preferences
-                  </button>
-                </li>
               </ul>
             </div>
           </div>
