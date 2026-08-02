@@ -7,13 +7,13 @@ import {
   CheckCircle2,
   CircleGauge,
   Clock3,
+  CreditCard,
   Crown,
   ExternalLink,
   FileText,
   Lock,
   RefreshCw,
   Shield,
-  ShoppingBag,
 } from "lucide-react";
 import { apiGet, apiPostJson } from "../../lib/api";
 import PageHeader from "../../components/ui/PageHeader";
@@ -256,6 +256,15 @@ export default function BillingPage() {
     if (!catalog) return [];
     return catalog.products.filter((product) => product.catalog_visible);
   }, [catalog]);
+
+  useEffect(() => {
+    setSelectedSku((current) => {
+      if (current && visibleProducts.some((product) => product.sku === current)) {
+        return current;
+      }
+      return visibleProducts[0]?.sku ?? null;
+    });
+  }, [visibleProducts]);
 
   const selectedProduct = useMemo(
     () => visibleProducts.find((product) => product.sku === selectedSku) ?? null,
@@ -542,8 +551,8 @@ export default function BillingPage() {
     <main className="w-full max-w-[76rem] mx-auto px-4 sm:px-6 md:px-8 py-8 space-y-10">
       <PageHeader
         badge="Account billing"
-        title="Manage your HireWiz access."
-        subtitle="India-only pricing in INR. Purchases are one-time, do not auto-renew, and are delivered digitally after verified payment confirmation."
+        title="Upgrade to HireWiz Premium."
+        subtitle="One-time INR purchase, 30 days of Premium access, and no automatic renewal. Access is delivered after verified payment confirmation."
       />
 
       <GlassCard
@@ -601,10 +610,10 @@ export default function BillingPage() {
           <section className="space-y-5" aria-labelledby="products-heading">
             <div>
               <h2 id="products-heading" className="text-xl font-black text-white tracking-tight">
-                Available products
+                Premium pass
               </h2>
               <p className="mt-1 text-sm text-slate-400">
-                Prices below come from the server catalog. Select a product to review the complete order summary.
+                Prices come from the server catalog and are locked before hosted checkout opens.
               </p>
             </div>
 
@@ -667,7 +676,7 @@ export default function BillingPage() {
                                 ? "Checking account status…"
                                 : selected
                                   ? "Selected"
-                                  : "Review this purchase"}
+                                  : "View order summary"}
                           </button>
                         </div>
                       </div>
@@ -695,27 +704,38 @@ export default function BillingPage() {
               <h2 id="checkout-heading" className="text-xl font-black text-white tracking-tight">
                 Order summary
               </h2>
-              <p className="mt-1 text-sm text-slate-400">Review the seller, amount, delivery and renewal terms.</p>
+              <p className="mt-1 text-sm text-slate-400">Review the amount, seller, delivery and renewal terms.</p>
             </div>
-
-            {!checkoutEnabled && (
-              <GlassCard className="p-6 border-amber-800 bg-amber-950/20" hoverEffect={false}>
-                <div className="flex items-start gap-3">
-                  <Clock3 className="text-amber-300 mt-0.5 shrink-0" size={20} />
-                  <div>
-                    <h3 className="font-black text-white">Online payments are under review</h3>
-                    <p className="mt-2 text-sm text-slate-300 leading-relaxed">
-                      Purchases are not currently available. No checkout provider is advertised or loaded while
-                      payment activation is pending. You can continue using the free product features.
-                    </p>
-                  </div>
-                </div>
-              </GlassCard>
-            )}
 
             <GlassCard className="p-6 md:p-8" hoverEffect={false}>
               {selectedProduct ? (
                 <div className="space-y-5">
+                  <div
+                    className={`rounded-xl border p-4 ${
+                      checkoutEnabled
+                        ? "border-emerald-800 bg-emerald-950/25"
+                        : "border-amber-800 bg-amber-950/20"
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      {checkoutEnabled ? (
+                        <Shield className="text-emerald-300 mt-0.5 shrink-0" size={20} />
+                      ) : (
+                        <Clock3 className="text-amber-300 mt-0.5 shrink-0" size={20} />
+                      )}
+                      <div>
+                        <h3 className="font-black text-white">
+                          {checkoutEnabled ? "Secure checkout is available" : "Checkout is not available yet"}
+                        </h3>
+                        <p className="mt-2 text-sm text-slate-300 leading-relaxed">
+                          {checkoutEnabled
+                            ? "Confirm the billing country below, then continue to Razorpay Checkout to complete this one-time purchase."
+                            : "You can review the Premium pass now. Purchases stay paused until payment activation is complete."}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="flex items-start justify-between gap-4 pb-5 border-b border-slate-800">
                     <div>
                       <div className="text-xs font-bold uppercase tracking-wider text-slate-400">Product</div>
@@ -804,8 +824,8 @@ export default function BillingPage() {
                         </>
                       ) : (
                         <>
-                          <ShoppingBag size={17} />
-                          Continue to secure checkout · {formatPrice(selectedProduct.amount_minor, selectedProduct.currency)}
+                          <CreditCard size={17} />
+                          Pay securely with Razorpay · {formatPrice(selectedProduct.amount_minor, selectedProduct.currency)}
                         </>
                       )}
                     </button>
@@ -815,7 +835,7 @@ export default function BillingPage() {
                       disabled
                       className="w-full rounded-xl border border-slate-700 bg-slate-900 text-slate-400 font-bold py-4 px-5 cursor-not-allowed"
                     >
-                      Purchase unavailable while payments are under review
+                      Checkout unavailable
                     </button>
                   )}
                 </div>
@@ -852,8 +872,8 @@ export default function BillingPage() {
               <div className="flex items-start gap-3">
                 <Shield size={18} className="text-primary mt-0.5 shrink-0" />
                 <p>
-                  When checkout is available, card, UPI, bank and other payment credentials are entered only in the
-                  hosted payment page. HireWiz does not collect raw card details, CVV, UPI PINs or bank credentials.
+                  Card, UPI, bank and other payment credentials are entered only in the hosted payment page. HireWiz
+                  does not collect raw card details, CVV, UPI PINs or bank credentials.
                 </p>
               </div>
               <div className="flex flex-wrap gap-x-4 gap-y-2 pt-4 border-t border-slate-800 text-xs font-bold">
