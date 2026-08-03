@@ -25,9 +25,8 @@ export default function BulletOptimizer() {
     setResult(null);
 
     // Call the un-gated public optimization endpoint
-    const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || "/api";
     try {
-      const res = await fetch(`${apiBase}/public/optimize_bullet`, {
+      const res = await fetch("/api/backend/public/optimize_bullet", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ bullet_text: bullet }),
@@ -41,8 +40,12 @@ export default function BulletOptimizer() {
         action_verb_score: data.action_verb_score,
         metrics_present: Boolean(data.metrics_present),
       });
-    } catch (err: any) {
-      setError(err.message || "Failed to connect to parser service.");
+    } catch (optimizationError: unknown) {
+      setError(
+        optimizationError instanceof Error
+          ? optimizationError.message
+          : "Failed to connect to parser service.",
+      );
     } finally {
       setLoading(false);
     }

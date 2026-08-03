@@ -1,0 +1,64 @@
+[project]
+name = "hirewiz-backend"
+version = "0.1.0"
+description = "HireWiz API and asynchronous career-analysis worker"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "alembic>=1.17.0,<2",
+  "email-validator>=2.3.0,<3",
+  "fastapi>=0.141.0,<1",
+  "google-auth>=2.56.0,<3",
+  "google-cloud-storage>=3.7.0,<4",
+  "google-cloud-tasks>=2.21.0,<3",
+  "google-genai>=2.16.0,<3",
+  "httpx>=0.28.0,<1",
+  "passlib[bcrypt]>=1.7.4,<2",
+  "pdfplumber>=0.11.0,<1",
+  "psycopg[binary]>=3.2.0,<4",
+  "pydantic>=2.13.0,<3",
+  "python-docx>=1.2.0,<2",
+  "python-dotenv>=1.2.0,<2",
+  "python-jose[cryptography]>=3.5.0,<4",
+  "python-multipart>=0.0.22,<1",
+  "rapidfuzz>=3.14.0,<4",
+  "redis>=8.1.0,<9",
+  "sentry-sdk[fastapi]>=2.48.0,<3",
+  "slowapi>=0.1.9,<1",
+  "spacy>=3.8.0,<4",
+  "sqlalchemy>=2.0.50,<2.1",
+  "uvicorn[standard]>=0.41.0,<1",
+]
+
+[dependency-groups]
+dev = [
+  "mypy>=1.19.0,<2",
+  "pytest>=9.0.0,<10",
+  "pytest-cov>=7.0.0,<8",
+  "ruff>=0.15.0,<1",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests", "../tests"]
+pythonpath = ["..", "."]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = ["alembic/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501", "B008"]
+
+[tool.mypy]
+python_version = "3.12"
+plugins = ["sqlalchemy.ext.mypy.plugin"]
+follow_imports = "skip"
+check_untyped_defs = true
+ignore_missing_imports = true
+warn_unused_ignores = true
+exclude = ["alembic/"]

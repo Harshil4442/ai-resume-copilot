@@ -31,7 +31,7 @@ export default function FadeIn({
   return (
     <motion.div
       initial={{
-        opacity: 0,
+        opacity: 1,
         ...directionOffset[direction],
       }}
       whileInView={{

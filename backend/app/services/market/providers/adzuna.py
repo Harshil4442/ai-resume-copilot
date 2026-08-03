@@ -1,6 +1,6 @@
 import os
 
-import requests
+import httpx
 
 from ..cache import cache_key, get_json, set_json
 from .base import JobPosting, JobProvider, JobSearchParams, ProviderResult
@@ -35,7 +35,11 @@ class AdzunaProvider(JobProvider):
                 from_cache=True,
             )
 
-        resp = requests.get(f"{ADZUNA_URL}/jobs/{country}/search/1", params=query, timeout=30)
+        resp = httpx.get(
+            f"{ADZUNA_URL}/jobs/{country}/search/1",
+            params=query,
+            timeout=httpx.Timeout(30, connect=8),
+        )
         resp.raise_for_status()
         data = resp.json()
         jobs = []
@@ -55,4 +59,3 @@ class AdzunaProvider(JobProvider):
         warnings = [] if jobs else ["Adzuna returned no postings with usable descriptions for this query."]
         set_json(key, {"jobs": [job.to_dict() for job in jobs], "warnings": warnings})
         return ProviderResult(provider=self.name, jobs=jobs, warnings=warnings)
-

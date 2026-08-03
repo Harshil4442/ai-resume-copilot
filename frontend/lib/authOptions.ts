@@ -6,6 +6,11 @@ import { cookies } from "next/headers";
 const POLICY_VERSION = "2026-07-11";
 const GOOGLE_CONSENT_COOKIE = "hirewiz_google_registration_consent";
 
+type BackendAuthToken = {
+  access_token?: unknown;
+  user_id?: unknown;
+};
+
 const configuredNextAuthSecret = process.env.NEXTAUTH_SECRET?.trim();
 if (
   process.env.NODE_ENV === "production" &&
@@ -50,13 +55,14 @@ export const authOptions: NextAuthOptions = {
           
           if (!res.ok) return null;
           
-          const user = await res.json();
-          if (user && user.access_token) {
+          const user = (await res.json()) as BackendAuthToken;
+          if (typeof user.access_token === "string" && typeof user.user_id === "number") {
             return {
-              id: credentials.email,
+              id: String(user.user_id),
               email: credentials.email,
               accessToken: user.access_token,
-            } as any;
+              hirewizUserId: user.user_id,
+            };
           }
           return null;
         } catch (e) {
@@ -76,7 +82,7 @@ export const authOptions: NextAuthOptions = {
         backendUrl = backendUrl.replace(/\/+$/, "");
         let registrationConsent = false;
         try {
-          registrationConsent = cookies().get(GOOGLE_CONSENT_COOKIE)?.value === POLICY_VERSION;
+          registrationConsent = (await cookies()).get(GOOGLE_CONSENT_COOKIE)?.value === POLICY_VERSION;
         } catch {
           // No request cookie context means a new account must fail closed.
         }
@@ -93,23 +99,25 @@ export const authOptions: NextAuthOptions = {
           if (!res.ok) {
             throw new Error(`Backend rejected Google sign-in (${res.status}).`);
           }
-          const data = await res.json();
-          if (!data.access_token) {
+          const data = (await res.json()) as BackendAuthToken;
+          if (typeof data.access_token !== "string" || typeof data.user_id !== "number") {
             throw new Error("Backend did not return an access token.");
           }
           token.accessToken = data.access_token;
+          token.hirewizUserId = data.user_id;
         } catch (e) {
           console.error("Google backend login error:", e);
           throw e;
         }
-      } else if (user && (user as any).accessToken) {
-        token.accessToken = (user as any).accessToken;
+      } else if (user?.accessToken && user.hirewizUserId) {
+        token.accessToken = user.accessToken;
+        token.hirewizUserId = user.hirewizUserId;
       }
       return token;
     },
     async session({ session, token }) {
-      if (session.user) {
-        (session.user as any).accessToken = token.accessToken;
+      if (session.user && token.hirewizUserId) {
+        session.user.id = String(token.hirewizUserId);
       }
       return session;
     },

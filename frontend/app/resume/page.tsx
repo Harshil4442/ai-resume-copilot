@@ -1,15 +1,19 @@
 "use client";
 
-import { useState } from "react";
-import type { ResumeParseResponse } from "../../lib/types";
-import { apiPostForm } from "../../lib/api";
-import PageHeader from "../../components/ui/PageHeader";
-import GlassCard from "../../components/ui/GlassCard";
-import AnimatedButton from "../../components/ui/AnimatedButton";
-import FadeIn from "../../components/ui/FadeIn";
-import StaggerContainer, { StaggerItem } from "../../components/ui/StaggerContainer";
-import { FileUp, Target, Search, Clock, FileText, CheckCircle2, ChevronRight, AlertCircle, ArrowRight } from "lucide-react";
+import { AlertCircle, ArrowRight, CheckCircle2, FileText, FileUp, ShieldCheck, Target } from "lucide-react";
 import Link from "next/link";
+import { useState } from "react";
+
+import { Button } from "../../components/ui/Button";
+import { trackEvent } from "../../lib/analytics";
+import { apiPostForm } from "../../lib/api";
+import type { ResumeParseResponse } from "../../lib/types";
+
+const MAX_FILE_BYTES = 5 * 1024 * 1024;
+const ACCEPTED_TYPES = new Set([
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+]);
 
 export default function ResumePage() {
   const [file, setFile] = useState<File | null>(null);
@@ -18,192 +22,125 @@ export default function ResumePage() {
   const [loading, setLoading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
 
-  const handleDrag = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.type === "dragenter" || e.type === "dragover") {
-      setDragActive(true);
-    } else if (e.type === "dragleave") {
-      setDragActive(false);
+  function chooseFile(candidate: File | null) {
+    setData(null);
+    setError(null);
+    if (!candidate) {
+      setFile(null);
+      return;
     }
-  };
+    if (!ACCEPTED_TYPES.has(candidate.type) || candidate.size > MAX_FILE_BYTES) {
+      setFile(null);
+      setError("Choose a PDF or DOCX file no larger than 5 MB.");
+      return;
+    }
+    setFile(candidate);
+    trackEvent("resume_upload_selected", { file_type: candidate.type, size_bytes: candidate.size });
+  }
 
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
+  function handleDrag(event: React.DragEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    setDragActive(event.type === "dragenter" || event.type === "dragover");
+  }
+
+  function handleDrop(event: React.DragEvent) {
+    event.preventDefault();
+    event.stopPropagation();
     setDragActive(false);
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      setFile(e.dataTransfer.files[0]);
-    }
-  };
+    chooseFile(event.dataTransfer.files?.[0] || null);
+  }
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function onSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    if (!file) return;
     setError(null);
     setData(null);
-    if (!file) return;
     setLoading(true);
-
+    trackEvent("resume_upload_started", { file_type: file.type, size_bytes: file.size });
     const form = new FormData();
     form.append("file", file);
-
     try {
-      const json = await apiPostForm<ResumeParseResponse>("/resume/parse", form);
-      setData(json);
+      const parsed = await apiPostForm<ResumeParseResponse>("/resume/parse", form);
+      setData(parsed);
+      trackEvent("resume_upload_completed", {
+        resume_id: parsed.resume_id,
+        skill_count: parsed.skills.length,
+      });
       window.dispatchEvent(new Event("refresh_analysis_units"));
-    } catch (err: any) {
-      setError(err.message || "Failed to parse resume.");
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : "Failed to parse resume.");
+      trackEvent("resume_upload_failed", { file_type: file.type });
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <main className="w-full max-w-[80rem] mx-auto px-4 sm:px-6 md:px-8 py-8 space-y-10">
-      <PageHeader 
-        badge="Resume Intelligence"
-        title="Turn a resume into structured career data."
-        subtitle="Extract sections, skills, experience, and contact signals before matching against jobs and market demand."
-      />
-
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-8">
-        <GlassCard className="p-0 overflow-hidden" hoverEffect={false}>
-          <div className="p-8 md:p-12 h-full flex flex-col justify-center">
-            <h2 className="text-3xl font-black text-white tracking-tighter mb-4">Upload Document</h2>
-            <p className="text-slate-300 font-medium mb-8">
-              PDF and DOCX formats are supported. Our LLM-powered parser will securely extract your core data for analysis.
-            </p>
-
-            <form onSubmit={onSubmit} className="space-y-6">
-              <div 
-                className={`relative border-2 border-dashed rounded-3xl p-10 text-center transition-all ${
-                  dragActive 
-                    ? "border-primary bg-primary/5 scale-[1.02]" 
-                    : file 
-                      ? "border-emerald-300 bg-emerald-900/30/50" 
-                      : "border-slate-600 hover:border-primary/50 hover:bg-slate-900/50"
-                }`}
-                onDragEnter={handleDrag}
-                onDragLeave={handleDrag}
-                onDragOver={handleDrag}
-                onDrop={handleDrop}
-              >
-                <input
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                  type="file"
-                  accept="application/pdf,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                  onChange={(e) => setFile(e.target.files?.[0] || null)}
-                />
-                
-                <div className="flex flex-col items-center justify-center space-y-4 pointer-events-none">
-                  <div className={`w-16 h-16 rounded-2xl flex items-center justify-center ${file ? 'bg-emerald-100 text-emerald-400' : 'bg-blue-100 text-blue-600'}`}>
-                    {file ? <FileText size={32} /> : <FileUp size={32} />}
-                  </div>
-                  <div>
-                    <h3 className="text-xl font-black text-white">
-                      {file ? file.name : "Drag & drop or click to browse"}
-                    </h3>
-                    <p className="text-sm text-slate-400 font-medium mt-2">
-                      {file ? `${(file.size / 1024 / 1024).toFixed(2)} MB • Ready to parse` : "Supports PDF, DOCX (Max 5MB)"}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <AnimatedButton type="submit" disabled={!file || loading} className="w-full py-4 text-lg shadow-lg" showArrow>
-                {loading ? "Extracting Data..." : "Upload & Parse"}
-              </AnimatedButton>
-
-              {error && (
-                <FadeIn>
-                  <div className="flex items-center gap-2 text-sm text-rose-400 bg-rose-900/30 border border-rose-800 rounded-xl px-4 py-3 shadow-sm">
-                    <AlertCircle size={16} /> {error}
-                  </div>
-                </FadeIn>
-              )}
-            </form>
+    <main className="app-page">
+      <div className="page-container">
+        <header className="grid gap-6 border-b border-white/10 pb-7 lg:grid-cols-[1fr_auto] lg:items-end">
+          <div>
+            <p className="eyebrow">Resume evidence</p>
+            <h1 className="mt-2 text-3xl font-black text-neutral-100 sm:text-4xl">Add your source resume</h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-500">HireWiz extracts a private working copy. You choose which facts become approved evidence.</p>
           </div>
-        </GlassCard>
+          <div className="flex gap-5 text-xs text-neutral-500">
+            <span className="flex items-center gap-2"><ShieldCheck size={16} className="text-primary" /> PDF or DOCX</span>
+            <span>5 MB maximum</span>
+          </div>
+        </header>
 
-        <StaggerContainer className="space-y-4 h-full flex flex-col justify-center">
-          {[
-            { icon: Search, title: "Precision Parsing", desc: "Extracts hard skills, soft skills, and core metrics automatically." },
-            { icon: Target, title: "Job Matching", desc: "Compare parsed data against live job descriptions." },
-            { icon: Clock, title: "History Tracking", desc: "Keep multiple versions of resumes in your workspace." }
-          ].map((item, i) => (
-            <StaggerItem key={i}>
-              <GlassCard className="p-5 flex items-start gap-4">
-                <div className="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center flex-shrink-0 text-slate-200">
-                  <item.icon size={20} />
-                </div>
-                <div>
-                  <h3 className="text-sm font-black text-white tracking-tight">{item.title}</h3>
-                  <p className="text-xs text-slate-400 font-medium mt-1 leading-relaxed">{item.desc}</p>
-                </div>
-              </GlassCard>
-            </StaggerItem>
-          ))}
-        </StaggerContainer>
-      </div>
+        <div className="mt-8 grid gap-10 lg:grid-cols-[minmax(0,1fr)_340px]">
+          <form onSubmit={onSubmit}>
+            <label
+              className={`relative flex min-h-72 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed p-8 text-center transition-colors ${dragActive ? "border-primary bg-primary/5" : file ? "border-primary/40 bg-primary/[0.03]" : "border-white/20 bg-white/[0.015] hover:border-white/35"}`}
+              onDragEnter={handleDrag}
+              onDragLeave={handleDrag}
+              onDragOver={handleDrag}
+              onDrop={handleDrop}
+            >
+              <input className="sr-only" type="file" accept="application/pdf,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={(event) => chooseFile(event.target.files?.[0] || null)} />
+              <span className="icon-tile h-12 w-12">{file ? <FileText size={22} /> : <FileUp size={22} />}</span>
+              <h2 className="mt-5 max-w-full break-words text-lg font-black text-neutral-200">{file ? file.name : "Choose a resume"}</h2>
+              <p className="mt-2 text-sm text-neutral-500">{file ? `${(file.size / 1024 / 1024).toFixed(2)} MB, ready to parse` : "Drop the file here or open your file browser"}</p>
+            </label>
+            <Button type="submit" className="mt-4 w-full" disabled={!file || loading}>
+              {loading ? "Extracting evidence..." : "Parse resume"} <ArrowRight size={16} />
+            </Button>
+            {error ? <div className="mt-4 flex gap-3 border border-coral/30 bg-coral/5 p-4 text-sm text-[#ffab9e]" role="alert"><AlertCircle size={18} className="shrink-0" /> {error}</div> : null}
+          </form>
 
-      {loading && (
-        <FadeIn>
-          <GlassCard className="p-16 text-center border-dashed border-slate-600 border-2" hoverEffect={false}>
-            <div className="mx-auto w-12 h-12 rounded-full border-4 border-slate-700 border-t-primary animate-spin mb-6"></div>
-            <h2 className="text-xl font-bold text-white tracking-tight">AI is parsing your document...</h2>
-            <p className="text-sm text-slate-400 mt-2">Extracting your career timeline, education, and mapping technical skills.</p>
-          </GlassCard>
-        </FadeIn>
-      )}
+          <aside className="border-t border-white/10 pt-7 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-2">
+            <p className="data-label">After parsing</p>
+            <ol className="mt-5 grid gap-5 text-sm text-neutral-400">
+              <li className="flex gap-3"><span className="font-black text-primary">01</span><span>Review extracted skills and experience.</span></li>
+              <li className="flex gap-3"><span className="font-black text-primary">02</span><span>Add a target role to preserve its job snapshot.</span></li>
+              <li className="flex gap-3"><span className="font-black text-primary">03</span><span>Approve evidence before tailoring or interview preparation.</span></li>
+            </ol>
+          </aside>
+        </div>
 
-      {data && (
-        <FadeIn>
-          <GlassCard className="p-8 border-emerald-800 bg-emerald-900/30/30" hoverEffect={false}>
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8 border-b border-emerald-800 pb-8">
+        {data ? (
+          <section className="mt-10 border-t border-white/10 pt-8" aria-live="polite">
+            <div className="grid gap-7 lg:grid-cols-[1fr_auto] lg:items-start">
               <div>
-                <div className="text-[10px] font-black text-emerald-400 uppercase tracking-widest flex items-center gap-2 mb-2">
-                  <CheckCircle2 size={14} /> Extraction Complete
+                <div className="flex items-center gap-2 text-sm font-bold text-[#69debd]"><CheckCircle2 size={17} /> Resume parsed</div>
+                <h2 className="mt-3 text-2xl font-black text-neutral-100">Review the extracted signals</h2>
+                <p className="mt-2 text-sm text-neutral-500">Estimated experience: {data.experience_years} years. These values remain editable source material, not verified claims.</p>
+                <div className="mt-5 flex flex-wrap gap-2">
+                  {data.skills.slice(0, 30).map((skill) => <span key={skill} className="rounded-md border border-white/10 bg-white/[0.025] px-2.5 py-1.5 text-xs font-semibold text-neutral-300">{skill}</span>)}
+                  {!data.skills.length ? <span className="text-sm text-neutral-600">No skills were confidently extracted.</span> : null}
                 </div>
-                <h2 className="text-3xl font-black text-white tracking-tighter">Resume #{data.resume_id}</h2>
               </div>
-              <div className="bg-slate-950 px-6 py-4 rounded-2xl shadow-sm border border-emerald-800 text-center">
-                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Estimated Experience</div>
-                <div className="text-3xl font-black text-primary">{data.experience_years} <span className="text-sm font-bold text-slate-400">YRS</span></div>
-              </div>
-            </div>
-
-            <div className="mb-8">
-              <h3 className="text-sm font-black text-white uppercase tracking-wider mb-4">Extracted Signals</h3>
-              <div className="flex flex-wrap gap-2">
-                {data.skills.map((s) => (
-                  <span key={s} className="px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs font-bold text-slate-200 shadow-sm hover:scale-105 transition-transform cursor-default">
-                    {s}
-                  </span>
-                ))}
+              <div className="grid min-w-60 gap-2">
+                <Button asChild><Link href="/workspace?new=1"><Target size={16} /> Add target role</Link></Button>
+                <Button asChild variant="secondary"><Link href="/resume/preview"><FileText size={16} /> Inspect parsed data</Link></Button>
               </div>
             </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <Link href="/resume/preview" className="flex items-center justify-between bg-slate-950 border border-slate-700 rounded-xl p-4 font-bold text-sm text-slate-200 hover:border-primary/50 hover:shadow-md transition-all group">
-                Preview Data
-                <ChevronRight size={16} className="text-slate-400 group-hover:text-primary transition-colors" />
-              </Link>
-              <Link href="/jobs" className="flex items-center justify-between bg-slate-950 border border-slate-700 rounded-xl p-4 font-bold text-sm text-slate-200 hover:border-primary/50 hover:shadow-md transition-all group">
-                Run Job Match
-                <Target size={16} className="text-slate-400 group-hover:text-primary transition-colors" />
-              </Link>
-              <Link href="/market" className="flex items-center justify-between bg-slate-950 border border-slate-700 rounded-xl p-4 font-bold text-sm text-slate-200 hover:border-primary/50 hover:shadow-md transition-all group">
-                Market Demand
-                <Search size={16} className="text-slate-400 group-hover:text-primary transition-colors" />
-              </Link>
-              <Link href="/dashboard" className="flex items-center justify-between bg-slate-900 border border-slate-800 rounded-xl p-4 font-bold text-sm text-white hover:bg-slate-800 hover:shadow-md transition-all group">
-                Dashboard
-                <ArrowRight size={16} className="text-slate-400 group-hover:text-white transition-colors" />
-              </Link>
-            </div>
-          </GlassCard>
-        </FadeIn>
-      )}
+          </section>
+        ) : null}
+      </div>
     </main>
   );
 }

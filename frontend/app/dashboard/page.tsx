@@ -1,300 +1,179 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import type { AnalyticsSummary, DashboardMatchCard } from "../../lib/types";
-import { apiGet } from "../../lib/api";
-import ScoreCard from "../../components/ScoreCard";
-import MatchHistoryChart from "../../components/MatchHistoryChart";
-import PageHeader from "../../components/ui/PageHeader";
-import GlassCard from "../../components/ui/GlassCard";
-import Skeleton from "../../components/ui/Skeleton";
-import FadeIn from "../../components/ui/FadeIn";
-import StaggerContainer, { StaggerItem } from "../../components/ui/StaggerContainer";
-import AnimatedButton from "../../components/ui/AnimatedButton";
-import { 
-  FileText, CheckCircle2, AlertTriangle, ArrowRight, 
-  Target, BarChart3, Activity, ArrowUpRight, UserCheck
+import { useQuery } from "@tanstack/react-query";
+import {
+  ArrowRight,
+  BriefcaseBusiness,
+  Check,
+  Circle,
+  Clock3,
+  FileText,
+  Gauge,
+  Plus,
+  Target,
 } from "lucide-react";
 import Link from "next/link";
-import ScoreRing from "../../components/ui/ScoreRing";
+import { useEffect, useRef } from "react";
 
-function formatDate(value?: string | null) {
-  if (!value) return "No activity yet";
-  return new Date(value).toLocaleDateString();
+import { Button } from "../../components/ui/Button";
+import { EmptyState } from "../../components/ui/EmptyState";
+import { LoadingBlock } from "../../components/ui/LoadingBlock";
+import { StatusBadge } from "../../components/ui/StatusBadge";
+import { apiGet } from "../../lib/api";
+import { trackEvent } from "../../lib/analytics";
+import type { OpportunityList, Reminder } from "../../lib/career";
+import { stageLabels, stageTone } from "../../lib/career";
+import type { AnalyticsSummary, UserProfile } from "../../lib/types";
+
+type FeatureResponse = { features: Record<string, { enabled: boolean }> };
+type BillingCatalog = {
+  checkout_enabled: boolean;
+  products: { sku: string; name: string; amount_minor: number; currency: string; entitlement_quantity: number }[];
+};
+
+function firstName(profile: UserProfile | undefined) {
+  return profile?.full_name?.trim().split(/\s+/)[0] || "there";
 }
 
-function MatchCard({ title, match }: { title: string; match?: DashboardMatchCard | null }) {
-  return (
-    <GlassCard className="h-full flex flex-col p-5">
-      <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-3">{title}</div>
-      {match ? (
-        <div className="flex-grow flex flex-col justify-between">
-          <div>
-            <div className="text-sm font-bold text-white line-clamp-2 leading-snug">
-              {match.job_title}
-            </div>
-            {match.company && (
-              <div className="text-xs text-slate-400 mt-1">@ {match.company}</div>
-            )}
-          </div>
-          <div className="flex items-center justify-between gap-3 mt-4 pt-4 border-t border-slate-800">
-            <span className="text-3xl font-black text-white tracking-tighter">{match.match_score.toFixed(1)}</span>
-            <span className="text-xs font-semibold text-slate-400">{formatDate(match.created_at)}</span>
-          </div>
-        </div>
-      ) : (
-        <div className="text-sm text-slate-400 flex-grow flex items-center justify-center">No match yet</div>
-      )}
-    </GlassCard>
-  );
-}
-
-function QuickAction({ href, title, subtitle, icon: Icon }: { href: string; title: string; subtitle: string; icon: any }) {
-  return (
-    <Link href={href} className="group block">
-      <GlassCard className="h-full transition-all duration-300 hover:-translate-y-1 hover:shadow-lg hover:border-primary/30">
-        <div className="flex items-start gap-4">
-          <div className="p-2 rounded-lg bg-slate-800 text-slate-300 group-hover:bg-primary/10 group-hover:text-primary transition-colors">
-            <Icon size={20} />
-          </div>
-          <div className="flex-grow">
-            <div className="flex items-center justify-between gap-3 mb-1">
-              <div className="text-sm font-bold text-white">{title}</div>
-              <ArrowRight size={14} className="text-slate-400 transition-transform group-hover:translate-x-1 group-hover:text-primary" />
-            </div>
-            <div className="text-xs text-slate-400 leading-relaxed">{subtitle}</div>
-          </div>
-        </div>
-      </GlassCard>
-    </Link>
-  );
+function formatDue(value: string) {
+  return new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }).format(new Date(value));
 }
 
 export default function DashboardPage() {
-  const [data, setData] = useState<AnalyticsSummary | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const profile = useQuery({ queryKey: ["profile"], queryFn: () => apiGet<UserProfile>("/auth/profile") });
+  const analytics = useQuery({ queryKey: ["analytics-summary"], queryFn: () => apiGet<AnalyticsSummary>("/analytics/summary") });
+  const features = useQuery({ queryKey: ["features"], queryFn: () => apiGet<FeatureResponse>("/v1/features") });
+  const upgradeTracked = useRef(false);
+  const workspaceEnabled = features.data?.features.career_workspace?.enabled !== false;
+  const opportunities = useQuery({ queryKey: ["opportunities"], queryFn: () => apiGet<OpportunityList>("/v1/opportunities?limit=8"), enabled: features.isSuccess && workspaceEnabled });
+  const reminders = useQuery({ queryKey: ["reminders", "scheduled"], queryFn: () => apiGet<Reminder[]>("/v1/reminders?status=scheduled"), enabled: features.isSuccess && workspaceEnabled });
+  const shouldOfferUpgrade = profile.data?.tier === "free" && (profile.data?.ai_credits ?? 50) <= 10;
+  const billingCatalog = useQuery({ queryKey: ["billing-catalog"], queryFn: () => apiGet<BillingCatalog>("/public/billing/catalog"), enabled: shouldOfferUpgrade });
+
+  const loading = profile.isLoading || analytics.isLoading || features.isLoading || (workspaceEnabled && opportunities.isLoading);
+  const active = (opportunities.data?.items || []).filter((item) => !["rejected", "withdrawn", "archived"].includes(item.stage));
+  const interviews = active.filter((item) => item.stage === "interviewing").length;
+  const activation = [
+    { label: "Add your first resume", complete: (analytics.data?.resume_count || 0) > 0, href: "/resume" },
+    ...(workspaceEnabled ? [
+      { label: "Create a target opportunity", complete: (opportunities.data?.total || 0) > 0, href: "/workspace?new=1" },
+      { label: "Run an evidence-aware match", complete: (analytics.data?.applications_count || 0) > 0, href: "/workspace" },
+    ] : []),
+    { label: "Complete your career profile", complete: (profile.data?.profile_completeness || 0) >= 70, href: "/profile" },
+  ];
+  const activated = activation.filter((item) => item.complete).length;
+  const nextActivation = activation.find((item) => !item.complete);
+  const upgradeProduct = billingCatalog.data?.checkout_enabled ? billingCatalog.data.products[0] : undefined;
 
   useEffect(() => {
-    let mounted = true;
-    apiGet<AnalyticsSummary>("/analytics/summary")
-      .then((d) => mounted && setData(d))
-      .catch((e) => mounted && setError(e?.message || "Failed to load dashboard"));
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  const avg = data?.average_match_score ?? 0;
-  const avgText = data && data.applications_count > 0 ? `${avg.toFixed(1)}` : "-";
-  const profileScore = data?.profile_health?.score ?? data?.profile_completeness ?? 0;
-  const resumeQuality = data?.resume_quality;
-  const matchOverview = data?.match_overview;
-  const recurringGaps = data?.recurring_gaps || [];
-
-  const trendData = useMemo(() => data?.match_history || [], [data]);
+    if (!upgradeProduct || upgradeTracked.current) return;
+    upgradeTracked.current = true;
+    trackEvent("upgrade_prompt_viewed", { surface: "dashboard_low_units", reason: "low_units", sku: upgradeProduct.sku });
+  }, [upgradeProduct]);
 
   return (
-    <main className="w-full max-w-[80rem] mx-auto px-4 sm:px-6 md:px-8 py-8 space-y-10">
-      <PageHeader 
-        badge="Command Center"
-        title="Your career signal, measured."
-        subtitle="Track profile health, resume quality, match performance, and the recurring gaps that matter."
-      />
-
-      {error && (
-        <FadeIn>
-          <div className="text-sm text-red-600 bg-red-50/80 backdrop-blur-md border border-red-200 rounded-xl px-4 py-3 shadow-sm flex items-center gap-2 max-w-2xl mx-auto">
-            <AlertTriangle size={16} /> {error}
+    <main className="app-page">
+      <div className="page-container">
+        <header className="grid gap-6 border-b border-white/10 pb-7 lg:grid-cols-[1fr_auto] lg:items-end">
+          <div>
+            <p className="eyebrow">Today</p>
+            <h1 className="mt-2 text-3xl font-black text-neutral-100 sm:text-4xl">Good to see you, {firstName(profile.data)}.</h1>
+            <p className="mt-2 text-sm leading-6 text-neutral-500">Keep the next application moving without losing its context.</p>
           </div>
-        </FadeIn>
-      )}
+          <Button asChild><Link href={workspaceEnabled ? "/workspace?new=1" : "/resume"}>{workspaceEnabled ? <Plus size={16} /> : <FileText size={16} />} {workspaceEnabled ? "Add opportunity" : "Add resume"}</Link></Button>
+        </header>
 
-      {!data && !error && (
-        <StaggerContainer className="space-y-10">
-          <StaggerItem className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <Skeleton className="h-32" />
-            <Skeleton className="h-32" />
-            <Skeleton className="h-32" />
-            <Skeleton className="h-32" />
-          </StaggerItem>
-          <StaggerItem className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Skeleton className="h-64" />
-            <Skeleton className="h-64" />
-          </StaggerItem>
-        </StaggerContainer>
-      )}
+        {loading ? <div className="mt-8"><LoadingBlock rows={6} /></div> : null}
+        {!loading && (profile.isError || analytics.isError || features.isError || (workspaceEnabled && opportunities.isError)) ? (
+          <div className="mt-8 border-y border-coral/25 bg-coral/5 px-5 py-5 text-sm text-[#ffab9e]">Some dashboard data could not be loaded. Your saved workspace is unchanged.</div>
+        ) : null}
 
-      {data && (
-        <StaggerContainer className="space-y-10">
-          {/* Key Metrics */}
-          <StaggerItem className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <ScoreCard 
-              title="Profile Completeness" 
-              value={`${Math.round(profileScore)}%`} 
-              subtitle="Profile, resume, and match readiness"
-              icon={UserCheck} 
-            />
-            <ScoreCard 
-              title="Avg Match Score" 
-              value={avgText} 
-              subtitle={`${data.applications_count} matches run`}
-              icon={Target} 
-            />
-            <ScoreCard 
-              title="Resumes Parsed" 
-              value={data.resume_count ?? 0} 
-              subtitle={formatDate(resumeQuality?.latest_resume_date)}
-              icon={FileText} 
-            />
-            <ScoreCard 
-              title="Last Activity" 
-              value={<Activity size={24} className="text-white" />} 
-              subtitle={formatDate(data.activity_summary?.last_activity_at)}
-              icon={Activity} 
-            />
-          </StaggerItem>
-
-          {/* Detailed Health Panels */}
-          <StaggerItem className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <GlassCard className="p-6 md:p-8 flex flex-col md:flex-row items-center md:items-start gap-8">
-              <div className="flex-shrink-0">
-                <ScoreRing score={Math.round(profileScore)} size={140} strokeWidth={10} />
-              </div>
-              <div className="flex-grow text-center md:text-left">
-                <div className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Profile Health</div>
-                <h2 className="text-2xl font-black text-white tracking-tighter mb-3">Readiness scan</h2>
-                
-                <p className="text-sm text-slate-300 mb-6 leading-relaxed">
-                  {profileScore >= 80
-                    ? "Your profile has enough context for strong analysis. Great job."
-                    : "Add a few more profile details to improve analysis context and accuracy."}
-                </p>
-                
-                {(data.profile_health?.missing_items || []).length > 0 ? (
-                  <div>
-                    <div className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3 flex items-center justify-center md:justify-start gap-1">
-                      <AlertTriangle size={12} className="text-amber-500" /> Action required
-                    </div>
-                    <div className="flex flex-wrap justify-center md:justify-start gap-2">
-                      {(data.profile_health?.missing_items || []).map((item) => (
-                        <span key={item} className="inline-flex h-6 items-center rounded-full bg-amber-900/30 px-2.5 text-[10px] font-bold text-amber-400 border border-amber-800 shadow-sm">
-                          {item}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2 text-sm font-semibold text-emerald-400 bg-emerald-900/30 px-3 py-1.5 rounded-full border border-emerald-800 inline-flex">
-                    <CheckCircle2 size={16} /> All systems go
-                  </div>
-                )}
-                
-                <div className="mt-6 pt-6 border-t border-slate-800 flex justify-center md:justify-start">
-                  <AnimatedButton href="/profile" variant="outline" className="h-9 text-xs px-4" showArrow>
-                    Update Profile
-                  </AnimatedButton>
+        {!loading ? (
+          <>
+            <section className="grid border-b border-white/10 sm:grid-cols-2 xl:grid-cols-4" aria-label="Career search summary">
+              {[
+                { label: "Active roles", value: active.length, icon: BriefcaseBusiness, tone: "text-primary" },
+                { label: "Interviews", value: interviews, icon: Target, tone: "text-accent" },
+                { label: "Average match", value: analytics.data?.applications_count ? Math.round(analytics.data.average_match_score) : "-", icon: Gauge, tone: "text-[#f4f2ea]" },
+                { label: "Analysis units", value: profile.data?.tier === "premium" ? "Premium" : profile.data?.ai_credits ?? 0, icon: Circle, tone: "text-coral" },
+              ].map((metric) => (
+                <div key={metric.label} className="border-t border-white/10 py-6 sm:border-r sm:px-6 sm:first:pl-0 xl:border-t-0 last:border-r-0">
+                  <div className="flex items-center justify-between"><p className="data-label">{metric.label}</p><metric.icon size={16} className={metric.tone} /></div>
+                  <p className="mt-3 text-3xl font-black text-neutral-100">{metric.value}</p>
                 </div>
-              </div>
-            </GlassCard>
+              ))}
+            </section>
 
-            <GlassCard className="p-6 md:p-8">
-              <div className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Resume Quality</div>
-              <h2 className="text-2xl font-black text-white tracking-tighter mb-6">Evidence density</h2>
-              
-              <div className="grid grid-cols-2 gap-y-8 gap-x-4">
-                <div>
-                  <div className="text-xs font-semibold text-slate-400 mb-1">Unique skills</div>
-                  <div className="text-3xl font-black text-white tracking-tighter">{resumeQuality?.total_unique_skills ?? 0}</div>
+            <div className="mt-10 grid gap-12 xl:grid-cols-[1fr_360px]">
+              <section className="min-w-0">
+                {workspaceEnabled ? (
+                  <>
+                <div className="flex items-end justify-between gap-4">
+                  <div><p className="eyebrow">Priority queue</p><h2 className="mt-2 text-2xl font-black">Move these forward</h2></div>
+                  <Link href="/workspace" className="text-sm font-bold text-neutral-500 hover:text-primary">All opportunities</Link>
                 </div>
-                <div>
-                  <div className="text-xs font-semibold text-slate-400 mb-1">Verification rate</div>
-                  <div className="text-3xl font-black text-white tracking-tighter">{resumeQuality?.verification_rate ?? 0}%</div>
-                </div>
-                <div>
-                  <div className="text-xs font-semibold text-slate-400 mb-1">Evidenced skills</div>
-                  <div className="text-3xl font-black text-white tracking-tighter">{resumeQuality?.evidenced_skills ?? 0}</div>
-                </div>
-                <div>
-                  <div className="text-xs font-semibold text-slate-400 mb-1">Quantified signals</div>
-                  <div className="text-3xl font-black text-white tracking-tighter">{resumeQuality?.quantified_achievements ?? 0}</div>
-                </div>
-              </div>
-              
-              {(resumeQuality?.missing_sections || []).length > 0 && (
-                <div className="mt-8 p-4 bg-slate-900/50 rounded-xl border border-slate-800">
-                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-2 flex items-center gap-1.5">
-                    <AlertTriangle size={12} className="text-amber-500" /> Missing Sections
-                  </div>
-                  <p className="text-xs text-slate-200 leading-relaxed font-medium">
-                    {(resumeQuality?.missing_sections || []).join(", ")}
-                  </p>
-                </div>
-              )}
-            </GlassCard>
-          </StaggerItem>
-
-          {/* Match Performance Grid */}
-          <StaggerItem>
-            <h2 className="text-2xl font-black text-white mb-4 tracking-tighter px-1">Match Performance</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <MatchCard title="Best match" match={matchOverview?.best_match} />
-              <MatchCard title="Weakest match" match={matchOverview?.weakest_match} />
-              <MatchCard title="Latest match" match={matchOverview?.latest_match} />
-            </div>
-          </StaggerItem>
-
-          {/* Chart */}
-          <StaggerItem>
-            <GlassCard className="p-6">
-              <div className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4">Score Trend</div>
-              <MatchHistoryChart data={trendData} />
-            </GlassCard>
-          </StaggerItem>
-
-          {/* Gaps & Actions */}
-          <StaggerItem className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <GlassCard className="p-6 md:p-8 lg:col-span-2">
-              <div className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Recurring Gaps</div>
-              <h2 className="text-2xl font-black text-white tracking-tighter mb-4">Skills slowing you down</h2>
-              
-              {recurringGaps.length > 0 ? (
-                <>
-                  <p className="text-sm text-slate-400 mb-6 leading-relaxed max-w-xl">
-                    These are the skills you frequently lack compared to the job descriptions you apply for. Focus your learning here to boost your match scores across the board.
-                  </p>
-                  <div className="flex flex-wrap gap-2 mb-8">
-                    {recurringGaps.map((gap) => (
-                      <span key={gap.skill} className="inline-flex h-7 items-center rounded-full bg-rose-900/30 px-3 text-xs font-bold text-rose-400 border border-rose-800 shadow-sm transition-transform hover:scale-105">
-                        {gap.skill} <span className="ml-1.5 opacity-50 font-normal">· {gap.count}</span>
-                      </span>
+                {active.length ? (
+                  <div className="mt-5 border-t border-white/10">
+                    {active.slice(0, 5).map((item) => (
+                      <Link key={item.id} href={`/workspace/${item.id}`} className="group grid gap-3 border-b border-white/10 py-5 sm:grid-cols-[1fr_auto] sm:items-center">
+                        <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h3 className="font-black text-neutral-200">{item.title}</h3><StatusBadge tone={stageTone[item.stage]}>{stageLabels[item.stage]}</StatusBadge></div><p className="mt-1 text-sm text-neutral-500">{item.company || "Company not set"}{item.next_action ? ` · ${item.next_action}` : ""}</p></div>
+                        <ArrowRight size={17} className="hidden text-neutral-700 transition-transform group-hover:translate-x-1 group-hover:text-primary sm:block" />
+                      </Link>
                     ))}
                   </div>
-                  <AnimatedButton href="/learning" variant="secondary" className="h-9 text-xs px-4">
-                    Generate learning strategy
-                  </AnimatedButton>
-                </>
-              ) : (
-                <div className="py-8 text-center bg-slate-900/50 rounded-xl border border-slate-800 border-dashed">
-                  <p className="text-sm font-medium text-slate-400">Run more job matches to see recurring gap patterns.</p>
-                </div>
-              )}
-            </GlassCard>
+                ) : (
+                  <EmptyState icon={BriefcaseBusiness} title="No active opportunities" description="Add a target role to turn your resume, evidence, learning, and follow-up into one workflow." action={<Button asChild><Link href="/workspace?new=1"><Plus size={16} /> Add opportunity</Link></Button>} />
+                )}
 
-            <GlassCard className="p-6 md:p-8 flex flex-col">
-              <div className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Next Best Move</div>
-              <h2 className="text-2xl font-black text-white tracking-tighter mb-6">Quick Actions</h2>
-              
-              <div className="flex flex-col gap-3 flex-grow justify-center">
-                <QuickAction href="/profile" title="Update Profile" subtitle="Add career context" icon={UserCheck} />
-                <QuickAction href="/resume" title="Upload Resume" subtitle="Refresh parsed data" icon={FileText} />
-                <QuickAction href="/jobs" title="Run Match" subtitle="Analyze a target job" icon={Target} />
-              </div>
-            </GlassCard>
-          </StaggerItem>
-        </StaggerContainer>
-      )}
+                <div className="mt-12">
+                  <div className="flex items-end justify-between gap-4"><div><p className="eyebrow">Upcoming</p><h2 className="mt-2 text-2xl font-black">Reminders</h2></div></div>
+                  {(reminders.data || []).length ? (
+                    <div className="mt-5 divide-y divide-white/10 border-y border-white/10">
+                      {(reminders.data || []).slice(0, 5).map((reminder) => (
+                        <div key={reminder.id} className="grid gap-2 py-4 sm:grid-cols-[1fr_auto] sm:items-center"><div className="flex min-w-0 items-start gap-3"><Clock3 size={16} className="mt-0.5 shrink-0 text-accent" /><p className="text-sm font-semibold text-neutral-300">{reminder.message}</p></div><p className="pl-7 text-xs font-bold text-neutral-600 sm:pl-0">{formatDue(reminder.due_at)}</p></div>
+                      ))}
+                    </div>
+                  ) : <p className="mt-5 border-y border-white/10 py-6 text-sm text-neutral-600">No scheduled follow-ups.</p>}
+                </div>
+                  </>
+                ) : (
+                  <EmptyState icon={FileText} title="Build your resume evidence" description="Career Workspace is not enabled for this account yet. Your resume and profile tools remain available." action={<Button asChild><Link href="/resume">Add resume</Link></Button>} />
+                )}
+              </section>
+
+              <aside className="space-y-9">
+                <section className="surface-panel p-5">
+                  <div className="flex items-center justify-between"><div><p className="data-label">Activation</p><h2 className="mt-1 text-lg font-black">{activated} of {activation.length} complete</h2></div><span className="text-2xl font-black text-primary">{Math.round((activated / activation.length) * 100)}%</span></div>
+                  <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/8"><div className="h-full bg-primary" style={{ width: `${(activated / activation.length) * 100}%` }} /></div>
+                  <ol className="mt-5 space-y-1">
+                    {activation.map((step) => (
+                      <li key={step.label}><Link href={step.href} className="flex min-h-10 items-center gap-3 rounded-md px-2 text-sm text-neutral-400 hover:bg-white/5 hover:text-neutral-200">{step.complete ? <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[#07120f]"><Check size={13} /></span> : <Circle size={19} className="text-neutral-700" />}<span className={step.complete ? "text-neutral-600 line-through" : ""}>{step.label}</span></Link></li>
+                    ))}
+                  </ol>
+                  {nextActivation ? <Button asChild className="mt-5 w-full" variant="secondary"><Link href={nextActivation.href}>Continue setup <ArrowRight size={15} /></Link></Button> : null}
+                </section>
+
+                {upgradeProduct ? (
+                  <section className="border-l-2 border-accent pl-5">
+                    <p className="data-label">Low analysis units</p>
+                    <h2 className="mt-2 text-lg font-black text-neutral-200">{upgradeProduct.name}</h2>
+                    <p className="mt-2 text-sm leading-6 text-neutral-500">
+                      {new Intl.NumberFormat("en-IN", { style: "currency", currency: upgradeProduct.currency, maximumFractionDigits: 0 }).format(upgradeProduct.amount_minor / 100)} for {upgradeProduct.entitlement_quantity} days. One-time payment, no automatic renewal, with the published Premium usage policy.
+                    </p>
+                    <Button asChild className="mt-4" size="sm"><Link href="/billing" onClick={() => trackEvent("upgrade_prompt_clicked", { surface: "dashboard_low_units", reason: "low_units", sku: upgradeProduct.sku })}>Review Premium <ArrowRight size={14} /></Link></Button>
+                  </section>
+                ) : null}
+
+                <section className="border-t border-white/10 pt-7">
+                  <p className="data-label">Resume signal</p>
+                  <div className="mt-4 grid grid-cols-2 gap-5"><div><p className="text-2xl font-black">{analytics.data?.resume_quality?.evidenced_skills || 0}</p><p className="mt-1 text-xs text-neutral-600">Evidenced skills</p></div><div><p className="text-2xl font-black">{analytics.data?.resume_quality?.verification_rate || 0}%</p><p className="mt-1 text-xs text-neutral-600">Verification</p></div></div>
+                  <Button asChild variant="ghost" className="mt-4 px-0"><Link href="/resume"><FileText size={15} /> Review resume</Link></Button>
+                </section>
+              </aside>
+            </div>
+          </>
+        ) : null}
+      </div>
     </main>
   );
 }
-
-

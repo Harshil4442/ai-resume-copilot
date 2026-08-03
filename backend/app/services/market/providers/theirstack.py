@@ -1,7 +1,7 @@
 import os
 from typing import Any
 
-import requests
+import httpx
 
 from ..cache import cache_key, get_json, set_json
 from .base import JobPosting, JobProvider, JobSearchParams, ProviderResult
@@ -81,7 +81,12 @@ class TheirStackProvider(JobProvider):
         token = os.getenv("THEIRSTACK_API_KEY", "").strip()
         headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
         warnings: list[str] = []
-        resp = requests.post(THEIRSTACK_URL, json=payload, headers=headers, timeout=30)
+        resp = httpx.post(
+            THEIRSTACK_URL,
+            json=payload,
+            headers=headers,
+            timeout=httpx.Timeout(30, connect=8),
+        )
         resp.raise_for_status()
         data = resp.json()
         rows = data.get("data") or data.get("jobs") or data.get("results") or []
@@ -93,4 +98,3 @@ class TheirStackProvider(JobProvider):
         value = {"jobs": [job.to_dict() for job in jobs], "warnings": warnings}
         set_json(key, value)
         return ProviderResult(provider=self.name, jobs=jobs, warnings=warnings)
-

@@ -104,7 +104,9 @@ export default function PrivacyPolicy() {
             <li>cloud hosting, database, and delivery providers that run the website and API;</li>
             <li>AI API providers for requested analysis and generation;</li>
             <li>job-data providers, which receive market-search parameters but are not intended to receive resume content;</li>
-            <li>Google for optional Google sign-in and, after consent where configured, analytics;</li>
+            <li>Google for optional Google sign-in and, after consent where configured, aggregate analytics;</li>
+            <li>PostHog for consented product analytics and Sentry for minimized operational error reporting;</li>
+            <li>an email delivery provider for account, analysis, reminder, and payment messages when lifecycle email is enabled;</li>
             <li>the payment processor used for hosted checkout, fraud screening, confirmation, refund, and dispute handling;</li>
             <li>professional advisers, authorities, or counterparties when reasonably necessary to comply with law, protect rights and security, or complete a legitimate business reorganization.</li>
           </ul>
@@ -138,6 +140,12 @@ export default function PrivacyPolicy() {
             only as long as reasonably needed for the purpose for which they were collected. Exact infrastructure and
             provider retention periods can vary by record and legal requirement.
           </p>
+          <p className="mt-4">
+            The current application defaults to deleting completed analysis input payloads after 30 days, result payloads
+            after 90 days, model-call telemetry after 365 days, and completed notification-delivery rows after 90 days.
+            These periods may be shortened or changed for legal, security, backup, or active-support requirements, and
+            durable opportunity snapshots or user-approved evidence remain until you delete them or the account.
+          </p>
         </section>
 
         <section>
@@ -146,7 +154,8 @@ export default function PrivacyPolicy() {
             Subject to applicable law, you may request access, correction, or deletion; withdraw consent where
             processing relies on consent; and raise a complaint. Profile data can be corrected in your account. Account
             deletion is available in Profile or by verified email request. We may ask for information needed to verify
-            identity and protect the account before completing a request.
+            identity and protect the account before completing a request. A machine-readable account export is available
+            from Profile, and each opportunity has its own export.
           </p>
           <p className="mt-4">
             Use the footer's Cookie Preferences control to reject or withdraw optional analytics consent. You can also

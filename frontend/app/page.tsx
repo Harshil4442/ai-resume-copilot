@@ -1,363 +1,158 @@
+import {
+  ArrowRight,
+  BarChart3,
+  BriefcaseBusiness,
+  Check,
+  FileCheck2,
+  Fingerprint,
+  Gauge,
+  ShieldCheck,
+  Sparkles,
+} from "lucide-react";
 import Link from "next/link";
-import { FileText, Target, TrendingUp, BookOpen, PenTool, BarChart3, CheckCircle2, Shield, Zap } from "lucide-react";
-import ShimmerBadge from "../components/ui/ShimmerBadge";
-import GradientHeading from "../components/ui/GradientHeading";
-import AnimatedButton from "../components/ui/AnimatedButton";
-import FadeIn from "../components/ui/FadeIn";
-import StaggerContainer, { StaggerItem } from "../components/ui/StaggerContainer";
-import Marquee from "../components/ui/Marquee";
-import GlassCard from "../components/ui/GlassCard";
-import BulletOptimizer from "../components/BulletOptimizer";
-import ScrollReveal from "../components/ui/ScrollReveal";
-import FloatingElement from "../components/ui/FloatingElement";
-import type { Metadata } from "next";
-import { blogPosts, toolPages } from "../lib/seoContent";
 
-export const metadata: Metadata = {
-  title: "AI-assisted resume analysis you review and control",
-  description:
-    "Compare your own resume with job-description text and review informational suggestions for wording, skills, market signals, and learning topics.",
-  alternates: { canonical: "/" },
-};
+const workflow = [
+  { label: "Evidence", detail: "Approve the facts that represent your work.", icon: Fingerprint },
+  { label: "Opportunity", detail: "Capture the role and preserve its original snapshot.", icon: BriefcaseBusiness },
+  { label: "Application", detail: "Connect the exact resume, preparation, and follow-up.", icon: FileCheck2 },
+  { label: "Outcome", detail: "Learn from each response, interview, and offer.", icon: BarChart3 },
+];
 
-export default function Home() {
+const differentiators = [
+  {
+    title: "Claims stay traceable",
+    copy: "Every important resume claim can point back to evidence you approved. Missing facts become questions, not inventions.",
+    icon: ShieldCheck,
+  },
+  {
+    title: "Every role gets context",
+    copy: "The job snapshot, match, resume version, interview work, contacts, reminders, and outcome remain together.",
+    icon: BriefcaseBusiness,
+  },
+  {
+    title: "Learning earns its place",
+    copy: "Skill ROI ranks the next learning action by demand across your actual target roles and the evidence you already have.",
+    icon: Gauge,
+  },
+];
+
+export default function HomePage() {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-between pb-20">
-      
-      {/* Hero Section */}
-      <section className="w-full max-w-[80rem] mx-auto px-6 md:px-8 pt-24 pb-16 md:pt-32 md:pb-24 text-center">
-        <StaggerContainer staggerDelay={0.15}>
-          <StaggerItem className="flex justify-center mb-6">
-            <ShimmerBadge href="/about">Self-service resume analysis</ShimmerBadge>
-          </StaggerItem>
-          
-          <StaggerItem>
-            <GradientHeading className="mb-6 max-w-4xl mx-auto text-5xl md:text-6xl lg:text-7xl">
-              Review your resume<br className="hidden sm:block" /> against the role you choose.
-            </GradientHeading>
-          </StaggerItem>
-          
-          <StaggerItem>
-            <p className="text-lg md:text-xl text-slate-400 text-balance tracking-tight max-w-2xl mx-auto leading-relaxed mb-10">
-              Upload your own resume, compare it with job-description text, and review AI-assisted wording, skill-gap, market, and learning suggestions. You decide what is accurate and what to use.
+    <main className="w-full">
+      <section className="home-hero relative flex min-h-[620px] items-end overflow-hidden border-b border-white/10 bg-[#111513]">
+        <div className="absolute inset-0 bg-[url('/workspace-preview.png')] bg-cover bg-center opacity-[0.58] lg:opacity-[0.8]" aria-hidden="true" />
+        <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(8,12,10,0.99)_0%,rgba(8,12,10,0.94)_42%,rgba(8,12,10,0.34)_72%,rgba(8,12,10,0.08)_100%),linear-gradient(0deg,#0f1211_0%,transparent_42%)]" aria-hidden="true" />
+        <div className="page-container relative z-10 pb-16 pt-24 sm:pb-20">
+          <div className="max-w-2xl">
+            <p className="eyebrow">Evidence-backed career workspace</p>
+            <h1 className="mt-4 text-5xl font-black leading-[1.02] text-[#f4f2ea] sm:text-6xl lg:text-7xl">HireWiz</h1>
+            <p className="mt-5 max-w-xl text-lg leading-8 text-neutral-300 sm:text-xl">
+              Turn real career evidence into stronger role decisions, tailored resumes, interview preparation, and a job search that remembers what happened.
             </p>
-          </StaggerItem>
-          
-          <StaggerItem className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <AnimatedButton href="/register" showArrow>Create a free account</AnimatedButton>
-            <AnimatedButton href="/pricing" variant="secondary">View public pricing</AnimatedButton>
-          </StaggerItem>
-        </StaggerContainer>
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+              <Link href="/register" className="button-primary min-w-40">
+                Build your workspace <ArrowRight size={16} aria-hidden="true" />
+              </Link>
+              <Link href="/pricing" className="button-secondary min-w-32">View pricing</Link>
+            </div>
+            <div className="mt-8 flex flex-wrap gap-x-6 gap-y-3 text-sm text-neutral-400">
+              {[
+                "50 free analysis units",
+                "No automatic renewal",
+                "You approve every claim",
+              ].map((item) => (
+                <span key={item} className="flex items-center gap-2">
+                  <Check size={15} className="text-primary" aria-hidden="true" /> {item}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
       </section>
 
-      {/* Capability Banner (feature-oriented, no unverified testimonials) */}
-      <div className="w-full max-w-[1000px] mx-auto py-8 mb-32 overflow-hidden flex flex-col gap-4 relative [mask-image:linear-gradient(to_right,transparent,black_15%,black_85%,transparent)]">
-
-        {/* LTR Marquee */}
-        <Marquee className="[--duration:60s]" reverse>
-          <div className="flex items-center gap-4 px-2">
-            {[
-              { title: "Bullet clarity", text: "Rewrite resume bullets to be clearer and evidence-based." },
-              { title: "Compatibility estimate", text: "Compare your resume with a job description using a HireWiz estimate." },
-              { title: "Skill signals", text: "See which skills appear most in the job-posting sample you analyze." },
-              { title: "Gap analysis", text: "Identify skills mentioned in a role that your resume doesn't cover yet." },
-              { title: "Learning suggestions", text: "Get study topics and project ideas mapped to your skill gaps." },
-            ].map((item, i) => (
-              <div key={i} className="w-[340px] p-5 rounded-2xl bg-slate-900/50 border border-slate-800/80 flex flex-col gap-3 hover:bg-slate-800/50 transition">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center">
-                    <CheckCircle2 size={16} />
-                  </div>
-                  <span className="text-sm font-bold text-slate-200">{item.title}</span>
-                </div>
-                <p className="text-sm text-slate-400 leading-relaxed">{item.text}</p>
-              </div>
-            ))}
-          </div>
-        </Marquee>
-
-        {/* RTL Marquee */}
-        <Marquee className="[--duration:70s]">
-          <div className="flex items-center gap-4 px-2">
-            {[
-              { title: "Structured parsing", text: "Turn your uploaded PDF into structured, reviewable sections." },
-              { title: "Market snapshot", text: "Review in-demand skills from a sample of recent job postings." },
-              { title: "Tailoring help", text: "Draft tailored wording that you review before saving or exporting." },
-              { title: "Portfolio direction", text: "Plan projects that demonstrate the skills a target role asks for." },
-              { title: "You stay in control", text: "AI suggestions are informational and require your review." },
-            ].map((item, i) => (
-              <div key={i} className="w-[340px] p-5 rounded-2xl bg-slate-900/50 border border-slate-800/80 flex flex-col gap-3 hover:bg-slate-800/50 transition">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-purple-500/20 text-purple-400 flex items-center justify-center">
-                    <CheckCircle2 size={16} />
-                  </div>
-                  <span className="text-sm font-bold text-slate-200">{item.title}</span>
-                </div>
-                <p className="text-sm text-slate-400 leading-relaxed">{item.text}</p>
-              </div>
-            ))}
-          </div>
-        </Marquee>
-      </div>
-
-      {/* Marquee Icons Section */}
-      <section className="w-full max-w-[80rem] mx-auto px-6 md:px-8 mb-32">
-        <ScrollReveal delay={0.2} direction="up">
-          <div className="relative rounded-2xl bg-slate-900/40 border border-slate-700/50 backdrop-blur-md p-6 shadow-[0_0_50px_rgba(59,130,246,0.1)]">
-            {/* Fade overlays */}
-            <div className="pointer-events-none absolute inset-y-0 left-0 w-1/3 bg-gradient-to-r from-background to-transparent z-10 rounded-l-2xl"></div>
-            <div className="pointer-events-none absolute inset-y-0 right-0 w-1/3 bg-gradient-to-l from-background to-transparent z-10 rounded-r-2xl"></div>
-            
-            <Marquee pauseOnHover={true}>
-              <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-950 border border-slate-800 shadow-sm">
-                <FileText className="text-blue-500" size={18} />
-                <span className="text-sm font-semibold text-slate-200">Structure resume text</span>
-              </div>
-              <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-950 border border-slate-800 shadow-sm">
-                <Target className="text-amber-500" size={18} />
-                <span className="text-sm font-semibold text-slate-200">Match job descriptions</span>
-              </div>
-              <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-950 border border-slate-800 shadow-sm">
-                <TrendingUp className="text-emerald-500" size={18} />
-                <span className="text-sm font-semibold text-slate-200">Analyze market trends</span>
-              </div>
-              <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-950 border border-slate-800 shadow-sm">
-                <BookOpen className="text-purple-500" size={18} />
-                <span className="text-sm font-semibold text-slate-200">AI learning strategies</span>
-              </div>
-              <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-950 border border-slate-800 shadow-sm">
-                <PenTool className="text-rose-500" size={18} />
-                <span className="text-sm font-semibold text-slate-200">Draft wording for your review</span>
-              </div>
-            </Marquee>
-          </div>
-        </ScrollReveal>
+      <section className="border-b border-white/10 bg-[#f0c96b] py-5 text-[#18140a]">
+        <div className="page-container flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <p className="font-black">One workspace from saved role to final outcome.</p>
+          <Link href="/about" className="inline-flex items-center gap-2 text-sm font-bold hover:underline">
+            See the product approach <ArrowRight size={15} />
+          </Link>
+        </div>
       </section>
 
-      {/* Bullet Optimizer Preview */}
-      <section className="w-full max-w-[80rem] mx-auto px-6 md:px-8 mb-32">
-        <div className="grid lg:grid-cols-2 gap-16 items-center">
+      <section className="py-20 sm:py-24">
+        <div className="page-container">
+          <div className="max-w-2xl">
+            <p className="eyebrow">A connected job search</p>
+            <h2 className="mt-3 text-3xl font-black leading-tight text-[#f4f2ea] sm:text-4xl">
+              Stop rebuilding context for every application.
+            </h2>
+            <p className="muted-copy mt-4 text-base">
+              HireWiz keeps the decisions and source material attached to the role, so the next action starts from what you already know.
+            </p>
+          </div>
+          <ol className="mt-12 grid border-y border-white/10 md:grid-cols-4">
+            {workflow.map((step, index) => (
+              <li key={step.label} className="min-w-0 border-b border-white/10 px-0 py-7 md:border-b-0 md:border-r md:px-6 first:md:pl-0 last:border-0">
+                <div className="flex items-center justify-between">
+                  <step.icon size={21} className="text-primary" aria-hidden="true" />
+                  <span className="text-xs font-bold text-neutral-600">0{index + 1}</span>
+                </div>
+                <h3 className="mt-6 text-lg font-black text-neutral-100">{step.label}</h3>
+                <p className="mt-2 text-sm leading-6 text-neutral-500">{step.detail}</p>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </section>
+
+      <section className="border-y border-white/10 bg-[#141716] py-20 sm:py-24">
+        <div className="page-container grid gap-12 lg:grid-cols-[0.82fr_1.18fr] lg:items-start">
+          <div className="lg:sticky lg:top-28">
+            <p className="eyebrow">Built around trust</p>
+            <h2 className="mt-3 text-3xl font-black leading-tight sm:text-4xl">AI should work from your history, not rewrite it.</h2>
+            <p className="muted-copy mt-4">
+              Your approved evidence is the boundary. HireWiz can select, organize, and sharpen it for a role while keeping you in control.
+            </p>
+            <Link href="/register" className="button-primary mt-7">
+              Start with your evidence <Sparkles size={16} aria-hidden="true" />
+            </Link>
+          </div>
+          <div className="divide-y divide-white/10 border-y border-white/10">
+            {differentiators.map((item) => (
+              <article key={item.title} className="grid gap-4 py-8 sm:grid-cols-[44px_1fr]">
+                <span className="flex h-10 w-10 items-center justify-center rounded-md bg-primary/10 text-primary">
+                  <item.icon size={20} aria-hidden="true" />
+                </span>
+                <div>
+                  <h3 className="text-xl font-black text-neutral-100">{item.title}</h3>
+                  <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-500">{item.copy}</p>
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="py-20 sm:py-24">
+        <div className="page-container grid gap-10 lg:grid-cols-2 lg:items-center">
           <div>
-            <ScrollReveal direction="left">
-              <h2 className="text-3xl md:text-4xl font-bold tracking-tight text-white mb-4">
-                Write clearer, evidence-based bullets.
-              </h2>
-              <p className="text-lg text-slate-400 mb-8 leading-relaxed">
-                Our AI reviews your resume bullets and suggests stronger action verbs and places to add quantifiable metrics. Suggestions are informational and require your review.
-              </p>
-              <ul className="space-y-4 mb-8">
-                <li className="flex items-start gap-3">
-                  <CheckCircle2 className="text-emerald-500 mt-1" size={20} />
-                  <span className="text-slate-200 font-medium">Identify weak action verbs for review</span>
-                </li>
-                <li className="flex items-start gap-3">
-                  <CheckCircle2 className="text-emerald-500 mt-1" size={20} />
-                  <span className="text-slate-200 font-medium">Identify missing quantifiable metrics</span>
-                </li>
-                <li className="flex items-start gap-3">
-                  <CheckCircle2 className="text-emerald-500 mt-1" size={20} />
-                  <span className="text-slate-200 font-medium">Review AI-assisted wording alternatives</span>
-                </li>
-              </ul>
-              <AnimatedButton href="/register" variant="outline" showArrow>Try the full tool</AnimatedButton>
-            </ScrollReveal>
+            <p className="eyebrow">Start free, upgrade when it matters</p>
+            <h2 className="mt-3 text-3xl font-black leading-tight sm:text-4xl">A focused 30-day Premium pass. No renewal surprise.</h2>
+            <p className="muted-copy mt-4 max-w-xl">
+              Use the free allowance to build context and test a match. Premium removes analysis-unit deductions for 30 days while your search is active.
+            </p>
           </div>
-          <ScrollReveal direction="right" delay={0.2}>
-            <FloatingElement yOffset={10} duration={6}>
-              <div className="absolute -inset-8 bg-blue-500/10 rounded-full blur-3xl -z-10"></div>
-              <div className="relative p-[1px] rounded-3xl bg-gradient-to-br from-blue-400/40 via-slate-800/10 to-purple-400/40 shadow-[0_0_40px_rgba(59,130,246,0.1)]">
-                <div className="bg-[#020617]/80 backdrop-blur-2xl rounded-[23px] overflow-hidden">
-                  <BulletOptimizer />
-                </div>
-              </div>
-            </FloatingElement>
-          </ScrollReveal>
+          <div className="border-l-2 border-accent pl-6 sm:pl-8">
+            <p className="data-label">HireWiz Premium</p>
+            <p className="mt-2 text-5xl font-black text-accent">INR 999</p>
+            <p className="mt-2 text-sm text-neutral-500">One-time payment for 30 days. No automatic renewal.</p>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <Link href="/pricing" className="button-secondary">Review full terms</Link>
+              <Link href="/register" className="button-primary">Create free account</Link>
+            </div>
+          </div>
         </div>
       </section>
-
-      {/* Bento Grid Features */}
-      <section className="w-full max-w-[80rem] mx-auto px-6 md:px-8 mb-32">
-        <ScrollReveal className="text-center mb-16">
-          <h2 className="text-3xl md:text-5xl font-bold tracking-tight text-white mb-4">Tools to help you present your experience.</h2>
-          <p className="text-lg text-slate-400">Self-service software for the modern job seeker.</p>
-        </ScrollReveal>
-
-        <StaggerContainer className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-          <StaggerItem className="lg:col-span-2">
-            <GlassCard className="h-full flex flex-col p-8">
-              <div className="h-12 w-12 rounded-xl bg-blue-100 flex items-center justify-center text-blue-600 mb-6">
-                <Target size={24} />
-              </div>
-              <h3 className="text-2xl font-bold text-white mb-3">Job Description Comparison</h3>
-              <p className="text-slate-400 leading-relaxed mb-6 flex-grow">
-                Paste any job description and let our AI compare it against your parsed resume. See a HireWiz compatibility estimate, likely missing skills, and a breakdown of how your resume aligns with the role's requirements.
-              </p>
-              <Link href="/about" className="text-sm font-bold text-primary hover:text-blue-400 flex items-center gap-1 group">
-                See How It Works <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
-              </Link>
-            </GlassCard>
-          </StaggerItem>
-
-          <StaggerItem>
-            <GlassCard className="h-full flex flex-col p-8">
-              <div className="h-12 w-12 rounded-xl bg-amber-100 flex items-center justify-center text-amber-600 mb-6">
-                <TrendingUp size={24} />
-              </div>
-              <h3 className="text-xl font-bold text-white mb-3">Market Trends</h3>
-              <p className="text-slate-400 leading-relaxed mb-6 flex-grow text-sm">
-                Analyze a sample of recent job postings from third-party job-data providers to see which skills are frequently requested for your target role. Results are informational estimates.
-              </p>
-              <Link href="/about" className="text-sm font-bold text-primary hover:text-blue-400 flex items-center gap-1 group">
-                Read the Limitations <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
-              </Link>
-            </GlassCard>
-          </StaggerItem>
-
-          <StaggerItem>
-            <GlassCard className="h-full flex flex-col p-8">
-              <div className="h-12 w-12 rounded-xl bg-purple-100 flex items-center justify-center text-purple-600 mb-6">
-                <BookOpen size={24} />
-              </div>
-              <h3 className="text-xl font-bold text-white mb-3">Learning Strategies</h3>
-              <p className="text-slate-400 leading-relaxed mb-6 flex-grow text-sm">
-                Review study topics and project ideas based on estimated gaps between your resume and a selected job description. Suggestions may be inaccurate and require your judgment.
-              </p>
-              <Link href="/about" className="text-sm font-bold text-primary hover:text-blue-400 flex items-center gap-1 group">
-                Learn About Suggestions <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
-              </Link>
-            </GlassCard>
-          </StaggerItem>
-
-          <StaggerItem className="lg:col-span-2">
-            <GlassCard className="h-full flex flex-col p-8 relative overflow-hidden group">
-              <div className="absolute right-0 top-0 w-64 h-64 bg-emerald-100/50 rounded-full blur-3xl -mr-20 -mt-20 transition-transform group-hover:scale-110"></div>
-              <div className="relative z-10">
-                <div className="h-12 w-12 rounded-xl bg-emerald-100 flex items-center justify-center text-emerald-400 mb-6">
-                  <Shield size={24} />
-                </div>
-                <h3 className="text-2xl font-bold text-white mb-3">Structured Resume Parsing</h3>
-                <p className="text-slate-400 leading-relaxed mb-6 max-w-xl">
-                  Upload your PDF and our extraction engine structures your experience into clear, reviewable sections so you can check how your resume reads. HireWiz does not produce an official ATS score.
-                </p>
-                <Link href="/register" className="text-sm font-bold text-primary hover:text-blue-400 flex items-center gap-1 group/link">
-                  Create an Account <ArrowRight className="h-4 w-4 transition-transform group-hover/link:translate-x-1" />
-                </Link>
-              </div>
-            </GlassCard>
-          </StaggerItem>
-        </StaggerContainer>
-      </section>
-
-      {/* Public Learning Funnel */}
-      <section className="w-full max-w-[80rem] mx-auto px-6 md:px-8 mb-32">
-        <ScrollReveal className="text-center mb-12">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-950/50 border border-blue-800/60 text-blue-200 text-xs font-bold mb-5">
-            <BookOpen size={14} /> New public guides and tools
-          </div>
-          <h2 className="text-3xl md:text-5xl font-bold tracking-tight text-white mb-4">
-            Learn first, then apply it with a tool.
-          </h2>
-          <p className="text-lg text-slate-400 max-w-2xl mx-auto leading-relaxed">
-            Browse resume guides, use quick public tools, and create a free account when you want deeper analysis.
-          </p>
-        </ScrollReveal>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <GlassCard className="p-7" hoverEffect={false}>
-            <div className="text-xs font-bold uppercase tracking-wider text-purple-300">Resume guides</div>
-            <h3 className="mt-2 text-2xl font-black text-white">Read practical resume advice</h3>
-            <p className="mt-3 text-sm text-slate-400 leading-relaxed">
-              Guides for keywords, job-description matching, fresher formats, and role-specific resume signals.
-            </p>
-            <div className="mt-5 space-y-3">
-              {blogPosts.slice(0, 3).map((post) => (
-                <Link
-                  key={post.slug}
-                  href={`/blog/${post.slug}`}
-                  className="block rounded-xl border border-slate-800 bg-slate-950/40 p-3 text-sm font-bold text-slate-200 hover:border-primary/70 hover:text-primary"
-                >
-                  {post.title}
-                </Link>
-              ))}
-            </div>
-            <Link href="/blog" className="mt-6 inline-flex items-center gap-1 text-sm font-bold text-primary hover:text-blue-300">
-              View all guides <ArrowRight className="h-4 w-4" />
-            </Link>
-          </GlassCard>
-
-          <GlassCard className="p-7" hoverEffect={false}>
-            <div className="text-xs font-bold uppercase tracking-wider text-blue-300">Free tools</div>
-            <h3 className="mt-2 text-2xl font-black text-white">Turn advice into action</h3>
-            <p className="mt-3 text-sm text-slate-400 leading-relaxed">
-              Start with a public checklist or one-bullet optimizer before signing up for full resume parsing.
-            </p>
-            <div className="mt-5 space-y-3">
-              {toolPages.slice(0, 3).map((tool) => (
-                <Link
-                  key={tool.slug}
-                  href={`/tools/${tool.slug}`}
-                  className="block rounded-xl border border-slate-800 bg-slate-950/40 p-3 text-sm font-bold text-slate-200 hover:border-primary/70 hover:text-primary"
-                >
-                  {tool.title}
-                </Link>
-              ))}
-            </div>
-            <Link href="/tools" className="mt-6 inline-flex items-center gap-1 text-sm font-bold text-primary hover:text-blue-300">
-              Open free tools <ArrowRight className="h-4 w-4" />
-            </Link>
-          </GlassCard>
-
-          <GlassCard className="p-7 bg-gradient-to-br from-slate-950/70 to-blue-950/40" hoverEffect={false}>
-            <div className="text-xs font-bold uppercase tracking-wider text-emerald-300">Learning resources</div>
-            <h3 className="mt-2 text-2xl font-black text-white">Close skill gaps honestly</h3>
-            <p className="mt-3 text-sm text-slate-400 leading-relaxed">
-              Use curated official/free learning resources to build real evidence for skills your target roles mention.
-            </p>
-            <ul className="mt-5 space-y-3 text-sm text-slate-300">
-              <li className="flex items-start gap-2"><CheckCircle2 size={16} className="text-emerald-400 mt-0.5 shrink-0" /> Official and free-first resources</li>
-              <li className="flex items-start gap-2"><CheckCircle2 size={16} className="text-emerald-400 mt-0.5 shrink-0" /> Affiliate-ready disclosure for future monetization</li>
-              <li className="flex items-start gap-2"><CheckCircle2 size={16} className="text-emerald-400 mt-0.5 shrink-0" /> Tracks outbound resource clicks after analytics consent</li>
-            </ul>
-            <Link href="/resources" className="mt-6 inline-flex items-center gap-1 text-sm font-bold text-primary hover:text-blue-300">
-              Browse resources <ArrowRight className="h-4 w-4" />
-            </Link>
-          </GlassCard>
-        </div>
-      </section>
-
-      {/* CTA Section */}
-      <section className="w-full max-w-[80rem] mx-auto px-6 md:px-8">
-        <ScrollReveal direction="up">
-          <div className="relative rounded-3xl overflow-hidden bg-slate-950 p-10 md:p-20 text-center border border-slate-800 shadow-2xl">
-            <div className="absolute inset-0 bg-[linear-gradient(to_right,#4f4f4f2e_1px,transparent_1px),linear-gradient(to_bottom,#4f4f4f2e_1px,transparent_1px)] bg-[size:24px_24px] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_50%,#000_70%,transparent_100%)]"></div>
-            
-            <div className="relative z-10 max-w-2xl mx-auto">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-950/10 border border-white/10 text-white text-xs font-semibold mb-6">
-                <Zap size={14} className="text-amber-400" /> Start free today
-              </div>
-              <h2 className="text-3xl md:text-5xl font-black tracking-tight text-white mb-6">
-                Ready to review your resume?
-              </h2>
-              <p className="text-lg text-slate-400 mb-10 text-balance">
-                Create a free account and use AI-assisted tools to review, structure, and improve your resume — you stay in control of every change.
-              </p>
-              <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-                <AnimatedButton href="/register" showArrow>Create free account</AnimatedButton>
-              </div>
-            </div>
-          </div>
-        </ScrollReveal>
-      </section>
-      
     </main>
-  );
-}
-
-function ArrowRight({ className }: { className?: string }) {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-      <path d="M5 12h14" />
-      <path d="m12 5 7 7-7 7" />
-    </svg>
   );
 }

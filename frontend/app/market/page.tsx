@@ -1,119 +1,31 @@
 "use client";
 
+import { AlertCircle, ArrowUpRight, BarChart3, BriefcaseBusiness, Globe2, LoaderCircle, MapPin, Search, TrendingUp } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+
+import { Button } from "../../components/ui/Button";
+import { EmptyState } from "../../components/ui/EmptyState";
+import { trackEvent } from "../../lib/analytics";
 import { apiGet, apiPostJson } from "../../lib/api";
-import type { MarketAnalyzeResponse, MarketResumeGap, MarketTopSkill } from "../../lib/types";
-import PageHeader from "../../components/ui/PageHeader";
-import GlassCard from "../../components/ui/GlassCard";
-import AnimatedButton from "../../components/ui/AnimatedButton";
-import FadeIn from "../../components/ui/FadeIn";
-import StaggerContainer, { StaggerItem } from "../../components/ui/StaggerContainer";
-import { 
-  Globe, Briefcase, MapPin, Navigation, Compass, AlertTriangle, 
-  Target, BarChart3, TrendingUp, Zap, Sparkles, AlertCircle 
-} from "lucide-react";
-import { twMerge } from "tailwind-merge";
-import clsx from "clsx";
+import type { MarketAnalyzeResponse } from "../../lib/types";
 
-type ResumeItem = {
-  id: number;
-  filename: string;
-  created_at: string;
-};
+type ResumeItem = { id: number; filename: string; created_at: string };
 
-function badgeClass(value: string) {
-  const v = value.toLowerCase();
-  if (v === "critical") return "bg-rose-900/30 text-rose-400 border-rose-800 shadow-sm";
-  if (v === "high") return "bg-orange-50 text-orange-700 border-orange-200 shadow-sm";
-  if (v === "medium") return "bg-amber-900/30 text-amber-400 border-amber-800 shadow-sm";
-  if (v === "proven" || v === "high confidence") return "bg-emerald-900/30 text-emerald-400 border-emerald-800 shadow-sm";
-  if (v === "claimed") return "bg-blue-900/30 text-blue-400 border-blue-700 shadow-sm";
-  if (v === "missing" || v === "low confidence") return "bg-rose-900/30 text-rose-400 border-rose-800 shadow-sm";
-  return "bg-slate-900/50 text-slate-200 border-slate-700 shadow-sm";
-}
-
-function Stat({ label, value, sub, icon: Icon }: { label: string; value: string; sub?: string; icon: any }) {
-  return (
-    <GlassCard className="p-5 flex flex-col justify-between h-full bg-slate-900/40" hoverEffect={false}>
-      <div className="flex items-center gap-2 mb-3">
-        <Icon size={16} className="text-primary" />
-        <div className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">{label}</div>
-      </div>
-      <div>
-        <div className="text-2xl font-black text-white">{value}</div>
-        {sub && <div className="text-xs text-slate-400 mt-1 font-medium">{sub}</div>}
-      </div>
-    </GlassCard>
-  );
-}
-
-function SkillBadge({ skill }: { skill: string }) {
-  return <span className="px-3 py-1 bg-slate-800 text-slate-200 rounded-full text-xs font-bold border border-slate-700 shadow-sm hover:scale-105 transition-transform">{skill}</span>;
-}
-
-function TopSkillsTable({ skills }: { skills: MarketTopSkill[] }) {
-  return (
-    <div className="overflow-x-auto custom-scrollbar">
-      <table className="w-full text-sm">
-        <thead className="text-[10px] uppercase tracking-wider text-slate-400 border-b border-slate-700 bg-slate-900/50">
-          <tr>
-            <th className="text-left py-3 px-4 font-bold">Skill</th>
-            <th className="text-left py-3 px-4 font-bold">Category</th>
-            <th className="text-right py-3 px-4 font-bold">Count</th>
-            <th className="text-right py-3 px-4 font-bold">Demand</th>
-            <th className="text-right py-3 px-4 font-bold">Importance</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100">
-          {skills.map((skill) => (
-            <tr key={skill.skill} className="hover:bg-slate-900/50 transition-colors">
-              <td className="py-3 px-4 font-bold text-white">{skill.skill}</td>
-              <td className="py-3 px-4 text-slate-400 font-medium">{skill.category}</td>
-              <td className="py-3 px-4 text-right">{skill.count}</td>
-              <td className="py-3 px-4 text-right font-black text-primary">{skill.percentage.toFixed(1)}%</td>
-              <td className="py-3 px-4 text-right">
-                <span className={twMerge(clsx("px-2.5 py-1 rounded-md border text-[10px] font-bold uppercase tracking-wider", badgeClass(skill.importance)))}>
-                  {skill.importance}
-                </span>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function GapRow({ gap }: { gap: MarketResumeGap }) {
-  return (
-    <div className="grid grid-cols-1 lg:grid-cols-[1fr_120px_120px_1.6fr] gap-4 p-5 rounded-2xl bg-slate-950 border border-slate-700 shadow-sm hover:shadow-md transition-shadow">
-      <div>
-        <div className="text-sm font-black text-white">{gap.skill}</div>
-        <div className="text-xs font-semibold text-slate-400 mt-1 flex items-center gap-1">
-          <TrendingUp size={12} className="text-primary" /> Demand {gap.market_demand_percentage.toFixed(1)}%
-        </div>
-      </div>
-      <div className="flex items-center lg:justify-center">
-        <span className={twMerge(clsx("px-2.5 py-1 rounded-md border text-[10px] font-bold uppercase tracking-wider", badgeClass(gap.resume_status)))}>
-          {gap.resume_status}
-        </span>
-      </div>
-      <div className="flex items-center lg:justify-center">
-        <span className={twMerge(clsx("px-2.5 py-1 rounded-md border text-[10px] font-bold uppercase tracking-wider", badgeClass(gap.priority)))}>
-          {gap.priority} priority
-        </span>
-      </div>
-      <p className="text-sm text-slate-300 leading-relaxed font-medium">{gap.reason}</p>
-    </div>
-  );
+function tone(value: string) {
+  const normalized = value.toLowerCase();
+  if (["critical", "missing", "low confidence"].includes(normalized)) return "border-coral/30 bg-coral/5 text-[#ffab9e]";
+  if (["high", "medium"].includes(normalized)) return "border-accent/30 bg-accent/5 text-[#ffd075]";
+  if (["proven", "high confidence"].includes(normalized)) return "border-primary/30 bg-primary/5 text-[#69debd]";
+  return "border-white/10 bg-white/[0.025] text-neutral-400";
 }
 
 export default function MarketPage() {
   const [resumes, setResumes] = useState<ResumeItem[]>([]);
-  const [targetRole, setTargetRole] = useState("Backend Engineer");
-  const [location, setLocation] = useState("United States");
-  const [countryCode, setCountryCode] = useState("US");
+  const [targetRole, setTargetRole] = useState("Software Engineer");
+  const [location, setLocation] = useState("India");
+  const [countryCode, setCountryCode] = useState("IN");
   const [experienceLevel, setExperienceLevel] = useState("mid");
   const [remote, setRemote] = useState("any");
   const [resumeId, setResumeId] = useState("");
@@ -125,26 +37,24 @@ export default function MarketPage() {
 
   useEffect(() => {
     apiGet<{ resumes: ResumeItem[] }>("/resume/list")
-      .then((res) => {
-        setResumes(res.resumes);
-        if (res.resumes.length > 0) setResumeId(String(res.resumes[0].id));
+      .then((response) => {
+        setResumes(response.resumes);
+        setResumeId(response.resumes[0] ? String(response.resumes[0].id) : "");
       })
-      .catch(() => {});
+      .catch(() => setResumes([]));
   }, []);
 
   const chartData = useMemo(
-    () => (data?.top_skills || []).slice(0, 12).map((item) => ({
-      skill: item.skill,
-      demand: item.percentage,
-    })),
+    () => (data?.top_skills || []).slice(0, 12).map((item) => ({ skill: item.skill, demand: item.percentage })),
     [data],
   );
 
-  async function analyze(e: React.FormEvent) {
-    e.preventDefault();
+  async function analyze(event: React.FormEvent) {
+    event.preventDefault();
     setError(null);
     setData(null);
     setLoading(true);
+    trackEvent("market_analysis_started", { country_code: countryCode, has_resume: Boolean(resumeId) });
     try {
       const response = await apiPostJson<MarketAnalyzeResponse>("/market/analyze", {
         target_role: targetRole,
@@ -157,314 +67,109 @@ export default function MarketPage() {
         posted_within_days: postedWithinDays,
       });
       setData(response);
+      trackEvent("market_analysis_completed", {
+        country_code: countryCode,
+        sample_size: response.sample_size,
+        source_provider: response.source_provider,
+      });
       window.dispatchEvent(new Event("refresh_analysis_units"));
-    } catch (err: any) {
-      setError(err?.message || "Market analysis failed");
+    } catch (analysisError) {
+      setError(analysisError instanceof Error ? analysisError.message : "Market analysis failed");
+      trackEvent("market_analysis_failed", { country_code: countryCode });
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <main className="w-full max-w-[80rem] mx-auto px-4 sm:px-6 md:px-8 py-8 space-y-10">
-      <PageHeader 
-        badge="Market Intelligence"
-        title="See which skills a sample of job postings is asking for."
-        subtitle="Analyze recent postings from third-party job-data providers, extract frequently repeated skills, compare them against your resume, and pick projects that close high-value gaps. Results are informational estimates based on the sample analyzed."
-      />
+    <main className="app-page">
+      <div className="page-container">
+        <header className="border-b border-white/10 pb-7">
+          <p className="eyebrow">Market research</p>
+          <h1 className="mt-2 text-3xl font-black text-neutral-100 sm:text-4xl">Sample current demand for a target role</h1>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-neutral-500">Results reflect configured third-party sources and the analyzed sample, not the entire job market.</p>
+        </header>
 
-      <GlassCard className="p-0 overflow-hidden" hoverEffect={false}>
-        <div className="grid grid-cols-1 lg:grid-cols-[1.3fr_1fr] bg-slate-900/50">
-          <div className="p-8 lg:p-10 flex flex-col justify-center">
-            <h2 className="text-3xl font-black tracking-tighter text-white mb-4">Market Snapshot</h2>
-            <p className="text-slate-300 leading-relaxed font-medium mb-10 max-w-lg">
-              We analyze a sample of recent job postings from third-party job-data providers to estimate which skills are frequently requested for your target role.
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-auto">
-              <Stat label="Mode" value="On-demand" sub="Third-party job APIs" icon={Zap} />
-              <Stat label="Extraction" value="LLM NLP" sub="Semantic deduplication" icon={Sparkles} />
-              <Stat label="Coverage" value="Multi-region" sub="Subject to provider data" icon={Globe} />
+        <div className="mt-8 grid gap-10 xl:grid-cols-[360px_minmax(0,1fr)]">
+          <form onSubmit={analyze} className="surface h-fit p-5 sm:p-6 xl:sticky xl:top-24">
+            <div className="flex items-center gap-3"><span className="icon-tile"><Search size={18} /></span><div><p className="data-label">Research query</p><h2 className="mt-1 text-lg font-black">Market snapshot</h2></div></div>
+            <div className="mt-6 grid gap-4">
+              <label className="grid gap-2 text-sm font-semibold text-neutral-300">Target role<input className="field-control" value={targetRole} onChange={(event) => setTargetRole(event.target.value)} /></label>
+              <div className="grid gap-4 sm:grid-cols-[1fr_90px] xl:grid-cols-[1fr_90px]">
+                <label className="grid gap-2 text-sm font-semibold text-neutral-300">Location<input className="field-control" value={location} onChange={(event) => setLocation(event.target.value)} /></label>
+                <label className="grid gap-2 text-sm font-semibold text-neutral-300">Country<input className="field-control uppercase" maxLength={2} value={countryCode} onChange={(event) => setCountryCode(event.target.value.toUpperCase())} /></label>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-2">
+                <label className="grid gap-2 text-sm font-semibold text-neutral-300">Experience<select className="field-control" value={experienceLevel} onChange={(event) => setExperienceLevel(event.target.value)}><option value="">Any</option><option value="entry">Entry</option><option value="junior">Junior</option><option value="mid">Mid</option><option value="senior">Senior</option><option value="staff">Staff</option></select></label>
+                <label className="grid gap-2 text-sm font-semibold text-neutral-300">Work mode<select className="field-control" value={remote} onChange={(event) => setRemote(event.target.value)}><option value="any">Any</option><option value="remote">Remote</option><option value="onsite">On-site or hybrid</option></select></label>
+              </div>
+              <label className="grid gap-2 text-sm font-semibold text-neutral-300">Resume comparison<select className="field-control" value={resumeId} onChange={(event) => setResumeId(event.target.value)}><option value="">Market only</option>{resumes.map((resume) => <option key={resume.id} value={resume.id}>{resume.filename || `Resume ${resume.id}`}</option>)}</select></label>
+              <div className="grid grid-cols-2 gap-4">
+                <label className="grid gap-2 text-sm font-semibold text-neutral-300">Sample size<input className="field-control" type="number" min="5" max="100" value={maxResults} onChange={(event) => setMaxResults(Number(event.target.value))} /></label>
+                <label className="grid gap-2 text-sm font-semibold text-neutral-300">Days<input className="field-control" type="number" min="1" max="365" value={postedWithinDays} onChange={(event) => setPostedWithinDays(Number(event.target.value))} /></label>
+              </div>
+              <Button type="submit" className="mt-2 w-full" disabled={loading || !targetRole.trim()}>{loading ? <LoaderCircle size={16} className="animate-spin" /> : <BarChart3 size={16} />}{loading ? "Analyzing..." : "Analyze demand"}</Button>
+              <p className="text-center text-xs text-neutral-600">5 analysis units</p>
             </div>
-          </div>
-          
-          <div className="bg-slate-950 p-8 lg:p-10 border-t lg:border-t-0 lg:border-l border-slate-700">
-            <form onSubmit={analyze} className="space-y-5">
-              <div>
-                <label className="block text-xs font-bold text-slate-200 mb-1">Target Role</label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400"><Briefcase size={16} /></div>
-                  <input className="w-full rounded-xl border border-slate-700 bg-slate-900/50 pl-10 pr-4 py-3 text-sm outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10" value={targetRole} onChange={(e) => setTargetRole(e.target.value)} />
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-1 sm:grid-cols-[2fr_1fr] gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-200 mb-1">Location</label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400"><MapPin size={16} /></div>
-                    <input className="w-full rounded-xl border border-slate-700 bg-slate-900/50 pl-10 pr-4 py-3 text-sm outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10" value={location} onChange={(e) => setLocation(e.target.value)} />
+          </form>
+
+          <div className="min-w-0">
+            {error ? <div className="flex gap-3 border border-coral/30 bg-coral/5 p-4 text-sm text-[#ffab9e]" role="alert"><AlertCircle size={18} className="shrink-0" /> {error}</div> : null}
+            {loading ? <div className="flex min-h-80 items-center justify-center border-y border-white/10 text-sm text-neutral-500"><LoaderCircle size={20} className="mr-3 animate-spin text-primary" /> Sampling recent listings and normalizing skills</div> : null}
+            {!loading && !data ? <EmptyState icon={Globe2} title="Run a focused market sample" description="Choose a role and location to compare current source coverage, skill demand, and resume evidence." /> : null}
+
+            {data ? (
+              <div className="space-y-10">
+                <section className="border-b border-white/10 pb-8">
+                  <p className="eyebrow">Result summary</p>
+                  <p className="mt-3 text-xl font-bold leading-8 text-neutral-200">{data.summary}</p>
+                  <dl className="mt-6 grid gap-4 border-t border-white/10 pt-5 sm:grid-cols-4">
+                    <div><dt className="data-label">Listings</dt><dd className="mt-1 text-xl font-black">{data.sample_size}</dd></div>
+                    <div><dt className="data-label">Confidence</dt><dd className="mt-1 font-bold capitalize text-neutral-300">{data.confidence}</dd></div>
+                    <div><dt className="data-label">Source</dt><dd className="mt-1 font-bold text-neutral-300">{data.source_provider}</dd></div>
+                    <div><dt className="data-label">Response</dt><dd className="mt-1 font-bold text-neutral-300">{data.from_cache ? "Cached" : "Live"}</dd></div>
+                  </dl>
+                  {data.warnings.length ? <div className="mt-5 border-l-2 border-accent pl-4 text-sm leading-6 text-[#ffd075]">{data.warnings.join(" ")}</div> : null}
+                </section>
+
+                <section>
+                  <div className="flex items-end justify-between gap-4"><div><p className="eyebrow">Demand</p><h2 className="mt-2 text-2xl font-black">Most repeated skills</h2></div><TrendingUp size={20} className="text-primary" /></div>
+                  <div className="mt-6 h-[390px] min-w-0">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={chartData} layout="vertical" margin={{ left: 30, right: 20 }}>
+                        <CartesianGrid horizontal={false} stroke="rgba(255,255,255,0.08)" />
+                        <XAxis type="number" domain={[0, 100]} tickFormatter={(value) => `${value}%`} tick={{ fill: "#737a76", fontSize: 11 }} axisLine={false} />
+                        <YAxis type="category" dataKey="skill" width={120} tick={{ fill: "#b7bdb9", fontSize: 11 }} axisLine={false} tickLine={false} />
+                        <Tooltip formatter={(value) => [`${Number(value).toFixed(1)}%`, "Demand"]} contentStyle={{ background: "#171a19", border: "1px solid rgba(255,255,255,.12)", borderRadius: 8 }} />
+                        <Bar dataKey="demand" fill="#42cdaa" radius={[0, 4, 4, 0]} barSize={22} />
+                      </BarChart>
+                    </ResponsiveContainer>
                   </div>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-200 mb-1">Country</label>
-                  <input className="w-full rounded-xl border border-slate-700 bg-slate-900/50 px-4 py-3 text-sm outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10 uppercase" maxLength={2} value={countryCode} onChange={(e) => setCountryCode(e.target.value.toUpperCase())} />
-                </div>
-              </div>
+                </section>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-200 mb-1">Experience</label>
-                  <select className="w-full rounded-xl border border-slate-700 bg-slate-900/50 px-4 py-3 text-sm outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10" value={experienceLevel} onChange={(e) => setExperienceLevel(e.target.value)}>
-                    <option value="">Any</option>
-                    <option value="entry">Entry Level</option>
-                    <option value="junior">Junior</option>
-                    <option value="mid">Mid Level</option>
-                    <option value="senior">Senior</option>
-                    <option value="staff">Staff/Principal</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-200 mb-1">Work Mode</label>
-                  <select className="w-full rounded-xl border border-slate-700 bg-slate-900/50 px-4 py-3 text-sm outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10" value={remote} onChange={(e) => setRemote(e.target.value)}>
-                    <option value="any">Any Mode</option>
-                    <option value="remote">Remote Only</option>
-                    <option value="onsite">On-site or Hybrid</option>
-                  </select>
-                </div>
-              </div>
+                <section>
+                  <h2 className="text-xl font-black">Demand table</h2>
+                  <div className="mt-5 overflow-x-auto border-y border-white/10">
+                    <table className="w-full min-w-[620px] text-sm"><thead className="text-left text-xs text-neutral-600"><tr><th className="px-3 py-3">Skill</th><th className="px-3 py-3">Category</th><th className="px-3 py-3 text-right">Listings</th><th className="px-3 py-3 text-right">Demand</th><th className="px-3 py-3 text-right">Importance</th></tr></thead><tbody className="divide-y divide-white/10">{data.top_skills.slice(0, 20).map((skill) => <tr key={skill.skill}><td className="px-3 py-3 font-bold text-neutral-200">{skill.skill}</td><td className="px-3 py-3 text-neutral-500">{skill.category}</td><td className="px-3 py-3 text-right text-neutral-400">{skill.count}</td><td className="px-3 py-3 text-right font-bold text-primary">{skill.percentage.toFixed(1)}%</td><td className="px-3 py-3 text-right"><span className={`rounded-md border px-2 py-1 text-xs font-bold ${tone(skill.importance)}`}>{skill.importance}</span></td></tr>)}</tbody></table>
+                  </div>
+                </section>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-200 mb-1">Compare Against Resume</label>
-                <select className="w-full rounded-xl border border-slate-700 bg-slate-900/50 px-4 py-3 text-sm outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10" value={resumeId} onChange={(e) => setResumeId(e.target.value)}>
-                  <option value="">No resume comparison (Market only)</option>
-                  {resumes.map((resume) => (
-                    <option key={resume.id} value={String(resume.id)}>
-                      {resume.filename || `Resume #${resume.id}`} - {new Date(resume.created_at).toLocaleDateString()}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                <section>
+                  <div className="flex flex-wrap items-end justify-between gap-3"><div><p className="eyebrow">Resume comparison</p><h2 className="mt-2 text-2xl font-black">Evidence gaps</h2></div><Button asChild variant="secondary" size="sm"><Link href="/resume">Update resume</Link></Button></div>
+                  <div className="mt-5 divide-y divide-white/10 border-y border-white/10">
+                    {data.resume_gap_analysis.slice(0, 12).map((gap) => <article key={gap.skill} className="grid gap-3 py-4 sm:grid-cols-[1fr_auto_auto] sm:items-center"><div><p className="font-bold text-neutral-200">{gap.skill}</p><p className="mt-1 text-sm text-neutral-500">{gap.reason}</p></div><span className={`rounded-md border px-2 py-1 text-xs font-bold ${tone(gap.resume_status)}`}>{gap.resume_status}</span><span className={`rounded-md border px-2 py-1 text-xs font-bold ${tone(gap.priority)}`}>{gap.priority}</span></article>)}
+                    {!data.resume_gap_analysis.length ? <p className="py-7 text-sm text-neutral-600">Connect a resume to compare approved career signals.</p> : null}
+                  </div>
+                </section>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-200 mb-1">Sample Size</label>
-                  <input className="w-full rounded-xl border border-slate-700 bg-slate-900/50 px-4 py-3 text-sm outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10" type="number" min="5" max="100" value={maxResults} onChange={(e) => setMaxResults(Number(e.target.value))} />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-200 mb-1">Posted Within (Days)</label>
-                  <input className="w-full rounded-xl border border-slate-700 bg-slate-900/50 px-4 py-3 text-sm outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10" type="number" min="1" max="365" value={postedWithinDays} onChange={(e) => setPostedWithinDays(Number(e.target.value))} />
-                </div>
-              </div>
+                {data.recommended_projects.length ? <section><p className="eyebrow">Skill actions</p><h2 className="mt-2 text-2xl font-black">Project ideas</h2><div className="mt-5 grid gap-5 md:grid-cols-2">{data.recommended_projects.map((project) => <article key={project.title} className="surface p-5"><div className="flex items-start justify-between gap-3"><h3 className="font-black text-neutral-200">{project.title}</h3><span className="text-xs font-bold text-accent">{project.difficulty}</span></div><p className="mt-3 text-sm leading-6 text-neutral-500">{project.description}</p><p className="mt-4 text-xs font-semibold text-neutral-600">{project.skills_covered.join(" · ")}</p></article>)}</div></section> : null}
 
-              <AnimatedButton 
-                type="submit"
-                disabled={loading || !targetRole.trim()} 
-                className="w-full py-4 text-base mt-2 shadow-lg"
-                showArrow
-              >
-                {loading ? "Analyzing market..." : "Analyze market demand (Free: 5 analysis units)"}
-              </AnimatedButton>
-            </form>
+                <section><div className="flex items-end justify-between gap-4"><div><p className="eyebrow">Source sample</p><h2 className="mt-2 text-2xl font-black">Listings analyzed</h2></div><BriefcaseBusiness size={20} className="text-accent" /></div><div className="mt-5 divide-y divide-white/10 border-y border-white/10">{data.sample_jobs.map((job) => <a key={`${job.source}-${job.url}-${job.title}`} href={job.url || "#"} target="_blank" rel="noreferrer" className="grid gap-2 py-4 hover:bg-white/[0.02] sm:grid-cols-[1fr_auto] sm:items-center sm:px-3"><div><p className="font-bold text-neutral-200">{job.title}</p><p className="mt-1 flex flex-wrap gap-3 text-xs text-neutral-600"><span>{job.company || "Unknown company"}</span><span className="flex items-center gap-1"><MapPin size={12} />{job.location || "Location unavailable"}</span><span>{job.source}</span></p></div><ArrowUpRight size={16} className="text-neutral-600" /></a>)}</div></section>
+              </div>
+            ) : null}
           </div>
         </div>
-      </GlassCard>
-
-      {error && (
-        <FadeIn>
-          <div className="text-sm text-rose-400 bg-rose-900/30 border border-rose-800 rounded-xl px-4 py-3 shadow-sm flex items-center gap-2 max-w-2xl mx-auto">
-            <AlertCircle size={16} /> {error}
-          </div>
-        </FadeIn>
-      )}
-
-      {loading && (
-        <FadeIn>
-          <GlassCard className="p-16 text-center border-dashed border-slate-600 border-2" hoverEffect={false}>
-            <div className="mx-auto w-12 h-12 rounded-full border-4 border-slate-700 border-t-primary animate-spin mb-6"></div>
-            <h2 className="text-xl font-bold text-white tracking-tight">Analyzing the job market...</h2>
-            <p className="text-sm text-slate-400 mt-2">Fetching recent postings from job-data providers, extracting skills with AI, and cross-referencing your resume.</p>
-          </GlassCard>
-        </FadeIn>
-      )}
-
-      {data && (
-        <StaggerContainer className="space-y-8">
-          <StaggerItem className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6">
-            <GlassCard className="p-6 md:p-8 bg-blue-900/30/50 border-blue-800" hoverEffect={false}>
-              <div className="text-[10px] font-black uppercase tracking-widest text-blue-600 flex items-center gap-2 mb-4">
-                <Sparkles size={14} /> AI Summary
-              </div>
-              <p className="text-xl font-bold text-white leading-relaxed tracking-tight">{data.summary}</p>
-            </GlassCard>
-            
-            <GlassCard className="p-6 md:p-8 flex flex-col justify-center" hoverEffect={false}>
-              <div className="grid grid-cols-2 gap-y-6 gap-x-4">
-                <div>
-                  <div className="text-[10px] uppercase tracking-wider text-slate-400 font-bold mb-1">Sample Size</div>
-                  <div className="text-3xl font-black text-white">{data.sample_size}</div>
-                </div>
-                <div>
-                  <div className="text-[10px] uppercase tracking-wider text-slate-400 font-bold mb-1">Confidence</div>
-                  <div className="text-xl font-black text-white capitalize pt-1.5">{data.confidence}</div>
-                </div>
-                <div>
-                  <div className="text-[10px] uppercase tracking-wider text-slate-400 font-bold mb-1">Source</div>
-                  <div className="text-sm font-bold text-slate-200">{data.source_provider}</div>
-                </div>
-                <div>
-                  <div className="text-[10px] uppercase tracking-wider text-slate-400 font-bold mb-1">Cache</div>
-                  <div className="text-sm font-bold text-slate-200">{data.from_cache ? "Hit (Fast)" : "Live"}</div>
-                </div>
-              </div>
-            </GlassCard>
-          </StaggerItem>
-
-          {data.warnings.length > 0 && (
-            <StaggerItem>
-              <GlassCard className="p-5 border-amber-800 bg-amber-900/30/80 backdrop-blur-sm" hoverEffect={false}>
-                <div className="text-[10px] font-black uppercase tracking-wider text-amber-400 flex items-center gap-2 mb-2">
-                  <AlertTriangle size={14} /> Analysis Warnings
-                </div>
-                <ul className="space-y-1 mt-3">
-                  {data.warnings.map((warning) => (
-                    <li key={warning} className="text-sm text-amber-800 font-medium flex gap-2">
-                      <span className="text-amber-500">•</span> {warning}
-                    </li>
-                  ))}
-                </ul>
-              </GlassCard>
-            </StaggerItem>
-          )}
-
-          <StaggerItem className="grid grid-cols-1 xl:grid-cols-[1.4fr_1fr] gap-6">
-            <GlassCard className="p-6 md:p-8" hoverEffect={false}>
-              <div className="mb-6">
-                <h2 className="text-xl font-black text-white tracking-tighter">Top Demanded Skills</h2>
-                <p className="text-sm text-slate-400 font-medium mt-1">Percentage indicates how many sampled postings explicitly required the skill.</p>
-              </div>
-              <div className="h-[360px] w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={chartData} layout="vertical" margin={{ left: 50, right: 20, top: 0, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#E2E8F0" />
-                    <XAxis type="number" domain={[0, 100]} tickFormatter={(v) => `${v}%`} tick={{ fill: '#64748b', fontSize: 12, fontWeight: 600 }} axisLine={{ stroke: '#CBD5E1' }} />
-                    <YAxis type="category" dataKey="skill" width={120} tick={{ fill: '#0f172a', fontSize: 12, fontWeight: 700 }} axisLine={false} tickLine={false} />
-                    <Tooltip 
-                      formatter={(value: number) => [`${Number(value).toFixed(1)}%`, "Demand"]}
-                      contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)', fontWeight: 'bold' }}
-                    />
-                    <Bar dataKey="demand" fill="#3b82f6" radius={[0, 6, 6, 0]} barSize={24} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </GlassCard>
-
-            <GlassCard className="p-6 md:p-8 bg-slate-900/50" hoverEffect={false}>
-              <h2 className="text-xl font-black text-white tracking-tighter mb-6">Category Breakdown</h2>
-              <div className="space-y-6 max-h-[360px] overflow-y-auto pr-2 custom-scrollbar">
-                {data.skill_categories.map((category) => (
-                  <div key={category.category}>
-                    <div className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-3">{category.category}</div>
-                    <div className="flex flex-wrap gap-2">
-                      {category.skills.slice(0, 8).map((skill) => (
-                        <span key={skill.skill} className="px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs font-bold text-slate-200 shadow-sm flex items-center gap-2">
-                          {skill.skill} <span className="text-[10px] font-black text-primary bg-blue-900/30 px-1.5 rounded">{skill.percentage.toFixed(0)}%</span>
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </GlassCard>
-          </StaggerItem>
-
-          <StaggerItem>
-            <GlassCard className="p-6 md:p-8 overflow-hidden" hoverEffect={false}>
-              <h2 className="text-xl font-black text-white tracking-tighter mb-6">Complete Skill Demand Table</h2>
-              <TopSkillsTable skills={data.top_skills.slice(0, 20)} />
-            </GlassCard>
-          </StaggerItem>
-
-          <StaggerItem>
-            <div className="flex items-end justify-between gap-4 mb-6 px-1">
-              <div>
-                <h2 className="text-2xl font-black text-white tracking-tighter">Resume vs Market</h2>
-                <p className="text-sm text-slate-400 font-medium mt-1">High-demand skills are classified as proven, claimed, or missing based on your parsed resume.</p>
-              </div>
-              <a href="/resume" className="text-sm font-bold text-primary hover:underline whitespace-nowrap">Update Resume &rarr;</a>
-            </div>
-            <div className="space-y-4">
-              {data.resume_gap_analysis.length > 0 ? (
-                data.resume_gap_analysis.slice(0, 12).map((gap) => <GapRow key={gap.skill} gap={gap} />)
-              ) : (
-                <GlassCard className="p-8 text-center text-sm font-medium text-slate-400 bg-slate-900/50 border-dashed" hoverEffect={false}>
-                  Select a resume to compare in the form above to see the gap analysis.
-                </GlassCard>
-              )}
-            </div>
-          </StaggerItem>
-
-          <StaggerItem>
-            <h2 className="text-2xl font-black text-white tracking-tighter mb-6 px-1">Project ideas to close market gaps</h2>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {data.recommended_projects.map((project) => (
-                <GlassCard key={project.title} className="p-6 md:p-8 h-full flex flex-col">
-                  <div className="flex items-start justify-between gap-4 mb-4">
-                    <h3 className="text-lg font-black text-white">{project.title}</h3>
-                    <span className="px-2.5 py-1 rounded-md border border-slate-700 bg-slate-800 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap">{project.difficulty}</span>
-                  </div>
-                  <p className="text-sm text-slate-300 leading-relaxed font-medium flex-grow mb-6">{project.description}</p>
-                  
-                  <div className="mb-6">
-                    <div className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-3">Skills Addressed</div>
-                    <div className="flex flex-wrap gap-2">
-                      {project.skills_covered.map((skill) => <SkillBadge key={skill} skill={skill} />)}
-                    </div>
-                  </div>
-                  
-                  <div className="pt-5 border-t border-slate-800 mt-auto">
-                    <div className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-1.5"><FileText size={12} /> Target Resume Bullets</div>
-                    <ul className="space-y-2.5">
-                      {project.resume_bullets.map((bullet) => (
-                        <li key={bullet} className="text-sm text-slate-200 font-medium leading-relaxed flex gap-2">
-                          <span className="text-primary mt-1"><Target size={14} /></span>
-                          {bullet}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </GlassCard>
-              ))}
-            </div>
-          </StaggerItem>
-
-          <StaggerItem>
-            <GlassCard className="p-6 md:p-8" hoverEffect={false}>
-              <h2 className="text-xl font-black text-white tracking-tighter mb-6">Sample jobs used for analysis</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {data.sample_jobs.map((job) => (
-                  <a
-                    key={`${job.source}-${job.url}-${job.title}`}
-                    href={job.url || "#"}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="group rounded-2xl border border-slate-700 bg-slate-900/50 p-5 transition-all hover:bg-slate-950 hover:border-primary/30 hover:shadow-lg flex flex-col"
-                  >
-                    <div className="text-sm font-black text-white group-hover:text-primary transition-colors line-clamp-2">{job.title}</div>
-                    <div className="text-xs text-slate-400 font-medium mt-1 flex-grow">{job.company || "Unknown company"} • {job.location || "Unknown location"}</div>
-                    <div className="text-[10px] font-bold text-slate-400 mt-4 uppercase tracking-wider flex justify-between items-center">
-                      <span>{job.source}</span>
-                      <ArrowUpRight size={14} className="opacity-0 group-hover:opacity-100 transition-opacity text-primary" />
-                    </div>
-                  </a>
-                ))}
-              </div>
-            </GlassCard>
-          </StaggerItem>
-        </StaggerContainer>
-      )}
+      </div>
     </main>
   );
 }
-
-// Re-using icon imported in dashboard but let's redefine just in case
-import { ArrowUpRight, FileText } from "lucide-react";

@@ -3,7 +3,6 @@
 import { ReactNode } from "react";
 import ShimmerBadge from "./ShimmerBadge";
 import GradientHeading from "./GradientHeading";
-import FadeIn from "./FadeIn";
 import StaggerContainer, { StaggerItem } from "./StaggerContainer";
 import { twMerge } from "tailwind-merge";
 import clsx from "clsx";
@@ -25,28 +24,28 @@ export default function PageHeader({
 }: PageHeaderProps) {
   
   return (
-    <div className={twMerge(clsx("relative py-12 md:py-20 text-center max-w-4xl mx-auto px-4", className))}>
+    <div className={twMerge(clsx("relative py-8 md:py-12 max-w-4xl px-0", className))}>
       <StaggerContainer staggerDelay={0.15}>
         {badge && (
-          <StaggerItem className="mb-6 flex justify-center">
+          <StaggerItem className="mb-4 flex">
             <ShimmerBadge showArrow={false}>{badge}</ShimmerBadge>
           </StaggerItem>
         )}
         
         <StaggerItem>
-          <GradientHeading className="mb-6">{title}</GradientHeading>
+          <GradientHeading className="mb-4 text-3xl md:text-4xl lg:text-5xl">{title}</GradientHeading>
         </StaggerItem>
         
         {subtitle && (
           <StaggerItem>
-            <p className="text-lg md:text-xl text-slate-400 text-balance tracking-tight max-w-2xl mx-auto leading-relaxed">
+            <p className="max-w-2xl text-base md:text-lg text-neutral-400 text-balance leading-relaxed">
               {subtitle}
             </p>
           </StaggerItem>
         )}
         
         {actions && (
-          <StaggerItem className="mt-10 flex flex-wrap items-center justify-center gap-4">
+          <StaggerItem className="mt-7 flex flex-wrap items-center gap-3">
             {actions}
           </StaggerItem>
         )}

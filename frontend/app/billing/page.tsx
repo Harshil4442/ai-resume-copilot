@@ -11,14 +11,14 @@ import {
   Crown,
   ExternalLink,
   FileText,
+  History,
   Lock,
   RefreshCw,
   Shield,
 } from "lucide-react";
 import { apiGet, apiPostJson } from "../../lib/api";
-import PageHeader from "../../components/ui/PageHeader";
-import GlassCard from "../../components/ui/GlassCard";
-import FadeIn from "../../components/ui/FadeIn";
+import { Button } from "../../components/ui/Button";
+import { LoadingBlock } from "../../components/ui/LoadingBlock";
 import { trackEvent } from "../../lib/analytics";
 
 const RAZORPAY_CHECKOUT_SRC = "https://checkout.razorpay.com/v1/checkout.js";
@@ -76,6 +76,23 @@ interface BillingOrderStatus {
   created_at: string;
   paid_at: string | null;
   refunded_at: string | null;
+}
+
+interface UsageEvent {
+  id: string;
+  analysis_run_id: string | null;
+  event_type: string;
+  amount: number;
+  balance_after: number;
+  source_type: string;
+  source_id: string | null;
+  reason: string | null;
+  created_at: string;
+}
+
+interface UsageHistoryResponse {
+  balance: number;
+  items: UsageEvent[];
 }
 
 interface RazorpaySuccessResponse {
@@ -185,24 +202,49 @@ function wait(milliseconds: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 }
 
+function usageEventLabel(event: UsageEvent): string {
+  if (event.event_type === "reserve") return "Analysis units reserved";
+  if (event.event_type === "commit") return "Analysis completed";
+  if (event.event_type === "release") return "Reserved units returned";
+  if (event.event_type === "waive") return "Included with current access";
+  if (event.event_type === "adjust") return "Support adjustment";
+  return event.event_type.replaceAll("_", " ");
+}
+
 export default function BillingPage() {
   const mountedRef = useRef(true);
   const pollRunRef = useRef(0);
+  const confirmedOrderRef = useRef(new Set<string>());
   const [catalog, setCatalog] = useState<BillingCatalog | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [selectedSku, setSelectedSku] = useState<SupportedSku | null>(null);
   const [currentTier, setCurrentTier] = useState<string | null>(null);
+  const [premiumUntil, setPremiumUntil] = useState<string | null>(null);
   const [analysisUnits, setAnalysisUnits] = useState(0);
+  const [usageHistory, setUsageHistory] = useState<UsageHistoryResponse | null>(null);
+  const [usageLoading, setUsageLoading] = useState(true);
   const [indiaBillingConfirmed, setIndiaBillingConfirmed] = useState(false);
   const [phase, setPhase] = useState<CheckoutPhase>("idle");
   const [currentOrder, setCurrentOrder] = useState<BillingOrderStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const refreshProfile = useCallback(async () => {
-    const profile = await apiGet<{ tier?: string; ai_credits?: number }>("/auth/profile");
+    const profile = await apiGet<{ tier?: string; ai_credits?: number; premium_until?: string | null }>("/auth/profile");
     if (!mountedRef.current) return;
     setCurrentTier(profile.tier || "free");
     setAnalysisUnits(profile.ai_credits ?? 0);
+    setPremiumUntil(profile.premium_until || null);
+  }, []);
+
+  const refreshUsage = useCallback(async () => {
+    try {
+      const response = await apiGet<UsageHistoryResponse>("/v1/usage-events?limit=20");
+      if (!mountedRef.current) return;
+      setUsageHistory(response);
+      setAnalysisUnits(response.balance);
+    } finally {
+      if (mountedRef.current) setUsageLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -245,30 +287,29 @@ export default function BillingPage() {
       // Authentication middleware owns signed-out navigation. A catalog can
       // still be shown safely if profile refresh is momentarily unavailable.
     });
+    refreshUsage().catch(() => {
+      // The current balance still comes from the profile if history is unavailable.
+    });
 
     return () => {
       mountedRef.current = false;
       pollRunRef.current += 1;
     };
-  }, [refreshProfile]);
+  }, [refreshProfile, refreshUsage]);
 
   const visibleProducts = useMemo(() => {
     if (!catalog) return [];
     return catalog.products.filter((product) => product.catalog_visible);
   }, [catalog]);
 
-  useEffect(() => {
-    setSelectedSku((current) => {
-      if (current && visibleProducts.some((product) => product.sku === current)) {
-        return current;
-      }
-      return visibleProducts[0]?.sku ?? null;
-    });
-  }, [visibleProducts]);
+  const effectiveSelectedSku =
+    selectedSku && visibleProducts.some((product) => product.sku === selectedSku)
+      ? selectedSku
+      : visibleProducts[0]?.sku ?? null;
 
   const selectedProduct = useMemo(
-    () => visibleProducts.find((product) => product.sku === selectedSku) ?? null,
-    [selectedSku, visibleProducts],
+    () => visibleProducts.find((product) => product.sku === effectiveSelectedSku) ?? null,
+    [effectiveSelectedSku, visibleProducts],
   );
 
   const checkoutEnabled = Boolean(
@@ -288,12 +329,16 @@ export default function BillingPage() {
       setCurrentOrder(order);
       setPhase("confirmed");
       setError(null);
-      trackEvent("payment_success", {
-        order_id: order.order_id,
-        sku: order.sku,
-        amount_minor: order.amount_minor,
-        currency: order.currency,
-      });
+      if (!confirmedOrderRef.current.has(order.order_id)) {
+        confirmedOrderRef.current.add(order.order_id);
+        trackEvent("entitlement_fulfilled", {
+          $insert_id: `entitlement-${order.order_id}`,
+          order_id: order.order_id,
+          sku: order.sku,
+          amount_minor: order.amount_minor,
+          currency: order.currency,
+        });
+      }
       window.dispatchEvent(new Event("refresh_analysis_units"));
       try {
         await refreshProfile();
@@ -307,9 +352,10 @@ export default function BillingPage() {
 
   useEffect(() => {
     let cancelled = false;
-    apiGet<BillingOrderStatus>("/billing/recent-order")
+    apiGet<BillingOrderStatus | null>("/billing/recent-order")
       .then(async (order) => {
         if (cancelled || !mountedRef.current) return;
+        if (!order) return;
         if (order.status === "paid" && order.fulfilled) {
           await markConfirmed(order);
           return;
@@ -382,12 +428,6 @@ export default function BillingPage() {
     setPhase("opening");
     setError(null);
     setCurrentOrder(null);
-    trackEvent("checkout_started", {
-      sku: selectedProduct.sku,
-      amount_minor: selectedProduct.amount_minor,
-      currency: selectedProduct.currency,
-    });
-
     try {
       // The browser sends only an allowlisted SKU. Amount, currency and
       // entitlements are selected and locked by the server.
@@ -406,6 +446,13 @@ export default function BillingPage() {
       ) {
         throw new Error("Checkout configuration changed. Refresh this page before trying again.");
       }
+
+      trackEvent("checkout_started", {
+        sku: selectedProduct.sku,
+        amount_minor: selectedProduct.amount_minor,
+        currency: selectedProduct.currency,
+        provider: order.provider,
+      });
 
       setCurrentOrder({
         order_id: order.order_id,
@@ -435,7 +482,7 @@ export default function BillingPage() {
         prefill: order.prefill?.email ? { email: order.prefill.email } : undefined,
         handler: (response) => {
           successReported = true;
-          trackEvent("checkout_client_success", {
+          trackEvent("payment_client_confirmed", {
             sku: selectedProduct.sku,
             order_id: order.order_id,
             provider_order_id: response.razorpay_order_id,
@@ -473,14 +520,14 @@ export default function BillingPage() {
           },
         },
         retry: { enabled: true },
-        theme: { color: "#2563eb" },
+        theme: { color: "#42cdaa" },
       });
 
       checkout.on("payment.failed", (response) => {
-        trackEvent("checkout_payment_failed", {
+        trackEvent("checkout_failed", {
           sku: selectedProduct.sku,
           order_id: order.order_id,
-          error_description: response.error?.description || null,
+          failure_category: "provider_failed",
         });
         setPhase("pending");
         setError(
@@ -490,6 +537,10 @@ export default function BillingPage() {
       });
       checkout.open();
     } catch (checkoutError: unknown) {
+      trackEvent("checkout_failed", {
+        sku: selectedProduct.sku,
+        failure_category: "initialization_failed",
+      });
       setPhase("idle");
       setError(
         getErrorMessage(
@@ -502,391 +553,106 @@ export default function BillingPage() {
 
   const checkCurrentOrder = useCallback(() => {
     if (currentOrder?.order_id) void pollOrder(currentOrder.order_id);
-  }, [currentOrder?.order_id, pollOrder]);
+  }, [currentOrder, pollOrder]);
 
   if (phase === "confirmed" && currentOrder) {
     return (
-      <main className="w-full max-w-[64rem] mx-auto px-4 sm:px-6 md:px-8 py-10">
-        <FadeIn>
-          <GlassCard
-            className="p-8 md:p-12 text-center border-emerald-800 bg-emerald-950/30"
-            hoverEffect={false}
-          >
-            <div className="w-16 h-16 mx-auto rounded-full bg-emerald-900/60 text-emerald-300 flex items-center justify-center mb-6">
-              <CheckCircle2 size={32} />
-            </div>
-            <h1 className="text-3xl font-black text-white tracking-tight">Payment confirmed</h1>
-            <p className="mt-3 text-slate-300 max-w-xl mx-auto">
+      <main className="app-page">
+        <div className="page-container max-w-3xl">
+          <section className="border-y border-primary/30 py-12 text-center" aria-labelledby="payment-confirmed-heading">
+            <span className="icon-tile mx-auto h-14 w-14 text-primary"><CheckCircle2 size={27} /></span>
+            <p className="eyebrow mt-6">Verified fulfilment</p>
+            <h1 id="payment-confirmed-heading" className="mt-2 text-3xl font-black text-neutral-100 sm:text-4xl">Payment confirmed</h1>
+            <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-neutral-400">
               The server received verified payment confirmation and activated the purchased HireWiz access.
             </p>
-            <p className="mt-4 text-xs text-slate-400 break-all">
-              Order reference: {currentOrder.order_id}
-            </p>
-            {currentOrder.payment_reference ? (
-              <p className="mt-1 text-xs text-slate-400 break-all">
-                Payment reference: {currentOrder.payment_reference}
-              </p>
-            ) : null}
-            <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
-              <Link
-                href="/dashboard"
-                className="inline-flex items-center justify-center rounded-xl bg-primary px-5 py-3 text-sm font-bold text-white hover:bg-primary/90"
-              >
-                Continue to dashboard
-              </Link>
-              <Link
-                href="/contact"
-                className="inline-flex items-center justify-center rounded-xl border border-slate-700 px-5 py-3 text-sm font-bold text-slate-200 hover:bg-slate-800"
-              >
-                Billing support
-              </Link>
+            <div className="mx-auto mt-6 max-w-xl border-y border-white/10 py-4 text-xs leading-5 text-neutral-500">
+              <p className="break-all">Order reference: {currentOrder.order_id}</p>
+              {currentOrder.payment_reference ? <p className="break-all">Payment reference: {currentOrder.payment_reference}</p> : null}
             </div>
-          </GlassCard>
-        </FadeIn>
+            <div className="mt-7 flex flex-col justify-center gap-3 sm:flex-row">
+              <Button asChild><Link href="/dashboard">Continue to dashboard</Link></Button>
+              <Button asChild variant="secondary"><Link href="/contact">Billing support</Link></Button>
+            </div>
+          </section>
+        </div>
       </main>
     );
   }
 
   return (
-    <main className="w-full max-w-[76rem] mx-auto px-4 sm:px-6 md:px-8 py-8 space-y-10">
-      <PageHeader
-        badge="Account billing"
-        title="Upgrade to HireWiz Premium."
-        subtitle="One-time INR purchase, 30 days of Premium access, and no automatic renewal. Access is delivered after verified payment confirmation."
-      />
-
-      <GlassCard
-        className="p-6 md:p-8 bg-gradient-to-r from-slate-900 to-blue-950 border-slate-800 text-white flex flex-col md:flex-row items-start md:items-center justify-between gap-6"
-        hoverEffect={false}
-      >
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center">
-            {currentTier === "premium" ? (
-              <Crown className="text-amber-400" size={24} />
-            ) : (
-              <CircleGauge className="text-blue-400" size={24} aria-hidden="true" />
-            )}
-          </div>
+    <main className="app-page">
+      <div className="page-container space-y-10">
+        <header className="grid gap-6 border-b border-white/10 pb-7 lg:grid-cols-[1fr_auto] lg:items-end">
           <div>
-            <div className="text-[10px] uppercase tracking-widest font-bold text-slate-400">Current access</div>
-            <h2 className="text-xl font-black tracking-tight text-white">
-              {currentTier === "premium"
-                ? "Premium active"
-                : currentTier === "free"
-                  ? "Free access"
-                  : "Checking account status…"}
-            </h2>
+            <p className="eyebrow">Account billing</p>
+            <h1 className="mt-2 text-3xl font-black text-neutral-100 sm:text-4xl">Premium access</h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-500">One INR payment for 30 days, with no trial, stored mandate, or automatic renewal.</p>
           </div>
-        </div>
-        <div className="rounded-xl border border-slate-700 bg-slate-950/40 px-5 py-3">
-          <div className="text-[10px] uppercase tracking-widest font-bold text-slate-400">Analysis units</div>
-          <div className="mt-1 text-xl font-black text-white">
-            {currentTier === "premium"
-              ? "Unlimited while active"
-              : currentTier === "free"
-                ? analysisUnits
-                : "—"}
+          <div className="flex items-center gap-3">
+            <span className="icon-tile">{currentTier === "premium" ? <Crown size={19} className="text-accent" /> : <CircleGauge size={19} />}</span>
+            <div><p className="data-label">Current access</p><p className="mt-1 font-black text-neutral-100">{currentTier === "premium" ? "Premium active" : currentTier === "free" ? "Free access" : "Checking status"}</p></div>
           </div>
-        </div>
-      </GlassCard>
+        </header>
 
-      {error && (
-        <div
-          role="alert"
-          className="flex items-start gap-3 text-sm text-rose-200 bg-rose-950/40 border border-rose-800 rounded-xl px-4 py-3"
-        >
-          <AlertCircle size={18} className="mt-0.5 shrink-0" />
-          <span>{error}</span>
-        </div>
-      )}
+        <section className="grid gap-5 border-y border-white/10 py-6 sm:grid-cols-2" aria-label="Current entitlement">
+          <div><p className="data-label">Analysis units</p><p className="mt-2 text-3xl font-black text-primary">{currentTier === "premium" ? "Included" : currentTier === "free" ? analysisUnits : "..."}</p><p className="mt-1 text-xs text-neutral-500">{currentTier === "premium" ? "No unit deductions while Premium is active." : "Durable balance after reservations and releases."}</p></div>
+          <div className="sm:border-l sm:border-white/10 sm:pl-6"><p className="data-label">Access period</p><p className="mt-2 text-lg font-black text-neutral-200">{currentTier === "premium" && premiumUntil ? `Through ${new Date(premiumUntil).toLocaleDateString("en-IN")}` : currentTier === "premium" ? "Active" : "Free tier"}</p><p className="mt-1 text-xs text-neutral-500">Premium ends automatically. No renewal payment is scheduled.</p></div>
+        </section>
 
-      {catalogLoading ? (
-        <GlassCard className="p-12 text-center" hoverEffect={false}>
-          <RefreshCw className="mx-auto animate-spin text-primary" size={24} />
-          <p className="mt-3 text-sm font-semibold text-slate-300">Loading server-owned billing information…</p>
-        </GlassCard>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-[1.15fr_0.85fr] gap-8 items-start">
-          <section className="space-y-5" aria-labelledby="products-heading">
-            <div>
-              <h2 id="products-heading" className="text-xl font-black text-white tracking-tight">
-                Premium pass
-              </h2>
-              <p className="mt-1 text-sm text-slate-400">
-                Prices come from the server catalog and are locked before hosted checkout opens.
-              </p>
-            </div>
+        {error ? <div role="alert" className="flex items-start gap-3 border-y border-coral/30 bg-coral/5 px-4 py-4 text-sm text-[#ffab9e]"><AlertCircle size={18} className="mt-0.5 shrink-0" /><span>{error}</span></div> : null}
 
-            {visibleProducts.length === 0 ? (
-              <GlassCard className="p-8" hoverEffect={false}>
-                <p className="font-bold text-white">No paid product is currently available.</p>
-                <p className="mt-2 text-sm text-slate-400">
-                  No checkout will be loaded. View the public pricing information or contact billing support.
-                </p>
-              </GlassCard>
-            ) : (
-              <div className="grid grid-cols-1 gap-4">
-                {visibleProducts.map((product) => {
-                  const selected = product.sku === selectedSku;
+        {catalogLoading ? <LoadingBlock rows={6} /> : (
+          <div className="grid gap-10 lg:grid-cols-[minmax(0,1.08fr)_minmax(360px,0.92fr)] lg:items-start">
+            <section aria-labelledby="products-heading">
+              <div><p className="data-label">Available product</p><h2 id="products-heading" className="mt-2 text-2xl font-black text-neutral-100">Premium pass</h2><p className="mt-2 text-sm leading-6 text-neutral-500">Price and entitlement terms come from the server catalog.</p></div>
+              <div className="mt-6 grid gap-4">
+                {visibleProducts.length ? visibleProducts.map((product) => {
+                  const selected = product.sku === effectiveSelectedSku;
                   return (
-                    <GlassCard
-                      key={product.sku}
-                      className={`p-6 md:p-8 transition-colors ${
-                        selected ? "border-primary ring-2 ring-primary/40" : "border-slate-800"
-                      }`}
-                      hoverEffect={false}
-                    >
-                      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-5">
+                    <article key={product.sku} className={`surface-panel p-5 sm:p-7 ${selected ? "border-primary/70" : ""}`}>
+                      <div className="grid gap-6 sm:grid-cols-[1fr_auto] sm:items-start">
                         <div className="min-w-0">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-xl bg-blue-950 text-blue-300 flex items-center justify-center">
-                              <Crown size={20} />
-                            </div>
-                            <div>
-                              <h3 className="text-xl font-black text-white">{product.name}</h3>
-                              <p className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                                One-time purchase · no automatic renewal
-                              </p>
-                            </div>
-                          </div>
-                          <p className="mt-4 text-sm text-slate-300">{product.description}</p>
-                          <ul className="mt-5 space-y-2">
-                            {productFacts(product).map((fact) => (
-                              <li key={fact} className="flex items-start gap-2 text-sm text-slate-300">
-                                <CheckCircle2 size={15} className="text-emerald-400 mt-0.5 shrink-0" />
-                                <span>{fact}</span>
-                              </li>
-                            ))}
-                          </ul>
+                          <div className="flex items-start gap-3"><span className="icon-tile"><Crown size={19} className="text-accent" /></span><div><h3 className="text-xl font-black text-neutral-100">{product.name}</h3><p className="mt-1 text-xs font-bold uppercase text-neutral-500">One-time purchase | no renewal</p></div></div>
+                          <p className="mt-5 text-sm leading-6 text-neutral-400">{product.description}</p>
+                          <ul className="mt-5 grid gap-2.5">{productFacts(product).map((fact) => <li key={fact} className="flex items-start gap-2 text-sm text-neutral-400"><CheckCircle2 size={15} className="mt-0.5 shrink-0 text-primary" /><span>{fact}</span></li>)}</ul>
                         </div>
-                        <div className="sm:text-right shrink-0">
-                          <div className="text-3xl font-black text-white">
-                            {formatPrice(product.amount_minor, product.currency)}
-                          </div>
-                          <div className="text-xs font-bold text-slate-400 mt-1">INR total · one-time</div>
-                          <button
-                            type="button"
-                            onClick={() => setSelectedSku(product.sku)}
-                            disabled={currentTier !== "free"}
-                            className="mt-4 w-full sm:w-auto rounded-xl border border-primary/60 px-4 py-2.5 text-sm font-bold text-blue-200 hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            {currentTier === "premium"
-                              ? "Premium already active"
-                              : currentTier === null
-                                ? "Checking account status…"
-                                : selected
-                                  ? "Selected"
-                                  : "View order summary"}
-                          </button>
-                        </div>
+                        <div className="sm:min-w-44 sm:text-right"><p className="text-3xl font-black text-accent">{formatPrice(product.amount_minor, product.currency)}</p><p className="mt-1 text-xs text-neutral-500">INR total</p><Button type="button" variant={selected ? "secondary" : "primary"} className="mt-4 w-full" onClick={() => { setSelectedSku(product.sku); trackEvent("checkout_product_selected", { sku: product.sku, amount_minor: product.amount_minor, currency: product.currency }); }} disabled={currentTier !== "free"}>{currentTier === "premium" ? "Already active" : currentTier === null ? "Checking status" : selected ? "Selected" : "Review purchase"}</Button></div>
                       </div>
-                    </GlassCard>
+                    </article>
                   );
-                })}
+                }) : <div className="border-y border-white/10 py-8"><p className="font-bold text-neutral-200">No paid product is currently available.</p><p className="mt-2 text-sm text-neutral-500">No checkout provider has been loaded.</p></div>}
               </div>
-            )}
+              <div className="mt-8 border-y border-white/10 py-6 text-sm leading-6 text-neutral-400"><h3 className="font-black text-neutral-200">About analysis units</h3><p className="mt-2">Analysis units are software usage allowances, not money or stored value. They cannot be withdrawn, resold, or transferred.</p><Link href="/pricing" className="mt-3 inline-flex items-center gap-1 font-bold text-primary hover:underline">Read full pricing and usage details <ExternalLink size={13} /></Link></div>
+            </section>
 
-            <GlassCard className="p-6 text-sm text-slate-300" hoverEffect={false}>
-              <h3 className="font-black text-white">About analysis units</h3>
-              <p className="mt-2 leading-relaxed">
-                Analysis units are usage allowances for specified HireWiz software functions. They are not money, a
-                wallet, or stored value; they cannot be withdrawn, resold, or transferred. Standalone unit packs are
-                not offered in this checkout.
-              </p>
-              <Link href="/pricing" className="mt-3 inline-flex items-center gap-1 text-primary font-bold hover:underline">
-                Read full pricing and usage details <ExternalLink size={13} />
-              </Link>
-            </GlassCard>
-          </section>
-
-          <section className="space-y-5" aria-labelledby="checkout-heading">
-            <div>
-              <h2 id="checkout-heading" className="text-xl font-black text-white tracking-tight">
-                Order summary
-              </h2>
-              <p className="mt-1 text-sm text-slate-400">Review the amount, seller, delivery and renewal terms.</p>
-            </div>
-
-            <GlassCard className="p-6 md:p-8" hoverEffect={false}>
-              {selectedProduct ? (
-                <div className="space-y-5">
-                  <div
-                    className={`rounded-xl border p-4 ${
-                      checkoutEnabled
-                        ? "border-emerald-800 bg-emerald-950/25"
-                        : "border-amber-800 bg-amber-950/20"
-                    }`}
-                  >
-                    <div className="flex items-start gap-3">
-                      {checkoutEnabled ? (
-                        <Shield className="text-emerald-300 mt-0.5 shrink-0" size={20} />
-                      ) : (
-                        <Clock3 className="text-amber-300 mt-0.5 shrink-0" size={20} />
-                      )}
-                      <div>
-                        <h3 className="font-black text-white">
-                          {checkoutEnabled ? "Secure checkout is available" : "Checkout is not available yet"}
-                        </h3>
-                        <p className="mt-2 text-sm text-slate-300 leading-relaxed">
-                          {checkoutEnabled
-                            ? "Confirm the billing country below, then continue to Razorpay Checkout to complete this one-time purchase."
-                            : "You can review the Premium pass now. Purchases stay paused until payment activation is complete."}
-                        </p>
-                      </div>
-                    </div>
+            <section aria-labelledby="checkout-heading">
+              <div><p className="data-label">Purchase review</p><h2 id="checkout-heading" className="mt-2 text-2xl font-black text-neutral-100">Order summary</h2><p className="mt-2 text-sm text-neutral-500">Review the amount, seller, delivery, and renewal terms.</p></div>
+              <div className="surface-panel mt-6 p-5 sm:p-7">
+                {selectedProduct ? <div>
+                  <div className={`border-l-2 pl-4 ${checkoutEnabled ? "border-primary" : "border-accent"}`}><div className="flex items-start gap-3">{checkoutEnabled ? <Shield className="mt-0.5 shrink-0 text-primary" size={18} /> : <Clock3 className="mt-0.5 shrink-0 text-accent" size={18} />}<div><h3 className="font-black text-neutral-100">{checkoutEnabled ? "Secure checkout available" : "Checkout is not available yet"}</h3><p className="mt-1 text-sm leading-6 text-neutral-400">{checkoutEnabled ? "Confirm India billing, then continue to Razorpay hosted checkout." : "The product remains visible while purchases are paused."}</p></div></div></div>
+                  <div className="mt-6 grid grid-cols-[1fr_auto] gap-4 border-y border-white/10 py-5"><div><p className="data-label">Product</p><p className="mt-2 font-black text-neutral-100">{selectedProduct.name}</p></div><div className="text-right"><p className="data-label">Due today</p><p className="mt-2 text-2xl font-black text-primary">{formatPrice(selectedProduct.amount_minor, selectedProduct.currency)}</p></div></div>
+                  <dl className="divide-y divide-white/10 text-sm">{[["Purchase type", "One-time payment"], ["Automatic renewal", "No"], ["Trial", "None"], ["Billing country", "India"], ["Seller", "HireWiz, operated by SAVALIYA HARSHIL YOGESHBHAI"], ["Delivery", "Digital account access after verified payment"]].map(([term, value]) => <div key={term} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)] gap-4 py-3"><dt className="text-neutral-500">{term}</dt><dd className="text-right font-semibold text-neutral-200">{value}</dd></div>)}</dl>
+                  <p className="border-y border-white/10 py-4 text-xs leading-5 text-neutral-500">The server locks this total before checkout. Compare the same amount in the hosted payment window before authorizing payment.</p>
+                  <label className="mt-5 flex cursor-pointer items-start gap-3 text-sm leading-6 text-neutral-400"><input type="checkbox" checked={indiaBillingConfirmed} onChange={(event) => setIndiaBillingConfirmed(event.target.checked)} disabled={currentTier !== "free" || !checkoutEnabled} className="mt-1 h-4 w-4 shrink-0 accent-primary" /><span>I confirm my billing country is India and this INR pass is for domestic use.</span></label>
+                  <div className="mt-5">
+                    {currentTier === "premium" ? <div className="flex items-start gap-3 border-y border-white/10 py-4 text-sm text-neutral-400"><Lock size={17} className="mt-0.5 shrink-0" />Additional purchases are disabled while Premium is active.</div> : currentTier === null ? <div className="flex items-start gap-3 border-y border-white/10 py-4 text-sm text-neutral-400"><Lock size={17} className="mt-0.5 shrink-0" />Checkout waits for account status.</div> : checkoutEnabled && selectedProduct.enabled_for_purchase ? <Button type="button" onClick={handleCheckout} disabled={!purchaseAllowed || checkoutBusy} className="w-full">{checkoutBusy ? <><RefreshCw size={17} className="animate-spin" />{phase === "confirming" ? "Waiting for verified confirmation" : "Opening hosted checkout"}</> : <><CreditCard size={17} />Pay with Razorpay | {formatPrice(selectedProduct.amount_minor, selectedProduct.currency)}</>}</Button> : <Button type="button" variant="secondary" disabled className="w-full">Checkout unavailable</Button>}
                   </div>
+                </div> : <div className="py-8 text-center"><FileText className="mx-auto text-neutral-500" size={28} /><p className="mt-3 font-bold text-neutral-100">Select a product to review it.</p></div>}
 
-                  <div className="flex items-start justify-between gap-4 pb-5 border-b border-slate-800">
-                    <div>
-                      <div className="text-xs font-bold uppercase tracking-wider text-slate-400">Product</div>
-                      <div className="mt-1 font-black text-white">{selectedProduct.name}</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-xs font-bold uppercase tracking-wider text-slate-400">Total due today</div>
-                      <div className="mt-1 text-2xl font-black text-primary">
-                        {formatPrice(selectedProduct.amount_minor, selectedProduct.currency)}
-                      </div>
-                      <div className="text-xs text-slate-400">INR</div>
-                    </div>
-                  </div>
-
-                  <dl className="space-y-3 text-sm">
-                    <div className="flex justify-between gap-4">
-                      <dt className="text-slate-400">Purchase type</dt>
-                      <dd className="font-semibold text-white text-right">One-time payment</dd>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                      <dt className="text-slate-400">Automatic renewal</dt>
-                      <dd className="font-semibold text-white text-right">No</dd>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                      <dt className="text-slate-400">Trial</dt>
-                      <dd className="font-semibold text-white text-right">None</dd>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                      <dt className="text-slate-400">Billing country</dt>
-                      <dd className="font-semibold text-white text-right">India</dd>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                      <dt className="text-slate-400">Seller</dt>
-                      <dd className="font-semibold text-white text-right max-w-[16rem]">
-                        HireWiz, operated by SAVALIYA HARSHIL YOGESHBHAI
-                      </dd>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                      <dt className="text-slate-400">Delivery</dt>
-                      <dd className="font-semibold text-white text-right max-w-[16rem]">
-                        Digital access in your HireWiz account after verified payment confirmation
-                      </dd>
-                    </div>
-                  </dl>
-
-                  <div className="rounded-xl border border-slate-800 bg-slate-950/30 p-4 text-xs text-slate-300 leading-relaxed">
-                    The total shown is locked by the server for this product. No separate HireWiz fee or tax is added,
-                    and no optional paid add-on is selected. Check the same final amount in the hosted checkout before
-                    authorizing payment.
-                  </div>
-
-                  <label className="flex items-start gap-3 rounded-xl border border-slate-700 bg-slate-900/40 p-4 text-sm text-slate-300 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={indiaBillingConfirmed}
-                      onChange={(event) => setIndiaBillingConfirmed(event.target.checked)}
-                      disabled={currentTier !== "free" || !checkoutEnabled}
-                      className="mt-0.5 h-4 w-4 shrink-0 accent-primary"
-                    />
-                    <span>
-                      I confirm that my billing country is India and I am purchasing this INR pass for domestic use.
-                    </span>
-                  </label>
-
-                  {currentTier === "premium" ? (
-                    <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-4 text-sm text-slate-300 flex items-start gap-3">
-                      <Lock size={17} className="mt-0.5 shrink-0" />
-                      Additional purchases are disabled while your Premium access is active.
-                    </div>
-                  ) : currentTier === null ? (
-                    <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-4 text-sm text-slate-300 flex items-start gap-3">
-                      <Lock size={17} className="mt-0.5 shrink-0" />
-                      Checkout remains disabled until your current account status is confirmed.
-                    </div>
-                  ) : checkoutEnabled && selectedProduct.enabled_for_purchase ? (
-                    <button
-                      type="button"
-                      onClick={handleCheckout}
-                      disabled={!purchaseAllowed || checkoutBusy}
-                      className="w-full rounded-xl bg-primary hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60 text-white font-bold py-4 px-5 transition flex items-center justify-center gap-2"
-                    >
-                      {checkoutBusy ? (
-                        <>
-                          <RefreshCw size={17} className="animate-spin" />
-                          {phase === "confirming" ? "Waiting for verified confirmation…" : "Opening hosted checkout…"}
-                        </>
-                      ) : (
-                        <>
-                          <CreditCard size={17} />
-                          Pay securely with Razorpay · {formatPrice(selectedProduct.amount_minor, selectedProduct.currency)}
-                        </>
-                      )}
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      disabled
-                      className="w-full rounded-xl border border-slate-700 bg-slate-900 text-slate-400 font-bold py-4 px-5 cursor-not-allowed"
-                    >
-                      Checkout unavailable
-                    </button>
-                  )}
-                </div>
-              ) : (
-                <div className="py-8 text-center">
-                  <FileText className="mx-auto text-slate-500" size={28} />
-                  <p className="mt-3 font-bold text-white">Select a product to review its order summary.</p>
-                  <p className="mt-1 text-sm text-slate-400">Nothing is preselected and no checkout has been started.</p>
-                </div>
-              )}
-
-              {currentOrder && phase !== "confirmed" && (
-                <div className="mt-6 pt-5 border-t border-slate-800">
-                  <div className="text-xs text-slate-400 break-all">Order reference: {currentOrder.order_id}</div>
-                  {currentOrder.payment_reference ? (
-                    <div className="mt-1 text-xs text-slate-400 break-all">
-                      Payment reference: {currentOrder.payment_reference}
-                    </div>
-                  ) : null}
-                  <button
-                    type="button"
-                    onClick={checkCurrentOrder}
-                    disabled={phase === "confirming"}
-                    className="mt-3 inline-flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-200 hover:bg-slate-800 disabled:opacity-60"
-                  >
-                    <RefreshCw size={13} className={phase === "confirming" ? "animate-spin" : ""} />
-                    Check payment status
-                  </button>
-                </div>
-              )}
-            </GlassCard>
-
-            <GlassCard className="p-6 text-sm text-slate-300 space-y-4" hoverEffect={false}>
-              <div className="flex items-start gap-3">
-                <Shield size={18} className="text-primary mt-0.5 shrink-0" />
-                <p>
-                  Card, UPI, bank and other payment credentials are entered only in the hosted payment page. HireWiz
-                  does not collect raw card details, CVV, UPI PINs or bank credentials.
-                </p>
+                {currentOrder && phase !== "confirmed" ? <div className="mt-6 border-t border-white/10 pt-5 text-xs text-neutral-500"><p className="break-all">Order reference: {currentOrder.order_id}</p>{currentOrder.payment_reference ? <p className="break-all">Payment reference: {currentOrder.payment_reference}</p> : null}<Button type="button" variant="secondary" size="sm" onClick={checkCurrentOrder} disabled={phase === "confirming"} className="mt-3"><RefreshCw size={13} className={phase === "confirming" ? "animate-spin" : ""} />Check payment status</Button></div> : null}
               </div>
-              <div className="flex flex-wrap gap-x-4 gap-y-2 pt-4 border-t border-slate-800 text-xs font-bold">
-                <Link href="/terms" className="text-primary hover:underline">Terms</Link>
-                <Link href="/privacy" className="text-primary hover:underline">Privacy</Link>
-                <Link href="/refund" className="text-primary hover:underline">Refund &amp; cancellation</Link>
-                <Link href="/digital-delivery" className="text-primary hover:underline">Digital delivery</Link>
-                <Link href="/contact" className="text-primary hover:underline">Billing support</Link>
-              </div>
-            </GlassCard>
-          </section>
-        </div>
-      )}
+
+              <div className="mt-6 border-y border-white/10 py-5 text-sm leading-6 text-neutral-400"><div className="flex items-start gap-3"><Shield size={18} className="mt-0.5 shrink-0 text-primary" /><p>Card, CVV, UPI PIN, bank-login, and other payment credentials are entered only in Razorpay hosted checkout.</p></div><div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 border-t border-white/10 pt-4 text-xs font-bold">{[["/terms", "Terms"], ["/privacy", "Privacy"], ["/refund", "Refunds"], ["/digital-delivery", "Digital delivery"], ["/contact", "Billing support"]].map(([href, label]) => <Link key={href} href={href} className="text-primary hover:underline">{label}</Link>)}</div></div>
+            </section>
+          </div>
+        )}
+
+        <section className="border-t border-white/10 pt-8" aria-labelledby="usage-history-heading">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><p className="data-label">Durable ledger</p><h2 id="usage-history-heading" className="mt-2 flex items-center gap-2 text-2xl font-black text-neutral-100"><History size={20} className="text-primary" /> Usage history</h2><p className="mt-2 text-sm text-neutral-500">Reservations, completed operations, Premium waivers, and automatic releases.</p></div><p className="text-sm font-bold text-neutral-300">Current balance: <span className="text-primary">{analysisUnits}</span></p></div>
+          {usageLoading ? <div className="mt-6"><LoadingBlock rows={4} /></div> : usageHistory?.items.length ? <div className="mt-6 divide-y divide-white/10 border-y border-white/10">{usageHistory.items.map((event) => <div key={event.id} className="grid gap-2 py-4 sm:grid-cols-[1fr_auto_auto] sm:items-center sm:gap-6"><div><p className="text-sm font-bold text-neutral-200">{usageEventLabel(event)}</p><p className="mt-1 text-xs text-neutral-500">{new Date(event.created_at).toLocaleString("en-IN")}{event.analysis_run_id ? ` | Run ${event.analysis_run_id.slice(-8)}` : ""}</p></div><p className={`text-sm font-black ${event.amount > 0 ? "text-primary" : event.amount < 0 ? "text-accent" : "text-neutral-400"}`}>{event.amount > 0 ? "+" : ""}{event.amount} units</p><p className="text-xs text-neutral-500 sm:text-right">Balance {event.balance_after}</p></div>)}</div> : <p className="mt-6 border-y border-white/10 py-7 text-sm text-neutral-500">No analysis-unit activity yet.</p>}
+        </section>
+      </div>
     </main>
   );
 }

@@ -4,7 +4,7 @@ import os
 from dataclasses import dataclass
 from typing import Any
 
-import requests
+import httpx
 
 from .catalog import CatalogProduct
 
@@ -124,7 +124,7 @@ class RazorpayAdapter:
             "partial_payment": False,
         }
         try:
-            response = requests.post(
+            response = httpx.post(
                 RAZORPAY_ORDERS_URL,
                 auth=(self.settings.key_id, self.settings.key_secret),
                 json=request_body,
@@ -132,7 +132,7 @@ class RazorpayAdapter:
             )
             response.raise_for_status()
             data = response.json()
-        except requests.RequestException as exc:
+        except httpx.HTTPError as exc:
             status_code = getattr(getattr(exc, "response", None), "status_code", None)
             raise RazorpayProviderError(
                 f"Razorpay order request failed (status={status_code or 'network'})"

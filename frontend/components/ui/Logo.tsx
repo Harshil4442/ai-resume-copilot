@@ -1,6 +1,7 @@
-import type { CSSProperties, ImgHTMLAttributes } from "react";
+import Image, { type ImageProps } from "next/image";
+import type { CSSProperties } from "react";
 
-type LogoProps = Omit<ImgHTMLAttributes<HTMLImageElement>, "src" | "alt" | "width" | "height"> & {
+type LogoProps = Omit<ImageProps, "src" | "alt" | "width" | "height"> & {
   alt?: string;
   size?: number;
 };
@@ -13,7 +14,7 @@ export default function Logo({ alt = "HireWiz logo", className, size = 34, style
   };
 
   return (
-    <img
+    <Image
       src="/logo.png"
       alt={alt}
       width={size}

@@ -13,29 +13,31 @@ const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
 export const metadata: Metadata = {
   metadataBase: new URL(SITE.canonicalUrl),
   title: {
-    default: "HireWiz — AI-assisted resume analysis you review and control",
-    template: "%s — HireWiz",
+    default: "HireWiz | Evidence-backed career workspace",
+    template: "%s | HireWiz",
   },
   description:
-    "HireWiz is self-service, AI-assisted software to analyze and improve your own resume: compatibility estimates, skill-gap analysis, market insights, and learning suggestions. Results are informational.",
+    "Turn real career evidence into role-specific resumes, application decisions, interview preparation, and a connected job-search workspace.",
   applicationName: "HireWiz",
   openGraph: {
     type: "website",
     url: "https://www.hirewizhq.com",
     siteName: "HireWiz",
-    title: "HireWiz — AI-assisted resume analysis you review and control",
+    title: "HireWiz | Evidence-backed career workspace",
     description:
-      "Self-service, AI-assisted resume analysis. Compare your resume with a job description, see a HireWiz compatibility estimate, and get learning suggestions.",
+      "A connected workspace for evidence-backed resumes, opportunity decisions, interview preparation, and application outcomes.",
   },
   twitter: {
     card: "summary_large_image",
-    title: "HireWiz — AI-assisted resume analysis you review and control",
+    title: "HireWiz | Evidence-backed career workspace",
     description:
-      "Self-service, AI-assisted resume analysis. Results are informational estimates, not employer or ATS scores.",
+      "Build stronger applications from approved career evidence and keep every opportunity connected.",
   },
 };
 
 const GA_MEASUREMENT_ID = process.env.NEXT_PUBLIC_GA_ID?.trim() || null;
+const POSTHOG_KEY = process.env.NEXT_PUBLIC_POSTHOG_KEY?.trim() || null;
+const POSTHOG_HOST = process.env.NEXT_PUBLIC_POSTHOG_HOST?.trim() || "https://us.i.posthog.com";
 
 const softwareApplicationJsonLd = {
   "@context": "https://schema.org",
@@ -54,23 +56,26 @@ const softwareApplicationJsonLd = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${inter.variable} font-sans`}>
+    <html lang="en" className={`${inter.variable} font-sans`} data-scroll-behavior="smooth">
       <head>
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareApplicationJsonLd) }}
         />
       </head>
-      <body className="flex flex-col min-h-screen text-white selection:bg-primary/20 selection:text-primary">
+      <body className="flex min-h-screen flex-col text-[#f4f2ea] selection:bg-primary/20 selection:text-white">
         <SessionProviderWrapper>
           <AnimatedBackground />
           <Nav />
-          <div className="flex-grow flex flex-col pt-14">{children}</div>
+          <div className="flex flex-grow flex-col pt-16">{children}</div>
           <Footer />
-          <AnalyticsConsent gaMeasurementId={GA_MEASUREMENT_ID} />
+          <AnalyticsConsent
+            gaMeasurementId={GA_MEASUREMENT_ID}
+            posthogKey={POSTHOG_KEY}
+            posthogHost={POSTHOG_HOST}
+          />
         </SessionProviderWrapper>
       </body>
     </html>
   );
 }
-

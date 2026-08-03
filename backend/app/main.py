@@ -1,12 +1,17 @@
 import logging
 import os
 import sys
+import time
 import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+
+from .observability import configure_observability, correlation_id_var
+
+configure_observability()
 
 log = logging.getLogger("ai_resume_copilot")
 
@@ -18,10 +23,7 @@ except Exception:
     pass
 
 from .routers import auth, resume, jobs, recommendations, llm, analytics, rag, market, billing, public_endpoints  # noqa: E402
-from .database import engine  # noqa: E402
-from .models import Base  # noqa: E402
-from .migrations import run_migrations  # noqa: E402
-
+from .routers.v1 import router as v1_router  # noqa: E402
 from .rate_limiter import limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi import _rate_limit_exceeded_handler
@@ -29,10 +31,6 @@ from slowapi import _rate_limit_exceeded_handler
 app = FastAPI(title="HireWiz API")
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-
-# Create tables and run schema migrations
-Base.metadata.create_all(bind=engine)
-run_migrations()
 
 # CORS
 origins_env = os.getenv("FRONTEND_ORIGINS", "*")
@@ -49,11 +47,31 @@ app.add_middleware(
     allow_origins=allow_origins,
     allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "Accept"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "Idempotency-Key", "X-Correlation-ID"],
 )
 
 from jose import JWTError, jwt
 from .security import JWT_SECRET, JWT_ALGORITHM
+
+
+@app.middleware("http")
+async def request_context_middleware(request: Request, call_next):
+    incoming = (request.headers.get("X-Correlation-ID") or "").strip()
+    correlation_id = (
+        incoming
+        if incoming and len(incoming) <= 64 and all(ch.isalnum() or ch in "-_." for ch in incoming)
+        else uuid.uuid4().hex[:16]
+    )
+    request.state.correlation_id = correlation_id
+    token = correlation_id_var.set(correlation_id)
+    started = time.perf_counter()
+    try:
+        response = await call_next(request)
+    finally:
+        correlation_id_var.reset(token)
+    response.headers["X-Correlation-ID"] = correlation_id
+    response.headers["Server-Timing"] = f'app;dur={(time.perf_counter() - started) * 1000:.1f}'
+    return response
 
 @app.middleware("http")
 async def jwt_validation_middleware(request: Request, call_next):
@@ -118,11 +136,12 @@ app.include_router(market.router, prefix="/api")
 app.include_router(billing.router, prefix="/api")
 app.include_router(billing.public_router, prefix="/api")
 app.include_router(public_endpoints.router, prefix="/api")
+app.include_router(v1_router, prefix="/api")
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
     # Log full traceback server-side, never leak it to the client.
-    correlation_id = uuid.uuid4().hex[:12]
+    correlation_id = getattr(request.state, "correlation_id", uuid.uuid4().hex[:12])
     log.exception(
         "Unhandled error [%s] on %s %s: %s",
         correlation_id, request.method, request.url.path, exc,

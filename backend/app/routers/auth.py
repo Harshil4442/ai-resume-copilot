@@ -1,7 +1,9 @@
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token as google_id_token
 from sqlalchemy.orm import Session
@@ -15,7 +17,20 @@ from ..models import (
     Resume,
     JobMatch,
     PaymentOrder,
+    AnalysisRun,
+    AdminAuditEvent,
+    ApplicationEvent,
+    CareerMemoryEntry,
+    EvidenceItem,
+    ModelCallEvent,
+    NotificationOutbox,
+    Opportunity,
+    OpportunityContact,
+    Reminder,
+    ResumeVersion,
+    UsageEvent,
 )
+from ..domains.notifications import enqueue_notification
 from ..schemas import (
     AuthLoginRequest,
     AuthGoogleLoginRequest,
@@ -123,10 +138,27 @@ def register(request: Request, payload: AuthRegisterRequest, db: Session = Depen
         age_confirmed_at=accepted_at,
     )
     db.add(u)
+    db.flush()
+    db.add(UserProfile(user_id=u.id))
+    enqueue_notification(
+        db,
+        user_id=u.id,
+        notification_type="welcome",
+        recipient=u.email,
+        payload={},
+        idempotency_key=f"user:{u.id}:welcome",
+    )
+    enqueue_notification(
+        db,
+        user_id=u.id,
+        notification_type="onboarding_reminder",
+        recipient=u.email,
+        payload={},
+        idempotency_key=f"user:{u.id}:onboarding:day-1",
+        available_at=accepted_at + timedelta(hours=24),
+    )
     db.commit()
     db.refresh(u)
-    db.add(UserProfile(user_id=u.id))
-    db.commit()
     return UserMeResponse(id=u.id, email=u.email, tier=u.tier, ai_credits=u.ai_credits)
 
 @router.post("/login", response_model=AuthTokenResponse)
@@ -139,7 +171,7 @@ def login(request: Request, payload: AuthLoginRequest, db: Session = Depends(get
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
     token = create_access_token(subject=str(u.id))
-    return AuthTokenResponse(access_token=token, token_type="bearer")
+    return AuthTokenResponse(access_token=token, user_id=u.id, token_type="bearer")
 
 @router.post("/google-login", response_model=AuthTokenResponse)
 @limiter.limit("10/minute")
@@ -191,16 +223,30 @@ def google_login(request: Request, payload: AuthGoogleLoginRequest, db: Session 
             age_confirmed_at=accepted_at,
         )
         db.add(u)
+        db.flush()
+        db.add(UserProfile(user_id=u.id, full_name=name))
+        enqueue_notification(
+            db,
+            user_id=u.id,
+            notification_type="welcome",
+            recipient=u.email,
+            payload={},
+            idempotency_key=f"user:{u.id}:welcome",
+        )
+        enqueue_notification(
+            db,
+            user_id=u.id,
+            notification_type="onboarding_reminder",
+            recipient=u.email,
+            payload={},
+            idempotency_key=f"user:{u.id}:onboarding:day-1",
+            available_at=accepted_at + timedelta(hours=24),
+        )
         db.commit()
         db.refresh(u)
-        
-        # Create standard profile
-        profile = UserProfile(user_id=u.id, full_name=name)
-        db.add(profile)
-        db.commit()
 
     token = create_access_token(subject=str(u.id))
-    return AuthTokenResponse(access_token=token, token_type="bearer")
+    return AuthTokenResponse(access_token=token, user_id=u.id, token_type="bearer")
 
 @router.get("/me", response_model=UserMeResponse)
 def me(current_user: User = Depends(get_current_user)):
@@ -275,9 +321,84 @@ def delete_account(
         order.customer_deleted_at = now
         order.user_id = None
 
+    db.query(ModelCallEvent).filter(ModelCallEvent.user_id == uid).delete(synchronize_session=False)
+    db.query(NotificationOutbox).filter(NotificationOutbox.user_id == uid).delete(synchronize_session=False)
+    db.query(AdminAuditEvent).filter(AdminAuditEvent.actor_user_id == uid).update(
+        {AdminAuditEvent.actor_user_id: None}, synchronize_session=False
+    )
+    db.query(UsageEvent).filter(UsageEvent.user_id == uid).delete(synchronize_session=False)
+    db.query(ApplicationEvent).filter(ApplicationEvent.user_id == uid).delete(synchronize_session=False)
+    db.query(ResumeVersion).filter(ResumeVersion.user_id == uid).delete(synchronize_session=False)
+    db.query(EvidenceItem).filter(EvidenceItem.user_id == uid).delete(synchronize_session=False)
+    db.query(Reminder).filter(Reminder.user_id == uid).delete(synchronize_session=False)
+    db.query(OpportunityContact).filter(OpportunityContact.user_id == uid).delete(synchronize_session=False)
+    db.query(CareerMemoryEntry).filter(CareerMemoryEntry.user_id == uid).delete(synchronize_session=False)
+    db.query(AnalysisRun).filter(AnalysisRun.user_id == uid).delete(synchronize_session=False)
+    db.query(Opportunity).filter(Opportunity.user_id == uid).delete(synchronize_session=False)
     db.query(JobMatch).filter(JobMatch.user_id == uid).delete(synchronize_session=False)
     db.query(Resume).filter(Resume.user_id == uid).delete(synchronize_session=False)
     db.query(UserProfile).filter(UserProfile.user_id == uid).delete(synchronize_session=False)
     db.query(User).filter(User.id == uid).delete(synchronize_session=False)
     db.commit()
     return {"status": "deleted"}
+
+
+def _rows(db: Session, model, uid: int) -> list[dict]:
+    return [
+        {column.name: getattr(row, column.name) for column in model.__table__.columns}
+        for row in db.query(model).filter(model.user_id == uid).all()
+    ]
+
+
+@router.get("/export-account")
+def export_account(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    uid = current_user.id
+    profile = db.query(UserProfile).filter(UserProfile.user_id == uid).first()
+    payment_orders = db.query(PaymentOrder).filter(PaymentOrder.user_id == uid).all()
+    payload = {
+        "exported_at": datetime.now(timezone.utc),
+        "account": {
+            "id": current_user.id,
+            "email": current_user.email,
+            "tier": current_user.tier,
+            "analysis_units": current_user.ai_credits,
+            "premium_until": current_user.premium_until,
+        },
+        "profile": (
+            {column.name: getattr(profile, column.name) for column in UserProfile.__table__.columns}
+            if profile
+            else None
+        ),
+        "resumes": _rows(db, Resume, uid),
+        "job_matches": _rows(db, JobMatch, uid),
+        "opportunities": _rows(db, Opportunity, uid),
+        "application_events": _rows(db, ApplicationEvent, uid),
+        "resume_versions": _rows(db, ResumeVersion, uid),
+        "evidence_items": _rows(db, EvidenceItem, uid),
+        "reminders": _rows(db, Reminder, uid),
+        "contacts": _rows(db, OpportunityContact, uid),
+        "career_memory": _rows(db, CareerMemoryEntry, uid),
+        "analysis_runs": _rows(db, AnalysisRun, uid),
+        "usage_events": _rows(db, UsageEvent, uid),
+        "model_call_events": _rows(db, ModelCallEvent, uid),
+        "payment_orders": [
+            {
+                "reference": order.public_id,
+                "provider": order.provider,
+                "sku": order.sku,
+                "amount_minor": order.gross_amount_minor,
+                "currency": order.currency,
+                "status": order.status,
+                "paid_at": order.paid_at,
+                "created_at": order.created_at,
+            }
+            for order in payment_orders
+        ],
+    }
+    response = JSONResponse(content=jsonable_encoder(payload))
+    response.headers["Content-Disposition"] = "attachment; filename=hirewiz-account-export.json"
+    response.headers["Cache-Control"] = "private, no-store"
+    return response

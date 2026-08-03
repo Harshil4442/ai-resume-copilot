@@ -30,6 +30,7 @@ class AuthGoogleLoginRequest(BaseModel):
 
 class AuthTokenResponse(BaseModel):
     access_token: str
+    user_id: int
     token_type: str = "bearer"
 
 class UserMeResponse(BaseModel):
@@ -87,12 +88,11 @@ class ResumeParseResponse(BaseModel):
 # Resume list (for dropdown)
 # -------------------------
 class ResumeListItem(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     filename: str
     created_at: datetime
-
-    class Config:
-        from_attributes = True
 
 class ResumeListResponse(BaseModel):
     resumes: List[ResumeListItem]
@@ -130,14 +130,13 @@ class JobMatchResponse(BaseModel):
     improvement_tips:        List[str]
 
 class JobMatchHistoryItem(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     match_id: int
     job_title: str
     company: str
     match_score: float
     created_at: datetime
-
-    class Config:
-        from_attributes = True
 
 class JobMatchHistoryResponse(BaseModel):
     matches: List[JobMatchHistoryItem]

@@ -12,7 +12,7 @@ function RocketLogo({ variant, color = 'blue' }: { variant: number; color?: stri
       default: return { prim: '#38bdf8', sec: '#1e40af', accent: '#f97316', glow: 'rgba(56, 189, 248, 0.4)' };
     }
   };
-  const { prim, sec, accent, glow } = getColors();
+  const { prim, sec, accent } = getColors();
 
   // Basic Rocket Body Path
   const bodyPath = "M32 6C32 6 22 18 22 34C22 42 26 48 32 52C38 48 42 42 42 34C42 18 32 6 32 6Z";

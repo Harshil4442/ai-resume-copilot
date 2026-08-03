@@ -2,7 +2,7 @@ import json
 import logging
 from typing import List
 
-import requests
+import httpx
 
 from ...schemas import RagAskResponse, RagMessage
 from ..llm_client import chat_json
@@ -75,7 +75,7 @@ def ask_match_ai(*, resume, match, question: str, recent_messages: List[RagMessa
         # stays useful. Transport/provider errors (below) are surfaced.
         log.warning("RAG fallback (parse error): %s", exc)
         return _fallback_response(question, top_chunks)
-    except requests.exceptions.RequestException as exc:
+    except httpx.HTTPError as exc:
         # Network / 429 / 5xx errors should be visible to the user instead
         # of silently degraded.
         log.error("RAG provider error: %s", exc)

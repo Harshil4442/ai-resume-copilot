@@ -1,6 +1,6 @@
 import os
 
-import requests
+import httpx
 
 from ..cache import cache_key, get_json, set_json
 from .base import JobPosting, JobProvider, JobSearchParams, ProviderResult
@@ -34,7 +34,11 @@ class JoobleProvider(JobProvider):
             )
 
         api_key = os.getenv("JOOBLE_API_KEY", "").strip()
-        resp = requests.post(f"{JOOBLE_URL}/{api_key}", json=payload, timeout=30)
+        resp = httpx.post(
+            f"{JOOBLE_URL}/{api_key}",
+            json=payload,
+            timeout=httpx.Timeout(30, connect=8),
+        )
         resp.raise_for_status()
         data = resp.json()
         jobs = []
@@ -54,4 +58,3 @@ class JoobleProvider(JobProvider):
         warnings = [] if jobs else ["Jooble returned no postings with usable snippets for this query."]
         set_json(key, {"jobs": [job.to_dict() for job in jobs], "warnings": warnings})
         return ProviderResult(provider=self.name, jobs=jobs, warnings=warnings)
-

@@ -4,15 +4,15 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
 
+import { resetAnalyticsIdentity } from "../../lib/analytics";
+
 export default function LogoutPage() {
   const router = useRouter();
   useEffect(() => {
+    resetAnalyticsIdentity();
     signOut({ redirect: false }).then(() => {
-      localStorage.removeItem("access_token");
       router.push("/login");
     });
-    // `signOut` is a stable module-level import.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
 
 

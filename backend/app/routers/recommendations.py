@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from .. import models, schemas
 from ..security import get_current_user
+from ..services.guardrails import billable_operation
 from ..services.recommender import (
     build_fallback_learning_strategy,
     get_skill_gaps_and_courses,
@@ -133,9 +134,6 @@ async def match_learning_strategy(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    from ..services.guardrails import verify_and_deduct_credit
-    verify_and_deduct_credit(current_user.id, db)
-
     match = (
         db.query(models.JobMatch)
         .filter(models.JobMatch.id == payload.match_id, models.JobMatch.user_id == current_user.id)
@@ -160,34 +158,41 @@ async def match_learning_strategy(
     improvement_tips = _as_list(match.improvement_tips)
     dimension_scores = _as_list(match.dimension_scores)
 
-    generated_by = "llm"
-    try:
-        from ..services.llm_client import generate_learning_strategy_llm
+    with billable_operation(
+        user_id=current_user.id,
+        db=db,
+        operation="learning_strategy",
+        amount=1,
+        input_payload={"match_id": match.id},
+    ):
+        generated_by = "llm"
+        try:
+            from ..services.llm_client import generate_learning_strategy_llm
 
-        strategy = generate_learning_strategy_llm(
-            job_title=match.job_title,
-            company=match.company,
-            jd_text=match.job_description or "",
-            resume_skills=resume_skills,
-            experience_years=experience_years,
-            true_gaps=true_gaps,
-            partial_matches=partial_matches,
-            required_skills=required_skills,
-            match_score=float(match.match_score or 0.0),
-            fit_summary=match.fit_summary or "",
-            dimension_scores=dimension_scores,
-            improvement_tips=improvement_tips,
-        )
-    except Exception:
-        generated_by = "fallback"
-        strategy = build_fallback_learning_strategy(
-            job_title=match.job_title,
-            company=match.company,
-            match_score=float(match.match_score or 0.0),
-            true_gaps=true_gaps,
-            partial_matches=partial_matches,
-            improvement_tips=improvement_tips,
-        )
+            strategy = generate_learning_strategy_llm(
+                job_title=match.job_title,
+                company=match.company,
+                jd_text=match.job_description or "",
+                resume_skills=resume_skills,
+                experience_years=experience_years,
+                true_gaps=true_gaps,
+                partial_matches=partial_matches,
+                required_skills=required_skills,
+                match_score=float(match.match_score or 0.0),
+                fit_summary=match.fit_summary or "",
+                dimension_scores=dimension_scores,
+                improvement_tips=improvement_tips,
+            )
+        except Exception:
+            generated_by = "fallback"
+            strategy = build_fallback_learning_strategy(
+                job_title=match.job_title,
+                company=match.company,
+                match_score=float(match.match_score or 0.0),
+                true_gaps=true_gaps,
+                partial_matches=partial_matches,
+                improvement_tips=improvement_tips,
+            )
 
     skills_hint = strategy.pop("_resource_skills", None) or [*true_gaps, *required_skills[:3]]
     strategy = _normalize_strategy(strategy)
