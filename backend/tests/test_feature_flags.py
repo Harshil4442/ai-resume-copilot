@@ -3,6 +3,22 @@ from __future__ import annotations
 from backend.app.feature_flags import decide_feature
 
 
+def test_production_defaults_fail_closed(monkeypatch):
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.delenv("FEATURE_CAREER_WORKSPACE_ENABLED", raising=False)
+    monkeypatch.delenv("FEATURE_CAREER_WORKSPACE_ROLLOUT_PERCENT", raising=False)
+
+    decision = decide_feature(
+        "career_workspace",
+        user_id=1,
+        email="owner@example.com",
+    )
+
+    assert decision.enabled is False
+    assert decision.rollout_percent == 0
+    assert decision.reason == "kill_switch"
+
+
 def test_feature_kill_switch_overrides_internal_access(monkeypatch):
     monkeypatch.setenv("FEATURE_CAREER_WORKSPACE_ENABLED", "false")
     monkeypatch.setenv("FEATURE_INTERNAL_EMAILS", "owner@example.com")

@@ -8,7 +8,7 @@ This report records what was verified before opening the architecture-upgrade pu
 
 | Gate | Result |
 | --- | --- |
-| Backend tests | 55 passed |
+| Backend tests | 56 passed |
 | Prompt contract evaluations | 4 passed |
 | Modern backend Ruff scope | Passed |
 | Modern backend mypy scope | 28 source files passed |

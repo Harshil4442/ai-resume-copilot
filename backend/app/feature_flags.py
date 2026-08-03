@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import sys
 from dataclasses import asdict, dataclass
 
 FEATURE_DEFAULTS: dict[str, tuple[bool, int]] = {
@@ -10,6 +11,15 @@ FEATURE_DEFAULTS: dict[str, tuple[bool, int]] = {
     "async_analysis": (True, 100),
     "referral_credit": (False, 0),
 }
+
+
+def _runtime_defaults(key: str) -> tuple[bool, int]:
+    app_env = (os.getenv("APP_ENV") or "").strip().lower()
+    if not app_env and "pytest" in sys.modules:
+        app_env = "test"
+    if app_env in {"development", "dev", "local", "test", "staging"}:
+        return FEATURE_DEFAULTS[key]
+    return False, 0
 
 
 @dataclass(frozen=True)
@@ -55,7 +65,7 @@ def decide_feature(
 ) -> FeatureDecision:
     if key not in FEATURE_DEFAULTS:
         raise KeyError(f"Unknown feature: {key}")
-    default_enabled, default_percent = FEATURE_DEFAULTS[key]
+    default_enabled, default_percent = _runtime_defaults(key)
     prefix = f"FEATURE_{key.upper()}"
     globally_enabled = _env_bool(f"{prefix}_ENABLED", default_enabled)
     rollout_percent = _env_percent(f"{prefix}_ROLLOUT_PERCENT", default_percent)

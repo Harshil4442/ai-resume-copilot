@@ -87,8 +87,10 @@ Server rollout variables follow this pattern:
 - `FEATURE_<KEY>_USER_IDS`
 
 Current keys are `CAREER_WORKSPACE`, `EVIDENCE_TAILORING`, `ASYNC_ANALYSIS`, and
-`REFERRAL_CREDIT`. Keep referral credit disabled until its conversion and fraud rules
-are implemented and approved.
+`REFERRAL_CREDIT`. Keep referral credit disabled until its conversion attribution and
+fraud controls are implemented and approved. Production defaults fail closed when
+rollout variables are absent; set each enabled key and percentage deliberately after
+internal acceptance.
 
 Billing variables and activation checks remain documented in
 [RAZORPAY_GO_LIVE.md](RAZORPAY_GO_LIVE.md). Keep provider secrets in Secret Manager and
