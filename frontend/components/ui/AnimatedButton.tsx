@@ -29,12 +29,12 @@ export default function AnimatedButton({
   disabled = false,
 }: AnimatedButtonProps) {
   
-  const baseClasses = "inline-flex items-center justify-center whitespace-nowrap text-sm font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 h-11 px-6 py-2 rounded-xl group";
+  const baseClasses = "inline-flex items-center justify-center whitespace-nowrap text-sm font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50 h-10 px-5 py-2 rounded-md group";
   
   const variants = {
-    primary: "bg-primary text-white hover:bg-primary/90 shadow-md hover:shadow-lg shadow-primary/20",
-    secondary: "bg-slate-800 text-white hover:bg-slate-200 hover:text-slate-900 shadow-sm",
-    outline: "border border-slate-700 bg-transparent hover:bg-slate-900/50 text-white",
+    primary: "bg-primary text-[#05110d] hover:bg-[#45d7b0]",
+    secondary: "bg-[#f0c96b] text-[#171309] hover:bg-[#f6d889]",
+    outline: "border border-white/15 bg-transparent hover:bg-white/5 text-[#f4f2ea]",
   };
 
   const content = (

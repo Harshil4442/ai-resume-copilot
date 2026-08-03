@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from .. import models, schemas
 from ..database import get_db
 from ..security import get_current_user
+from ..services.guardrails import billable_operation
 from ..services.rag.chat import ask_match_ai
 
 router = APIRouter(prefix="/rag", tags=["rag"])
@@ -15,9 +16,6 @@ def ask_ai_about_match(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    from ..services.guardrails import verify_and_deduct_credit
-    verify_and_deduct_credit(current_user.id, db)
-
     match = (
         db.query(models.JobMatch)
         .filter(models.JobMatch.id == payload.job_match_id, models.JobMatch.user_id == current_user.id)
@@ -40,9 +38,16 @@ def ask_ai_about_match(
     if not resume:
         raise HTTPException(status_code=404, detail="Resume not found for this user")
 
-    return ask_match_ai(
-        resume=resume,
-        match=match,
-        question=payload.question.strip(),
-        recent_messages=payload.recent_messages,
-    )
+    with billable_operation(
+        user_id=current_user.id,
+        db=db,
+        operation="match_question",
+        amount=1,
+        input_payload={"job_match_id": match.id, "resume_id": resume.id},
+    ):
+        return ask_match_ai(
+            resume=resume,
+            match=match,
+            question=payload.question.strip(),
+            recent_messages=payload.recent_messages,
+        )

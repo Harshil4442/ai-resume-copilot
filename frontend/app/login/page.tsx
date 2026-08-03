@@ -1,15 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { ArrowRight, CheckCircle2, LogIn, ShieldCheck } from "lucide-react";
 import { getProviders, signIn } from "next-auth/react";
-import GlassCard from "../../components/ui/GlassCard";
-import AnimatedButton from "../../components/ui/AnimatedButton";
-import FadeIn from "../../components/ui/FadeIn";
-import StaggerContainer, { StaggerItem } from "../../components/ui/StaggerContainer";
-import { Sparkles, ArrowRight, Code, LayoutDashboard } from "lucide-react";
-import ScaleIn from "../../components/ui/ScaleIn";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+
+import { Button } from "../../components/ui/Button";
+import { trackEvent } from "../../lib/analytics";
 import { prepareGoogleRegistrationConsent } from "../../lib/auth";
 
 export default function LoginPage() {
@@ -27,142 +25,89 @@ export default function LoginPage() {
       .catch(() => setGoogleAvailable(false));
   }, []);
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function onSubmit(event: React.FormEvent) {
+    event.preventDefault();
     setError(null);
     setLoading(true);
     try {
-      const res = await signIn("credentials", {
-        email,
-        password,
-        redirect: false,
-      });
-      if (res?.error) {
+      const result = await signIn("credentials", { email, password, redirect: false });
+      if (result?.error) {
         setError("Invalid email or password");
-      } else {
-        router.push("/dashboard");
+        trackEvent("login_failed", { method: "credentials" });
+        return;
       }
-    } catch (e: any) {
-      setError(e.message || "Login failed");
+      trackEvent("login_succeeded", { method: "credentials" });
+      router.push("/dashboard");
+    } catch (loginError) {
+      setError(loginError instanceof Error ? loginError.message : "Login failed");
+      trackEvent("login_failed", { method: "credentials" });
     } finally {
       setLoading(false);
     }
   }
 
+  async function startGoogleLogin() {
+    if (!googleAgreed) return;
+    setError(null);
+    setLoading(true);
+    try {
+      await prepareGoogleRegistrationConsent();
+      trackEvent("oauth_started", { method: "google", surface: "login" });
+      await signIn("google", { callbackUrl: "/dashboard" });
+    } catch (googleError) {
+      setError(googleError instanceof Error ? googleError.message : "Could not start Google sign-in.");
+      setLoading(false);
+    }
+  }
+
   return (
-    <main className="w-full min-h-[calc(100vh-80px)] flex items-center justify-center p-4 md:p-8">
-      <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-[1fr_450px] gap-6 lg:gap-8 items-stretch">
-        <ScaleIn delay={0.1} className="h-full">
-          <GlassCard className="hidden lg:flex flex-col justify-between p-10 bg-slate-900 border-slate-800 text-white overflow-hidden relative h-full" hoverEffect={false}>
-            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_right,_var(--tw-gradient-stops))] from-primary/20 via-slate-900 to-slate-900 pointer-events-none"></div>
-          
-          <div className="relative z-10">
-            <div className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-6 flex items-center gap-2">
-              <Sparkles size={14} /> Welcome Back
-            </div>
-            <h1 className="text-5xl font-black text-white tracking-tighter mb-6 leading-[1.1]">
-              Continue your resume review.
-            </h1>
-            <p className="text-slate-400 font-medium leading-relaxed max-w-md">
-              Access your saved resumes, HireWiz estimates, market samples, and learning suggestions. You remain responsible for verifying every AI-generated detail.
-            </p>
+    <main className="app-page flex min-h-[calc(100vh-4rem)] items-center">
+      <div className="page-container grid gap-10 lg:grid-cols-[1fr_440px] lg:items-center">
+        <section className="max-w-xl">
+          <p className="eyebrow">HireWiz Career Workspace</p>
+          <h1 className="mt-3 text-4xl font-black leading-tight text-neutral-100 sm:text-5xl">Continue your job search with the full record intact.</h1>
+          <div className="mt-8 grid gap-4 border-t border-white/10 pt-6 text-sm text-neutral-400 sm:grid-cols-3">
+            <span className="flex gap-2"><CheckCircle2 size={17} className="shrink-0 text-primary" /> Approved evidence</span>
+            <span className="flex gap-2"><CheckCircle2 size={17} className="shrink-0 text-primary" /> Exact resume versions</span>
+            <span className="flex gap-2"><CheckCircle2 size={17} className="shrink-0 text-primary" /> Outcome history</span>
+          </div>
+        </section>
+
+        <section className="surface p-6 sm:p-8" aria-labelledby="login-heading">
+          <div className="flex items-center gap-3">
+            <span className="icon-tile"><LogIn size={19} /></span>
+            <div><p className="data-label">Account access</p><h2 id="login-heading" className="mt-1 text-2xl font-black text-neutral-100">Sign in</h2></div>
           </div>
 
-          <StaggerContainer className="relative z-10 grid grid-cols-3 gap-4 mt-12">
-            {[
-              { title: "Parse", desc: "Resume signals", icon: Code },
-              { title: "Match", desc: "Job alignment", icon: LayoutDashboard },
-              { title: "Improve", desc: "Action plan", icon: Sparkles }
-            ].map((item) => (
-              <StaggerItem key={item.title}>
-                <div className="bg-slate-950/5 border border-white/10 rounded-2xl p-4 backdrop-blur-sm h-full hover:bg-slate-950/10 transition-colors">
-                  <item.icon size={18} className="text-blue-400 mb-3" />
-                  <div className="text-sm font-black text-white mb-1">{item.title}</div>
-                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{item.desc}</div>
-                </div>
-              </StaggerItem>
-            ))}
-          </StaggerContainer>
-          </GlassCard>
-        </ScaleIn>
-
-        <FadeIn>
-          <GlassCard className="p-8 md:p-10 h-full flex flex-col justify-center bg-slate-900/70 backdrop-blur-xl border-white" hoverEffect={false}>
-            <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Sign In</div>
-            <h2 className="text-3xl font-black text-white tracking-tighter mb-2">Enter workspace</h2>
-            <p className="text-sm text-slate-400 font-medium mb-8">Use your account to access resumes, matches, strategies, and market trends.</p>
-
-            <form onSubmit={onSubmit} className="space-y-4">
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-200 mb-1.5 px-1">Email Address</label>
-                  <input className="w-full rounded-xl border border-slate-700 bg-slate-900/50 px-4 py-3.5 text-sm outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10 font-medium placeholder:text-slate-300/80" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-200 mb-1.5 px-1">Password</label>
-                  <input className="w-full rounded-xl border border-slate-700 bg-slate-900/50 px-4 py-3.5 text-sm outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10 font-medium placeholder:text-slate-300/80" placeholder="••••••••" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete="current-password" />
-                </div>
-              </div>
-
-              <div className="pt-2">
-                <AnimatedButton type="submit" disabled={loading} className="w-full py-3.5 text-base shadow-md" showArrow>
-                  {loading ? "Signing in..." : "Sign in to account"}
-                </AnimatedButton>
-              </div>
-            </form>
-
-            {googleAvailable ? (
-              <>
-            <div className="relative flex items-center py-6">
-              <div className="flex-grow border-t border-slate-700"></div>
-              <span className="flex-shrink-0 mx-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Or Continue With</span>
-              <div className="flex-grow border-t border-slate-700"></div>
-            </div>
-
-            <label className="mb-3 flex items-start gap-2.5 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={googleAgreed}
-                onChange={(event) => setGoogleAgreed(event.target.checked)}
-                className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-600 bg-slate-900/50 accent-primary cursor-pointer"
-              />
-              <span className="text-[11px] leading-relaxed text-slate-400">
-                If Google sign-in creates a new account, I confirm I am at least 18 and agree to the{" "}
-                <Link href="/terms" className="text-slate-300 hover:text-primary underline">Terms of Service</Link>{" "}
-                and acknowledge the <Link href="/privacy" className="text-slate-300 hover:text-primary underline">Privacy Policy</Link>.
-              </span>
+          <form onSubmit={onSubmit} className="mt-7 grid gap-5">
+            <label className="grid gap-2 text-sm font-semibold text-neutral-300">
+              Email address
+              <input className="field-control" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required autoComplete="email" />
             </label>
+            <label className="grid gap-2 text-sm font-semibold text-neutral-300">
+              Password
+              <input className="field-control" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required autoComplete="current-password" />
+            </label>
+            <Button type="submit" className="w-full" disabled={loading}>
+              {loading ? "Signing in..." : "Sign in"} <ArrowRight size={16} />
+            </Button>
+          </form>
 
-            <button 
-              type="button" 
-              onClick={async () => {
-                if (!googleAgreed) return;
-                setError(null);
-                setLoading(true);
-                try {
-                  await prepareGoogleRegistrationConsent();
-                  await signIn("google", { callbackUrl: "/dashboard" });
-                } catch (googleError: any) {
-                  setError(googleError?.message || "Could not start Google sign-in.");
-                  setLoading(false);
-                }
-              }}
-              disabled={!googleAgreed || loading}
-              className="w-full bg-slate-950 border border-slate-700 hover:bg-slate-900/50 hover:border-slate-600 text-slate-200 font-bold py-3.5 px-4 rounded-xl flex items-center justify-center gap-3 transition-all shadow-sm active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <svg viewBox="0 0 24 24" className="w-5 h-5"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
-              Google
-            </button>
-              </>
-            ) : null}
-
-            {error && <div className="mt-6 text-sm text-rose-400 font-bold bg-rose-900/30 border border-rose-800 rounded-xl px-4 py-3">{error}</div>}
-
-            <div className="mt-auto pt-8 text-center text-sm text-slate-400 font-medium">
-              New to HireWiz? <Link className="font-bold text-primary hover:underline transition-all" href="/register">Create an account</Link>
+          {googleAvailable ? (
+            <div className="mt-6 border-t border-white/10 pt-6">
+              <label className="flex cursor-pointer items-start gap-3 text-xs leading-5 text-neutral-500">
+                <input type="checkbox" checked={googleAgreed} onChange={(event) => setGoogleAgreed(event.target.checked)} className="mt-0.5 h-4 w-4 accent-primary" />
+                <span>If Google creates a new account, I confirm I am at least 18 and agree to the <Link href="/terms" className="text-neutral-300 underline">Terms</Link> and <Link href="/privacy" className="text-neutral-300 underline">Privacy Policy</Link>.</span>
+              </label>
+              <Button type="button" variant="secondary" className="mt-4 w-full" onClick={startGoogleLogin} disabled={!googleAgreed || loading}>
+                <span className="font-black" aria-hidden="true">G</span> Continue with Google
+              </Button>
             </div>
-          </GlassCard>
-        </FadeIn>
+          ) : null}
+
+          {error ? <div className="mt-5 flex gap-2 border border-coral/30 bg-coral/5 p-3 text-sm text-[#ffab9e]" role="alert"><ShieldCheck size={17} className="shrink-0" /> {error}</div> : null}
+          <p className="mt-7 text-center text-sm text-neutral-500">New to HireWiz? <Link href="/register" className="font-bold text-primary hover:underline">Create an account</Link></p>
+        </section>
       </div>
     </main>
   );

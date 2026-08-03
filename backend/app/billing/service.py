@@ -8,6 +8,7 @@ from typing import Any
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from ..domains.notifications import enqueue_notification
 from ..models import (
     EntitlementLedger,
     PaymentEvent,
@@ -310,6 +311,19 @@ def _grant_entitlement(db: Session, order: PaymentOrder, now: datetime) -> bool:
             expires_at=expires_at,
             granted_at=now,
         )
+    )
+    amount = order.gross_amount_minor / 100
+    enqueue_notification(
+        db,
+        user_id=int(user.id),
+        notification_type="payment_receipt",
+        recipient=str(user.email),
+        payload={
+            "reference": order.public_id,
+            "amount_display": f"{order.currency} {amount:,.2f}",
+            "sku": order.sku,
+        },
+        idempotency_key=f"payment:{order.public_id}:receipt",
     )
     return True
 

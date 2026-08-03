@@ -1,20 +1,14 @@
-import { getSession } from "next-auth/react";
+const API_BASE = "/api/backend";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "/api";
-
-async function getToken(): Promise<string | null> {
-  if (typeof window === "undefined") return null;
-  const session = await getSession();
-  if ((session as any)?.user?.accessToken) {
-    return (session as any).user.accessToken;
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+    public readonly detail: unknown,
+  ) {
+    super(message);
+    this.name = "ApiError";
   }
-  return null;
-}
-
-async function withAuth(headers: Record<string, string> = {}): Promise<Record<string, string>> {
-  const token = await getToken();
-  if (token) headers["Authorization"] = `Bearer ${token}`;
-  return headers;
 }
 
 async function parseResponse(res: Response) {
@@ -30,50 +24,91 @@ async function parseResponse(res: Response) {
   return raw ? { detail: raw } : {};
 }
 
-export async function apiGet<T>(path: string): Promise<T> {
-  const headers = await withAuth();
+function errorMessage(data: unknown, fallback: string): string {
+  if (typeof data === "string" && data) return data;
+  if (data && typeof data === "object" && "detail" in data) {
+    const detail = (data as { detail?: unknown }).detail;
+    if (typeof detail === "string") return detail;
+    if (detail && typeof detail === "object" && "message" in detail) {
+      const message = (detail as { message?: unknown }).message;
+      if (typeof message === "string") return message;
+    }
+  }
+  return fallback;
+}
+
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     cache: "no-store",
-    headers,
+    ...init,
   });
   const data = await parseResponse(res);
-  if (!res.ok) throw new Error((data as any)?.detail || `GET ${path} failed (${res.status})`);
+  if (!res.ok) {
+    throw new ApiError(
+      errorMessage(data, `${init.method || "GET"} ${path} failed (${res.status})`),
+      res.status,
+      data,
+    );
+  }
   return data as T;
 }
 
-export async function apiPostJson<T>(path: string, body: unknown): Promise<T> {
-  const headers = await withAuth({ "Content-Type": "application/json" });
-  const res = await fetch(`${API_BASE}${path}`, {
+export async function apiGet<T>(path: string): Promise<T> {
+  return request<T>(path);
+}
+
+export async function apiPostJson<T>(
+  path: string,
+  body: unknown,
+  headers: Record<string, string> = {},
+): Promise<T> {
+  return request<T>(path, {
     method: "POST",
-    headers,
+    headers: { "Content-Type": "application/json", ...headers },
     body: JSON.stringify(body),
   });
-  const data = await parseResponse(res);
-  if (!res.ok) throw new Error((data as any)?.detail || `POST ${path} failed (${res.status})`);
-  return data as T;
 }
 
 export async function apiPutJson<T>(path: string, body: unknown): Promise<T> {
-  const headers = await withAuth({ "Content-Type": "application/json" });
-  const res = await fetch(`${API_BASE}${path}`, {
+  return request<T>(path, {
     method: "PUT",
-    headers,
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  const data = await parseResponse(res);
-  if (!res.ok) throw new Error((data as any)?.detail || `PUT ${path} failed (${res.status})`);
-  return data as T;
+}
+
+export async function apiPatchJson<T>(path: string, body: unknown): Promise<T> {
+  return request<T>(path, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export async function apiDelete<T = void>(path: string): Promise<T> {
+  return request<T>(path, { method: "DELETE" });
 }
 
 export async function apiPostForm<T>(path: string, form: FormData): Promise<T> {
-  const headers = await withAuth(); // don't set Content-Type; browser sets boundary
-  const res = await fetch(`${API_BASE}${path}`, {
+  return request<T>(path, {
     method: "POST",
-    headers,
     body: form,
   });
-  const data = await parseResponse(res);
-  if (!res.ok) throw new Error((data as any)?.detail || `POST ${path} failed (${res.status})`);
-  return data as T;
 }
 
+export async function apiDownload(path: string, fallbackFilename: string): Promise<void> {
+  const response = await fetch(`${API_BASE}${path}`, { cache: "no-store" });
+  if (!response.ok) {
+    const data = await parseResponse(response);
+    throw new ApiError(errorMessage(data, `Download failed (${response.status})`), response.status, data);
+  }
+  const disposition = response.headers.get("content-disposition") || "";
+  const match = disposition.match(/filename="?([^";]+)"?/i);
+  const filename = match?.[1] || fallbackFilename;
+  const url = URL.createObjectURL(await response.blob());
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}

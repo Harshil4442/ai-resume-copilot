@@ -10,17 +10,18 @@ import TrackEventOnView from "../../../components/TrackEventOnView";
 import { getToolPage, toolPages } from "../../../lib/seoContent";
 
 type ToolPageProps = {
-  params: {
+  params: Promise<{
     slug: string;
-  };
+  }>;
 };
 
 export function generateStaticParams() {
   return toolPages.map((tool) => ({ slug: tool.slug }));
 }
 
-export function generateMetadata({ params }: ToolPageProps): Metadata {
-  const tool = getToolPage(params.slug);
+export async function generateMetadata({ params }: ToolPageProps): Promise<Metadata> {
+  const { slug } = await params;
+  const tool = getToolPage(slug);
   if (!tool) return {};
 
   return {
@@ -30,8 +31,9 @@ export function generateMetadata({ params }: ToolPageProps): Metadata {
   };
 }
 
-export default function ToolPage({ params }: ToolPageProps) {
-  const tool = getToolPage(params.slug);
+export default async function ToolPage({ params }: ToolPageProps) {
+  const { slug } = await params;
+  const tool = getToolPage(slug);
   if (!tool) notFound();
 
   return (

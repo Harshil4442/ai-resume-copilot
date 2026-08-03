@@ -1,42 +1,65 @@
+substitutions:
+  _REGION: us-central1
+  _ARTIFACT_REPOSITORY: cloud-run-source-deploy
+  _IMAGE_NAME: hirewiz
+  _API_SERVICE: ai-resume-parser
+  _WORKER_SERVICE: hirewiz-analysis-worker
+
 steps:
-  # Step 1: Build the Docker image (--no-cache ensures fresh pip install)
-  - name: 'gcr.io/cloud-builders/docker'
+  - id: build
+    name: gcr.io/cloud-builders/docker
     args:
-      - 'build'
-      - '--no-cache'
-      - '-t'
-      - 'us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/ai-resume-parser:$COMMIT_SHA'
-      - '-t'
-      - 'us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/ai-resume-parser:latest'
-      - '.'
+      - build
+      - --tag=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REPOSITORY}/${_IMAGE_NAME}:$COMMIT_SHA
+      - --tag=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REPOSITORY}/${_IMAGE_NAME}:latest
+      - .
 
-  # Step 2: Push image to Artifact Registry
-  - name: 'gcr.io/cloud-builders/docker'
+  - id: push-commit
+    name: gcr.io/cloud-builders/docker
     args:
-      - 'push'
-      - 'us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/ai-resume-parser:$COMMIT_SHA'
+      - push
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REPOSITORY}/${_IMAGE_NAME}:$COMMIT_SHA
 
-  - name: 'gcr.io/cloud-builders/docker'
+  - id: push-latest
+    name: gcr.io/cloud-builders/docker
     args:
-      - 'push'
-      - 'us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/ai-resume-parser:latest'
+      - push
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REPOSITORY}/${_IMAGE_NAME}:latest
 
-  # Step 3: Deploy to Cloud Run
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  - id: deploy-api
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
     entrypoint: gcloud
     args:
-      - 'run'
-      - 'deploy'
-      - 'ai-resume-parser'
-      - '--image=us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/ai-resume-parser:$COMMIT_SHA'
-      - '--region=us-central1'
-      - '--platform=managed'
-      - '--quiet'
+      - run
+      - deploy
+      - ${_API_SERVICE}
+      - --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REPOSITORY}/${_IMAGE_NAME}:$COMMIT_SHA
+      - --region=${_REGION}
+      - --platform=managed
+      - --update-env-vars=SERVICE_ROLE=api,APP_RELEASE=$COMMIT_SHA
+      - --quiet
 
-# Store images in Artifact Registry
+  - id: deploy-worker-if-bootstrapped
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        if gcloud run services describe "${_WORKER_SERVICE}" --region "${_REGION}" >/dev/null 2>&1; then
+          gcloud run deploy "${_WORKER_SERVICE}" \
+            --image "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REPOSITORY}/${_IMAGE_NAME}:$COMMIT_SHA" \
+            --region "${_REGION}" \
+            --platform managed \
+            --no-allow-unauthenticated \
+            --update-env-vars "SERVICE_ROLE=worker,APP_RELEASE=$COMMIT_SHA" \
+            --quiet
+        else
+          echo "Worker not bootstrapped; API deployed. Follow docs/GCP_ASYNC_WORKER_RUNBOOK.md once."
+        fi
+
 images:
-  - 'us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/ai-resume-parser:$COMMIT_SHA'
-  - 'us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/ai-resume-parser:latest'
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REPOSITORY}/${_IMAGE_NAME}:$COMMIT_SHA
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REPOSITORY}/${_IMAGE_NAME}:latest
 
 options:
   logging: CLOUD_LOGGING_ONLY

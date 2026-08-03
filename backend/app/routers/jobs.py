@@ -6,15 +6,8 @@ log = logging.getLogger(__name__)
 
 from ..database import get_db
 from .. import models, schemas
-from ..services.matching import (
-    build_skill_confidence_map,
-    _normalize_skill_list,
-    compute_skill_scores,
-    combine_scores,
-    score_to_grade,
-    get_dynamic_weights,
-)
 from ..security import get_current_user
+from ..services.guardrails import billable_operation
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -24,9 +17,6 @@ def match_job(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    from ..services.guardrails import verify_and_deduct_credit
-    verify_and_deduct_credit(current_user.id, db)
-
     resume = (
         db.query(models.Resume)
         .filter(models.Resume.id == payload.resume_id,
@@ -35,124 +25,48 @@ def match_job(
     )
     if not resume:
         raise HTTPException(status_code=404, detail="Resume not found for this user")
+    jd_text = payload.job_description if isinstance(payload.job_description, str) else str(payload.job_description)
+    if len(jd_text.strip()) < 20:
+        raise HTTPException(status_code=422, detail="Job description is too short")
 
-    jd_text = (
-        payload.job_description
-        if isinstance(payload.job_description, str)
-        else str(payload.job_description)
-    )
-    sections      = resume.sections or {}
-    exp_years     = resume.experience_years or 0.0
-    resume_skills = resume.skills or []
-    rs_norm       = _normalize_skill_list(resume_skills)
+    from ..domains.analysis.operations import execute_job_match
 
-    # Initialise outside the try so the variable is unambiguously defined even
-    # if a future edit moves the assignment into a conditional branch.
-    req_norm: list[str] = []
-
-    # ── SINGLE MEGA PROMPT CALL ──────────────────────────────────────────────
     try:
-        from ..services.llm_client import analyze_job_match_mega_llm
-        mega_result = analyze_job_match_mega_llm(
-            resume_sections  = sections,
-            resume_skills    = resume_skills,
-            experience_years = exp_years,
-            jd_text          = jd_text,
-            job_title        = payload.job_title
-        )
-    except Exception as e:
-        log.error("Mega-Match LLM failed: %s", e, exc_info=True)
-        # Check if it was a 429
-        err_msg = str(e)
-        if "429" in err_msg:
-            detail = f"API Rate Limit (429) hit. Details: {err_msg}"
-        else:
-            detail = f"Step 1 (LLM Call) failed: {err_msg}"
-        raise HTTPException(status_code=500, detail=detail)
-
-    # ── Step 2: Post-processing LLM results ──────────────────────────────────
-    try:
-        req_norm = [s.lower() for s in mega_result.get("extracted_jd_skills", [])]
-        
-        coverage_map = {}
-        new_coverage_records = []
-        for item in mega_result.get("skill_analysis", []):
-            rs_skill = (item.get("via_skill") or "").lower().strip()
-            jd_skill = (item.get("jd_skill") or "").lower().strip()
-            weight   = float(item.get("coverage", 0.0))
-            
-            if rs_skill and jd_skill:
-                coverage_map[(rs_skill, jd_skill)] = weight
-                if weight > 0:
-                    new_coverage_records.append(models.SkillCoverage(
-                        skill_from=rs_skill, skill_to=jd_skill, weight=weight, source="llm_mega"
-                    ))
-    except Exception as e:
-        log.error("JSON Post-processing failed: %s", e)
-        raise HTTPException(status_code=500, detail=f"Step 2 (Data Processing) failed: {str(e)}")
-
-    # Bulk persist to Neon
-    if new_coverage_records:
-        try:
-            for rec in new_coverage_records:
-                db.merge(rec)
-            db.commit()
-        except Exception as e:
-            db.rollback()
-            log.warning("Could not persist mega-coverage to DB: %s", e)
-            # We don't raise 500 here so the user still sees their match results 
-            # even if the cache save fails.
-
-    # ── Step 3: Skill confidence & weighted scoring ──────────────────────────
-    confidence_map = build_skill_confidence_map(resume_skills, sections)
-    
-    applied_score, claimed_score, verif_rate, full_matches, partial_matches, true_gaps = (
-        compute_skill_scores(rs_norm, req_norm, coverage_map, confidence_map, jd_text)
-    )
-
-    # ── Step 4: Final combined score ─────────────────────────────────────────
-    holistic_dimensions = mega_result.get("dimensions", [])
-    overall_score = combine_scores(
-        applied_score, claimed_score, verif_rate, holistic_dimensions, exp_years
-    )
-    grade = score_to_grade(overall_score)
-    
-    fit_summary      = mega_result.get("fit_summary", "")
-    improvement_tips = mega_result.get("improvement_tips", [])
-
-    # ── Step 5: Persist ───────────────────────────────────────────────────────
-    match = models.JobMatch(
-        user_id                 = current_user.id,
-        resume_id               = resume.id,
-        job_title               = payload.job_title,
-        company                 = payload.company or "",
-        job_description         = jd_text,
-        match_score             = float(overall_score),
-        required_skills         = req_norm,
-        full_matches            = full_matches,
-        partial_matches         = partial_matches,
-        true_gaps               = true_gaps,
-        fit_summary             = fit_summary,
-        dimension_scores        = holistic_dimensions,
-        skill_verification_rate = float(verif_rate),
-        improvement_tips        = improvement_tips,
-    )
-    db.add(match)
-    db.commit()
-    db.refresh(match)
+        with billable_operation(
+            user_id=current_user.id,
+            db=db,
+            operation="job_match_legacy",
+            amount=1,
+            input_payload={"resume_id": resume.id, "job_title": payload.job_title},
+        ):
+            result = execute_job_match(
+                db,
+                user_id=current_user.id,
+                payload={
+                    "resume_id": resume.id,
+                    "job_title": payload.job_title,
+                    "company": payload.company or "",
+                    "job_description": jd_text,
+                },
+            )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        log.error("Job match failed: %s", exc, exc_info=True)
+        raise HTTPException(status_code=502, detail="Job analysis provider failed. Reserved units were released.") from exc
 
     return schemas.JobMatchResponse(
-        match_id                = match.id,
-        match_score             = overall_score,
-        grade                   = grade,
-        required_skills         = req_norm,
-        full_matches            = full_matches,
-        partial_matches         = [schemas.PartialMatch(**p) for p in partial_matches],
-        true_gaps               = true_gaps,
-        skill_verification_rate = verif_rate,
-        dimensions              = [schemas.DimensionScore(**d) for d in holistic_dimensions],
-        fit_summary             = fit_summary,
-        improvement_tips        = improvement_tips,
+        match_id=result["match_id"],
+        match_score=result["match_score"],
+        grade=result["grade"],
+        required_skills=result["required_skills"],
+        full_matches=result["full_matches"],
+        partial_matches=[schemas.PartialMatch(**item) for item in result["partial_matches"]],
+        true_gaps=result["true_gaps"],
+        skill_verification_rate=result["skill_verification_rate"],
+        dimensions=[schemas.DimensionScore(**item) for item in result["dimensions"]],
+        fit_summary=result["fit_summary"],
+        improvement_tips=result["improvement_tips"],
     )
 
 @router.get("/matches", response_model=schemas.JobMatchHistoryResponse)
@@ -186,9 +100,6 @@ def tailor_resume(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    from ..services.guardrails import verify_and_deduct_credit
-    
-    # 1. Fetch JobMatch
     match = db.query(models.JobMatch).filter(
         models.JobMatch.id == match_id,
         models.JobMatch.user_id == current_user.id
@@ -201,58 +112,87 @@ def tailor_resume(
     if not resume:
         raise HTTPException(status_code=404, detail="Associated resume not found")
 
-    # 2. Verify and Deduct 10 Credits
-    verify_and_deduct_credit(current_user.id, db, amount=10)
+    approved_evidence = (
+        db.query(models.EvidenceItem)
+        .filter(
+            models.EvidenceItem.user_id == current_user.id,
+            models.EvidenceItem.resume_id == resume.id,
+            models.EvidenceItem.approval_state == "approved",
+        )
+        .order_by(models.EvidenceItem.created_at.asc())
+        .all()
+    )
+    evidence_payload = [
+        {
+            "id": item.id,
+            "title": item.title,
+            "text": item.evidence_text,
+            "metrics": item.metrics or {},
+            "skills": item.skills or [],
+        }
+        for item in approved_evidence
+    ]
 
-    # 3. Call LLM
     try:
-        from ..services.llm_client import tailor_resume_mega_llm
-        
-        # Convert partial_matches (which is a list of dicts in DB) to what LLM expects
-        partial_matches = match.partial_matches or []
-        true_gaps = match.true_gaps or []
-        
-        tailored_latex = tailor_resume_mega_llm(
-            resume_text=resume.raw_text,
-            jd_text=match.job_description,
-            template_type=payload.template_type,
-            true_gaps=true_gaps,
-            partial_matches=partial_matches
-        )
-        
-        pdf_b64 = None
-        import tempfile
-        import subprocess
-        import os
-        import base64
-        
-        with tempfile.TemporaryDirectory() as tempdir:
-            tex_path = os.path.join(tempdir, "resume.tex")
-            with open(tex_path, "w", encoding="utf-8") as f:
-                f.write(tailored_latex)
-            
-            try:
-                subprocess.run(
-                    ["pdflatex", "-interaction=nonstopmode", "resume.tex"],
-                    cwd=tempdir,
-                    check=True,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    timeout=15
-                )
-                pdf_path = os.path.join(tempdir, "resume.pdf")
-                if os.path.exists(pdf_path):
-                    with open(pdf_path, "rb") as pdf_file:
-                        pdf_b64 = base64.b64encode(pdf_file.read()).decode("utf-8")
-            except Exception as latex_err:
-                log.warning(f"Failed to compile LaTeX: {latex_err}")
-        
-        return schemas.ResumeTailorResponse(
-            tailored_resume_markdown=tailored_latex,
-            pdf_base64=pdf_b64
-        )
-        
-    except Exception as e:
-        log.error(f"Tailoring failed: {e}", exc_info=True)
-        # Refund credits if it fails? (optional, skipping for now to keep simple)
-        raise HTTPException(status_code=500, detail=f"Failed to tailor resume: {str(e)}")
+        with billable_operation(
+            user_id=current_user.id,
+            db=db,
+            operation="resume_tailor_legacy",
+            amount=10,
+            input_payload={
+                "match_id": match.id,
+                "resume_id": resume.id,
+                "template_type": payload.template_type,
+                "evidence_ids": [item["id"] for item in evidence_payload],
+            },
+        ):
+            from ..services.llm_client import tailor_resume_mega_llm
+
+            tailored_latex = tailor_resume_mega_llm(
+                resume_text=resume.raw_text,
+                jd_text=match.job_description,
+                template_type=payload.template_type,
+                true_gaps=match.true_gaps or [],
+                partial_matches=match.partial_matches or [],
+                approved_evidence=evidence_payload,
+            )
+
+            pdf_b64 = None
+            import base64
+            import os
+            import subprocess
+            import tempfile
+
+            with tempfile.TemporaryDirectory() as tempdir:
+                tex_path = os.path.join(tempdir, "resume.tex")
+                with open(tex_path, "w", encoding="utf-8") as file:
+                    file.write(tailored_latex)
+
+                try:
+                    subprocess.run(
+                        ["pdflatex", "-interaction=nonstopmode", "resume.tex"],
+                        cwd=tempdir,
+                        check=True,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        timeout=15,
+                    )
+                    pdf_path = os.path.join(tempdir, "resume.pdf")
+                    if os.path.exists(pdf_path):
+                        with open(pdf_path, "rb") as pdf_file:
+                            pdf_b64 = base64.b64encode(pdf_file.read()).decode("utf-8")
+                except Exception as latex_error:
+                    log.warning("Failed to compile LaTeX: %s", latex_error)
+
+            return schemas.ResumeTailorResponse(
+                tailored_resume_markdown=tailored_latex,
+                pdf_base64=pdf_b64,
+            )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        log.error("Tailoring failed: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=502,
+            detail="Resume tailoring failed. Reserved units were released.",
+        ) from exc

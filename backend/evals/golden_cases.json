@@ -1,0 +1,46 @@
+[
+  {
+    "name": "valid role match contract",
+    "operation": "job_match",
+    "expected_pass": true,
+    "output": {
+      "match_score": 78,
+      "required_skills": ["python", "postgresql"],
+      "true_gaps": ["kubernetes"],
+      "fit_summary": "Strong backend evidence with one infrastructure gap."
+    }
+  },
+  {
+    "name": "invalid role match score",
+    "operation": "job_match",
+    "expected_pass": false,
+    "output": {
+      "match_score": 140,
+      "required_skills": "python",
+      "true_gaps": [],
+      "fit_summary": ""
+    }
+  },
+  {
+    "name": "valid evidence cited tailoring",
+    "operation": "resume_tailor",
+    "expected_pass": true,
+    "allowed_evidence_ids": ["ev_1", "ev_2"],
+    "output": {
+      "summary_items": [{"text": "Built reliable Python services.", "evidence_ids": ["ev_1"]}],
+      "bullets": [{"text": "Reduced API latency by 40 percent.", "evidence_ids": ["ev_2"]}],
+      "evidence_needed": []
+    }
+  },
+  {
+    "name": "reject unsupported evidence citation",
+    "operation": "resume_tailor",
+    "expected_pass": false,
+    "allowed_evidence_ids": ["ev_1"],
+    "output": {
+      "summary_items": [{"text": "Generated unsupported claim.", "evidence_ids": ["ev_missing"]}],
+      "bullets": [],
+      "evidence_needed": []
+    }
+  }
+]

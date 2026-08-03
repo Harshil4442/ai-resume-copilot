@@ -1,9 +1,13 @@
-import os
 import json
-import time
+import logging
+import os
 import random
-import requests
+import time
 from typing import List, Dict
+
+import httpx
+
+logger = logging.getLogger(__name__)
 
 # Read lazily so tests / local dev without a key still import cleanly
 def _api_key() -> str:
@@ -70,32 +74,51 @@ def _chat(messages: List[Dict]) -> str:
         seen = set()
         models_to_try = [x for x in models_to_try if not (x in seen or seen.add(x))]
         
-        print(f"[LLM_CLIENT] Gemini path entered. target_model={target_model!r}, will try: {models_to_try}", flush=True)
+        logger.debug(
+            "Gemini model fallback initialized",
+            extra={"target_model": target_model, "fallback_count": len(models_to_try)},
+        )
         
         last_error = None
         for attempt_model in models_to_try:
             try:
-                print(f"[LLM_CLIENT] Attempting model: {attempt_model!r}", flush=True)
+                logger.debug(
+                    "Attempting Gemini model",
+                    extra={"attempt_model": attempt_model},
+                )
                 response = client.models.generate_content(
                     model=attempt_model,
                     contents=gemini_messages,
                     config=config
                 )
                 if response and hasattr(response, "text"):
-                    print(f"[LLM_CLIENT] SUCCESS with model: {attempt_model!r}", flush=True)
+                    logger.info(
+                        "Gemini request completed",
+                        extra={"attempt_model": attempt_model},
+                    )
                     return response.text
                 return ""
             except Exception as e:
                 last_error = e
                 error_str = str(e).lower()
-                print(f"[LLM_CLIENT] FAILED model {attempt_model!r}: {e}", flush=True)
                 # Try next fallback if model not found OR rate limited
-                if "not found" in error_str or "404" in error_str or "is not supported" in error_str or "429" in error_str or "quota" in error_str or "resource exhausted" in error_str:
+                retryable = (
+                    "not found" in error_str
+                    or "404" in error_str
+                    or "is not supported" in error_str
+                    or "429" in error_str
+                    or "quota" in error_str
+                    or "resource exhausted" in error_str
+                )
+                logger.warning(
+                    "Gemini model attempt failed",
+                    extra={"attempt_model": attempt_model, "retryable": retryable},
+                )
+                if retryable:
                     continue
-                else:
-                    raise Exception(f"Failed with {attempt_model}: {e}") from e
+                raise RuntimeError("LLM provider request failed.") from e
                     
-        raise Exception(f"All fallback models failed. Last error from {models_to_try[-1]}: {last_error}") from last_error
+        raise RuntimeError("All configured LLM models failed.") from last_error
 
     # Strip trailing slash to prevent 404 double-slash errors (e.g., //chat/completions)
     base_url = LLM_API_BASE.rstrip("/")
@@ -114,13 +137,25 @@ def _chat(messages: List[Dict]) -> str:
     max_retries = 5
     for attempt in range(max_retries):
         try:
-            resp = requests.post(url, json=payload, headers=headers, timeout=90)
+            resp = httpx.post(
+                url,
+                json=payload,
+                headers=headers,
+                timeout=httpx.Timeout(90, connect=10),
+            )
             
             if resp.status_code == 429:
                 # 429 is the rate limit error. Wait longer each time.
                 if attempt < max_retries - 1:
                     sleep_time = (5 * (attempt + 1)) + random.random()
-                    print(f"Rate limited (429). Retrying in {sleep_time:.1f}s... (Attempt {attempt+1}/{max_retries})")
+                    logger.warning(
+                        "LLM provider rate limited; retrying",
+                        extra={
+                            "attempt": attempt + 1,
+                            "max_retries": max_retries,
+                            "retry_delay_seconds": round(sleep_time, 1),
+                        },
+                    )
                     time.sleep(sleep_time)
                     continue
             
@@ -128,18 +163,18 @@ def _chat(messages: List[Dict]) -> str:
             data = resp.json()
             return data["choices"][0]["message"]["content"]
             
-        except requests.exceptions.HTTPError as e:
+        except httpx.HTTPStatusError as e:
             if resp.status_code == 429 and attempt < max_retries - 1:
                 continue # Already handled above, but just in case
             if attempt == max_retries - 1:
-                raise Exception(f"OpenAI endpoint failed with HTTPError on model {LLM_MODEL}: {e}") from e
+                raise RuntimeError("LLM provider returned an HTTP error.") from e
             time.sleep(2)
         except Exception as e:
             if attempt == max_retries - 1:
-                raise Exception(f"OpenAI endpoint failed on model {LLM_MODEL}: {e}") from e
+                raise RuntimeError("LLM provider request failed.") from e
             time.sleep(2)
     
-    raise Exception(f"All {max_retries} retries failed for OpenAI model {LLM_MODEL}.")
+    raise RuntimeError("All LLM provider retries failed.")
 
 
 def _extract_json_object(raw: str) -> Dict:
@@ -166,8 +201,11 @@ def chat_json(messages: List[Dict]) -> Dict:
 
 def rewrite_bullets(resume_text: str, jd_text: str, tone: str) -> Dict:
     system_prompt = (
-        "You are an expert resume writer. Rewrite the candidate's bullet points using STAR format, "
-        "quantifying impact and aligning with the job description. "
+        "You are an evidence-preserving resume editor. Rewrite only facts explicitly present in "
+        "the candidate's resume. Never add or infer metrics, employers, dates, tools, skills, scope, "
+        "ownership, or outcomes. If a fact needed for STAR is missing, keep the claim modest and "
+        "state the missing detail in the summary instead of fabricating it. Align wording with the "
+        "job description only when the resume already supports that wording. "
         f"Tone: {tone}. Output JSON with keys 'bullets' (list of strings) and 'summary' (string)."
     )
     user_content = f"RESUME:\n{resume_text}\n\nJOB DESCRIPTION:\n{jd_text}"
@@ -181,12 +219,26 @@ def rewrite_bullets(resume_text: str, jd_text: str, tone: str) -> Dict:
     except Exception:
         return {"bullets": [content], "summary": "Model did not return JSON; raw response in bullets[0]."}
 
-def generate_interview_questions(job_title: str, jd_text: str, num_questions: int = 8) -> List[Dict[str, str]]:
+def generate_interview_questions(
+    job_title: str,
+    jd_text: str,
+    num_questions: int = 8,
+    approved_evidence: List[Dict] | None = None,
+) -> List[Dict[str, object]]:
+    evidence = approved_evidence or []
+    allowed_ids = {str(item.get("id")) for item in evidence if item.get("id")}
     system_prompt = (
-        "You are an expert interviewer. Generate thoughtful interview questions and model answers "
-        "based on the job description. Output a JSON list of objects with 'question' and 'answer'."
+        "You are an evidence-grounded interview coach. Generate thoughtful interview questions "
+        "for the job description and a concise coaching angle for each. Never write a fictional "
+        "first-person model answer or invent candidate history, metrics, skills, or outcomes. "
+        "Reference only evidence IDs supplied by the user. If no evidence supports a question, use "
+        "an empty evidence_ids list. Output a JSON list with question, coaching_angle, and evidence_ids."
     )
-    user_content = f"JOB TITLE: {job_title}\n\nJOB DESCRIPTION:\n{jd_text}\n\nNumber of Qs: {num_questions}"
+    evidence_context = json.dumps(evidence, default=str)[:6000]
+    user_content = (
+        f"JOB TITLE: {job_title}\n\nJOB DESCRIPTION:\n{jd_text}\n\n"
+        f"APPROVED EVIDENCE:\n{evidence_context}\n\nNumber of Qs: {num_questions}"
+    )
     content = _chat(
         [{"role": "system", "content": system_prompt},
          {"role": "user", "content": user_content}]
@@ -194,11 +246,153 @@ def generate_interview_questions(job_title: str, jd_text: str, num_questions: in
 
     try:
         data = json.loads(content)
-        if isinstance(data, list):
-            return data
-        return [{"question": "Explain your relevant experience.", "answer": str(data)}]
+        if not isinstance(data, list):
+            raise ValueError("Interview response was not a list")
     except Exception:
-        return [{"question": "Explain your relevant experience.", "answer": content[:800]}]
+        data = [
+            {
+                "question": "Which approved experience best demonstrates your fit for this role?",
+                "coaching_angle": "Choose one relevant example and explain the context, action, and verified result.",
+                "evidence_ids": [],
+            }
+        ]
+
+    evidence_by_id = {str(item.get("id")): item for item in evidence if item.get("id")}
+    questions: List[Dict[str, object]] = []
+    for raw_item in data[:num_questions]:
+        if not isinstance(raw_item, dict):
+            continue
+        question = str(raw_item.get("question") or "Explain your relevant experience.").strip()
+        coaching_angle = str(
+            raw_item.get("coaching_angle")
+            or "Explain the context, your action, and the verified result."
+        ).strip()
+        raw_ids = raw_item.get("evidence_ids")
+        evidence_ids = (
+            [str(item) for item in raw_ids if str(item) in allowed_ids]
+            if isinstance(raw_ids, list)
+            else []
+        )
+        cited = [evidence_by_id[item] for item in evidence_ids]
+        if cited:
+            facts = "; ".join(
+                f"{item.get('title', 'Evidence')}: {item.get('text', '')}" for item in cited
+            )[:1800]
+            answer = f"Approved facts to use: {facts}\n\nCoaching focus: {coaching_angle}"
+            answer_state = "evidence_backed"
+        else:
+            answer = (
+                "No approved evidence is linked to this question yet. Add or approve a relevant "
+                f"fact before drafting a personal answer. Coaching focus: {coaching_angle}"
+            )
+            answer_state = "evidence_needed"
+        questions.append(
+            {
+                "question": question,
+                "answer": answer,
+                "evidence_ids": evidence_ids,
+                "answer_state": answer_state,
+            }
+        )
+    return questions
+
+
+def tailor_resume_from_evidence(
+    *,
+    job_title: str,
+    jd_text: str,
+    approved_evidence: List[Dict],
+) -> Dict:
+    """Create traceable resume copy using approved evidence as the only fact source."""
+    if not approved_evidence:
+        raise ValueError("At least one approved evidence item is required")
+
+    allowed = {
+        str(item["id"]): item
+        for item in approved_evidence
+        if item.get("id") and str(item.get("text") or "").strip()
+    }
+    system_prompt = (
+        "You are an evidence-preserving resume editor. Transform only the supplied APPROVED "
+        "EVIDENCE into concise resume language relevant to the target job. Never add, infer, or "
+        "exaggerate any metric, employer, date, skill, tool, responsibility, seniority, scope, or "
+        "outcome. Every summary statement and bullet must cite one or more supplied evidence IDs. "
+        "Unsupported job requirements belong in evidence_needed, never in candidate claims. Return "
+        "only JSON with summary_items [{text,evidence_ids}], bullets [{text,evidence_ids}], and "
+        "evidence_needed [string]."
+    )
+    data = chat_json(
+        [
+            {"role": "system", "content": system_prompt},
+            {
+                "role": "user",
+                "content": (
+                    f"TARGET JOB: {job_title}\n\nJOB DESCRIPTION:\n{jd_text[:3500]}\n\n"
+                    f"APPROVED EVIDENCE:\n{json.dumps(approved_evidence, default=str)[:9000]}"
+                ),
+            },
+        ]
+    )
+
+    def sourced_items(key: str, limit: int) -> List[Dict]:
+        result: List[Dict] = []
+        raw_items = data.get(key, [])
+        if not isinstance(raw_items, list):
+            return result
+        for raw_item in raw_items[:limit]:
+            if not isinstance(raw_item, dict):
+                continue
+            text = str(raw_item.get("text") or "").strip()
+            raw_ids = raw_item.get("evidence_ids")
+            ids = (
+                list(dict.fromkeys(str(value) for value in raw_ids if str(value) in allowed))
+                if isinstance(raw_ids, list)
+                else []
+            )
+            if not text or not ids:
+                continue
+            result.append(
+                {
+                    "text": text,
+                    "evidence_ids": ids,
+                    "sources": [
+                        {
+                            "id": evidence_id,
+                            "title": allowed[evidence_id].get("title", "Evidence"),
+                            "evidence_text": allowed[evidence_id].get("text", ""),
+                        }
+                        for evidence_id in ids
+                    ],
+                }
+            )
+        return result
+
+    summary_items = sourced_items("summary_items", 3)
+    bullets = sourced_items("bullets", 12)
+    if not summary_items and not bullets:
+        raise ValueError("The model returned no evidence-cited resume content")
+    raw_needed = data.get("evidence_needed", [])
+    evidence_needed = (
+        [str(item).strip() for item in raw_needed if str(item).strip()][:10]
+        if isinstance(raw_needed, list)
+        else []
+    )
+    approved_skills = sorted(
+        {
+            str(skill).strip()
+            for item in approved_evidence
+            for skill in (item.get("skills") if isinstance(item.get("skills"), list) else [])
+            if str(skill).strip()
+        }
+    )
+    return {
+        "target_job_title": job_title,
+        "summary_items": summary_items,
+        "bullets": bullets,
+        "skills": approved_skills,
+        "evidence_needed": evidence_needed,
+        "evidence_policy": "approved_only",
+    }
 
 
 def extract_jd_skills_llm(jd_text: str) -> List[str]:
@@ -610,6 +804,7 @@ def tailor_resume_mega_llm(
     template_type: str,
     true_gaps: List[str],
     partial_matches: List[Dict],
+    approved_evidence: List[Dict] | None = None,
 ) -> str:
     """
     Completely rewrite and tailor the resume for a specific job match based on a template.
@@ -631,15 +826,17 @@ def tailor_resume_mega_llm(
         "### STRICT RULES:\n"
         "1. **LaTeX Formatting:** You MUST output raw, valid LaTeX code. Use the standard article class. Do not use markdown.\n"
         "2. **1-Page Constraint:** The content MUST fit on a single A4 page. Be extremely concise.\n"
-        "3. **The STAR Method:** Rewrite every single bullet point into Situation/Task, Action, and Result. "
-        "Every bullet MUST start with a strong action verb (e.g., Spearheaded, Architected, Orchestrated).\n"
-        "4. **Keyword Injection:** The user is missing these skills: " + ", ".join(true_gaps[:15]) + ".\n"
-        "They have partial matches for: " + ", ".join([p.get('skill', '') for p in partial_matches[:10]]) + ".\n"
-        "Creatively weave these keywords into the experience bullets ONLY if the context of their past jobs makes it believable.\n"
-        "5. **Metrics Placeholders:** If you see a major achievement without numbers, inject a clear placeholder like `[Increased revenue by X%]`.\n"
-        "6. **Aggressive Reordering:** Reorder the bullet points under each job so the achievements most relevant to the JD appear first.\n"
-        "7. **Preserve Links:** You MUST retain any URLs, LinkedIn profiles, GitHub links, and portfolios exactly as they appear in the original resume. Use \\href{url}{text}.\n"
-        f"8. **Tone & Style:** {chosen_tone}\n\n"
+        "3. **Evidence Boundary:** The original resume and APPROVED EVIDENCE are the only sources of "
+        "candidate facts. Never add, infer, exaggerate, or make plausible-sounding metrics, skills, "
+        "tools, responsibilities, dates, employers, scope, or outcomes.\n"
+        "4. **Known Gaps:** These are gaps, not candidate skills: " + ", ".join(true_gaps[:15]) + ". "
+        "Do not claim them. Partial matches may be used only when the source text explicitly supports them.\n"
+        "5. **Traceability:** Add a LaTeX comment immediately before every generated bullet in the "
+        "form `% Evidence: resume` or `% Evidence: EVIDENCE_ID`. Never cite an ID not supplied.\n"
+        "6. **Missing Facts:** Do not insert placeholders or guessed numbers. Omit unsupported claims.\n"
+        "7. **Reordering:** Reorder supported bullets so the most relevant evidence appears first.\n"
+        "8. **Preserve Links:** You MUST retain any URLs, LinkedIn profiles, GitHub links, and portfolios exactly as they appear in the original resume. Use \\href{url}{text}.\n"
+        f"9. **Tone & Style:** {chosen_tone}\n\n"
         "### LATEX TEMPLATE TO USE:\n"
         "```latex\n"
         "\\documentclass[10pt,a4paper]{article}\n"
@@ -681,7 +878,8 @@ def tailor_resume_mega_llm(
     
     user_content = (
         f"JOB DESCRIPTION:\n{jd_text[:3000]}\n\n"
-        f"CANDIDATE'S ORIGINAL RESUME:\n{resume_text[:4000]}"
+        f"CANDIDATE'S ORIGINAL RESUME:\n{resume_text[:4000]}\n\n"
+        f"APPROVED EVIDENCE:\n{json.dumps(approved_evidence or [], default=str)[:6000]}"
     )
     
     raw = _chat([

@@ -1,7 +1,6 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { useEffect, useState } from "react";
 import { twMerge } from "tailwind-merge";
 import clsx from "clsx";
 
@@ -20,14 +19,9 @@ export default function ScoreRing({
   className,
   showText = true,
 }: ScoreRingProps) {
-  const [offset, setOffset] = useState(0);
   const radius = (size - strokeWidth) / 2;
   const circumference = radius * 2 * Math.PI;
-  
-  useEffect(() => {
-    const progressOffset = ((100 - score) / 100) * circumference;
-    setOffset(progressOffset);
-  }, [score, circumference]);
+  const offset = ((100 - score) / 100) * circumference;
 
   let colorClass = "text-emerald-500";
   if (score < 50) colorClass = "text-rose-500";

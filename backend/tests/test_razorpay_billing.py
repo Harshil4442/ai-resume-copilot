@@ -250,6 +250,14 @@ def test_catalog_and_checkout_fail_closed(client, monkeypatch, session_factory):
         assert db.query(PaymentOrder).count() == 0
 
 
+def test_recent_order_returns_null_when_checkout_has_not_started(client):
+    response = client.get("/api/billing/recent-order")
+
+    assert response.status_code == 200
+    assert response.json() is None
+    assert response.headers["cache-control"] == "no-store, private"
+
+
 def test_production_never_enables_test_mode(client, monkeypatch):
     monkeypatch.setenv("APP_ENV", "production")
     monkeypatch.setenv("RAZORPAY_CHECKOUT_ENABLED", "true")

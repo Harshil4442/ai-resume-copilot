@@ -1,203 +1,180 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { usePathname } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
+import {
+  BriefcaseBusiness,
+  CircleGauge,
+  CreditCard,
+  FileText,
+  LayoutDashboard,
+  Library,
+  LogOut,
+  Menu,
+  Search,
+  User,
+  Wrench,
+  X,
+} from "lucide-react";
 import { useSession } from "next-auth/react";
-import { apiGet } from "../lib/api";
 import Link from "next/link";
-import Logo from "./ui/Logo";
-import { Menu, X, LayoutDashboard, FileText, Target, TrendingUp, BookOpen, User, CreditCard, Info, Mail, CircleGauge, Wrench, Library } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 
-const appLinks = [
+import { apiGet } from "../lib/api";
+import Logo from "./ui/Logo";
+
+type ProfileSummary = {
+  ai_credits: number;
+  tier: string;
+};
+type FeatureResponse = {
+  features: Record<string, { enabled: boolean }>;
+};
+type NavLink = {
+  href: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  feature?: string;
+};
+
+const appLinks: NavLink[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/workspace", label: "Workspace", icon: BriefcaseBusiness, feature: "career_workspace" },
   { href: "/resume", label: "Resume", icon: FileText },
-  { href: "/jobs", label: "Match", icon: Target },
-  { href: "/market", label: "Market", icon: TrendingUp },
-  { href: "/learning", label: "Learning", icon: BookOpen },
+  { href: "/market", label: "Market", icon: Search },
   { href: "/profile", label: "Profile", icon: User },
   { href: "/billing", label: "Billing", icon: CreditCard },
 ];
 
-// Signed-out visitors see public, non-authenticated destinations only.
-const publicLinks = [
+const publicLinks: NavLink[] = [
   { href: "/tools", label: "Tools", icon: Wrench },
   { href: "/resources", label: "Resources", icon: Library },
   { href: "/pricing", label: "Pricing", icon: CreditCard },
-  { href: "/about", label: "How It Works", icon: Info },
 ];
 
 export default function Nav() {
-  const [loggedIn, setLoggedIn] = useState<boolean>(false);
-  const [analysisUnits, setAnalysisUnits] = useState<number | null>(null);
-  const [tier, setTier] = useState<string>("free");
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  
   const pathname = usePathname();
-  const { data: session, status } = useSession();
+  const { status } = useSession();
+  const authenticated = status === "authenticated";
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const profile = useQuery({
+    queryKey: ["nav-profile", pathname],
+    queryFn: () => apiGet<ProfileSummary>("/auth/profile"),
+    enabled: authenticated,
+  });
+  const features = useQuery({
+    queryKey: ["feature-decisions"],
+    queryFn: () => apiGet<FeatureResponse>("/v1/features"),
+    enabled: authenticated,
+    staleTime: 60_000,
+  });
 
   useEffect(() => {
-    // Remove tokens left by legacy builds. Authentication now stays inside
-    // NextAuth's protected session cookie and is read through getSession().
     localStorage.removeItem("access_token");
-    if (status === "authenticated" && (session as any)?.user?.accessToken) {
-      setLoggedIn(true);
-    } else if (status === "unauthenticated") {
-      setLoggedIn(false);
-      setAnalysisUnits(null);
-      setTier("free");
-    }
-  }, [session, status]);
-
-  useEffect(() => {
-    const fetchProfile = () => {
-      if (loggedIn) {
-        apiGet<any>("/auth/profile")
-          .then(data => {
-            setAnalysisUnits(data.ai_credits ?? 0);
-            setTier(data.tier ?? "free");
-          })
-          .catch(console.error);
-      }
-    };
-    fetchProfile();
-    
-    window.addEventListener("refresh_analysis_units", fetchProfile);
-    return () => window.removeEventListener("refresh_analysis_units", fetchProfile);
-  }, [loggedIn, pathname]);
-
-  // Close mobile menu on route change
-  useEffect(() => {
-    setIsMobileMenuOpen(false);
   }, [pathname]);
 
-  const links = loggedIn ? appLinks : publicLinks;
+  const links = authenticated
+    ? appLinks.filter((link) => !link.feature || features.data?.features[link.feature]?.enabled !== false)
+    : publicLinks;
+  const units = profile.data?.ai_credits;
+  const premium = profile.data?.tier === "premium";
 
   return (
-    <>
-      <header className="fixed left-0 top-0 z-50 w-full h-14 bg-slate-900/70 backdrop-blur-[12px] border-b border-slate-700/50 animate-fade-in [--animation-delay:600ms] translate-y-[-1rem] opacity-0 shadow-sm">
-        <div className="max-w-[80rem] mx-auto px-4 md:px-8 h-full flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2.5">
-            <Logo />
-            <span className="text-sm font-black tracking-tight text-white">HireWiz</span>
-          </Link>
-          
-          {/* Desktop Nav */}
-          <nav className="hidden md:flex items-center gap-1 text-sm bg-slate-900/50 rounded-full border border-slate-700/50 p-1">
+    <header className="fixed inset-x-0 top-0 z-50 h-16 border-b border-white/10 bg-[#0f1211]/95 backdrop-blur-md">
+      <div className="page-container flex h-full items-center justify-between gap-4">
+        <Link href={authenticated ? "/dashboard" : "/"} className="flex shrink-0 items-center gap-2.5" aria-label="HireWiz home">
+          <Logo />
+          <span className="text-base font-black text-[#f4f2ea]">HireWiz</span>
+        </Link>
+
+        <nav className="hidden h-full min-w-0 items-stretch lg:flex" aria-label="Primary navigation">
+          {links.map((link) => {
+            const active = pathname === link.href || pathname.startsWith(`${link.href}/`);
+            return (
+              <Link
+                key={link.href}
+                href={link.href}
+                className={`relative flex min-w-0 items-center gap-1.5 px-3 text-sm font-semibold transition-colors ${
+                  active ? "text-white" : "text-neutral-400 hover:text-neutral-100"
+                }`}
+              >
+                <link.icon size={15} aria-hidden="true" />
+                <span>{link.label}</span>
+                {active ? <span className="absolute inset-x-3 bottom-0 h-0.5 bg-primary" /> : null}
+              </Link>
+            );
+          })}
+        </nav>
+
+        <div className="flex shrink-0 items-center gap-2">
+          {authenticated && typeof units === "number" ? (
+            <Link
+              href="/billing"
+              className="hidden min-h-9 items-center gap-2 rounded-md border border-white/10 px-3 text-xs font-bold text-neutral-300 hover:border-white/20 hover:bg-white/5 sm:flex"
+              title={premium ? "Premium is active" : `${units} analysis units remaining`}
+            >
+              <CircleGauge size={14} className="text-primary" aria-hidden="true" />
+              <span>{premium ? "Premium" : units}</span>
+            </Link>
+          ) : null}
+
+          {authenticated ? (
+            <Link href="/logout" className="icon-button hidden lg:inline-flex" aria-label="Log out" title="Log out">
+              <LogOut size={17} />
+            </Link>
+          ) : (
+            <div className="hidden items-center gap-2 lg:flex">
+              <Link href="/login" className="button-ghost">Log in</Link>
+              <Link href="/register" className="button-primary">Create account</Link>
+            </div>
+          )}
+
+          <button
+            type="button"
+            className="icon-button lg:hidden"
+            aria-label={mobileOpen ? "Close navigation" : "Open navigation"}
+            aria-expanded={mobileOpen}
+            onClick={() => setMobileOpen((value) => !value)}
+          >
+            {mobileOpen ? <X size={19} /> : <Menu size={19} />}
+          </button>
+        </div>
+      </div>
+
+      {mobileOpen ? (
+        <div className="absolute inset-x-0 top-16 max-h-[calc(100vh-4rem)] overflow-y-auto border-b border-white/10 bg-[#111412] p-4 shadow-2xl lg:hidden">
+          <nav className="page-container grid gap-1 p-0" aria-label="Mobile navigation">
             {links.map((link) => {
-              const active = pathname === link.href;
+              const active = pathname === link.href || pathname.startsWith(`${link.href}/`);
               return (
                 <Link
                   key={link.href}
                   href={link.href}
-                  className={`relative px-3 py-1.5 rounded-full font-semibold transition-colors duration-200 flex items-center gap-1.5 ${
-                    active
-                      ? "bg-slate-950 text-white shadow-sm border border-slate-700/50"
-                      : "text-slate-400 hover:text-white hover:bg-slate-800/50"
+                  onClick={() => setMobileOpen(false)}
+                  className={`flex min-h-11 items-center gap-3 rounded-md px-3 text-sm font-semibold ${
+                    active ? "bg-primary/12 text-primary" : "text-neutral-300 hover:bg-white/5"
                   }`}
                 >
-                  <link.icon size={14} className={active ? "text-primary" : ""} />
+                  <link.icon size={18} aria-hidden="true" />
                   {link.label}
                 </Link>
               );
             })}
+            <div className="mt-3 border-t border-white/10 pt-3">
+              {authenticated ? (
+                <Link href="/logout" onClick={() => setMobileOpen(false)} className="flex min-h-11 items-center gap-3 rounded-md px-3 text-sm font-semibold text-neutral-300 hover:bg-white/5">
+                  <LogOut size={18} aria-hidden="true" /> Log out
+                </Link>
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  <Link href="/login" onClick={() => setMobileOpen(false)} className="button-secondary">Log in</Link>
+                  <Link href="/register" onClick={() => setMobileOpen(false)} className="button-primary">Create account</Link>
+                </div>
+              )}
+            </div>
           </nav>
-
-          <div className="flex items-center gap-3">
-            {loggedIn && analysisUnits !== null && (
-              <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 rounded-full border border-slate-700/60 cursor-help group relative">
-                <CircleGauge size={13} className="text-blue-400" aria-hidden="true" />
-                <span className="text-xs font-bold text-slate-200">
-                  {tier === "premium" ? "∞" : analysisUnits}
-                </span>
-                <div className="absolute top-full mt-2 right-0 w-48 p-2 bg-slate-900 text-white text-[10px] rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                  {tier === "premium" ? "Premium active: no analysis-unit deductions" : `${analysisUnits} analysis units remaining`}
-                </div>
-              </div>
-            )}
-            
-            {loggedIn ? (
-              <Link className="hidden md:inline-flex px-4 py-1.5 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 transition shadow-sm" href="/logout">Logout</Link>
-            ) : (
-              <div className="hidden md:flex items-center gap-2">
-                <Link className="px-4 py-1.5 rounded-xl text-slate-300 text-sm font-semibold hover:text-white transition" href="/login">Login</Link>
-                <Link className="px-4 py-1.5 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary/90 transition shadow-sm" href="/register">Sign Up</Link>
-              </div>
-            )}
-
-            {/* Mobile Menu Toggle */}
-            <button 
-              className="md:hidden p-2 text-slate-300 hover:text-white transition-colors rounded-md hover:bg-slate-800"
-              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            >
-              {isMobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
-            </button>
-          </div>
         </div>
-      </header>
-
-      {/* Mobile Drawer Menu */}
-      <AnimatePresence>
-        {isMobileMenuOpen && (
-          <>
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-slate-900/20 backdrop-blur-sm z-40 md:hidden"
-              onClick={() => setIsMobileMenuOpen(false)}
-            />
-            <motion.div
-              initial={{ x: "100%" }}
-              animate={{ x: 0 }}
-              exit={{ x: "100%" }}
-              transition={{ type: "spring", bounce: 0, duration: 0.4 }}
-              className="fixed top-14 right-0 bottom-0 w-64 bg-slate-950 border-l border-slate-700 z-40 md:hidden shadow-2xl flex flex-col"
-            >
-              <div className="p-4 flex-1 overflow-y-auto">
-                <div className="flex flex-col gap-1">
-                  {links.map((link) => {
-                    const active = pathname === link.href;
-                    return (
-                      <Link
-                        key={link.href}
-                        href={link.href}
-                        className={`flex items-center gap-3 px-4 py-3 rounded-xl font-semibold transition-colors ${
-                          active 
-                            ? "bg-slate-900/50 text-white" 
-                            : "text-slate-400 hover:bg-slate-900/50 hover:text-white"
-                        }`}
-                      >
-                        <link.icon size={18} className={active ? "text-primary" : ""} />
-                        {link.label}
-                      </Link>
-                    );
-                  })}
-                </div>
-              </div>
-              
-              <div className="p-4 border-t border-slate-800">
-                {loggedIn && analysisUnits !== null && (
-                  <div className="flex items-center justify-between px-4 py-3 bg-slate-900/50 rounded-xl mb-4">
-                    <span className="text-sm font-semibold text-slate-300 flex items-center gap-2">
-                      <CircleGauge size={15} className="text-blue-400" aria-hidden="true" /> Analysis units
-                    </span>
-                    <span className="font-bold text-white">{tier === "premium" ? "∞" : analysisUnits}</span>
-                  </div>
-                )}
-                {loggedIn ? (
-                  <Link className="flex w-full justify-center px-4 py-2.5 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 transition" href="/logout">Logout</Link>
-                ) : (
-                  <div className="flex flex-col gap-2">
-                    <Link className="flex w-full justify-center px-4 py-2.5 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 transition" href="/login">Login</Link>
-                    <Link className="flex w-full justify-center px-4 py-2.5 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary/90 transition" href="/register">Sign Up</Link>
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
-    </>
+      ) : null}
+    </header>
   );
 }

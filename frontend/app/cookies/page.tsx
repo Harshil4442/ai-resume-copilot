@@ -61,6 +61,14 @@ const storageRows = [
     lifetime: "Up to 2 years",
   },
   {
+    name: "ph_<project-key>_posthog",
+    owner: "PostHog",
+    type: "First-party cookie and local storage",
+    purpose: "Maintains consented product-analytics session and event attribution state.",
+    category: "Optional analytics",
+    lifetime: "Up to 12 months or earlier withdrawal",
+  },
+  {
     name: "_ga_<container-id>",
     owner: "Google Analytics",
     type: "First-party analytics cookie",
@@ -127,17 +135,17 @@ export default function CookiePolicy() {
           <p>
             Authentication, security, and consent-preference storage is necessary to sign in, protect requests, and
             remember your choice. Blocking or deleting it can sign you out or prevent account features from working.
-            The current application also uses an access token in browser local storage as an authentication fallback;
-            do not use HireWiz on a shared or untrusted browser.
+            Backend access tokens are retained in the server-managed encrypted session and are not exposed to browser
+            JavaScript or stored in browser local storage.
           </p>
         </section>
 
         <section>
           <h2 className="text-2xl font-bold text-white mb-4">4. Optional analytics</h2>
           <p>
-            Google Analytics loads only when a measurement ID is configured and you select “Accept analytics.” It is
-            not loaded merely because you visit the site. Analytics helps measure aggregate page and feature use; it is
-            not used by HireWiz for targeted advertising. Choosing “Essential only” leaves analytics disabled.
+            Google Analytics and PostHog load only when their keys are configured and you select “Accept analytics.”
+            They are not loaded merely because you visit the site. Analytics measures aggregate acquisition and product
+            use and is not used by HireWiz for targeted advertising. Choosing “Essential only” leaves analytics disabled.
           </p>
         </section>
 
@@ -155,7 +163,7 @@ export default function CookiePolicy() {
           <h2 className="text-2xl font-bold text-white mb-4">6. Change or withdraw your choice</h2>
           <p className="mb-4">
             You can reopen Cookie Preferences at any time. Withdrawing analytics consent prevents future analytics
-            loading and removes accessible HireWiz-domain Google Analytics cookies. You can also clear site data in
+            loading and removes accessible HireWiz-domain Google Analytics and PostHog storage. You can also clear site data in
             your browser; provider-domain cookies may need to be managed through that provider or your browser settings.
           </p>
           <CookiePreferencesButton />

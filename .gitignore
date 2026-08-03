@@ -19,6 +19,11 @@ __pycache__/
 .venv/
 venv/
 .pytest_cache/
-.db
+*.db
 app.db
-
+.mypy_cache/
+.ruff_cache/
+*.tsbuildinfo
+frontend/playwright-report/
+frontend/test-results/
+coverage/

@@ -1,64 +1,40 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { AlertCircle, BriefcaseBusiness, CheckCircle2, Crown, Download, Link as LinkIcon, Save, ShieldOff, Trash2, User } from "lucide-react";
 import { signOut } from "next-auth/react";
-import { apiGet, apiPutJson, apiPostJson } from "../../lib/api";
-import type { UserProfile } from "../../lib/types";
-import PageHeader from "../../components/ui/PageHeader";
-import GlassCard from "../../components/ui/GlassCard";
-import AnimatedButton from "../../components/ui/AnimatedButton";
-import FadeIn from "../../components/ui/FadeIn";
-import StaggerContainer, { StaggerItem } from "../../components/ui/StaggerContainer";
-import { User, Link as LinkIcon, Briefcase, FileText, CheckCircle2, AlertTriangle, AlertCircle, Save, Crown, Trash2, ShieldOff } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 
-type ProfileForm = Omit<UserProfile, "email" | "profile_completeness" | "missing_fields" | "skills" | "tier" | "ai_credits"> & {
-  skills_text: string;
-};
+import CareerMemoryPanel from "../../components/CareerMemoryPanel";
+import { Button } from "../../components/ui/Button";
+import { LoadingBlock } from "../../components/ui/LoadingBlock";
+import { resetAnalyticsIdentity, trackEvent } from "../../lib/analytics";
+import { apiDownload, apiGet, apiPostJson, apiPutJson } from "../../lib/api";
+import type { UserProfile } from "../../lib/types";
+
+type ProfileForm = Omit<UserProfile, "email" | "profile_completeness" | "missing_fields" | "skills" | "tier" | "ai_credits"> & { skills_text: string };
 
 const emptyForm: ProfileForm = {
-  full_name: "",
-  headline: "",
-  phone: "",
-  location: "",
-  linkedin: "",
-  github: "",
-  portfolio: "",
-  target_role: "",
-  preferred_job_type: "",
-  preferred_location: "",
-  years_experience: 0,
-  bio: "",
-  skills_text: "",
-  education: "",
-  certifications: "",
+  full_name: "", headline: "", phone: "", location: "", linkedin: "", github: "", portfolio: "",
+  target_role: "", preferred_job_type: "", preferred_location: "", years_experience: 0, bio: "",
+  skills_text: "", education: "", certifications: "",
 };
 
 function toForm(profile: UserProfile): ProfileForm {
   return {
-    full_name: profile.full_name || "",
-    headline: profile.headline || "",
-    phone: profile.phone || "",
-    location: profile.location || "",
-    linkedin: profile.linkedin || "",
-    github: profile.github || "",
-    portfolio: profile.portfolio || "",
-    target_role: profile.target_role || "",
-    preferred_job_type: profile.preferred_job_type || "",
-    preferred_location: profile.preferred_location || "",
-    years_experience: profile.years_experience ?? 0,
-    bio: profile.bio || "",
-    skills_text: (profile.skills || []).join(", "),
-    education: profile.education || "",
+    full_name: profile.full_name || "", headline: profile.headline || "", phone: profile.phone || "",
+    location: profile.location || "", linkedin: profile.linkedin || "", github: profile.github || "",
+    portfolio: profile.portfolio || "", target_role: profile.target_role || "",
+    preferred_job_type: profile.preferred_job_type || "", preferred_location: profile.preferred_location || "",
+    years_experience: profile.years_experience ?? 0, bio: profile.bio || "",
+    skills_text: (profile.skills || []).join(", "), education: profile.education || "",
     certifications: profile.certifications || "",
   };
 }
 
 function splitSkills(text: string) {
-  return text
-    .split(/[,|\n]/)
-    .map((s) => s.trim())
-    .filter(Boolean);
+  return text.split(/[,|\n]/).map((skill) => skill.trim()).filter(Boolean);
 }
 
 export default function ProfilePage() {
@@ -68,361 +44,148 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [ok, setOk] = useState(false);
-  const [acctBusy, setAcctBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [accountBusy, setAccountBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-
-  async function endPremium() {
-    if (!confirm("End your current Premium access now? This pass does not renew automatically, and ending access early does not create a refund.")) return;
-    setAcctBusy(true);
-    setError(null);
-    try {
-      await apiPostJson("/billing/end-premium", {});
-      const refreshed = await apiGet<UserProfile>("/auth/profile");
-      setProfile(refreshed);
-      window.dispatchEvent(new Event("refresh_analysis_units"));
-    } catch (e: any) {
-      setError(e?.message || "Could not cancel Premium.");
-    } finally {
-      setAcctBusy(false);
-    }
-  }
-
-  async function deleteAccount() {
-    setAcctBusy(true);
-    setError(null);
-    try {
-      await apiPostJson("/auth/delete-account", {});
-      await signOut({ redirect: false });
-      router.push("/register");
-    } catch (e: any) {
-      setError(e?.message || "Could not delete account.");
-      setAcctBusy(false);
-    }
-  }
+  const [confirmEndPremium, setConfirmEndPremium] = useState(false);
 
   useEffect(() => {
     apiGet<UserProfile>("/auth/profile")
-      .then((data) => {
-        setProfile(data);
-        setForm(toForm(data));
-      })
-      .catch((e: any) => setError(e?.message || "Failed to load profile"))
+      .then((response) => { setProfile(response); setForm(toForm(response)); })
+      .catch((loadError) => setError(loadError instanceof Error ? loadError.message : "Failed to load profile"))
       .finally(() => setLoading(false));
   }, []);
 
   const skills = useMemo(() => splitSkills(form.skills_text), [form.skills_text]);
-
   function update<K extends keyof ProfileForm>(key: K, value: ProfileForm[K]) {
-    setForm((prev) => ({ ...prev, [key]: value }));
+    setForm((current) => ({ ...current, [key]: value }));
   }
 
-  async function save(e: React.FormEvent) {
-    e.preventDefault();
+  async function save(event: React.FormEvent) {
+    event.preventDefault();
     setSaving(true);
     setError(null);
-    setOk(false);
+    setSaved(false);
     try {
-      const payload = {
-        ...form,
-        skills,
-        years_experience: Number(form.years_experience || 0),
-      };
-      delete (payload as any).skills_text;
-      const saved = await apiPutJson<UserProfile>("/auth/profile", payload);
-      setProfile(saved);
-      setForm(toForm(saved));
-      setOk(true);
-      setTimeout(() => setOk(false), 3000);
-    } catch (e: any) {
-      setError(e?.message || "Failed to save profile");
+      const { skills_text, ...values } = form;
+      const response = await apiPutJson<UserProfile>("/auth/profile", { ...values, skills: splitSkills(skills_text), years_experience: Number(values.years_experience || 0) });
+      setProfile(response);
+      setForm(toForm(response));
+      setSaved(true);
+      trackEvent("profile_saved", { completeness: response.profile_completeness });
+      window.setTimeout(() => setSaved(false), 3000);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Failed to save profile");
     } finally {
       setSaving(false);
     }
   }
 
-  if (loading) {
-    return (
-      <main className="w-full max-w-4xl mx-auto px-4 py-16 flex justify-center">
-        <div className="w-12 h-12 rounded-full border-4 border-slate-700 border-t-primary animate-spin"></div>
-      </main>
-    );
+  async function endPremium() {
+    setAccountBusy(true);
+    setError(null);
+    try {
+      await apiPostJson("/billing/end-premium", {});
+      const response = await apiGet<UserProfile>("/auth/profile");
+      setProfile(response);
+      setConfirmEndPremium(false);
+      trackEvent("premium_access_ended");
+      window.dispatchEvent(new Event("refresh_analysis_units"));
+    } catch (accountError) {
+      setError(accountError instanceof Error ? accountError.message : "Could not end Premium access.");
+    } finally {
+      setAccountBusy(false);
+    }
   }
 
+  async function deleteAccount() {
+    setAccountBusy(true);
+    setError(null);
+    try {
+      await apiPostJson("/auth/delete-account", {});
+      trackEvent("account_deleted");
+      resetAnalyticsIdentity();
+      await signOut({ redirect: false });
+      router.push("/register");
+    } catch (accountError) {
+      setError(accountError instanceof Error ? accountError.message : "Could not delete account.");
+      setAccountBusy(false);
+    }
+  }
+
+  async function exportAccount() {
+    setAccountBusy(true);
+    setError(null);
+    try {
+      await apiDownload("/auth/export-account", "hirewiz-account-export.json");
+      trackEvent("account_exported");
+    } catch (accountError) {
+      setError(accountError instanceof Error ? accountError.message : "Could not export account data.");
+    } finally {
+      setAccountBusy(false);
+    }
+  }
+
+  if (loading) return <main className="app-page"><div className="page-container"><LoadingBlock rows={7} /></div></main>;
+
   return (
-    <main className="w-full max-w-[64rem] mx-auto px-4 sm:px-6 md:px-8 py-8 space-y-10">
-      <PageHeader 
-        badge="Identity Layer"
-        title="Give the AI better career context."
-        subtitle="Add optional career details so the app has better context for your resume, matches, and dashboard."
-      />
+    <main className="app-page">
+      <div className="page-container space-y-10">
+        <header className="grid gap-6 border-b border-white/10 pb-7 lg:grid-cols-[1fr_auto] lg:items-end">
+          <div><p className="eyebrow">Profile and preferences</p><h1 className="mt-2 text-3xl font-black text-neutral-100 sm:text-4xl">Your career context</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-500">Only the information visible here and in Career Memory is reusable across your workspace.</p></div>
+          {profile ? <div className="min-w-56"><div className="flex items-end justify-between"><span className="data-label">Profile completeness</span><span className="text-2xl font-black text-primary">{profile.profile_completeness}%</span></div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/8"><div className="h-full bg-primary" style={{ width: `${profile.profile_completeness}%` }} /></div><p className="mt-2 truncate text-xs text-neutral-600">{profile.email}</p></div> : null}
+        </header>
 
-      {profile && (
-        <FadeIn>
-          <GlassCard className="p-6 md:p-8 flex flex-col md:flex-row justify-between gap-6 bg-gradient-to-r from-slate-900 to-blue-950 border-slate-800 text-white" hoverEffect={false}>
-            <div className="flex items-center gap-5">
-              <div className="w-16 h-16 rounded-2xl bg-slate-950/10 border border-white/20 flex items-center justify-center backdrop-blur-sm text-2xl font-black shadow-inner">
-                {profile.email.charAt(0).toUpperCase()}
-              </div>
-              <div>
-                <div className="text-[10px] font-bold text-blue-300 uppercase tracking-widest mb-1">Signed In</div>
-                <div className="text-lg font-black tracking-tight">{profile.email}</div>
-              </div>
-            </div>
+        {error ? <div className="flex gap-3 border border-coral/30 bg-coral/5 p-4 text-sm text-[#ffab9e]" role="alert"><AlertCircle size={18} className="shrink-0" /> {error}</div> : null}
 
-            <div className="flex items-center gap-6">
-              <div className="hidden md:block w-px h-12 bg-slate-950/10"></div>
-              <div>
-                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Completeness</div>
-                <div className="flex items-center gap-3">
-                  <div className="text-3xl font-black">{profile.profile_completeness}%</div>
-                  <div className="w-24 h-2 rounded-full bg-slate-950/10 overflow-hidden">
-                    <div 
-                      className="h-full bg-blue-900/300 rounded-full" 
-                      style={{ width: `${profile.profile_completeness}%` }}
-                    />
-                  </div>
-                </div>
-              </div>
+        <form onSubmit={save} className="space-y-6">
+          <section className="surface p-5 sm:p-7">
+            <div className="flex items-center gap-3"><span className="icon-tile"><User size={18} /></span><h2 className="text-lg font-black">Identity</h2></div>
+            <div className="mt-6 grid gap-5 md:grid-cols-2">
+              <label className="grid gap-2 text-sm font-semibold text-neutral-300">Full name<input className="field-control" value={form.full_name || ""} onChange={(event) => update("full_name", event.target.value)} /></label>
+              <label className="grid gap-2 text-sm font-semibold text-neutral-300">Professional headline<input className="field-control" value={form.headline || ""} onChange={(event) => update("headline", event.target.value)} /></label>
+              <label className="grid gap-2 text-sm font-semibold text-neutral-300">Phone<input className="field-control" value={form.phone || ""} onChange={(event) => update("phone", event.target.value)} /></label>
+              <label className="grid gap-2 text-sm font-semibold text-neutral-300">Location<input className="field-control" value={form.location || ""} onChange={(event) => update("location", event.target.value)} /></label>
             </div>
-          </GlassCard>
-          
-          {profile.missing_fields.length > 0 && (
-            <div className="mt-4 px-2">
-              <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1.5"><AlertTriangle size={12} className="text-amber-500" /> Missing Context Fields</div>
-              <div className="flex flex-wrap gap-2">
-                {profile.missing_fields.slice(0, 8).map((field) => (
-                  <span key={field} className="px-2.5 py-1 rounded-md bg-amber-900/30 border border-amber-100 text-[10px] font-bold text-amber-400 shadow-sm uppercase tracking-wider">
-                    {field.replace('_', ' ')}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-        </FadeIn>
-      )}
+          </section>
 
-      {error && (
-        <FadeIn>
-          <div className="flex items-center gap-2 text-sm text-rose-400 bg-rose-900/30 border border-rose-800 rounded-xl px-4 py-3 shadow-sm">
-            <AlertCircle size={16} /> {error}
+          <section className="surface p-5 sm:p-7">
+            <div className="flex items-center gap-3"><span className="icon-tile"><LinkIcon size={18} /></span><h2 className="text-lg font-black">Professional links</h2></div>
+            <div className="mt-6 grid gap-5 md:grid-cols-3">
+              <label className="grid gap-2 text-sm font-semibold text-neutral-300">LinkedIn<input className="field-control" inputMode="url" value={form.linkedin || ""} onChange={(event) => update("linkedin", event.target.value)} /></label>
+              <label className="grid gap-2 text-sm font-semibold text-neutral-300">GitHub<input className="field-control" inputMode="url" value={form.github || ""} onChange={(event) => update("github", event.target.value)} /></label>
+              <label className="grid gap-2 text-sm font-semibold text-neutral-300">Portfolio<input className="field-control" inputMode="url" value={form.portfolio || ""} onChange={(event) => update("portfolio", event.target.value)} /></label>
+            </div>
+          </section>
+
+          <section className="surface p-5 sm:p-7">
+            <div className="flex items-center gap-3"><span className="icon-tile"><BriefcaseBusiness size={18} /></span><h2 className="text-lg font-black">Career direction</h2></div>
+            <div className="mt-6 grid gap-5 md:grid-cols-2">
+              <label className="grid gap-2 text-sm font-semibold text-neutral-300">Target role<input className="field-control" value={form.target_role || ""} onChange={(event) => update("target_role", event.target.value)} /></label>
+              <label className="grid gap-2 text-sm font-semibold text-neutral-300">Preferred work mode<input className="field-control" value={form.preferred_job_type || ""} onChange={(event) => update("preferred_job_type", event.target.value)} /></label>
+              <label className="grid gap-2 text-sm font-semibold text-neutral-300">Preferred location<input className="field-control" value={form.preferred_location || ""} onChange={(event) => update("preferred_location", event.target.value)} /></label>
+              <label className="grid gap-2 text-sm font-semibold text-neutral-300">Years of experience<input className="field-control" type="number" min="0" step="0.5" value={form.years_experience ?? 0} onChange={(event) => update("years_experience", Number(event.target.value))} /></label>
+              <label className="grid gap-2 text-sm font-semibold text-neutral-300 md:col-span-2">Career summary<textarea className="field-control min-h-28 resize-y" value={form.bio || ""} onChange={(event) => update("bio", event.target.value)} /></label>
+              <label className="grid gap-2 text-sm font-semibold text-neutral-300 md:col-span-2">Skills<textarea className="field-control min-h-24 resize-y" value={form.skills_text} onChange={(event) => update("skills_text", event.target.value)} placeholder="Python, PostgreSQL, product strategy" />{skills.length ? <span className="text-xs text-neutral-600">{skills.length} normalized skills</span> : null}</label>
+              <label className="grid gap-2 text-sm font-semibold text-neutral-300">Education<textarea className="field-control min-h-24 resize-y" value={form.education || ""} onChange={(event) => update("education", event.target.value)} /></label>
+              <label className="grid gap-2 text-sm font-semibold text-neutral-300">Certifications<textarea className="field-control min-h-24 resize-y" value={form.certifications || ""} onChange={(event) => update("certifications", event.target.value)} /></label>
+            </div>
+          </section>
+
+          <div className="sticky bottom-4 z-20 flex justify-end"><div className="flex w-full items-center justify-between gap-4 rounded-lg border border-white/15 bg-[#111412]/95 p-3 shadow-xl backdrop-blur sm:w-auto"><span className={`text-sm font-bold ${saved ? "text-primary" : "text-neutral-600"}`}>{saved ? <span className="flex items-center gap-2"><CheckCircle2 size={16} /> Saved</span> : "Unsaved edits stay on this page"}</span><Button type="submit" disabled={saving}><Save size={16} /> {saving ? "Saving..." : "Save profile"}</Button></div></div>
+        </form>
+
+        <CareerMemoryPanel />
+
+        <section className="border-t border-white/10 pt-8">
+          <p className="eyebrow">Account controls</p>
+          <div className="mt-5 divide-y divide-white/10 border-y border-white/10">
+            <div className="grid gap-4 py-5 sm:grid-cols-[1fr_auto] sm:items-center"><div><h2 className="font-black text-neutral-200">Export account data</h2><p className="mt-1 text-sm text-neutral-500">Download your profile, career records, usage history, and payment references.</p></div><Button variant="secondary" onClick={exportAccount} disabled={accountBusy}><Download size={16} /> Export JSON</Button></div>
+            <div className="grid gap-4 py-5 sm:grid-cols-[1fr_auto] sm:items-center"><div><h2 className="flex items-center gap-2 font-black text-neutral-200"><Crown size={17} className="text-accent" /> Premium access</h2><p className="mt-1 text-sm text-neutral-500">{profile?.tier === "premium" ? (profile.premium_until ? `Active until ${new Date(profile.premium_until).toLocaleDateString("en-IN")}. No automatic renewal.` : "Premium access is active.") : "Free access is active."}</p></div>{profile?.tier === "premium" ? (!confirmEndPremium ? <Button variant="secondary" onClick={() => setConfirmEndPremium(true)}><ShieldOff size={16} /> End access</Button> : <div className="flex gap-2"><Button variant="danger" onClick={endPremium} disabled={accountBusy}>Confirm</Button><Button variant="ghost" onClick={() => setConfirmEndPremium(false)}>Cancel</Button></div>) : <Button asChild><Link href="/billing">View Premium</Link></Button>}</div>
+            <div className="grid gap-4 py-5 sm:grid-cols-[1fr_auto] sm:items-center"><div><h2 className="font-black text-[#ffab9e]">Delete account</h2><p className="mt-1 max-w-2xl text-sm text-neutral-500">Delete career data and unlink retained accounting records. This cannot be undone.</p></div>{!confirmDelete ? <Button variant="danger" onClick={() => setConfirmDelete(true)}><Trash2 size={16} /> Delete account</Button> : <div className="flex flex-wrap gap-2"><Button variant="danger" onClick={deleteAccount} disabled={accountBusy}>{accountBusy ? "Deleting..." : "Permanently delete"}</Button><Button variant="ghost" onClick={() => setConfirmDelete(false)} disabled={accountBusy}>Cancel</Button></div>}</div>
           </div>
-        </FadeIn>
-      )}
-
-      <form onSubmit={save} className="space-y-6">
-        <StaggerContainer className="space-y-6">
-          <StaggerItem>
-            <GlassCard className="p-6 md:p-8" hoverEffect={false}>
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-10 h-10 rounded-xl bg-blue-900/30 text-blue-600 flex items-center justify-center"><User size={20} /></div>
-                <h2 className="text-xl font-black text-white tracking-tighter">Basic Info</h2>
-              </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-200 mb-1.5 px-1">Full Name</label>
-                  <input className="w-full rounded-xl border border-slate-700 bg-slate-900/50 px-4 py-3 text-sm font-medium outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10" placeholder="John Doe" value={form.full_name || ""} onChange={(e) => update("full_name", e.target.value)} />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-200 mb-1.5 px-1">Professional Headline</label>
-                  <input className="w-full rounded-xl border border-slate-700 bg-slate-900/50 px-4 py-3 text-sm font-medium outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10" placeholder="Senior Software Engineer at ACME" value={form.headline || ""} onChange={(e) => update("headline", e.target.value)} />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-200 mb-1.5 px-1">Phone</label>
-                  <input className="w-full rounded-xl border border-slate-700 bg-slate-900/50 px-4 py-3 text-sm font-medium outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10" placeholder="+1 555-0000" value={form.phone || ""} onChange={(e) => update("phone", e.target.value)} />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-200 mb-1.5 px-1">Location</label>
-                  <input className="w-full rounded-xl border border-slate-700 bg-slate-900/50 px-4 py-3 text-sm font-medium outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10" placeholder="San Francisco, CA" value={form.location || ""} onChange={(e) => update("location", e.target.value)} />
-                </div>
-              </div>
-            </GlassCard>
-          </StaggerItem>
-
-          <StaggerItem>
-            <GlassCard className="p-6 md:p-8" hoverEffect={false}>
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center"><LinkIcon size={20} /></div>
-                <h2 className="text-xl font-black text-white tracking-tighter">Links</h2>
-              </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-200 mb-1.5 px-1">LinkedIn</label>
-                  <input className="w-full rounded-xl border border-slate-700 bg-slate-900/50 px-4 py-3 text-sm font-medium outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10" placeholder="https://linkedin.com/in/..." value={form.linkedin || ""} onChange={(e) => update("linkedin", e.target.value)} />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-200 mb-1.5 px-1">GitHub</label>
-                  <input className="w-full rounded-xl border border-slate-700 bg-slate-900/50 px-4 py-3 text-sm font-medium outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10" placeholder="https://github.com/..." value={form.github || ""} onChange={(e) => update("github", e.target.value)} />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-200 mb-1.5 px-1">Portfolio</label>
-                  <input className="w-full rounded-xl border border-slate-700 bg-slate-900/50 px-4 py-3 text-sm font-medium outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10" placeholder="https://yourwebsite.com" value={form.portfolio || ""} onChange={(e) => update("portfolio", e.target.value)} />
-                </div>
-              </div>
-            </GlassCard>
-          </StaggerItem>
-
-          <StaggerItem>
-            <GlassCard className="p-6 md:p-8" hoverEffect={false}>
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-10 h-10 rounded-xl bg-emerald-900/30 text-emerald-400 flex items-center justify-center"><Briefcase size={20} /></div>
-                <h2 className="text-xl font-black text-white tracking-tighter">Career Preferences</h2>
-              </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-200 mb-1.5 px-1">Target Role</label>
-                  <input className="w-full rounded-xl border border-slate-700 bg-slate-900/50 px-4 py-3 text-sm font-medium outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10" placeholder="Backend Engineer" value={form.target_role || ""} onChange={(e) => update("target_role", e.target.value)} />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-200 mb-1.5 px-1">Preferred Job Type</label>
-                  <input className="w-full rounded-xl border border-slate-700 bg-slate-900/50 px-4 py-3 text-sm font-medium outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10" placeholder="Remote, Hybrid" value={form.preferred_job_type || ""} onChange={(e) => update("preferred_job_type", e.target.value)} />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-200 mb-1.5 px-1">Preferred Location</label>
-                  <input className="w-full rounded-xl border border-slate-700 bg-slate-900/50 px-4 py-3 text-sm font-medium outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10" placeholder="US, UK" value={form.preferred_location || ""} onChange={(e) => update("preferred_location", e.target.value)} />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-200 mb-1.5 px-1">Years of Experience</label>
-                  <input className="w-full rounded-xl border border-slate-700 bg-slate-900/50 px-4 py-3 text-sm font-medium outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10" placeholder="0" type="number" min="0" step="0.5" value={form.years_experience ?? 0} onChange={(e) => update("years_experience", Number(e.target.value))} />
-                </div>
-              </div>
-            </GlassCard>
-          </StaggerItem>
-
-          <StaggerItem>
-            <GlassCard className="p-6 md:p-8" hoverEffect={false}>
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-10 h-10 rounded-xl bg-orange-50 text-orange-600 flex items-center justify-center"><FileText size={20} /></div>
-                <h2 className="text-xl font-black text-white tracking-tighter">Details & Education</h2>
-              </div>
-              
-              <div className="space-y-5">
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-200 mb-1.5 px-1">Short Bio</label>
-                  <textarea className="w-full rounded-xl border border-slate-700 bg-slate-900/50 px-4 py-3 text-sm font-medium outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10 min-h-[100px] resize-y" placeholder="Brief career summary..." value={form.bio || ""} onChange={(e) => update("bio", e.target.value)} />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-200 mb-1.5 px-1">Manual Skills</label>
-                  <textarea className="w-full rounded-xl border border-slate-700 bg-slate-900/50 px-4 py-3 text-sm font-medium outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10 min-h-[80px] resize-y" placeholder="React, Python, AWS (comma separated)" value={form.skills_text} onChange={(e) => update("skills_text", e.target.value)} />
-                  
-                  {skills.length > 0 && (
-                    <div className="flex flex-wrap gap-2 mt-3 p-3 bg-slate-900/50 rounded-xl border border-slate-800">
-                      {skills.map((skill) => (
-                        <span key={skill} className="px-2.5 py-1 rounded-md bg-slate-950 border border-slate-700 text-[10px] font-bold text-slate-200 shadow-sm uppercase tracking-wider">
-                          {skill}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  <div>
-                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-200 mb-1.5 px-1">Education</label>
-                    <textarea className="w-full rounded-xl border border-slate-700 bg-slate-900/50 px-4 py-3 text-sm font-medium outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10 min-h-[80px] resize-y" placeholder="BSc Computer Science..." value={form.education || ""} onChange={(e) => update("education", e.target.value)} />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-200 mb-1.5 px-1">Certifications</label>
-                    <textarea className="w-full rounded-xl border border-slate-700 bg-slate-900/50 px-4 py-3 text-sm font-medium outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10 min-h-[80px] resize-y" placeholder="AWS Certified Solutions Architect..." value={form.certifications || ""} onChange={(e) => update("certifications", e.target.value)} />
-                  </div>
-                </div>
-              </div>
-            </GlassCard>
-          </StaggerItem>
-        </StaggerContainer>
-
-        <div className="sticky bottom-6 z-20 flex justify-end">
-          <div className="flex items-center gap-4 bg-slate-950/80 backdrop-blur-xl p-4 rounded-2xl shadow-xl border border-slate-700 w-full md:w-auto">
-            {ok && (
-              <FadeIn className="hidden md:flex items-center gap-2 text-emerald-400 text-sm font-bold bg-emerald-900/30 px-4 py-2 rounded-xl">
-                <CheckCircle2 size={16} /> Saved
-              </FadeIn>
-            )}
-            <AnimatedButton type="submit" disabled={saving} className="w-full md:w-48 py-3" showArrow={false}>
-              {saving ? "Saving..." : <><Save size={18} className="mr-2 inline" /> Save Profile</>}
-            </AnimatedButton>
-          </div>
-        </div>
-      </form>
-
-      {/* Account and paid access */}
-      <StaggerContainer className="space-y-6">
-        <StaggerItem>
-          <GlassCard className="p-6 md:p-8" hoverEffect={false}>
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center"><Crown size={20} /></div>
-              <h2 className="text-xl font-black text-white tracking-tighter">Premium access</h2>
-            </div>
-            {profile?.tier === "premium" ? (
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                  <div className="text-sm font-bold text-white">Premium is active</div>
-                  <div className="text-xs text-slate-400 mt-1">
-                    {profile.premium_until
-                      ? `Access valid until ${new Date(profile.premium_until).toLocaleDateString()}. Premium does not auto-charge.`
-                      : "Unlimited AI operations."}
-                  </div>
-                </div>
-                <button
-                  onClick={endPremium}
-                  disabled={acctBusy}
-                  className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-slate-800 border border-slate-600 text-slate-200 text-sm font-semibold hover:bg-slate-700 transition disabled:opacity-50"
-                >
-                  <ShieldOff size={16} /> End current access
-                </button>
-              </div>
-            ) : (
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="text-sm text-slate-400">
-                  You are on the free plan. Upgrade for unlimited AI operations.
-                </div>
-                <a href="/billing" className="inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary/90 transition">
-                  View plans
-                </a>
-              </div>
-            )}
-          </GlassCard>
-        </StaggerItem>
-
-        <StaggerItem>
-          <GlassCard className="p-6 md:p-8 border-rose-900/60" hoverEffect={false}>
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-xl bg-rose-500/10 text-rose-400 flex items-center justify-center"><Trash2 size={20} /></div>
-              <h2 className="text-xl font-black text-white tracking-tighter">Delete Account</h2>
-            </div>
-            <p className="text-sm text-slate-400 mb-5 max-w-2xl">
-              Permanently delete your HireWiz profile, resumes, and match history. Limited payment records may be retained or pseudonymised where required for accounting, fraud prevention, disputes, or legal compliance. This cannot be undone.
-            </p>
-            {!confirmDelete ? (
-              <button
-                onClick={() => setConfirmDelete(true)}
-                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-rose-950/60 border border-rose-800 text-rose-300 text-sm font-semibold hover:bg-rose-900/60 transition"
-              >
-                <Trash2 size={16} /> Delete my account
-              </button>
-            ) : (
-              <div className="flex flex-col sm:flex-row gap-3">
-                <button
-                  onClick={deleteAccount}
-                  disabled={acctBusy}
-                  className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-rose-600 text-white text-sm font-bold hover:bg-rose-500 transition disabled:opacity-50"
-                >
-                  {acctBusy ? "Deleting..." : "Yes, permanently delete everything"}
-                </button>
-                <button
-                  onClick={() => setConfirmDelete(false)}
-                  disabled={acctBusy}
-                  className="inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-slate-800 border border-slate-600 text-slate-200 text-sm font-semibold hover:bg-slate-700 transition"
-                >
-                  Cancel
-                </button>
-              </div>
-            )}
-          </GlassCard>
-        </StaggerItem>
-      </StaggerContainer>
+        </section>
+      </div>
     </main>
   );
 }

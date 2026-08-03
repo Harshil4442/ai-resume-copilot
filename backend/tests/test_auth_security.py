@@ -52,6 +52,12 @@ def test_password_registration_grants_free_analysis_units():
         )
         assert response.status_code == 200, response.text
         assert response.json()["ai_credits"] == 50
+        login = client.post(
+            "/api/auth/login",
+            json={"email": "new.user@example.com", "password": "strong-password-123"},
+        )
+        assert login.status_code == 200, login.text
+        assert login.json()["user_id"] == response.json()["id"]
         with factory() as db:
             user = db.query(User).one()
             assert user.ai_credits == 50
@@ -87,6 +93,7 @@ def test_google_login_derives_identity_from_verified_token(monkeypatch):
         )
         assert response.status_code == 200, response.text
         assert response.json()["access_token"]
+        assert isinstance(response.json()["user_id"], int)
         with factory() as db:
             user = db.query(User).one()
             assert user.email == "verified.user@example.com"

@@ -1,4 +1,4 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "/api";
+const API_BASE = "/api/backend";
 const POLICY_VERSION = "2026-07-11";
 
 export async function prepareGoogleRegistrationConsent() {

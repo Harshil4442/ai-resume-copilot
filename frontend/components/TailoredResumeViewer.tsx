@@ -1,29 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-
 export default function TailoredResumeViewer({ markdownContent, pdfBase64 }: { markdownContent: string, pdfBase64?: string | null }) {
-  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (pdfBase64) {
-      try {
-        const byteCharacters = atob(pdfBase64);
-        const byteNumbers = new Array(byteCharacters.length);
-        for (let i = 0; i < byteCharacters.length; i++) {
-          byteNumbers[i] = byteCharacters.charCodeAt(i);
-        }
-        const byteArray = new Uint8Array(byteNumbers);
-        const blob = new Blob([byteArray], { type: 'application/pdf' });
-        const url = URL.createObjectURL(blob);
-        setPdfUrl(url);
-        
-        return () => URL.revokeObjectURL(url);
-      } catch (e) {
-        console.error("Failed to parse PDF", e);
-      }
-    }
-  }, [pdfBase64]);
+  const pdfUrl = pdfBase64 ? `data:application/pdf;base64,${pdfBase64}` : null;
 
   const handleDownloadPdf = () => {
     if (pdfUrl) {

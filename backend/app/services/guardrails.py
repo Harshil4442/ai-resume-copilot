@@ -1,50 +1,96 @@
+from __future__ import annotations
+
+from collections.abc import Iterator
+from contextlib import contextmanager
+from typing import Any
+
 from fastapi import HTTPException, status
-from sqlalchemy import update
 from sqlalchemy.orm import Session
-from ..models import User
 
-def verify_and_deduct_credit(user_id: int, db: Session, amount: int = 1) -> bool:
+from .. import models
+from ..domains.common import payload_fingerprint, public_id, utcnow
+from ..domains.usage import (
+    InsufficientUnitsError,
+    commit_run_usage,
+    release_run_usage,
+    reserve_run_usage,
+)
+
+
+@contextmanager
+def billable_operation(
+    *,
+    user_id: int,
+    db: Session,
+    operation: str,
+    amount: int,
+    input_payload: dict[str, Any] | None = None,
+) -> Iterator[models.AnalysisRun]:
+    """Give a synchronous legacy operation durable, failure-safe usage accounting.
+
+    Callers must complete ownership and input validation before entering this
+    context. A reservation is persisted before provider work begins, committed
+    only after a successful return, and released after every raised exception.
     """
-    Checks whether a user has enough analysis units or active Premium access.
-    Deducts `amount` atomically for a free account.
-    """
-    if amount <= 0:
-        raise ValueError("analysis-unit deduction must be positive")
+    if amount < 0:
+        raise ValueError("analysis-unit reservation cannot be negative")
 
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
-        )
-        
-    if user.is_premium_active():
-        # Active Premium has no analysis-unit deductions.
-        return True
-
-    # Premium grant has lapsed — fall back to free access.
-    if user.tier == "premium" and not user.is_premium_active():
-        db.execute(
-            update(User).where(User.id == user_id).values(tier="free", premium_until=None)
-        )
-        user.tier = "free"
-
-    # Keep the balance predicate inside the UPDATE so concurrent operations
-    # cannot both pass a stale read and drive the balance below zero.
-    result = db.execute(
-        update(User)
-        .where(User.id == user_id, User.ai_credits >= amount)
-        .values(ai_credits=User.ai_credits - amount)
+    payload = input_payload or {}
+    now = utcnow()
+    run = models.AnalysisRun(
+        id=public_id("run"),
+        user_id=user_id,
+        operation=operation,
+        status="running",
+        idempotency_key=public_id("legacy"),
+        input_fingerprint=payload_fingerprint(payload),
+        input_payload=payload,
+        estimated_units=amount,
+        committed_units=0,
+        usage_state="pending",
+        attempt_count=1,
+        created_at=now,
+        updated_at=now,
+        started_at=now,
     )
-    if result.rowcount != 1:
+    db.add(run)
+    db.flush()
+    try:
+        reserve_run_usage(db, user_id=user_id, run=run, units=amount)
+        db.commit()
+    except InsufficientUnitsError as exc:
         db.rollback()
-        balance = db.query(User.ai_credits).filter(User.id == user_id).scalar()
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
             detail=(
-                f"Operation requires {amount} analysis unit(s). "
-                f"Your balance is {int(balance or 0)}. Premium access has no unit deductions."
+                f"Operation requires {exc.required} analysis unit(s). "
+                f"Your balance is {exc.balance}. Premium access has no unit deductions."
             ),
-        )
-    db.commit()
-    return True
+        ) from exc
+
+    try:
+        yield run
+    except Exception as exc:
+        db.rollback()
+        current = db.get(models.AnalysisRun, run.id)
+        if current:
+            release_run_usage(
+                db,
+                current,
+                reason=f"Synchronous operation failed: {type(exc).__name__}",
+            )
+            current.status = "failed"
+            current.error_code = type(exc).__name__
+            current.error_message = str(exc)[:500]
+            current.completed_at = utcnow()
+            current.updated_at = current.completed_at
+            db.commit()
+        raise
+    else:
+        current = db.get(models.AnalysisRun, run.id)
+        if current:
+            commit_run_usage(db, current)
+            current.status = "succeeded"
+            current.completed_at = utcnow()
+            current.updated_at = current.completed_at
+            db.commit()

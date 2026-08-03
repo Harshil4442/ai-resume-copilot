@@ -22,24 +22,22 @@ export default function ResumePreviewPage() {
           setLoading(false);
         }
       })
-      .catch((err: any) => {
-        setError(err.message || "Failed to load resumes list");
+      .catch((loadError: unknown) => {
+        setError(loadError instanceof Error ? loadError.message : "Failed to load resumes list");
         setLoading(false);
       });
   }, []);
 
   useEffect(() => {
     if (selectedId === null) return;
-    setLoading(true);
-    setError(null);
-    
+
     // Fetch single resume details
     apiGet<ResumeParseResponse>(`/resume/${selectedId}`)
       .then((data) => {
         setResumeData(data);
       })
-      .catch((err: any) => {
-        setError(err.message || "Failed to load resume details");
+      .catch((loadError: unknown) => {
+        setError(loadError instanceof Error ? loadError.message : "Failed to load resume details");
       })
       .finally(() => {
         setLoading(false);
@@ -79,7 +77,11 @@ export default function ResumePreviewPage() {
           <select
             className="field py-1.5 px-3 min-w-[200px]"
             value={selectedId || ""}
-            onChange={(e) => setSelectedId(Number(e.target.value))}
+            onChange={(event) => {
+              setLoading(true);
+              setError(null);
+              setSelectedId(Number(event.target.value));
+            }}
           >
             {resumes.map((r) => (
               <option key={r.id} value={r.id}>

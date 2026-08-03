@@ -1,7 +1,8 @@
 /** @type {import('next').NextConfig} */
 const configuredApiOrigins = [
-  process.env.NEXT_PUBLIC_API_BASE_URL,
   process.env.BACKEND_URL,
+  process.env.NEXT_PUBLIC_POSTHOG_HOST,
+  process.env.NEXT_PUBLIC_SENTRY_DSN,
 ]
   .filter(Boolean)
   .flatMap((value) => {
@@ -58,6 +59,7 @@ const authRouteHeaders = privateRouteHeaders.filter(
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  allowedDevOrigins: ['127.0.0.1'],
   async headers() {
     return [
       {
@@ -68,6 +70,7 @@ const nextConfig = {
         '/dashboard/:path*',
         '/resume/:path*',
         '/jobs/:path*',
+        '/workspace/:path*',
         '/market/:path*',
         '/learning/:path*',
         '/profile/:path*',
@@ -105,23 +108,6 @@ const nextConfig = {
         ],
         destination: 'https://www.hirewizhq.com/:path*',
         permanent: true,
-      },
-    ];
-  },
-  async rewrites() {
-    // Production (Vercel): set BACKEND_URL to your Cloud Run base URL
-    // Example: https://ai-resume-parser-xxxxx-uc.a.run.app
-    // Local dev: falls back to http://localhost:8000
-    let backend = process.env.BACKEND_URL || "";
-    backend = backend.replace(/\/+$/, "");
-    if (backend.endsWith("/api")) backend = backend.slice(0, -4);
-    if (!backend) backend = "http://localhost:8000";
-
-    return [
-      {
-        // Exclude NextAuth specific paths from being proxied to the FastAPI backend
-        source: "/api/:path((?!auth/callback|auth/signin|auth/signout|auth/session|auth/providers|auth/csrf|auth/error|auth/google-consent).*)",
-        destination: `${backend}/api/:path*`,
       },
     ];
   },

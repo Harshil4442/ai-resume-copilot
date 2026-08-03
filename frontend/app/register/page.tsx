@@ -1,21 +1,22 @@
 "use client";
 
-import Link from "next/link";
-import { useEffect, useState } from "react";
-import { prepareGoogleRegistrationConsent, register } from "../../lib/auth";
+import { ArrowRight, FileCheck2, ShieldCheck, Target } from "lucide-react";
 import { getProviders, signIn } from "next-auth/react";
-import GlassCard from "../../components/ui/GlassCard";
-import AnimatedButton from "../../components/ui/AnimatedButton";
-import FadeIn from "../../components/ui/FadeIn";
-import StaggerContainer, { StaggerItem } from "../../components/ui/StaggerContainer";
-import { Sparkles, FileText, Target, Zap } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+
+import { Button } from "../../components/ui/Button";
+import { trackEvent } from "../../lib/analytics";
+import { prepareGoogleRegistrationConsent, register } from "../../lib/auth";
 
 export default function RegisterPage() {
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [agreed, setAgreed] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [ok, setOk] = useState(false);
+  const [created, setCreated] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleAvailable, setGoogleAvailable] = useState(false);
 
@@ -25,145 +26,88 @@ export default function RegisterPage() {
       .catch(() => setGoogleAvailable(false));
   }, []);
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function onSubmit(event: React.FormEvent) {
+    event.preventDefault();
     if (!agreed) {
-      setError("Please agree to the Terms of Service and Privacy Policy to continue.");
+      setError("Agree to the Terms and Privacy Policy to continue.");
       return;
     }
     setError(null);
-    setOk(false);
     setLoading(true);
-
     try {
       await register(email, password);
-      setOk(true);
-    } catch (err: any) {
-      setError(err?.message || "Register failed");
+      trackEvent("account_created", { method: "credentials" });
+      const result = await signIn("credentials", { email, password, redirect: false });
+      if (result?.error) {
+        setCreated(true);
+        return;
+      }
+      trackEvent("registration_completed", { method: "credentials" });
+      router.push("/resume");
+    } catch (registerError) {
+      setError(registerError instanceof Error ? registerError.message : "Registration failed");
+      trackEvent("registration_failed", { method: "credentials" });
     } finally {
       setLoading(false);
     }
   }
 
+  async function startGoogleRegistration() {
+    if (!agreed) return;
+    setError(null);
+    setLoading(true);
+    try {
+      await prepareGoogleRegistrationConsent();
+      trackEvent("oauth_started", { method: "google", surface: "register" });
+      await signIn("google", { callbackUrl: "/resume" });
+    } catch (googleError) {
+      setError(googleError instanceof Error ? googleError.message : "Could not start Google sign-in.");
+      setLoading(false);
+    }
+  }
+
   return (
-    <main className="w-full min-h-[calc(100vh-80px)] flex items-center justify-center p-4 md:p-8">
-      <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-[450px_1fr] gap-6 lg:gap-8 items-stretch">
-        
-        <FadeIn>
-          <GlassCard className="p-8 md:p-10 h-full flex flex-col justify-center bg-slate-900/70 backdrop-blur-xl border-white" hoverEffect={false}>
-            <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Create Profile</div>
-            <h2 className="text-3xl font-black text-white tracking-tighter mb-2">Create your HireWiz account</h2>
-            <p className="text-sm text-slate-400 font-medium mb-8">Upload your own resume, compare it with job-description text, and review every AI-assisted suggestion before use.</p>
-
-            <form onSubmit={onSubmit} className="space-y-4">
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-200 mb-1.5 px-1">Email Address</label>
-                  <input className="w-full rounded-xl border border-slate-700 bg-slate-900/50 px-4 py-3.5 text-sm outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10 font-medium" placeholder="you@example.com" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-200 mb-1.5 px-1">Password</label>
-                  <input className="w-full rounded-xl border border-slate-700 bg-slate-900/50 px-4 py-3.5 text-sm outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10 font-medium" placeholder="At least 10 characters" type="password" value={password} onChange={(e) => setPassword(e.target.value)} minLength={10} maxLength={128} required autoComplete="new-password" />
-                </div>
-              </div>
-
-              <label className="flex items-start gap-2.5 pt-1 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={agreed}
-                  onChange={(e) => setAgreed(e.target.checked)}
-                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-600 bg-slate-900/50 accent-primary cursor-pointer"
-                />
-                <span className="text-[11px] leading-relaxed text-slate-400">
-                  I am at least 18 years old and I agree to the{" "}
-                  <Link href="/terms" className="text-slate-300 hover:text-primary underline">Terms of Service</Link>{" "}
-                  and acknowledge the{" "}
-                  <Link href="/privacy" className="text-slate-300 hover:text-primary underline">Privacy Policy</Link>.
-                </span>
-              </label>
-
-              <div className="pt-2">
-                <AnimatedButton type="submit" disabled={loading || !agreed} className="w-full py-3.5 text-base shadow-md" showArrow>
-                  {loading ? "Creating account..." : "Create account"}
-                </AnimatedButton>
-              </div>
-            </form>
-
-            {googleAvailable ? (
-              <>
-            <div className="relative flex items-center py-6">
-              <div className="flex-grow border-t border-slate-700"></div>
-              <span className="flex-shrink-0 mx-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Or Continue With</span>
-              <div className="flex-grow border-t border-slate-700"></div>
-            </div>
-
-            <button
-              type="button"
-              onClick={async () => {
-                if (!agreed) {
-                  setError("Please agree to the Terms of Service and Privacy Policy to continue.");
-                  return;
-                }
-                setError(null);
-                setLoading(true);
-                try {
-                  await prepareGoogleRegistrationConsent();
-                  await signIn("google", { callbackUrl: "/dashboard" });
-                } catch (err: any) {
-                  setError(err?.message || "Could not start Google sign-in.");
-                  setLoading(false);
-                }
-              }}
-              disabled={!agreed || loading}
-              className="w-full bg-slate-950 border border-slate-700 hover:bg-slate-900/50 hover:border-slate-600 text-slate-200 font-bold py-3.5 px-4 rounded-xl flex items-center justify-center gap-3 transition-all shadow-sm active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <svg viewBox="0 0 24 24" className="w-5 h-5"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
-              Google
-            </button>
-              </>
-            ) : null}
-
-            {ok && <div className="mt-6 text-sm text-emerald-400 font-bold bg-emerald-900/30 border border-emerald-800 rounded-xl px-4 py-3 text-center">Account created successfully! <Link className="underline decoration-2" href="/login">Log in now</Link></div>}
-            {error && <div className="mt-6 text-sm text-rose-400 font-bold bg-rose-900/30 border border-rose-800 rounded-xl px-4 py-3">{error}</div>}
-
-            <div className="mt-auto pt-8 text-center text-sm text-slate-400 font-medium">
-              Already have an account? <Link className="font-bold text-primary hover:underline transition-all" href="/login">Log in</Link>
-            </div>
-          </GlassCard>
-        </FadeIn>
-
-        <GlassCard className="hidden lg:flex flex-col justify-between p-10 bg-gradient-to-br from-slate-900 to-blue-950 border-slate-800 text-white overflow-hidden relative" hoverEffect={false}>
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,_var(--tw-gradient-stops))] from-primary/30 via-transparent to-transparent pointer-events-none"></div>
-          
-          <div className="relative z-10">
-            <div className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-6 flex items-center gap-2">
-              <Sparkles size={14} /> Self-service software
-            </div>
-            <h1 className="text-5xl font-black text-white tracking-tighter mb-6 leading-[1.1]">
-              Your resume.<br/>Your review and control.
-            </h1>
+    <main className="app-page flex min-h-[calc(100vh-4rem)] items-center">
+      <div className="page-container grid gap-10 lg:grid-cols-[1fr_440px] lg:items-center">
+        <section className="max-w-xl">
+          <p className="eyebrow">Start with your evidence</p>
+          <h1 className="mt-3 text-4xl font-black leading-tight text-neutral-100 sm:text-5xl">Build a role-specific application without inventing your story.</h1>
+          <div className="mt-8 divide-y divide-white/10 border-y border-white/10">
+            <div className="flex gap-4 py-4"><FileCheck2 size={20} className="shrink-0 text-primary" /><div><p className="font-bold text-neutral-200">Approve facts once</p><p className="mt-1 text-sm text-neutral-500">Keep reusable evidence under your control.</p></div></div>
+            <div className="flex gap-4 py-4"><Target size={20} className="shrink-0 text-accent" /><div><p className="font-bold text-neutral-200">Connect every target role</p><p className="mt-1 text-sm text-neutral-500">Preserve the job, resume version, next action, and outcome.</p></div></div>
           </div>
+        </section>
 
-          <StaggerContainer className="relative z-10 grid grid-cols-1 gap-4 mt-12">
-            {[
-              { title: "Resume Parsing", desc: "Structure text from a resume you are authorized to use", icon: FileText },
-              { title: "Market Analysis", desc: "Review an on-demand sample from configured job-data providers", icon: Target },
-              { title: "Learning Suggestions", desc: "Review project ideas based on estimated skill gaps", icon: Zap },
-            ].map((item) => (
-              <StaggerItem key={item.title}>
-                <div className="bg-slate-950/5 border border-white/10 rounded-2xl p-5 backdrop-blur-sm flex items-center gap-4 hover:bg-slate-950/10 transition-colors">
-                  <div className="w-12 h-12 rounded-xl bg-blue-900/300/20 flex items-center justify-center flex-shrink-0">
-                    <item.icon size={20} className="text-blue-400" />
-                  </div>
-                  <div>
-                    <div className="text-base font-black text-white mb-0.5 tracking-tight">{item.title}</div>
-                    <div className="text-xs font-medium text-slate-400">{item.desc}</div>
-                  </div>
-                </div>
-              </StaggerItem>
-            ))}
-          </StaggerContainer>
-        </GlassCard>
+        <section className="surface p-6 sm:p-8" aria-labelledby="register-heading">
+          <p className="data-label">HireWiz account</p>
+          <h2 id="register-heading" className="mt-1 text-2xl font-black text-neutral-100">Create your account</h2>
+          <form onSubmit={onSubmit} className="mt-7 grid gap-5">
+            <label className="grid gap-2 text-sm font-semibold text-neutral-300">
+              Email address
+              <input className="field-control" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required autoComplete="email" />
+            </label>
+            <label className="grid gap-2 text-sm font-semibold text-neutral-300">
+              Password
+              <input className="field-control" type="password" value={password} onChange={(event) => setPassword(event.target.value)} minLength={10} maxLength={128} required autoComplete="new-password" placeholder="At least 10 characters" />
+            </label>
+            <label className="flex cursor-pointer items-start gap-3 text-xs leading-5 text-neutral-500">
+              <input type="checkbox" checked={agreed} onChange={(event) => setAgreed(event.target.checked)} className="mt-0.5 h-4 w-4 accent-primary" />
+              <span>I am at least 18 and agree to the <Link href="/terms" className="text-neutral-300 underline">Terms</Link> and acknowledge the <Link href="/privacy" className="text-neutral-300 underline">Privacy Policy</Link>.</span>
+            </label>
+            <Button type="submit" className="w-full" disabled={loading || !agreed}>{loading ? "Creating account..." : "Create account"} <ArrowRight size={16} /></Button>
+          </form>
+
+          {googleAvailable ? (
+            <div className="mt-6 border-t border-white/10 pt-6">
+              <Button type="button" variant="secondary" className="w-full" onClick={startGoogleRegistration} disabled={!agreed || loading}>
+                <span className="font-black" aria-hidden="true">G</span> Continue with Google
+              </Button>
+            </div>
+          ) : null}
+          {created ? <p className="mt-5 border border-primary/25 bg-primary/5 p-3 text-sm text-[#69debd]">Account created. <Link href="/login" className="font-bold underline">Sign in to continue</Link>.</p> : null}
+          {error ? <div className="mt-5 flex gap-2 border border-coral/30 bg-coral/5 p-3 text-sm text-[#ffab9e]" role="alert"><ShieldCheck size={17} className="shrink-0" /> {error}</div> : null}
+          <p className="mt-7 text-center text-sm text-neutral-500">Already registered? <Link href="/login" className="font-bold text-primary hover:underline">Sign in</Link></p>
+        </section>
       </div>
     </main>
   );

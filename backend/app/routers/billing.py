@@ -393,7 +393,7 @@ def get_recent_order(
     response: Response,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> dict | None:
     _no_store(response)
     cutoff = _utcnow() - timedelta(hours=24)
     order = (
@@ -407,7 +407,7 @@ def get_recent_order(
         .first()
     )
     if order is None:
-        raise HTTPException(status_code=404, detail="No recent order found.")
+        return None
     return _order_status_payload(db, order)
 
 

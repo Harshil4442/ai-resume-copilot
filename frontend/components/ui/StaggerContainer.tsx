@@ -19,7 +19,7 @@ export default function StaggerContainer({
   delayChildren = 0,
 }: StaggerContainerProps) {
   const containerVariants = {
-    hidden: { opacity: 0 },
+    hidden: { opacity: 1 },
     show: {
       opacity: 1,
       transition: {
@@ -44,7 +44,7 @@ export default function StaggerContainer({
 
 export const StaggerItem = ({ children, className }: { children: ReactNode, className?: string }) => {
   const itemVariants = {
-    hidden: { opacity: 0, y: 20 },
+    hidden: { opacity: 1, y: 20 },
     show: { 
       opacity: 1, 
       y: 0,

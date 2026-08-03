@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from .. import models, schemas
 from ..security import get_current_user
+from ..services.guardrails import billable_operation
 from ..services.llm_client import rewrite_bullets, generate_interview_questions
 
 router = APIRouter(prefix="/llm", tags=["llm"])
@@ -14,9 +15,6 @@ async def rewrite_bullets_endpoint(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    from ..services.guardrails import verify_and_deduct_credit
-    verify_and_deduct_credit(current_user.id, db)
-
     resume = (
         db.query(models.Resume)
         .filter(models.Resume.id == payload.resume_id, models.Resume.user_id == current_user.id)
@@ -25,7 +23,14 @@ async def rewrite_bullets_endpoint(
     if not resume:
         raise HTTPException(status_code=404, detail="Resume not found for this user.")
 
-    data = rewrite_bullets(resume.raw_text, payload.job_description, payload.tone)
+    with billable_operation(
+        user_id=current_user.id,
+        db=db,
+        operation="rewrite_bullets",
+        amount=1,
+        input_payload={"resume_id": resume.id, "tone": payload.tone},
+    ):
+        data = rewrite_bullets(resume.raw_text, payload.job_description, payload.tone)
     return schemas.RewriteBulletsResponse(
         rewritten_bullets=data.get("bullets", []),
         summary=data.get("summary", ""),
@@ -37,8 +42,14 @@ async def interview_questions_endpoint(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    from ..services.guardrails import verify_and_deduct_credit
-    verify_and_deduct_credit(current_user.id, db)
-
-    questions = generate_interview_questions(payload.job_title, payload.job_description)
+    if len(payload.job_description.strip()) < 20:
+        raise HTTPException(status_code=422, detail="Job description is too short")
+    with billable_operation(
+        user_id=current_user.id,
+        db=db,
+        operation="interview_questions_legacy",
+        amount=1,
+        input_payload={"job_title": payload.job_title},
+    ):
+        questions = generate_interview_questions(payload.job_title, payload.job_description)
     return schemas.InterviewQuestionsResponse(questions=questions)

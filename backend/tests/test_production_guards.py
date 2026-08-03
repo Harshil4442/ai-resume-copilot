@@ -1,6 +1,10 @@
 import os
 import subprocess
 import sys
+from pathlib import Path
+
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _database_import(*, app_env: str, database_url: str | None):
@@ -14,6 +18,7 @@ def _database_import(*, app_env: str, database_url: str | None):
     return subprocess.run(
         [sys.executable, "-c", "import backend.app.database"],
         env=env,
+        cwd=REPOSITORY_ROOT,
         text=True,
         capture_output=True,
         check=False,

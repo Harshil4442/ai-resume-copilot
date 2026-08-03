@@ -32,13 +32,14 @@ export type UserProfile = {
 export type AuthTokenResponse = {
   access_token: string;
   token_type: "bearer";
+  user_id: number;
 };
 
 export type ResumeParseResponse = {
   resume_id: number;
   skills: string[];
   experience_years: number;
-  sections: Record<string, any>;
+  sections: Record<string, string>;
   contact_info?: {
     name?: string | null;
     email?: string | null;
@@ -59,8 +60,8 @@ export type RecommendedCourse = {
 export type GapAnalysisResponse = {
   current_skills?: string[];
   skill_gaps: string[];
-  recommended_courses: RecommendedCourse[]; // ✅ add this
-  [key: string]: any;
+  recommended_courses: RecommendedCourse[];
+  [key: string]: unknown;
 };
 
 export type JobMatchResponse = {
