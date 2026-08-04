@@ -25,11 +25,27 @@ class RetryableRunError(RuntimeError):
 
 
 def _retryable(exc: Exception) -> bool:
-    message = str(exc).lower()
-    return any(
-        marker in message
-        for marker in ("429", "rate limit", "timeout", "timed out", "temporarily", "502", "503", "504")
-    )
+    current: BaseException | None = exc
+    while current is not None:
+        if getattr(current, "retryable", False):
+            return True
+        message = str(current).lower()
+        if any(
+            marker in message
+            for marker in (
+                "429",
+                "rate limit",
+                "timeout",
+                "timed out",
+                "temporarily",
+                "502",
+                "503",
+                "504",
+            )
+        ):
+            return True
+        current = current.__cause__ or current.__context__
+    return False
 
 
 def enqueue_cloud_task(run_id: str) -> str:

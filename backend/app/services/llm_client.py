@@ -9,6 +9,52 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
+GEMINI_FALLBACK_MODELS = (
+    "gemini-3.6-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-3.5-flash",
+    "gemini-3.1-flash-lite",
+    "gemini-2.5-flash",
+)
+
+
+class LLMProviderError(RuntimeError):
+    def __init__(self, message: str, *, retryable: bool = False):
+        super().__init__(message)
+        self.retryable = retryable
+
+
+def _gemini_error_disposition(exc: Exception) -> tuple[bool, bool]:
+    """Return whether to try another model and whether the task should retry."""
+    message = str(exc).lower()
+    model_unavailable = any(
+        marker in message for marker in ("404", "not found", "is not supported")
+    )
+    transient = any(
+        marker in message
+        for marker in (
+            "408",
+            "429",
+            "500",
+            "502",
+            "503",
+            "504",
+            "high demand",
+            "quota",
+            "rate limit",
+            "resource exhausted",
+            "temporarily",
+            "timed out",
+            "timeout",
+            "unavailable",
+        )
+    )
+    return model_unavailable or transient, transient
+
+
+def _gemini_models(target_model: str) -> list[str]:
+    return list(dict.fromkeys((target_model, *GEMINI_FALLBACK_MODELS)))
+
 # Read lazily so tests / local dev without a key still import cleanly
 def _api_key() -> str:
     return os.getenv("LLM_API_KEY", "").strip()
@@ -56,23 +102,11 @@ def _chat(messages: List[Dict]) -> str:
             elif m["role"] == "assistant":
                 gemini_messages.append({"role": "model", "parts": [{"text": m["content"]}]})
                 
-        config = types.GenerateContentConfig(
-            temperature=0.3,
-        )
+        # Gemini 3.x models use their documented default sampling behavior.
+        config = types.GenerateContentConfig()
             
         target_model = LLM_MODEL.strip('"\' \r\n')
-        models_to_try = [
-            target_model,
-            'gemini-3.5-flash',
-            'gemini-3.1-flash-lite',
-            'gemini-2.5-flash',
-            'gemini-2.5-pro',
-            'gemini-2.5-flash-lite',
-        ]
-        
-        # Deduplicate list while preserving order
-        seen = set()
-        models_to_try = [x for x in models_to_try if not (x in seen or seen.add(x))]
+        models_to_try = _gemini_models(target_model)
         
         logger.debug(
             "Gemini model fallback initialized",
@@ -80,6 +114,7 @@ def _chat(messages: List[Dict]) -> str:
         )
         
         last_error = None
+        saw_transient_error = False
         for attempt_model in models_to_try:
             try:
                 logger.debug(
@@ -100,25 +135,26 @@ def _chat(messages: List[Dict]) -> str:
                 return ""
             except Exception as e:
                 last_error = e
-                error_str = str(e).lower()
-                # Try next fallback if model not found OR rate limited
-                retryable = (
-                    "not found" in error_str
-                    or "404" in error_str
-                    or "is not supported" in error_str
-                    or "429" in error_str
-                    or "quota" in error_str
-                    or "resource exhausted" in error_str
-                )
+                try_fallback, transient = _gemini_error_disposition(e)
+                saw_transient_error = saw_transient_error or transient
                 logger.warning(
                     "Gemini model attempt failed",
-                    extra={"attempt_model": attempt_model, "retryable": retryable},
+                    extra={
+                        "attempt_model": attempt_model,
+                        "try_fallback": try_fallback,
+                        "transient": transient,
+                    },
                 )
-                if retryable:
+                if try_fallback:
                     continue
-                raise RuntimeError("LLM provider request failed.") from e
-                    
-        raise RuntimeError("All configured LLM models failed.") from last_error
+                raise LLMProviderError("Gemini provider rejected the request.") from e
+
+        message = (
+            "All configured Gemini models were temporarily unavailable."
+            if saw_transient_error
+            else "No configured Gemini model is available."
+        )
+        raise LLMProviderError(message, retryable=saw_transient_error) from last_error
 
     # Strip trailing slash to prevent 404 double-slash errors (e.g., //chat/completions)
     base_url = LLM_API_BASE.rstrip("/")
