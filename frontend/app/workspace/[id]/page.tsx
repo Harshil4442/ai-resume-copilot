@@ -56,6 +56,7 @@ import { trackEvent } from "../../../lib/analytics";
 
 type Tab = "overview" | "resume" | "learning" | "interview" | "activity" | "outcome";
 type Outcome = "offer_accepted" | "offer_declined" | "rejected" | "withdrawn";
+type ResumeArtifactFormat = "pdf" | "docx";
 type InterviewResult = {
   opportunity_id: string;
   questions: {
@@ -350,6 +351,20 @@ export default function OpportunityPage() {
       await queryClient.invalidateQueries({ queryKey: ["opportunity", opportunityId] });
     },
   });
+  const downloadVersion = useMutation({
+    mutationFn: ({ id, versionNumber, format }: { id: string; versionNumber: number; format: ResumeArtifactFormat }) =>
+      apiDownload(
+        `/v1/resume-versions/${id}/download?format=${format}`,
+        `hirewiz-tailored-resume-v${versionNumber}.${format}`,
+      ),
+    onSuccess: (_, variables) => {
+      trackEvent("resume_version_downloaded", {
+        opportunity_id: opportunityId,
+        resume_version_id: variables.id,
+        format: variables.format,
+      });
+    },
+  });
   const createVersion = useMutation({
     mutationFn: () => {
       if (!opportunity.data?.resume_id) throw new Error("Connect a resume first.");
@@ -578,9 +593,29 @@ export default function OpportunityPage() {
                         </div>
                         <StatusBadge tone={version.approval_state === "approved" ? "teal" : version.approval_state === "rejected" ? "coral" : "neutral"}>{version.approval_state}</StatusBadge>
                       </div>
-                      <div className="mt-3 flex gap-2 border-t border-white/10 pt-3">
+                      <div className="mt-3 flex flex-wrap gap-1 border-t border-white/10 pt-3">
                         <Button size="sm" variant="ghost" onClick={() => updateVersion.mutate({ id: version.id, state: "approved" })}><Check size={14} /> Approve</Button>
                         <Button size="sm" variant="ghost" onClick={() => updateVersion.mutate({ id: version.id, state: "rejected" })}><X size={14} /> Reject</Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => downloadVersion.mutate({ id: version.id, versionNumber: version.version_number, format: "pdf" })}
+                          disabled={downloadVersion.isPending && downloadVersion.variables?.id === version.id}
+                          title="Download PDF"
+                        >
+                          {downloadVersion.isPending && downloadVersion.variables?.id === version.id && downloadVersion.variables.format === "pdf" ? <LoaderCircle size={14} className="animate-spin" /> : <Download size={14} />}
+                          PDF
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => downloadVersion.mutate({ id: version.id, versionNumber: version.version_number, format: "docx" })}
+                          disabled={downloadVersion.isPending && downloadVersion.variables?.id === version.id}
+                          title="Download editable DOCX"
+                        >
+                          {downloadVersion.isPending && downloadVersion.variables?.id === version.id && downloadVersion.variables.format === "docx" ? <LoaderCircle size={14} className="animate-spin" /> : <Download size={14} />}
+                          DOCX
+                        </Button>
                       </div>
                     </div>
                   ))}
@@ -600,8 +635,13 @@ export default function OpportunityPage() {
                   <div className="mt-4 border-l-2 border-primary pl-4">
                     <p className="text-sm font-bold text-neutral-200">Version {tailored.version_number} created</p>
                     <p className="mt-1 text-xs leading-5 text-neutral-500">Every generated line links back to approved evidence. Review it before marking the version approved.</p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Button size="sm" variant="secondary" onClick={() => downloadVersion.mutate({ id: tailored.resume_version_id, versionNumber: tailored.version_number, format: "pdf" })} disabled={downloadVersion.isPending}><Download size={14} /> PDF</Button>
+                      <Button size="sm" variant="secondary" onClick={() => downloadVersion.mutate({ id: tailored.resume_version_id, versionNumber: tailored.version_number, format: "docx" })} disabled={downloadVersion.isPending}><Download size={14} /> DOCX</Button>
+                    </div>
                   </div>
                 ) : null}
+                {downloadVersion.isError ? <p className="mt-3 text-sm text-coral">{downloadVersion.error instanceof Error ? downloadVersion.error.message : "Could not download this resume version."}</p> : null}
                 <Button className="mt-5 w-full" disabled={!item.resume_id || createVersion.isPending} onClick={() => createVersion.mutate()}><FilePlus2 size={16} /> Save current version</Button>
                 {createVersion.isError ? <p className="mt-3 text-sm text-coral">{createVersion.error instanceof Error ? createVersion.error.message : "Could not create version."}</p> : null}
               </aside>

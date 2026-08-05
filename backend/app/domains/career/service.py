@@ -636,11 +636,10 @@ def list_resume_versions(
     return query.order_by(models.ResumeVersion.created_at.desc()).all()
 
 
-def update_resume_version_state(
+def get_resume_version(
     db: Session,
     user_id: int,
     version_id: str,
-    payload: schemas.ResumeVersionStateUpdate,
 ) -> models.ResumeVersion:
     version = (
         db.query(models.ResumeVersion)
@@ -652,6 +651,16 @@ def update_resume_version_state(
     )
     if not version:
         raise HTTPException(status_code=404, detail="Resume version not found")
+    return version
+
+
+def update_resume_version_state(
+    db: Session,
+    user_id: int,
+    version_id: str,
+    payload: schemas.ResumeVersionStateUpdate,
+) -> models.ResumeVersion:
+    version = get_resume_version(db, user_id, version_id)
     version.approval_state = payload.approval_state
     db.commit()
     db.refresh(version)

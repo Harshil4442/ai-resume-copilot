@@ -34,6 +34,7 @@ cffi==2.1.0 ; platform_python_implementation != 'PyPy'
 charset-normalizer==3.4.9
     # via
     #   pdfminer-six
+    #   reportlab
     #   requests
 click==8.4.2
     # via uvicorn
@@ -177,7 +178,9 @@ pdfminer-six==20260107
 pdfplumber==0.11.10
     # via hirewiz-backend
 pillow==12.3.0
-    # via pdfplumber
+    # via
+    #   pdfplumber
+    #   reportlab
 preshed==3.0.13
     # via
     #   spacy
@@ -236,6 +239,8 @@ pyyaml==6.0.3
 rapidfuzz==3.14.5
     # via hirewiz-backend
 redis==8.1.0
+    # via hirewiz-backend
+reportlab==4.5.1
     # via hirewiz-backend
 requests==2.34.2
     # via
