@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
@@ -10,6 +12,7 @@ from ...database import get_db
 from ...domains.career import schemas, service
 from ...feature_flags import decide_feature
 from ...security import get_current_user
+from ...services.resume_artifacts import render_resume_version
 
 
 def require_career_workspace(
@@ -257,6 +260,50 @@ def list_resume_versions(
         current_user.id,
         resume_id=resume_id,
         opportunity_id=opportunity_id,
+    )
+
+
+@router.get(
+    "/resume-versions/{version_id}/download",
+    response_class=Response,
+    responses={
+        200: {
+            "description": "Rendered resume version",
+            "content": {
+                "application/pdf": {"schema": {"type": "string", "format": "binary"}},
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document": {
+                    "schema": {"type": "string", "format": "binary"}
+                },
+            },
+        }
+    },
+)
+def download_resume_version(
+    version_id: str,
+    artifact_format: Literal["pdf", "docx"] = Query(default="pdf", alias="format"),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    version = service.get_resume_version(db, current_user.id, version_id)
+    resume = (
+        db.query(models.Resume)
+        .filter(
+            models.Resume.id == version.resume_id,
+            models.Resume.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not resume:
+        raise HTTPException(status_code=404, detail="Resume not found")
+    artifact = render_resume_version(version, resume, artifact_format)
+    return Response(
+        content=artifact.content,
+        media_type=artifact.media_type,
+        headers={
+            "Cache-Control": "private, no-store",
+            "Content-Disposition": f'attachment; filename="{artifact.filename}"',
+            "X-Content-Type-Options": "nosniff",
+        },
     )
 
 

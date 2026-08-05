@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from io import BytesIO
+
 from backend.app.database import Base, get_db
-from backend.app.models import ApplicationEvent, EvidenceItem, Resume, User
+from backend.app.models import ApplicationEvent, EvidenceItem, Resume, ResumeVersion, User
 from backend.app.routers.v1 import router as v1_router
 from backend.app.security import get_current_user
+from docx import Document as DocxDocument
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -189,6 +192,92 @@ def test_applied_stage_requires_exact_resume_version():
         )
         assert response.status_code == 422
         assert "exact resume version" in response.json()["detail"]
+    finally:
+        client.close()
+        engine.dispose()
+
+
+def test_resume_version_downloads_private_pdf_and_editable_docx():
+    engine, factory, client = _client()
+    try:
+        created = client.post(
+            "/api/v1/opportunities",
+            json={
+                "title": "Platform Engineer",
+                "company": "Example Co",
+                "resume_id": 10,
+                "job_description": "Build reliable Python services and PostgreSQL data systems.",
+            },
+        )
+        opportunity_id = created.json()["id"]
+        version = client.post(
+            "/api/v1/resume-versions",
+            json={
+                "resume_id": 10,
+                "opportunity_id": opportunity_id,
+                "label": "Example Co Platform Engineer",
+                "structured_content": {
+                    "target_job_title": "Platform Engineer",
+                    "summary_items": [
+                        {
+                            "text": "Python engineer focused on reliable data systems.",
+                            "evidence_ids": ["evd_internal_trace"],
+                        }
+                    ],
+                    "bullets": [
+                        {
+                            "text": "Improved <API> & reliability\u0001 through focused profiling.",
+                            "evidence_ids": ["evd_internal_trace"],
+                        }
+                    ],
+                    "skills": ["Python", "PostgreSQL"],
+                    "evidence_policy": "approved_only",
+                },
+            },
+        )
+        assert version.status_code == 201, version.text
+        version_id = version.json()["id"]
+
+        pdf = client.get(f"/api/v1/resume-versions/{version_id}/download?format=pdf")
+        assert pdf.status_code == 200, pdf.text
+        assert pdf.headers["content-type"] == "application/pdf"
+        assert pdf.headers["cache-control"] == "private, no-store"
+        assert pdf.headers["x-content-type-options"] == "nosniff"
+        assert pdf.headers["content-disposition"].endswith("-v1.pdf\"")
+        assert pdf.content.startswith(b"%PDF-")
+
+        docx = client.get(f"/api/v1/resume-versions/{version_id}/download?format=docx")
+        assert docx.status_code == 200, docx.text
+        assert docx.headers["content-type"].startswith(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
+        assert docx.headers["content-disposition"].endswith("-v1.docx\"")
+        document = DocxDocument(BytesIO(docx.content))
+        text = "\n".join(paragraph.text for paragraph in document.paragraphs)
+        assert "Owner" in text
+        assert "Platform Engineer" in text
+        assert "Improved <API> & reliability" in text
+        assert "Reduced API latency by 40 percent" in text
+        assert "evd_internal_trace" not in text
+        assert "\x01" not in text
+
+        with factory() as db:
+            db.add(
+                ResumeVersion(
+                    id="rsv_private",
+                    user_id=2,
+                    resume_id=20,
+                    version_number=1,
+                    label="Private version",
+                    structured_content={},
+                    evidence_ids=[],
+                )
+            )
+            db.commit()
+        assert (
+            client.get("/api/v1/resume-versions/rsv_private/download?format=pdf").status_code
+            == 404
+        )
     finally:
         client.close()
         engine.dispose()

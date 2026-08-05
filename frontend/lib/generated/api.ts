@@ -1032,6 +1032,23 @@ export interface paths {
         patch: operations["update_resume_version_api_v1_resume_versions__version_id__patch"];
         trace?: never;
     };
+    "/api/v1/resume-versions/{version_id}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download Resume Version */
+        get: operations["download_resume_version_api_v1_resume_versions__version_id__download_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/skill-roi": {
         parameters: {
             query?: never;
@@ -4557,6 +4574,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ResumeVersionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_resume_version_api_v1_resume_versions__version_id__download_get: {
+        parameters: {
+            query?: {
+                format?: "pdf" | "docx";
+            };
+            header?: never;
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Rendered resume version */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/pdf": string;
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": string;
                 };
             };
             /** @description Validation Error */

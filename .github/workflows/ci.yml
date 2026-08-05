@@ -42,7 +42,7 @@ jobs:
       - name: Ruff modernized modules
         working-directory: backend
         run: >-
-          .venv/bin/ruff check app/domains app/services/guardrails.py app/routers/v1
+          .venv/bin/ruff check app/domains app/services/guardrails.py app/services/resume_artifacts.py app/routers/v1
           app/routers/worker.py app/worker_main.py app/observability.py app/feature_flags.py app/migrate.py scripts
           tests/test_analysis_runs.py tests/test_career_workspace.py tests/test_alembic_schema.py
           tests/test_usage_guardrails.py tests/test_feature_flags.py tests/test_operations_platform.py
@@ -50,7 +50,7 @@ jobs:
       - name: Type-check modernized modules
         working-directory: backend
         run: >-
-          .venv/bin/mypy app/domains app/services/guardrails.py app/routers/v1
+          .venv/bin/mypy app/domains app/services/guardrails.py app/services/resume_artifacts.py app/routers/v1
           app/routers/worker.py app/worker_main.py app/observability.py app/feature_flags.py app/migrate.py
       - name: Compile backend
         run: backend/.venv/bin/python -m compileall -q backend/app
