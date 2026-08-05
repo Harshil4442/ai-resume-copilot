@@ -36,7 +36,7 @@ Core required variables:
 - `DATABASE_URL`
 - `JWT_SECRET`
 - `FRONTEND_ORIGINS=https://hirewizhq.com,https://www.hirewizhq.com`
-- `LLM_API_BASE`, `LLM_MODEL`, `LLM_API_KEY`
+- `LLM_API_BASE`, `LLM_API_KEY`, `LLM_MODEL=gemini-3.6-flash`
 - `APP_RELEASE`, `LOG_FORMAT=json`, `LOG_LEVEL=INFO`
 - `SENTRY_DSN` and an initial `SENTRY_TRACES_SAMPLE_RATE=0.05`
 
