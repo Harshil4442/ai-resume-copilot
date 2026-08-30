@@ -33,6 +33,10 @@ export const metadata: Metadata = {
     description:
       "Build stronger applications from approved career evidence and keep every opportunity connected.",
   },
+  // Verify the site with AdSense without loading advertising code before approval.
+  other: {
+    "google-adsense-account": "ca-pub-3196140381767962",
+  },
 };
 
 const GA_MEASUREMENT_ID = process.env.NEXT_PUBLIC_GA_ID?.trim() || null;
