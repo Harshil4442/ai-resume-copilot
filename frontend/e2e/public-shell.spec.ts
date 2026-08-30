@@ -16,3 +16,17 @@ test("public homepage has no automatically detectable accessibility violations",
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);
 });
+
+test("publishes the AdSense ownership metadata and authorized seller record", async ({ page, request }) => {
+  await page.goto("/");
+  await expect(page.locator('meta[name="google-adsense-account"]')).toHaveAttribute(
+    "content",
+    "ca-pub-3196140381767962",
+  );
+
+  const adsTxtResponse = await request.get("/ads.txt");
+  expect(adsTxtResponse.ok()).toBe(true);
+  expect((await adsTxtResponse.text()).trim()).toBe(
+    "google.com, pub-3196140381767962, DIRECT, f08c47fec0942fa0",
+  );
+});
