@@ -86,15 +86,15 @@ export default function CookiePolicy() {
         title="Cookie Policy"
         subtitle="The essential and optional browser storage used by HireWiz."
       />
-      <div className="w-full max-w-5xl mx-auto px-6 md:px-8 mt-12 text-slate-300 space-y-8 leading-relaxed">
-        <p className="text-sm text-slate-400">
+      <div className="w-full max-w-5xl mx-auto px-6 md:px-8 mt-12 text-foreground space-y-8 leading-relaxed">
+        <p className="text-sm text-muted-foreground">
           Effective: {SITE.policyEffectiveDate} · Last updated: {SITE.policyEffectiveDate} · Version {SITE.policyVersion}.
           HireWiz is operated by {SITE.operatorName}, trading as HireWiz. Questions: {" "}
           <a href={`mailto:${SITE.supportEmail}`} className="text-primary hover:underline">{SITE.supportEmail}</a>.
         </p>
 
         <section>
-          <h2 className="text-2xl font-bold text-white mb-4">1. What this Policy covers</h2>
+          <h2 className="font-display text-2xl font-normal text-foreground mb-4">1. What this Policy covers</h2>
           <p>
             Cookies are small browser files. Local storage is a similar browser mechanism that can retain a value on
             your device. The table below describes storage that the current HireWiz frontend can use. Actual names may
@@ -103,10 +103,10 @@ export default function CookiePolicy() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-bold text-white mb-4">2. Current inventory</h2>
-          <div className="overflow-x-auto rounded-xl border border-slate-700/60">
+          <h2 className="font-display text-2xl font-normal text-foreground mb-4">2. Current inventory</h2>
+          <div className="overflow-x-auto rounded-xl border border-border">
             <table className="w-full min-w-[850px] text-left text-sm">
-              <thead className="bg-slate-900/70 text-xs uppercase tracking-wider text-slate-400">
+              <thead className="bg-surface text-xs uppercase tracking-wider text-muted-foreground">
                 <tr>
                   <th className="px-4 py-3">Name</th>
                   <th className="px-4 py-3">Owner / type</th>
@@ -117,12 +117,12 @@ export default function CookiePolicy() {
               </thead>
               <tbody>
                 {storageRows.map((row) => (
-                  <tr key={row.name} className="border-t border-slate-800 align-top">
-                    <td className="px-4 py-4 font-semibold text-white break-words">{row.name}</td>
-                    <td className="px-4 py-4 text-slate-400">{row.owner}<br />{row.type}</td>
+                  <tr key={row.name} className="border-t border-border align-top">
+                    <td className="px-4 py-4 font-semibold text-foreground break-words">{row.name}</td>
+                    <td className="px-4 py-4 text-muted-foreground">{row.owner}<br />{row.type}</td>
                     <td className="px-4 py-4">{row.purpose}</td>
-                    <td className="px-4 py-4 text-slate-400">{row.category}</td>
-                    <td className="px-4 py-4 text-slate-400">{row.lifetime}</td>
+                    <td className="px-4 py-4 text-muted-foreground">{row.category}</td>
+                    <td className="px-4 py-4 text-muted-foreground">{row.lifetime}</td>
                   </tr>
                 ))}
               </tbody>
@@ -131,7 +131,7 @@ export default function CookiePolicy() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-bold text-white mb-4">3. Essential storage</h2>
+          <h2 className="font-display text-2xl font-normal text-foreground mb-4">3. Essential storage</h2>
           <p>
             Authentication, security, and consent-preference storage is necessary to sign in, protect requests, and
             remember your choice. Blocking or deleting it can sign you out or prevent account features from working.
@@ -141,7 +141,7 @@ export default function CookiePolicy() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-bold text-white mb-4">4. Optional analytics</h2>
+          <h2 className="font-display text-2xl font-normal text-foreground mb-4">4. Optional analytics</h2>
           <p>
             Google Analytics and PostHog load only when their keys are configured and you select “Accept analytics.”
             They are not loaded merely because you visit the site. Analytics measures aggregate acquisition and product
@@ -150,7 +150,7 @@ export default function CookiePolicy() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-bold text-white mb-4">5. Authentication and checkout providers</h2>
+          <h2 className="font-display text-2xl font-normal text-foreground mb-4">5. Authentication and checkout providers</h2>
           <p>
             If you choose Google sign-in or open a hosted payment checkout, that provider may set cookies on its own
             domain for authentication, fraud prevention, payment, and security. Those cookies are controlled by the
@@ -160,7 +160,7 @@ export default function CookiePolicy() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-bold text-white mb-4">6. Change or withdraw your choice</h2>
+          <h2 className="font-display text-2xl font-normal text-foreground mb-4">6. Change or withdraw your choice</h2>
           <p className="mb-4">
             You can reopen Cookie Preferences at any time. Withdrawing analytics consent prevents future analytics
             loading and removes accessible HireWiz-domain Google Analytics and PostHog storage. You can also clear site data in
@@ -170,7 +170,7 @@ export default function CookiePolicy() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-bold text-white mb-4">7. Updates and contact</h2>
+          <h2 className="font-display text-2xl font-normal text-foreground mb-4">7. Updates and contact</h2>
           <p>
             We will update this inventory when storage practices materially change. For questions, email {" "}
             <a href={`mailto:${SITE.supportEmail}`} className="text-primary hover:underline">{SITE.supportEmail}</a> or

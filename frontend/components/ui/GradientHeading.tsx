@@ -19,7 +19,7 @@ export default function GradientHeading({
   return (
     <Element
       className={twMerge(clsx(
-        "text-4xl md:text-5xl lg:text-6xl text-[#f4f2ea] text-balance leading-[1.05] font-black",
+        "text-4xl md:text-5xl lg:text-6xl font-display text-foreground text-balance leading-[1.05] font-normal tracking-[-0.035em]",
         className
       ))}
     >

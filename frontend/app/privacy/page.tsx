@@ -18,15 +18,15 @@ export default function PrivacyPolicy() {
         title="Privacy Policy"
         subtitle="How personal data is processed when you use HireWiz."
       />
-      <div className="w-full max-w-4xl mx-auto px-6 md:px-8 mt-12 text-slate-300 space-y-8 leading-relaxed">
-        <p className="text-sm text-slate-400">
+      <div className="w-full max-w-4xl mx-auto px-6 md:px-8 mt-12 text-foreground space-y-8 leading-relaxed">
+        <p className="text-sm text-muted-foreground">
           Effective: {SITE.policyEffectiveDate} · Last updated: {SITE.policyEffectiveDate} · Version {SITE.policyVersion}.
           HireWiz is operated by {SITE.operatorName}, trading as HireWiz, in Gujarat, India. For privacy requests,
           email <a href={`mailto:${SITE.supportEmail}`} className="text-primary hover:underline">{SITE.supportEmail}</a>.
         </p>
 
         <section>
-          <h2 className="text-2xl font-bold text-white mb-4">1. Scope and our role</h2>
+          <h2 className="font-display text-2xl font-normal text-foreground mb-4">1. Scope and our role</h2>
           <p>
             This Policy applies to the HireWiz website and self-service software. HireWiz determines why and how the
             personal data described below is processed for this service. Third-party websites and services have their
@@ -35,7 +35,7 @@ export default function PrivacyPolicy() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-bold text-white mb-4">2. Data we process</h2>
+          <h2 className="font-display text-2xl font-normal text-foreground mb-4">2. Data we process</h2>
           <ul className="list-disc pl-6 space-y-2">
             <li><strong>Account and authentication:</strong> email address, password hash (not your raw password), sign-in method, Google account name/email when you choose Google sign-in, and the time/version of required Terms, Privacy, and age confirmations.</li>
             <li><strong>Profile:</strong> name, headline, phone, location, professional links, target-role preferences, experience, biography, skills, education, and certifications that you choose to add.</li>
@@ -54,7 +54,7 @@ export default function PrivacyPolicy() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-bold text-white mb-4">3. Sources of data</h2>
+          <h2 className="font-display text-2xl font-normal text-foreground mb-4">3. Sources of data</h2>
           <p>
             Most data comes directly from you, your browser, or the files and text you submit. If you choose Google
             sign-in, account information comes from Google. Payment status and transaction metadata come from the
@@ -63,7 +63,7 @@ export default function PrivacyPolicy() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-bold text-white mb-4">4. Why we use data</h2>
+          <h2 className="font-display text-2xl font-normal text-foreground mb-4">4. Why we use data</h2>
           <ul className="list-disc pl-6 space-y-2">
             <li>create and authenticate accounts, maintain sessions, and provide requested features;</li>
             <li>parse resumes, compare text, generate estimates and suggestions, and keep requested history;</li>
@@ -81,7 +81,7 @@ export default function PrivacyPolicy() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-bold text-white mb-4">5. AI processing and model training</h2>
+          <h2 className="font-display text-2xl font-normal text-foreground mb-4">5. AI processing and model training</h2>
           <p>
             Resume text, job-description text, prompts, and relevant context are sent to the configured AI API provider
             to produce the feature you request. HireWiz does not use this content to operate a recruitment database or
@@ -98,7 +98,7 @@ export default function PrivacyPolicy() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-bold text-white mb-4">6. When data is shared</h2>
+          <h2 className="font-display text-2xl font-normal text-foreground mb-4">6. When data is shared</h2>
           <p>We do not sell personal data or candidate databases. Data is shared only as needed with:</p>
           <ul className="list-disc pl-6 mt-4 space-y-2">
             <li>cloud hosting, database, and delivery providers that run the website and API;</li>
@@ -117,7 +117,7 @@ export default function PrivacyPolicy() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-bold text-white mb-4">7. Payments</h2>
+          <h2 className="font-display text-2xl font-normal text-foreground mb-4">7. Payments</h2>
           <p>
             Checkout is hosted or securely presented by the payment processor used for your order. Card numbers, CVV,
             UPI PINs, and bank-login credentials are submitted to that provider, not HireWiz. HireWiz receives only the
@@ -127,7 +127,7 @@ export default function PrivacyPolicy() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-bold text-white mb-4">8. Retention and deletion</h2>
+          <h2 className="font-display text-2xl font-normal text-foreground mb-4">8. Retention and deletion</h2>
           <p>
             Account, profile, resume, job-description, and generated-history data are kept while your account is active
             so the service can provide saved features. When you delete the account, the application deletes associated
@@ -149,7 +149,7 @@ export default function PrivacyPolicy() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-bold text-white mb-4">9. Your choices and rights</h2>
+          <h2 className="font-display text-2xl font-normal text-foreground mb-4">9. Your choices and rights</h2>
           <p>
             Subject to applicable law, you may request access, correction, or deletion; withdraw consent where
             processing relies on consent; and raise a complaint. Profile data can be corrected in your account. Account
@@ -164,7 +164,7 @@ export default function PrivacyPolicy() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-bold text-white mb-4">10. Security</h2>
+          <h2 className="font-display text-2xl font-normal text-foreground mb-4">10. Security</h2>
           <p>
             We use technical and organizational safeguards appropriate to the service, including access controls,
             password hashing, encrypted HTTPS transport, and restricted application access to account data. No online
@@ -173,7 +173,7 @@ export default function PrivacyPolicy() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-bold text-white mb-4">11. International processing</h2>
+          <h2 className="font-display text-2xl font-normal text-foreground mb-4">11. International processing</h2>
           <p>
             Some service providers operate infrastructure outside India or across multiple regions. Data may therefore
             be processed in other countries, where legal protections may differ. We use provider and contractual
@@ -182,7 +182,7 @@ export default function PrivacyPolicy() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-bold text-white mb-4">12. Age limit</h2>
+          <h2 className="font-display text-2xl font-normal text-foreground mb-4">12. Age limit</h2>
           <p>
             HireWiz is intended for people aged 18 or older. We do not knowingly offer accounts to children. If you
             believe a minor created an account, contact us so the report can be reviewed.
@@ -190,7 +190,7 @@ export default function PrivacyPolicy() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-bold text-white mb-4">13. Incidents and policy changes</h2>
+          <h2 className="font-display text-2xl font-normal text-foreground mb-4">13. Incidents and policy changes</h2>
           <p>
             If a personal-data incident requires notification under applicable law, we will notify affected people and
             authorities as required. We may update this Policy for product, provider, or legal changes. The date and
@@ -199,7 +199,7 @@ export default function PrivacyPolicy() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-bold text-white mb-4">14. Contact and grievance</h2>
+          <h2 className="font-display text-2xl font-normal text-foreground mb-4">14. Contact and grievance</h2>
           <p>
             Send privacy requests or complaints to{" "}
             <a href={`mailto:${SITE.supportEmail}`} className="text-primary hover:underline">{SITE.supportEmail}</a> or

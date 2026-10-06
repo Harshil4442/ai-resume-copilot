@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import useMotionPreference from "./useMotionPreference";
 import { ReactNode } from "react";
 import { twMerge } from "tailwind-merge";
 import clsx from "clsx";
@@ -20,6 +21,7 @@ export default function FadeIn({
   className,
   duration = 0.7,
 }: FadeInProps) {
+  const reducedMotion = useMotionPreference();
   const directionOffset = {
     up: { y: 24, x: 0 },
     down: { y: -24, x: 0 },
@@ -30,21 +32,17 @@ export default function FadeIn({
 
   return (
     <motion.div
-      initial={{
+      initial={false}
+      whileInView={reducedMotion ? { opacity: 1, x: 0, y: 0 } : {
         opacity: 1,
-        ...directionOffset[direction],
-      }}
-      whileInView={{
-        opacity: 1,
-        x: 0,
-        y: 0,
+        x: [directionOffset[direction].x, 0],
+        y: [directionOffset[direction].y, 0],
       }}
       viewport={{ once: true, margin: "-50px" }}
       transition={{
-        duration,
-        delay,
-        type: "spring" as const,
-        bounce: 0.2,
+        duration: reducedMotion ? 0 : duration,
+        delay: reducedMotion ? 0 : delay,
+        ease: [0.22, 1, 0.36, 1],
       }}
       className={twMerge(clsx(className))}
     >

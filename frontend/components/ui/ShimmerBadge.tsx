@@ -19,21 +19,17 @@ export default function ShimmerBadge({ children, href, className, showArrow = tr
     <Component
       href={href}
       className={twMerge(clsx(
-        "inline-flex h-7 items-center justify-between rounded-full border border-slate-700 bg-slate-950 px-3 text-xs text-white transition-all ease-in hover:cursor-pointer hover:bg-slate-900/50 group gap-1 shadow-sm",
+        "group inline-flex min-h-7 items-center justify-between gap-1 rounded-full border border-border bg-surface px-3 font-mono text-[11px] font-normal uppercase tracking-wide text-primary transition-colors",
+        href && "hover:border-accent hover:bg-accent/15",
         className
       ))}
     >
-      <p 
-        className="mx-auto max-w-md animate-shimmer bg-clip-text bg-no-repeat bg-gradient-to-r from-slate-400 via-white via-50% to-slate-400 inline-flex items-center justify-center font-medium"
-        style={{
-          backgroundSize: "200% 100%",
-        }}
-      >
+      <span className="inline-flex items-center justify-center">
         <span>{children}</span>
         {showArrow && (
-          <ArrowRight className="ml-1 h-3 w-3 transition-transform duration-300 ease-in-out group-hover:translate-x-0.5 text-white" />
+          <ArrowRight aria-hidden="true" className="ml-1 h-3 w-3 transition-transform duration-300 ease-in-out motion-safe:group-hover:translate-x-0.5" />
         )}
-      </p>
+      </span>
     </Component>
   );
 }

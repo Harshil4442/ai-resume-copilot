@@ -31,15 +31,15 @@ export default function ToolsIndexPage() {
           const Icon = icons[index % icons.length];
           return (
             <GlassCard key={tool.slug} className="p-7 flex flex-col" hoverEffect={false}>
-              <div className="w-11 h-11 rounded-xl bg-blue-500/15 text-blue-300 flex items-center justify-center mb-5">
+              <div className="w-11 h-11 rounded-xl bg-primary/10 text-primary flex items-center justify-center mb-5">
                 <Icon size={22} />
               </div>
-              <div className="text-xs font-bold uppercase tracking-wider text-blue-300">{tool.badge}</div>
-              <h2 className="mt-2 text-2xl font-black text-white">{tool.title}</h2>
-              <p className="mt-3 text-sm text-slate-400 leading-relaxed flex-1">{tool.description}</p>
+              <div className="text-xs font-bold uppercase tracking-wider text-primary">{tool.badge}</div>
+              <h2 className="font-display mt-2 text-2xl font-normal text-foreground">{tool.title}</h2>
+              <p className="mt-3 text-sm text-muted-foreground leading-relaxed flex-1">{tool.description}</p>
               <Link
                 href={`/tools/${tool.slug}`}
-                className="mt-6 inline-flex items-center gap-2 text-sm font-bold text-primary hover:text-blue-300"
+                className="mt-6 inline-flex items-center gap-2 text-sm font-bold text-primary transition-colors hover:text-foreground"
               >
                 Open tool <ArrowRight size={15} />
               </Link>
@@ -48,9 +48,9 @@ export default function ToolsIndexPage() {
         })}
       </section>
 
-      <GlassCard className="p-7 bg-slate-950/50" hoverEffect={false}>
-        <h2 className="text-xl font-black text-white">What these tools are — and are not</h2>
-        <ul className="mt-4 grid gap-3 text-sm text-slate-300 md:grid-cols-2">
+      <GlassCard className="p-7 bg-surface" hoverEffect={false}>
+        <h2 className="font-display text-xl font-normal text-foreground">What these tools are — and are not</h2>
+        <ul className="mt-4 grid gap-3 text-sm text-foreground md:grid-cols-2">
           {[
             "They provide informational checks and writing suggestions.",
             "They do not guarantee ATS acceptance, interviews, offers, or employment.",
@@ -58,7 +58,7 @@ export default function ToolsIndexPage() {
             "They are not recruitment, staffing, placement, or employer-candidate matching services.",
           ].map((item) => (
             <li key={item} className="flex items-start gap-2">
-              <CheckCircle2 size={16} className="text-emerald-400 mt-0.5 shrink-0" />
+              <CheckCircle2 size={16} className="text-primary mt-0.5 shrink-0" />
               <span>{item}</span>
             </li>
           ))}

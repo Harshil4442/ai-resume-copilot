@@ -36,7 +36,7 @@ export default function BlogExplorer({ posts }: BlogExplorerProps) {
       <GlassCard className="p-5 md:p-6" hoverEffect={false}>
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={18} />
             <input
               value={query}
               onChange={(event) => {
@@ -46,8 +46,9 @@ export default function BlogExplorer({ posts }: BlogExplorerProps) {
                   trackEvent("blog_search_used", { query: value.trim().toLowerCase() });
                 }
               }}
+              aria-label="Search guides"
               placeholder="Search guides by role, keyword, or skill..."
-              className="w-full rounded-xl border border-slate-700 bg-slate-950/60 py-3 pl-10 pr-4 text-sm font-semibold text-white placeholder:text-slate-500 outline-none focus:border-primary"
+              className="field-control py-3 pl-10 pr-4 text-sm"
             />
           </div>
           <div className="flex flex-wrap gap-2">
@@ -55,14 +56,15 @@ export default function BlogExplorer({ posts }: BlogExplorerProps) {
               <button
                 key={item}
                 type="button"
+                aria-pressed={category === item}
                 onClick={() => {
                   setCategory(item);
                   trackEvent("blog_category_filter_used", { category: item });
                 }}
-                className={`rounded-full px-3 py-2 text-xs font-bold transition ${
+                className={`rounded-full px-3 py-2 text-xs font-medium transition-colors ${
                   category === item
-                    ? "bg-primary text-white"
-                    : "border border-slate-700 text-slate-300 hover:bg-slate-800"
+                    ? "bg-primary text-primary-foreground"
+                    : "border border-border text-muted-foreground hover:border-accent hover:bg-surface"
                 }`}
               >
                 {item}
@@ -72,25 +74,25 @@ export default function BlogExplorer({ posts }: BlogExplorerProps) {
         </div>
       </GlassCard>
 
-      <div className="text-sm font-semibold text-slate-400">
+      <div className="text-sm font-semibold text-muted-foreground">
         Showing {filteredPosts.length} of {posts.length} guides
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredPosts.map((post) => (
           <GlassCard key={post.slug} className="p-7 flex flex-col" hoverEffect={false}>
-            <div className="w-10 h-10 rounded-xl bg-purple-500/15 text-purple-300 flex items-center justify-center mb-5">
+            <div className="w-10 h-10 rounded-full bg-primary/8 text-primary flex items-center justify-center mb-5">
               <BookOpen size={20} />
             </div>
-            <div className="text-xs font-bold uppercase tracking-wider text-purple-300">
+            <div className="font-mono text-[11px] uppercase tracking-wide text-primary">
               {post.category} · {post.readTime}
             </div>
-            <h2 className="mt-2 text-xl font-black text-white">{post.title}</h2>
-            <p className="mt-3 text-sm text-slate-400 leading-relaxed flex-1">{post.description}</p>
+            <h2 className="mt-2 font-display text-2xl font-normal text-foreground">{post.title}</h2>
+            <p className="mt-3 text-sm text-muted-foreground leading-relaxed flex-1">{post.description}</p>
             <Link
               href={`/blog/${post.slug}`}
               onClick={() => trackEvent("blog_card_clicked", { post_slug: post.slug, category: post.category })}
-              className="mt-6 inline-flex items-center gap-2 text-sm font-bold text-primary hover:text-blue-300"
+              className="mt-6 inline-flex items-center gap-2 text-sm font-medium text-primary hover:text-[#39490d]"
             >
               Read guide <ArrowRight size={15} />
             </Link>

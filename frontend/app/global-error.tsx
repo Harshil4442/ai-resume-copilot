@@ -16,17 +16,17 @@ export default function GlobalError({
 
   return (
     <html lang="en">
-      <body className="flex min-h-screen items-center justify-center bg-neutral-950 px-6 text-neutral-50">
+      <body className="flex min-h-screen items-center justify-center bg-background px-6 text-foreground">
         <main className="max-w-md text-center">
-          <p className="text-sm font-semibold text-teal-300">Something did not finish</p>
-          <h1 className="mt-2 text-3xl font-bold">Your work is still safe.</h1>
-          <p className="mt-3 text-sm leading-6 text-neutral-400">
+          <p className="text-sm font-semibold text-primary">Something did not finish</p>
+          <h1 className="font-display mt-2 text-3xl font-normal">Your work is still safe.</h1>
+          <p className="mt-3 text-sm leading-6 text-muted-foreground">
             We recorded the failure. Try this screen again, or return to your workspace.
           </p>
           <button
             type="button"
             onClick={reset}
-            className="mt-6 rounded-md bg-teal-400 px-4 py-2.5 text-sm font-bold text-neutral-950 hover:bg-teal-300"
+            className="button-primary mt-6"
           >
             Try again
           </button>

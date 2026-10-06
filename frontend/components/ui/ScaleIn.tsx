@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import useMotionPreference from "./useMotionPreference";
 
 interface ScaleInProps {
   children: React.ReactNode;
@@ -9,15 +10,16 @@ interface ScaleInProps {
 }
 
 export default function ScaleIn({ children, delay = 0, className = "" }: ScaleInProps) {
+  const reducedMotion = useMotionPreference();
   return (
     <motion.div
-      initial={{ opacity: 1, scale: 0.95, y: 10 }}
-      animate={{ opacity: 1, scale: 1, y: 0 }}
+      initial={false}
+      whileInView={reducedMotion ? { opacity: 1, scale: 1, y: 0 } : { opacity: 1, scale: [0.98, 1], y: [10, 0] }}
+      viewport={{ once: true }}
       transition={{
-        type: "spring",
-        stiffness: 100,
-        damping: 20,
-        delay: delay,
+        duration: reducedMotion ? 0 : 0.5,
+        ease: [0.22, 1, 0.36, 1],
+        delay: reducedMotion ? 0 : delay,
       }}
       className={className}
     >

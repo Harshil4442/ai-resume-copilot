@@ -18,14 +18,14 @@ export default function TermsOfService() {
         title="Terms of Service"
         subtitle="The terms for using HireWiz and purchasing digital access."
       />
-      <div className="w-full max-w-4xl mx-auto px-6 md:px-8 mt-12 text-slate-300 space-y-8 leading-relaxed">
-        <p className="text-sm text-slate-400">
+      <div className="w-full max-w-4xl mx-auto px-6 md:px-8 mt-12 text-foreground space-y-8 leading-relaxed">
+        <p className="text-sm text-muted-foreground">
           Effective: {SITE.policyEffectiveDate} · Last updated: {SITE.policyEffectiveDate} · Version {SITE.policyVersion}.
           HireWiz is operated by {SITE.operatorName}, trading as HireWiz, in Gujarat, India ("HireWiz", "we", "our", or "us").
         </p>
 
         <section>
-          <h2 className="text-2xl font-bold text-white mb-4">1. Acceptance and eligibility</h2>
+          <h2 className="font-display text-2xl font-normal text-foreground mb-4">1. Acceptance and eligibility</h2>
           <p>
             By creating an account, using the service, or making a purchase, you agree to these Terms and acknowledge
             our <Link href="/privacy" className="text-primary hover:underline">Privacy Policy</Link>. You must be at
@@ -34,7 +34,7 @@ export default function TermsOfService() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-bold text-white mb-4">2. What the service is</h2>
+          <h2 className="font-display text-2xl font-normal text-foreground mb-4">2. What the service is</h2>
           <p>
             HireWiz is automated, self-service software. You provide your own resume and, optionally, job-description
             text. The service can parse resume text, calculate HireWiz compatibility estimates, identify possible
@@ -49,7 +49,7 @@ export default function TermsOfService() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-bold text-white mb-4">3. Accounts and account security</h2>
+          <h2 className="font-display text-2xl font-normal text-foreground mb-4">3. Accounts and account security</h2>
           <p>
             You must provide accurate account information, protect your credentials, and promptly tell us about
             suspected unauthorized access. You are responsible for activity under your account unless applicable law
@@ -63,7 +63,7 @@ export default function TermsOfService() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-bold text-white mb-4">4. Public price and paid access</h2>
+          <h2 className="font-display text-2xl font-normal text-foreground mb-4">4. Public price and paid access</h2>
           <p>
             The current paid product is shown on the public <Link href="/pricing" className="text-primary hover:underline">Pricing page</Link>.
             For the India launch, HireWiz offers a one-time Premium pass that provides 30 days of access. It is not a
@@ -86,7 +86,7 @@ export default function TermsOfService() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-bold text-white mb-4">5. Analysis units</h2>
+          <h2 className="font-display text-2xl font-normal text-foreground mb-4">5. Analysis units</h2>
           <p>
             New free accounts receive 50 complimentary analysis units for specified AI-assisted operations. The
             unit cost is displayed before a metered operation starts. Units are a feature-use allowance only: they are
@@ -101,7 +101,7 @@ export default function TermsOfService() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-bold text-white mb-4">6. Your content and permission to process it</h2>
+          <h2 className="font-display text-2xl font-normal text-foreground mb-4">6. Your content and permission to process it</h2>
           <p>
             You retain your rights in content you upload. You grant HireWiz and the service providers listed on our{" "}
             <Link href="/subprocessors" className="text-primary hover:underline">Service Providers page</Link> a limited,
@@ -112,7 +112,7 @@ export default function TermsOfService() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-bold text-white mb-4">7. AI output and user verification</h2>
+          <h2 className="font-display text-2xl font-normal text-foreground mb-4">7. AI output and user verification</h2>
           <p>
             AI output may be incomplete, inaccurate, biased, outdated, or fabricated. You must verify every suggested
             fact before saving, exporting, or sharing it. Do not add an employer, date, degree, certification, skill,
@@ -122,7 +122,7 @@ export default function TermsOfService() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-bold text-white mb-4">8. Acceptable use</h2>
+          <h2 className="font-display text-2xl font-normal text-foreground mb-4">8. Acceptable use</h2>
           <p>You must not use HireWiz to:</p>
           <ul className="list-disc pl-6 mt-4 space-y-2">
             <li>upload another person's resume or personal data without authority;</li>
@@ -136,7 +136,7 @@ export default function TermsOfService() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-bold text-white mb-4">9. Market and third-party information</h2>
+          <h2 className="font-display text-2xl font-normal text-foreground mb-4">9. Market and third-party information</h2>
           <p>
             Market results use a limited sample made available by third-party data providers. Coverage, freshness,
             geography, sample size, and availability vary. Percentages and summaries are informational estimates and
@@ -146,7 +146,7 @@ export default function TermsOfService() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-bold text-white mb-4">10. HireWiz intellectual property</h2>
+          <h2 className="font-display text-2xl font-normal text-foreground mb-4">10. HireWiz intellectual property</h2>
           <p>
             HireWiz and its licensors retain rights in the software, design, branding, and proprietary methods. These
             Terms give you a personal, limited, revocable, non-transferable right to use the service for its intended
@@ -155,7 +155,7 @@ export default function TermsOfService() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-bold text-white mb-4">11. Availability and changes</h2>
+          <h2 className="font-display text-2xl font-normal text-foreground mb-4">11. Availability and changes</h2>
           <p>
             The service is provided on an "as available" basis. We may maintain, secure, change, or discontinue
             features. Where a material change affects an active paid pass, we will act reasonably and apply the Refund
@@ -164,7 +164,7 @@ export default function TermsOfService() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-bold text-white mb-4">12. Disclaimers and limitation of liability</h2>
+          <h2 className="font-display text-2xl font-normal text-foreground mb-4">12. Disclaimers and limitation of liability</h2>
           <p>
             To the extent permitted by law, HireWiz does not warrant that AI output will be accurate, that every file
             will parse correctly, or that use of the service will produce a career or employment outcome. We do not
@@ -179,7 +179,7 @@ export default function TermsOfService() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-bold text-white mb-4">13. Responsibility for misuse</h2>
+          <h2 className="font-display text-2xl font-normal text-foreground mb-4">13. Responsibility for misuse</h2>
           <p>
             To the extent permitted by law, you are responsible for direct losses and third-party claims caused by
             your unlawful use, infringement, fraud, or deliberate breach of these Terms. We will provide reasonable
@@ -188,7 +188,7 @@ export default function TermsOfService() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-bold text-white mb-4">14. Governing law and complaints</h2>
+          <h2 className="font-display text-2xl font-normal text-foreground mb-4">14. Governing law and complaints</h2>
           <p>
             These Terms are governed by the laws of India, subject to mandatory consumer protections and the
             jurisdiction rules that apply to you. Before starting formal proceedings, please contact our Grievance
@@ -199,7 +199,7 @@ export default function TermsOfService() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-bold text-white mb-4">15. General terms</h2>
+          <h2 className="font-display text-2xl font-normal text-foreground mb-4">15. General terms</h2>
           <p>
             If part of these Terms is unenforceable, the remaining provisions continue to apply. Delay in enforcing a
             right is not a waiver. You may not transfer your account or these Terms without our consent. We may assign
@@ -208,7 +208,7 @@ export default function TermsOfService() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-bold text-white mb-4">16. Changes to these Terms</h2>
+          <h2 className="font-display text-2xl font-normal text-foreground mb-4">16. Changes to these Terms</h2>
           <p>
             We may update these Terms to reflect product, legal, or operational changes. We will update the date and
             version above and provide additional notice when a change is material. Changes do not retroactively remove
@@ -217,7 +217,7 @@ export default function TermsOfService() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-bold text-white mb-4">17. Contact</h2>
+          <h2 className="font-display text-2xl font-normal text-foreground mb-4">17. Contact</h2>
           <p>
             Email <a href={`mailto:${SITE.supportEmail}`} className="text-primary hover:underline">{SITE.supportEmail}</a>,
             call <a href={SITE.supportPhoneHref} className="text-primary hover:underline">{SITE.supportPhoneDisplay}</a>,
