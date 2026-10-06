@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import useMotionPreference from "./useMotionPreference";
 
 interface ScrollRevealProps {
   children: React.ReactNode;
@@ -18,18 +19,19 @@ export default function ScrollReveal({
   width = "100%"
 }: ScrollRevealProps) {
   
-  const yOffset = direction === "up" ? 40 : direction === "down" ? -40 : 0;
-  const xOffset = direction === "left" ? 40 : direction === "right" ? -40 : 0;
+  const reducedMotion = useMotionPreference();
+  const yOffset = direction === "up" ? 20 : direction === "down" ? -20 : 0;
+  const xOffset = direction === "left" ? 20 : direction === "right" ? -20 : 0;
 
   return (
     <motion.div
-      initial={{ opacity: 1, y: yOffset, x: xOffset }}
-      whileInView={{ opacity: 1, y: 0, x: 0 }}
+      initial={false}
+      whileInView={reducedMotion ? { opacity: 1, y: 0, x: 0 } : { opacity: 1, y: [yOffset, 0], x: [xOffset, 0] }}
       viewport={{ once: true, margin: "-50px" }}
       transition={{ 
-        duration: 0.7, 
+        duration: reducedMotion ? 0 : 0.65,
         ease: [0.22, 1, 0.36, 1], 
-        delay 
+        delay: reducedMotion ? 0 : delay
       }}
       style={{ width }}
       className={className}

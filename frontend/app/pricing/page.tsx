@@ -36,7 +36,7 @@ export default async function PricingPage() {
   return (
     <main className="w-full max-w-[64rem] mx-auto px-4 sm:px-6 md:px-8 py-12 space-y-10">
       <TrackEventOnView eventName="pricing_viewed" />
-      <Link href="/" className="inline-flex items-center text-sm font-semibold text-slate-400 hover:text-primary transition-colors">
+      <Link href="/" className="inline-flex items-center text-sm font-semibold text-muted-foreground hover:text-primary transition-colors">
         <ArrowLeft size={16} className="mr-2" /> Back to Home
       </Link>
 
@@ -49,23 +49,23 @@ export default async function PricingPage() {
       <FadeIn delay={0.1}>
         {premium ? (
           <GlassCard className="max-w-2xl mx-auto p-8 md:p-10 flex flex-col" hoverEffect={false}>
-            <div className="w-11 h-11 rounded-xl bg-blue-500/15 flex items-center justify-center text-blue-400 mb-5">
+            <div className="w-11 h-11 rounded-xl bg-primary/10 flex items-center justify-center text-primary mb-5">
               <Crown size={22} />
             </div>
-            <h2 className="text-2xl font-black text-white">{premium.name}</h2>
-            <p className="mt-2 text-sm text-slate-400 leading-relaxed">{premium.description}</p>
+            <h2 className="font-display text-2xl font-normal text-foreground">{premium.name}</h2>
+            <p className="mt-2 text-sm text-muted-foreground leading-relaxed">{premium.description}</p>
             <div className="mt-5 flex items-baseline gap-2">
-              <span className="text-5xl font-black text-white tracking-tighter">{premium.amount_display}</span>
-              <span className="text-sm font-bold text-slate-400">one-time</span>
+              <span className="text-5xl font-semibold text-foreground tracking-tighter">{premium.amount_display}</span>
+              <span className="text-sm font-bold text-muted-foreground">one-time</span>
             </div>
-            <p className="text-sm font-semibold text-slate-300 mt-3">
+            <p className="text-sm font-semibold text-foreground mt-3">
               {premium.duration_days} days of access · {premium.currency} · no trial · no subscription · no auto-renewal
             </p>
 
             <ul className="mt-7 space-y-3">
               {PREMIUM_FEATURES.map((feature) => (
-                <li key={feature} className="flex items-start gap-2 text-sm text-slate-200 font-medium leading-relaxed">
-                  <CheckCircle2 size={16} className="text-emerald-400 flex-shrink-0 mt-0.5" /> {feature}
+                <li key={feature} className="flex items-start gap-2 text-sm text-foreground font-medium leading-relaxed">
+                  <CheckCircle2 size={16} className="text-primary flex-shrink-0 mt-0.5" /> {feature}
                 </li>
               ))}
             </ul>
@@ -73,24 +73,24 @@ export default async function PricingPage() {
             {canPurchase ? (
               <Link
                 href="/billing"
-                className="mt-8 w-full inline-flex justify-center items-center px-4 py-3 rounded-xl bg-primary text-white text-sm font-bold hover:bg-primary/90 transition-colors"
+                className="mt-8 w-full inline-flex justify-center items-center px-4 py-3 rounded-full bg-primary text-primary-foreground text-sm font-bold hover:bg-primary/90 transition-colors"
               >
                 Sign in to purchase
               </Link>
             ) : (
-              <div className="mt-8 rounded-xl border border-amber-800/70 bg-amber-950/30 p-4 text-sm text-amber-100">
+              <div className="mt-8 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
                 Paid checkout is not currently enabled. You can still create a free account and review the product before purchasing becomes available.
-                <Link href="/register" className="mt-3 inline-flex font-bold text-amber-300 hover:underline">Create a free account</Link>
+                <Link href="/register" className="mt-3 inline-flex font-bold text-amber-800 hover:underline">Create a free account</Link>
               </div>
             )}
           </GlassCard>
         ) : (
           <GlassCard className="max-w-2xl mx-auto p-8 md:p-10" hoverEffect={false}>
             <div className="flex items-start gap-3">
-              <AlertCircle size={22} className="text-amber-400 flex-shrink-0 mt-0.5" />
+              <AlertCircle size={22} className="text-amber-800 flex-shrink-0 mt-0.5" />
               <div>
-                <h2 className="text-xl font-black text-white">Pricing is temporarily unavailable</h2>
-                <p className="mt-2 text-sm text-slate-400 leading-relaxed">
+                <h2 className="font-display text-xl font-normal text-foreground">Pricing is temporarily unavailable</h2>
+                <p className="mt-2 text-sm text-muted-foreground leading-relaxed">
                   We could not load the server-owned product catalog. No checkout can be started from this page. Please try again later or contact support.
                 </p>
               </div>
@@ -100,8 +100,8 @@ export default async function PricingPage() {
       </FadeIn>
 
       <FadeIn delay={0.15}>
-        <GlassCard className="p-8 md:p-10 text-slate-300 leading-relaxed space-y-5" hoverEffect={false}>
-          <h2 className="text-xl font-black text-white tracking-tight">Included analysis units</h2>
+        <GlassCard className="p-8 md:p-10 text-foreground leading-relaxed space-y-5" hoverEffect={false}>
+          <h2 className="font-display text-xl font-normal text-foreground tracking-tight">Included analysis units</h2>
           <p>
             New free accounts receive <strong>50 complimentary analysis units</strong> for metered AI-assisted
             operations. They do not refresh on a schedule or expire while the account remains open; they are used
@@ -114,7 +114,7 @@ export default async function PricingPage() {
             full tailored-resume draft uses ten units. The confirmation button shows the unit cost before an
             operation starts. At launch, HireWiz does not sell standalone units or top-up packs.
           </p>
-          <p className="text-sm text-slate-400">
+          <p className="text-sm text-muted-foreground">
             If a technical failure consumes units without delivering a result, contact support with the time and
             operation details so the transaction can be reviewed; restoration is not automatic. Premium access
             removes unit deductions while the 30-day pass remains active. Deleting the account removes unused units.
@@ -123,17 +123,17 @@ export default async function PricingPage() {
       </FadeIn>
 
       <FadeIn delay={0.2}>
-        <GlassCard className="p-8 md:p-10 text-slate-300 leading-relaxed space-y-4" hoverEffect={false}>
-          <h2 className="text-xl font-black text-white tracking-tight">Payment, tax, and delivery details</h2>
+        <GlassCard className="p-8 md:p-10 text-foreground leading-relaxed space-y-4" hoverEffect={false}>
+          <h2 className="font-display text-xl font-normal text-foreground tracking-tight">Payment, tax, and delivery details</h2>
           <ul className="space-y-3 text-sm">
             <li className="flex items-start gap-2"><Shield size={16} className="text-primary mt-0.5 flex-shrink-0" /> <span><strong>Seller:</strong> HireWiz, operated by {SITE.operatorName}, trading as HireWiz.</span></li>
             <li className="flex items-start gap-2"><Shield size={16} className="text-primary mt-0.5 flex-shrink-0" /> <span><strong>Final total:</strong> ₹999 INR is the full amount due for this pass. HireWiz does not add a separate fee or tax at checkout.</span></li>
             <li className="flex items-start gap-2"><Shield size={16} className="text-primary mt-0.5 flex-shrink-0" /> <span><strong>No automatic renewal:</strong> The pass expires after 30 days. We do not store a mandate or automatically charge you again.</span></li>
             <li className="flex items-start gap-2"><Shield size={16} className="text-primary mt-0.5 flex-shrink-0" /> <span><strong>Hosted checkout:</strong> Payment credentials are entered with the payment processor used for checkout. HireWiz does not collect or store raw card details, CVV, UPI PIN, or bank-login credentials.</span></li>
-            <li className="flex items-start gap-2"><Shield size={16} className="text-primary mt-0.5 flex-shrink-0" /> <span><strong>Digital delivery:</strong> Premium access is normally added to the purchasing account after confirmed payment. See the <Link href="/digital-delivery" className="text-primary hover:underline">Digital Service Delivery &amp; Shipping Policy</Link>.</span></li>
-            <li className="flex items-start gap-2"><Shield size={16} className="text-primary mt-0.5 flex-shrink-0" /> <span><strong>Refunds:</strong> Eligibility and the request process are set out in the <Link href="/refund" className="text-primary hover:underline">Refund &amp; Cancellation Policy</Link>.</span></li>
+            <li className="flex items-start gap-2"><Shield size={16} className="text-primary mt-0.5 flex-shrink-0" /> <span><strong>Digital delivery:</strong> Premium access is normally added to the purchasing account after confirmed payment. See the <Link href="/digital-delivery" className="text-primary underline underline-offset-2 hover:text-foreground transition-colors">Digital Service Delivery &amp; Shipping Policy</Link>.</span></li>
+            <li className="flex items-start gap-2"><Shield size={16} className="text-primary mt-0.5 flex-shrink-0" /> <span><strong>Refunds:</strong> Eligibility and the request process are set out in the <Link href="/refund" className="text-primary underline underline-offset-2 hover:text-foreground transition-colors">Refund &amp; Cancellation Policy</Link>.</span></li>
           </ul>
-          <div className="pt-4 flex flex-wrap gap-x-4 gap-y-2 text-xs font-semibold text-slate-400 border-t border-slate-700/60">
+          <div className="pt-4 flex flex-wrap gap-x-4 gap-y-2 text-xs font-semibold text-muted-foreground border-t border-border">
             <Link href="/terms" className="hover:text-primary">Terms of Service</Link>
             <Link href="/privacy" className="hover:text-primary">Privacy Policy</Link>
             <Link href="/refund" className="hover:text-primary">Refund &amp; Cancellation</Link>

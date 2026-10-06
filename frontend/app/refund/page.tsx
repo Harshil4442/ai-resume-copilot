@@ -16,7 +16,7 @@ export const metadata: Metadata = {
 export default function RefundPolicyPage() {
   return (
     <main className="w-full max-w-[50rem] mx-auto px-4 sm:px-6 md:px-8 py-12 space-y-8">
-      <Link href="/" className="inline-flex items-center text-sm font-semibold text-slate-400 hover:text-primary transition-colors">
+      <Link href="/" className="inline-flex items-center text-sm font-semibold text-muted-foreground hover:text-primary transition-colors">
         <ArrowLeft size={16} className="mr-2" /> Back to Home
       </Link>
 
@@ -27,19 +27,19 @@ export default function RefundPolicyPage() {
       />
 
       <FadeIn delay={0.1}>
-        <GlassCard className="p-8 md:p-10 text-slate-300 leading-relaxed space-y-8" hoverEffect={false}>
-          <div className="flex items-center gap-3 text-primary border-b border-slate-700/60 pb-4">
+        <GlassCard className="p-8 md:p-10 text-foreground leading-relaxed space-y-8" hoverEffect={false}>
+          <div className="flex items-center gap-3 text-primary border-b border-border pb-4">
             <RefreshCcw size={24} />
-            <h2 className="text-xl font-bold text-white m-0">Transparent rules for digital access</h2>
+            <h2 className="font-display text-xl font-normal text-foreground m-0">Transparent rules for digital access</h2>
           </div>
 
-          <p className="text-sm text-slate-400 m-0">
+          <p className="text-sm text-muted-foreground m-0">
             Version {SITE.policyVersion}. HireWiz is operated by {SITE.operatorName}, trading as HireWiz. This Policy
             does not limit any refund, dispute, or consumer right that cannot lawfully be waived.
           </p>
 
           <section>
-            <h3 className="text-lg font-bold text-white mb-4">1. Product covered</h3>
+            <h3 className="text-lg font-bold text-foreground mb-4">1. Product covered</h3>
             <p>
               HireWiz currently sells one digital product for customers in India: a one-time Premium pass providing
               30 days of access. It is not an automatically renewing subscription. HireWiz does not currently sell
@@ -49,8 +49,8 @@ export default function RefundPolicyPage() {
           </section>
 
           <section>
-            <h3 className="text-lg font-bold text-white mb-4">2. Cancellation and expiry</h3>
-            <ul className="list-disc pl-6 space-y-2 text-slate-400">
+            <h3 className="text-lg font-bold text-foreground mb-4">2. Cancellation and expiry</h3>
+            <ul className="list-disc pl-6 space-y-2 text-muted-foreground">
               <li>There is no recurring charge or renewal mandate to cancel. The pass expires at the end of its 30-day period unless you choose to buy another pass.</li>
               <li>You can end Premium access early through Profile or by contacting support. Ending access early does not by itself create a refund entitlement.</li>
               <li>Deleting your account ends access and removes active application data as described in the Privacy Policy; deletion does not automatically create a refund.</li>
@@ -58,9 +58,9 @@ export default function RefundPolicyPage() {
           </section>
 
           <section>
-            <h3 className="text-lg font-bold text-white mb-4">3. When a refund may be available</h3>
+            <h3 className="text-lg font-bold text-foreground mb-4">3. When a refund may be available</h3>
             <p>We will review a refund request where:</p>
-            <ul className="list-disc pl-6 mt-4 space-y-2 text-slate-400">
+            <ul className="list-disc pl-6 mt-4 space-y-2 text-muted-foreground">
               <li>the same order was charged more than once because of a technical or processing error;</li>
               <li>payment was confirmed but Premium access was not delivered, and support could not correct the activation;</li>
               <li>a material HireWiz service failure substantially prevented use of the paid pass and support could not provide a reasonable remedy;</li>
@@ -75,13 +75,13 @@ export default function RefundPolicyPage() {
           </section>
 
           <section>
-            <h3 className="text-lg font-bold text-white mb-4">4. How to request a refund</h3>
+            <h3 className="text-lg font-bold text-foreground mb-4">4. How to request a refund</h3>
             <p>
               Email <a href={`mailto:${SITE.supportEmail}`} className="text-primary hover:underline">{SITE.supportEmail}</a>{" "}
               from your registered email address within seven days of the charge, or as soon as reasonably possible
               for an unauthorized charge or legal claim. Include:
             </p>
-            <ul className="list-disc pl-6 mt-4 space-y-2 text-slate-400">
+            <ul className="list-disc pl-6 mt-4 space-y-2 text-muted-foreground">
               <li>your registered email address;</li>
               <li>the order or transaction ID shown in the receipt or checkout confirmation;</li>
               <li>the charge date and amount; and</li>
@@ -94,7 +94,7 @@ export default function RefundPolicyPage() {
           </section>
 
           <section>
-            <h3 className="text-lg font-bold text-white mb-4">5. Approved refunds</h3>
+            <h3 className="text-lg font-bold text-foreground mb-4">5. Approved refunds</h3>
             <p>
               An approved refund is initiated to the original payment method through the processor used for checkout.
               HireWiz will communicate when it has initiated the refund; the bank, card network, UPI app, or processor
@@ -108,7 +108,7 @@ export default function RefundPolicyPage() {
           </section>
 
           <section>
-            <h3 className="text-lg font-bold text-white mb-4">6. Payment disputes and chargebacks</h3>
+            <h3 className="text-lg font-bold text-foreground mb-4">6. Payment disputes and chargebacks</h3>
             <p>
               You may use any bank, payment-provider, regulator, or consumer-dispute right available to you. If a
               dispute is opened, we may temporarily pause the affected paid access while the transaction is reviewed
@@ -118,7 +118,7 @@ export default function RefundPolicyPage() {
           </section>
 
           <section>
-            <h3 className="text-lg font-bold text-white mb-4">7. Billing and grievance contact</h3>
+            <h3 className="text-lg font-bold text-foreground mb-4">7. Billing and grievance contact</h3>
             <p>
               Billing support: <a href={`mailto:${SITE.supportEmail}`} className="text-primary hover:underline">{SITE.supportEmail}</a>.
               If the response does not resolve your concern, contact {SITE.grievanceContactName}, {SITE.grievanceContactRole},
@@ -126,7 +126,7 @@ export default function RefundPolicyPage() {
             </p>
           </section>
 
-          <div className="pt-5 border-t border-slate-700/60 flex flex-wrap gap-4 text-xs font-semibold text-slate-400">
+          <div className="pt-5 border-t border-border flex flex-wrap gap-4 text-xs font-semibold text-muted-foreground">
             <Link href="/pricing" className="hover:text-primary">Pricing</Link>
             <Link href="/digital-delivery" className="hover:text-primary">Digital Delivery &amp; Shipping</Link>
             <Link href="/terms" className="hover:text-primary">Terms of Service</Link>

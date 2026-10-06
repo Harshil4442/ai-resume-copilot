@@ -104,7 +104,7 @@ const PROVIDER_ROLES: Row[] = [
 export default function SubprocessorsPage() {
   return (
     <main className="w-full max-w-[72rem] mx-auto px-4 sm:px-6 md:px-8 py-12 space-y-8">
-      <Link href="/" className="inline-flex items-center text-sm font-semibold text-slate-400 hover:text-primary transition-colors">
+      <Link href="/" className="inline-flex items-center text-sm font-semibold text-muted-foreground hover:text-primary transition-colors">
         <ArrowLeft size={16} className="mr-2" /> Back to Home
       </Link>
 
@@ -115,14 +115,14 @@ export default function SubprocessorsPage() {
       />
 
       <FadeIn delay={0.1}>
-        <GlassCard className="p-6 md:p-8 text-slate-300 leading-relaxed space-y-4" hoverEffect={false}>
+        <GlassCard className="p-6 md:p-8 text-foreground leading-relaxed space-y-4" hoverEffect={false}>
           <p className="m-0">
             HireWiz uses external infrastructure and APIs to provide the functions below. Some integrations are
             configurable and are used only when production credentials are enabled or you initiate that feature. We do
             not present an inactive payment provider as available. The provider used for a market request is also shown
             with the result.
           </p>
-          <p className="text-sm text-slate-400 m-0">
+          <p className="text-sm text-muted-foreground m-0">
             Payment card details, CVV, UPI PINs, and bank-login credentials are entered with the checkout processor and
             are not received or stored by HireWiz.
           </p>
@@ -134,22 +134,22 @@ export default function SubprocessorsPage() {
           <div className="overflow-x-auto">
             <table className="w-full min-w-[1000px] text-left text-sm">
               <thead>
-                <tr className="border-b border-slate-700/60 text-[11px] uppercase tracking-wider text-slate-400">
-                  <th className="px-4 py-3 font-black">Provider / role</th>
-                  <th className="px-4 py-3 font-black">When used</th>
-                  <th className="px-4 py-3 font-black">Purpose</th>
-                  <th className="px-4 py-3 font-black">Data involved</th>
-                  <th className="px-4 py-3 font-black">Processing region</th>
+                <tr className="border-b border-border text-[11px] uppercase tracking-wider text-muted-foreground">
+                  <th className="px-4 py-3 font-semibold">Provider / role</th>
+                  <th className="px-4 py-3 font-semibold">When used</th>
+                  <th className="px-4 py-3 font-semibold">Purpose</th>
+                  <th className="px-4 py-3 font-semibold">Data involved</th>
+                  <th className="px-4 py-3 font-semibold">Processing region</th>
                 </tr>
               </thead>
               <tbody>
                 {PROVIDER_ROLES.map((row) => (
-                  <tr key={row.provider} className="border-b border-slate-800/60 last:border-0 align-top">
-                    <td className="px-4 py-4 font-bold text-white">{row.provider}</td>
-                    <td className="px-4 py-4 text-slate-300">{row.whenUsed}</td>
-                    <td className="px-4 py-4 text-slate-300">{row.purpose}</td>
-                    <td className="px-4 py-4 text-slate-400">{row.data}</td>
-                    <td className="px-4 py-4 text-slate-400">{row.region}</td>
+                  <tr key={row.provider} className="border-b border-border last:border-0 align-top">
+                    <td className="px-4 py-4 font-bold text-foreground">{row.provider}</td>
+                    <td className="px-4 py-4 text-foreground">{row.whenUsed}</td>
+                    <td className="px-4 py-4 text-foreground">{row.purpose}</td>
+                    <td className="px-4 py-4 text-muted-foreground">{row.data}</td>
+                    <td className="px-4 py-4 text-muted-foreground">{row.region}</td>
                   </tr>
                 ))}
               </tbody>
@@ -159,8 +159,8 @@ export default function SubprocessorsPage() {
       </FadeIn>
 
       <FadeIn delay={0.2}>
-        <GlassCard className="p-6 md:p-8 text-slate-300 leading-relaxed space-y-4" hoverEffect={false}>
-          <p className="text-sm text-slate-400 m-0">
+        <GlassCard className="p-6 md:p-8 text-foreground leading-relaxed space-y-4" hoverEffect={false}>
+          <p className="text-sm text-muted-foreground m-0">
             This page is updated when the production provider configuration changes. See the{" "}
             <Link href="/privacy" className="text-primary hover:underline">Privacy Policy</Link> for purposes,
             retention, choices, and rights. Questions may be sent to{" "}

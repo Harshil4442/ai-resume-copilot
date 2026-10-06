@@ -11,7 +11,7 @@ export default function Skeleton({
   return (
     <div
       className={twMerge(clsx(
-        "animate-pulse rounded-md bg-slate-200/60",
+        "motion-safe:animate-pulse rounded-xl bg-[#edf0e7]",
         className
       ))}
     />

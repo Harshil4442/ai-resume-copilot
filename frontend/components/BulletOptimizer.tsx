@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { trackEvent } from "../lib/analytics";
+import FadeIn from "./ui/FadeIn";
 
 type OptimizationResult = {
   action_verb_score: number;
@@ -53,19 +54,20 @@ export default function BulletOptimizer() {
 
   return (
     <div className="p-6 md:p-8 max-w-4xl mx-auto my-4 bg-transparent">
-      <div className="label-kicker flex items-center gap-3">
-        <span className="pulse-dot bg-blue-900/300" /> Public Micro-Tool
+      <div className="eyebrow flex items-center gap-3">
+        <span className="status-dot bg-primary" /> Public Micro-Tool
       </div>
-      <h2 className="text-3xl md:text-4xl font-black text-white mt-2">
+      <h2 className="font-display text-4xl md:text-5xl font-normal text-foreground mt-2">
         Resume Bullet Review
       </h2>
-      <p className="text-sm text-slate-400 mt-2">
+      <p className="text-sm text-muted-foreground leading-6 mt-3">
         Test one resume bullet. HireWiz provides a simple writing-quality estimate and an AI-assisted alternative for you to verify.
       </p>
 
       <form onSubmit={handleOptimize} className="mt-6 space-y-4">
         <textarea
-          className="w-full rounded-xl bg-slate-950/50 border border-slate-700/60 p-4 text-white placeholder-slate-500 outline-none focus:border-primary focus:ring-1 focus:ring-primary min-h-[100px]"
+          className="field-control min-h-[130px] resize-y"
+          aria-label="Resume bullet to review"
           placeholder="e.g. Worked on database performance improvements and cooperated with front-end developers."
           value={bullet}
           onChange={(e) => setBullet(e.target.value)}
@@ -74,7 +76,7 @@ export default function BulletOptimizer() {
         <button
           type="submit"
           disabled={loading || !bullet.trim()}
-          className="w-full md:w-auto px-6 py-3 rounded-xl bg-primary text-white font-bold hover:bg-primary/90 transition shadow-sm"
+          className="button-primary w-full md:w-auto"
         >
           {loading ? "Analyzing bullet..." : "Optimize Bullet"}
         </button>
@@ -87,37 +89,37 @@ export default function BulletOptimizer() {
       )}
 
       {result && (
-        <div className="mt-8 pt-6 border-t border-slate-700/60 space-y-6 animate-rise-fade">
+        <FadeIn duration={0.35} className="mt-8 pt-6 border-t border-border space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="premium-card p-4 flex items-center justify-between">
+            <div className="surface-panel p-4 flex items-center justify-between">
               <div>
-                <div className="text-xs font-bold uppercase tracking-wider text-slate-400">Action Verb Score</div>
-                <div className="text-3xl font-black text-white mt-1">{result.action_verb_score} / 100</div>
+                <div className="data-label">Action Verb Score</div>
+                <div className="text-3xl font-normal text-foreground mt-1">{result.action_verb_score} / 100</div>
               </div>
               <span className={`h-4 w-4 rounded-full ${result.action_verb_score >= 80 ? 'bg-emerald-400' : result.action_verb_score >= 60 ? 'bg-amber-400' : 'bg-red-400'}`} />
             </div>
 
-            <div className="premium-card p-4 flex items-center justify-between">
+            <div className="surface-panel p-4 flex items-center justify-between">
               <div>
-                <div className="text-xs font-bold uppercase tracking-wider text-slate-400">Quantifiable Metrics</div>
-                <div className="text-lg font-black text-white mt-2">
+                <div className="data-label">Quantifiable Metrics</div>
+                <div className="text-lg font-normal text-foreground mt-2">
                   {result.metrics_present ? "✅ Present" : "❌ Missing (STAR gap)"}
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="rounded-lg border border-blue-800 bg-blue-900/30/40 p-5">
-            <div className="text-xs font-bold uppercase tracking-wider text-blue-500">AI-Suggested Alternative</div>
-            <p className="mt-2 text-base font-semibold text-white leading-relaxed italic">
+          <div className="surface-soft p-5">
+            <div className="eyebrow">AI-Suggested Alternative</div>
+            <p className="mt-2 text-base font-medium text-foreground leading-relaxed italic">
               "{result.recommended_bullet}"
             </p>
           </div>
 
-          <div className="bg-slate-950/60 border border-slate-800 text-white p-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4 rounded-xl shadow-lg mt-8">
+          <div className="bg-surface border border-border text-foreground p-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4 rounded-2xl mt-8">
             <div>
-              <div className="text-xs font-bold uppercase tracking-wider text-blue-400">Continue reviewing your resume</div>
-              <p className="text-sm text-slate-300 mt-1">
+              <div className="eyebrow">Continue reviewing your resume</div>
+              <p className="text-sm text-muted-foreground mt-1">
                 Create an account to structure your resume, compare it with job-description text, and review suggestions. HireWiz does not guarantee employment outcomes.
               </p>
             </div>
@@ -125,20 +127,20 @@ export default function BulletOptimizer() {
             <Link
               href="/register"
               onClick={() => trackEvent("signup_cta_clicked", { source: "bullet_optimizer" })}
-              className="bg-white text-slate-950 hover:bg-slate-200 transition text-center px-6 py-2.5 rounded-full font-black text-sm whitespace-nowrap"
+              className="button-primary whitespace-nowrap"
             >
               Sign Up For Free
             </Link>
             <Link
               href="/pricing"
               onClick={() => trackEvent("premium_cta_clicked", { source: "bullet_optimizer" })}
-              className="border border-slate-700 text-white hover:bg-slate-800 transition text-center px-6 py-2.5 rounded-full font-black text-sm whitespace-nowrap"
+              className="button-secondary whitespace-nowrap"
             >
               View Premium
             </Link>
             </div>
           </div>
-        </div>
+        </FadeIn>
       )}
     </div>
   );

@@ -17,8 +17,8 @@ export default function LogoutPage() {
 
 
   return (
-    <main className="max-w-md mx-auto py-10">
-      <div className="text-sm">Signing out…</div>
+    <main className="app-page">
+      <div className="page-container text-sm text-muted-foreground" role="status">Signing out…</div>
     </main>
   );
 }

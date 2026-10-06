@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import useMotionPreference from "./useMotionPreference";
 import { ReactNode } from "react";
 
 interface FloatingElementProps {
@@ -18,14 +19,15 @@ export default function FloatingElement({
   yOffset = 15,
   duration = 4
 }: FloatingElementProps) {
+  const reducedMotion = useMotionPreference();
   return (
     <motion.div
-      animate={{ y: [0, -yOffset, 0] }}
+      animate={{ y: reducedMotion ? 0 : [0, -yOffset, 0] }}
       transition={{
-        duration: duration,
-        repeat: Infinity,
+        duration: reducedMotion ? 0 : duration,
+        repeat: reducedMotion ? 0 : Infinity,
         ease: "easeInOut",
-        delay: delay
+        delay: reducedMotion ? 0 : delay
       }}
       className={className}
     >

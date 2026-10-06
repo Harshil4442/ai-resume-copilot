@@ -30,7 +30,7 @@ export default function Marquee({
         <div
           key={i}
           className={twMerge(clsx(
-            "flex shrink-0 justify-around [gap:var(--gap)] animate-marquee flex-row",
+            "flex shrink-0 justify-around [gap:var(--gap)] motion-safe:animate-marquee flex-row",
             pauseOnHover && "group-hover:[animation-play-state:paused]",
             reverse && "[animation-direction:reverse]"
           ))}

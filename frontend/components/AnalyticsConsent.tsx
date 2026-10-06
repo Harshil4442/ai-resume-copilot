@@ -186,10 +186,10 @@ export default function AnalyticsConsent({
 
       {showPrompt ? (
         <div className="fixed inset-x-0 bottom-0 z-[100] px-4 pb-4 sm:px-6" role="dialog" aria-label="Cookie preferences">
-          <div className="mx-auto max-w-4xl rounded-2xl border border-slate-700 bg-slate-950/95 p-5 shadow-2xl backdrop-blur-xl sm:flex sm:items-center sm:justify-between sm:gap-6">
+          <div className="mx-auto max-w-4xl rounded-2xl border border-border bg-white/95 p-5 shadow-[0_8px_40px_rgba(23,23,23,0.12)] backdrop-blur-xl sm:flex sm:items-center sm:justify-between sm:gap-6">
             <div>
-              <h2 className="text-sm font-black text-white">Choose your cookie preference</h2>
-              <p className="mt-1 text-xs leading-relaxed text-slate-400">
+              <h2 className="text-sm font-semibold text-foreground">Choose your cookie preference</h2>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                 {analyticsConfigured
                   ? "Essential storage keeps sign-in and your preference working. With your permission, analytics cookies help us understand aggregate site use. Advertising cookies are not used."
                   : "Analytics is not currently configured. Only essential authentication, security, and preference storage is available."}
@@ -199,7 +199,7 @@ export default function AnalyticsConsent({
               <button
                 type="button"
                 onClick={() => savePreference("essential")}
-                className="rounded-xl border border-slate-600 px-4 py-2.5 text-xs font-bold text-slate-200 hover:bg-slate-800"
+                className="button-secondary text-xs"
               >
                 Essential only
               </button>
@@ -207,7 +207,7 @@ export default function AnalyticsConsent({
                 <button
                   type="button"
                   onClick={() => savePreference("analytics")}
-                  className="rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-white hover:bg-primary/90"
+                  className="button-primary text-xs"
                 >
                   Accept analytics
                 </button>

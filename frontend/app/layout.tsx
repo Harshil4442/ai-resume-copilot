@@ -1,14 +1,15 @@
-import { Inter } from 'next/font/google';
+import { Crimson_Text, DM_Sans, Roboto_Mono } from 'next/font/google';
 import "./globals.css";
 import Nav from "../components/Nav";
 import Footer from "../components/Footer";
 import SessionProviderWrapper from "../components/SessionProviderWrapper";
-import AnimatedBackground from "../components/ui/AnimatedBackground";
 import AnalyticsConsent from "../components/AnalyticsConsent";
 import { Metadata } from 'next';
 import { SITE } from "../lib/site";
 
-const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
+const dmSans = DM_Sans({ subsets: ['latin'], variable: '--font-dm-sans', display: 'swap' });
+const crimsonText = Crimson_Text({ subsets: ['latin'], weight: ['400', '600'], style: ['normal', 'italic'], variable: '--font-crimson-text', display: 'swap' });
+const robotoMono = Roboto_Mono({ subsets: ['latin'], weight: ['400', '500'], variable: '--font-roboto-mono', display: 'swap' });
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE.canonicalUrl),
@@ -60,16 +61,15 @@ const softwareApplicationJsonLd = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${inter.variable} font-sans`} data-scroll-behavior="smooth">
+    <html lang="en" className={`${dmSans.variable} ${crimsonText.variable} ${robotoMono.variable} font-sans`} data-scroll-behavior="smooth">
       <head>
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareApplicationJsonLd) }}
         />
       </head>
-      <body className="flex min-h-screen flex-col text-[#f4f2ea] selection:bg-primary/20 selection:text-white">
+      <body className="flex min-h-screen flex-col bg-background text-foreground selection:bg-accent/30 selection:text-foreground">
         <SessionProviderWrapper>
-          <AnimatedBackground />
           <Nav />
           <div className="flex flex-grow flex-col pt-16">{children}</div>
           <Footer />

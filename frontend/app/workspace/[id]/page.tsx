@@ -115,21 +115,21 @@ function MatchSummary({ match }: { match: OpportunityMatch }) {
     <div className="grid gap-7 lg:grid-cols-[180px_1fr]">
       <div className="border-l-2 border-primary pl-5">
         <p className="data-label">Role match</p>
-        <p className="mt-2 text-5xl font-black text-primary">{score}</p>
-        <p className="mt-1 text-sm font-bold text-neutral-400">Grade {match.grade}</p>
-        <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/8">
+        <p className="mt-2 text-5xl font-semibold text-primary">{score}</p>
+        <p className="mt-1 text-sm font-bold text-muted-foreground">Grade {match.grade}</p>
+        <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-surface">
           <div className="h-full bg-primary" style={{ width: `${Math.min(100, Math.max(0, score))}%` }} />
         </div>
       </div>
       <div className="min-w-0">
-        <h2 className="text-lg font-black text-neutral-100">Evidence-aware assessment</h2>
-        <p className="mt-2 text-sm leading-6 text-neutral-400">{match.fit_summary || "Your role-specific summary will appear here."}</p>
+        <h2 className="font-display text-lg font-normal text-foreground">Evidence-aware assessment</h2>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">{match.fit_summary || "Your role-specific summary will appear here."}</p>
         <div className="mt-5 flex flex-wrap gap-2">
           {match.full_matches.slice(0, 8).map((skill) => (
-            <span key={skill} className="rounded-md border border-primary/20 bg-primary/8 px-2 py-1 text-xs font-semibold text-[#69debd]">{skill}</span>
+            <span key={skill} className="rounded-md border border-primary/20 bg-primary/8 px-2 py-1 text-xs font-semibold text-primary">{skill}</span>
           ))}
           {match.true_gaps.slice(0, 8).map((skill) => (
-            <span key={skill} className="rounded-md border border-coral/20 bg-coral/8 px-2 py-1 text-xs font-semibold text-[#ffab9e]">{skill}</span>
+            <span key={skill} className="rounded-md border border-coral/20 bg-coral/8 px-2 py-1 text-xs font-semibold text-coral">{skill}</span>
           ))}
         </div>
       </div>
@@ -141,15 +141,15 @@ function RunFeedback({ run }: { run: AnalysisRun | undefined }) {
   if (!run || run.status === "succeeded") return null;
   if (run.status === "failed") {
     return (
-      <div className="mt-4 flex gap-3 border-y border-coral/25 bg-coral/5 px-4 py-4 text-sm text-[#ffab9e]" role="alert">
+      <div className="mt-4 flex gap-3 border-y border-coral/25 bg-coral/5 px-4 py-4 text-sm text-coral" role="alert">
         <CircleAlert size={18} className="mt-0.5 shrink-0" />
-        <div><strong>Analysis did not complete.</strong><p className="mt-1 text-neutral-400">Reserved units were released automatically. Try again later.</p></div>
+        <div><strong>Analysis did not complete.</strong><p className="mt-1 text-muted-foreground">Reserved units were released automatically. Try again later.</p></div>
       </div>
     );
   }
-  if (run.status === "cancelled") return <p className="mt-4 text-sm text-neutral-500">Analysis cancelled. Reserved units were released.</p>;
+  if (run.status === "cancelled") return <p className="mt-4 text-sm text-muted-foreground">Analysis cancelled. Reserved units were released.</p>;
   return (
-    <div className="mt-4 flex items-center gap-3 border-y border-primary/20 bg-primary/5 px-4 py-4 text-sm text-neutral-300" role="status">
+    <div className="mt-4 flex items-center gap-3 border-y border-primary/20 bg-primary/5 px-4 py-4 text-sm text-foreground" role="status">
       <LoaderCircle size={18} className="animate-spin text-primary" />
       <span>{run.status === "queued" ? "Analysis is queued" : "Analyzing the role against your approved resume evidence"}</span>
     </div>
@@ -430,25 +430,25 @@ export default function OpportunityPage() {
   return (
     <main className="app-page">
       <div className="page-container">
-        <Link href="/workspace" className="inline-flex items-center gap-2 text-sm font-semibold text-neutral-500 hover:text-neutral-200"><ArrowLeft size={16} /> Opportunities</Link>
-        <header className="mt-5 grid gap-6 border-b border-white/10 pb-7 lg:grid-cols-[1fr_auto] lg:items-end">
+        <Link href="/workspace" className="inline-flex items-center gap-2 text-sm font-semibold text-muted-foreground hover:text-foreground"><ArrowLeft size={16} /> Opportunities</Link>
+        <header className="mt-5 grid gap-6 border-b border-border pb-7 lg:grid-cols-[1fr_auto] lg:items-end">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <StatusBadge tone={stageTone[item.stage]}>{stageLabels[item.stage]}</StatusBadge>
-              <span className="text-xs font-bold text-neutral-600">{item.priority} priority</span>
+              <span className="text-xs font-bold text-muted-foreground">{item.priority} priority</span>
             </div>
-            <h1 className="mt-3 text-3xl font-black leading-tight text-neutral-100 sm:text-4xl">{item.title}</h1>
-            <p className="mt-2 text-sm font-semibold text-neutral-400">{item.company || "Company not set"}{item.location ? ` · ${item.location}` : ""}</p>
+            <h1 className="font-display mt-3 text-4xl font-normal leading-tight text-foreground sm:text-5xl">{item.title}</h1>
+            <p className="mt-2 text-sm font-semibold text-muted-foreground">{item.company || "Company not set"}{item.location ? ` · ${item.location}` : ""}</p>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-            <label className="grid gap-1 text-xs font-bold text-neutral-500">
+            <label className="grid gap-1 text-xs font-bold text-muted-foreground">
               Resume
               <select className="field-control min-w-44" value={item.resume_id || ""} onChange={(event) => connectResume.mutate(event.target.value)} disabled={connectResume.isPending}>
                 <option value="">Not connected</option>
                 {(resumes.data?.resumes || []).map((resume) => <option key={resume.id} value={resume.id}>{resume.filename}</option>)}
               </select>
             </label>
-            <label className="grid gap-1 text-xs font-bold text-neutral-500">
+            <label className="grid gap-1 text-xs font-bold text-muted-foreground">
               Application stage
               <select
                 className="field-control min-w-44"
@@ -470,7 +470,7 @@ export default function OpportunityPage() {
               </select>
             </label>
             {item.resume_versions.length ? (
-              <label className="grid gap-1 text-xs font-bold text-neutral-500">
+              <label className="grid gap-1 text-xs font-bold text-muted-foreground">
                 Submitted version
                 <select className="field-control min-w-44" value={effectiveSubmittedVersionId} onChange={(event) => setSubmittedVersionId(event.target.value)}>
                   {item.resume_versions.map((version) => <option key={version.id} value={version.id}>Version {version.version_number}: {version.label}</option>)}
@@ -492,9 +492,9 @@ export default function OpportunityPage() {
         {stageError || transition.isError ? <p className="mt-3 text-sm text-coral">{stageError || (transition.error instanceof Error ? transition.error.message : "Could not update application stage.")}</p> : null}
         {exportOpportunity.isError ? <p className="mt-3 text-sm text-coral">{exportOpportunity.error instanceof Error ? exportOpportunity.error.message : "Could not export this opportunity."}</p> : null}
 
-        <nav className="mt-7 flex max-w-full gap-1 overflow-x-auto border-b border-white/10" aria-label="Opportunity sections">
+        <nav className="mt-7 flex max-w-full gap-1 overflow-x-auto border-b border-border" aria-label="Opportunity sections">
           {tabs.map((entry) => (
-            <button key={entry.id} type="button" onClick={() => setTab(entry.id)} className={`relative flex min-h-11 shrink-0 items-center gap-2 px-3 text-sm font-bold ${tab === entry.id ? "text-white" : "text-neutral-500 hover:text-neutral-300"}`}>
+            <button key={entry.id} type="button" onClick={() => setTab(entry.id)} className={`relative flex min-h-11 shrink-0 items-center gap-2 px-3 text-sm font-bold ${tab === entry.id ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
               <entry.icon size={15} /> {entry.label}
               {tab === entry.id ? <span className="absolute inset-x-3 bottom-0 h-0.5 bg-primary" /> : null}
             </button>
@@ -509,31 +509,31 @@ export default function OpportunityPage() {
                   <EmptyState icon={Gauge} title="No match analysis yet" description="Connect a resume and run a match to compare this role with your approved career evidence." action={<Button onClick={() => startMatch.mutate()}><Sparkles size={16} /> Run match</Button>} />
                 )}
                 {latestMatch?.improvement_tips.length ? (
-                  <div className="mt-10 border-t border-white/10 pt-7">
-                    <h2 className="text-lg font-black text-neutral-100">Priority improvements</h2>
+                  <div className="mt-10 border-t border-border pt-7">
+                    <h2 className="font-display text-lg font-normal text-foreground">Priority improvements</h2>
                     <ul className="mt-4 grid gap-3">
-                      {latestMatch.improvement_tips.slice(0, 6).map((tip) => <li key={tip} className="flex gap-3 text-sm leading-6 text-neutral-400"><CheckCircle2 size={17} className="mt-1 shrink-0 text-primary" /> {tip}</li>)}
+                      {latestMatch.improvement_tips.slice(0, 6).map((tip) => <li key={tip} className="flex gap-3 text-sm leading-6 text-muted-foreground"><CheckCircle2 size={17} className="mt-1 shrink-0 text-primary" /> {tip}</li>)}
                     </ul>
                   </div>
                 ) : null}
-                <div className="mt-10 border-t border-white/10 pt-7">
-                  <h2 className="text-lg font-black text-neutral-100">Role snapshot</h2>
-                  <p className="mt-3 max-h-72 overflow-y-auto whitespace-pre-wrap text-sm leading-6 text-neutral-500">{item.job_description}</p>
+                <div className="mt-10 border-t border-border pt-7">
+                  <h2 className="font-display text-lg font-normal text-foreground">Role snapshot</h2>
+                  <p className="mt-3 max-h-72 overflow-y-auto whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{item.job_description}</p>
                 </div>
               </section>
 
               <aside className="space-y-8">
                 <section>
-                  <div className="flex items-center justify-between"><h2 className="text-base font-black">Reminders</h2><CalendarPlus size={17} className="text-accent" /></div>
+                  <div className="flex items-center justify-between"><h2 className="font-display text-base font-normal">Reminders</h2><CalendarPlus size={17} className="text-primary" /></div>
                   <div className="mt-4 space-y-2">
                     {item.reminders.filter((reminder) => reminder.status === "scheduled").map((reminder) => (
                       <div key={reminder.id} className="surface-soft flex gap-3 p-3 text-sm">
-                        <Clock3 size={15} className="mt-0.5 shrink-0 text-accent" />
-                        <div className="min-w-0 flex-1"><p className="font-semibold text-neutral-300">{reminder.message}</p><p className="mt-1 text-xs text-neutral-600">{new Date(reminder.due_at).toLocaleString("en-IN")}</p></div>
-                        <button type="button" onClick={() => completeReminder.mutate(reminder.id)} className="text-neutral-600 hover:text-primary" aria-label="Complete reminder"><Check size={16} /></button>
+                        <Clock3 size={15} className="mt-0.5 shrink-0 text-primary" />
+                        <div className="min-w-0 flex-1"><p className="font-semibold text-foreground">{reminder.message}</p><p className="mt-1 text-xs text-muted-foreground">{new Date(reminder.due_at).toLocaleString("en-IN")}</p></div>
+                        <button type="button" onClick={() => completeReminder.mutate(reminder.id)} className="text-muted-foreground hover:text-primary" aria-label="Complete reminder"><Check size={16} /></button>
                       </div>
                     ))}
-                    {!item.reminders.some((reminder) => reminder.status === "scheduled") ? <p className="text-sm text-neutral-600">No upcoming reminders.</p> : null}
+                    {!item.reminders.some((reminder) => reminder.status === "scheduled") ? <p className="text-sm text-muted-foreground">No upcoming reminders.</p> : null}
                   </div>
                   <div className="mt-4 grid gap-2">
                     <input className="field-control" value={reminderMessage} onChange={(event) => setReminderMessage(event.target.value)} placeholder="Follow-up reminder" />
@@ -542,11 +542,11 @@ export default function OpportunityPage() {
                   </div>
                 </section>
 
-                <section className="border-t border-white/10 pt-7">
-                  <div className="flex items-center justify-between"><h2 className="text-base font-black">Contacts</h2><UserPlus size={17} className="text-primary" /></div>
+                <section className="border-t border-border pt-7">
+                  <div className="flex items-center justify-between"><h2 className="font-display text-base font-normal">Contacts</h2><UserPlus size={17} className="text-primary" /></div>
                   <div className="mt-4 space-y-2">
-                    {item.contacts.map((contact) => <div key={contact.id} className="surface-soft p-3"><p className="text-sm font-bold text-neutral-300">{contact.name}</p><p className="mt-1 text-xs text-neutral-600">{contact.role || "Contact"}</p></div>)}
-                    {!item.contacts.length ? <p className="text-sm text-neutral-600">No recruiter or referral contacts yet.</p> : null}
+                    {item.contacts.map((contact) => <div key={contact.id} className="surface-soft p-3"><p className="text-sm font-bold text-foreground">{contact.name}</p><p className="mt-1 text-xs text-muted-foreground">{contact.role || "Contact"}</p></div>)}
+                    {!item.contacts.length ? <p className="text-sm text-muted-foreground">No recruiter or referral contacts yet.</p> : null}
                   </div>
                   <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
                     <input className="field-control" value={contactName} onChange={(event) => setContactName(event.target.value)} placeholder="Contact name" />
@@ -562,19 +562,19 @@ export default function OpportunityPage() {
             <div className="grid gap-10 xl:grid-cols-[1fr_360px]">
               <section>
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-                  <div><p className="eyebrow">Evidence Graph</p><h2 className="mt-2 text-2xl font-black">Approved facts for this resume</h2><p className="mt-2 text-sm text-neutral-500">{approvedCount} approved evidence {approvedCount === 1 ? "item" : "items"}.</p></div>
+                  <div><p className="eyebrow">Evidence Graph</p><h2 className="font-display mt-2 text-2xl font-normal">Approved facts for this resume</h2><p className="mt-2 text-sm text-muted-foreground">{approvedCount} approved evidence {approvedCount === 1 ? "item" : "items"}.</p></div>
                   <Button variant="secondary" onClick={() => importEvidence.mutate()} disabled={!item.resume_id || importEvidence.isPending}><RefreshCw size={15} /> Import from resume</Button>
                 </div>
                 {!item.resume_id ? <EmptyState icon={FilePlus2} title="Connect a resume first" description="Edit this opportunity and choose a parsed resume before building evidence." /> : null}
                 {evidence.isLoading ? <div className="mt-6"><LoadingBlock rows={4} /></div> : null}
                 {item.resume_id && !evidence.isLoading && !(evidence.data || []).length ? <EmptyState icon={ShieldCheck} title="No evidence imported" description="Import the resume sections, then approve only the facts you want HireWiz to reuse." action={<Button onClick={() => importEvidence.mutate()}><FilePlus2 size={16} /> Import evidence</Button>} /> : null}
-                <div className="mt-6 divide-y divide-white/10 border-t border-white/10">
+                <div className="mt-6 divide-y divide-border border-t border-border">
                   {(evidence.data || []).map((entry) => (
                     <article key={entry.id} className="grid gap-4 py-5 sm:grid-cols-[1fr_auto]">
                       <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2"><h3 className="font-black text-neutral-200">{entry.title}</h3><StatusBadge tone={entry.approval_state === "approved" ? "teal" : entry.approval_state === "rejected" ? "coral" : "neutral"}>{entry.approval_state}</StatusBadge></div>
-                        {editingEvidenceId === entry.id ? <div className="mt-3"><label className="sr-only" htmlFor={`evidence-${entry.id}`}>Edit {entry.title} evidence</label><textarea id={`evidence-${entry.id}`} className="field-control min-h-32 resize-y" value={evidenceDraft} onChange={(event) => setEvidenceDraft(event.target.value)} /><p className="mt-2 text-xs text-neutral-500">Saving a factual edit returns this item to pending review.</p><div className="mt-3 flex gap-2"><Button size="sm" onClick={() => editEvidence.mutate({ id: entry.id, evidenceText: evidenceDraft.trim() })} disabled={evidenceDraft.trim().length < 2 || editEvidence.isPending}>Save edit</Button><Button size="sm" variant="ghost" onClick={() => { setEditingEvidenceId(null); setEvidenceDraft(""); }} disabled={editEvidence.isPending}>Cancel</Button></div></div> : <p className="mt-2 line-clamp-3 text-sm leading-6 text-neutral-500">{entry.evidence_text}</p>}
-                        {entry.skills.length ? <p className="mt-2 text-xs text-neutral-600">{entry.skills.slice(0, 8).join(" · ")}</p> : null}
+                        <div className="flex flex-wrap items-center gap-2"><h3 className="font-semibold text-foreground">{entry.title}</h3><StatusBadge tone={entry.approval_state === "approved" ? "teal" : entry.approval_state === "rejected" ? "coral" : "neutral"}>{entry.approval_state}</StatusBadge></div>
+                        {editingEvidenceId === entry.id ? <div className="mt-3"><label className="sr-only" htmlFor={`evidence-${entry.id}`}>Edit {entry.title} evidence</label><textarea id={`evidence-${entry.id}`} className="field-control min-h-32 resize-y" value={evidenceDraft} onChange={(event) => setEvidenceDraft(event.target.value)} /><p className="mt-2 text-xs text-muted-foreground">Saving a factual edit returns this item to pending review.</p><div className="mt-3 flex gap-2"><Button size="sm" onClick={() => editEvidence.mutate({ id: entry.id, evidenceText: evidenceDraft.trim() })} disabled={evidenceDraft.trim().length < 2 || editEvidence.isPending}>Save edit</Button><Button size="sm" variant="ghost" onClick={() => { setEditingEvidenceId(null); setEvidenceDraft(""); }} disabled={editEvidence.isPending}>Cancel</Button></div></div> : <p className="mt-2 line-clamp-3 text-sm leading-6 text-muted-foreground">{entry.evidence_text}</p>}
+                        {entry.skills.length ? <p className="mt-2 text-xs text-muted-foreground">{entry.skills.slice(0, 8).join(" · ")}</p> : null}
                       </div>
                       <div className="flex items-start gap-1"><Button size="icon" variant="ghost" onClick={() => { setEditingEvidenceId(entry.id); setEvidenceDraft(entry.evidence_text); }} aria-label="Edit evidence"><Pencil size={16} /></Button><Button size="icon" variant="ghost" onClick={() => approveEvidence.mutate({ id: entry.id, state: "approved" })} aria-label="Approve evidence"><Check size={17} /></Button><Button size="icon" variant="ghost" onClick={() => approveEvidence.mutate({ id: entry.id, state: "rejected" })} aria-label="Reject evidence"><X size={17} /></Button></div>
                     </article>
@@ -582,18 +582,18 @@ export default function OpportunityPage() {
                 </div>
               </section>
               <aside>
-                <div className="flex items-center justify-between"><div><p className="data-label">Resume versions</p><h2 className="mt-1 text-lg font-black">Application history</h2></div><FileCheck2 size={19} className="text-primary" /></div>
+                <div className="flex items-center justify-between"><div><p className="data-label">Resume versions</p><h2 className="font-display mt-1 text-lg font-normal">Application history</h2></div><FileCheck2 size={19} className="text-primary" /></div>
                 <div className="mt-5 space-y-3">
                   {item.resume_versions.map((version) => (
                     <div key={version.id} className="surface-soft p-4">
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <p className="text-sm font-bold text-neutral-200">{version.label}</p>
-                          <p className="mt-1 text-xs text-neutral-600">Version {version.version_number} · {version.evidence_ids.length} evidence links{version.submitted_at ? " · submitted" : ""}</p>
+                          <p className="text-sm font-bold text-foreground">{version.label}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">Version {version.version_number} · {version.evidence_ids.length} evidence links{version.submitted_at ? " · submitted" : ""}</p>
                         </div>
                         <StatusBadge tone={version.approval_state === "approved" ? "teal" : version.approval_state === "rejected" ? "coral" : "neutral"}>{version.approval_state}</StatusBadge>
                       </div>
-                      <div className="mt-3 flex flex-wrap gap-1 border-t border-white/10 pt-3">
+                      <div className="mt-3 flex flex-wrap gap-1 border-t border-border pt-3">
                         <Button size="sm" variant="ghost" onClick={() => updateVersion.mutate({ id: version.id, state: "approved" })}><Check size={14} /> Approve</Button>
                         <Button size="sm" variant="ghost" onClick={() => updateVersion.mutate({ id: version.id, state: "rejected" })}><X size={14} /> Reject</Button>
                         <Button
@@ -619,7 +619,7 @@ export default function OpportunityPage() {
                       </div>
                     </div>
                   ))}
-                  {!item.resume_versions.length ? <p className="text-sm leading-6 text-neutral-600">No role-specific version has been saved.</p> : null}
+                  {!item.resume_versions.length ? <p className="text-sm leading-6 text-muted-foreground">No role-specific version has been saved.</p> : null}
                 </div>
                 <Button
                   className="mt-5 w-full"
@@ -633,8 +633,8 @@ export default function OpportunityPage() {
                 {startTailoring.isError ? <p className="mt-3 text-sm text-coral">{startTailoring.error instanceof Error ? startTailoring.error.message : "Could not start tailoring."}</p> : null}
                 {tailored ? (
                   <div className="mt-4 border-l-2 border-primary pl-4">
-                    <p className="text-sm font-bold text-neutral-200">Version {tailored.version_number} created</p>
-                    <p className="mt-1 text-xs leading-5 text-neutral-500">Every generated line links back to approved evidence. Review it before marking the version approved.</p>
+                    <p className="text-sm font-bold text-foreground">Version {tailored.version_number} created</p>
+                    <p className="mt-1 text-xs leading-5 text-muted-foreground">Every generated line links back to approved evidence. Review it before marking the version approved.</p>
                     <div className="mt-3 flex flex-wrap gap-2">
                       <Button size="sm" variant="secondary" onClick={() => downloadVersion.mutate({ id: tailored.resume_version_id, versionNumber: tailored.version_number, format: "pdf" })} disabled={downloadVersion.isPending}><Download size={14} /> PDF</Button>
                       <Button size="sm" variant="secondary" onClick={() => downloadVersion.mutate({ id: tailored.resume_version_id, versionNumber: tailored.version_number, format: "docx" })} disabled={downloadVersion.isPending}><Download size={14} /> DOCX</Button>
@@ -650,15 +650,15 @@ export default function OpportunityPage() {
 
           {tab === "learning" ? (
             <section>
-              <div className="max-w-2xl"><p className="eyebrow">Skill ROI</p><h2 className="mt-2 text-2xl font-black">What is worth learning next</h2><p className="mt-2 text-sm leading-6 text-neutral-500">Ranked across your active opportunities and approved evidence.</p></div>
+              <div className="max-w-2xl"><p className="eyebrow">Skill ROI</p><h2 className="font-display mt-2 text-2xl font-normal">What is worth learning next</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">Ranked across your active opportunities and approved evidence.</p></div>
               {skillRoi.isLoading ? <div className="mt-7"><LoadingBlock rows={5} /></div> : null}
               {!skillRoi.isLoading && !skillRoi.data?.items.length ? <EmptyState icon={BookOpenCheck} title="Skill ROI needs match data" description="Run matches for active opportunities to see which skill investment has the strongest return." /> : null}
-              <div className="mt-7 divide-y divide-white/10 border-y border-white/10">
+              <div className="mt-7 divide-y divide-border border-y border-border">
                 {(skillRoi.data?.items || []).map((entry, index) => (
                   <article key={entry.skill} className="grid gap-4 py-5 sm:grid-cols-[44px_1fr_auto] sm:items-center">
-                    <span className="text-2xl font-black text-neutral-700">{String(index + 1).padStart(2, "0")}</span>
-                    <div><h3 className="font-black text-neutral-200">{entry.skill}</h3><p className="mt-1 text-sm text-neutral-500">{entry.reason}</p></div>
-                    <div className="sm:text-right"><p className="text-xl font-black text-accent">{Math.round(entry.score)}</p><p className="text-xs text-neutral-600">~{entry.estimated_hours} hours</p></div>
+                    <span className="text-2xl font-semibold text-muted-foreground">{String(index + 1).padStart(2, "0")}</span>
+                    <div><h3 className="font-semibold text-foreground">{entry.skill}</h3><p className="mt-1 text-sm text-muted-foreground">{entry.reason}</p></div>
+                    <div className="sm:text-right"><p className="text-xl font-semibold text-primary">{Math.round(entry.score)}</p><p className="text-xs text-muted-foreground">~{entry.estimated_hours} hours</p></div>
                   </article>
                 ))}
               </div>
@@ -667,14 +667,14 @@ export default function OpportunityPage() {
 
           {tab === "interview" ? (
             <section>
-              <div className="flex flex-col gap-5 border-b border-white/10 pb-7 sm:flex-row sm:items-end sm:justify-between">
-                <div className="max-w-2xl"><p className="eyebrow">Role-specific preparation</p><h2 className="mt-2 text-2xl font-black">Interview questions</h2><p className="mt-2 text-sm leading-6 text-neutral-500">Generated from the preserved role. Keep answers grounded in approved evidence.</p></div>
+              <div className="flex flex-col gap-5 border-b border-border pb-7 sm:flex-row sm:items-end sm:justify-between">
+                <div className="max-w-2xl"><p className="eyebrow">Role-specific preparation</p><h2 className="font-display mt-2 text-2xl font-normal">Interview questions</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">Generated from the preserved role. Keep answers grounded in approved evidence.</p></div>
                 <Button onClick={() => startInterview.mutate()} disabled={startInterview.isPending || Boolean(interviewRun.data && !terminal.has(interviewRun.data.status))}>{interviewRun.data && !terminal.has(interviewRun.data.status) ? <LoaderCircle size={16} className="animate-spin" /> : <BrainCircuit size={16} />} Generate questions</Button>
               </div>
               <RunFeedback run={interviewRun.data} />
-              <div className="divide-y divide-white/10">
+              <div className="divide-y divide-border">
                 {(questions?.questions || []).map((question, index) => (
-                  <article key={`${index}-${question.question}`} className="py-6"><div className="flex gap-4"><span className="text-sm font-black text-primary">{String(index + 1).padStart(2, "0")}</span><div><div className="flex flex-wrap items-center gap-2"><h3 className="font-black text-neutral-200">{question.question}</h3><StatusBadge tone={question.answer_state === "evidence_backed" ? "teal" : "amber"}>{question.answer_state === "evidence_backed" ? `${question.evidence_ids?.length || 0} sources` : "evidence needed"}</StatusBadge></div>{question.answer ? <p className="mt-3 whitespace-pre-line text-sm leading-6 text-neutral-500">{question.answer}</p> : null}</div></div></article>
+                  <article key={`${index}-${question.question}`} className="py-6"><div className="flex gap-4"><span className="text-sm font-semibold text-primary">{String(index + 1).padStart(2, "0")}</span><div><div className="flex flex-wrap items-center gap-2"><h3 className="font-semibold text-foreground">{question.question}</h3><StatusBadge tone={question.answer_state === "evidence_backed" ? "teal" : "amber"}>{question.answer_state === "evidence_backed" ? `${question.evidence_ids?.length || 0} sources` : "evidence needed"}</StatusBadge></div>{question.answer ? <p className="mt-3 whitespace-pre-line text-sm leading-6 text-muted-foreground">{question.answer}</p> : null}</div></div></article>
                 ))}
               </div>
               {!questions && !interviewRun.data ? <EmptyState icon={MessageSquareText} title="Prepare from the actual role" description="Generate a focused question set from this opportunity's job snapshot." /> : null}
@@ -685,23 +685,23 @@ export default function OpportunityPage() {
             <section className="grid gap-10 lg:grid-cols-[1fr_360px]">
               <div className="max-w-2xl">
                 <p className="eyebrow">Outcome learning</p>
-                <h2 className="mt-2 text-2xl font-black">Close the loop</h2>
-                <p className="mt-2 text-sm leading-6 text-neutral-500">
+                <h2 className="font-display mt-2 text-2xl font-normal">Close the loop</h2>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">
                   Record what happened so future Skill ROI and application decisions can learn from your own history.
                 </p>
                 {item.outcome ? (
                   <div className="mt-7 border-l-2 border-primary pl-5">
                     <p className="data-label">Recorded outcome</p>
-                    <p className="mt-2 text-lg font-black text-neutral-200">{item.outcome.replaceAll("_", " ")}</p>
-                    {item.outcome_notes ? <p className="mt-2 text-sm leading-6 text-neutral-500">{item.outcome_notes}</p> : null}
-                    {item.outcome_at ? <p className="mt-2 text-xs text-neutral-700">{new Date(item.outcome_at).toLocaleString("en-IN")}</p> : null}
+                    <p className="mt-2 text-lg font-semibold text-foreground">{item.outcome.replaceAll("_", " ")}</p>
+                    {item.outcome_notes ? <p className="mt-2 text-sm leading-6 text-muted-foreground">{item.outcome_notes}</p> : null}
+                    {item.outcome_at ? <p className="mt-2 text-xs text-muted-foreground">{new Date(item.outcome_at).toLocaleString("en-IN")}</p> : null}
                   </div>
                 ) : (
                   <EmptyState icon={Trophy} title="No final outcome recorded" description="You can update this later without losing the application timeline." />
                 )}
               </div>
-              <div className="border-t border-white/10 pt-6 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
-                <label className="grid gap-2 text-sm font-semibold text-neutral-300">
+              <div className="border-t border-border pt-6 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
+                <label className="grid gap-2 text-sm font-semibold text-foreground">
                   Final outcome
                   <select className="field-control" value={outcome} onChange={(event) => setOutcome(event.target.value as Outcome)}>
                     <option value="offer_accepted">Offer accepted</option>
@@ -710,7 +710,7 @@ export default function OpportunityPage() {
                     <option value="withdrawn">Withdrawn</option>
                   </select>
                 </label>
-                <label className="mt-4 grid gap-2 text-sm font-semibold text-neutral-300">
+                <label className="mt-4 grid gap-2 text-sm font-semibold text-foreground">
                   Notes or feedback
                   <textarea className="field-control min-h-32 resize-y" value={outcomeNotes} onChange={(event) => setOutcomeNotes(event.target.value)} placeholder="Optional recruiter feedback or what you learned" />
                 </label>
@@ -724,10 +724,10 @@ export default function OpportunityPage() {
 
           {tab === "activity" ? (
             <section className="max-w-3xl">
-              <p className="eyebrow">History</p><h2 className="mt-2 text-2xl font-black">Application activity</h2>
-              <ol className="mt-7 border-l border-white/10 pl-6">
+              <p className="eyebrow">History</p><h2 className="font-display mt-2 text-2xl font-normal">Application activity</h2>
+              <ol className="mt-7 border-l border-border pl-6">
                 {item.activity.map((event) => (
-                  <li key={event.id} className="relative pb-7"><span className="absolute -left-[29px] top-1.5 h-2.5 w-2.5 rounded-full border-2 border-[#0f1211] bg-primary" /><p className="text-sm font-bold text-neutral-300">{event.event_type === "stage_changed" ? `${stageLabels[event.from_stage || "saved"]} to ${stageLabels[event.to_stage || "saved"]}` : event.event_type === "outcome_recorded" ? "Outcome recorded" : "Opportunity created"}</p>{event.note ? <p className="mt-1 text-sm text-neutral-500">{event.note}</p> : null}<p className="mt-1 text-xs text-neutral-700">{new Date(event.occurred_at).toLocaleString("en-IN")}</p></li>
+                  <li key={event.id} className="relative pb-7"><span className="absolute -left-[29px] top-1.5 h-2.5 w-2.5 rounded-full border-2 border-background bg-primary" /><p className="text-sm font-bold text-foreground">{event.event_type === "stage_changed" ? `${stageLabels[event.from_stage || "saved"]} to ${stageLabels[event.to_stage || "saved"]}` : event.event_type === "outcome_recorded" ? "Outcome recorded" : "Opportunity created"}</p>{event.note ? <p className="mt-1 text-sm text-muted-foreground">{event.note}</p> : null}<p className="mt-1 text-xs text-muted-foreground">{new Date(event.occurred_at).toLocaleString("en-IN")}</p></li>
                 ))}
               </ol>
             </section>

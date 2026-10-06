@@ -33,12 +33,12 @@ export default function PageHeader({
         )}
         
         <StaggerItem>
-          <GradientHeading className="mb-4 text-3xl md:text-4xl lg:text-5xl">{title}</GradientHeading>
+          <GradientHeading className="mb-4 text-4xl md:text-5xl lg:text-6xl">{title}</GradientHeading>
         </StaggerItem>
         
         {subtitle && (
           <StaggerItem>
-            <p className="max-w-2xl text-base md:text-lg text-neutral-400 text-balance leading-relaxed">
+            <p className="max-w-2xl text-base md:text-lg text-muted-foreground text-balance leading-relaxed">
               {subtitle}
             </p>
           </StaggerItem>

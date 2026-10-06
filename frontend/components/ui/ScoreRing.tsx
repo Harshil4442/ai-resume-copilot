@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import useMotionPreference from "./useMotionPreference";
 import { twMerge } from "tailwind-merge";
 import clsx from "clsx";
 
@@ -19,19 +20,20 @@ export default function ScoreRing({
   className,
   showText = true,
 }: ScoreRingProps) {
+  const reducedMotion = useMotionPreference();
   const radius = (size - strokeWidth) / 2;
   const circumference = radius * 2 * Math.PI;
   const offset = ((100 - score) / 100) * circumference;
 
-  let colorClass = "text-emerald-500";
-  if (score < 50) colorClass = "text-rose-500";
-  else if (score < 80) colorClass = "text-amber-500";
+  let colorClass = "text-primary";
+  if (score < 50) colorClass = "text-coral";
+  else if (score < 80) colorClass = "text-[#96702d]";
 
   return (
     <div className={twMerge(clsx("relative inline-flex items-center justify-center", className))} style={{ width: size, height: size }}>
       <svg className="transform -rotate-90" width={size} height={size}>
         <circle
-          className="text-slate-100"
+          className="text-border"
           strokeWidth={strokeWidth}
           stroke="currentColor"
           fill="transparent"
@@ -43,9 +45,11 @@ export default function ScoreRing({
           className={colorClass}
           strokeWidth={strokeWidth}
           strokeDasharray={circumference}
-          initial={{ strokeDashoffset: circumference }}
-          animate={{ strokeDashoffset: offset }}
-          transition={{ duration: 1.5, type: "spring" as const, bounce: 0.1 }}
+          strokeDashoffset={offset}
+          initial={false}
+          whileInView={{ strokeDashoffset: reducedMotion ? offset : [circumference, offset] }}
+          viewport={{ once: true }}
+          transition={{ duration: reducedMotion ? 0 : 1, ease: "easeOut" }}
           strokeLinecap="round"
           stroke="currentColor"
           fill="transparent"
@@ -56,7 +60,7 @@ export default function ScoreRing({
       </svg>
       {showText && (
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-2xl font-black text-white tracking-tighter leading-none">{score}</span>
+          <span className="font-display text-3xl font-normal text-foreground leading-none">{score}</span>
         </div>
       )}
     </div>

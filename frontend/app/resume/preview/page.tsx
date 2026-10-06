@@ -59,10 +59,10 @@ export default function ResumePreviewPage() {
   if (resumes.length === 0 && !loading) {
     return (
       <main className="app-shell max-w-4xl mx-auto py-12 px-4 text-center">
-        <div className="panel p-8 kinetic-border">
-          <h2 className="text-2xl font-black text-white">No Resumes Found</h2>
-          <p className="text-slate-400 mt-2">Please upload a resume first to preview and print it.</p>
-          <a href="/resume" className="btn-primary mt-4 inline-block">Go to Upload</a>
+        <div className="surface-panel p-8">
+          <h2 className="font-display text-2xl font-normal text-foreground">No Resumes Found</h2>
+          <p className="text-muted-foreground mt-2">Please upload a resume first to preview and print it.</p>
+          <a href="/resume" className="button-primary mt-4">Go to Upload</a>
         </div>
       </main>
     );
@@ -71,11 +71,11 @@ export default function ResumePreviewPage() {
   return (
     <main className="app-shell max-w-4xl mx-auto py-6 px-4">
       {/* Control panel (not printed) */}
-      <div className="no-print panel p-4 mb-6 kinetic-border flex flex-wrap items-center justify-between gap-4 bg-slate-900/70 backdrop-blur-xl">
+      <div className="no-print surface-panel mb-6 flex flex-wrap items-center justify-between gap-4 p-4">
         <div className="flex items-center gap-3">
-          <label className="text-sm font-bold text-slate-200">Select Resume:</label>
+          <label className="text-sm font-bold text-foreground">Select Resume:</label>
           <select
-            className="field py-1.5 px-3 min-w-[200px]"
+            className="field-control min-w-[200px] py-1.5 px-3"
             value={selectedId || ""}
             onChange={(event) => {
               setLoading(true);
@@ -90,24 +90,24 @@ export default function ResumePreviewPage() {
             ))}
           </select>
         </div>
-        <button onClick={handlePrint} className="btn-primary flex items-center gap-2">
+        <button onClick={handlePrint} className="button-primary">
           <span>🖨️</span> Print / Save PDF
         </button>
       </div>
 
-      {loading && <div className="text-center py-12 text-slate-400">Loading resume document...</div>}
+      {loading && <div className="text-center py-12 text-muted-foreground">Loading resume document...</div>}
       {error && <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-4 py-3 mb-6">{error}</div>}
 
       {/* Printable resume container */}
       {resumeData && !loading && (
-        <div className="resume-container panel p-8 md:p-12 bg-slate-950 text-white border border-slate-700 shadow-md min-h-[1100px] flex flex-col justify-between">
+        <div className="resume-container surface-panel flex min-h-[1100px] flex-col justify-between p-8 text-foreground md:p-12">
           <div className="space-y-6">
             {/* Header / Contact Info */}
-            <div className="text-center border-b border-slate-700 pb-6">
-              <h1 className="text-3xl font-bold tracking-tight text-white">
+            <div className="text-center border-b border-border pb-6">
+              <h1 className="font-display text-3xl font-normal tracking-tight text-foreground">
                 {resumeData.contact_info?.name || "Professional Candidate"}
               </h1>
-              <div className="flex flex-wrap justify-center gap-x-4 gap-y-1 text-sm text-slate-300 mt-2 font-medium">
+              <div className="flex flex-wrap justify-center gap-x-4 gap-y-1 text-sm text-foreground mt-2 font-medium">
                 {resumeData.contact_info?.email && (
                   <span>✉️ {resumeData.contact_info.email}</span>
                 )}
@@ -128,10 +128,10 @@ export default function ResumePreviewPage() {
               if (!secText || secName === "other") return null;
               return (
                 <div key={secName} className="space-y-2">
-                  <h2 className="text-lg font-bold uppercase tracking-wider text-slate-100 border-b border-slate-800 pb-1">
+                  <h2 className="font-display text-lg font-normal uppercase tracking-wider text-foreground border-b border-border pb-1">
                     {formatTitle(secName)}
                   </h2>
-                  <div className="text-sm text-slate-200 leading-relaxed whitespace-pre-wrap font-normal">
+                  <div className="text-sm text-foreground leading-relaxed whitespace-pre-wrap font-normal">
                     {secText}
                   </div>
                 </div>
@@ -141,10 +141,10 @@ export default function ResumePreviewPage() {
             {/* Fallback for other section */}
             {resumeData.sections?.other && (
               <div className="space-y-2">
-                <h2 className="text-lg font-bold uppercase tracking-wider text-slate-100 border-b border-slate-800 pb-1">
+                <h2 className="font-display text-lg font-normal uppercase tracking-wider text-foreground border-b border-border pb-1">
                   Additional Details
                 </h2>
-                <div className="text-sm text-slate-200 leading-relaxed whitespace-pre-wrap font-normal">
+                <div className="text-sm text-foreground leading-relaxed whitespace-pre-wrap font-normal">
                   {resumeData.sections.other}
                 </div>
               </div>
@@ -152,18 +152,18 @@ export default function ResumePreviewPage() {
           </div>
 
           {/* Viral PLG Footer Hook */}
-          <div className="mt-12 pt-4 border-t border-slate-800 text-center flex justify-center items-center">
+          <div className="mt-12 pt-4 border-t border-border text-center flex justify-center items-center">
             <a
               href="https://ai-resume-copilot-three.vercel.app/?ref=user_resume_share"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-[10px] font-bold uppercase tracking-widest text-slate-400 hover:text-blue-500 transition duration-300 pointer-events-auto decoration-none"
+              className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground hover:text-primary transition duration-300 pointer-events-auto decoration-none"
               style={{
                 display: "inline-block",
                 padding: "4px 8px",
-                border: "1px solid #f1f5f9",
-                borderRadius: "6px",
-                backgroundColor: "#f8fafc",
+                border: "1px solid var(--color-border)",
+                borderRadius: "999px",
+                backgroundColor: "var(--color-surface)",
               }}
             >
               Built with HireWiz

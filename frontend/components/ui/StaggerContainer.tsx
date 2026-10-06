@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import useMotionPreference from "./useMotionPreference";
 import { ReactNode } from "react";
 import { twMerge } from "tailwind-merge";
 import clsx from "clsx";
@@ -18,13 +19,14 @@ export default function StaggerContainer({
   className,
   delayChildren = 0,
 }: StaggerContainerProps) {
+  const reducedMotion = useMotionPreference();
   const containerVariants = {
     hidden: { opacity: 1 },
     show: {
       opacity: 1,
       transition: {
-        staggerChildren: staggerDelay,
-        delayChildren: delayChildren,
+        staggerChildren: reducedMotion ? 0 : staggerDelay,
+        delayChildren: reducedMotion ? 0 : delayChildren,
       },
     },
   };
@@ -43,15 +45,15 @@ export default function StaggerContainer({
 }
 
 export const StaggerItem = ({ children, className }: { children: ReactNode, className?: string }) => {
+  const reducedMotion = useMotionPreference();
   const itemVariants = {
-    hidden: { opacity: 1, y: 20 },
+    hidden: { opacity: 1, y: 0 },
     show: { 
       opacity: 1, 
-      y: 0,
+      y: reducedMotion ? 0 : [16, 0],
       transition: {
-        type: "spring" as const,
-        bounce: 0.2,
-        duration: 0.6
+        ease: [0.22, 1, 0.36, 1] as const,
+        duration: reducedMotion ? 0 : 0.6
       }
     },
   };

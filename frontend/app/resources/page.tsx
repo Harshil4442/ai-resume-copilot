@@ -62,8 +62,8 @@ export default function ResourcesPage() {
         subtitle="Use these public resources to build evidence for the skills your target roles ask for."
       />
 
-      <GlassCard className="p-6 border-amber-800/60 bg-amber-950/20" hoverEffect={false}>
-        <p className="text-sm text-amber-100 leading-relaxed">
+      <GlassCard className="p-6 border-amber-200 bg-amber-50" hoverEffect={false}>
+        <p className="text-sm text-amber-800 leading-relaxed">
           Disclosure: links currently point to free or official resources. If HireWiz later adds approved affiliate
           links, this page will be updated to clearly identify them. We do not recommend pretending to have skills you
           have not yet practiced.
@@ -73,12 +73,12 @@ export default function ResourcesPage() {
       <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {resources.map((resource) => (
           <GlassCard key={resource.href} className="p-7 flex flex-col" hoverEffect={false}>
-            <div className="text-xs font-bold uppercase tracking-wider text-blue-300">{resource.category}</div>
-            <h2 className="mt-2 text-xl font-black text-white">{resource.title}</h2>
-            <p className="mt-3 text-sm text-slate-400 leading-relaxed flex-1">{resource.description}</p>
+            <div className="text-xs font-bold uppercase tracking-wider text-primary">{resource.category}</div>
+            <h2 className="font-display mt-2 text-xl font-normal text-foreground">{resource.title}</h2>
+            <p className="mt-3 text-sm text-muted-foreground leading-relaxed flex-1">{resource.description}</p>
             <TrackedExternalLink
               href={resource.href}
-              className="mt-6 inline-flex items-center gap-2 text-sm font-bold text-primary hover:text-blue-300"
+              className="mt-6 inline-flex items-center gap-2 text-sm font-bold text-primary transition-colors hover:text-foreground"
               eventName="resource_link_clicked"
               eventParams={{ resource_title: resource.title, resource_category: resource.category }}
             >

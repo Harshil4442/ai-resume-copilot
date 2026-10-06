@@ -16,7 +16,7 @@ function RocketLogo({ variant, color = 'blue' }: { variant: number; color?: stri
 
   // Basic Rocket Body Path
   const bodyPath = "M32 6C32 6 22 18 22 34C22 42 26 48 32 52C38 48 42 42 42 34C42 18 32 6 32 6Z";
-  
+
   // Custom renders based on 20 variants
   return (
     <svg viewBox="0 0 64 64" fill="none" className="w-16 h-16 transition-all duration-300">
@@ -40,21 +40,21 @@ function RocketLogo({ variant, color = 'blue' }: { variant: number; color?: stri
       <g transform={variant === 5 || variant === 17 ? "rotate(-30 32 32)" : ""}>
         {/* Flame Trail */}
         {variant !== 7 && (
-          <path 
-            d={variant === 6 || variant === 12 ? "M28 50L24 62L32 54L40 62L36 50" : "M28 52L26 60L32 56L38 60L36 52"} 
-            fill={accent} 
+          <path
+            d={variant === 6 || variant === 12 ? "M28 50L24 62L32 54L40 62L36 50" : "M28 52L26 60L32 56L38 60L36 52"}
+            fill={accent}
             filter={variant === 13 ? `url(#glow-rocket-${variant})` : ''}
           />
         )}
 
         {/* Left Wing */}
         <path d="M22 38L14 48L22 44Z" fill={variant === 7 ? 'none' : prim} stroke={variant === 7 ? prim : 'none'} strokeWidth="2" />
-        
+
         {/* Main Body */}
-        <path 
-          d={bodyPath} 
-          fill={variant === 7 ? 'none' : `url(#grad-rocket-${variant})`} 
-          stroke={variant === 7 ? `url(#grad-rocket-${variant})` : 'none'} 
+        <path
+          d={bodyPath}
+          fill={variant === 7 ? 'none' : `url(#grad-rocket-${variant})`}
+          stroke={variant === 7 ? `url(#grad-rocket-${variant})` : 'none'}
           strokeWidth="2.5"
           filter={variant === 13 ? `url(#glow-rocket-${variant})` : ''}
           opacity={variant === 10 ? 0.75 : 1}
@@ -64,13 +64,13 @@ function RocketLogo({ variant, color = 'blue' }: { variant: number; color?: stri
         <path d="M42 38L50 48L42 44Z" fill={variant === 7 ? 'none' : prim} stroke={variant === 7 ? prim : 'none'} strokeWidth="2" />
 
         {/* Window */}
-        <circle 
-          cx="32" 
-          cy="32" 
-          r={variant === 18 ? 5.5 : 4} 
-          fill={variant === 7 ? 'none' : '#ffffff'} 
-          stroke={variant === 7 ? prim : 'none'} 
-          strokeWidth="1.5" 
+        <circle
+          cx="32"
+          cy="32"
+          r={variant === 18 ? 5.5 : 4}
+          fill={variant === 7 ? 'none' : '#ffffff'}
+          stroke={variant === 7 ? prim : 'none'}
+          strokeWidth="1.5"
         />
       </g>
 
@@ -102,7 +102,7 @@ function RainbowH({ variant, color = 'cyan' }: { variant: number; color?: string
       {variant === 6 && (
         <rect x="4" y="4" width="56" height="56" rx="14" fill="url(#rainbow-grad-bg)" />
       )}
-      
+
       <defs>
         <linearGradient id="rainbow-grad-bg" x1="0%" y1="0%" x2="100%" y2="100%">
           <stop offset="0%" stopColor={c1} />
@@ -149,7 +149,7 @@ function RainbowH({ variant, color = 'cyan' }: { variant: number; color?: string
 // ==================== CONCEPT C: ARROW H (20 VARIANTS) ====================
 function ArrowH({ variant, color = 'green' }: { variant: number; color?: string }) {
   const arrowColor = color === 'orange' ? '#f97316' : color === 'purple' ? '#a855f7' : '#10b981';
-  
+
   return (
     <svg viewBox="0 0 64 64" fill="none" className="w-16 h-16">
       <defs>
@@ -257,15 +257,15 @@ export default function LogoPlayground() {
 
   const renderGrid = () => {
     const list = Array.from({ length: 20 }, (_, i) => i + 1);
-    
+
     return (
       <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-6 max-w-6xl mx-auto px-4">
         {list.map((v) => (
-          <div 
+          <div
             key={v}
             className={`flex flex-col items-center justify-between p-6 rounded-2xl border transition-all duration-300 ${
-              bgColor === 'dark' 
-                ? 'bg-slate-900/60 border-slate-800/80 hover:border-slate-700/60 hover:bg-slate-800/40' 
+              bgColor === 'dark'
+                ? 'bg-slate-900/60 border-slate-800/80 hover:border-slate-700/60 hover:bg-slate-800/40'
                 : 'bg-white border-slate-200/80 hover:border-slate-300/80 hover:shadow-md'
             }`}
           >
@@ -275,7 +275,7 @@ export default function LogoPlayground() {
               {activeTab === 'arrow' && <ArrowH variant={v} />}
               {activeTab === 'cloud' && <CloudH variant={v} />}
             </div>
-            
+
             <div className="mt-4 text-center">
               <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${
                 bgColor === 'dark' ? 'bg-slate-800/80 text-slate-400' : 'bg-slate-100 text-slate-500'
@@ -290,36 +290,34 @@ export default function LogoPlayground() {
   };
 
   return (
-    <main className={`min-h-screen pb-24 transition-colors duration-300 ${
-      bgColor === 'dark' ? 'bg-[#030712] text-white' : 'bg-slate-50 text-slate-900'
-    }`}>
+    <main className="min-h-screen bg-background pb-24 text-foreground">
       {/* Header */}
       <div className="max-w-4xl mx-auto text-center pt-20 px-6 mb-16">
-        <h1 className="text-4xl md:text-5xl font-black tracking-tight mb-4">
+        <h1 className="font-display mb-4 text-4xl font-normal leading-tight md:text-5xl">
           Logo Concepts Playground
         </h1>
-        <p className="text-lg text-slate-400 max-w-2xl mx-auto">
+        <p className="mx-auto max-w-2xl text-lg text-muted-foreground">
           Explore all 80 variations (4 designs × 20 styles each) rendered directly in sharp vector code.
         </p>
 
         {/* Bg Toggles & Controls */}
         <div className="flex justify-center items-center gap-4 mt-8">
-          <button 
+          <button
             onClick={() => setBgColor('dark')}
-            className={`px-4 py-2 rounded-xl text-sm font-bold border transition-all ${
-              bgColor === 'dark' 
-                ? 'bg-white text-slate-900 border-white' 
-                : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
+            className={`rounded-full border px-4 py-2 text-sm font-medium transition-colors ${
+              bgColor === 'dark'
+                ? 'border-primary bg-primary text-primary-foreground'
+                : 'border-border bg-card text-muted-foreground hover:border-primary/30 hover:text-primary'
             }`}
           >
             Dark Mode Preview
           </button>
-          <button 
+          <button
             onClick={() => setBgColor('light')}
-            className={`px-4 py-2 rounded-xl text-sm font-bold border transition-all ${
-              bgColor === 'light' 
-                ? 'bg-slate-900 text-white border-slate-900' 
-                : 'bg-slate-200 text-slate-600 border-slate-300 hover:text-slate-900'
+            className={`rounded-full border px-4 py-2 text-sm font-medium transition-colors ${
+              bgColor === 'light'
+                ? 'border-primary bg-primary text-primary-foreground'
+                : 'border-border bg-card text-muted-foreground hover:border-primary/30 hover:text-primary'
             }`}
           >
             Light Mode Preview
@@ -333,12 +331,10 @@ export default function LogoPlayground() {
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className={`flex-1 py-3 px-4 rounded-xl text-sm font-bold capitalize transition-all ${
-              activeTab === tab 
-                ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' 
-                : bgColor === 'dark'
-                  ? 'bg-slate-900/60 border border-slate-800 text-slate-400 hover:text-white'
-                  : 'bg-white border border-slate-200 text-slate-600 hover:text-slate-900'
+            className={`flex-1 rounded-full px-4 py-3 text-sm font-medium capitalize transition-colors ${
+              activeTab === tab
+                ? 'bg-primary text-primary-foreground'
+                : 'border border-border bg-card text-muted-foreground hover:border-primary/30 hover:text-primary'
             }`}
           >
             {tab === 'rocket' ? '🚀 Rocket' : tab === 'rainbow' ? '🌈 Rainbow' : tab === 'arrow' ? '📈 Arrow' : '☁️ Cloud'}
