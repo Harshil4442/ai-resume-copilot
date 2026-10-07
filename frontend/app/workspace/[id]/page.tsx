@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
   ArrowLeft,
+  ArrowRight,
   BookOpenCheck,
   BrainCircuit,
   BriefcaseBusiness,
@@ -175,6 +176,7 @@ export default function OpportunityPage() {
   const [editingEvidenceId, setEditingEvidenceId] = useState<string | null>(null);
   const [evidenceDraft, setEvidenceDraft] = useState("");
   const trackedTerminalRuns = useRef(new Set<string>());
+  const resumeTabRef = useRef<HTMLButtonElement>(null);
 
   const opportunity = useQuery({
     queryKey: ["opportunity", opportunityId],
@@ -425,33 +427,42 @@ export default function OpportunityPage() {
   )?.resume_version_id || item.resume_versions[0]?.id || "";
   const approvedCount = (evidence.data || []).filter((entry) => entry.approval_state === "approved").length;
   const questions = interviewResult.data?.result as unknown as InterviewResult | undefined;
+  const interviewQuestions = questions?.questions || [];
+  const evidenceBackedCount = interviewQuestions.filter((question) => question.answer_state === "evidence_backed").length;
+  const interviewIsRunning = startInterview.isPending || Boolean(interviewRun.data && !terminal.has(interviewRun.data.status));
   const tailored = tailorResult.data?.result as unknown as TailorResult | undefined;
+
+  function reviewResumeEvidence() {
+    setTab("resume");
+    resumeTabRef.current?.focus();
+    resumeTabRef.current?.scrollIntoView({ block: "nearest" });
+  }
 
   return (
     <main className="app-page">
       <div className="page-container">
         <Link href="/workspace" className="inline-flex items-center gap-2 text-sm font-semibold text-muted-foreground hover:text-foreground"><ArrowLeft size={16} /> Opportunities</Link>
-        <header className="mt-5 grid gap-6 border-b border-border pb-7 lg:grid-cols-[1fr_auto] lg:items-end">
+        <header className="mt-5 space-y-6 border-b border-border pb-7">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <StatusBadge tone={stageTone[item.stage]}>{stageLabels[item.stage]}</StatusBadge>
               <span className="text-xs font-bold text-muted-foreground">{item.priority} priority</span>
             </div>
-            <h1 className="font-display mt-3 text-4xl font-normal leading-tight text-foreground sm:text-5xl">{item.title}</h1>
+            <h1 className="font-display mt-3 max-w-4xl break-words text-4xl font-normal leading-tight text-foreground sm:text-5xl">{item.title}</h1>
             <p className="mt-2 text-sm font-semibold text-muted-foreground">{item.company || "Company not set"}{item.location ? ` · ${item.location}` : ""}</p>
           </div>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-            <label className="grid gap-1 text-xs font-bold text-muted-foreground">
+          <div className={`grid gap-4 rounded-xl border border-border bg-surface/60 p-4 sm:grid-cols-2 sm:p-5 ${item.resume_versions.length ? "xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1.2fr)_auto]" : "xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto]"}`}>
+            <label className="grid min-w-0 gap-2 text-xs font-bold text-muted-foreground">
               Resume
-              <select className="field-control min-w-44" value={item.resume_id || ""} onChange={(event) => connectResume.mutate(event.target.value)} disabled={connectResume.isPending}>
+              <select className="field-control min-w-0 truncate pr-8" title={resumes.data?.resumes.find((resume) => resume.id === item.resume_id)?.filename} value={item.resume_id || ""} onChange={(event) => connectResume.mutate(event.target.value)} disabled={connectResume.isPending}>
                 <option value="">Not connected</option>
                 {(resumes.data?.resumes || []).map((resume) => <option key={resume.id} value={resume.id}>{resume.filename}</option>)}
               </select>
             </label>
-            <label className="grid gap-1 text-xs font-bold text-muted-foreground">
+            <label className="grid min-w-0 gap-2 text-xs font-bold text-muted-foreground">
               Application stage
               <select
-                className="field-control min-w-44"
+                className="field-control min-w-0"
                 value={item.stage}
                 onChange={(event) => {
                   const nextStage = event.target.value;
@@ -470,20 +481,22 @@ export default function OpportunityPage() {
               </select>
             </label>
             {item.resume_versions.length ? (
-              <label className="grid gap-1 text-xs font-bold text-muted-foreground">
+              <label className="grid min-w-0 gap-2 text-xs font-bold text-muted-foreground">
                 Submitted version
-                <select className="field-control min-w-44" value={effectiveSubmittedVersionId} onChange={(event) => setSubmittedVersionId(event.target.value)}>
+                <select className="field-control min-w-0 truncate pr-8" title={item.resume_versions.find((version) => version.id === effectiveSubmittedVersionId)?.label} value={effectiveSubmittedVersionId} onChange={(event) => setSubmittedVersionId(event.target.value)}>
                   {item.resume_versions.map((version) => <option key={version.id} value={version.id}>Version {version.version_number}: {version.label}</option>)}
                 </select>
               </label>
             ) : null}
-            <Button onClick={() => startMatch.mutate()} disabled={startMatch.isPending || Boolean(matchRun.data && !terminal.has(matchRun.data.status))}>
-              {matchRun.data && !terminal.has(matchRun.data.status) ? <LoaderCircle size={16} className="animate-spin" /> : <Sparkles size={16} />}
-              {latestMatch ? "Refresh match" : "Run match"}
-            </Button>
-            <Button size="icon" variant="secondary" onClick={() => exportOpportunity.mutate()} disabled={exportOpportunity.isPending} aria-label="Export opportunity" title="Export opportunity">
-              <Download size={16} />
-            </Button>
+            <div className="flex items-end gap-2 sm:col-span-2 xl:col-span-1">
+              <Button className="min-h-11 flex-1 whitespace-nowrap xl:flex-none" onClick={() => startMatch.mutate()} disabled={startMatch.isPending || Boolean(matchRun.data && !terminal.has(matchRun.data.status))}>
+                {matchRun.data && !terminal.has(matchRun.data.status) ? <LoaderCircle size={16} className="animate-spin" /> : <Sparkles size={16} />}
+                {latestMatch ? "Refresh match" : "Run match"}
+              </Button>
+              <Button className="h-11 w-11 shrink-0" size="icon" variant="secondary" onClick={() => exportOpportunity.mutate()} disabled={exportOpportunity.isPending} aria-label="Export opportunity" title="Export opportunity">
+                <Download size={16} />
+              </Button>
+            </div>
           </div>
         </header>
 
@@ -494,7 +507,7 @@ export default function OpportunityPage() {
 
         <nav className="mt-7 flex max-w-full gap-1 overflow-x-auto border-b border-border" aria-label="Opportunity sections">
           {tabs.map((entry) => (
-            <button key={entry.id} type="button" onClick={() => setTab(entry.id)} className={`relative flex min-h-11 shrink-0 items-center gap-2 px-3 text-sm font-bold ${tab === entry.id ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+            <button key={entry.id} ref={entry.id === "resume" ? resumeTabRef : undefined} type="button" aria-pressed={tab === entry.id} onClick={() => setTab(entry.id)} className={`relative flex min-h-11 shrink-0 items-center gap-2 px-3 text-sm font-bold ${tab === entry.id ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
               <entry.icon size={15} /> {entry.label}
               {tab === entry.id ? <span className="absolute inset-x-3 bottom-0 h-0.5 bg-primary" /> : null}
             </button>
@@ -666,18 +679,61 @@ export default function OpportunityPage() {
           ) : null}
 
           {tab === "interview" ? (
-            <section>
-              <div className="flex flex-col gap-5 border-b border-border pb-7 sm:flex-row sm:items-end sm:justify-between">
-                <div className="max-w-2xl"><p className="eyebrow">Role-specific preparation</p><h2 className="font-display mt-2 text-2xl font-normal">Interview questions</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">Generated from the preserved role. Keep answers grounded in approved evidence.</p></div>
-                <Button onClick={() => startInterview.mutate()} disabled={startInterview.isPending || Boolean(interviewRun.data && !terminal.has(interviewRun.data.status))}>{interviewRun.data && !terminal.has(interviewRun.data.status) ? <LoaderCircle size={16} className="animate-spin" /> : <BrainCircuit size={16} />} Generate questions</Button>
+            <section aria-labelledby="interview-heading">
+              <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+                <div className="max-w-2xl">
+                  <p className="eyebrow">Role-specific preparation</p>
+                  <h2 id="interview-heading" className="font-display mt-2 text-3xl font-normal">Interview questions</h2>
+                  <p className="mt-2 max-w-prose text-sm leading-6 text-muted-foreground">Practice for this role using your own experience. Review the guidance, then build your answers from approved evidence.</p>
+                </div>
+                <Button className="min-h-11 shrink-0 self-start sm:self-auto" onClick={() => startInterview.mutate()} disabled={interviewIsRunning}>
+                  {interviewIsRunning ? <LoaderCircle size={16} className="animate-spin" /> : <BrainCircuit size={16} />}
+                  {interviewIsRunning ? "Generating questions" : interviewQuestions.length ? "Regenerate questions" : "Generate questions"}
+                </Button>
               </div>
+              {interviewQuestions.length ? (
+                <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-2 border-y border-border py-4 text-sm">
+                  <span className="font-semibold text-foreground">{interviewQuestions.length} {interviewQuestions.length === 1 ? "question" : "questions"}</span>
+                  {evidenceBackedCount ? <span className="inline-flex items-center gap-2 text-primary"><ShieldCheck size={16} aria-hidden="true" /> {evidenceBackedCount} evidence-backed</span> : null}
+                  {interviewQuestions.length > evidenceBackedCount ? <span className="inline-flex items-center gap-2 text-muted-foreground"><CircleAlert size={16} aria-hidden="true" /> {interviewQuestions.length - evidenceBackedCount} {interviewQuestions.length - evidenceBackedCount === 1 ? "needs" : "need"} evidence</span> : null}
+                </div>
+              ) : null}
               <RunFeedback run={interviewRun.data} />
-              <div className="divide-y divide-border">
-                {(questions?.questions || []).map((question, index) => (
-                  <article key={`${index}-${question.question}`} className="py-6"><div className="flex gap-4"><span className="text-sm font-semibold text-primary">{String(index + 1).padStart(2, "0")}</span><div><div className="flex flex-wrap items-center gap-2"><h3 className="font-semibold text-foreground">{question.question}</h3><StatusBadge tone={question.answer_state === "evidence_backed" ? "teal" : "amber"}>{question.answer_state === "evidence_backed" ? `${question.evidence_ids?.length || 0} sources` : "evidence needed"}</StatusBadge></div>{question.answer ? <p className="mt-3 whitespace-pre-line text-sm leading-6 text-muted-foreground">{question.answer}</p> : null}</div></div></article>
-                ))}
+              {startInterview.isError ? <p className="mt-4 text-sm text-coral" role="alert">{startInterview.error instanceof Error ? startInterview.error.message : "Could not generate questions. Please try again."}</p> : null}
+              {interviewResult.isLoading ? <div className="mt-6"><LoadingBlock rows={3} /></div> : null}
+              {interviewResult.isError ? <div className="mt-4 flex flex-wrap items-center gap-3 text-sm" role="alert"><p className="text-coral">Could not load your interview questions.</p><Button variant="secondary" size="sm" onClick={() => void interviewResult.refetch()}>Retry loading</Button></div> : null}
+              <div className="mt-6 space-y-4">
+                {interviewQuestions.map((question, index) => {
+                  const evidenceBacked = question.answer_state === "evidence_backed";
+                  const sourceCount = question.evidence_ids?.length || 0;
+                  return (
+                    <article key={`${index}-${question.question}`} aria-labelledby={`interview-question-${index}`} className="rounded-xl border border-border bg-white p-5 transition-colors hover:border-accent sm:p-6">
+                      <div className="flex items-start gap-3 sm:gap-4">
+                        <span className="flex h-10 w-10 shrink-0 items-center justify-center whitespace-nowrap rounded-full bg-surface font-mono text-sm font-medium tabular-nums text-primary" aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
+                        <div className="min-w-0 flex-1">
+                          <h3 id={`interview-question-${index}`} className="break-words text-base font-semibold leading-6 text-foreground sm:text-lg sm:leading-7">{question.question}</h3>
+                          <StatusBadge className="mt-2" tone={evidenceBacked ? "teal" : "amber"}>{evidenceBacked ? `Evidence-backed · ${sourceCount} ${sourceCount === 1 ? "source" : "sources"}` : "Evidence needed"}</StatusBadge>
+                        </div>
+                      </div>
+                      {question.answer ? (
+                        <div className="mt-5 rounded-lg bg-surface/80 p-4 sm:ml-14 sm:p-5">
+                          <p className="data-label">{evidenceBacked ? "Suggested talking points" : "Preparation guidance"}</p>
+                          <p className="mt-2 max-w-prose whitespace-pre-line break-words text-sm leading-7 text-muted-foreground">{question.answer}</p>
+                        </div>
+                      ) : null}
+                      {!evidenceBacked ? (
+                        <div className="mt-4 flex flex-col items-start gap-3 sm:ml-14 sm:flex-row sm:items-center sm:justify-between">
+                          <p className="max-w-prose text-xs leading-5 text-muted-foreground">Add or approve relevant evidence, then regenerate your questions.</p>
+                          <Button variant="secondary" size="sm" className="shrink-0" onClick={reviewResumeEvidence}>Review resume evidence <ArrowRight size={14} aria-hidden="true" /></Button>
+                        </div>
+                      ) : null}
+                    </article>
+                  );
+                })}
               </div>
-              {!questions && !interviewRun.data ? <EmptyState icon={MessageSquareText} title="Prepare from the actual role" description="Generate a focused question set from this opportunity's job snapshot." /> : null}
+              {!interviewQuestions.length && !interviewIsRunning && !interviewResult.isLoading && !interviewResult.isError && (!interviewRun.data || interviewRun.data.status === "succeeded") ? (
+                <EmptyState icon={MessageSquareText} title={questions ? "No questions returned" : "Prepare from the actual role"} description={questions ? "Try generating another set of questions for this opportunity." : "Generate questions from the saved job description, then review your evidence before practicing."} />
+              ) : null}
             </section>
           ) : null}
 
