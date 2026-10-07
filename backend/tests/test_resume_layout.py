@@ -212,10 +212,15 @@ def test_pdf_native_character_positions_retain_source_word_spacing(monkeypatch):
 
 def test_pdf_rejects_overflow_and_leaves_original_unchanged():
     source = _pdf()
-    with pytest.raises(ResumeLayoutError, match="slot"):
+    unit = _first_unit(source, "pdf")
+    with pytest.raises(ResumeLayoutError, match="slot") as rejected:
         apply_source_edits(
-            source, "pdf", [_edit(_first_unit(source, "pdf"), "Built " + "wide systems " * 20)]
+            source, "pdf", [_edit(unit, "Built " + "wide systems " * 20)]
         )
+    assert rejected.value.unit_id == unit["unit_id"]
+    assert "Native width limit is" in rejected.value.repair_hint
+    assert "Character count alone cannot prove font fit" in rejected.value.repair_hint
+    assert ORIGINAL not in rejected.value.repair_hint
     assert _first_unit(source, "pdf")["text"] == ORIGINAL
 
 
@@ -265,9 +270,12 @@ def test_pdf_font_envelope_does_not_allow_a_new_overlap_with_neighboring_content
     replacement = "Built easy interfaces with SQL."
     unobstructed = _pdf_line(original)
     safe_unit = extract_source_units(unobstructed, "pdf")[0]
-    assert replacement in _pdf_snapshot(
-        apply_source_edits(unobstructed, "pdf", [_edit(safe_unit, replacement)])
-    )[0]["text"]
+    assert (
+        replacement
+        in _pdf_snapshot(apply_source_edits(unobstructed, "pdf", [_edit(safe_unit, replacement)]))[
+            0
+        ]["text"]
+    )
 
     source = _pdf_line(original, obstruction=True)
     unit = extract_source_units(source, "pdf")[0]
@@ -340,9 +348,7 @@ def test_pdf_edit_retains_untouched_bullet_resource_with_same_base_font_name():
     assert before["objects"][1][0].strip() == "•"
     assert after["objects"][1] == before["objects"][1]
     bullet_crop = (90, 325, 108, 346)  # Twice the PDF coordinates around the bullet.
-    assert after["image"].crop(bullet_crop).tobytes() == before["image"].crop(
-        bullet_crop
-    ).tobytes()
+    assert after["image"].crop(bullet_crop).tobytes() == before["image"].crop(bullet_crop).tobytes()
     assert before["image"].crop(bullet_crop).getextrema() != ((255, 255),) * 3
     with BytesIO(source) as original_stream, BytesIO(result) as result_stream:
         original_page = PdfReader(original_stream).pages[0]
@@ -371,6 +377,88 @@ def test_pdf_candidates_include_complete_line_context_and_supported_font_charact
     subset_unit = _first_unit(_pdf(subset=True), "pdf")
     assert set(subset_unit["text"]) <= set(subset_unit["allowed_characters"])
     assert "Ж" not in subset_unit["allowed_characters"]
+
+
+def test_pdf_context_keeps_section_boundaries_and_prioritizes_summary_over_skills():
+    output = BytesIO()
+    canvas = Canvas(output, pagesize=(612, 792), invariant=True)
+    passages = [
+        ("SUMMARY", 660, "Built Python services for customers with reliable releases."),
+        ("EXPERIENCE", 610, "Developed backend services with automated quality checks."),
+        (
+            "TECHNICAL SKILLS",
+            560,
+            "Python services, deployment tools, profiling, and release automation.",
+        ),
+    ]
+    for heading, y, text in passages:
+        canvas.setFont("Times-Bold", 12)
+        canvas.drawString(60, y, heading)
+        canvas.setFont("Times-Roman", 11)
+        canvas.drawString(60, y - 20, text)
+    canvas.save()
+    units = extract_source_units(output.getvalue(), "pdf")
+    assert [unit["section"] for unit in units] == ["summary", "experience", "technical skills"]
+    assert [unit["generation_priority"] for unit in units] == [1, 2, 8]
+    for index, unit in enumerate(units):
+        assert unit["text"] in unit["paragraph_context"]
+        assert all(
+            other[2] not in unit["paragraph_context"]
+            for other_index, other in enumerate(passages)
+            if other_index != index
+        )
+
+
+def test_pdf_fragment_boundaries_protect_sentence_join_before_emphasized_metric():
+    output = BytesIO()
+    canvas = Canvas(output, pagesize=(612, 792), invariant=True)
+    canvas.setFont("Times-Bold", 12)
+    canvas.drawString(48, 704, "EXPERIENCE")
+    x = 60.0
+    pieces = [
+        ("Times-Bold", "Developed Python automation tools "),
+        ("Times-Roman", "for ARM architecture validation, enabling "),
+        ("Times-Bold", "100+ engineers"),
+    ]
+    for font, text in pieces:
+        canvas.setFont(font, 10)
+        canvas.drawString(x, 662, text)
+        x += pdfmetrics.stringWidth(text, font, 10)
+    canvas.save()
+    source = output.getvalue()
+    unit = next(
+        unit for unit in extract_source_units(source, "pdf") if unit["text"].startswith("for ARM")
+    )
+    assert unit["required_prefix"] == "for ARM"
+    assert unit["required_suffix"] == "validation, enabling"
+    with pytest.raises(ResumeLayoutError, match="adjoining fragment boundaries") as rejected:
+        apply_source_edits(
+            source, "pdf", [_edit(unit, "for ARM validation, enabling reliability ")]
+        )
+    assert rejected.value.unit_id == unit["unit_id"]
+    accepted = apply_source_edits(source, "pdf", [_edit(unit, "for ARM validation, enabling ")])
+    with (
+        pdfium.PdfDocument(accepted) as document,
+        closing(document[0]) as page,
+        closing(page.get_textpage()) as textpage,
+    ):
+        assert "for ARM validation, enabling" in textpage.get_text_range()
+        assert "100+ engineers" in textpage.get_text_range()
+
+
+def test_pdf_fragment_boundaries_leave_complete_sentences_bullets_and_columns_free():
+    output = BytesIO()
+    canvas = Canvas(output, pagesize=(612, 792), invariant=True)
+    canvas.setFont("Times-Roman", 10)
+    canvas.drawString(48, 662, "•")
+    canvas.drawString(60, 662, ORIGINAL)
+    canvas.drawString(400, 662, "Another isolated column with professional details.")
+    canvas.save()
+    units = extract_source_units(output.getvalue(), "pdf")
+    assert len(units) == 2
+    assert all(
+        not unit.get("required_prefix") and not unit.get("required_suffix") for unit in units
+    )
 
 
 def _docx() -> bytes:

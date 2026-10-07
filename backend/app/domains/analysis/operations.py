@@ -40,6 +40,7 @@ _TAILORING_VALIDATION_REASONS = {
     "Every replacement must cite supplied approved evidence": "unsupported_evidence",
     "Every factual skill or named term must be supported by the original text or cited evidence": "unsupported_factual_term",
     "The original source text no longer matches the proposed edit.": "source_text_mismatch",
+    "Source edits must retain adjoining fragment boundaries.": "changed_fragment_boundary",
     "Source edits must preserve all original numbers and dates.": "changed_source_numbers",
     "The original PDF font is missing a required glyph.": "missing_pdf_glyph",
     "The original PDF whitespace cannot be retained safely.": "unsupported_pdf_whitespace",
@@ -51,6 +52,11 @@ _TAILORING_VALIDATION_REASONS = {
     "Saved PDF text or font differs from the accepted source edit.": "changed_pdf_text_or_style",
     "The replacement is too long for its original DOCX paragraph.": "docx_paragraph_overflow",
     "The PDF changed visually outside the accepted text slots.": "changed_pdf_layout",
+}
+_TAILORING_REASON_CODES = set(_TAILORING_VALIDATION_REASONS.values()) | {
+    "unchanged_source_text",
+    "invalid_replacement_text",
+    "duplicate_source_location",
 }
 
 OUTPUT_SCHEMAS: dict[str, dict[str, Any]] = {
@@ -334,7 +340,9 @@ def execute_interview_questions(
     payload: dict[str, Any],
     run: models.AnalysisRun,
 ) -> dict[str, Any]:
-    opportunity = get_opportunity(db, user_id, run.opportunity_id or str(payload.get("opportunity_id", "")))
+    opportunity = get_opportunity(
+        db, user_id, run.opportunity_id or str(payload.get("opportunity_id", ""))
+    )
     from ...services.llm_client import generate_interview_questions
 
     evidence_query = db.query(models.EvidenceItem).filter(
@@ -490,7 +498,7 @@ def execute_resume_tailor(
     # Limit model context by whole units, never by truncating JSON or a source passage.
     source_units: list[dict[str, Any]] = []
     context_length = 0
-    for unit in units:
+    for unit in sorted(units, key=lambda item: item.get("generation_priority", 5)):
         if len(source_units) >= 100 or context_length + len(unit["text"]) > 24_000:
             continue
         source_units.append(unit)
@@ -498,7 +506,7 @@ def execute_resume_tailor(
     if not source_units:
         raise ResumeLayoutError("No source text can be edited while preserving this layout")
 
-    prompt_version = "resume-source-v3"
+    prompt_version = "resume-source-v4"
     _ensure_prompt_version(
         db,
         operation="resume_tailor",
@@ -511,7 +519,8 @@ def execute_resume_tailor(
         repair_note = ""
         last_validation_error: Exception | None = None
         known_unit_ids = {unit["unit_id"] for unit in source_units}
-        for _attempt in range(2):
+        first_constraint: tuple[str, str | None] | None = None
+        for _attempt in range(3):
             candidate = None
             try:
                 candidate = tailor_resume_from_evidence(
@@ -523,14 +532,56 @@ def execute_resume_tailor(
                 )
                 candidate["format_preservation"] = "source"
                 candidate["source_format"] = resume.source_format
+                rejected = candidate.get("rejected_source_edits")
+                if isinstance(rejected, list) and rejected:
+                    log.warning(
+                        "Tailoring proposals excluded run_id=%s attempt=%d stage=model_validation rejected=%d retained=%d",
+                        run.id,
+                        _attempt + 1,
+                        len(rejected),
+                        len(candidate["source_edits"]),
+                    )
                 evaluation = validate_evidence_output(
-                    candidate, {str(item["id"]) for item in evidence_payload},
+                    candidate,
+                    {str(item["id"]) for item in evidence_payload},
                 )
                 if not evaluation.passed:
                     raise TailoringOutputError(evaluation.errors[0])
-                apply_source_edits(
-                    resume.source_document, resume.source_format, candidate["source_edits"],
-                )
+                while True:
+                    try:
+                        apply_source_edits(
+                            resume.source_document,
+                            resume.source_format,
+                            candidate["source_edits"],
+                        )
+                        break
+                    except ResumeLayoutError as exc:
+                        unit_id = getattr(exc, "unit_id", None)
+                        edits = candidate["source_edits"]
+                        if (
+                            unit_id not in known_unit_ids
+                            or len(edits) <= 1
+                            or not any(item.get("unit_id") == unit_id for item in edits)
+                        ):
+                            raise
+                        # Discard only the identified unsafe proposal, then
+                        # verify the entire remaining document again. A saved
+                        # version always contains a fully proven set of edits.
+                        candidate["source_edits"] = [
+                            item for item in edits if item.get("unit_id") != unit_id
+                        ]
+                        reason = _TAILORING_VALIDATION_REASONS.get(
+                            str(exc), "other_validation_failure"
+                        )
+                        log.warning(
+                            "Tailoring proposal excluded run_id=%s attempt=%d reason=%s unit_id=%s retained=%d",
+                            run.id,
+                            _attempt + 1,
+                            reason,
+                            unit_id,
+                            len(candidate["source_edits"]),
+                        )
+                candidate.pop("rejected_source_edits", None)
                 content = candidate
                 break
             except (TailoringOutputError, ResumeLayoutError) as exc:
@@ -539,6 +590,9 @@ def execute_resume_tailor(
                 if not isinstance(unit_id, str) or unit_id not in known_unit_ids:
                     unit_id = None
                 reason = _TAILORING_VALIDATION_REASONS.get(str(exc), "other_validation_failure")
+                reason_code = getattr(exc, "reason_code", None)
+                if isinstance(reason_code, str) and reason_code in _TAILORING_REASON_CODES:
+                    reason = reason_code
                 proposed_edits = candidate.get("source_edits") if candidate is not None else None
                 edit_count = len(proposed_edits) if isinstance(proposed_edits, list) else "unknown"
                 # These controlled fields survive the worker's DB rollback and
@@ -555,6 +609,18 @@ def execute_resume_tailor(
                     edit_count,
                 )
                 repair_note = f"Source unit {unit_id}: {exc}" if unit_id else str(exc)
+                hint = getattr(exc, "repair_hint", None)
+                if isinstance(hint, str) and hint:
+                    repair_note += f" {hint[:350]}"
+                # A schema or text repair can expose a different native-fit
+                # constraint next. Allow one repair for that new constraint;
+                # repeated failures at the same boundary stop after two
+                # calls. Every generation is capped at three provider calls.
+                constraint = (reason, unit_id)
+                if _attempt == 0:
+                    first_constraint = constraint
+                elif _attempt == 1 and constraint == first_constraint:
+                    break
         if content is None:
             raise TailoringOutputError(
                 "Could not apply useful changes while preserving the resume format"
@@ -595,12 +661,15 @@ def execute_resume_tailor(
             for evidence_id in item.get("evidence_ids", [])
         )
     )
-    next_version = int(
-        db.query(func.max(models.ResumeVersion.version_number))
-        .filter(models.ResumeVersion.resume_id == resume.id)
-        .scalar()
-        or 0
-    ) + 1
+    next_version = (
+        int(
+            db.query(func.max(models.ResumeVersion.version_number))
+            .filter(models.ResumeVersion.resume_id == resume.id)
+            .scalar()
+            or 0
+        )
+        + 1
+    )
     version = models.ResumeVersion(
         id=public_id("rsv"),
         user_id=user_id,
