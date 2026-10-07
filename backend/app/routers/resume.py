@@ -1,9 +1,11 @@
 import io
 import zipfile
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
+from fastapi.responses import Response
 
 from ..database import get_db
 from .. import models, schemas
@@ -32,6 +34,8 @@ def list_resumes(
                 id=r.id,
                 filename=r.original_filename or f"Resume #{r.id}",
                 created_at=r.created_at,
+                source_available=bool(r.source_available),
+                source_format=r.source_format,
             )
             for r in resumes
         ]
@@ -65,6 +69,66 @@ def get_resume(
             linkedin=contact.get("linkedin"),
             github=contact.get("github"),
         ),
+        source_available=bool(resume.source_available),
+        source_format=resume.source_format,
+    )
+
+
+@router.get(
+    "/{resume_id}/source",
+    response_class=Response,
+    responses={
+        200: {
+            "description": "Original uploaded resume",
+            "content": {
+                "application/pdf": {"schema": {"type": "string", "format": "binary"}},
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document": {
+                    "schema": {"type": "string", "format": "binary"}
+                },
+            },
+        }
+    },
+)
+def download_resume_source(
+    resume_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    resume = (
+        db.query(models.Resume)
+        .filter(models.Resume.id == resume_id, models.Resume.user_id == current_user.id)
+        .first()
+    )
+    if not resume:
+        raise HTTPException(status_code=404, detail="Resume not found")
+    if not resume.source_available:
+        raise HTTPException(
+            status_code=409,
+            detail="The original file is unavailable. Upload this resume again to preserve its formatting.",
+        )
+
+    filename = resume.original_filename or f"resume-{resume.id}.{resume.source_format}"
+    safe_filename = Path(filename.replace("\\", "/")).name
+    ascii_filename = "".join(
+        character if 32 <= ord(character) < 127 and character not in {'"', "\\"} else "_"
+        for character in safe_filename
+    )
+    media_type = (
+        "application/pdf"
+        if resume.source_format == "pdf"
+        else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+    return Response(
+        content=resume.source_document,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{ascii_filename}"; '
+                f"filename*=UTF-8''{quote(safe_filename, safe='')}"
+            ),
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
     )
 
 ALLOWED_TYPES = {
@@ -134,7 +198,7 @@ async def parse_resume(
             status_code=413,
             detail=f"File is larger than {MAX_UPLOAD_BYTES // (1024 * 1024)}MB limit.",
         )
-    filename, _kind = _validated_resume_upload(filename, content_type, file_bytes)
+    filename, source_format = _validated_resume_upload(filename, content_type, file_bytes)
     raw_text, sections, skills, exp_years, contact_info = parse_resume_file(
         file_bytes, filename=filename, use_llm=True
     )
@@ -143,6 +207,8 @@ async def parse_resume(
         user_id=current_user.id,
         original_filename=filename,
         raw_text=raw_text,
+        source_document=file_bytes,
+        source_format=source_format,
         skills=skills,
         experience_years=exp_years,
         sections=sections,
@@ -158,4 +224,6 @@ async def parse_resume(
         experience_years=exp_years,
         sections=sections,
         contact_info=schemas.ContactInfo(**contact_info),
+        source_available=bool(resume.source_available),
+        source_format=resume.source_format,
     )

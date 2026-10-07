@@ -3,6 +3,7 @@
 import { AlertCircle, ArrowRight, CheckCircle2, FileText, FileUp, ShieldCheck, Target } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 
 import { Button } from "../../components/ui/Button";
 import { trackEvent } from "../../lib/analytics";
@@ -16,6 +17,7 @@ const ACCEPTED_TYPES = new Set([
 ]);
 
 export default function ResumePage() {
+  const queryClient = useQueryClient();
   const [file, setFile] = useState<File | null>(null);
   const [data, setData] = useState<ResumeParseResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -63,6 +65,7 @@ export default function ResumePage() {
     try {
       const parsed = await apiPostForm<ResumeParseResponse>("/resume/parse", form);
       setData(parsed);
+      await queryClient.invalidateQueries({ queryKey: ["resumes"] });
       trackEvent("resume_upload_completed", {
         resume_id: parsed.resume_id,
         skill_count: parsed.skills.length,
@@ -83,7 +86,7 @@ export default function ResumePage() {
           <div>
             <p className="eyebrow">Resume evidence</p>
             <h1 className="font-display mt-2 text-4xl font-normal text-foreground sm:text-5xl">Add your source resume</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">HireWiz extracts a private working copy. You choose which facts become approved evidence.</p>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">HireWiz keeps your original file privately and extracts a working copy. Approve the facts to use, then review changes to existing text before downloading in the same file format.</p>
           </div>
           <div className="flex gap-5 text-xs text-muted-foreground">
             <span className="flex items-center gap-2"><ShieldCheck size={16} className="text-primary" /> PDF or DOCX</span>
@@ -116,7 +119,7 @@ export default function ResumePage() {
             <ol className="mt-5 grid gap-5 text-sm text-muted-foreground">
               <li className="flex gap-3"><span className="font-semibold text-primary">01</span><span>Review extracted skills and experience.</span></li>
               <li className="flex gap-3"><span className="font-semibold text-primary">02</span><span>Add a target role to preserve its job snapshot.</span></li>
-              <li className="flex gap-3"><span className="font-semibold text-primary">03</span><span>Approve evidence before tailoring or interview preparation.</span></li>
+              <li className="flex gap-3"><span className="font-semibold text-primary">03</span><span>Approve evidence, then review tailored changes while keeping your source layout.</span></li>
             </ol>
           </aside>
         </div>
@@ -128,6 +131,7 @@ export default function ResumePage() {
                 <div className="flex items-center gap-2 text-sm font-bold text-primary"><CheckCircle2 size={17} /> Resume parsed</div>
                 <h2 className="font-display mt-3 text-2xl font-normal text-foreground">Review the extracted signals</h2>
                 <p className="mt-2 text-sm text-muted-foreground">Estimated experience: {data.experience_years} years. These values remain editable source material, not verified claims.</p>
+                {data.source_available && data.source_format ? <p className="mt-3 text-sm font-semibold text-primary">Original {data.source_format.toUpperCase()} retained for preview and tailoring.</p> : <p className="mt-3 text-sm text-coral">The original file is unavailable. Upload your source again before tailoring.</p>}
                 <div className="mt-5 flex flex-wrap gap-2">
                   {data.skills.slice(0, 30).map((skill) => <span key={skill} className="rounded-md border border-border bg-surface px-2.5 py-1.5 text-xs font-semibold text-foreground">{skill}</span>)}
                   {!data.skills.length ? <span className="text-sm text-muted-foreground">No skills were confidently extracted.</span> : null}
@@ -135,7 +139,7 @@ export default function ResumePage() {
               </div>
               <div className="grid min-w-60 gap-2">
                 <Button asChild><Link href="/workspace?new=1"><Target size={16} /> Add target role</Link></Button>
-                <Button asChild variant="secondary"><Link href="/resume/preview"><FileText size={16} /> Inspect parsed data</Link></Button>
+                <Button asChild variant="secondary"><Link href={`/resume/preview?resume=${data.resume_id}`}><FileText size={16} /> View original resume</Link></Button>
               </div>
             </div>
           </section>

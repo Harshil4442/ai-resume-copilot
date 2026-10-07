@@ -7,12 +7,13 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     JSON,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
     Index,
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import column_property, deferred, relationship
 from .database import Base
 
 
@@ -229,6 +230,11 @@ class Resume(Base):
 
     original_filename = Column(String, default="")
     raw_text = Column(Text, default="")
+    source_document = deferred(Column(LargeBinary, nullable=True))
+    source_format = Column(String(8), nullable=True)
+    source_available = column_property(
+        source_document.expression.is_not(None) & source_format.in_(("pdf", "docx"))
+    )
 
     skills = Column(JSON, default=list)
     experience_years = Column(Float, default=0.0)

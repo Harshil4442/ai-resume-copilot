@@ -447,9 +447,28 @@ def execute_resume_tailor(
         for item in evidence
     ]
 
-    from ...services.llm_client import tailor_resume_from_evidence
+    from ...services.llm_client import TailoringOutputError, tailor_resume_from_evidence
+    from ...services.resume_layout import (
+        ResumeLayoutError,
+        apply_source_edits,
+        extract_source_units,
+    )
 
-    prompt_version = "resume-evidence-v1"
+    if not resume.source_document or resume.source_format not in {"pdf", "docx"}:
+        raise TailoringOutputError("Upload the original resume before tailoring")
+    units = extract_source_units(resume.source_document, resume.source_format)
+    # Limit model context by whole units, never by truncating JSON or a source passage.
+    source_units: list[dict[str, Any]] = []
+    context_length = 0
+    for unit in units:
+        if len(source_units) >= 100 or context_length + len(unit["text"]) > 24_000:
+            continue
+        source_units.append(unit)
+        context_length += len(unit["text"])
+    if not source_units:
+        raise ResumeLayoutError("No source text can be edited while preserving this layout")
+
+    prompt_version = "resume-source-v2"
     _ensure_prompt_version(
         db,
         operation="resume_tailor",
@@ -458,11 +477,33 @@ def execute_resume_tailor(
     )
     started = time.perf_counter()
     try:
-        content = tailor_resume_from_evidence(
-            job_title=opportunity.title,
-            jd_text=opportunity.job_description,
-            approved_evidence=evidence_payload,
-        )
+        content = None
+        repair_note = ""
+        for _attempt in range(2):
+            try:
+                candidate = tailor_resume_from_evidence(
+                    job_title=opportunity.title,
+                    jd_text=opportunity.job_description,
+                    approved_evidence=evidence_payload,
+                    source_units=source_units,
+                    repair_note=repair_note,
+                )
+                candidate["format_preservation"] = "source"
+                candidate["source_format"] = resume.source_format
+                evaluation = validate_evidence_output(
+                    candidate, {str(item["id"]) for item in evidence_payload},
+                )
+                if not evaluation.passed:
+                    raise TailoringOutputError(evaluation.errors[0])
+                apply_source_edits(
+                    resume.source_document, resume.source_format, candidate["source_edits"],
+                )
+                content = candidate
+                break
+            except (TailoringOutputError, ResumeLayoutError) as exc:
+                repair_note = str(exc)
+        if content is None:
+            raise TailoringOutputError("Could not apply useful changes while preserving the resume format")
     except Exception as exc:
         _record_model_call(
             db,
@@ -495,7 +536,7 @@ def execute_resume_tailor(
     evidence_ids = list(
         dict.fromkeys(
             evidence_id
-            for item in [*content.get("summary_items", []), *content.get("bullets", [])]
+            for item in content.get("source_edits", [])
             for evidence_id in item.get("evidence_ids", [])
         )
     )

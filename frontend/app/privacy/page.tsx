@@ -20,7 +20,7 @@ export default function PrivacyPolicy() {
       />
       <div className="w-full max-w-4xl mx-auto px-6 md:px-8 mt-12 text-foreground space-y-8 leading-relaxed">
         <p className="text-sm text-muted-foreground">
-          Effective: {SITE.policyEffectiveDate} · Last updated: {SITE.policyEffectiveDate} · Version {SITE.policyVersion}.
+          Effective: {SITE.policyEffectiveDate} · Last updated: 7 October 2026 · Version {SITE.policyVersion}.
           HireWiz is operated by {SITE.operatorName}, trading as HireWiz, in Gujarat, India. For privacy requests,
           email <a href={`mailto:${SITE.supportEmail}`} className="text-primary hover:underline">{SITE.supportEmail}</a>.
         </p>
@@ -39,7 +39,7 @@ export default function PrivacyPolicy() {
           <ul className="list-disc pl-6 space-y-2">
             <li><strong>Account and authentication:</strong> email address, password hash (not your raw password), sign-in method, Google account name/email when you choose Google sign-in, and the time/version of required Terms, Privacy, and age confirmations.</li>
             <li><strong>Profile:</strong> name, headline, phone, location, professional links, target-role preferences, experience, biography, skills, education, and certifications that you choose to add.</li>
-            <li><strong>Resume and job-description content:</strong> uploaded filename and extracted text, resume sections and contact details, job descriptions, target role/company text, and information derived from that content.</li>
+            <li><strong>Resume and job-description content:</strong> original uploaded PDF or DOCX files retained for preview and formatting-preserving tailoring, uploaded filenames and extracted text, resume sections and contact details, job descriptions, target role/company text, and information derived from that content.</li>
             <li><strong>Generated results:</strong> compatibility estimates, identified skills and gaps, summaries, learning suggestions, tailored drafts, chat prompts and responses supplied in a request, and match history.</li>
             <li><strong>Market-analysis inputs and results:</strong> role, location, country, work-mode and experience filters, requested sample size, data-source result metadata, and generated summaries.</li>
             <li><strong>Account usage and entitlements:</strong> tier, Premium expiry, analysis-unit balance and deductions, feature requests, and account actions.</li>
@@ -133,6 +133,10 @@ export default function PrivacyPolicy() {
             so the service can provide saved features. When you delete the account, the application deletes associated
             active-database records. Some information may remain temporarily in infrastructure backups or with service
             providers until their ordinary overwrite/deletion cycle completes.
+          </p>
+          <p className="mt-4">
+            Retained original resume files follow the same account-deletion process. You can download your original
+            file from Resume; the account JSON export includes its metadata rather than the binary file.
           </p>
           <p className="mt-4">
             Transaction, fraud, dispute, tax, accounting, and legal records may be retained for the period required by

@@ -547,6 +547,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/resume/{resume_id}/source": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download Resume Source */
+        get: operations["download_resume_source_api_resume__resume_id__source_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/analysis-runs/{run_id}": {
         parameters: {
             query?: never;
@@ -2248,6 +2265,13 @@ export interface components {
             filename: string;
             /** Id */
             id: number;
+            /**
+             * Source Available
+             * @default false
+             */
+            source_available: boolean;
+            /** Source Format */
+            source_format?: ("pdf" | "docx") | null;
         };
         /** ResumeListResponse */
         ResumeListResponse: {
@@ -2267,6 +2291,13 @@ export interface components {
             };
             /** Skills */
             skills: string[];
+            /**
+             * Source Available
+             * @default false
+             */
+            source_available: boolean;
+            /** Source Format */
+            source_format?: ("pdf" | "docx") | null;
         };
         /** ResumeTailorRequest */
         ResumeTailorRequest: {
@@ -3411,6 +3442,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ResumeParseResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_resume_source_api_resume__resume_id__source_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                resume_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Original uploaded resume */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/pdf": string;
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": string;
                 };
             };
             /** @description Validation Error */
@@ -4600,7 +4663,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Rendered resume version */
+            /** @description Resume version in its preserved source format */
             200: {
                 headers: {
                     [name: string]: unknown;

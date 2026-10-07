@@ -2,8 +2,10 @@ import json
 import logging
 import os
 import random
+import re
 import time
-from typing import List, Dict
+from functools import lru_cache
+from typing import Dict, List
 
 import httpx
 
@@ -26,6 +28,10 @@ class LLMProviderError(RuntimeError):
 
 class InterviewOutputError(ValueError):
     """The provider did not produce a complete, usable interview question set."""
+
+
+class TailoringOutputError(ValueError):
+    """The provider did not produce safe, source-linked resume replacements."""
 
 
 def _gemini_error_disposition(exc: Exception) -> tuple[bool, bool]:
@@ -397,100 +403,182 @@ def generate_interview_questions(
     return questions
 
 
+def _factual_term_pattern(term: str) -> re.Pattern:
+    # Symbols belong to a technical token: C must not authorize C++, and Java
+    # must not match JavaScript. A trailing sentence period remains a boundary.
+    return re.compile(rf"(?<![\w+#]){re.escape(term)}(?![\w+#])", re.IGNORECASE)
+
+
+@lru_cache(maxsize=1)
+def _factual_skill_patterns() -> tuple[tuple[str, tuple[re.Pattern, ...]], ...]:
+    from .market.skill_taxonomy import SKILL_TAXONOMY, all_search_terms
+
+    # Common prose words are not proof of a technical claim. Named versions,
+    # acronyms and brands are checked independently below.
+    ambiguous = {"Go", "Lambda", "Render", "Logging", "Monitoring", "Embeddings", "Express.js"}
+    skills = {
+        skill
+        for category, values in SKILL_TAXONOMY.items()
+        if category not in {"Soft Skills", "Architecture"}
+        for skill in values
+        if skill not in ambiguous
+    }
+    return tuple(
+        (canonical, tuple(_factual_term_pattern(term) for term in terms))
+        for canonical, terms in all_search_terms().items()
+        if canonical in skills
+    )
+
+
+def _validate_factual_terms(original: str, replacement: str, cited_evidence: list[dict]) -> None:
+    """Reject detectable new named facts; this is not a semantic entailment test."""
+    support_parts = [original]
+    for evidence in cited_evidence:
+        support_parts.append(str(evidence.get("text") or ""))
+        support_parts.extend(
+            skill for skill in evidence.get("skills", []) if isinstance(skill, str)
+        )
+    support = "\n".join(support_parts)
+    grounded_skill_spans: list[tuple[int, int]] = []
+    for _canonical, patterns in _factual_skill_patterns():
+        matches = [match for pattern in patterns for match in pattern.finditer(replacement)]
+        if matches and not any(pattern.search(support) for pattern in patterns):
+            raise TailoringOutputError(
+                "Every factual skill or named term must be supported by the original text or cited evidence"
+            )
+        grounded_skill_spans.extend(match.span() for match in matches)
+
+    for match in re.finditer(r"(?<!\w)[A-Za-z][A-Za-z0-9]*(?!\w)", replacement):
+        if any(start <= match.start() and match.end() <= end for start, end in grounded_skill_spans):
+            continue
+        term = match.group()
+        acronym_plural = term.endswith("s") and len(term) > 2 and term[:-1].isupper()
+        acronym = (len(term) >= 2 and term.isupper()) or acronym_plural
+        brand = bool(re.search(r"[a-z][A-Z]|[A-Za-z]\d", term))
+        prefix = replacement[:match.start()].rstrip()
+        sentence_initial = not prefix or prefix[-1] in ".!?;:•●▪◦-*"
+        proper_name = term[0].isupper() and not sentence_initial
+        support_term = term[:-1] if acronym_plural else term
+        if (acronym or brand or proper_name) and not _factual_term_pattern(support_term).search(support):
+            raise TailoringOutputError(
+                "Every factual skill or named term must be supported by the original text or cited evidence"
+            )
+
+
 def tailor_resume_from_evidence(
     *,
     job_title: str,
     jd_text: str,
     approved_evidence: List[Dict],
+    source_units: List[Dict],
+    repair_note: str = "",
 ) -> Dict:
-    """Create traceable resume copy using approved evidence as the only fact source."""
-    if not approved_evidence:
-        raise ValueError("At least one approved evidence item is required")
+    """Suggest evidence-cited replacements at existing source-document locations."""
+    from collections import Counter
 
+    if not approved_evidence or not source_units:
+        raise TailoringOutputError("Approved evidence and editable source text are required")
     allowed = {
         str(item["id"]): item
         for item in approved_evidence
         if item.get("id") and str(item.get("text") or "").strip()
     }
+    units = {item["unit_id"]: item for item in source_units}
     system_prompt = (
-        "You are an evidence-preserving resume editor. Transform only the supplied APPROVED "
-        "EVIDENCE into concise resume language relevant to the target job. Never add, infer, or "
-        "exaggerate any metric, employer, date, skill, tool, responsibility, seniority, scope, or "
-        "outcome. Every summary statement and bullet must cite one or more supplied evidence IDs. "
-        "Unsupported job requirements belong in evidence_needed, never in candidate claims. Return "
-        "only JSON with summary_items [{text,evidence_ids}], bullets [{text,evidence_ids}], and "
-        "evidence_needed [string]."
+        "You are a careful resume editor. Improve the relevance, clarity, and action verbs of "
+        "existing resume text for the target job, using only APPROVED EVIDENCE. The original "
+        "document is the template. Return targeted replacements at the supplied source unit IDs. "
+        "Keep the same sections, order, typography, links, and employer/role associations. "
+        "Do not add a target-job heading, highlights section, new bullets, or duplicate content. "
+        "Preserve every existing number, date, metric, employer, qualification, and factual meaning. "
+        "Never invent candidate history or add an unsupported skill or job keyword. "
+        "Each replacement must be no longer than its original text and fit the same space. "
+        "Change only the text at the specified location, keeping surrounding context in mind. "
+        "PDF units may be parts of a sentence with a particular bold or italic style; do not "
+        "move words or facts between units. Copy original_text exactly from the source unit. "
+        "Prefer a few useful edits over rewriting everything. Return only a JSON object with "
+        "source_edits [{unit_id,original_text,replacement_text,evidence_ids,reason}] and "
+        "evidence_needed [string]. Every edit must cite approved evidence IDs. "
+        "Put unsupported job requirements in evidence_needed, never in the resume."
     )
-    data = chat_json(
-        [
-            {"role": "system", "content": system_prompt},
-            {
-                "role": "user",
-                "content": (
-                    f"TARGET JOB: {job_title}\n\nJOB DESCRIPTION:\n{jd_text[:3500]}\n\n"
-                    f"APPROVED EVIDENCE:\n{json.dumps(approved_evidence, default=str)[:9000]}"
-                ),
-            },
-        ]
+    evidence_context = [
+        {**item, "text": str(item.get("text") or "")[:4000]}
+        for item in approved_evidence
+    ]
+    user_content = (
+        f"TARGET JOB: {job_title}\n\nJOB DESCRIPTION:\n{jd_text[:7000]}\n\n"
+        f"APPROVED EVIDENCE:\n{json.dumps(evidence_context, default=str)}\n\n"
+        f"EDITABLE SOURCE UNITS:\n{json.dumps(source_units, default=str)}"
     )
-
-    def sourced_items(key: str, limit: int) -> List[Dict]:
-        result: List[Dict] = []
-        raw_items = data.get(key, [])
-        if not isinstance(raw_items, list):
-            return result
-        for raw_item in raw_items[:limit]:
-            if not isinstance(raw_item, dict):
-                continue
-            text = str(raw_item.get("text") or "").strip()
-            raw_ids = raw_item.get("evidence_ids")
-            ids = (
-                list(dict.fromkeys(str(value) for value in raw_ids if str(value) in allowed))
-                if isinstance(raw_ids, list)
-                else []
-            )
-            if not text or not ids:
-                continue
-            result.append(
-                {
-                    "text": text,
-                    "evidence_ids": ids,
-                    "sources": [
-                        {
-                            "id": evidence_id,
-                            "title": allowed[evidence_id].get("title", "Evidence"),
-                            "evidence_text": allowed[evidence_id].get("text", ""),
-                        }
-                        for evidence_id in ids
-                    ],
-                }
-            )
-        return result
-
-    summary_items = sourced_items("summary_items", 3)
-    bullets = sourced_items("bullets", 12)
-    if not summary_items and not bullets:
-        raise ValueError("The model returned no evidence-cited resume content")
+    if repair_note:
+        user_content += (
+            f"\n\nThe previous proposed changes could not be applied: {repair_note[:500]} "
+            "Return safer, shorter replacements that satisfy all constraints."
+        )
+    raw_content = _chat([
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_content},
+    ])
+    data = None
+    try:
+        candidate = _extract_json_object(raw_content)
+        if isinstance(candidate, dict):
+            data = candidate
+    except (ValueError, TypeError, AttributeError):
+        pass
+    if data is None:
+        raise TailoringOutputError("Return a JSON object containing source_edits")
+    raw_edits = data.get("source_edits")
+    if not isinstance(raw_edits, list) or not 1 <= len(raw_edits) <= 12:
+        raise TailoringOutputError("Return between one and twelve useful source replacements")
+    edits = []
+    seen = set()
+    number_pattern = r"\d+(?:[.,]\d+)*(?:\s*%|\+|[x×])?"
+    for item in raw_edits:
+        if not isinstance(item, dict):
+            raise TailoringOutputError("Every source replacement must be an object")
+        unit_id = item.get("unit_id")
+        if not isinstance(unit_id, str) or unit_id not in units or unit_id in seen:
+            raise TailoringOutputError("Use each supplied source location at most once")
+        original = item.get("original_text")
+        replacement = item.get("replacement_text")
+        reason = item.get("reason")
+        ids = item.get("evidence_ids")
+        if original != units[unit_id]["text"]:
+            raise TailoringOutputError("Copy original_text exactly from the source location")
+        if (
+            not isinstance(replacement, str)
+            or not replacement.strip()
+            or replacement.strip() == original.strip()
+            or len(replacement) > len(original)
+            or any(ord(character) < 32 for character in replacement)
+        ):
+            raise TailoringOutputError("Replacements must change the text and fit its original length")
+        if Counter(re.findall(number_pattern, original)) != Counter(re.findall(number_pattern, replacement)):
+            raise TailoringOutputError("Preserve all original numbers, dates, and metrics exactly")
+        if not isinstance(reason, str) or not reason.strip():
+            raise TailoringOutputError("Every replacement must explain its relevance to the role")
+        if (
+            not isinstance(ids, list)
+            or not ids
+            or any(not isinstance(value, str) or value not in allowed for value in ids)
+        ):
+            raise TailoringOutputError("Every replacement must cite supplied approved evidence")
+        _validate_factual_terms(original, replacement, [allowed[value] for value in ids])
+        seen.add(unit_id)
+        edits.append({
+            "unit_id": unit_id,
+            "original_text": original,
+            "replacement_text": replacement.strip(),
+            "evidence_ids": list(dict.fromkeys(ids)),
+            "reason": reason.strip()[:1000],
+        })
     raw_needed = data.get("evidence_needed", [])
-    evidence_needed = (
-        [str(item).strip() for item in raw_needed if str(item).strip()][:10]
-        if isinstance(raw_needed, list)
-        else []
-    )
-    approved_skills = sorted(
-        {
-            str(skill).strip()
-            for item in approved_evidence
-            for skill in (item.get("skills") if isinstance(item.get("skills"), list) else [])
-            if str(skill).strip()
-        }
-    )
     return {
         "target_job_title": job_title,
-        "summary_items": summary_items,
-        "bullets": bullets,
-        "skills": approved_skills,
-        "evidence_needed": evidence_needed,
+        "source_edits": edits,
+        "evidence_needed": [item.strip()[:1000] for item in raw_needed if isinstance(item, str) and item.strip()][:10]
+        if isinstance(raw_needed, list) else [],
         "evidence_policy": "approved_only",
     }
 

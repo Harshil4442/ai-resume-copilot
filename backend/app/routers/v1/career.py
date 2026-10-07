@@ -12,7 +12,8 @@ from ...database import get_db
 from ...domains.career import schemas, service
 from ...feature_flags import decide_feature
 from ...security import get_current_user
-from ...services.resume_artifacts import render_resume_version
+from ...services.resume_artifacts import ResumeArtifactError, render_resume_version
+from ...services.resume_layout import ResumeLayoutError
 
 
 def require_career_workspace(
@@ -268,7 +269,7 @@ def list_resume_versions(
     response_class=Response,
     responses={
         200: {
-            "description": "Rendered resume version",
+            "description": "Resume version in its preserved source format",
             "content": {
                 "application/pdf": {"schema": {"type": "string", "format": "binary"}},
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document": {
@@ -295,7 +296,10 @@ def download_resume_version(
     )
     if not resume:
         raise HTTPException(status_code=404, detail="Resume not found")
-    artifact = render_resume_version(version, resume, artifact_format)
+    try:
+        artifact = render_resume_version(version, resume, artifact_format)
+    except (ResumeArtifactError, ResumeLayoutError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return Response(
         content=artifact.content,
         media_type=artifact.media_type,

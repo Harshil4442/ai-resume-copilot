@@ -1,208 +1,128 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { apiGet } from "../../../lib/api";
-import type { ResumeParseResponse } from "../../../lib/types";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { ArrowLeft, Download, FileText, FileUp, LoaderCircle } from "lucide-react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 
-export default function ResumePreviewPage() {
-  const [resumes, setResumes] = useState<Array<{ id: number; filename: string }>>([]);
+import { Button } from "../../../components/ui/Button";
+import { EmptyState } from "../../../components/ui/EmptyState";
+import { LoadingBlock } from "../../../components/ui/LoadingBlock";
+import { apiDownload, apiGet } from "../../../lib/api";
+import { fetchResumeSource, fetchResumeVersionPdf } from "../../../lib/career";
+import type { ResumeListResponse } from "../../../lib/types";
+
+function ResumePreviewContent() {
+  const searchParams = useSearchParams();
+  const requestedId = Number(searchParams.get("resume"));
+  const versionId = searchParams.get("version");
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [resumeData, setResumeData] = useState<ResumeParseResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [pdfPreview, setPdfPreview] = useState<{ documentKey: string; url: string } | null>(null);
+  const [pdfError, setPdfError] = useState<{ documentKey: string; message: string } | null>(null);
+  const [previewAttempt, setPreviewAttempt] = useState(0);
+  const resumes = useQuery({ queryKey: ["resumes"], queryFn: () => apiGet<ResumeListResponse>("/resume/list") });
+  const selectedResume = resumes.data?.resumes.find((resume) => resume.id === (selectedId ?? requestedId)) || resumes.data?.resumes[0];
+  const resumeId = selectedResume?.id;
+  const sourceAvailable = selectedResume?.source_available;
+  const sourceFormat = selectedResume?.source_format;
+  const documentKey = `${versionId ? requestedId : resumeId}:${versionId || "source"}:${previewAttempt}`;
+  const sourceRequestId = versionId ? null : resumeId;
+  const sourceRequestReady = !versionId && sourceAvailable && sourceFormat === "pdf";
 
   useEffect(() => {
-    // Fetch user's parsed resumes list
-    apiGet<{ resumes: Array<{ id: number; filename: string }> }>("/resume/list")
-      .then((data) => {
-        setResumes(data.resumes);
-        if (data.resumes.length > 0) {
-          setSelectedId(data.resumes[0].id);
-        } else {
-          setLoading(false);
-        }
+    if (!versionId && (!sourceRequestId || !sourceRequestReady)) return;
+    const controller = new AbortController();
+    let objectUrl: string | undefined;
+    const request = versionId ? fetchResumeVersionPdf(versionId, controller.signal) : fetchResumeSource(sourceRequestId!, controller.signal);
+    void request
+      .then((blob) => {
+        if (controller.signal.aborted) return;
+        if (blob.type.split(";")[0].trim().toLowerCase() !== "application/pdf") throw new Error("The server did not return a PDF file. Please try again.");
+        objectUrl = URL.createObjectURL(blob);
+        setPdfPreview({ documentKey, url: objectUrl });
       })
-      .catch((loadError: unknown) => {
-        setError(loadError instanceof Error ? loadError.message : "Failed to load resumes list");
-        setLoading(false);
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        setPdfError({ documentKey, message: error instanceof Error ? error.message : "Could not load this PDF." });
       });
-  }, []);
+    return () => {
+      controller.abort();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [sourceRequestId, sourceRequestReady, versionId, documentKey]);
 
-  useEffect(() => {
-    if (selectedId === null) return;
-
-    // Fetch single resume details
-    apiGet<ResumeParseResponse>(`/resume/${selectedId}`)
-      .then((data) => {
-        setResumeData(data);
-      })
-      .catch((loadError: unknown) => {
-        setError(loadError instanceof Error ? loadError.message : "Failed to load resume details");
-      })
-      .finally(() => {
-        setLoading(false);
-      });
-  }, [selectedId]);
-
-  function handlePrint() {
-    window.print();
-  }
-
-  // Format section title for human reading (e.g. 'work_experience' -> 'Work Experience')
-  function formatTitle(title: string) {
-    return title
-      .split(/_|-/)
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(" ");
-  }
-
-  if (resumes.length === 0 && !loading) {
-    return (
-      <main className="app-shell max-w-4xl mx-auto py-12 px-4 text-center">
-        <div className="surface-panel p-8">
-          <h2 className="font-display text-2xl font-normal text-foreground">No Resumes Found</h2>
-          <p className="text-muted-foreground mt-2">Please upload a resume first to preview and print it.</p>
-          <a href="/resume" className="button-primary mt-4">Go to Upload</a>
-        </div>
-      </main>
-    );
-  }
+  const downloadOriginal = useMutation({ mutationFn: (resume: NonNullable<typeof selectedResume>) => apiDownload(`/resume/${resume.id}/source`, resume.filename) });
+  const downloadTailored = useMutation({
+    mutationFn: () => {
+      if (!versionId) throw new Error("Choose a tailored version first.");
+      return apiDownload(`/v1/resume-versions/${encodeURIComponent(versionId)}/download?format=pdf`, "hirewiz-tailored-resume.pdf");
+    },
+  });
+  const pdfUrl = pdfPreview && pdfPreview.documentKey === documentKey ? pdfPreview.url : null;
+  const previewError = pdfError && pdfError.documentKey === documentKey ? pdfError.message : null;
+  function retryPreview() { setPdfError(null); setPdfPreview(null); setPreviewAttempt((attempt) => attempt + 1); }
 
   return (
-    <main className="app-shell max-w-4xl mx-auto py-6 px-4">
-      {/* Control panel (not printed) */}
-      <div className="no-print surface-panel mb-6 flex flex-wrap items-center justify-between gap-4 p-4">
-        <div className="flex items-center gap-3">
-          <label className="text-sm font-bold text-foreground">Select Resume:</label>
-          <select
-            className="field-control min-w-[200px] py-1.5 px-3"
-            value={selectedId || ""}
-            onChange={(event) => {
-              setLoading(true);
-              setError(null);
-              setSelectedId(Number(event.target.value));
-            }}
-          >
-            {resumes.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.filename}
-              </option>
-            ))}
-          </select>
-        </div>
-        <button onClick={handlePrint} className="button-primary">
-          <span>🖨️</span> Print / Save PDF
-        </button>
-      </div>
+    <main className="app-page">
+      <div className="page-container max-w-5xl">
+        <Link href={versionId ? "/workspace" : "/resume"} className="inline-flex items-center gap-2 text-sm font-semibold text-muted-foreground hover:text-foreground"><ArrowLeft size={16} /> {versionId ? "Workspace" : "Resume upload"}</Link>
+        <header className="mt-5 border-b border-border pb-7">
+          <p className="eyebrow">{versionId ? "Version review" : "Original source"}</p>
+          <h1 className="font-display mt-2 text-4xl font-normal sm:text-5xl">{versionId ? "Tailored resume" : "Your original resume"}</h1>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">{versionId ? "This preview uses the exact PDF served by the download button. Check its text and layout, then return to your opportunity workspace to approve or reject the version." : "View or download the file you uploaded, with its original formatting. Tailored versions and proposed changes are reviewed in your opportunity workspace."}</p>
+        </header>
 
-      {loading && <div className="text-center py-12 text-muted-foreground">Loading resume document...</div>}
-      {error && <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-4 py-3 mb-6">{error}</div>}
+        {!versionId && resumes.isLoading ? <div className="mt-8"><LoadingBlock rows={5} /></div> : null}
+        {!versionId && resumes.isError ? <div className="mt-6 flex flex-wrap items-center gap-3" role="alert"><p className="text-sm text-coral">{resumes.error instanceof Error ? resumes.error.message : "Could not load your resumes."}</p><Button size="sm" variant="secondary" onClick={() => void resumes.refetch()}>Retry loading</Button></div> : null}
+        {!versionId && !resumes.isLoading && !resumes.isError && !selectedResume ? <EmptyState icon={FileUp} title="Add your source resume" description="Upload a PDF or DOCX to keep the original file available for preview and tailoring." action={<Button asChild><Link href="/resume">Upload resume</Link></Button>} /> : null}
 
-      {/* Printable resume container */}
-      {resumeData && !loading && (
-        <div className="resume-container surface-panel flex min-h-[1100px] flex-col justify-between p-8 text-foreground md:p-12">
-          <div className="space-y-6">
-            {/* Header / Contact Info */}
-            <div className="text-center border-b border-border pb-6">
-              <h1 className="font-display text-3xl font-normal tracking-tight text-foreground">
-                {resumeData.contact_info?.name || "Professional Candidate"}
-              </h1>
-              <div className="flex flex-wrap justify-center gap-x-4 gap-y-1 text-sm text-foreground mt-2 font-medium">
-                {resumeData.contact_info?.email && (
-                  <span>✉️ {resumeData.contact_info.email}</span>
-                )}
-                {resumeData.contact_info?.phone && (
-                  <span>📞 {resumeData.contact_info.phone}</span>
-                )}
-                {resumeData.contact_info?.linkedin && (
-                  <span>🔗 {resumeData.contact_info.linkedin}</span>
-                )}
-                {resumeData.contact_info?.github && (
-                  <span>💻 {resumeData.contact_info.github}</span>
-                )}
-              </div>
+        {versionId ? (
+          <section className="mt-7">
+            {pdfUrl ? <Button variant="secondary" onClick={() => downloadTailored.mutate()} disabled={downloadTailored.isPending}><Download size={16} /> Download PDF</Button> : null}
+            {downloadTailored.isError ? <p className="mt-3 text-sm text-coral" role="alert">{downloadTailored.error instanceof Error ? downloadTailored.error.message : "Could not download this version."}</p> : null}
+            {previewError ? <div className="mt-6" role="alert"><p className="text-sm text-coral">Could not preview the tailored version. {previewError}</p><Button className="mt-3" size="sm" variant="secondary" onClick={retryPreview}>Retry preview</Button></div> : pdfUrl ? (
+              <div className="mt-5 overflow-hidden rounded-lg border border-border bg-surface"><iframe src={pdfUrl} title="Tailored resume PDF" className="h-[75vh] min-h-[480px] w-full border-0" /><p className="px-4 py-3 text-xs leading-5 text-muted-foreground">If your browser cannot display this PDF, use Download PDF to review the same file.</p></div>
+            ) : <div role="status"><p className="mb-4 text-sm text-muted-foreground">Loading tailored PDF...</p><LoadingBlock rows={6} /></div>}
+          </section>
+        ) : null}
+
+        {selectedResume && !versionId ? (
+          <section className="mt-7">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+              <label className="grid min-w-0 gap-2 text-sm font-semibold sm:max-w-lg sm:flex-1">
+                Source resume
+                <select className="field-control min-w-0 truncate" value={selectedResume.id} onChange={(event) => { setPdfPreview(null); setPdfError(null); setSelectedId(Number(event.target.value)); }}>
+                  {resumes.data?.resumes.map((resume) => <option key={resume.id} value={resume.id}>{resume.filename}</option>)}
+                </select>
+              </label>
+              {selectedResume.source_available && selectedResume.source_format ? <Button variant="secondary" onClick={() => downloadOriginal.mutate(selectedResume)} disabled={downloadOriginal.isPending}>{downloadOriginal.isPending ? <LoaderCircle size={16} className="animate-spin" /> : <Download size={16} />} Download original {selectedResume.source_format.toUpperCase()}</Button> : null}
             </div>
+            {downloadOriginal.isError ? <p className="mt-3 text-sm text-coral" role="alert">{downloadOriginal.error instanceof Error ? downloadOriginal.error.message : "Could not download the original resume."}</p> : null}
 
-            {/* Resume Sections */}
-            {Object.entries(resumeData.sections || {}).map(([secName, secText]) => {
-              if (!secText || secName === "other") return null;
-              return (
-                <div key={secName} className="space-y-2">
-                  <h2 className="font-display text-lg font-normal uppercase tracking-wider text-foreground border-b border-border pb-1">
-                    {formatTitle(secName)}
-                  </h2>
-                  <div className="text-sm text-foreground leading-relaxed whitespace-pre-wrap font-normal">
-                    {secText}
-                  </div>
-                </div>
-              );
-            })}
-
-            {/* Fallback for other section */}
-            {resumeData.sections?.other && (
-              <div className="space-y-2">
-                <h2 className="font-display text-lg font-normal uppercase tracking-wider text-foreground border-b border-border pb-1">
-                  Additional Details
-                </h2>
-                <div className="text-sm text-foreground leading-relaxed whitespace-pre-wrap font-normal">
-                  {resumeData.sections.other}
-                </div>
+            {!selectedResume.source_available || !selectedResume.source_format ? (
+              <EmptyState icon={FileUp} title="Upload your source again" description="This older resume has extracted text, but its original file was not retained. Upload the PDF or DOCX again, then select the new resume in your opportunity workspace before tailoring." action={<Button asChild><Link href="/resume">Upload source again</Link></Button>} />
+            ) : selectedResume.source_format === "docx" ? (
+              <div className="surface-soft mt-7 p-6 sm:p-8">
+                <FileText size={28} className="text-primary" aria-hidden="true" />
+                <h2 className="font-display mt-4 text-2xl font-normal">Original DOCX is ready</h2>
+                <p className="mt-3 max-w-prose text-sm leading-6 text-muted-foreground">Download the original file and open it in Word or another compatible document editor to view its layout. Your tailored version will also use DOCX.</p>
               </div>
-            )}
-          </div>
-
-          {/* Viral PLG Footer Hook */}
-          <div className="mt-12 pt-4 border-t border-border text-center flex justify-center items-center">
-            <a
-              href="https://ai-resume-copilot-three.vercel.app/?ref=user_resume_share"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground hover:text-primary transition duration-300 pointer-events-auto decoration-none"
-              style={{
-                display: "inline-block",
-                padding: "4px 8px",
-                border: "1px solid var(--color-border)",
-                borderRadius: "999px",
-                backgroundColor: "var(--color-surface)",
-              }}
-            >
-              Built with HireWiz
-            </a>
-          </div>
-        </div>
-      )}
-
-      {/* Print-specific style override */}
-      <style dangerouslySetInnerHTML={{ __html: `
-        @media print {
-          .no-print {
-            display: none !important;
-          }
-          body {
-            background: white !important;
-            color: black !important;
-            padding: 0 !important;
-            margin: 0 !important;
-          }
-          .resume-container {
-            border: none !important;
-            box-shadow: none !important;
-            padding: 0 !important;
-            margin: 0 !important;
-            min-height: auto !important;
-            background: white !important;
-            color: black !important;
-          }
-          .app-shell {
-            max-width: 100% !important;
-            padding: 0 !important;
-            margin: 0 !important;
-          }
-          header, footer, nav {
-            display: none !important;
-          }
-        }
-      ` }} />
+            ) : previewError ? (
+              <div className="mt-7 flex flex-wrap items-center gap-3" role="alert"><p className="text-sm text-coral">{previewError}</p><Button size="sm" variant="secondary" onClick={retryPreview}>Retry preview</Button></div>
+            ) : pdfUrl ? (
+              <div className="mt-7 overflow-hidden rounded-lg border border-border bg-surface">
+                <iframe src={pdfUrl} title={`Original resume: ${selectedResume.filename}`} className="h-[75vh] min-h-[480px] w-full border-0" />
+                <p className="px-4 py-3 text-xs leading-5 text-muted-foreground">If your browser cannot display this PDF, use Download original PDF to view it.</p>
+              </div>
+            ) : <div className="mt-7" role="status"><p className="mb-4 text-sm text-muted-foreground">Loading original PDF...</p><LoadingBlock rows={6} /></div>}
+          </section>
+        ) : null}
+      </div>
     </main>
   );
+}
+
+export default function ResumePreviewPage() {
+  return <Suspense fallback={<main className="app-page"><div className="page-container"><LoadingBlock rows={5} /></div></main>}><ResumePreviewContent /></Suspense>;
 }

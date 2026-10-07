@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from io import BytesIO
 
 import pytest
 from backend.app.database import Base
@@ -16,10 +17,25 @@ from backend.app.models import (
     User,
 )
 from backend.app.services import llm_client
+from backend.app.services.resume_artifacts import render_resume_version
+from docx import Document as DocxDocument
 from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
+
+SOURCE_EXPERIENCE = "Developed reliable Python services for customers and improved system performance."
+TAILORED_EXPERIENCE = "Built reliable Python services for customers and improved system performance."
+
+
+def _native_source():
+    document = DocxDocument()
+    document.styles["Normal"].font.name = "Times New Roman"
+    document.add_heading("Experience", level=2)
+    document.add_paragraph(SOURCE_EXPERIENCE)
+    output = BytesIO()
+    document.save(output)
+    return output.getvalue()
 
 
 def _database():
@@ -38,7 +54,9 @@ def _database():
                 Resume(
                     id=10,
                     user_id=1,
-                    original_filename="owner.pdf",
+                    original_filename="owner.docx",
+                    source_document=_native_source(),
+                    source_format="docx",
                     raw_text="Python engineer",
                     skills=["python"],
                     sections={"experience": "Built Python services"},
@@ -391,75 +409,170 @@ def test_active_premium_run_is_audited_without_deduction():
 def test_evidence_tailoring_creates_a_traceable_version_and_commits_once(monkeypatch):
     engine, factory = _database()
     monkeypatch.setattr(tasks, "SessionLocal", factory)
-    monkeypatch.setattr(
-        llm_client,
-        "tailor_resume_from_evidence",
-        lambda **kwargs: {
-            "summary_items": [
-                {"text": "Built reliable Python services", "evidence_ids": ["evd_approved"]}
-            ],
-            "bullets": [
-                {"text": "Built Python services", "evidence_ids": ["evd_approved"]}
-            ],
-            "skills": ["python"],
-            "evidence_needed": [],
-            "evidence_policy": "approved_only",
-        },
-    )
+    calls = []
+
+    def tailor(**kwargs):
+        calls.append(kwargs)
+        return _source_edit_response(kwargs["source_units"])
+
+    monkeypatch.setattr(llm_client, "tailor_resume_from_evidence", tailor)
     try:
-        with factory() as db:
-            db.add_all(
-                [
-                    Opportunity(
-                        id="opp_tailor",
-                        user_id=1,
-                        resume_id=10,
-                        title="Platform Engineer",
-                        company="Example Co",
-                        job_description="Build and operate reliable Python services for global customers.",
-                        job_snapshot={},
-                    ),
-                    EvidenceItem(
-                        id="evd_approved",
-                        user_id=1,
-                        resume_id=10,
-                        category="experience",
-                        title="Platform work",
-                        evidence_text="Built reliable Python services",
-                        skills=["python"],
-                        metrics={},
-                        approval_state="approved",
-                    ),
-                ]
-            )
-            db.commit()
-        with factory() as db:
-            run, _ = analysis_service.create_run(
-                db,
-                user_id=1,
-                payload=schemas.AnalysisRunCreate(
-                    operation="resume_tailor",
-                    opportunity_id="opp_tailor",
-                    input={},
-                ),
-                header_idempotency_key="test-request",
-            )
-            run_id = run.id
+        run_id = _create_tailoring_run(factory)
 
         assert tasks.process_analysis_run(run_id) == "succeeded"
         assert tasks.process_analysis_run(run_id) == "succeeded"
+        assert len(calls) == 1
         with factory() as db:
             run = db.get(AnalysisRun, run_id)
             version = db.query(ResumeVersion).one()
+            resume = db.get(Resume, 10)
+            assert run.status == "succeeded"
+            assert run.usage_state == "committed"
             assert run.committed_units == 10
+            assert run.attempt_count == 1
             assert db.get(User, 1).ai_credits == 40
             assert version.generation_run_id == run_id
             assert version.evidence_ids == ["evd_approved"]
             assert version.structured_content["evidence_policy"] == "approved_only"
-            assert [event.event_type for event in db.query(UsageEvent).order_by(UsageEvent.created_at)] == [
-                "reserve",
-                "commit",
+            assert version.structured_content["format_preservation"] == "source"
+            assert version.structured_content["source_format"] == "docx"
+            artifact = render_resume_version(version, resume, "docx")
+            edited = DocxDocument(BytesIO(artifact.content))
+            assert edited.paragraphs[-1].text == TAILORED_EXPERIENCE
+            assert DocxDocument(BytesIO(resume.source_document)).paragraphs[-1].text == SOURCE_EXPERIENCE
+            events = db.query(UsageEvent).order_by(UsageEvent.created_at).all()
+            assert [event.event_type for event in events] == ["reserve", "commit"]
+            assert [event.amount for event in events] == [-10, 0]
+    finally:
+        engine.dispose()
+
+
+def _source_edit_response(units, *, replacement=TAILORED_EXPERIENCE):
+    unit = next(item for item in units if item["text"] == SOURCE_EXPERIENCE)
+    return {
+        "source_edits": [
+            {
+                "unit_id": unit["unit_id"],
+                "original_text": unit["text"],
+                "replacement_text": replacement,
+                "evidence_ids": ["evd_approved"],
+                "reason": "Use concise wording supported by the approved platform experience.",
+            }
+        ],
+        "evidence_needed": [],
+        "evidence_policy": "approved_only",
+    }
+
+
+def _create_tailoring_run(factory):
+    with factory() as db:
+        db.add_all(
+            [
+                Opportunity(
+                    id="opp_tailor",
+                    user_id=1,
+                    resume_id=10,
+                    title="Platform Engineer",
+                    company="Example Co",
+                    job_description="Build and operate reliable Python services for global customers.",
+                    job_snapshot={},
+                ),
+                EvidenceItem(
+                    id="evd_approved",
+                    user_id=1,
+                    resume_id=10,
+                    category="experience",
+                    title="Platform work",
+                    evidence_text=SOURCE_EXPERIENCE,
+                    skills=["python"],
+                    metrics={},
+                    approval_state="approved",
+                ),
             ]
+        )
+        db.commit()
+    with factory() as db:
+        run, _ = analysis_service.create_run(
+            db,
+            user_id=1,
+            payload=schemas.AnalysisRunCreate(
+                operation="resume_tailor", opportunity_id="opp_tailor", input={}
+            ),
+            header_idempotency_key="native-tailor-request-001",
+        )
+        assert run.usage_state == "reserved"
+        assert db.get(User, 1).ai_credits == 40
+        return run.id
+
+
+@pytest.mark.parametrize("failure", ["malformed", "unsafe-layout"])
+def test_invalid_native_tailoring_fails_without_version_and_refunds_once(monkeypatch, failure):
+    engine, factory = _database()
+    monkeypatch.setattr(tasks, "SessionLocal", factory)
+    repair_notes = []
+
+    def invalid_tailor(**kwargs):
+        repair_notes.append(kwargs["repair_note"])
+        if failure == "malformed":
+            return {"source_edits": "not an edit list"}
+        return _source_edit_response(
+            kwargs["source_units"], replacement=TAILORED_EXPERIENCE * 5
+        )
+
+    monkeypatch.setattr(llm_client, "tailor_resume_from_evidence", invalid_tailor)
+    try:
+        run_id = _create_tailoring_run(factory)
+        assert tasks.process_analysis_run(run_id) == "failed"
+        assert tasks.process_analysis_run(run_id) == "failed"
+        assert len(repair_notes) == 2
+        assert repair_notes[0] == ""
+        assert repair_notes[1]
+        with factory() as db:
+            run = db.get(AnalysisRun, run_id)
+            assert run.status == "failed"
+            assert run.usage_state == "released"
+            assert run.committed_units == 0
+            assert run.result_payload is None
+            assert run.error_code == "TailoringOutputError"
+            assert run.attempt_count == 1
+            assert db.query(ResumeVersion).count() == 0
+            assert db.get(User, 1).ai_credits == 50
+            events = db.query(UsageEvent).order_by(UsageEvent.created_at).all()
+            assert [event.event_type for event in events] == ["reserve", "release"]
+            assert [event.amount for event in events] == [-10, 10]
+    finally:
+        engine.dispose()
+
+
+def test_native_tailoring_repairs_an_unsafe_edit_and_commits_one_charge(monkeypatch):
+    engine, factory = _database()
+    monkeypatch.setattr(tasks, "SessionLocal", factory)
+    repair_notes = []
+
+    def repaired_tailor(**kwargs):
+        repair_notes.append(kwargs["repair_note"])
+        replacement = TAILORED_EXPERIENCE * 5 if len(repair_notes) == 1 else TAILORED_EXPERIENCE
+        return _source_edit_response(kwargs["source_units"], replacement=replacement)
+
+    monkeypatch.setattr(llm_client, "tailor_resume_from_evidence", repaired_tailor)
+    try:
+        run_id = _create_tailoring_run(factory)
+        assert tasks.process_analysis_run(run_id) == "succeeded"
+        assert tasks.process_analysis_run(run_id) == "succeeded"
+        assert len(repair_notes) == 2
+        assert repair_notes[0] == ""
+        assert repair_notes[1]
+        with factory() as db:
+            run = db.get(AnalysisRun, run_id)
+            assert run.usage_state == "committed"
+            assert run.committed_units == 10
+            assert run.attempt_count == 1
+            assert db.get(User, 1).ai_credits == 40
+            version = db.query(ResumeVersion).one()
+            assert version.structured_content["source_edits"][0]["replacement_text"] == TAILORED_EXPERIENCE
+            events = db.query(UsageEvent).order_by(UsageEvent.created_at).all()
+            assert [event.event_type for event in events] == ["reserve", "commit"]
+            assert [event.amount for event in events] == [-10, 0]
     finally:
         engine.dispose()
 

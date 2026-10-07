@@ -32,6 +32,32 @@ def validate_evidence_output(output: Any, allowed_evidence_ids: set[str]) -> Eva
     errors: list[str] = []
     if not isinstance(output, dict):
         return EvaluationResult(False, ("output must be an object",))
+    if output.get("format_preservation") == "source":
+        edits = output.get("source_edits")
+        if not isinstance(edits, list) or not edits:
+            return EvaluationResult(False, ("at least one source replacement is required",))
+        seen: set[str] = set()
+        for index, item in enumerate(edits):
+            if not isinstance(item, dict):
+                errors.append(f"source_edits[{index}] must be an object")
+                continue
+            for field in ("unit_id", "original_text", "replacement_text", "reason"):
+                value = item.get(field)
+                if not isinstance(value, str) or not value.strip():
+                    errors.append(f"source_edits[{index}] must contain {field}")
+            unit_id = item.get("unit_id")
+            if isinstance(unit_id, str):
+                if unit_id in seen:
+                    errors.append("source replacements must have unique locations")
+                seen.add(unit_id)
+            evidence_ids = item.get("evidence_ids")
+            if (
+                not isinstance(evidence_ids, list)
+                or not evidence_ids
+                or any(not isinstance(value, str) or value not in allowed_evidence_ids for value in evidence_ids)
+            ):
+                errors.append(f"source_edits[{index}] must cite approved evidence")
+        return EvaluationResult(not errors, tuple(errors))
     sourced_count = 0
     for collection in ("summary_items", "bullets"):
         items = output.get(collection)

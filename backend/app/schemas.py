@@ -83,6 +83,8 @@ class ResumeParseResponse(BaseModel):
     experience_years: float
     sections: Dict[str, str]
     contact_info: ContactInfo
+    source_available: bool = False
+    source_format: Literal["pdf", "docx"] | None = None
 
 # -------------------------
 # Resume list (for dropdown)
@@ -93,6 +95,8 @@ class ResumeListItem(BaseModel):
     id: int
     filename: str
     created_at: datetime
+    source_available: bool = False
+    source_format: Literal["pdf", "docx"] | None = None
 
 class ResumeListResponse(BaseModel):
     resumes: List[ResumeListItem]

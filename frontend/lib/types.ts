@@ -35,7 +35,18 @@ export type AuthTokenResponse = {
   user_id: number;
 };
 
-export type ResumeParseResponse = {
+export type ResumeSourceFormat = "pdf" | "docx";
+
+export type ResumeSourceMetadata = {
+  source_available: boolean;
+  source_format: ResumeSourceFormat | null;
+};
+
+export type ResumeListResponse = {
+  resumes: (ResumeSourceMetadata & { id: number; filename: string; created_at: string })[];
+};
+
+export type ResumeParseResponse = ResumeSourceMetadata & {
   resume_id: number;
   skills: string[];
   experience_years: number;

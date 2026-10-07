@@ -87,6 +87,18 @@ def _run_migrations_unlocked(bind):
         if "age_confirmed_at" not in columns:
             connection.execute(text("ALTER TABLE users ADD COLUMN age_confirmed_at TIMESTAMP NULL"))
 
+    inspector = inspect(bind)
+    if inspector.has_table("resumes"):
+        resume_columns = {col["name"] for col in inspector.get_columns("resumes")}
+        additions = {
+            "source_document": "BYTEA NULL" if bind.dialect.name == "postgresql" else "BLOB NULL",
+            "source_format": "VARCHAR(8) NULL",
+        }
+        with bind.begin() as connection:
+            for name, ddl in additions.items():
+                if name not in resume_columns:
+                    connection.execute(text(f"ALTER TABLE resumes ADD COLUMN {name} {ddl}"))
+
     # ``create_all`` creates the new payment-domain tables on fresh and
     # existing deployments. The additive migration below upgrades the legacy
     # Cashfree/PayPal payment_orders table without deleting accounting rows.

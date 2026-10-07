@@ -596,12 +596,21 @@ def create_resume_version(
         .scalar()
         or 0
     ) + 1
-    content = payload.structured_content or {
-        "contact_info": resume.contact_info or {},
-        "sections": resume.sections or {},
-        "skills": resume.skills or [],
-        "experience_years": resume.experience_years or 0,
-    }
+    content = payload.structured_content
+    if not content:
+        if resume.source_available and resume.source_format in {"pdf", "docx"}:
+            content = {
+                "format_preservation": "source",
+                "source_format": resume.source_format,
+                "source_edits": [],
+            }
+        else:
+            content = {
+                "contact_info": resume.contact_info or {},
+                "sections": resume.sections or {},
+                "skills": resume.skills or [],
+                "experience_years": resume.experience_years or 0,
+            }
     version = models.ResumeVersion(
         id=public_id("rsv"),
         user_id=user_id,

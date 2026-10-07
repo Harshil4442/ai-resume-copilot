@@ -71,7 +71,12 @@ def validate_analysis_input(
             raise HTTPException(status_code=422, detail="opportunity_id is required")
         if not opportunity.resume_id:
             raise HTTPException(status_code=422, detail="Connect a resume before tailoring")
-        _owned_resume(db, user_id, opportunity.resume_id)
+        resume = _owned_resume(db, user_id, opportunity.resume_id)
+        if not resume.source_available:
+            raise HTTPException(
+                status_code=409,
+                detail="Upload the original resume file again before tailoring to preserve its formatting.",
+            )
         approved_count = (
             db.query(models.EvidenceItem.id)
             .filter(
