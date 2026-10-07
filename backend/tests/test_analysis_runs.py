@@ -20,15 +20,23 @@ from backend.app.models import (
 )
 from backend.app.services import llm_client
 from backend.app.services.resume_artifacts import render_resume_version
-from backend.app.services.resume_layout import ResumeLayoutError
+from backend.app.services.resume_layout import (
+    ResumeLayoutError,
+    apply_source_edits,
+    extract_source_units,
+)
 from docx import Document as DocxDocument
 from fastapi import HTTPException
+from pypdf import PdfReader
+from reportlab.pdfgen.canvas import Canvas
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 SOURCE_EXPERIENCE = "Developed reliable Python services for customers and improved system performance."
 TAILORED_EXPERIENCE = "Built reliable Python services for customers and improved system performance."
+PDF_OVERFLOW_ORIGINAL = "Built stable Python interfaces for customers."
+PDF_OVERFLOW_REPLACEMENT = "Made stable Python interfaces for customers."
 
 
 def _native_source():
@@ -433,7 +441,7 @@ def test_evidence_tailoring_creates_a_traceable_version_and_commits_once(monkeyp
             assert run.usage_state == "committed"
             assert run.committed_units == 10
             assert run.attempt_count == 1
-            assert run.prompt_version == "resume-source-v3"
+            assert run.prompt_version == "resume-source-v4"
             assert db.get(User, 1).ai_credits == 40
             assert version.generation_run_id == run_id
             assert version.evidence_ids == ["evd_approved"]
@@ -507,6 +515,377 @@ def _create_tailoring_run(factory):
         assert run.usage_state == "reserved"
         assert db.get(User, 1).ai_credits == 40
         return run.id
+
+
+def _configure_pdf_tailoring_source(factory):
+    output = BytesIO()
+    canvas = Canvas(output, pagesize=(612, 792), invariant=True)
+    canvas.setFont("Times-Roman", 11)
+    canvas.drawString(60, 650, SOURCE_EXPERIENCE)
+    canvas.drawString(60, 620, PDF_OVERFLOW_ORIGINAL)
+    canvas.save()
+    source = output.getvalue()
+    with factory() as db:
+        resume = db.get(Resume, 10)
+        resume.source_document = source
+        resume.source_format = "pdf"
+        resume.original_filename = "owner.pdf"
+        db.commit()
+    units = extract_source_units(source, "pdf")
+    assert len(units) == 2
+    return source, {unit["text"]: unit for unit in units}
+
+
+def _pdf_tailoring_edit(unit, replacement):
+    return {
+        "unit_id": unit["unit_id"],
+        "original_text": unit["text"],
+        "replacement_text": replacement,
+        "evidence_ids": ["evd_approved"],
+        "reason": "Use a concise action verb for the approved Python experience.",
+    }
+
+
+def test_mixed_pdf_tailoring_saves_only_the_proven_safe_edits_and_charges_once(monkeypatch):
+    engine, factory = _database()
+    monkeypatch.setattr(tasks, "SessionLocal", factory)
+    calls = []
+    try:
+        source, units = _configure_pdf_tailoring_source(factory)
+        safe = _pdf_tailoring_edit(units[SOURCE_EXPERIENCE], TAILORED_EXPERIENCE)
+        unsafe = _pdf_tailoring_edit(units[PDF_OVERFLOW_ORIGINAL], PDF_OVERFLOW_REPLACEMENT)
+        unsafe["evidence_ids"] = ["evd_overflow"]
+        with factory() as db:
+            db.add(
+                EvidenceItem(
+                    id="evd_overflow", user_id=1, resume_id=10, category="experience",
+                    title="Interface work", evidence_text=PDF_OVERFLOW_ORIGINAL,
+                    skills=["python"], metrics={}, approval_state="approved",
+                )
+            )
+            db.commit()
+        # Fewer characters can still overflow a fixed native-font text slot.
+        assert len(unsafe["replacement_text"]) < len(unsafe["original_text"])
+
+        def response(messages):
+            calls.append(messages)
+            return json.dumps({"source_edits": [safe, unsafe], "evidence_needed": []})
+
+        monkeypatch.setattr(llm_client, "_chat", response)
+        run_id = _create_tailoring_run(factory)
+        assert tasks.process_analysis_run(run_id) == "succeeded"
+        assert tasks.process_analysis_run(run_id) == "succeeded"
+        assert len(calls) == 1
+        with factory() as db:
+            run = db.get(AnalysisRun, run_id)
+            resume = db.get(Resume, 10)
+            version = db.query(ResumeVersion).one()
+            assert run.status == "succeeded" and run.attempt_count == 1
+            assert run.usage_state == "committed" and run.committed_units == 10
+            assert run.prompt_version == "resume-source-v4"
+            assert db.get(User, 1).ai_credits == 40
+            assert version.generation_run_id == run_id
+            assert version.structured_content["source_edits"] == [safe]
+            assert run.result_payload["content"]["source_edits"] == [safe]
+            assert version.evidence_ids == ["evd_approved"]
+            assert resume.source_document == source
+            artifact = render_resume_version(version, resume, "pdf")
+            exported_text = PdfReader(BytesIO(artifact.content)).pages[0].extract_text()
+            assert TAILORED_EXPERIENCE in exported_text
+            assert SOURCE_EXPERIENCE not in exported_text
+            assert PDF_OVERFLOW_ORIGINAL in exported_text
+            assert PDF_OVERFLOW_REPLACEMENT not in exported_text
+            events = db.query(UsageEvent).order_by(UsageEvent.created_at).all()
+            assert [event.event_type for event in events] == ["reserve", "commit"]
+            assert [event.amount for event in events] == [-10, 0]
+            assert db.query(ModelCallEvent).one().status == "succeeded"
+    finally:
+        engine.dispose()
+
+
+def test_all_pdf_tailoring_edits_overflow_twice_without_saving_and_refund_once(monkeypatch):
+    engine, factory = _database()
+    monkeypatch.setattr(tasks, "SessionLocal", factory)
+    calls = []
+    try:
+        source, units = _configure_pdf_tailoring_source(factory)
+        unsafe = _pdf_tailoring_edit(units[PDF_OVERFLOW_ORIGINAL], PDF_OVERFLOW_REPLACEMENT)
+
+        def response(messages):
+            calls.append(messages)
+            return json.dumps({"source_edits": [unsafe], "evidence_needed": []})
+
+        monkeypatch.setattr(llm_client, "_chat", response)
+        run_id = _create_tailoring_run(factory)
+        assert tasks.process_analysis_run(run_id) == "failed"
+        assert tasks.process_analysis_run(run_id) == "failed"
+        assert len(calls) == 2
+        assert unsafe["unit_id"] in calls[1][1]["content"]
+        assert "does not fit its original PDF text slot" in calls[1][1]["content"]
+        with factory() as db:
+            run = db.get(AnalysisRun, run_id)
+            assert run.status == "failed" and run.attempt_count == 1
+            assert run.usage_state == "released" and run.committed_units == 0
+            assert run.error_code == "TailoringOutputError"
+            assert run.result_payload is None
+            assert db.query(ResumeVersion).count() == 0
+            assert db.query(ModelCallEvent).count() == 0
+            assert db.get(Resume, 10).source_document == source
+            assert db.get(User, 1).ai_credits == 50
+            events = db.query(UsageEvent).order_by(UsageEvent.created_at).all()
+            assert [event.event_type for event in events] == ["reserve", "release"]
+            assert [event.amount for event in events] == [-10, 10]
+    finally:
+        engine.dispose()
+
+
+def test_mixed_pdf_joining_edit_preserves_the_sentence_and_charges_only_once(monkeypatch):
+    engine, factory = _database()
+    monkeypatch.setattr(tasks, "SessionLocal", factory)
+    joining_original = "for CPU architecture validation, enabling "
+    joining_replacement = "for CPU validation, enabling reliability "
+    calls = []
+    try:
+        output = BytesIO()
+        canvas = Canvas(output, pagesize=(612, 792), invariant=True)
+        canvas.setFont("Times-Roman", 11)
+        canvas.drawString(60, 650, SOURCE_EXPERIENCE)
+        leading = "Built checks "
+        canvas.drawString(60, 620, leading)
+        cursor = 60 + canvas.stringWidth(leading, "Times-Roman", 11)
+        canvas.drawString(cursor, 620, joining_original)
+        cursor += canvas.stringWidth(joining_original, "Times-Roman", 11)
+        canvas.setFont("Times-Bold", 11)
+        canvas.drawString(cursor, 620, "50+ engineers")
+        canvas.save()
+        source = output.getvalue()
+        units = {unit["text"].strip(): unit for unit in extract_source_units(source, "pdf")}
+        joining_unit = units[joining_original.strip()]
+        assert joining_unit["required_prefix"] == "for CPU"
+        assert joining_unit["required_suffix"] == "validation, enabling"
+        safe = _pdf_tailoring_edit(units[SOURCE_EXPERIENCE], TAILORED_EXPERIENCE)
+        unsafe = _pdf_tailoring_edit(joining_unit, joining_replacement)
+        unsafe["evidence_ids"] = ["evd_joining"]
+        with factory() as db:
+            resume = db.get(Resume, 10)
+            resume.source_document = source
+            resume.source_format = "pdf"
+            resume.original_filename = "owner.pdf"
+            db.add(
+                EvidenceItem(
+                    id="evd_joining", user_id=1, resume_id=10, category="experience",
+                    title="Validation work", evidence_text=joining_original,
+                    skills=["CPU"], metrics={}, approval_state="approved",
+                )
+            )
+            db.commit()
+
+        def response(messages):
+            calls.append(messages)
+            return json.dumps({"source_edits": [safe, unsafe], "evidence_needed": []})
+
+        monkeypatch.setattr(llm_client, "_chat", response)
+        run_id = _create_tailoring_run(factory)
+        assert tasks.process_analysis_run(run_id) == "succeeded"
+        assert tasks.process_analysis_run(run_id) == "succeeded"
+        assert len(calls) == 1
+        with factory() as db:
+            run = db.get(AnalysisRun, run_id)
+            resume = db.get(Resume, 10)
+            version = db.query(ResumeVersion).one()
+            assert run.status == "succeeded" and run.attempt_count == 1
+            assert run.usage_state == "committed" and run.committed_units == 10
+            assert run.result_payload["content"]["source_edits"] == [safe]
+            assert version.structured_content["source_edits"] == [safe]
+            assert version.evidence_ids == ["evd_approved"]
+            assert "rejected_source_edits" not in version.structured_content
+            assert resume.source_document == source
+            artifact = render_resume_version(version, resume, "pdf")
+            exported_text = PdfReader(BytesIO(artifact.content)).pages[0].extract_text()
+            assert TAILORED_EXPERIENCE in exported_text
+            assert joining_original.strip() in exported_text
+            assert joining_replacement.strip() not in exported_text
+            assert "50+ engineers" in exported_text
+            assert db.get(User, 1).ai_credits == 40
+            events = db.query(UsageEvent).order_by(UsageEvent.created_at).all()
+            assert [event.event_type for event in events] == ["reserve", "commit"]
+            assert [event.amount for event in events] == [-10, 0]
+    finally:
+        engine.dispose()
+
+
+def test_all_invalid_llm_edit_repair_hint_reaches_second_request_and_charges_once(monkeypatch):
+    engine, factory = _database()
+    monkeypatch.setattr(tasks, "SessionLocal", factory)
+    calls = []
+    errors = []
+    real_tailor = llm_client.tailor_resume_from_evidence
+
+    def capture_hint(**kwargs):
+        try:
+            return real_tailor(**kwargs)
+        except llm_client.TailoringOutputError as error:
+            errors.append(error)
+            raise
+
+    monkeypatch.setattr(llm_client, "tailor_resume_from_evidence", capture_hint)
+    try:
+        run_id = _create_tailoring_run(factory)
+        with factory() as db:
+            units = extract_source_units(db.get(Resume, 10).source_document, "docx")
+        invalid = _source_edit_response(units, replacement=SOURCE_EXPERIENCE)
+        valid = _source_edit_response(units)
+        responses = iter([json.dumps(invalid), json.dumps(valid)])
+
+        def response(messages):
+            calls.append(messages)
+            return next(responses)
+
+        monkeypatch.setattr(llm_client, "_chat", response)
+        assert tasks.process_analysis_run(run_id) == "succeeded"
+        assert tasks.process_analysis_run(run_id) == "succeeded"
+        assert len(calls) == 2 and len(errors) == 1
+        repair_hint = errors[0].repair_hint
+        assert repair_hint
+        assert repair_hint in calls[1][1]["content"]
+        assert "previous proposed changes could not be applied" not in calls[0][1]["content"]
+        with factory() as db:
+            run = db.get(AnalysisRun, run_id)
+            assert run.usage_state == "committed" and run.committed_units == 10
+            assert run.attempt_count == 1
+            assert db.query(ResumeVersion).one().structured_content["source_edits"] == valid["source_edits"]
+            assert db.get(User, 1).ai_credits == 40
+            events = db.query(UsageEvent).order_by(UsageEvent.created_at).all()
+            assert [event.event_type for event in events] == ["reserve", "commit"]
+            assert [event.amount for event in events] == [-10, 0]
+    finally:
+        engine.dispose()
+
+
+def test_empty_tailoring_output_leaves_one_content_repair_and_charges_once(monkeypatch):
+    engine, factory = _database()
+    monkeypatch.setattr(tasks, "SessionLocal", factory)
+    calls = []
+    errors = []
+    real_tailor = llm_client.tailor_resume_from_evidence
+
+    def capture_hint(**kwargs):
+        try:
+            return real_tailor(**kwargs)
+        except llm_client.TailoringOutputError as error:
+            errors.append(error)
+            raise
+
+    monkeypatch.setattr(llm_client, "tailor_resume_from_evidence", capture_hint)
+    try:
+        run_id = _create_tailoring_run(factory)
+        with factory() as db:
+            source = db.get(Resume, 10).source_document
+            units = extract_source_units(source, "docx")
+        overlength = _source_edit_response(units, replacement=TAILORED_EXPERIENCE * 2)
+        valid = _source_edit_response(units)
+        responses = iter([
+            json.dumps({"source_edits": [], "evidence_needed": []}),
+            json.dumps(overlength),
+            json.dumps(valid),
+        ])
+
+        def response(messages):
+            calls.append(messages)
+            return next(responses)
+
+        monkeypatch.setattr(llm_client, "_chat", response)
+        assert tasks.process_analysis_run(run_id) == "succeeded"
+        assert tasks.process_analysis_run(run_id) == "succeeded"
+        assert len(calls) == 3 and len(errors) == 2
+        assert errors[0].reason_code == "invalid_edit_count"
+        assert errors[0].repair_hint in calls[1][1]["content"]
+        length_error = errors[1]
+        assert length_error.reason_code == "invalid_replacement_length"
+        assert length_error.unit_id == valid["source_edits"][0]["unit_id"]
+        assert length_error.repair_hint in calls[2][1]["content"]
+        assert length_error.unit_id in calls[2][1]["content"]
+        assert (
+            f"Original final length is {len(SOURCE_EXPERIENCE)} characters; "
+            f"proposed final length is {len(TAILORED_EXPERIENCE) * 2}."
+        ) in calls[2][1]["content"]
+        with factory() as db:
+            run = db.get(AnalysisRun, run_id)
+            resume = db.get(Resume, 10)
+            version = db.query(ResumeVersion).one()
+            assert run.status == "succeeded" and run.attempt_count == 1
+            assert run.usage_state == "committed" and run.committed_units == 10
+            assert run.error_code is None
+            assert run.result_payload["resume_version_id"] == version.id
+            assert version.structured_content["source_edits"] == valid["source_edits"]
+            assert resume.source_document == source
+            artifact = render_resume_version(version, resume, "docx")
+            assert DocxDocument(BytesIO(artifact.content)).paragraphs[-1].text == TAILORED_EXPERIENCE
+            assert db.get(User, 1).ai_credits == 40
+            events = db.query(UsageEvent).order_by(UsageEvent.created_at).all()
+            assert [event.event_type for event in events] == ["reserve", "commit"]
+            assert [event.amount for event in events] == [-10, 0]
+            assert db.query(ModelCallEvent).one().status == "succeeded"
+    finally:
+        engine.dispose()
+
+
+def test_changed_tailoring_constraint_leaves_one_native_width_repair_and_charges_once(monkeypatch):
+    engine, factory = _database()
+    monkeypatch.setattr(tasks, "SessionLocal", factory)
+    calls = []
+    try:
+        source, units = _configure_pdf_tailoring_source(factory)
+        safe = _pdf_tailoring_edit(units[SOURCE_EXPERIENCE], TAILORED_EXPERIENCE)
+        overlength = _pdf_tailoring_edit(units[SOURCE_EXPERIENCE], TAILORED_EXPERIENCE * 2)
+        overflow = _pdf_tailoring_edit(units[PDF_OVERFLOW_ORIGINAL], PDF_OVERFLOW_REPLACEMENT)
+        assert overlength["unit_id"] != overflow["unit_id"]
+        with pytest.raises(ResumeLayoutError, match="does not fit its original PDF text slot") as native_error:
+            apply_source_edits(source, "pdf", [overflow])
+        width_hint = native_error.value.repair_hint
+        assert width_hint and "width" in width_hint.lower()
+        assert native_error.value.unit_id == overflow["unit_id"]
+        responses = iter([
+            json.dumps({"source_edits": [overlength], "evidence_needed": []}),
+            json.dumps({"source_edits": [overflow], "evidence_needed": []}),
+            json.dumps({"source_edits": [safe], "evidence_needed": []}),
+        ])
+
+        def response(messages):
+            calls.append(messages)
+            return next(responses)
+
+        monkeypatch.setattr(llm_client, "_chat", response)
+        run_id = _create_tailoring_run(factory)
+        assert tasks.process_analysis_run(run_id) == "succeeded"
+        assert tasks.process_analysis_run(run_id) == "succeeded"
+        assert len(calls) == 3
+        assert (
+            f"Original final length is {len(SOURCE_EXPERIENCE)} characters; "
+            f"proposed final length is {len(TAILORED_EXPERIENCE) * 2}."
+        ) in calls[1][1]["content"]
+        assert overflow["unit_id"] in calls[2][1]["content"]
+        assert width_hint in calls[2][1]["content"]
+        with factory() as db:
+            run = db.get(AnalysisRun, run_id)
+            resume = db.get(Resume, 10)
+            version = db.query(ResumeVersion).one()
+            assert run.status == "succeeded" and run.attempt_count == 1
+            assert run.usage_state == "committed" and run.committed_units == 10
+            assert run.result_payload["content"]["source_edits"] == [safe]
+            assert version.structured_content["source_edits"] == [safe]
+            assert resume.source_document == source
+            artifact = render_resume_version(version, resume, "pdf")
+            exported_text = PdfReader(BytesIO(artifact.content)).pages[0].extract_text()
+            assert TAILORED_EXPERIENCE in exported_text
+            assert PDF_OVERFLOW_ORIGINAL in exported_text
+            assert PDF_OVERFLOW_REPLACEMENT not in exported_text
+            assert db.get(User, 1).ai_credits == 40
+            events = db.query(UsageEvent).order_by(UsageEvent.created_at).all()
+            assert [event.event_type for event in events] == ["reserve", "commit"]
+            assert [event.amount for event in events] == [-10, 0]
+    finally:
+        engine.dispose()
 
 
 @pytest.mark.parametrize("failure", ["malformed", "unsafe-layout"])

@@ -4,6 +4,7 @@ import os
 import random
 import re
 import time
+from collections import Counter
 from functools import lru_cache
 from typing import Dict, List
 
@@ -33,9 +34,18 @@ class InterviewOutputError(ValueError):
 class TailoringOutputError(ValueError):
     """The provider did not produce safe, source-linked resume replacements."""
 
-    def __init__(self, message: str, *, unit_id: str | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        unit_id: str | None = None,
+        reason_code: str | None = None,
+        repair_hint: str | None = None,
+    ) -> None:
         super().__init__(message)
         self.unit_id = unit_id
+        self.reason_code = reason_code
+        self.repair_hint = repair_hint
 
 
 def _gemini_error_disposition(exc: Exception) -> tuple[bool, bool]:
@@ -493,6 +503,157 @@ def _validate_factual_terms(original: str, replacement: str, cited_evidence: lis
             )
 
 
+def _validate_tailoring_edit(item: object, units: dict, allowed: dict, repeated: set[str]) -> dict:
+    """Validate one independent proposal without weakening any source guard."""
+    if not isinstance(item, dict):
+        raise TailoringOutputError(
+            "Every source replacement must be an object",
+            reason_code="invalid_edit_item",
+            repair_hint="Return a replacement object using a supplied source unit ID.",
+        )
+    unit_id = item.get("unit_id")
+    if not isinstance(unit_id, str) or unit_id not in units:
+        raise TailoringOutputError(
+            "Use each supplied source location at most once",
+            reason_code="invalid_source_location",
+            repair_hint="Choose a supplied editable source unit ID.",
+        )
+    if unit_id in repeated:
+        raise TailoringOutputError(
+            "Use each supplied source location at most once",
+            unit_id=unit_id,
+            reason_code="duplicate_source_location",
+            repair_hint="Return exactly one independent replacement for this source unit.",
+        )
+    original = item.get("original_text")
+    replacement = item.get("replacement_text")
+    if original != units[unit_id]["text"]:
+        raise TailoringOutputError(
+            "Copy original_text exactly from the source location",
+            unit_id=unit_id,
+            reason_code="source_text_mismatch",
+            repair_hint="Copy the supplied unit text exactly, including boundary spacing.",
+        )
+    if (
+        not isinstance(replacement, str)
+        or not replacement.strip()
+        or any(
+            ord(char) < 32 or 127 <= ord(char) <= 159 or 0xD800 <= ord(char) <= 0xDFFF
+            for char in replacement
+        )
+    ):
+        raise TailoringOutputError(
+            "Replacements must change the text and fit its original length",
+            unit_id=unit_id,
+            reason_code="invalid_replacement_text",
+            repair_hint="Return nonempty single-line text without control characters.",
+        )
+    if replacement.strip() == original.strip():
+        raise TailoringOutputError(
+            "Replacements must change the text and fit its original length",
+            unit_id=unit_id,
+            reason_code="unchanged_source_text",
+            repair_hint="This proposal does not change the source text. Choose a different useful passage; do not submit unchanged text.",
+        )
+    # Normalize only boundary whitespace to the exact source boundaries before
+    # testing the final length. Provider-added outer spaces are not extra text.
+    provider_length = len(replacement)
+    replacement = (
+        original[: len(original) - len(original.lstrip())]
+        + replacement.strip()
+        + original[len(original.rstrip()) :]
+    )
+    if len(replacement) > len(original):
+        raise TailoringOutputError(
+            "Replacements must fit their original length including boundary spacing"
+            if provider_length <= len(original)
+            else "Replacements must change the text and fit its original length",
+            unit_id=unit_id,
+            reason_code="invalid_replacement_length",
+            repair_hint=(
+                f"Original final length is {len(original)} characters; proposed final length is {len(replacement)}. "
+                f"Shorten by at least {len(replacement) - len(original)} "
+                f"{'character' if len(replacement) - len(original) == 1 else 'characters'}, retaining source boundary spacing "
+                "and all source numbers; prefer a different passage if useful wording cannot fit."
+            ),
+        )
+    replacement_tokens = replacement.split()
+    for field in ("required_prefix", "required_suffix"):
+        anchor = units[unit_id].get(field)
+        if not isinstance(anchor, str) or not anchor.strip():
+            continue
+        expected_tokens = anchor.split()
+        boundary_tokens = (
+            replacement_tokens[:len(expected_tokens)]
+            if field == "required_prefix"
+            else replacement_tokens[-len(expected_tokens):]
+        )
+        if boundary_tokens != expected_tokens:
+            raise TailoringOutputError(
+                "Preserve the source fragment's required prefix and suffix",
+                unit_id=unit_id,
+                reason_code="changed_fragment_boundary",
+                repair_hint=(
+                    "Keep required_prefix and required_suffix token sequences unchanged at their "
+                    "respective boundaries. Edit only interior wording or choose another passage."
+                ),
+            )
+    allowed_characters = units[unit_id].get("allowed_characters")
+    if isinstance(allowed_characters, str) and any(
+        char not in allowed_characters for char in replacement
+    ):
+        raise TailoringOutputError(
+            "Use only characters available in the source font",
+            unit_id=unit_id,
+            reason_code="missing_pdf_glyph",
+            repair_hint="Use only this unit's allowed_characters; choose another passage if a needed letter is unavailable.",
+        )
+    number_pattern = r"\d+(?:[.,]\d+)*(?:\s*%|\+|[x×])?"
+    if Counter(re.findall(number_pattern, original)) != Counter(
+        re.findall(number_pattern, replacement)
+    ):
+        raise TailoringOutputError(
+            "Preserve all original numbers, dates, and metrics exactly",
+            unit_id=unit_id,
+            reason_code="changed_source_numbers",
+            repair_hint="Retain every original number, date and metric exactly; do not add numerical claims.",
+        )
+    reason = item.get("reason")
+    if not isinstance(reason, str) or not reason.strip():
+        raise TailoringOutputError(
+            "Every replacement must explain its relevance to the role",
+            unit_id=unit_id,
+            reason_code="missing_edit_reason",
+            repair_hint="Explain the useful change and its relevance without adding candidate claims.",
+        )
+    ids = item.get("evidence_ids")
+    if (
+        not isinstance(ids, list)
+        or not ids
+        or any(not isinstance(value, str) or value not in allowed for value in ids)
+    ):
+        raise TailoringOutputError(
+            "Every replacement must cite supplied approved evidence",
+            unit_id=unit_id,
+            reason_code="unsupported_evidence",
+            repair_hint="Cite supplied approved evidence IDs that support this replacement's factual claims.",
+        )
+    try:
+        _validate_factual_terms(original, replacement, [allowed[value] for value in ids])
+    except TailoringOutputError as exc:
+        exc.unit_id = unit_id
+        exc.reason_code = "unsupported_factual_term"
+        exc.repair_hint = "Use only named facts supported by this original unit or its cited approved evidence; job requirements and neighboring passages are context, not evidence."
+        raise
+    return {
+        "unit_id": unit_id,
+        "original_text": original,
+        "replacement_text": replacement,
+        "evidence_ids": list(dict.fromkeys(ids)),
+        "reason": reason.strip()[:1000],
+    }
+
+
 def tailor_resume_from_evidence(
     *,
     job_title: str,
@@ -502,8 +663,6 @@ def tailor_resume_from_evidence(
     repair_note: str = "",
 ) -> Dict:
     """Suggest evidence-cited replacements at existing source-document locations."""
-    from collections import Counter
-
     if not approved_evidence or not source_units:
         raise TailoringOutputError("Approved evidence and editable source text are required")
     allowed = {
@@ -518,42 +677,71 @@ def tailor_resume_from_evidence(
         "document is the template. Return targeted replacements at the supplied source unit IDs. "
         "Keep the same sections, order, typography, links, and employer/role associations. "
         "Do not add a target-job heading, highlights section, new bullets, or duplicate content. "
-        "Preserve every existing number, date, metric, employer, qualification, and factual meaning. "
+        "Preserve every existing number, date, metric, employer, qualification, and the truth of each claim. "
         "Never invent candidate history or add an unsupported skill or job keyword. "
-        "Each replacement must be no longer than its original text and fit the same space. "
+        "Each final replacement, including source boundary spaces, must be no longer than its original "
+        "text and fit the same space. max_body_chars is the hard body-text limit; target_body_chars "
+        "is a soft length target. For fixed-font PDF text_object units, aim within target_body_chars, "
+        "at least 15% shorter than the original body, to leave room for different glyph widths. "
+        "A one-word synonym at nearly the same character count can be wider in the original font; "
+        "prefer meaningfully concise wording over a near-equal-length synonym. Keep all required "
+        "anchor words and source facts; choose another unit if they leave insufficient room for a "
+        "useful concise change. DOCX paragraph targets retain the full body-character budget. "
         "Change only the text at the specified location, keeping surrounding context in mind. "
-        "PDF units may be parts of a sentence with a particular bold or italic style; do not "
-        "move words or facts between units. Copy original_text exactly from the source unit. "
-        "Use line_context to understand the whole sentence, but replace only the supplied unit. "
+        "PDF units may be parts of a sentence with a particular bold or italic style. Each edit must "
+        "be independently useful and grammatical while neighboring units remain unchanged. Do not "
+        "move neighboring fragments or reassign work to another employer or project. Copy original_text "
+        "exactly from the source unit. Use section, paragraph_context, line_context and "
+        "generation_priority to choose useful passages, but replace only the supplied unit. "
+        "When required_prefix or required_suffix is supplied, retain those exact case-sensitive "
+        "word tokens and punctuation at the corresponding boundary; edit only the interior. These "
+        "read-only anchors preserve the grammar that joins unchanged styled fragments. Do not "
+        "insert a new transition word after required_suffix or before required_prefix. "
+        "In summary passages you may concisely summarize or reprioritize relevant facts from cited "
+        "approved evidence. Preserve claim specificity and employer/project associations. Do not "
+        "borrow factual support from surrounding context or the job description. "
         "Use only each unit's allowed_characters when provided: embedded fonts may lack letters. "
         "Preserve leading and trailing spaces at fragment boundaries. Leave skills lists alone "
         "unless a change adds clear, supported value. Prefer concise, natural wording in "
         "experience or project passages rather than adding keywords to disconnected fragments. "
-        "Return between one and twelve useful source replacements. Prefer a few useful edits "
-        "over rewriting everything. Where the facts already match the job, make concise edits "
-        "that clarify the relevant work without changing its meaning. Return only a JSON object with "
+        "Aim for three to six independent useful changes, preferring summary and complete action/experience "
+        "passages. Return fewer if fewer passages can improve safely; never force a change to meet this target. "
+        "Do not submit original or unchanged text as a proposed change. Leave already strong passages "
+        "alone; choose another passage where a concise change improves relevance or clarity. Do not "
+        "force keywords into short skills or bold fragments. Return only a JSON object with "
         "source_edits [{unit_id,original_text,replacement_text,evidence_ids,reason}] and "
         "evidence_needed [string]. Every edit must cite approved evidence IDs. "
         "Put unsupported job requirements in evidence_needed, never in the resume."
     )
     evidence_context = [
-        {**item, "text": str(item.get("text") or "")[:4000]}
-        for item in approved_evidence
+        {**item, "text": str(item.get("text") or "")[:4000]} for item in approved_evidence
     ]
+    prompt_units = []
+    for item in source_units:
+        body_chars = len(item["text"].strip())
+        prompt_units.append({
+            **item,
+            "max_body_chars": body_chars,
+            "target_body_chars": int(body_chars * 0.85) if item.get("kind") == "text_object" else body_chars,
+        })
     user_content = (
         f"TARGET JOB: {job_title}\n\nJOB DESCRIPTION:\n{jd_text[:7000]}\n\n"
         f"APPROVED EVIDENCE:\n{json.dumps(evidence_context, default=str)}\n\n"
-        f"EDITABLE SOURCE UNITS:\n{json.dumps(source_units, default=str)}"
+        f"EDITABLE SOURCE UNITS:\n{json.dumps(prompt_units, default=str)}"
     )
     if repair_note:
         user_content += (
-            f"\n\nThe previous proposed changes could not be applied: {repair_note[:500]} "
-            "Return safer, shorter replacements that satisfy all constraints."
+            f"\n\nThe previous proposed changes could not be applied: {repair_note[:3000]} "
+            "Address the specific rejected-unit constraints. Choose a different useful passage when "
+            "an unchanged or cramped fragment cannot improve safely. Return actual changed text; "
+            "do not repeat unchanged proposals. Preserve every source, evidence and format constraint."
         )
-    raw_content = _chat([
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_content},
-    ])
+    raw_content = _chat(
+        [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_content},
+        ]
+    )
     data = None
     try:
         candidate = _extract_json_object(raw_content)
@@ -562,71 +750,65 @@ def tailor_resume_from_evidence(
     except (ValueError, TypeError, AttributeError):
         pass
     if data is None:
-        raise TailoringOutputError("Return a JSON object containing source_edits")
+        raise TailoringOutputError(
+            "Return a JSON object containing source_edits",
+            reason_code="invalid_output_format",
+            repair_hint="Return the requested JSON object with a source_edits list of actual supported changes.",
+        )
     raw_edits = data.get("source_edits")
     if not isinstance(raw_edits, list) or not 1 <= len(raw_edits) <= 12:
-        raise TailoringOutputError("Return between one and twelve useful source replacements")
+        raise TailoringOutputError(
+            "Return between one and twelve useful source replacements",
+            reason_code="invalid_edit_count",
+            repair_hint="Return one to four actual changed, supported replacements using editable passages. Do not submit unchanged text or a placeholder.",
+        )
     edits = []
-    seen = set()
-    number_pattern = r"\d+(?:[.,]\d+)*(?:\s*%|\+|[x×])?"
+    errors: list[TailoringOutputError] = []
+    occurrences = Counter(
+        item["unit_id"]
+        for item in raw_edits
+        if isinstance(item, dict)
+        and isinstance(item.get("unit_id"), str)
+        and item["unit_id"] in units
+    )
+    repeated = {unit_id for unit_id, count in occurrences.items() if count > 1}
     for item in raw_edits:
-        if not isinstance(item, dict):
-            raise TailoringOutputError("Every source replacement must be an object")
-        unit_id = item.get("unit_id")
-        if not isinstance(unit_id, str) or unit_id not in units or unit_id in seen:
-            raise TailoringOutputError("Use each supplied source location at most once")
-        original = item.get("original_text")
-        replacement = item.get("replacement_text")
-        reason = item.get("reason")
-        ids = item.get("evidence_ids")
-        if original != units[unit_id]["text"]:
-            raise TailoringOutputError("Copy original_text exactly from the source location")
-        if (
-            not isinstance(replacement, str)
-            or not replacement.strip()
-            or replacement.strip() == original.strip()
-            or len(replacement) > len(original)
-            or any(ord(character) < 32 for character in replacement)
-        ):
-            raise TailoringOutputError("Replacements must change the text and fit its original length", unit_id=unit_id)
-        # Boundary spaces may be encoded as positioned gaps in a PDF rather
-        # than literal glyphs. Retain the source's exact fragment boundaries.
-        replacement = original[:len(original) - len(original.lstrip())] + replacement.strip() + original[len(original.rstrip()):]
-        if len(replacement) > len(original):
-            raise TailoringOutputError("Replacements must fit their original length including boundary spacing", unit_id=unit_id)
-        allowed_characters = units[unit_id].get("allowed_characters")
-        if isinstance(allowed_characters, str) and any(char not in allowed_characters for char in replacement):
-            raise TailoringOutputError("Use only characters available in the source font", unit_id=unit_id)
-        if Counter(re.findall(number_pattern, original)) != Counter(re.findall(number_pattern, replacement)):
-            raise TailoringOutputError("Preserve all original numbers, dates, and metrics exactly")
-        if not isinstance(reason, str) or not reason.strip():
-            raise TailoringOutputError("Every replacement must explain its relevance to the role")
-        if (
-            not isinstance(ids, list)
-            or not ids
-            or any(not isinstance(value, str) or value not in allowed for value in ids)
-        ):
-            raise TailoringOutputError("Every replacement must cite supplied approved evidence")
         try:
-            _validate_factual_terms(original, replacement, [allowed[value] for value in ids])
+            edits.append(_validate_tailoring_edit(item, units, allowed, repeated))
         except TailoringOutputError as exc:
-            exc.unit_id = unit_id
-            raise
-        seen.add(unit_id)
-        edits.append({
-            "unit_id": unit_id,
-            "original_text": original,
-            "replacement_text": replacement,
-            "evidence_ids": list(dict.fromkeys(ids)),
-            "reason": reason.strip()[:1000],
-        })
+            errors.append(exc)
+    if not edits:
+        # Retain the actionable original error while avoiding unknown model-
+        # supplied identities. Unchanged proposals never become a paid version.
+        actionable = next(
+            (
+                error
+                for error in errors
+                if error.unit_id is not None and error.reason_code != "unchanged_source_text"
+            ),
+            None,
+        )
+        raise actionable or next(
+            (error for error in errors if error.unit_id is not None), errors[0]
+        )
     raw_needed = data.get("evidence_needed", [])
     return {
         "target_job_title": job_title,
         "source_edits": edits,
-        "evidence_needed": [item.strip()[:1000] for item in raw_needed if isinstance(item, str) and item.strip()][:10]
-        if isinstance(raw_needed, list) else [],
+        "evidence_needed": [
+            item.strip()[:1000] for item in raw_needed if isinstance(item, str) and item.strip()
+        ][:10]
+        if isinstance(raw_needed, list)
+        else [],
         "evidence_policy": "approved_only",
+        "rejected_source_edits": [
+            {
+                "unit_id": error.unit_id,
+                "reason": error.reason_code,
+                "repair_hint": (error.repair_hint or "")[:350],
+            }
+            for error in errors
+        ],
     }
 
 

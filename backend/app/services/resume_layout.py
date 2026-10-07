@@ -29,9 +29,12 @@ from PIL import ImageChops, ImageDraw
 class ResumeLayoutError(ValueError):
     """The source or proposed edit cannot safely retain the original document."""
 
-    def __init__(self, message: str, *, unit_id: str | None = None) -> None:
+    def __init__(
+        self, message: str, *, unit_id: str | None = None, repair_hint: str | None = None
+    ) -> None:
         super().__init__(message)
         self.unit_id = unit_id
+        self.repair_hint = repair_hint
 
 
 # PDFium must not be called simultaneously from multiple threads, even for
@@ -49,6 +52,7 @@ _CONTACT = re.compile(r"@|https?://|www\.|linkedin\.|github\.", re.I)
 _CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
 _HEADINGS = {
     "summary",
+    "professional summary",
     "profile",
     "experience",
     "professional experience",
@@ -64,6 +68,7 @@ _HEADINGS = {
     "languages",
     "objective",
     "achievements",
+    "competitive programming",
 }
 _ACTION = re.compile(
     r"^(?:built|developed|designed|implemented|delivered|led|managed|created|improved|"
@@ -152,6 +157,19 @@ def _validated_edits(units: list[dict[str, Any]], edits: list[dict]) -> dict[str
             raise ResumeLayoutError("Source edits must preserve all original numbers and dates.")
         if _CONTACT.search(replacement):
             raise ResumeLayoutError("Source edits cannot add or change contact information.")
+        replacement_words = replacement.split()
+        for key in ("required_prefix", "required_suffix"):
+            boundary = available[unit_id].get(key)
+            boundary_words = boundary.split() if isinstance(boundary, str) else []
+            actual = (
+                replacement_words[: len(boundary_words)]
+                if key == "required_prefix"
+                else replacement_words[-len(boundary_words) :]
+            )
+            if boundary_words and actual != boundary_words:
+                raise ResumeLayoutError(
+                    "Source edits must retain adjoining fragment boundaries.", unit_id=unit_id
+                )
         if replacement != original:
             replacements[unit_id] = replacement
     return replacements
@@ -270,6 +288,13 @@ def _pdf_units(document: Any, source_bytes: bytes) -> list[dict[str, Any]]:
                 for index, obj in enumerate(objects)
                 if obj.type == raw.FPDF_PAGEOBJ_TEXT
             }
+            sections = {}
+            section = ""
+            for index, text in texts.items():
+                heading = text.strip().lower().rstrip(":")
+                if heading in _HEADINGS:
+                    section = heading
+                sections[index] = section
             for object_index, obj in enumerate(objects):
                 if obj.type != raw.FPDF_PAGEOBJ_TEXT:
                     continue
@@ -285,6 +310,37 @@ def _pdf_units(document: Any, source_bytes: bytes) -> list[dict[str, Any]]:
                             and abs(other.get_matrix().f - matrix.f) <= obj.get_font_size() * 0.3
                         ),
                         key=lambda entry: entry[0],
+                    )
+                    context_lines: dict[float, list[tuple[float, str]]] = {}
+                    for index, other in enumerate(objects):
+                        if (
+                            index not in texts
+                            or other.level != 0
+                            or sections[index] != sections[object_index]
+                        ):
+                            continue
+                        baseline = other.get_matrix().f
+                        if abs(baseline - matrix.f) <= obj.get_font_size() * 2.1:
+                            context_lines.setdefault(round(baseline, 1), []).append(
+                                (other.get_bounds()[0], texts[index].strip())
+                            )
+                    paragraph = " ".join(
+                        " ".join(value for _, value in sorted(context_lines[baseline]) if value)
+                        for baseline in sorted(context_lines, reverse=True)
+                    )
+                    source_section = sections[object_index]
+                    boundaries = _pdf_fragment_boundaries(objects, texts, sections, object_index)
+                    priority = (
+                        1
+                        if source_section in {"summary", "profile", "professional summary"}
+                        else 2
+                        if _ACTION.search(text.strip())
+                        else 3
+                        if source_section
+                        in {"experience", "work experience", "professional experience", "projects"}
+                        else 8
+                        if source_section in {"skills", "technical skills", "languages"}
+                        else 5
                     )
                     units.append(
                         {
@@ -304,10 +360,60 @@ def _pdf_units(document: Any, source_bytes: bytes) -> list[dict[str, Any]]:
                             "fit_policy": "original_font_and_fixed_slot",
                             "preserve_numbers": True,
                             "line_context": " ".join(value for _, value in line)[:1000],
+                            "paragraph_context": paragraph[:1000],
+                            "section": source_section,
+                            "generation_priority": priority,
+                            **boundaries,
                             "allowed_characters": _pdf_allowed_characters(obj, text),
                         }
                     )
     return units
+
+
+def _pdf_fragment_boundaries(
+    objects: list[Any], texts: dict[int, str], sections: dict[int, str], index: int
+) -> dict[str, str]:
+    """Keep transition words beside separate, usually emphasized, fragments.
+
+    A font change may split a sentence before a metric or skill. Rewriting its
+    joining words independently can break the complete sentence even when the
+    replacement fits. Preserve two words at each connected side, while keeping
+    complete sentences and isolated columns free to change.
+    """
+    obj = objects[index]
+    size = obj.get_font_size()
+    baseline = obj.get_matrix().f
+    bounds = obj.get_bounds()
+    line = sorted(
+        (
+            (other.get_bounds()[0], candidate, other.get_bounds())
+            for candidate, other in enumerate(objects)
+            if candidate in texts
+            and other.level == 0
+            and sections[candidate] == sections[index]
+            and abs(other.get_matrix().f - baseline) <= size * 0.3
+        ),
+        key=lambda entry: entry[0],
+    )
+    position = next(position for position, entry in enumerate(line) if entry[1] == index)
+    text = texts[index].strip()
+    words = list(re.finditer(r"\S+", text))
+    boundaries = {}
+    if position > 0:
+        _, previous, previous_bounds = line[position - 1]
+        if (
+            re.search(r"\w", texts[previous])
+            and -0.1 <= bounds[0] - previous_bounds[2] <= size * 1.5
+        ):
+            boundaries["required_prefix"] = text[: words[min(1, len(words) - 1)].end()]
+    if position + 1 < len(line) and not re.search(r"[.!?][\"')\]]?$", text):
+        _, following, following_bounds = line[position + 1]
+        if (
+            re.search(r"\w", texts[following])
+            and -0.1 <= following_bounds[0] - bounds[2] <= size * 1.5
+        ):
+            boundaries["required_suffix"] = text[words[max(0, len(words) - 2)].start() :]
+    return boundaries
 
 
 def _pdf_allowed_characters(obj: Any, text: str) -> str:
@@ -643,9 +749,22 @@ def _apply_pdf(source_bytes: bytes, edits: list[dict]) -> bytes:
                         snapshots[page_index]["spacing"][object_index] = restored_space
                     new_bounds = obj.get_bounds()
                     if not _fits(line_slot, new_bounds) or _style(obj) != style:
+                        available_width = line_slot[2] - line_slot[0]
+                        proposed_width = new_bounds[2] - new_bounds[0]
+                        hint = "Choose a shorter replacement or another passage; retain the original font and all source boundaries."
+                        if proposed_width > available_width:
+                            ratio = max(0, available_width / proposed_width - 0.05)
+                            suggested_budget = math.floor(len(replacement.strip()) * ratio)
+                            hint = (
+                                f"Native width limit is {available_width:.1f} points; proposed width is {proposed_width:.1f}. "
+                                f"Aim for at most {suggested_budget} body characters with narrower wording, "
+                                "retaining all required boundary words and source numbers, or choose another passage. "
+                                "Character count alone cannot prove font fit."
+                            )
                         raise ResumeLayoutError(
                             "The replacement does not fit its original PDF text slot.",
                             unit_id=unit_id,
+                            repair_hint=hint,
                         )
                     slots.append(
                         (

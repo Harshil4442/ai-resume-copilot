@@ -79,7 +79,11 @@ def test_tailoring_retains_exact_source_fragment_boundary_spaces(
     assert result["source_edits"] == [{**edit, "replacement_text": leading + replacement + trailing}]
     assert len(calls) == 1
     supplied_units = json.loads(calls[0][1]["content"].split("EDITABLE SOURCE UNITS:\n", 1)[1])
-    assert supplied_units == [source_unit]
+    assert supplied_units == [{
+        **source_unit,
+        "max_body_chars": len(original.strip()),
+        "target_body_chars": len(original.strip()),
+    }]
 
 
 def test_tailoring_counts_source_boundary_spaces_against_the_fragment_length(monkeypatch):
@@ -174,6 +178,309 @@ def test_tailoring_rejects_duplicate_locations(monkeypatch):
     monkeypatch.setattr(llm_client, "_chat", lambda messages: json.dumps({"source_edits": [_tailoring_edit()] * 2}))
     with pytest.raises(llm_client.TailoringOutputError):
         llm_client.tailor_resume_from_evidence(**_tailoring_input())
+
+
+@pytest.mark.parametrize(
+    "updates,reason",
+    [
+        ({"unit_id": "untrusted-model-identity"}, "invalid_source_location"),
+        ({"original_text": "private model source mismatch"}, "source_text_mismatch"),
+        ({"replacement_text": None}, "invalid_replacement_text"),
+        ({"replacement_text": ""}, "invalid_replacement_text"),
+        (
+            {"replacement_text": "private model replacement that is much too long " * 4},
+            "invalid_replacement_length",
+        ),
+        (
+            {"replacement_text": _tailoring_input()["source_units"][0]["text"]},
+            "unchanged_source_text",
+        ),
+        (
+            {"replacement_text": "Built Python services and reduced response time by 2%."},
+            "changed_source_numbers",
+        ),
+        (
+            {"replacement_text": "Built Python services and reduced response time by 20%.\n"},
+            "invalid_replacement_text",
+        ),
+        (
+            {"replacement_text": "Built Python services and reduced response time by 20%.\x7f"},
+            "invalid_replacement_text",
+        ),
+        (
+            {"replacement_text": "Built Java services and reduced response time by 20%."},
+            "unsupported_factual_term",
+        ),
+        ({"evidence_ids": ["untrusted-evidence-id"]}, "unsupported_evidence"),
+        ({"evidence_ids": []}, "unsupported_evidence"),
+        ({"reason": ""}, "missing_edit_reason"),
+    ],
+)
+@pytest.mark.parametrize("invalid_first", [False, True])
+def test_tailoring_keeps_safe_replacement_when_another_proposal_is_invalid(
+    monkeypatch, updates, reason, invalid_first
+):
+    inputs = _tailoring_input()
+    inputs["source_units"].append({**inputs["source_units"][0], "unit_id": "other-body"})
+    valid = _tailoring_edit()
+    invalid = {**valid, "unit_id": "other-body", **updates}
+    proposals = [invalid, valid] if invalid_first else [valid, invalid]
+    monkeypatch.setattr(
+        llm_client, "_chat", lambda messages: json.dumps({"source_edits": proposals})
+    )
+
+    result = llm_client.tailor_resume_from_evidence(**inputs)
+
+    assert result["source_edits"] == [valid]
+    rejected = result["rejected_source_edits"]
+    assert len(rejected) == 1
+    assert rejected[0]["unit_id"] == (None if reason == "invalid_source_location" else "other-body")
+    assert rejected[0]["reason"] == reason
+    assert rejected[0]["repair_hint"] and len(rejected[0]["repair_hint"]) <= 350
+    serialized = json.dumps(rejected)
+    assert "private model" not in serialized
+    assert "untrusted-model-identity" not in serialized
+    assert "untrusted-evidence-id" not in serialized
+    assert valid["original_text"] not in serialized
+    assert valid["replacement_text"] not in serialized
+
+
+@pytest.mark.parametrize("invalid", [None, "not an object"])
+def test_tailoring_keeps_safe_replacement_beside_nonobject_proposal(monkeypatch, invalid):
+    valid = _tailoring_edit()
+    monkeypatch.setattr(
+        llm_client, "_chat", lambda messages: json.dumps({"source_edits": [invalid, valid]})
+    )
+    result = llm_client.tailor_resume_from_evidence(**_tailoring_input())
+    assert result["source_edits"] == [valid]
+    assert result["rejected_source_edits"][0]["reason"] == "invalid_edit_item"
+    assert result["rejected_source_edits"][0]["unit_id"] is None
+
+
+def test_tailoring_keeps_safe_replacement_beside_missing_subset_glyph(monkeypatch):
+    inputs = _tailoring_input()
+    original = inputs["source_units"][0]["text"]
+    valid = _tailoring_edit()
+    inputs["source_units"].append(
+        {
+            "unit_id": "other-body",
+            "text": original,
+            "allowed_characters": "".join(
+                sorted(set(original + valid["replacement_text"]) - {"B"})
+            ),
+        }
+    )
+    unavailable = {**valid, "unit_id": "other-body"}
+    monkeypatch.setattr(
+        llm_client, "_chat", lambda messages: json.dumps({"source_edits": [unavailable, valid]})
+    )
+    result = llm_client.tailor_resume_from_evidence(**inputs)
+    assert result["source_edits"] == [valid]
+    assert result["rejected_source_edits"][0]["reason"] == "missing_pdf_glyph"
+
+
+def test_tailoring_drops_ambiguous_duplicate_unit_but_keeps_unrelated_safe_edit(monkeypatch):
+    inputs = _tailoring_input()
+    inputs["source_units"].append({**inputs["source_units"][0], "unit_id": "other-body"})
+    duplicate = _tailoring_edit()
+    independent = {**duplicate, "unit_id": "other-body"}
+    monkeypatch.setattr(
+        llm_client,
+        "_chat",
+        lambda messages: json.dumps({"source_edits": [duplicate, independent, duplicate]}),
+    )
+    result = llm_client.tailor_resume_from_evidence(**inputs)
+    assert result["source_edits"] == [independent]
+    assert [item["reason"] for item in result["rejected_source_edits"]] == [
+        "duplicate_source_location"
+    ] * 2
+
+
+def test_tailoring_normalizes_excess_provider_outer_spaces_before_length(monkeypatch):
+    inputs = _tailoring_input()
+    original = " " + inputs["source_units"][0]["text"] + "  "
+    inputs["source_units"][0]["text"] = original
+    valid = {**_tailoring_edit(), "original_text": original}
+    proposal = {**valid, "replacement_text": " " * 20 + valid["replacement_text"] + " " * 20}
+    assert len(proposal["replacement_text"]) > len(original)
+    monkeypatch.setattr(
+        llm_client, "_chat", lambda messages: json.dumps({"source_edits": [proposal]})
+    )
+    result = llm_client.tailor_resume_from_evidence(**inputs)
+    assert result["source_edits"] == [
+        {**valid, "replacement_text": " " + valid["replacement_text"] + "  "}
+    ]
+    assert result["rejected_source_edits"] == []
+
+
+def test_tailoring_all_invalid_prefers_actionable_length_error_over_noops(monkeypatch):
+    inputs = _tailoring_input()
+    original = inputs["source_units"][0]["text"]
+    inputs["source_units"].extend(
+        [
+            {"unit_id": "other-body", "text": original},
+            {"unit_id": "long-body", "text": original},
+        ]
+    )
+    unchanged = {**_tailoring_edit(), "replacement_text": original}
+    overlength = {**_tailoring_edit(), "unit_id": "long-body", "replacement_text": original + "!"}
+    proposals = [unchanged, {**unchanged, "unit_id": "other-body"}, overlength]
+    monkeypatch.setattr(
+        llm_client, "_chat", lambda messages: json.dumps({"source_edits": proposals})
+    )
+    with pytest.raises(llm_client.TailoringOutputError) as error:
+        llm_client.tailor_resume_from_evidence(**inputs)
+    assert error.value.unit_id == "long-body"
+    assert error.value.reason_code == "invalid_replacement_length"
+    assert f"Original final length is {len(original)}" in error.value.repair_hint
+    assert f"proposed final length is {len(original) + 1}" in error.value.repair_hint
+    assert "Shorten by at least 1 character" in error.value.repair_hint
+    assert original not in error.value.repair_hint
+
+
+@pytest.mark.parametrize("outer_spaces", [False, True])
+def test_tailoring_all_noops_never_returns_an_unchanged_version(monkeypatch, outer_spaces):
+    inputs = _tailoring_input()
+    original = inputs["source_units"][0]["text"]
+    replacement = " " + original + " " if outer_spaces else original
+    noop = {**_tailoring_edit(), "replacement_text": replacement}
+    monkeypatch.setattr(llm_client, "_chat", lambda messages: json.dumps({"source_edits": [noop]}))
+    with pytest.raises(llm_client.TailoringOutputError) as error:
+        llm_client.tailor_resume_from_evidence(**inputs)
+    assert error.value.reason_code == "unchanged_source_text"
+    assert error.value.unit_id == "source-body"
+    assert "Choose a different useful passage" in error.value.repair_hint
+
+
+@pytest.mark.parametrize("count", [0, 13])
+def test_tailoring_keeps_strict_raw_proposal_count(monkeypatch, count):
+    monkeypatch.setattr(
+        llm_client,
+        "_chat",
+        lambda messages: json.dumps({"source_edits": [_tailoring_edit()] * count}),
+    )
+    with pytest.raises(llm_client.TailoringOutputError) as error:
+        llm_client.tailor_resume_from_evidence(**_tailoring_input())
+    assert error.value.reason_code == "invalid_edit_count"
+    assert "actual changed" in error.value.repair_hint
+
+
+def _fragment_tailoring_input():
+    original = "for ARM architecture validation, enabling "
+    inputs = _tailoring_input()
+    inputs["source_units"] = [{
+        "unit_id": "source-fragment",
+        "text": original,
+        "required_prefix": "for ARM",
+        "required_suffix": "validation, enabling",
+        "line_context": original + "100+ engineers to test reliably.",
+    }]
+    inputs["approved_evidence"][0]["text"] = original + "100+ engineers to test reliably."
+    edit = {**_tailoring_edit(), "unit_id": "source-fragment", "original_text": original}
+    return inputs, edit
+
+
+@pytest.mark.parametrize(
+    "replacement",
+    [
+        "for ARM validation, enabling reliability ",
+        "to ARM architecture validation, enabling ",
+        "For ARM architecture validation, enabling ",
+        "for ARM architecture validation enabling ",
+        "for ARMament validation, enabling ",
+    ],
+)
+def test_tailoring_rejects_changes_to_readonly_fragment_transitions(monkeypatch, replacement):
+    inputs, edit = _fragment_tailoring_input()
+    assert len(replacement) <= len(edit["original_text"])
+    proposal = {**edit, "replacement_text": replacement}
+    monkeypatch.setattr(llm_client, "_chat", lambda messages: json.dumps({"source_edits": [proposal]}))
+    with pytest.raises(llm_client.TailoringOutputError) as error:
+        llm_client.tailor_resume_from_evidence(**inputs)
+    assert error.value.reason_code == "changed_fragment_boundary"
+    assert error.value.unit_id == "source-fragment"
+    assert "required_prefix and required_suffix" in error.value.repair_hint
+    assert "for ARM" not in error.value.repair_hint
+    assert "validation, enabling" not in error.value.repair_hint
+
+
+@pytest.mark.parametrize("provider_text", ["for ARM validation, enabling", "  for  ARM validation, enabling   "])
+def test_tailoring_keeps_interior_fragment_edits_and_exact_source_outer_spaces(monkeypatch, provider_text):
+    inputs, edit = _fragment_tailoring_input()
+    calls = []
+
+    def chat(messages):
+        calls.append(messages)
+        return json.dumps({"source_edits": [{**edit, "replacement_text": provider_text}]})
+
+    monkeypatch.setattr(llm_client, "_chat", chat)
+    result = llm_client.tailor_resume_from_evidence(**inputs)
+    assert result["source_edits"] == [{**edit, "replacement_text": provider_text.strip() + " "}]
+    assert result["rejected_source_edits"] == []
+    assert "required_prefix or required_suffix" in calls[0][0]["content"]
+
+
+def test_tailoring_retains_unrelated_safe_edit_when_fragment_transition_is_unsafe(monkeypatch):
+    fragment_inputs, fragment = _fragment_tailoring_input()
+    inputs = _tailoring_input()
+    inputs["source_units"].extend(fragment_inputs["source_units"])
+    inputs["approved_evidence"][0]["text"] += " " + fragment_inputs["approved_evidence"][0]["text"]
+    invalid = {**fragment, "replacement_text": "for ARM validation, enabling reliability "}
+    valid = _tailoring_edit()
+    monkeypatch.setattr(llm_client, "_chat", lambda messages: json.dumps({"source_edits": [invalid, valid]}))
+    result = llm_client.tailor_resume_from_evidence(**inputs)
+    assert result["source_edits"] == [valid]
+    assert result["rejected_source_edits"] == [{
+        "unit_id": "source-fragment",
+        "reason": "changed_fragment_boundary",
+        "repair_hint": "Keep required_prefix and required_suffix token sequences unchanged at their respective boundaries. Edit only interior wording or choose another passage.",
+    }]
+
+
+def test_tailoring_complete_summary_without_anchors_can_change_boundary_words(monkeypatch):
+    inputs = _tailoring_input()
+    inputs["source_units"][0]["section"] = "summary"
+    inputs["source_units"][0]["required_prefix"] = ""
+    inputs["source_units"][0]["required_suffix"] = ""
+    valid = {**_tailoring_edit(), "replacement_text": "Built Python services and cut response time by 20%."}
+    monkeypatch.setattr(llm_client, "_chat", lambda messages: json.dumps({"source_edits": [valid]}))
+    assert llm_client.tailor_resume_from_evidence(**inputs)["source_edits"] == [valid]
+
+
+@pytest.mark.parametrize("kind", ["text_object", "paragraph", None])
+def test_tailoring_supplies_pdf_width_margin_without_restricting_docx_or_changing_hard_limit(
+    monkeypatch, kind
+):
+    inputs = _tailoring_input()
+    original = " " + inputs["source_units"][0]["text"] + "  "
+    source_unit = {"unit_id": "source-body", "text": original, "max_chars": len(original)}
+    if kind is not None:
+        source_unit["kind"] = kind
+    original_unit = dict(source_unit)
+    inputs["source_units"] = [source_unit]
+    valid = {**_tailoring_edit(), "original_text": original}
+    calls = []
+
+    def chat(messages):
+        calls.append(messages)
+        return json.dumps({"source_edits": [valid]})
+
+    monkeypatch.setattr(llm_client, "_chat", chat)
+    result = llm_client.tailor_resume_from_evidence(**inputs)
+    body_chars = len(original.strip())
+    target_chars = int(body_chars * 0.85) if kind == "text_object" else body_chars
+    units = json.loads(calls[0][1]["content"].split("EDITABLE SOURCE UNITS:\n", 1)[1])
+    assert units == [{**source_unit, "max_body_chars": body_chars, "target_body_chars": target_chars}]
+    assert inputs["source_units"] == [original_unit]
+    # This valid proposal exceeds the PDF soft target; only the original hard
+    # length and downstream native font/layout proof may reject it.
+    assert len(valid["replacement_text"]) > int(body_chars * 0.85)
+    assert result["source_edits"] == [{**valid, "replacement_text": " " + valid["replacement_text"] + "  "}]
+    system = calls[0][0]["content"]
+    assert "soft length target" in system
+    assert "at least 15% shorter" in system
+    assert "nearly the same character count can be wider" in system
+    assert "three to six independent useful changes" in system
 
 
 @pytest.mark.parametrize("invented_term", ["C++", "Java", "java", "Kubernetes", "CloudNova", "Acme", "CISSP", "ZPX", "PhD"])

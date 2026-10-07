@@ -142,7 +142,8 @@ function RunFeedback({ run }: { run: AnalysisRun | undefined }) {
   if (!run || run.status === "succeeded") return null;
   if (run.status === "failed") {
     const incompleteInterview = run.operation === "interview_questions" && run.error_code === "InterviewOutputError";
-    const preservationFailed = run.operation === "resume_tailor" && (run.error_code === "ResumeLayoutError" || run.error_code === "TailoringOutputError");
+    const preservationFailed = run.operation === "resume_tailor" && run.error_code === "ResumeLayoutError";
+    const tailoringOutputFailed = run.operation === "resume_tailor" && run.error_code === "TailoringOutputError";
     const usageMessage = run.committed_units === 0 && run.usage_state === "released"
       ? "Any reserved units were released."
       : run.committed_units === 0 && run.usage_state === "waived"
@@ -151,7 +152,7 @@ function RunFeedback({ run }: { run: AnalysisRun | undefined }) {
     return (
       <div className="mt-4 flex gap-3 border-y border-coral/25 bg-coral/5 px-4 py-4 text-sm text-coral" role="alert">
         <CircleAlert size={18} className="mt-0.5 shrink-0" />
-        <div><strong>{preservationFailed ? "Could not apply the changes while preserving your resume format." : incompleteInterview ? "Could not generate a complete question set." : "Analysis did not complete."}</strong><p className="mt-1 text-muted-foreground">{incompleteInterview || preservationFailed ? "Please try again." : "Try again later."} {usageMessage}</p></div>
+        <div><strong>{tailoringOutputFailed ? "Could not generate safe, useful changes for this role." : preservationFailed ? "Could not apply the changes while preserving your resume format." : incompleteInterview ? "Could not generate a complete question set." : "Analysis did not complete."}</strong><p className="mt-1 text-muted-foreground">{incompleteInterview || preservationFailed || tailoringOutputFailed ? "Please try again." : "Try again later."} {usageMessage}</p></div>
       </div>
     );
   }

@@ -41,8 +41,12 @@ function createFixture() {
   };
   const requests: RequestRecord[] = [];
   const unexpected: RequestRecord[] = [];
-  const state = { listError: false, connectionError: false, parseCount: 0, connected: false, heldOpportunityReads: 0, pauseList: null as Promise<void> | null, pauseConnectedOpportunity: null as Promise<void> | null };
+  const state = { listError: false, connectionError: false, parseCount: 0, connected: false, heldOpportunityReads: 0, pauseList: null as Promise<void> | null, pauseConnectedOpportunity: null as Promise<void> | null, failureCode: null as string | null, failureUsageState: "released" as "released" | "waived" };
   const patchResponses: Record<string, unknown>[] = [];
+
+  function failedTailoringRun() {
+    return { id: "run_tailoring_failed", operation: "resume_tailor", opportunity_id: opportunityId, status: "failed", usage_state: state.failureUsageState, estimated_units: 10, committed_units: 0, created_at: now, updated_at: now, started_at: now, completed_at: now, cancel_requested: false, cancelled_at: null, attempt_count: 1, error_code: state.failureCode, provider: "local-fixture", model: "local-fixture", prompt_version: "fixture-v1", input_purged_at: null, result_purged_at: null };
+  }
 
   async function install(context: BrowserContext, baseURL: string) {
     // A signed dummy cookie passes local middleware; every backend request stays mocked.
@@ -105,6 +109,10 @@ function createFixture() {
         state.parseCount++;
         if (!resumes.some((resume) => resume.id === 3)) resumes.push({ id: 3, filename: sourceFile.name, created_at: now, source_available: true, source_format: "pdf" });
         value = { resume_id: 3, source_available: true, source_format: "pdf", skills: ["PostgreSQL", "Python"], experience_years: 4, sections: { experience: evidence[0].evidence_text }, education: [], certifications: [], projects: [], text_preview: evidence[0].evidence_text };
+      } else if (state.failureCode && path === "/v1/analysis-runs" && method === "POST") {
+        value = failedTailoringRun();
+      } else if (state.failureCode && path === "/v1/analysis-runs/run_tailoring_failed" && method === "GET") {
+        value = failedTailoringRun();
       } else {
         unexpected.push(record);
         status = 404;
@@ -136,6 +144,35 @@ async function audit(page: Page) {
   await page.evaluate(() => document.fonts.ready);
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+}
+
+for (const failure of [
+  { code: "TailoringOutputError", usage: "released", heading: "Could not generate safe, useful changes for this role.", message: "Please try again. Any reserved units were released." },
+  { code: "TailoringOutputError", usage: "waived", heading: "Could not generate safe, useful changes for this role.", message: "Please try again. No analysis units were charged." },
+  { code: "ResumeLayoutError", usage: "released", heading: "Could not apply the changes while preserving your resume format.", message: "Please try again. Any reserved units were released." },
+  { code: "RuntimeError", usage: "released", heading: "Analysis did not complete.", message: "Try again later. Any reserved units were released." },
+] as const) {
+  test(`tailoring failure banner classifies ${failure.code} with ${failure.usage} usage`, async ({ page, context, baseURL }) => {
+    const fixture = createFixture();
+    Object.assign(fixture.resumes[0], { source_available: true, source_format: "pdf" });
+    fixture.state.failureCode = failure.code;
+    fixture.state.failureUsageState = failure.usage;
+    await fixture.install(context, baseURL!);
+    await openWorkspace(page);
+    const { generate } = actions(page);
+    await expect(generate).toBeEnabled();
+    await generate.click();
+    const banner = page.getByRole("main").getByRole("alert");
+    await expect(banner.locator("strong")).toHaveText(failure.heading);
+    await expect(banner.locator("p")).toHaveText(failure.message);
+    await expect(generate).toBeEnabled();
+    await expect(page.getByText(/Version \d+ created\./)).toHaveCount(0);
+    expect(fixture.opportunity.resume_versions).toEqual([]);
+    expect(fixture.requests.filter((request) => request.path === "/v1/resume-versions" || request.path.endsWith("/result"))).toEqual([]);
+    expect(fixture.requests.find((request) => request.path === "/v1/analysis-runs" && request.method === "POST")?.body).toEqual({ operation: "resume_tailor", opportunity_id: opportunityId, input: {} });
+    expect(fixture.unexpected).toEqual([]);
+    await audit(page);
+  });
 }
 
 test("approved evidence with a missing original explains both disabled actions and the recovery path", async ({ page, context, baseURL }, testInfo) => {
