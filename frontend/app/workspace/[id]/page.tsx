@@ -32,8 +32,8 @@ import {
   X,
 } from "lucide-react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useParams, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "../../../components/ui/Button";
 import { EmptyState } from "../../../components/ui/EmptyState";
@@ -60,6 +60,7 @@ import { trackEvent } from "../../../lib/analytics";
 import type { ResumeListResponse, ResumeSourceFormat } from "../../../lib/types";
 
 type Tab = "overview" | "resume" | "learning" | "interview" | "activity" | "outcome";
+type SourceState = "no_selection" | "loading" | "request_error" | "missing_row" | "unknown_metadata" | "confirmed_absent" | "ready";
 type Outcome = "offer_accepted" | "offer_declined" | "rejected" | "withdrawn";
 type InterviewResult = {
   opportunity_id: string;
@@ -163,11 +164,12 @@ function RunFeedback({ run }: { run: AnalysisRun | undefined }) {
   );
 }
 
-export default function OpportunityPage() {
+function OpportunityContent() {
   const params = useParams<{ id: string }>();
+  const searchParams = useSearchParams();
   const opportunityId = params.id;
   const queryClient = useQueryClient();
-  const [tab, setTab] = useState<Tab>("overview");
+  const [tab, setTab] = useState<Tab>(() => tabs.find((entry) => entry.id === searchParams.get("tab"))?.id || "overview");
   const [matchRunId, setMatchRunId] = useState<string | null>(null);
   const [interviewRunId, setInterviewRunId] = useState<string | null>(null);
   const [tailorRunId, setTailorRunId] = useState<string | null>(null);
@@ -184,6 +186,7 @@ export default function OpportunityPage() {
   const [reviewedVersionIds, setReviewedVersionIds] = useState<Record<string, boolean>>({});
   const trackedTerminalRuns = useRef(new Set<string>());
   const resumeTabRef = useRef<HTMLButtonElement>(null);
+  const resumeSelectRef = useRef<HTMLSelectElement>(null);
 
   const opportunity = useQuery({
     queryKey: ["opportunity", opportunityId],
@@ -194,7 +197,14 @@ export default function OpportunityPage() {
     queryFn: () => apiGet<ResumeListResponse>("/resume/list"),
   });
   const sourceResume = resumes.data?.resumes.find((resume) => resume.id === opportunity.data?.resume_id);
-  const sourceReady = Boolean(sourceResume?.source_available && sourceResume.source_format);
+  const sourceState: SourceState = !opportunity.data?.resume_id ? "no_selection"
+    : resumes.isLoading ? "loading"
+    : resumes.isError ? "request_error"
+    : !sourceResume ? "missing_row"
+    : sourceResume.source_available === false ? "confirmed_absent"
+    : sourceResume.source_available === true && (sourceResume.source_format === "pdf" || sourceResume.source_format === "docx") ? "ready"
+    : "unknown_metadata";
+  const sourceReady = sourceState === "ready";
   const match = useQuery({
     queryKey: ["opportunity-match", opportunityId],
     queryFn: () => apiGet<OpportunityMatch>(`/v1/opportunities/${opportunityId}/match`),
@@ -321,7 +331,8 @@ export default function OpportunityPage() {
   });
   const startTailoring = useMutation({
     mutationFn: () => {
-      if (!sourceReady) throw new Error("Upload your source again and select the new resume before tailoring.");
+      if (!sourceReady) throw new Error("Check the original file status beside the tailoring actions before generating a version.");
+      if (!evidence.isSuccess || !(evidence.data || []).some((entry) => entry.approval_state === "approved")) throw new Error("Import and approve relevant evidence for the selected resume before tailoring.");
       return apiPostJson<AnalysisRun>(
         "/v1/analysis-runs",
         { operation: "resume_tailor", opportunity_id: opportunityId, input: {} },
@@ -448,6 +459,22 @@ export default function OpportunityPage() {
     (event) => event.to_stage === "applied" && event.resume_version_id,
   )?.resume_version_id || item.resume_versions[0]?.id || "";
   const approvedCount = (evidence.data || []).filter((entry) => entry.approval_state === "approved").length;
+  const sourceUploadHref = `/resume?opportunity=${encodeURIComponent(opportunityId)}`;
+  const sourceIssue = sourceState === "no_selection" ? "Choose a resume above before generating a tailored version or saving a source snapshot."
+    : sourceState === "loading" ? "Checking whether the selected resume has its original file. Please wait."
+    : sourceState === "request_error" ? "Could not load the selected resume's source details. Refresh details to check its original file."
+    : sourceState === "missing_row" ? "The connected resume is missing from the loaded resume list. Refresh details or choose another resume above."
+    : sourceState === "unknown_metadata" ? "The selected resume's original file status is unknown. Refresh details before uploading again."
+    : sourceState === "confirmed_absent" ? `${approvedCount > 0 ? "Your evidence is approved, but the selected resume's original file is missing." : "The selected resume's original file is missing."} Upload the original PDF or DOCX again, use it for this opportunity, then import and approve the new upload's facts.`
+    : null;
+  const tailoringIsRunning = startTailoring.isPending || Boolean(tailorRun.data && !terminal.has(tailorRun.data.status));
+  const tailoringIssue = connectResume.isPending ? "Connecting the selected resume. Please wait before generating a version or saving a source snapshot." : sourceIssue || (evidence.isLoading ? "Loading evidence for the selected resume before tailoring. You can still save a source snapshot."
+    : evidence.isError ? "Could not load evidence for the selected resume. Refresh evidence before tailoring. You can still save a source snapshot."
+    : approvedCount === 0 ? "Import and approve relevant evidence above before generating a tailored version. A source snapshot does not require approved evidence."
+    : tailoringIsRunning ? "A tailored version is being generated. Wait for it to finish before starting another."
+    : createVersion.isPending ? "Saving your source snapshot. Please wait."
+    : null);
+  const sourceCanRefresh = sourceState === "request_error" || sourceState === "missing_row" || sourceState === "unknown_metadata";
   const questions = interviewResult.data?.result as unknown as InterviewResult | undefined;
   const interviewQuestions = questions?.questions || [];
   const evidenceBackedCount = interviewQuestions.filter((question) => question.answer_state === "evidence_backed").length;
@@ -458,6 +485,15 @@ export default function OpportunityPage() {
     setTab("resume");
     resumeTabRef.current?.focus();
     resumeTabRef.current?.scrollIntoView({ block: "nearest" });
+  }
+
+  function chooseResume() {
+    resumeSelectRef.current?.focus();
+    resumeSelectRef.current?.scrollIntoView({ block: "nearest" });
+  }
+
+  function refreshSourceDetails() {
+    void Promise.all([opportunity.refetch(), resumes.refetch()]);
   }
 
   return (
@@ -476,9 +512,10 @@ export default function OpportunityPage() {
           <div className={`grid gap-4 rounded-xl border border-border bg-surface/60 p-4 sm:grid-cols-2 sm:p-5 ${item.resume_versions.length ? "xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1.2fr)_auto]" : "xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto]"}`}>
             <label className="grid min-w-0 gap-2 text-xs font-bold text-muted-foreground">
               Resume
-              <select className="field-control min-w-0 truncate pr-8" title={resumes.data?.resumes.find((resume) => resume.id === item.resume_id)?.filename} value={item.resume_id || ""} onChange={(event) => connectResume.mutate(event.target.value)} disabled={connectResume.isPending}>
+              <select ref={resumeSelectRef} className="field-control min-w-0 truncate pr-8" title={sourceResume?.filename} value={item.resume_id || ""} onChange={(event) => connectResume.mutate(event.target.value)} disabled={connectResume.isPending}>
                 <option value="">Not connected</option>
-                {(resumes.data?.resumes || []).map((resume) => <option key={resume.id} value={resume.id}>{resume.filename}</option>)}
+                {item.resume_id && !sourceResume ? <option value={item.resume_id}>Connected resume #{item.resume_id} · details unavailable</option> : null}
+                {(resumes.data?.resumes || []).map((resume) => <option key={resume.id} value={resume.id}>{resume.filename} · #{resume.id} · {resume.source_available === false ? "needs upload" : resume.source_available === true && (resume.source_format === "pdf" || resume.source_format === "docx") ? `${resume.source_format.toUpperCase()} original saved` : "source status unknown"}</option>)}
               </select>
             </label>
             <label className="grid min-w-0 gap-2 text-xs font-bold text-muted-foreground">
@@ -599,9 +636,7 @@ export default function OpportunityPage() {
                 <section className="surface-soft p-5 sm:p-6" aria-labelledby="source-resume-heading">
                   <p className="eyebrow">Original source</p>
                   <h2 id="source-resume-heading" className="font-display mt-2 break-words text-2xl font-normal">{sourceResume?.filename || "Connected resume"}</h2>
-                  {resumes.isLoading ? <p className="mt-3 text-sm text-muted-foreground" role="status">Checking the original file...</p> : resumes.isError ? (
-                    <div className="mt-3 flex flex-wrap items-center gap-3" role="alert"><p className="text-sm text-coral">Could not load source file details.</p><Button size="sm" variant="secondary" onClick={() => void resumes.refetch()}>Retry loading</Button></div>
-                  ) : sourceReady ? (
+                  {sourceReady ? (
                     <>
                       <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">Your original {sourceResume?.source_format?.toUpperCase()} is retained. Tailoring updates existing text in this file, without adding a separate highlights section or rebuilding the resume.</p>
                       <div className="mt-4 flex flex-wrap gap-2">
@@ -610,10 +645,7 @@ export default function OpportunityPage() {
                       </div>
                     </>
                   ) : (
-                    <div className="mt-3">
-                      <p className="max-w-2xl text-sm leading-6 text-muted-foreground">This older resume has extracted text, but its original file was not retained. Upload your source again, then choose the new resume in the Resume selector above before tailoring.</p>
-                      <Button asChild size="sm" className="mt-4"><Link href="/resume"><FilePlus2 size={15} /> Upload source again</Link></Button>
-                    </div>
+                    <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground" role="status">{sourceIssue}</p>
                   )}
                   {downloadOriginal.isError ? <p className="mt-3 text-sm text-coral" role="alert">{downloadOriginal.error instanceof Error ? downloadOriginal.error.message : "Could not download the original resume."}</p> : null}
                 </section>
@@ -625,7 +657,8 @@ export default function OpportunityPage() {
                 </div>
                 {!item.resume_id ? <EmptyState icon={FilePlus2} title="Connect a resume first" description="Edit this opportunity and choose a parsed resume before building evidence." /> : null}
                 {evidence.isLoading ? <div className="mt-6"><LoadingBlock rows={4} /></div> : null}
-                {item.resume_id && !evidence.isLoading && !(evidence.data || []).length ? <EmptyState icon={ShieldCheck} title="No evidence imported" description="Import the resume sections, then approve only the facts you want HireWiz to reuse." action={<Button onClick={() => importEvidence.mutate()}><FilePlus2 size={16} /> Import evidence</Button>} /> : null}
+                {evidence.isError ? <p className="mt-4 text-sm text-coral" role="alert">Could not load evidence for this resume. Refresh evidence below to try again.</p> : null}
+                {item.resume_id && evidence.isSuccess && !(evidence.data || []).length ? <EmptyState icon={ShieldCheck} title="No evidence imported" description="Import the resume sections, then approve only the facts you want HireWiz to reuse." action={<Button onClick={() => importEvidence.mutate()}><FilePlus2 size={16} /> Import evidence</Button>} /> : null}
                 <div className="mt-6 divide-y divide-border border-t border-border">
                   {(evidence.data || []).map((entry) => (
                     <article key={entry.id} className="grid gap-4 py-5 sm:grid-cols-[1fr_auto]">
@@ -640,21 +673,29 @@ export default function OpportunityPage() {
                 </div>
               </section>
               <section aria-labelledby="resume-versions-heading" className="border-t border-border pt-8">
-                <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+                <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
                   <div className="max-w-2xl">
                     <p className="eyebrow">Resume versions</p>
                     <h2 id="resume-versions-heading" className="font-display mt-2 text-2xl font-normal">Review changes before approval</h2>
                     <p className="mt-3 text-sm leading-6 text-muted-foreground">Compare the original wording with the proposed changes for this role. Each replacement links to approved evidence. Downloads keep the source file format and layout.</p>
                   </div>
-                  <div className="flex shrink-0 flex-wrap gap-2">
-                    <Button disabled={!sourceReady || approvedCount === 0 || startTailoring.isPending || Boolean(tailorRun.data && !terminal.has(tailorRun.data.status))} onClick={() => startTailoring.mutate()}>
-                      {startTailoring.isPending || (tailorRun.data && !terminal.has(tailorRun.data.status)) ? <LoaderCircle size={16} className="animate-spin" /> : <WandSparkles size={16} />}
-                      Generate tailored version
-                    </Button>
-                    <Button variant="secondary" disabled={!sourceReady || createVersion.isPending} onClick={() => createVersion.mutate()}><FilePlus2 size={16} /> Save source snapshot</Button>
+                  <div className="min-w-0 space-y-3 xl:max-w-md">
+                    <div className="flex flex-wrap gap-2">
+                      <Button aria-describedby={tailoringIssue ? "resume-actions-status" : undefined} disabled={connectResume.isPending || !sourceReady || !evidence.isSuccess || approvedCount === 0 || tailoringIsRunning} onClick={() => startTailoring.mutate()}>
+                        {tailoringIsRunning ? <LoaderCircle size={16} className="animate-spin" /> : <WandSparkles size={16} />}
+                        Generate tailored version
+                      </Button>
+                      <Button variant="secondary" aria-describedby={tailoringIssue ? "resume-actions-status" : undefined} disabled={connectResume.isPending || !sourceReady || createVersion.isPending} onClick={() => createVersion.mutate()}><FilePlus2 size={16} /> Save source snapshot</Button>
+                    </div>
+                    {tailoringIssue ? <p id="resume-actions-status" className="text-xs leading-5 text-muted-foreground" role="status">{tailoringIssue}</p> : null}
+                    {sourceIssue && sourceState !== "loading" ? <div className="flex flex-wrap gap-2">
+                      {sourceCanRefresh ? <Button size="sm" variant="secondary" disabled={opportunity.isFetching || resumes.isFetching} onClick={refreshSourceDetails}><RefreshCw size={14} /> Refresh details</Button> : null}
+                      {sourceState === "confirmed_absent" ? <Button asChild size="sm"><Link href={sourceUploadHref}><FilePlus2 size={14} /> Upload source again</Link></Button> : null}
+                      <Button size="sm" variant="ghost" onClick={chooseResume}>Choose resume</Button>
+                    </div> : null}
+                    {sourceReady && evidence.isError ? <Button size="sm" variant="secondary" disabled={evidence.isFetching} onClick={() => void evidence.refetch()}><RefreshCw size={14} /> Refresh evidence</Button> : null}
                   </div>
                 </div>
-                {sourceReady && approvedCount === 0 ? <p className="mt-3 text-xs leading-5 text-muted-foreground">Import and approve relevant evidence above before generating a tailored version.</p> : null}
                 <RunFeedback run={tailorRun.data} />
                 {startTailoring.isError ? <p className="mt-3 text-sm text-coral" role="alert">{startTailoring.error instanceof Error ? startTailoring.error.message : "Could not start tailoring."}</p> : null}
                 {tailored ? <p className="mt-4 border-l-2 border-primary pl-4 text-sm font-semibold text-primary" role="status">Version {tailored.version_number} created. Review its proposed changes below before approval.</p> : null}
@@ -858,4 +899,8 @@ export default function OpportunityPage() {
       </div>
     </main>
   );
+}
+
+export default function OpportunityPage() {
+  return <Suspense fallback={<main className="app-page"><div className="page-container"><LoadingBlock rows={7} /></div></main>}><OpportunityContent /></Suspense>;
 }
