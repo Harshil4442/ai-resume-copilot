@@ -28,7 +28,8 @@ reach client JavaScript. See [the runtime architecture](docs/ARCHITECTURE.md).
 - Evidence Graph with explicit approval, provenance, and source-preserving deletion rules
 - Durable asynchronous job match, interview coaching, market analysis, Skill ROI, and
   evidence-backed resume tailoring
-- Versioned resumes whose generated lines cite approved evidence
+- Versioned resumes with evidence-cited edits inside the original PDF or DOCX, Before/After
+  review, and native-format downloads
 - User-controlled Career Memory
 - Append-only usage history with reserve, commit, release, and Premium waiver events
 - Account data export and deletion
@@ -39,6 +40,12 @@ reach client JavaScript. See [the runtime architecture](docs/ARCHITECTURE.md).
 
 Legacy backend APIs remain compatible during migration. The old `/jobs` and `/learning`
 pages redirect into Career Workspace, where their replacement flows now live.
+
+Tailoring preserves the uploaded document rather than rebuilding a template. PDF edits
+must fit their existing font and text positions; DOCX edits retain the original document
+parts and styles and should be reviewed in a compatible editor. Unsupported or overflowing
+changes fail with reserved units released. Uploads from before source retention require
+the original file to be uploaded again before generating a new preserved-format version.
 
 ## Repository
 

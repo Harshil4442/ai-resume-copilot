@@ -10,6 +10,8 @@ from rapidfuzz import fuzz
 
 try:
     from docx import Document as DocxDocument
+    from docx.table import Table
+    from docx.text.paragraph import Paragraph
     DOCX_AVAILABLE = True
 except ImportError:
     DOCX_AVAILABLE = False
@@ -143,7 +145,29 @@ def extract_text_from_docx(file_bytes: bytes) -> str:
     if not DOCX_AVAILABLE:
         raise RuntimeError("python-docx not installed.")
     doc = DocxDocument(io.BytesIO(file_bytes))
-    return "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+
+    def block_text(container) -> List[str]:
+        parts = []
+        for block in container.iter_inner_content():
+            if isinstance(block, Paragraph):
+                if block.text.strip():
+                    parts.append(block.text)
+            elif isinstance(block, Table):
+                seen_cells = set()
+                for row in block.rows:
+                    values = []
+                    for cell in row.cells:
+                        if cell._tc in seen_cells:
+                            continue
+                        seen_cells.add(cell._tc)
+                        text = "\n".join(block_text(cell)).strip()
+                        if text:
+                            values.append(text)
+                    if values:
+                        parts.append("\t".join(values))
+        return parts
+
+    return "\n".join(block_text(doc))
 
 
 def _heuristic_sections_fuzzy(text: str) -> Dict[str, str]:

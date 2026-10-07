@@ -3424,6 +3424,26 @@
           "id": {
             "title": "Id",
             "type": "integer"
+          },
+          "source_available": {
+            "default": false,
+            "title": "Source Available",
+            "type": "boolean"
+          },
+          "source_format": {
+            "anyOf": [
+              {
+                "enum": [
+                  "pdf",
+                  "docx"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Format"
           }
         },
         "required": [
@@ -3476,6 +3496,26 @@
             },
             "title": "Skills",
             "type": "array"
+          },
+          "source_available": {
+            "default": false,
+            "title": "Source Available",
+            "type": "boolean"
+          },
+          "source_format": {
+            "anyOf": [
+              {
+                "enum": [
+                  "pdf",
+                  "docx"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Format"
           }
         },
         "required": [
@@ -5577,6 +5617,60 @@
         ]
       }
     },
+    "/api/resume/{resume_id}/source": {
+      "get": {
+        "operationId": "download_resume_source_api_resume__resume_id__source_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resume_id",
+            "required": true,
+            "schema": {
+              "title": "Resume Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "application/vnd.openxmlformats-officedocument.wordprocessingml.document": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Original uploaded resume"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Download Resume Source",
+        "tags": [
+          "resume"
+        ]
+      }
+    },
     "/api/v1/admin/analysis-runs/{run_id}": {
       "get": {
         "operationId": "inspect_analysis_run_api_v1_admin_analysis_runs__run_id__get",
@@ -7496,7 +7590,7 @@
                 }
               }
             },
-            "description": "Rendered resume version"
+            "description": "Resume version in its preserved source format"
           },
           "422": {
             "content": {

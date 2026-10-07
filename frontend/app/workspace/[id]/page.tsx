@@ -16,6 +16,7 @@ import {
   Download,
   FileCheck2,
   FilePlus2,
+  FileText,
   Gauge,
   LoaderCircle,
   MessageSquareText,
@@ -49,15 +50,17 @@ import {
   type Reminder,
   type ResumeVersion,
   type SkillRoi,
+  type SourcePreservingResumeContent,
+  getSourcePreservingContent,
   stageLabels,
   stageTone,
   stages,
 } from "../../../lib/career";
 import { trackEvent } from "../../../lib/analytics";
+import type { ResumeListResponse, ResumeSourceFormat } from "../../../lib/types";
 
 type Tab = "overview" | "resume" | "learning" | "interview" | "activity" | "outcome";
 type Outcome = "offer_accepted" | "offer_declined" | "rejected" | "withdrawn";
-type ResumeArtifactFormat = "pdf" | "docx";
 type InterviewResult = {
   opportunity_id: string;
   questions: {
@@ -71,13 +74,8 @@ type TailorResult = {
   resume_version_id: string;
   version_number: number;
   evidence_ids: string[];
-  content: {
-    summary_items?: { text: string; evidence_ids: string[] }[];
-    bullets?: { text: string; evidence_ids: string[] }[];
-    evidence_needed?: string[];
-  };
+  content: SourcePreservingResumeContent;
 };
-type ResumeList = { resumes: { id: number; filename: string; created_at: string }[] };
 
 const tabs: { id: Tab; label: string; icon: typeof Target }[] = [
   { id: "overview", label: "Overview", icon: Target },
@@ -143,6 +141,7 @@ function RunFeedback({ run }: { run: AnalysisRun | undefined }) {
   if (!run || run.status === "succeeded") return null;
   if (run.status === "failed") {
     const incompleteInterview = run.operation === "interview_questions" && run.error_code === "InterviewOutputError";
+    const preservationFailed = run.operation === "resume_tailor" && (run.error_code === "ResumeLayoutError" || run.error_code === "TailoringOutputError");
     const usageMessage = run.committed_units === 0 && run.usage_state === "released"
       ? "Any reserved units were released."
       : run.committed_units === 0 && run.usage_state === "waived"
@@ -151,7 +150,7 @@ function RunFeedback({ run }: { run: AnalysisRun | undefined }) {
     return (
       <div className="mt-4 flex gap-3 border-y border-coral/25 bg-coral/5 px-4 py-4 text-sm text-coral" role="alert">
         <CircleAlert size={18} className="mt-0.5 shrink-0" />
-        <div><strong>{incompleteInterview ? "Could not generate a complete question set." : "Analysis did not complete."}</strong><p className="mt-1 text-muted-foreground">{incompleteInterview ? "Please try again." : "Try again later."} {usageMessage}</p></div>
+        <div><strong>{preservationFailed ? "Could not apply the changes while preserving your resume format." : incompleteInterview ? "Could not generate a complete question set." : "Analysis did not complete."}</strong><p className="mt-1 text-muted-foreground">{incompleteInterview || preservationFailed ? "Please try again." : "Try again later."} {usageMessage}</p></div>
       </div>
     );
   }
@@ -182,6 +181,7 @@ export default function OpportunityPage() {
   const [outcomeNotes, setOutcomeNotes] = useState("");
   const [editingEvidenceId, setEditingEvidenceId] = useState<string | null>(null);
   const [evidenceDraft, setEvidenceDraft] = useState("");
+  const [reviewedVersionIds, setReviewedVersionIds] = useState<Record<string, boolean>>({});
   const trackedTerminalRuns = useRef(new Set<string>());
   const resumeTabRef = useRef<HTMLButtonElement>(null);
 
@@ -191,8 +191,10 @@ export default function OpportunityPage() {
   });
   const resumes = useQuery({
     queryKey: ["resumes"],
-    queryFn: () => apiGet<ResumeList>("/resume/list"),
+    queryFn: () => apiGet<ResumeListResponse>("/resume/list"),
   });
+  const sourceResume = resumes.data?.resumes.find((resume) => resume.id === opportunity.data?.resume_id);
+  const sourceReady = Boolean(sourceResume?.source_available && sourceResume.source_format);
   const match = useQuery({
     queryKey: ["opportunity-match", opportunityId],
     queryFn: () => apiGet<OpportunityMatch>(`/v1/opportunities/${opportunityId}/match`),
@@ -235,7 +237,7 @@ export default function OpportunityPage() {
     for (const run of [matchRun.data, interviewRun.data, tailorRun.data]) {
       if (!run || !terminal.has(run.status) || trackedTerminalRuns.current.has(run.id)) continue;
       trackedTerminalRuns.current.add(run.id);
-      if (run.operation === "interview_questions") {
+      if (run.operation === "interview_questions" || run.operation === "resume_tailor") {
         void queryClient.invalidateQueries({ queryKey: ["nav-profile"] });
       }
       trackEvent(run.status === "succeeded" ? "analysis_completed" : "analysis_failed", {
@@ -318,11 +320,14 @@ export default function OpportunityPage() {
     },
   });
   const startTailoring = useMutation({
-    mutationFn: () => apiPostJson<AnalysisRun>(
-      "/v1/analysis-runs",
-      { operation: "resume_tailor", opportunity_id: opportunityId, input: {} },
-      { "Idempotency-Key": crypto.randomUUID() },
-    ),
+    mutationFn: () => {
+      if (!sourceReady) throw new Error("Upload your source again and select the new resume before tailoring.");
+      return apiPostJson<AnalysisRun>(
+        "/v1/analysis-runs",
+        { operation: "resume_tailor", opportunity_id: opportunityId, input: {} },
+        { "Idempotency-Key": crypto.randomUUID() },
+      );
+    },
     onSuccess: (run) => {
       setTailorRunId(run.id);
       trackEvent("analysis_run_created", { operation: "resume_tailor", estimated_units: run.estimated_units });
@@ -364,7 +369,7 @@ export default function OpportunityPage() {
     },
   });
   const downloadVersion = useMutation({
-    mutationFn: ({ id, versionNumber, format }: { id: string; versionNumber: number; format: ResumeArtifactFormat }) =>
+    mutationFn: ({ id, versionNumber, format }: { id: string; versionNumber: number; format: ResumeSourceFormat }) =>
       apiDownload(
         `/v1/resume-versions/${id}/download?format=${format}`,
         `hirewiz-tailored-resume-v${versionNumber}.${format}`,
@@ -377,14 +382,21 @@ export default function OpportunityPage() {
       });
     },
   });
+  const downloadOriginal = useMutation({
+    mutationFn: () => {
+      if (!sourceResume || !sourceReady) throw new Error("The original resume file is unavailable. Upload your source again.");
+      return apiDownload(`/resume/${sourceResume.id}/source`, sourceResume.filename);
+    },
+  });
   const createVersion = useMutation({
     mutationFn: () => {
-      if (!opportunity.data?.resume_id) throw new Error("Connect a resume first.");
+      if (!opportunity.data?.resume_id || !sourceReady || !sourceResume?.source_format) throw new Error("Connect a resume with its original file first.");
       const evidenceIds = (evidence.data || []).filter((item) => item.approval_state === "approved").map((item) => item.id);
       return apiPostJson<ResumeVersion>("/v1/resume-versions", {
         resume_id: opportunity.data.resume_id,
         opportunity_id: opportunityId,
-        label: `${opportunity.data.company || opportunity.data.title} application`,
+        label: `${opportunity.data.company || opportunity.data.title} source snapshot`,
+        structured_content: { format_preservation: "source", source_format: sourceResume.source_format, source_edits: [] },
         evidence_ids: evidenceIds,
       });
     },
@@ -582,7 +594,30 @@ export default function OpportunityPage() {
           ) : null}
 
           {tab === "resume" ? (
-            <div className="grid gap-10 xl:grid-cols-[1fr_360px]">
+            <div className="space-y-10">
+              {item.resume_id ? (
+                <section className="surface-soft p-5 sm:p-6" aria-labelledby="source-resume-heading">
+                  <p className="eyebrow">Original source</p>
+                  <h2 id="source-resume-heading" className="font-display mt-2 break-words text-2xl font-normal">{sourceResume?.filename || "Connected resume"}</h2>
+                  {resumes.isLoading ? <p className="mt-3 text-sm text-muted-foreground" role="status">Checking the original file...</p> : resumes.isError ? (
+                    <div className="mt-3 flex flex-wrap items-center gap-3" role="alert"><p className="text-sm text-coral">Could not load source file details.</p><Button size="sm" variant="secondary" onClick={() => void resumes.refetch()}>Retry loading</Button></div>
+                  ) : sourceReady ? (
+                    <>
+                      <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">Your original {sourceResume?.source_format?.toUpperCase()} is retained. Tailoring updates existing text in this file, without adding a separate highlights section or rebuilding the resume.</p>
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <Button asChild size="sm" variant="secondary"><Link href={`/resume/preview?resume=${item.resume_id}`}><FileText size={15} /> View original</Link></Button>
+                        <Button size="sm" variant="ghost" onClick={() => downloadOriginal.mutate()} disabled={downloadOriginal.isPending}><Download size={15} /> Download original {sourceResume?.source_format?.toUpperCase()}</Button>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="mt-3">
+                      <p className="max-w-2xl text-sm leading-6 text-muted-foreground">This older resume has extracted text, but its original file was not retained. Upload your source again, then choose the new resume in the Resume selector above before tailoring.</p>
+                      <Button asChild size="sm" className="mt-4"><Link href="/resume"><FilePlus2 size={15} /> Upload source again</Link></Button>
+                    </div>
+                  )}
+                  {downloadOriginal.isError ? <p className="mt-3 text-sm text-coral" role="alert">{downloadOriginal.error instanceof Error ? downloadOriginal.error.message : "Could not download the original resume."}</p> : null}
+                </section>
+              ) : null}
               <section>
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
                   <div><p className="eyebrow">Evidence Graph</p><h2 className="font-display mt-2 text-2xl font-normal">Approved facts for this resume</h2><p className="mt-2 text-sm text-muted-foreground">{approvedCount} approved evidence {approvedCount === 1 ? "item" : "items"}.</p></div>
@@ -604,70 +639,91 @@ export default function OpportunityPage() {
                   ))}
                 </div>
               </section>
-              <aside>
-                <div className="flex items-center justify-between"><div><p className="data-label">Resume versions</p><h2 className="font-display mt-1 text-lg font-normal">Application history</h2></div><FileCheck2 size={19} className="text-primary" /></div>
-                <div className="mt-5 space-y-3">
-                  {item.resume_versions.map((version) => (
-                    <div key={version.id} className="surface-soft p-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-bold text-foreground">{version.label}</p>
-                          <p className="mt-1 text-xs text-muted-foreground">Version {version.version_number} · {version.evidence_ids.length} evidence links{version.submitted_at ? " · submitted" : ""}</p>
-                        </div>
-                        <StatusBadge tone={version.approval_state === "approved" ? "teal" : version.approval_state === "rejected" ? "coral" : "neutral"}>{version.approval_state}</StatusBadge>
-                      </div>
-                      <div className="mt-3 flex flex-wrap gap-1 border-t border-border pt-3">
-                        <Button size="sm" variant="ghost" onClick={() => updateVersion.mutate({ id: version.id, state: "approved" })}><Check size={14} /> Approve</Button>
-                        <Button size="sm" variant="ghost" onClick={() => updateVersion.mutate({ id: version.id, state: "rejected" })}><X size={14} /> Reject</Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => downloadVersion.mutate({ id: version.id, versionNumber: version.version_number, format: "pdf" })}
-                          disabled={downloadVersion.isPending && downloadVersion.variables?.id === version.id}
-                          title="Download PDF"
-                        >
-                          {downloadVersion.isPending && downloadVersion.variables?.id === version.id && downloadVersion.variables.format === "pdf" ? <LoaderCircle size={14} className="animate-spin" /> : <Download size={14} />}
-                          PDF
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => downloadVersion.mutate({ id: version.id, versionNumber: version.version_number, format: "docx" })}
-                          disabled={downloadVersion.isPending && downloadVersion.variables?.id === version.id}
-                          title="Download editable DOCX"
-                        >
-                          {downloadVersion.isPending && downloadVersion.variables?.id === version.id && downloadVersion.variables.format === "docx" ? <LoaderCircle size={14} className="animate-spin" /> : <Download size={14} />}
-                          DOCX
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                  {!item.resume_versions.length ? <p className="text-sm leading-6 text-muted-foreground">No role-specific version has been saved.</p> : null}
-                </div>
-                <Button
-                  className="mt-5 w-full"
-                  disabled={approvedCount === 0 || startTailoring.isPending || Boolean(tailorRun.data && !terminal.has(tailorRun.data.status))}
-                  onClick={() => startTailoring.mutate()}
-                >
-                  {tailorRun.data && !terminal.has(tailorRun.data.status) ? <LoaderCircle size={16} className="animate-spin" /> : <WandSparkles size={16} />}
-                  Generate evidence-backed version
-                </Button>
-                <RunFeedback run={tailorRun.data} />
-                {startTailoring.isError ? <p className="mt-3 text-sm text-coral">{startTailoring.error instanceof Error ? startTailoring.error.message : "Could not start tailoring."}</p> : null}
-                {tailored ? (
-                  <div className="mt-4 border-l-2 border-primary pl-4">
-                    <p className="text-sm font-bold text-foreground">Version {tailored.version_number} created</p>
-                    <p className="mt-1 text-xs leading-5 text-muted-foreground">Every generated line links back to approved evidence. Review it before marking the version approved.</p>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <Button size="sm" variant="secondary" onClick={() => downloadVersion.mutate({ id: tailored.resume_version_id, versionNumber: tailored.version_number, format: "pdf" })} disabled={downloadVersion.isPending}><Download size={14} /> PDF</Button>
-                      <Button size="sm" variant="secondary" onClick={() => downloadVersion.mutate({ id: tailored.resume_version_id, versionNumber: tailored.version_number, format: "docx" })} disabled={downloadVersion.isPending}><Download size={14} /> DOCX</Button>
-                    </div>
+              <section aria-labelledby="resume-versions-heading" className="border-t border-border pt-8">
+                <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+                  <div className="max-w-2xl">
+                    <p className="eyebrow">Resume versions</p>
+                    <h2 id="resume-versions-heading" className="font-display mt-2 text-2xl font-normal">Review changes before approval</h2>
+                    <p className="mt-3 text-sm leading-6 text-muted-foreground">Compare the original wording with the proposed changes for this role. Each replacement links to approved evidence. Downloads keep the source file format and layout.</p>
                   </div>
-                ) : null}
-                {downloadVersion.isError ? <p className="mt-3 text-sm text-coral">{downloadVersion.error instanceof Error ? downloadVersion.error.message : "Could not download this resume version."}</p> : null}
-                <Button className="mt-5 w-full" disabled={!item.resume_id || createVersion.isPending} onClick={() => createVersion.mutate()}><FilePlus2 size={16} /> Save current version</Button>
-                {createVersion.isError ? <p className="mt-3 text-sm text-coral">{createVersion.error instanceof Error ? createVersion.error.message : "Could not create version."}</p> : null}
-              </aside>
+                  <div className="flex shrink-0 flex-wrap gap-2">
+                    <Button disabled={!sourceReady || approvedCount === 0 || startTailoring.isPending || Boolean(tailorRun.data && !terminal.has(tailorRun.data.status))} onClick={() => startTailoring.mutate()}>
+                      {startTailoring.isPending || (tailorRun.data && !terminal.has(tailorRun.data.status)) ? <LoaderCircle size={16} className="animate-spin" /> : <WandSparkles size={16} />}
+                      Generate tailored version
+                    </Button>
+                    <Button variant="secondary" disabled={!sourceReady || createVersion.isPending} onClick={() => createVersion.mutate()}><FilePlus2 size={16} /> Save source snapshot</Button>
+                  </div>
+                </div>
+                {sourceReady && approvedCount === 0 ? <p className="mt-3 text-xs leading-5 text-muted-foreground">Import and approve relevant evidence above before generating a tailored version.</p> : null}
+                <RunFeedback run={tailorRun.data} />
+                {startTailoring.isError ? <p className="mt-3 text-sm text-coral" role="alert">{startTailoring.error instanceof Error ? startTailoring.error.message : "Could not start tailoring."}</p> : null}
+                {tailored ? <p className="mt-4 border-l-2 border-primary pl-4 text-sm font-semibold text-primary" role="status">Version {tailored.version_number} created. Review its proposed changes below before approval.</p> : null}
+                {createVersion.isError ? <p className="mt-3 text-sm text-coral" role="alert">{createVersion.error instanceof Error ? createVersion.error.message : "Could not save the source snapshot."}</p> : null}
+                {downloadVersion.isError ? <p className="mt-3 text-sm text-coral" role="alert">{downloadVersion.error instanceof Error ? downloadVersion.error.message : "Could not download this resume version."}</p> : null}
+                {updateVersion.isError ? <p className="mt-3 text-sm text-coral" role="alert">{updateVersion.error instanceof Error ? updateVersion.error.message : "Could not update version approval."}</p> : null}
+                <div className="mt-6 space-y-5">
+                  {item.resume_versions.map((version) => {
+                    const content = getSourcePreservingContent(version.structured_content);
+                    const versionResume = resumes.data?.resumes.find((resume) => resume.id === version.resume_id);
+                    const nativeFormat = content && versionResume?.source_available && versionResume.source_format === content.source_format ? content.source_format : null;
+                    const isUpdating = updateVersion.isPending && updateVersion.variables?.id === version.id;
+                    const isDownloading = downloadVersion.isPending && downloadVersion.variables?.id === version.id;
+                    return (
+                      <article key={version.id} className="min-w-0 rounded-lg border border-border p-5 sm:p-6">
+                        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="min-w-0">
+                            <h3 className="break-words text-base font-semibold text-foreground">{version.label}</h3>
+                            <p className="mt-2 text-xs leading-5 text-muted-foreground">Version {version.version_number} · {version.evidence_ids.length} evidence links{content ? ` · ${content.source_format.toUpperCase()} source layout` : " · older export"}{version.submitted_at ? " · submitted" : ""}</p>
+                          </div>
+                          <div className="flex shrink-0 flex-wrap items-center gap-3">
+                            <StatusBadge tone={version.approval_state === "approved" ? "teal" : version.approval_state === "rejected" ? "coral" : "neutral"}>{version.approval_state}</StatusBadge>
+                            {nativeFormat === "pdf" ? <Button asChild size="sm" variant="ghost"><Link href={`/resume/preview?resume=${version.resume_id}&version=${encodeURIComponent(version.id)}`}><FileText size={14} /> Preview version</Link></Button> : null}
+                            {nativeFormat ? <Button size="sm" variant="secondary" onClick={() => downloadVersion.mutate({ id: version.id, versionNumber: version.version_number, format: nativeFormat })} disabled={isDownloading}>{isDownloading ? <LoaderCircle size={14} className="animate-spin" /> : <Download size={14} />} {nativeFormat === "docx" && version.approval_state !== "approved" ? "Download draft DOCX" : `Download ${nativeFormat.toUpperCase()}`}</Button> : null}
+                          </div>
+                        </div>
+                        {content ? (
+                          <details className="mt-5 border-t border-border pt-4" open={version.id === tailored?.resume_version_id}>
+                            <summary className="cursor-pointer text-sm font-semibold text-primary">{content.source_edits.length ? `Review ${content.source_edits.length} proposed ${content.source_edits.length === 1 ? "change" : "changes"}` : "Review source snapshot"}</summary>
+                            <div className="mt-5 space-y-5">
+                              {nativeFormat === "docx" ? <p className="text-sm leading-6 text-muted-foreground">Download the draft DOCX and review its text and layout in your document editor before approving this version.</p> : nativeFormat === "pdf" ? <p className="text-sm leading-6 text-muted-foreground">Use Preview version to check the exact PDF layout before approving.</p> : null}
+                              {content.source_edits.map((edit, index) => (
+                                <div key={edit.unit_id} className="min-w-0 rounded-lg bg-surface p-4 sm:p-5">
+                                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                                    <h4 className="font-mono text-xs font-medium text-foreground">Change {String(index + 1).padStart(2, "0")}</h4>
+                                    <span className="text-xs text-primary">{new Set(edit.evidence_ids).size} approved evidence {new Set(edit.evidence_ids).size === 1 ? "link" : "links"}</span>
+                                  </div>
+                                  {edit.reason ? <p className="mt-2 break-words text-xs leading-5 text-muted-foreground">{edit.reason}</p> : null}
+                                  <div className="mt-4 grid gap-4 md:grid-cols-2">
+                                    <div className="min-w-0"><p className="data-label">Before</p><p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-muted-foreground">{edit.original_text}</p></div>
+                                    <div className="min-w-0 border-t border-border pt-4 md:border-l md:border-t-0 md:pl-5 md:pt-0"><p className="data-label">After</p><p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-foreground">{edit.replacement_text}</p></div>
+                                  </div>
+                                </div>
+                              ))}
+                              {!content.source_edits.length ? <p className="text-sm leading-6 text-muted-foreground">This snapshot keeps your original resume unchanged. View the original file before approving it.</p> : null}
+                              {content.evidence_needed?.length ? <div className="border-l-2 border-border pl-4"><p className="data-label">Requirements needing more evidence</p><ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-6 text-muted-foreground">{content.evidence_needed.map((requirement, index) => <li key={index}>{requirement}</li>)}</ul></div> : null}
+                              <Button asChild size="sm" variant="ghost"><Link href={`/resume/preview?resume=${version.resume_id}`}><FileText size={15} /> View original source</Link></Button>
+                              {!nativeFormat ? <p className="text-sm leading-6 text-muted-foreground">{resumes.isLoading ? "Checking the original file before approval and download..." : resumes.isError ? "Source file details could not be loaded. Retry loading above before approval or download." : "The original source for this version is unavailable. Upload the source again and generate a new version before approval or download."}</p> : null}
+                              <div className="border-t border-border pt-4">
+                                {version.approval_state !== "approved" ? <label className="flex items-start gap-3 text-sm leading-6 text-foreground"><input type="checkbox" className="mt-1 h-4 w-4 shrink-0 accent-primary" checked={Boolean(reviewedVersionIds[version.id])} onChange={(event) => { const checked = event.target.checked; setReviewedVersionIds((reviewed) => ({ ...reviewed, [version.id]: checked })); }} /> I have reviewed this version and its proposed changes.</label> : null}
+                                <div className="mt-4 flex flex-wrap gap-2">
+                                  <Button size="sm" onClick={() => updateVersion.mutate({ id: version.id, state: "approved" })} disabled={!nativeFormat || !reviewedVersionIds[version.id] || isUpdating || version.approval_state === "approved"}><Check size={14} /> {version.approval_state === "approved" ? "Approved" : "Approve version"}</Button>
+                                  <Button size="sm" variant="ghost" onClick={() => updateVersion.mutate({ id: version.id, state: "rejected" })} disabled={isUpdating || version.approval_state === "rejected"}><X size={14} /> Reject version</Button>
+                                </div>
+                              </div>
+                            </div>
+                          </details>
+                        ) : (
+                          <div className="mt-5 border-t border-border pt-4">
+                            <p className="text-sm leading-6 text-muted-foreground">This older version was rebuilt from extracted text. Generate a new version from the original source to preserve your resume format.</p>
+                            <Button size="sm" variant="ghost" className="mt-3" onClick={() => updateVersion.mutate({ id: version.id, state: "rejected" })} disabled={isUpdating || version.approval_state === "rejected"}><X size={14} /> Reject version</Button>
+                          </div>
+                        )}
+                      </article>
+                    );
+                  })}
+                  {!item.resume_versions.length ? <p className="text-sm leading-6 text-muted-foreground">No version saved yet. Generate a tailored version or save your unchanged source snapshot.</p> : null}
+                </div>
+              </section>
             </div>
           ) : null}
 

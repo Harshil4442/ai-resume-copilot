@@ -344,10 +344,17 @@ def delete_account(
 
 
 def _rows(db: Session, model, uid: int) -> list[dict]:
-    return [
-        {column.name: getattr(row, column.name) for column in model.__table__.columns}
-        for row in db.query(model).filter(model.user_id == uid).all()
-    ]
+    records = []
+    for row in db.query(model).filter(model.user_id == uid).all():
+        record = {
+            column.name: getattr(row, column.name)
+            for column in model.__table__.columns
+            if not (model is Resume and column.name == "source_document")
+        }
+        if model is Resume:
+            record["source_available"] = bool(row.source_available)
+        records.append(record)
+    return records
 
 
 @router.get("/export-account")

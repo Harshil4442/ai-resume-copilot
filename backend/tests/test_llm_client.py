@@ -7,6 +7,136 @@ from backend.app.services import llm_client
 from google import genai
 
 
+def _tailoring_input():
+    original = "Developed Python services and reduced response time by 20%."
+    return {
+        "job_title": "Platform Engineer",
+        "jd_text": "Build reliable Python services with measurable performance.",
+        "approved_evidence": [{"id": "evd_python", "title": "API work", "text": original}],
+        "source_units": [{"unit_id": "source-body", "text": original, "max_chars": len(original)}],
+    }
+
+
+def _tailoring_edit():
+    return {
+        "unit_id": "source-body",
+        "original_text": _tailoring_input()["source_units"][0]["text"],
+        "replacement_text": "Built Python services and reduced response time by 20%.",
+        "evidence_ids": ["evd_python"],
+        "reason": "Emphasizes implementation and performance relevant to the role.",
+    }
+
+
+def test_tailoring_returns_source_replacements_without_rebuilding_sections(monkeypatch):
+    calls = []
+
+    def response(messages):
+        calls.append(messages)
+        return f"```json\n{json.dumps({'source_edits': [_tailoring_edit()], 'evidence_needed': []})}\n```"
+
+    monkeypatch.setattr(llm_client, "_chat", response)
+    result = llm_client.tailor_resume_from_evidence(**_tailoring_input(), repair_note="Use a shorter replacement")
+    assert result["source_edits"] == [_tailoring_edit()]
+    assert "bullets" not in result and "summary_items" not in result and "skills" not in result
+    assert result["evidence_policy"] == "approved_only"
+    assert len(calls) == 1
+    assert "Use a shorter replacement" in calls[0][1]["content"]
+    assert "source-body" in calls[0][1]["content"]
+
+
+@pytest.mark.parametrize(
+    "updates",
+    [
+        {"unit_id": "foreign-source"},
+        {"original_text": "A different resume passage"},
+        {"replacement_text": ""},
+        {"replacement_text": "Invented a huge platform and reduced latency by 99%."},
+        {"replacement_text": "Built Python services and reduced response time by 2%."},
+        {"replacement_text": "Built Python services and reduced response time by 20%.\n"},
+        {"replacement_text": _tailoring_input()["source_units"][0]["text"]},
+        {"evidence_ids": ["evd_foreign"]},
+        {"evidence_ids": []},
+        {"reason": ""},
+    ],
+)
+def test_tailoring_rejects_unsafe_or_unsupported_replacements(monkeypatch, updates):
+    edit = {**_tailoring_edit(), **updates}
+    monkeypatch.setattr(llm_client, "_chat", lambda messages: json.dumps({"source_edits": [edit]}))
+    with pytest.raises(llm_client.TailoringOutputError):
+        llm_client.tailor_resume_from_evidence(**_tailoring_input())
+
+
+@pytest.mark.parametrize("output", ["Unreadable output", '{"source_edits": []}', "null", "[]", None])
+def test_tailoring_rejects_missing_edit_output_without_a_placeholder(monkeypatch, output):
+    monkeypatch.setattr(llm_client, "_chat", lambda messages: output)
+    with pytest.raises(llm_client.TailoringOutputError):
+        llm_client.tailor_resume_from_evidence(**_tailoring_input())
+
+
+def test_tailoring_rejects_duplicate_locations(monkeypatch):
+    monkeypatch.setattr(llm_client, "_chat", lambda messages: json.dumps({"source_edits": [_tailoring_edit()] * 2}))
+    with pytest.raises(llm_client.TailoringOutputError):
+        llm_client.tailor_resume_from_evidence(**_tailoring_input())
+
+
+@pytest.mark.parametrize("invented_term", ["C++", "Java", "java", "Kubernetes", "CloudNova", "Acme", "CISSP", "ZPX", "PhD"])
+def test_tailoring_rejects_factual_terms_found_only_in_the_job(monkeypatch, invented_term):
+    inputs = _tailoring_input()
+    inputs["jd_text"] = f"The employer requests {invented_term} experience."
+    edit = {**_tailoring_edit(), "replacement_text": f"Built {invented_term} services and reduced response time by 20%."}
+    monkeypatch.setattr(llm_client, "_chat", lambda messages: json.dumps({"source_edits": [edit]}))
+    with pytest.raises(llm_client.TailoringOutputError, match="factual skill or named term"):
+        llm_client.tailor_resume_from_evidence(**inputs)
+
+
+@pytest.mark.parametrize("support_location", ["unreferenced-evidence", "other-source-unit"])
+def test_tailoring_does_not_borrow_factual_support_from_unrelated_context(monkeypatch, support_location):
+    inputs = _tailoring_input()
+    if support_location == "unreferenced-evidence":
+        inputs["approved_evidence"].append({"id": "evd_java", "text": "Built Java services.", "skills": ["Java"]})
+    else:
+        inputs["source_units"].append({"unit_id": "other-project", "text": "Built Java services."})
+    edit = {**_tailoring_edit(), "replacement_text": "Built Java services and reduced response time by 20%."}
+    monkeypatch.setattr(llm_client, "_chat", lambda messages: json.dumps({"source_edits": [edit]}))
+    with pytest.raises(llm_client.TailoringOutputError, match="factual skill or named term"):
+        llm_client.tailor_resume_from_evidence(**inputs)
+
+
+@pytest.mark.parametrize("support_field", ["text", "skills"])
+def test_tailoring_accepts_new_factual_terms_from_the_cited_evidence(monkeypatch, support_field):
+    inputs = _tailoring_input()
+    evidence = {"id": "evd_java", "text": "Developed customer services."}
+    evidence[support_field] = "Developed Java services." if support_field == "text" else ["Java"]
+    inputs["approved_evidence"].append(evidence)
+    edit = {**_tailoring_edit(), "replacement_text": "Built Java services and reduced response time by 20%.", "evidence_ids": ["evd_python", "evd_java"]}
+    monkeypatch.setattr(llm_client, "_chat", lambda messages: json.dumps({"source_edits": [edit]}))
+    result = llm_client.tailor_resume_from_evidence(**inputs)
+    assert result["source_edits"] == [edit]
+
+
+@pytest.mark.parametrize("source_term,replacement_term", [("JavaScript", "Java"), ("C", "C++"), ("C++", "C#"), ("MySQL", "SQL")])
+def test_tailoring_factual_skill_support_uses_complete_technical_tokens(monkeypatch, source_term, replacement_term):
+    inputs = _tailoring_input()
+    original = inputs["source_units"][0]["text"].replace("Python", source_term)
+    inputs["source_units"][0]["text"] = original
+    inputs["approved_evidence"][0]["text"] = original
+    edit = {**_tailoring_edit(), "original_text": original, "replacement_text": f"Built {replacement_term} services and reduced response time by 20%."}
+    monkeypatch.setattr(llm_client, "_chat", lambda messages: json.dumps({"source_edits": [edit]}))
+    with pytest.raises(llm_client.TailoringOutputError, match="factual skill or named term"):
+        llm_client.tailor_resume_from_evidence(**inputs)
+
+
+def test_tailoring_accepts_grounded_aliases_and_normal_action_verb_paraphrases(monkeypatch):
+    inputs = _tailoring_input()
+    original = "Developed reliable postgres services for global customers and improved response time."
+    inputs["source_units"][0]["text"] = original
+    inputs["approved_evidence"][0]["text"] = original
+    edit = {**_tailoring_edit(), "original_text": original, "replacement_text": "Built PostgreSQL services for customers and improved response time."}
+    monkeypatch.setattr(llm_client, "_chat", lambda messages: json.dumps({"source_edits": [edit]}))
+    result = llm_client.tailor_resume_from_evidence(**inputs)
+    assert result["source_edits"] == [edit]
+
+
 def test_gemini_transient_failure_uses_next_stable_model(monkeypatch):
     attempts = []
 

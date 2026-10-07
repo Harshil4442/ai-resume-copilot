@@ -11,7 +11,7 @@ from backend.app.domains.analysis.evaluation import (
 def test_golden_prompt_contracts_pass():
     path = Path(__file__).resolve().parents[1] / "evals" / "golden_cases.json"
     result = evaluate_golden_cases(path)
-    assert result == {"passed": True, "case_count": 4, "failures": []}
+    assert result == {"passed": True, "case_count": 6, "failures": []}
 
 
 def test_evidence_contract_rejects_claim_without_citation():

@@ -5,8 +5,13 @@
     "expected_pass": true,
     "output": {
       "match_score": 78,
-      "required_skills": ["python", "postgresql"],
-      "true_gaps": ["kubernetes"],
+      "required_skills": [
+        "python",
+        "postgresql"
+      ],
+      "true_gaps": [
+        "kubernetes"
+      ],
       "fit_summary": "Strong backend evidence with one infrastructure gap."
     }
   },
@@ -25,10 +30,27 @@
     "name": "valid evidence cited tailoring",
     "operation": "resume_tailor",
     "expected_pass": true,
-    "allowed_evidence_ids": ["ev_1", "ev_2"],
+    "allowed_evidence_ids": [
+      "ev_1",
+      "ev_2"
+    ],
     "output": {
-      "summary_items": [{"text": "Built reliable Python services.", "evidence_ids": ["ev_1"]}],
-      "bullets": [{"text": "Reduced API latency by 40 percent.", "evidence_ids": ["ev_2"]}],
+      "summary_items": [
+        {
+          "text": "Built reliable Python services.",
+          "evidence_ids": [
+            "ev_1"
+          ]
+        }
+      ],
+      "bullets": [
+        {
+          "text": "Reduced API latency by 40 percent.",
+          "evidence_ids": [
+            "ev_2"
+          ]
+        }
+      ],
       "evidence_needed": []
     }
   },
@@ -36,11 +58,66 @@
     "name": "reject unsupported evidence citation",
     "operation": "resume_tailor",
     "expected_pass": false,
-    "allowed_evidence_ids": ["ev_1"],
+    "allowed_evidence_ids": [
+      "ev_1"
+    ],
     "output": {
-      "summary_items": [{"text": "Generated unsupported claim.", "evidence_ids": ["ev_missing"]}],
+      "summary_items": [
+        {
+          "text": "Generated unsupported claim.",
+          "evidence_ids": [
+            "ev_missing"
+          ]
+        }
+      ],
       "bullets": [],
       "evidence_needed": []
     }
+  },
+  {
+    "name": "source_tailoring_supported_replacement",
+    "operation": "resume_tailor",
+    "allowed_evidence_ids": [
+      "ev_1"
+    ],
+    "output": {
+      "format_preservation": "source",
+      "source_format": "docx",
+      "source_edits": [
+        {
+          "unit_id": "docx:source:paragraph",
+          "original_text": "Developed reliable Python services for customers.",
+          "replacement_text": "Built reliable Python services for customers.",
+          "evidence_ids": [
+            "ev_1"
+          ],
+          "reason": "Highlights implementation relevant to the role."
+        }
+      ]
+    },
+    "expected_pass": true
+  },
+  {
+    "name": "source_tailoring_rejects_foreign_evidence",
+    "operation": "resume_tailor",
+    "allowed_evidence_ids": [
+      "ev_1"
+    ],
+    "output": {
+      "format_preservation": "source",
+      "source_format": "docx",
+      "source_edits": [
+        {
+          "unit_id": "docx:source:paragraph",
+          "original_text": "Developed reliable Python services for customers.",
+          "replacement_text": "Built reliable Python services for customers.",
+          "evidence_ids": [
+            "ev_foreign"
+          ],
+          "reason": "Highlights implementation relevant to the role."
+        }
+      ]
+    },
+    "expected_pass": false
   }
 ]
