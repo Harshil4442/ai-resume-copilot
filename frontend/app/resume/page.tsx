@@ -2,12 +2,15 @@
 
 import { AlertCircle, ArrowRight, CheckCircle2, FileText, FileUp, ShieldCheck, Target } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { Button } from "../../components/ui/Button";
+import { LoadingBlock } from "../../components/ui/LoadingBlock";
 import { trackEvent } from "../../lib/analytics";
-import { apiPostForm } from "../../lib/api";
+import { apiPatchJson, apiPostForm } from "../../lib/api";
+import type { Opportunity, OpportunityDetail } from "../../lib/career";
 import type { ResumeParseResponse } from "../../lib/types";
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
@@ -16,17 +19,25 @@ const ACCEPTED_TYPES = new Set([
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 ]);
 
-export default function ResumePage() {
+function ResumeUploadContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const requestedOpportunity = searchParams.get("opportunity");
+  const opportunityId = requestedOpportunity && /^opp_[A-Za-z0-9_-]{1,60}$/.test(requestedOpportunity) ? requestedOpportunity : null;
   const queryClient = useQueryClient();
   const [file, setFile] = useState<File | null>(null);
   const [data, setData] = useState<ResumeParseResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
+  const [connecting, setConnecting] = useState(false);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
 
   function chooseFile(candidate: File | null) {
+    if (loading || connecting) return;
     setData(null);
     setError(null);
+    setConnectionError(null);
     if (!candidate) {
       setFile(null);
       return;
@@ -57,6 +68,7 @@ export default function ResumePage() {
     event.preventDefault();
     if (!file) return;
     setError(null);
+    setConnectionError(null);
     setData(null);
     setLoading(true);
     trackEvent("resume_upload_started", { file_type: file.type, size_bytes: file.size });
@@ -79,6 +91,28 @@ export default function ResumePage() {
     }
   }
 
+  async function connectUploadedResume() {
+    if (!opportunityId || !data?.source_available || !data.source_format) return;
+    setConnectionError(null);
+    setConnecting(true);
+    try {
+      const updated = await apiPatchJson<Opportunity>(`/v1/opportunities/${encodeURIComponent(opportunityId)}`, { resume_id: data.resume_id });
+      await queryClient.cancelQueries({ queryKey: ["opportunity", opportunityId] });
+      queryClient.setQueryData<OpportunityDetail>(["opportunity", opportunityId], (cached) => cached ? { ...cached, ...updated } : undefined);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["opportunity", opportunityId] }),
+        queryClient.invalidateQueries({ queryKey: ["opportunities"] }),
+        queryClient.invalidateQueries({ queryKey: ["opportunity-match", opportunityId] }),
+        queryClient.invalidateQueries({ queryKey: ["resumes"] }),
+      ]);
+      router.push(`/workspace/${encodeURIComponent(opportunityId)}?tab=resume`);
+    } catch (connectionFailure) {
+      setConnectionError(connectionFailure instanceof Error ? connectionFailure.message : "Could not connect this resume to your opportunity.");
+    } finally {
+      setConnecting(false);
+    }
+  }
+
   return (
     <main className="app-page">
       <div className="page-container">
@@ -87,6 +121,7 @@ export default function ResumePage() {
             <p className="eyebrow">Resume evidence</p>
             <h1 className="font-display mt-2 text-4xl font-normal text-foreground sm:text-5xl">Add your source resume</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">HireWiz keeps your original file privately and extracts a working copy. Approve the facts to use, then review changes to existing text before downloading in the same file format.</p>
+            {opportunityId ? <div className="mt-4 text-sm leading-6 text-muted-foreground"><p>Upload your original resume, then use it for the opportunity you came from. Import and approve the new upload&apos;s facts to enable tailoring.</p><Link href={`/workspace/${encodeURIComponent(opportunityId)}?tab=resume`} className="mt-2 inline-flex font-semibold text-primary hover:underline">Back to your opportunity</Link></div> : null}
           </div>
           <div className="flex gap-5 text-xs text-muted-foreground">
             <span className="flex items-center gap-2"><ShieldCheck size={16} className="text-primary" /> PDF or DOCX</span>
@@ -103,12 +138,12 @@ export default function ResumePage() {
               onDragOver={handleDrag}
               onDrop={handleDrop}
             >
-              <input className="sr-only" type="file" accept="application/pdf,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={(event) => chooseFile(event.target.files?.[0] || null)} />
+              <input className="sr-only" type="file" accept="application/pdf,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" disabled={loading || connecting} onChange={(event) => chooseFile(event.target.files?.[0] || null)} />
               <span className="icon-tile h-12 w-12">{file ? <FileText size={22} /> : <FileUp size={22} />}</span>
               <h2 className="font-display mt-5 max-w-full break-words text-lg font-normal text-foreground">{file ? file.name : "Choose a resume"}</h2>
               <p className="mt-2 text-sm text-muted-foreground">{file ? `${(file.size / 1024 / 1024).toFixed(2)} MB, ready to parse` : "Drop the file here or open your file browser"}</p>
             </label>
-            <Button type="submit" className="mt-4 w-full" disabled={!file || loading}>
+            <Button type="submit" className="mt-4 w-full" disabled={!file || loading || connecting}>
               {loading ? "Extracting evidence..." : "Parse resume"} <ArrowRight size={16} />
             </Button>
             {error ? <div className="mt-4 flex gap-3 border border-coral/30 bg-coral/5 p-4 text-sm text-coral" role="alert"><AlertCircle size={18} className="shrink-0" /> {error}</div> : null}
@@ -138,8 +173,9 @@ export default function ResumePage() {
                 </div>
               </div>
               <div className="grid min-w-60 gap-2">
-                <Button asChild><Link href="/workspace?new=1"><Target size={16} /> Add target role</Link></Button>
+                {opportunityId ? <Button onClick={() => void connectUploadedResume()} disabled={connecting || !data.source_available || !data.source_format}><Target size={16} /> {connecting ? "Connecting resume..." : "Use for this opportunity"}</Button> : <Button asChild><Link href="/workspace?new=1"><Target size={16} /> Add target role</Link></Button>}
                 <Button asChild variant="secondary"><Link href={`/resume/preview?resume=${data.resume_id}`}><FileText size={16} /> View original resume</Link></Button>
+                {connectionError ? <p className="text-sm leading-6 text-coral" role="alert">{connectionError} Your upload is saved. Retry connecting it.</p> : null}
               </div>
             </div>
           </section>
@@ -147,4 +183,8 @@ export default function ResumePage() {
       </div>
     </main>
   );
+}
+
+export default function ResumePage() {
+  return <Suspense fallback={<main className="app-page"><div className="page-container"><LoadingBlock rows={5} /></div></main>}><ResumeUploadContent /></Suspense>;
 }
