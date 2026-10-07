@@ -222,8 +222,12 @@ pydantic-core==2.46.4
     # via pydantic
 pygments==2.20.0
     # via rich
+pypdf==6.19.0
+    # via hirewiz-backend
 pypdfium2==5.12.1
-    # via pdfplumber
+    # via
+    #   hirewiz-backend
+    #   pdfplumber
 python-docx==1.2.0
     # via hirewiz-backend
 python-dotenv==1.2.2

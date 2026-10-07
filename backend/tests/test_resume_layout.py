@@ -21,6 +21,14 @@ from docx.oxml.ns import qn
 from docx.shared import Inches, Pt
 from lxml import etree
 from PIL import Image, ImageChops, ImageDraw
+from pypdf import PdfReader, PdfWriter
+from pypdf.generic import (
+    ArrayObject,
+    DecodedStreamObject,
+    DictionaryObject,
+    NameObject,
+    NumberObject,
+)
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -209,6 +217,160 @@ def test_pdf_rejects_overflow_and_leaves_original_unchanged():
             source, "pdf", [_edit(_first_unit(source, "pdf"), "Built " + "wide systems " * 20)]
         )
     assert _first_unit(source, "pdf")["text"] == ORIGINAL
+
+
+def _pdf_line(text: str, *, obstruction: bool = False) -> bytes:
+    output = BytesIO()
+    canvas = Canvas(output, pagesize=(612, 792), invariant=True)
+    canvas.setFont("Times-Roman", 11)
+    canvas.drawString(60, 620, text)
+    if obstruction:
+        # Below the original ink, but inside the font's descender envelope.
+        canvas.rect(60, 617.35, 200, 0.4, stroke=0, fill=1)
+    canvas.save()
+    return output.getvalue()
+
+
+@pytest.mark.parametrize(
+    "original,replacement,changed_edge",
+    [
+        ("Created stable interfaces with SQL.", "Built stable interfaces with SQL.", "left"),
+        ("Built stable interfaces with SQL.", "Built easy interfaces with SQL.", "bottom"),
+    ],
+)
+def test_pdf_safe_edits_use_font_envelope_instead_of_original_ink_bounds(
+    original, replacement, changed_edge
+):
+    source = _pdf_line(original)
+    unit = extract_source_units(source, "pdf")[0]
+    before = _pdf_snapshot(source)[0]
+    result = apply_source_edits(source, "pdf", [_edit(unit, replacement)])
+    after = _pdf_snapshot(result)[0]
+    old, new = before["objects"][0], after["objects"][0]
+    assert old[0] == original and new[0] == replacement
+    assert new[2:] == old[2:]  # Font, font size and baseline/matrix are unchanged.
+    assert new[1][2] <= old[1][2] + 0.1
+    if changed_edge == "left":
+        # B has a smaller left ink bearing than C at the exact same baseline.
+        assert new[1][0] < old[1][0] - 0.1
+    else:
+        assert "y" not in original and "y" in replacement
+        assert new[1][1] < old[1][1] - 0.1
+    assert after["text"].count(replacement) == 1
+    assert original not in after["text"]
+
+
+def test_pdf_font_envelope_does_not_allow_a_new_overlap_with_neighboring_content():
+    original = "Built stable interfaces with SQL."
+    replacement = "Built easy interfaces with SQL."
+    unobstructed = _pdf_line(original)
+    safe_unit = extract_source_units(unobstructed, "pdf")[0]
+    assert replacement in _pdf_snapshot(
+        apply_source_edits(unobstructed, "pdf", [_edit(safe_unit, replacement)])
+    )[0]["text"]
+
+    source = _pdf_line(original, obstruction=True)
+    unit = extract_source_units(source, "pdf")[0]
+    before = _pdf_snapshot(source)[0]
+    assert before["objects"][0][1][1] > 617.75  # No original overlap with the rectangle.
+    with pytest.raises(ResumeLayoutError, match="overlaps neighboring") as error:
+        apply_source_edits(source, "pdf", [_edit(unit, replacement)])
+    assert error.value.unit_id == unit["unit_id"]
+    after = _pdf_snapshot(source)[0]
+    assert after["text"] == before["text"]
+    assert after["image"].tobytes() == before["image"].tobytes()
+
+
+def _pdf_same_font_name_with_bullet_encoding() -> bytes:
+    writer = PdfWriter()
+    page = writer.add_blank_page(612, 792)
+    body_font = DictionaryObject(
+        {
+            NameObject("/Type"): NameObject("/Font"),
+            NameObject("/Subtype"): NameObject("/Type1"),
+            NameObject("/BaseFont"): NameObject("/Times-Roman"),
+            NameObject("/Encoding"): NameObject("/WinAnsiEncoding"),
+        }
+    )
+    bullet_font = DictionaryObject(
+        {
+            NameObject("/Type"): NameObject("/Font"),
+            NameObject("/Subtype"): NameObject("/Type1"),
+            NameObject("/BaseFont"): NameObject("/Times-Roman"),
+            NameObject("/Encoding"): DictionaryObject(
+                {
+                    NameObject("/Type"): NameObject("/Encoding"),
+                    NameObject("/BaseEncoding"): NameObject("/WinAnsiEncoding"),
+                    NameObject("/Differences"): ArrayObject(
+                        [NumberObject(1), NameObject("/bullet")]
+                    ),
+                }
+            ),
+        }
+    )
+    page[NameObject("/Resources")] = DictionaryObject(
+        {
+            NameObject("/Font"): DictionaryObject(
+                {
+                    NameObject("/FBody"): writer._add_object(body_font),
+                    NameObject("/FBullet"): writer._add_object(bullet_font),
+                }
+            )
+        }
+    )
+    stream = DecodedStreamObject()
+    stream.set_data(
+        b"BT /FBody 11 Tf 60 620 Td (Created stable interfaces with SQL.) Tj ET\n"
+        b"BT /FBullet 11 Tf 48 620 Td <01> Tj ET\n"
+    )
+    page[NameObject("/Contents")] = writer._add_object(stream)
+    output = BytesIO()
+    writer.write(output)
+    return output.getvalue()
+
+
+def test_pdf_edit_retains_untouched_bullet_resource_with_same_base_font_name():
+    source = _pdf_same_font_name_with_bullet_encoding()
+    unit = extract_source_units(source, "pdf")[0]
+    replacement = "Built stable interfaces with SQL."
+    before = _pdf_snapshot(source)[0]
+    result = apply_source_edits(source, "pdf", [_edit(unit, replacement)])
+    after = _pdf_snapshot(result)[0]
+    assert after["objects"][0][0] == replacement
+    assert before["objects"][1][0].strip() == "•"
+    assert after["objects"][1] == before["objects"][1]
+    bullet_crop = (90, 325, 108, 346)  # Twice the PDF coordinates around the bullet.
+    assert after["image"].crop(bullet_crop).tobytes() == before["image"].crop(
+        bullet_crop
+    ).tobytes()
+    assert before["image"].crop(bullet_crop).getextrema() != ((255, 255),) * 3
+    with BytesIO(source) as original_stream, BytesIO(result) as result_stream:
+        original_page = PdfReader(original_stream).pages[0]
+        result_page = PdfReader(result_stream).pages[0]
+        original_fonts = original_page["/Resources"]["/Font"]
+        result_fonts = result_page["/Resources"]["/Font"]
+        assert set(result_fonts) == set(original_fonts) == {"/FBody", "/FBullet"}
+        assert original_fonts["/FBody"]["/BaseFont"] == original_fonts["/FBullet"]["/BaseFont"]
+        for name in original_fonts:
+            assert result_fonts[name].get_object() == original_fonts[name].get_object()
+        assert result_fonts["/FBody"]["/Encoding"] != result_fonts["/FBullet"]["/Encoding"]
+
+
+def test_pdf_candidates_include_complete_line_context_and_supported_font_characters():
+    source = _pdf_same_font_name_with_bullet_encoding()
+    units = extract_source_units(source, "pdf")
+    assert len(units) == 1
+    unit = units[0]
+    assert unit["text"] == "Created stable interfaces with SQL."
+    assert unit["line_context"] == "• Created stable interfaces with SQL."
+    assert set(unit["text"]) <= set(unit["allowed_characters"])
+    assert "y" in unit["allowed_characters"] and "y" not in unit["text"]
+    assert "Ж" not in unit["allowed_characters"]
+    assert extract_source_units(source, "pdf") == units
+
+    subset_unit = _first_unit(_pdf(subset=True), "pdf")
+    assert set(subset_unit["text"]) <= set(subset_unit["allowed_characters"])
+    assert "Ж" not in subset_unit["allowed_characters"]
 
 
 def _docx() -> bytes:

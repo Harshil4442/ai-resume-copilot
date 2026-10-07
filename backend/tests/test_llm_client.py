@@ -45,6 +45,103 @@ def test_tailoring_returns_source_replacements_without_rebuilding_sections(monke
 
 
 @pytest.mark.parametrize(
+    "leading,trailing,provider_leading,provider_trailing",
+    [(" ", "", "", ""), ("", " ", "", ""), ("  ", "   ", " ", " "), ("", "", " ", " ")],
+)
+def test_tailoring_retains_exact_source_fragment_boundary_spaces(
+    monkeypatch, leading, trailing, provider_leading, provider_trailing
+):
+    inputs = _tailoring_input()
+    original = leading + inputs["source_units"][0]["text"] + trailing
+    replacement = _tailoring_edit()["replacement_text"]
+    source_unit = {
+        "unit_id": "source-body",
+        "text": original,
+        "max_chars": len(original),
+        "line_context": f"Earlier fragment {original} later fragment",
+        "allowed_characters": "".join(sorted(set(original + replacement))),
+    }
+    inputs["source_units"] = [source_unit]
+    edit = {
+        **_tailoring_edit(),
+        "original_text": original,
+        "replacement_text": provider_leading + replacement + provider_trailing,
+    }
+    calls = []
+
+    def chat(messages):
+        calls.append(messages)
+        return json.dumps({"source_edits": [edit]})
+
+    monkeypatch.setattr(llm_client, "_chat", chat)
+    result = llm_client.tailor_resume_from_evidence(**inputs)
+
+    assert result["source_edits"] == [{**edit, "replacement_text": leading + replacement + trailing}]
+    assert len(calls) == 1
+    supplied_units = json.loads(calls[0][1]["content"].split("EDITABLE SOURCE UNITS:\n", 1)[1])
+    assert supplied_units == [source_unit]
+
+
+def test_tailoring_counts_source_boundary_spaces_against_the_fragment_length(monkeypatch):
+    inputs = _tailoring_input()
+    original = "  Built reliable Python services for customers.  "
+    replacement = "Created reliable Python services for customers."
+    inputs["source_units"][0].update(text=original, max_chars=len(original))
+    inputs["approved_evidence"][0]["text"] = original
+    edit = {**_tailoring_edit(), "original_text": original, "replacement_text": replacement}
+    assert len(replacement) <= len(original)
+    monkeypatch.setattr(llm_client, "_chat", lambda messages: json.dumps({"source_edits": [edit]}))
+
+    with pytest.raises(llm_client.TailoringOutputError, match="including boundary spacing") as error:
+        llm_client.tailor_resume_from_evidence(**inputs)
+
+    assert error.value.unit_id == "source-body"
+
+
+@pytest.mark.parametrize(
+    "replacement,unavailable_character",
+    [
+        ("Built Python services and reduced response time by 20%.", "B"),
+        ("Built Python services; reduced response time by 20%.", ";"),
+    ],
+)
+def test_tailoring_rejects_grounded_text_with_unavailable_subset_font_characters(
+    monkeypatch, replacement, unavailable_character
+):
+    inputs = _tailoring_input()
+    original = inputs["source_units"][0]["text"]
+    inputs["source_units"][0]["allowed_characters"] = "".join(
+        sorted(set(original + replacement) - {unavailable_character})
+    )
+    assert unavailable_character not in original
+    edit = {**_tailoring_edit(), "replacement_text": replacement}
+    calls = []
+
+    def chat(messages):
+        calls.append(messages)
+        return json.dumps({"source_edits": [edit]})
+
+    monkeypatch.setattr(llm_client, "_chat", chat)
+    with pytest.raises(llm_client.TailoringOutputError, match="characters available in the source font") as error:
+        llm_client.tailor_resume_from_evidence(**inputs)
+
+    assert error.value.unit_id == "source-body"
+    assert len(calls) == 1
+
+
+def test_tailoring_line_context_does_not_authorize_new_facts_in_a_fragment(monkeypatch):
+    inputs = _tailoring_input()
+    inputs["source_units"][0]["line_context"] = "Developed Python services alongside a Java platform."
+    edit = {**_tailoring_edit(), "replacement_text": "Built Java services and reduced response time by 20%."}
+    monkeypatch.setattr(llm_client, "_chat", lambda messages: json.dumps({"source_edits": [edit]}))
+
+    with pytest.raises(llm_client.TailoringOutputError, match="factual skill or named term") as error:
+        llm_client.tailor_resume_from_evidence(**inputs)
+
+    assert error.value.unit_id == "source-body"
+
+
+@pytest.mark.parametrize(
     "updates",
     [
         {"unit_id": "foreign-source"},
@@ -135,6 +232,59 @@ def test_tailoring_accepts_grounded_aliases_and_normal_action_verb_paraphrases(m
     monkeypatch.setattr(llm_client, "_chat", lambda messages: json.dumps({"source_edits": [edit]}))
     result = llm_client.tailor_resume_from_evidence(**inputs)
     assert result["source_edits"] == [edit]
+
+
+@pytest.mark.parametrize(
+    "source_term,replacement_term",
+    [("APIs", "APIs"), ("APIs", "API"), ("API", "APIs"), ("SOPs", "SOPs"),
+     ("SDKs", "SDK"), ("JWTs", "JWT"), ("JWT", "JWTs"), ("SQLs", "SQL"),
+     ("CloudNovaSDKs", "CloudNovaSDKs")],
+)
+def test_tailoring_accepts_grounded_complete_acronym_and_original_brand_tokens(
+    monkeypatch, source_term, replacement_term
+):
+    original = f"Developed reliable {source_term} for customers and improved system performance."
+    replacement = f"Built reliable {replacement_term} for customers and improved system performance."
+    inputs = _tailoring_input()
+    inputs["source_units"][0]["text"] = original
+    inputs["approved_evidence"][0]["text"] = original
+    edit = {**_tailoring_edit(), "original_text": original, "replacement_text": replacement}
+    monkeypatch.setattr(llm_client, "_chat", lambda messages: json.dumps({"source_edits": [edit]}))
+    assert llm_client.tailor_resume_from_evidence(**inputs)["source_edits"] == [edit]
+
+
+@pytest.mark.parametrize("support_field", ["text", "skills"])
+def test_tailoring_accepts_acronym_plural_support_from_only_the_cited_evidence(monkeypatch, support_field):
+    inputs = _tailoring_input()
+    if support_field == "text":
+        inputs["approved_evidence"][0]["text"] += " Built reliable APIs."
+    else:
+        inputs["approved_evidence"][0]["skills"] = ["APIs"]
+    edit = {**_tailoring_edit(), "replacement_text": "Built API services and reduced response time by 20%."}
+    monkeypatch.setattr(llm_client, "_chat", lambda messages: json.dumps({"source_edits": [edit]}))
+    assert llm_client.tailor_resume_from_evidence(**inputs)["source_edits"] == [edit]
+
+
+@pytest.mark.parametrize("source_term,replacement_term", [("AWS", "AW"), ("APIsExtra", "API"), ("MySQL", "SQLs"), ("API", "ZPXs")])
+def test_tailoring_acronym_plural_support_does_not_match_other_complete_tokens(monkeypatch, source_term, replacement_term):
+    original = f"Developed reliable {source_term} services for customers and improved performance."
+    replacement = f"Built reliable {replacement_term} services for customers and improved performance."
+    inputs = _tailoring_input()
+    inputs["source_units"][0]["text"] = original
+    inputs["approved_evidence"][0]["text"] = original
+    edit = {**_tailoring_edit(), "original_text": original, "replacement_text": replacement}
+    monkeypatch.setattr(llm_client, "_chat", lambda messages: json.dumps({"source_edits": [edit]}))
+    with pytest.raises(llm_client.TailoringOutputError, match="factual skill or named term"):
+        llm_client.tailor_resume_from_evidence(**inputs)
+
+
+def test_tailoring_plural_acronym_does_not_borrow_unreferenced_evidence(monkeypatch):
+    inputs = _tailoring_input()
+    inputs["approved_evidence"].append({"id": "evd_apis", "text": "Built APIs.", "skills": ["API"]})
+    edit = {**_tailoring_edit(), "replacement_text": "Built APIs and reduced response time by 20%."}
+    monkeypatch.setattr(llm_client, "_chat", lambda messages: json.dumps({"source_edits": [edit]}))
+    with pytest.raises(llm_client.TailoringOutputError, match="factual skill or named term"):
+        llm_client.tailor_resume_from_evidence(**inputs)
 
 
 def test_gemini_transient_failure_uses_next_stable_model(monkeypatch):
