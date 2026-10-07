@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from io import BytesIO
 
 import pytest
@@ -10,6 +11,7 @@ from backend.app.domains.analysis import service as analysis_service
 from backend.app.models import (
     AnalysisRun,
     EvidenceItem,
+    ModelCallEvent,
     Opportunity,
     Resume,
     ResumeVersion,
@@ -18,6 +20,7 @@ from backend.app.models import (
 )
 from backend.app.services import llm_client
 from backend.app.services.resume_artifacts import render_resume_version
+from backend.app.services.resume_layout import ResumeLayoutError
 from docx import Document as DocxDocument
 from fastapi import HTTPException
 from sqlalchemy import create_engine
@@ -430,6 +433,7 @@ def test_evidence_tailoring_creates_a_traceable_version_and_commits_once(monkeyp
             assert run.usage_state == "committed"
             assert run.committed_units == 10
             assert run.attempt_count == 1
+            assert run.prompt_version == "resume-source-v3"
             assert db.get(User, 1).ai_credits == 40
             assert version.generation_run_id == run_id
             assert version.evidence_ids == ["evd_approved"]
@@ -573,6 +577,139 @@ def test_native_tailoring_repairs_an_unsafe_edit_and_commits_one_charge(monkeypa
             events = db.query(UsageEvent).order_by(UsageEvent.created_at).all()
             assert [event.event_type for event in events] == ["reserve", "commit"]
             assert [event.amount for event in events] == [-10, 0]
+    finally:
+        engine.dispose()
+
+
+def test_failed_tailoring_keeps_layout_diagnostics_and_cause_after_rollback(monkeypatch, caplog):
+    engine, factory = _database()
+    monkeypatch.setattr(tasks, "SessionLocal", factory)
+    repair_notes = []
+    unit_ids = []
+    errors = []
+    execute = tasks.execute_operation
+
+    def invalid_tailor(**kwargs):
+        repair_notes.append(kwargs["repair_note"])
+        response = _source_edit_response(
+            kwargs["source_units"], replacement=TAILORED_EXPERIENCE * 5
+        )
+        unit_ids.append(response["source_edits"][0]["unit_id"])
+        return response
+
+    def capture_failure(db, run):
+        try:
+            return execute(db, run)
+        except llm_client.TailoringOutputError as exc:
+            errors.append(exc)
+            raise
+
+    monkeypatch.setattr(llm_client, "tailor_resume_from_evidence", invalid_tailor)
+    monkeypatch.setattr(tasks, "execute_operation", capture_failure)
+    try:
+        run_id = _create_tailoring_run(factory)
+        with caplog.at_level(logging.WARNING, logger="hirewiz.analysis.operations"):
+            assert tasks.process_analysis_run(run_id) == "failed"
+            assert tasks.process_analysis_run(run_id) == "failed"
+        assert len(errors) == 1
+        cause = errors[0].__cause__
+        assert isinstance(cause, ResumeLayoutError)
+        assert cause.unit_id == unit_ids[0]
+        assert repair_notes[0] == ""
+        assert repair_notes[1].startswith(f"Source unit {unit_ids[0]}:")
+        diagnostic_messages = [
+            record.getMessage() for record in caplog.records
+            if record.name == "hirewiz.analysis.operations"
+        ]
+        assert len(diagnostic_messages) == 2
+        assert all(f"run_id={run_id}" in message for message in diagnostic_messages)
+        assert all("type=ResumeLayoutError" in message for message in diagnostic_messages)
+        assert all("reason=docx_paragraph_overflow" in message for message in diagnostic_messages)
+        assert all(f"unit_id={unit_ids[0]}" in message for message in diagnostic_messages)
+        assert all("source_units=1 edits=1" in message for message in diagnostic_messages)
+        assert SOURCE_EXPERIENCE not in caplog.text
+        assert TAILORED_EXPERIENCE not in caplog.text
+        with factory() as db:
+            run = db.get(AnalysisRun, run_id)
+            assert run.usage_state == "released" and run.committed_units == 0
+            assert run.error_code == "TailoringOutputError"
+            assert run.error_message == "Could not apply useful changes while preserving the resume format"
+            assert run.result_payload is None
+            assert db.query(ResumeVersion).count() == 0
+            assert db.query(ModelCallEvent).count() == 0
+            assert db.get(User, 1).ai_credits == 50
+            events = db.query(UsageEvent).order_by(UsageEvent.created_at).all()
+            assert [event.event_type for event in events] == ["reserve", "release"]
+            assert [event.amount for event in events] == [-10, 10]
+    finally:
+        engine.dispose()
+
+
+def test_zero_edit_provider_output_keeps_private_diagnostics_and_refunds(monkeypatch, caplog):
+    engine, factory = _database()
+    monkeypatch.setattr(tasks, "SessionLocal", factory)
+    calls = []
+    errors = []
+    execute = tasks.execute_operation
+
+    def zero_edits(messages):
+        calls.append(messages)
+        return json.dumps({"source_edits": [], "evidence_needed": []})
+
+    def capture_failure(db, run):
+        try:
+            return execute(db, run)
+        except llm_client.TailoringOutputError as exc:
+            errors.append(exc)
+            raise
+
+    monkeypatch.setattr(llm_client, "_chat", zero_edits)
+    monkeypatch.setattr(tasks, "execute_operation", capture_failure)
+    try:
+        run_id = _create_tailoring_run(factory)
+        with caplog.at_level(logging.WARNING, logger="hirewiz.analysis.operations"):
+            assert tasks.process_analysis_run(run_id) == "failed"
+        assert len(calls) == 2 and len(errors) == 1
+        assert isinstance(errors[0].__cause__, llm_client.TailoringOutputError)
+        assert str(errors[0].__cause__) == "Return between one and twelve useful source replacements"
+        diagnostics = [record.getMessage() for record in caplog.records
+                       if record.name == "hirewiz.analysis.operations"]
+        assert len(diagnostics) == 2
+        assert all("reason=invalid_edit_count" in message for message in diagnostics)
+        assert all("unit_id=none" in message for message in diagnostics)
+        assert SOURCE_EXPERIENCE not in caplog.text
+        assert TAILORED_EXPERIENCE not in caplog.text
+        with factory() as db:
+            run = db.get(AnalysisRun, run_id)
+            assert run.usage_state == "released" and run.committed_units == 0
+            assert db.query(ResumeVersion).count() == 0
+            assert db.query(ModelCallEvent).count() == 0
+            assert db.get(User, 1).ai_credits == 50
+    finally:
+        engine.dispose()
+
+
+def test_tailoring_diagnostics_and_repair_exclude_unknown_unit_identity(monkeypatch, caplog):
+    engine, factory = _database()
+    monkeypatch.setattr(tasks, "SessionLocal", factory)
+    unknown_unit = "untrusted-private-unit@example.com"
+    repair_notes = []
+
+    def invalid_tailor(**kwargs):
+        repair_notes.append(kwargs["repair_note"])
+        error = llm_client.TailoringOutputError("Return a JSON object containing source_edits")
+        error.unit_id = unknown_unit
+        raise error
+
+    monkeypatch.setattr(llm_client, "tailor_resume_from_evidence", invalid_tailor)
+    try:
+        run_id = _create_tailoring_run(factory)
+        with caplog.at_level(logging.WARNING, logger="hirewiz.analysis.operations"):
+            assert tasks.process_analysis_run(run_id) == "failed"
+        assert len(repair_notes) == 2
+        assert unknown_unit not in " ".join(repair_notes)
+        assert unknown_unit not in caplog.text
+        assert "reason=invalid_output_format unit_id=none" in caplog.text
     finally:
         engine.dispose()
 

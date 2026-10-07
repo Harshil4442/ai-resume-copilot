@@ -33,6 +33,10 @@ class InterviewOutputError(ValueError):
 class TailoringOutputError(ValueError):
     """The provider did not produce safe, source-linked resume replacements."""
 
+    def __init__(self, message: str, *, unit_id: str | None = None) -> None:
+        super().__init__(message)
+        self.unit_id = unit_id
+
 
 def _gemini_error_disposition(exc: Exception) -> tuple[bool, bool]:
     """Return whether to try another model and whether the task should retry."""
@@ -409,6 +413,21 @@ def _factual_term_pattern(term: str) -> re.Pattern:
     return re.compile(rf"(?<![\w+#]){re.escape(term)}(?![\w+#])", re.IGNORECASE)
 
 
+def _factual_acronym_base(term: str) -> str | None:
+    if re.fullmatch(r"[A-Z][A-Z0-9]{1,}s", term):
+        return term[:-1]
+    if re.fullmatch(r"[A-Z][A-Z0-9]{1,}", term):
+        return term
+    return None
+
+
+def _factual_acronym_pattern(base: str) -> re.Pattern:
+    # Only a lowercase plural suffix is optional: AWS is not a plural of AW.
+    # Matching still uses whole technical tokens, preserving MySQL vs SQL and
+    # the symbol boundaries used for C/C++/C#.
+    return re.compile(rf"(?<![\w+#])(?i:{re.escape(base)})(?:s)?(?![\w+#])")
+
+
 @lru_cache(maxsize=1)
 def _factual_skill_patterns() -> tuple[tuple[str, tuple[re.Pattern, ...]], ...]:
     from .market.skill_taxonomy import SKILL_TAXONOMY, all_search_terms
@@ -424,7 +443,15 @@ def _factual_skill_patterns() -> tuple[tuple[str, tuple[re.Pattern, ...]], ...]:
         if skill not in ambiguous
     }
     return tuple(
-        (canonical, tuple(_factual_term_pattern(term) for term in terms))
+        (
+            canonical,
+            tuple(
+                _factual_acronym_pattern(term)
+                if _factual_acronym_base(term) == term
+                else _factual_term_pattern(term)
+                for term in terms
+            ),
+        )
         for canonical, terms in all_search_terms().items()
         if canonical in skills
     )
@@ -452,14 +479,15 @@ def _validate_factual_terms(original: str, replacement: str, cited_evidence: lis
         if any(start <= match.start() and match.end() <= end for start, end in grounded_skill_spans):
             continue
         term = match.group()
-        acronym_plural = term.endswith("s") and len(term) > 2 and term[:-1].isupper()
-        acronym = (len(term) >= 2 and term.isupper()) or acronym_plural
+        acronym_base = _factual_acronym_base(term)
         brand = bool(re.search(r"[a-z][A-Z]|[A-Za-z]\d", term))
         prefix = replacement[:match.start()].rstrip()
         sentence_initial = not prefix or prefix[-1] in ".!?;:•●▪◦-*"
         proper_name = term[0].isupper() and not sentence_initial
-        support_term = term[:-1] if acronym_plural else term
-        if (acronym or brand or proper_name) and not _factual_term_pattern(support_term).search(support):
+        supported = _factual_term_pattern(term).search(support) or (
+            acronym_base is not None and _factual_acronym_pattern(acronym_base).search(support)
+        )
+        if (acronym_base or brand or proper_name) and not supported:
             raise TailoringOutputError(
                 "Every factual skill or named term must be supported by the original text or cited evidence"
             )
@@ -496,7 +524,14 @@ def tailor_resume_from_evidence(
         "Change only the text at the specified location, keeping surrounding context in mind. "
         "PDF units may be parts of a sentence with a particular bold or italic style; do not "
         "move words or facts between units. Copy original_text exactly from the source unit. "
-        "Prefer a few useful edits over rewriting everything. Return only a JSON object with "
+        "Use line_context to understand the whole sentence, but replace only the supplied unit. "
+        "Use only each unit's allowed_characters when provided: embedded fonts may lack letters. "
+        "Preserve leading and trailing spaces at fragment boundaries. Leave skills lists alone "
+        "unless a change adds clear, supported value. Prefer concise, natural wording in "
+        "experience or project passages rather than adding keywords to disconnected fragments. "
+        "Return between one and twelve useful source replacements. Prefer a few useful edits "
+        "over rewriting everything. Where the facts already match the job, make concise edits "
+        "that clarify the relevant work without changing its meaning. Return only a JSON object with "
         "source_edits [{unit_id,original_text,replacement_text,evidence_ids,reason}] and "
         "evidence_needed [string]. Every edit must cite approved evidence IDs. "
         "Put unsupported job requirements in evidence_needed, never in the resume."
@@ -553,7 +588,15 @@ def tailor_resume_from_evidence(
             or len(replacement) > len(original)
             or any(ord(character) < 32 for character in replacement)
         ):
-            raise TailoringOutputError("Replacements must change the text and fit its original length")
+            raise TailoringOutputError("Replacements must change the text and fit its original length", unit_id=unit_id)
+        # Boundary spaces may be encoded as positioned gaps in a PDF rather
+        # than literal glyphs. Retain the source's exact fragment boundaries.
+        replacement = original[:len(original) - len(original.lstrip())] + replacement.strip() + original[len(original.rstrip()):]
+        if len(replacement) > len(original):
+            raise TailoringOutputError("Replacements must fit their original length including boundary spacing", unit_id=unit_id)
+        allowed_characters = units[unit_id].get("allowed_characters")
+        if isinstance(allowed_characters, str) and any(char not in allowed_characters for char in replacement):
+            raise TailoringOutputError("Use only characters available in the source font", unit_id=unit_id)
         if Counter(re.findall(number_pattern, original)) != Counter(re.findall(number_pattern, replacement)):
             raise TailoringOutputError("Preserve all original numbers, dates, and metrics exactly")
         if not isinstance(reason, str) or not reason.strip():
@@ -564,12 +607,16 @@ def tailor_resume_from_evidence(
             or any(not isinstance(value, str) or value not in allowed for value in ids)
         ):
             raise TailoringOutputError("Every replacement must cite supplied approved evidence")
-        _validate_factual_terms(original, replacement, [allowed[value] for value in ids])
+        try:
+            _validate_factual_terms(original, replacement, [allowed[value] for value in ids])
+        except TailoringOutputError as exc:
+            exc.unit_id = unit_id
+            raise
         seen.add(unit_id)
         edits.append({
             "unit_id": unit_id,
             "original_text": original,
-            "replacement_text": replacement.strip(),
+            "replacement_text": replacement,
             "evidence_ids": list(dict.fromkeys(ids)),
             "reason": reason.strip()[:1000],
         })

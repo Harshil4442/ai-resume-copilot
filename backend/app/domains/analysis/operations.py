@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import inspect
 import json
+import logging
 import os
 import time
 from typing import Any
@@ -22,6 +23,35 @@ from ...services.matching import (
 from ..career.service import calculate_skill_roi, get_opportunity
 from ..common import public_id, utcnow
 from .evaluation import validate_evidence_output, validate_match_output
+
+log = logging.getLogger("hirewiz.analysis.operations")
+_TAILORING_VALIDATION_REASONS = {
+    "Return a JSON object containing source_edits": "invalid_output_format",
+    "Return between one and twelve useful source replacements": "invalid_edit_count",
+    "at least one source replacement is required": "invalid_edit_count",
+    "Every source replacement must be an object": "invalid_edit_item",
+    "Use each supplied source location at most once": "invalid_source_location",
+    "Copy original_text exactly from the source location": "source_text_mismatch",
+    "Replacements must change the text and fit its original length": "invalid_replacement_length",
+    "Replacements must fit their original length including boundary spacing": "invalid_replacement_length",
+    "Use only characters available in the source font": "missing_pdf_glyph",
+    "Preserve all original numbers, dates, and metrics exactly": "changed_source_numbers",
+    "Every replacement must explain its relevance to the role": "missing_edit_reason",
+    "Every replacement must cite supplied approved evidence": "unsupported_evidence",
+    "Every factual skill or named term must be supported by the original text or cited evidence": "unsupported_factual_term",
+    "The original source text no longer matches the proposed edit.": "source_text_mismatch",
+    "Source edits must preserve all original numbers and dates.": "changed_source_numbers",
+    "The original PDF font is missing a required glyph.": "missing_pdf_glyph",
+    "The original PDF whitespace cannot be retained safely.": "unsupported_pdf_whitespace",
+    "The original PDF word spacing cannot be retained safely.": "unsafe_pdf_word_spacing",
+    "The replacement does not fit its original PDF text slot.": "pdf_slot_overflow",
+    "Saved PDF text exceeds its original slot.": "pdf_slot_overflow",
+    "The replacement overlaps neighboring PDF content.": "pdf_content_overlap",
+    "The original PDF text stream cannot be updated safely.": "unsupported_pdf_text_stream",
+    "Saved PDF text or font differs from the accepted source edit.": "changed_pdf_text_or_style",
+    "The replacement is too long for its original DOCX paragraph.": "docx_paragraph_overflow",
+    "The PDF changed visually outside the accepted text slots.": "changed_pdf_layout",
+}
 
 OUTPUT_SCHEMAS: dict[str, dict[str, Any]] = {
     "job_match": {
@@ -468,7 +498,7 @@ def execute_resume_tailor(
     if not source_units:
         raise ResumeLayoutError("No source text can be edited while preserving this layout")
 
-    prompt_version = "resume-source-v2"
+    prompt_version = "resume-source-v3"
     _ensure_prompt_version(
         db,
         operation="resume_tailor",
@@ -479,7 +509,10 @@ def execute_resume_tailor(
     try:
         content = None
         repair_note = ""
+        last_validation_error: Exception | None = None
+        known_unit_ids = {unit["unit_id"] for unit in source_units}
         for _attempt in range(2):
+            candidate = None
             try:
                 candidate = tailor_resume_from_evidence(
                     job_title=opportunity.title,
@@ -501,9 +534,31 @@ def execute_resume_tailor(
                 content = candidate
                 break
             except (TailoringOutputError, ResumeLayoutError) as exc:
-                repair_note = str(exc)
+                last_validation_error = exc
+                unit_id = getattr(exc, "unit_id", None)
+                if not isinstance(unit_id, str) or unit_id not in known_unit_ids:
+                    unit_id = None
+                reason = _TAILORING_VALIDATION_REASONS.get(str(exc), "other_validation_failure")
+                proposed_edits = candidate.get("source_edits") if candidate is not None else None
+                edit_count = len(proposed_edits) if isinstance(proposed_edits, list) else "unknown"
+                # These controlled fields survive the worker's DB rollback and
+                # the JSON formatter; never log document or replacement text.
+                log.warning(
+                    "Tailoring validation rejected run_id=%s attempt=%d type=%s "
+                    "reason=%s unit_id=%s source_units=%d edits=%s",
+                    run.id,
+                    _attempt + 1,
+                    type(exc).__name__,
+                    reason,
+                    unit_id or "none",
+                    len(source_units),
+                    edit_count,
+                )
+                repair_note = f"Source unit {unit_id}: {exc}" if unit_id else str(exc)
         if content is None:
-            raise TailoringOutputError("Could not apply useful changes while preserving the resume format")
+            raise TailoringOutputError(
+                "Could not apply useful changes while preserving the resume format"
+            ) from last_validation_error
     except Exception as exc:
         _record_model_call(
             db,

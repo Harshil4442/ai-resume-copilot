@@ -29,6 +29,10 @@ from PIL import ImageChops, ImageDraw
 class ResumeLayoutError(ValueError):
     """The source or proposed edit cannot safely retain the original document."""
 
+    def __init__(self, message: str, *, unit_id: str | None = None) -> None:
+        super().__init__(message)
+        self.unit_id = unit_id
+
 
 # PDFium must not be called simultaneously from multiple threads, even for
 # different documents. All PDF operations in this module share this lock.
@@ -260,11 +264,28 @@ def _pdf_units(document: Any, source_bytes: bytes) -> list[dict[str, Any]]:
     units = []
     for page_index in range(len(document)):
         with closing(document[page_index]) as page, closing(page.get_textpage()) as textpage:
-            for object_index, obj in enumerate(_pdf_objects(page, textpage)):
+            objects = _pdf_objects(page, textpage)
+            texts = {
+                index: obj.extract()
+                for index, obj in enumerate(objects)
+                if obj.type == raw.FPDF_PAGEOBJ_TEXT
+            }
+            for object_index, obj in enumerate(objects):
                 if obj.type != raw.FPDF_PAGEOBJ_TEXT:
                     continue
-                text = obj.extract()
+                text = texts[object_index]
                 if _pdf_eligible(obj, text, page):
+                    matrix = obj.get_matrix()
+                    line = sorted(
+                        (
+                            (other.get_bounds()[0], texts[index].strip())
+                            for index, other in enumerate(objects)
+                            if index in texts
+                            and other.level == 0
+                            and abs(other.get_matrix().f - matrix.f) <= obj.get_font_size() * 0.3
+                        ),
+                        key=lambda entry: entry[0],
+                    )
                     units.append(
                         {
                             "unit_id": _unit_id(
@@ -282,9 +303,31 @@ def _pdf_units(document: Any, source_bytes: bytes) -> list[dict[str, Any]]:
                             "max_chars": len(text),
                             "fit_policy": "original_font_and_fixed_slot",
                             "preserve_numbers": True,
+                            "line_context": " ".join(value for _, value in line)[:1000],
+                            "allowed_characters": _pdf_allowed_characters(obj, text),
                         }
                     )
     return units
+
+
+def _pdf_allowed_characters(obj: Any, text: str) -> str:
+    # A subset font may contain only the letters used in the source. Tell the
+    # model what can be written natively; the renderer checks this again.
+    candidates = set(chr(value) for value in range(32, 127)) | set(text)
+    allowed = []
+    font = obj.get_font()
+    for char in sorted(candidates):
+        if char == " ":
+            allowed.append(char)
+            continue
+        if ord(char) > 0xFFFF or _CONTROL.search(char):
+            continue
+        width = ctypes.c_float()
+        if raw.FPDFFont_GetGlyphWidth(
+            font, ord(char), obj.get_font_size(), ctypes.byref(width)
+        ) and raw.FPDFFont_GetGlyphPath(font, ord(char), obj.get_font_size()):
+            allowed.append(char)
+    return "".join(allowed)
 
 
 def _color(obj: Any, getter: Any) -> tuple[int, ...]:
@@ -305,17 +348,138 @@ def _style(obj: Any) -> tuple[Any, ...]:
     )
 
 
-def _fits(old: tuple[float, ...], new: tuple[float, ...]) -> bool:
+def _pdf_line_slot(obj: Any, page: Any) -> tuple[float, ...]:
+    bounds = obj.get_bounds()
+    matrix = obj.get_matrix()
+    ascent, descent = ctypes.c_float(), ctypes.c_float()
+    font = obj.get_font()
+    if not (
+        raw.FPDFFont_GetAscent(font, obj.get_font_size(), ctypes.byref(ascent))
+        and raw.FPDFFont_GetDescent(font, obj.get_font_size(), ctypes.byref(descent))
+        and math.isfinite(ascent.value)
+        and math.isfinite(descent.value)
+        and ascent.value > 0
+        and descent.value <= 0
+    ):
+        return bounds
+    # Keep the original baseline and right boundary. Ink bearings/descenders
+    # vary with letters, so they are not the font's available line height.
+    return (
+        max(0, min(bounds[0], matrix.e)),
+        max(0, min(bounds[1], matrix.f + descent.value * matrix.d)),
+        min(page.get_width(), bounds[2]),
+        min(page.get_height(), max(bounds[3], matrix.f + ascent.value * matrix.d)),
+    )
+
+
+def _same_pdf_style(first: tuple[Any, ...], second: tuple[Any, ...]) -> bool:
+    # Original operators/resources are retained. Different TJ segmentation
+    # can change accumulated translations by one float32 ULP in PDFium.
+    # Keep font, size, colors, render mode and matrix scales exact; permit
+    # only subpixel translation precision, with an independent raster proof.
+    return (
+        first[:2] == second[:2]
+        and first[3:] == second[3:]
+        and first[2][:4] == second[2][:4]
+        and all(abs(a - b) <= 0.0001 for a, b in zip(first[2][4:], second[2][4:], strict=True))
+    )
+
+
+def _fits(slot: tuple[float, ...], new: tuple[float, ...]) -> bool:
     tolerance = 0.1  # float precision in PDFium's generated content
     return (
         all(math.isfinite(value) for value in new)
-        and 0 < new[2] - new[0] <= old[2] - old[0] + tolerance
-        and 0 < new[3] - new[1] <= old[3] - old[1] + tolerance
-        and new[0] >= old[0] - tolerance
-        and new[1] >= old[1] - tolerance
-        and new[2] <= old[2] + tolerance
-        and new[3] <= old[3] + tolerance
+        and 0 < new[2] - new[0] <= slot[2] - slot[0] + tolerance
+        and 0 < new[3] - new[1] <= slot[3] - slot[1] + tolerance
+        and new[0] >= slot[0] - tolerance
+        and new[1] >= slot[1] - tolerance
+        and new[2] <= slot[2] + tolerance
+        and new[3] <= slot[3] + tolerance
     )
+
+
+def _intersection(first: tuple[float, ...], second: tuple[float, ...]) -> tuple[float, ...] | None:
+    area = (
+        max(first[0], second[0]),
+        max(first[1], second[1]),
+        min(first[2], second[2]),
+        min(first[3], second[3]),
+    )
+    return area if area[2] - area[0] > 0.05 and area[3] - area[1] > 0.05 else None
+
+
+def _pdf_collision_bounds(obj: Any) -> tuple[float, ...]:
+    bounds = obj.get_bounds()
+    if obj.type == raw.FPDF_PAGEOBJ_PATH:
+        fill, stroke = ctypes.c_int(), ctypes.c_int()
+        width = ctypes.c_float()
+        if raw.FPDFPath_GetDrawMode(obj, ctypes.byref(fill), ctypes.byref(stroke)) and stroke.value:
+            if not raw.FPDFPageObj_GetStrokeWidth(obj, ctypes.byref(width)):
+                raise ResumeLayoutError("The PDF path stroke cannot be verified.")
+            matrix = obj.get_matrix()
+            scale = max(math.hypot(matrix.a, matrix.b), math.hypot(matrix.c, matrix.d))
+            padding = max(0.05, width.value * scale / 2)
+            bounds = (
+                bounds[0] - padding,
+                bounds[1] - padding,
+                bounds[2] + padding,
+                bounds[3] + padding,
+            )
+    return bounds
+
+
+def _check_pdf_collisions(
+    objects: list[Any], old_bounds: list[tuple[float, ...]], changed: dict[int, str]
+) -> None:
+    for index, unit_id in changed.items():
+        for other_index, other in enumerate(objects):
+            if index == other_index or other.level != 0:
+                continue
+            overlap = _intersection(objects[index].get_bounds(), _pdf_collision_bounds(other))
+            if overlap is None:
+                continue
+            previous = _intersection(old_bounds[index], old_bounds[other_index])
+            if previous is None or not _fits(previous, overlap):
+                raise ResumeLayoutError(
+                    "The replacement overlaps neighboring PDF content.", unit_id=unit_id
+                )
+
+
+def _pdf_text_cores(objects: list[Any], textpage: Any) -> dict[int, tuple[str, str]]:
+    """Exclude only a proven, extractor-generated trailing boundary space.
+
+    PDFium can assign the inferred gap between two text objects to the first
+    object's extracted string. A shorter adjacent edit can change that gap
+    without changing any source glyph. Actual encoded whitespace remains part
+    of the exact comparison, as do all internal generated word gaps.
+    """
+    ranges: dict[int, list[int]] = {}
+    for index in range(textpage.count_chars()):
+        identity = ctypes.cast(raw.FPDFText_GetTextObject(textpage, index), ctypes.c_void_p).value
+        if identity is not None:
+            ranges.setdefault(identity, []).append(index)
+    result = {}
+    for object_index, obj in enumerate(objects):
+        if obj.type != raw.FPDF_PAGEOBJ_TEXT:
+            continue
+        text = obj.extract()
+        identity = ctypes.cast(obj.raw, ctypes.c_void_p).value
+        indices = ranges.get(identity, []) if identity is not None else []
+        suffix = ""
+        if indices:
+            first, last = indices[0], indices[-1]
+            core = textpage.get_text_range(first, last - first + 1)
+            following = last + 1
+            if (
+                text == core + " "
+                and following < textpage.count_chars()
+                and raw.FPDFText_IsGenerated(textpage, following) == 1
+                and not raw.FPDFText_GetTextObject(textpage, following)
+                and textpage.get_text_range(following, 1) == " "
+            ):
+                text, suffix = core, " "
+        result[object_index] = (text, suffix)
+    return result
 
 
 def _word_gaps(obj: Any, textpage: Any) -> list[float]:
@@ -378,7 +542,15 @@ def _set_pdf_text(obj: Any, replacement: str) -> float | None:
             raise ResumeLayoutError("The original PDF word spacing cannot be retained safely.")
         restored_space = statistics.median(gaps)
         advances[" "] = restored_space
-    encoded = replacement.encode("utf-16-le") + b"\0\0"
+    written_text = replacement
+    if restored_space is not None:
+        # A missing space code can map to another TeX glyph (e.g. ß), even
+        # when its reported width is zero. Represent gaps with TJ positions,
+        # without ever writing a missing glyph into the source font.
+        written_text = replacement.replace(" ", "")
+        if replacement.startswith(" "):
+            raise ResumeLayoutError("The original PDF leading spacing cannot be retained safely.")
+    encoded = written_text.encode("utf-16-le") + b"\0\0"
     buffer = (raw.FPDF_WCHAR * (len(encoded) // ctypes.sizeof(raw.FPDF_WCHAR))).from_buffer_copy(
         encoded
     )
@@ -387,9 +559,11 @@ def _set_pdf_text(obj: Any, replacement: str) -> float | None:
     if restored_space is not None:
         position = 0.0
         positions = []
-        for char in replacement[:-1]:
+        for char in replacement:
+            if char != " ":
+                positions.append(position)
             position += advances[char]
-            positions.append(position)
+        positions = positions[1:]
         values = (ctypes.c_float * len(positions))(*positions)
         if not raw.FPDFText_SetPositions(obj, values, len(positions)):
             raise ResumeLayoutError("The original PDF word spacing cannot be retained safely.")
@@ -404,6 +578,8 @@ def _render(page: Any) -> Any:
 
 
 def _apply_pdf(source_bytes: bytes, edits: list[dict]) -> bytes:
+    from .pdf_streams import PdfStreamError, splice_pdf_text_streams
+
     with pdfium.PdfDocument(source_bytes) as document:
         _check_pdf(document)
         units = _pdf_units(document, source_bytes)
@@ -415,10 +591,24 @@ def _apply_pdf(source_bytes: bytes, edits: list[dict]) -> bytes:
             for unit in units
             if unit["unit_id"] in replacements
         }
+        target_ids = {
+            (unit["page_index"], unit["object_index"]): unit["unit_id"]
+            for unit in units
+            if unit["unit_id"] in replacements
+        }
+        stream_targets: dict[int, dict[int, str]] = {}
         snapshots: dict[int, dict[str, Any]] = {}
         for page_index in sorted({key[0] for key in targets}):
             with closing(document[page_index]) as page, closing(page.get_textpage()) as textpage:
                 objects = _pdf_objects(page, textpage)
+                ordinal = 0
+                stream_targets[page_index] = {}
+                for index, obj in enumerate(objects):
+                    if obj.type == raw.FPDF_PAGEOBJ_TEXT and obj.level == 0:
+                        if (page_index, index) in targets:
+                            stream_targets[page_index][ordinal] = target_ids[page_index, index]
+                        ordinal += 1
+                old_object_bounds = [_pdf_collision_bounds(obj) for obj in objects]
                 text_snapshot = {
                     index: (obj.extract(), obj.get_bounds(), _style(obj))
                     for index, obj in enumerate(objects)
@@ -431,34 +621,53 @@ def _apply_pdf(source_bytes: bytes, edits: list[dict]) -> bytes:
                     "texts": text_snapshot,
                     "slots": slots,
                     "spacing": {},
+                    "line_slots": {},
+                    "unit_ids": {},
+                    "text_cores": _pdf_text_cores(objects, textpage),
                 }
                 for object_index, obj in enumerate(objects):
                     replacement = targets.get((page_index, object_index))
                     if replacement is None:
                         continue
                     _, bounds, style = text_snapshot[object_index]
-                    restored_space = _set_pdf_text(obj, replacement)
+                    unit_id = target_ids[page_index, object_index]
+                    line_slot = _pdf_line_slot(obj, page)
+                    snapshots[page_index]["line_slots"][object_index] = line_slot
+                    snapshots[page_index]["unit_ids"][object_index] = unit_id
+                    try:
+                        restored_space = _set_pdf_text(obj, replacement)
+                    except ResumeLayoutError as exc:
+                        exc.unit_id = unit_id
+                        raise
                     if restored_space is not None:
                         snapshots[page_index]["spacing"][object_index] = restored_space
-                    if not _fits(bounds, obj.get_bounds()) or _style(obj) != style:
+                    new_bounds = obj.get_bounds()
+                    if not _fits(line_slot, new_bounds) or _style(obj) != style:
                         raise ResumeLayoutError(
-                            "The replacement does not fit its original PDF text slot."
+                            "The replacement does not fit its original PDF text slot.",
+                            unit_id=unit_id,
                         )
-                    slots.append(bounds)
-                # PDFium may otherwise lose an inherited color while rewriting
-                # a content stream (observed with LaTeX's colored Type1 links).
-                # Reassert the original text colors; saved style and render
-                # checks below still require unedited content to be identical.
-                for object_index, (_, _, style) in text_snapshot.items():
-                    obj = objects[object_index]
-                    if not raw.FPDFPageObj_SetFillColor(
-                        obj, *style[3]
-                    ) or not raw.FPDFPageObj_SetStrokeColor(obj, *style[4]):
-                        raise ResumeLayoutError("The original PDF text colors cannot be preserved.")
+                    slots.append(
+                        (
+                            min(bounds[0], new_bounds[0]),
+                            min(bounds[1], new_bounds[1]),
+                            max(bounds[2], new_bounds[2]),
+                            max(bounds[3], new_bounds[3]),
+                        )
+                    )
+                _check_pdf_collisions(objects, old_object_bounds, snapshots[page_index]["unit_ids"])
                 page.gen_content()
         output = BytesIO()
         document.save(output)
-        result = output.getvalue()
+        try:
+            # PDFium's page serializer can coalesce fonts with the same name
+            # but different encodings. Keep the source resources/content and
+            # transplant only the verified target text-show operands.
+            result = splice_pdf_text_streams(source_bytes, output.getvalue(), stream_targets)
+        except PdfStreamError as exc:
+            raise ResumeLayoutError(
+                "The original PDF text stream cannot be updated safely."
+            ) from exc
         _verify_pdf(source_bytes, result, len(document), snapshots, targets)
         return result
 
@@ -472,6 +681,7 @@ def _verify_pdf(
         for page_index, snapshot in snapshots.items():
             with closing(document[page_index]) as page, closing(page.get_textpage()) as textpage:
                 objects = _pdf_objects(page, textpage)
+                saved_cores = _pdf_text_cores(objects, textpage)
                 if (
                     page.get_size() != snapshot["size"]
                     or [obj.type for obj in objects] != snapshot["types"]
@@ -479,17 +689,30 @@ def _verify_pdf(
                     raise ResumeLayoutError(
                         "The PDF object structure changed during source editing."
                     )
-                for index, (old_text, old_bounds, old_style) in snapshot["texts"].items():
+                for index, (_old_text, old_bounds, old_style) in snapshot["texts"].items():
                     obj = objects[index]
-                    expected = targets.get((page_index, index), old_text)
-                    if obj.extract() != expected or _style(obj) != old_style:
+                    old_core, generated_suffix = snapshot["text_cores"][index]
+                    expected = targets.get((page_index, index), old_core)
+                    if (
+                        (page_index, index) in targets
+                        and generated_suffix
+                        and expected.endswith(generated_suffix)
+                    ):
+                        expected = expected[: -len(generated_suffix)]
+                    if saved_cores[index][0] != expected or not _same_pdf_style(
+                        _style(obj), old_style
+                    ):
                         raise ResumeLayoutError(
-                            "Saved PDF text or font differs from the accepted source edit."
+                            "Saved PDF text or font differs from the accepted source edit.",
+                            unit_id=snapshot["unit_ids"].get(index),
                         )
                     bounds = obj.get_bounds()
                     if (page_index, index) in targets:
-                        if not _fits(old_bounds, bounds):
-                            raise ResumeLayoutError("Saved PDF text exceeds its original slot.")
+                        if not _fits(snapshot["line_slots"][index], bounds):
+                            raise ResumeLayoutError(
+                                "Saved PDF text exceeds its original slot.",
+                                unit_id=snapshot["unit_ids"].get(index),
+                            )
                         if index in snapshot["spacing"]:
                             gaps = _word_gaps(obj, textpage)
                             if not gaps or any(
@@ -738,7 +961,8 @@ def _apply_docx(source_bytes: bytes, edits: list[dict]) -> bytes:
                 continue
             if not _docx_fit(unit["text"], replacement):
                 raise ResumeLayoutError(
-                    "The replacement is too long for its original DOCX paragraph."
+                    "The replacement is too long for its original DOCX paragraph.",
+                    unit_id=unit["unit_id"],
                 )
             paragraph = paragraphs[unit["paragraph_index"]]
             nodes = _paragraph_nodes(paragraph)
