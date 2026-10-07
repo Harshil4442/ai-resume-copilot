@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+
+import pytest
 from backend.app.database import Base
 from backend.app.domains.analysis import schemas, tasks
 from backend.app.domains.analysis import service as analysis_service
@@ -188,6 +191,153 @@ def test_terminal_failure_releases_reserved_usage(monkeypatch):
                 "reserve",
                 "release",
             ]
+    finally:
+        engine.dispose()
+
+
+def test_repaired_interview_output_saves_eight_questions_and_charges_once(monkeypatch):
+    engine, factory = _database()
+    monkeypatch.setattr(tasks, "SessionLocal", factory)
+    questions = [
+        {
+            "question": f"How would you improve the reliability of platform service {index}?",
+            "coaching_angle": "Describe a concrete method and a verified result.",
+            "evidence_ids": [],
+        }
+        for index in range(1, 9)
+    ]
+    provider_responses = iter(
+        [json.dumps(questions[:1]), f"```json\n{json.dumps(questions)}\n```"]
+    )
+    chat_calls = []
+
+    def response(messages):
+        chat_calls.append(len(messages))
+        return next(provider_responses)
+
+    monkeypatch.setattr(llm_client, "_chat", response)
+    try:
+        with factory() as db:
+            db.add(
+                Opportunity(
+                    id="opp_repaired_interview",
+                    user_id=1,
+                    resume_id=10,
+                    title="Platform Engineer",
+                    company="Example Co",
+                    job_description="Build and operate reliable Python services for global customers.",
+                    job_snapshot={},
+                )
+            )
+            db.commit()
+        with factory() as db:
+            run, created = analysis_service.create_run(
+                db,
+                user_id=1,
+                payload=schemas.AnalysisRunCreate(
+                    operation="interview_questions",
+                    opportunity_id="opp_repaired_interview",
+                    input={"num_questions": 8},
+                ),
+                header_idempotency_key="repaired-interview-output-001",
+            )
+            run_id = run.id
+            assert created is True
+            assert run.usage_state == "reserved"
+            assert db.get(User, 1).ai_credits == 49
+
+        assert tasks.process_analysis_run(run_id) == "succeeded"
+        assert tasks.process_analysis_run(run_id) == "succeeded"
+        assert len(chat_calls) == 2
+
+        with factory() as db:
+            run = db.get(AnalysisRun, run_id)
+            assert run.status == "succeeded"
+            assert run.usage_state == "committed"
+            assert run.committed_units == 1
+            assert run.attempt_count == 1
+            assert run.error_code is None
+            assert run.result_payload["opportunity_id"] == "opp_repaired_interview"
+            stored_questions = run.result_payload["questions"]
+            assert len(stored_questions) == 8
+            assert len({item["question"] for item in stored_questions}) == 8
+            assert db.get(User, 1).ai_credits == 49
+            events = db.query(UsageEvent).order_by(UsageEvent.created_at).all()
+            assert [event.event_type for event in events] == ["reserve", "commit"]
+            assert [event.amount for event in events] == [-1, 0]
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.parametrize(
+    "provider_response",
+    [
+        "I could not format the interview questions as JSON.",
+        '[{"question":"How did you improve a Python service?",'
+        '"coaching_angle":"Explain the verified result.","evidence_ids":[]}]',
+    ],
+    ids=["malformed-response", "incomplete-question-set"],
+)
+def test_invalid_interview_output_fails_without_charging_or_saving_a_result(
+    monkeypatch, provider_response
+):
+    engine, factory = _database()
+    monkeypatch.setattr(tasks, "SessionLocal", factory)
+    chat_calls = []
+
+    def invalid_response(*args, **kwargs):
+        chat_calls.append(args)
+        return provider_response
+
+    monkeypatch.setattr(llm_client, "_chat", invalid_response)
+    try:
+        with factory() as db:
+            db.add(
+                Opportunity(
+                    id="opp_interview",
+                    user_id=1,
+                    resume_id=10,
+                    title="Platform Engineer",
+                    company="Example Co",
+                    job_description="Build and operate reliable Python services for global customers.",
+                    job_snapshot={},
+                )
+            )
+            db.commit()
+        with factory() as db:
+            run, created = analysis_service.create_run(
+                db,
+                user_id=1,
+                payload=schemas.AnalysisRunCreate(
+                    operation="interview_questions",
+                    opportunity_id="opp_interview",
+                    input={"num_questions": 8},
+                ),
+                header_idempotency_key="invalid-interview-output-001",
+            )
+            run_id = run.id
+            assert created is True
+            assert run.estimated_units == 1
+            assert run.usage_state == "reserved"
+            assert db.get(User, 1).ai_credits == 49
+
+        assert tasks.process_analysis_run(run_id) == "failed"
+        assert tasks.process_analysis_run(run_id) == "failed"
+        assert len(chat_calls) == 2
+
+        with factory() as db:
+            run = db.get(AnalysisRun, run_id)
+            assert run.status == "failed"
+            assert run.usage_state == "released"
+            assert run.committed_units == 0
+            assert run.result_payload is None
+            assert run.completed_at is not None
+            assert run.error_code == "InterviewOutputError"
+            assert run.attempt_count == 1
+            assert db.get(User, 1).ai_credits == 50
+            events = db.query(UsageEvent).order_by(UsageEvent.created_at).all()
+            assert [event.event_type for event in events] == ["reserve", "release"]
+            assert [event.amount for event in events] == [-1, 1]
     finally:
         engine.dispose()
 

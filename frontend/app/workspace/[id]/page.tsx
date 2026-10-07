@@ -89,6 +89,7 @@ const tabs: { id: Tab; label: string; icon: typeof Target }[] = [
 ];
 
 const terminal = new Set(["succeeded", "failed", "cancelled"]);
+const interviewQuestionCount = 8;
 
 function useRun(runId: string | null) {
   return useQuery({
@@ -141,10 +142,16 @@ function MatchSummary({ match }: { match: OpportunityMatch }) {
 function RunFeedback({ run }: { run: AnalysisRun | undefined }) {
   if (!run || run.status === "succeeded") return null;
   if (run.status === "failed") {
+    const incompleteInterview = run.operation === "interview_questions" && run.error_code === "InterviewOutputError";
+    const usageMessage = run.committed_units === 0 && run.usage_state === "released"
+      ? "Any reserved units were released."
+      : run.committed_units === 0 && run.usage_state === "waived"
+        ? "No analysis units were charged."
+        : "";
     return (
       <div className="mt-4 flex gap-3 border-y border-coral/25 bg-coral/5 px-4 py-4 text-sm text-coral" role="alert">
         <CircleAlert size={18} className="mt-0.5 shrink-0" />
-        <div><strong>Analysis did not complete.</strong><p className="mt-1 text-muted-foreground">Reserved units were released automatically. Try again later.</p></div>
+        <div><strong>{incompleteInterview ? "Could not generate a complete question set." : "Analysis did not complete."}</strong><p className="mt-1 text-muted-foreground">{incompleteInterview ? "Please try again." : "Try again later."} {usageMessage}</p></div>
       </div>
     );
   }
@@ -228,6 +235,9 @@ export default function OpportunityPage() {
     for (const run of [matchRun.data, interviewRun.data, tailorRun.data]) {
       if (!run || !terminal.has(run.status) || trackedTerminalRuns.current.has(run.id)) continue;
       trackedTerminalRuns.current.add(run.id);
+      if (run.operation === "interview_questions") {
+        void queryClient.invalidateQueries({ queryKey: ["nav-profile"] });
+      }
       trackEvent(run.status === "succeeded" ? "analysis_completed" : "analysis_failed", {
         run_id: run.id,
         operation: run.operation,
@@ -238,7 +248,7 @@ export default function OpportunityPage() {
         trackEvent("first_useful_match", { opportunity_id: opportunityId });
       }
     }
-  }, [interviewRun.data, matchRun.data, opportunityId, tailorRun.data]);
+  }, [interviewRun.data, matchRun.data, opportunityId, queryClient, tailorRun.data]);
 
   const transition = useMutation({
     mutationFn: ({ stage, resumeVersionId }: { stage: string; resumeVersionId?: string }) =>
@@ -299,7 +309,7 @@ export default function OpportunityPage() {
   const startInterview = useMutation({
     mutationFn: () => apiPostJson<AnalysisRun>(
       "/v1/analysis-runs",
-      { operation: "interview_questions", opportunity_id: opportunityId, input: { num_questions: 8 } },
+      { operation: "interview_questions", opportunity_id: opportunityId, input: { num_questions: interviewQuestionCount } },
       { "Idempotency-Key": crypto.randomUUID() },
     ),
     onSuccess: (run) => {
@@ -684,7 +694,7 @@ export default function OpportunityPage() {
                 <div className="max-w-2xl">
                   <p className="eyebrow">Role-specific preparation</p>
                   <h2 id="interview-heading" className="font-display mt-2 text-3xl font-normal">Interview questions</h2>
-                  <p className="mt-2 max-w-prose text-sm leading-6 text-muted-foreground">Practice for this role using your own experience. Review the guidance, then build your answers from approved evidence.</p>
+                  <p className="mt-2 max-w-prose text-sm leading-6 text-muted-foreground">Generate {interviewQuestionCount} practice questions for this role. Review the guidance, then build your answers from approved evidence.</p>
                 </div>
                 <Button className="min-h-11 shrink-0 self-start sm:self-auto" onClick={() => startInterview.mutate()} disabled={interviewIsRunning}>
                   {interviewIsRunning ? <LoaderCircle size={16} className="animate-spin" /> : <BrainCircuit size={16} />}
