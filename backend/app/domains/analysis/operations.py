@@ -330,7 +330,7 @@ def execute_interview_questions(
     _ensure_prompt_version(
         db,
         operation="interview_questions",
-        version="interview-evidence-v2",
+        version="interview-evidence-v3",
         callable_object=generate_interview_questions,
     )
     started = time.perf_counter()
@@ -345,7 +345,7 @@ def execute_interview_questions(
         _record_model_call(
             db,
             run=run,
-            prompt_version="interview-evidence-v2",
+            prompt_version="interview-evidence-v3",
             input_payload=payload,
             output_payload={},
             latency_ms=int((time.perf_counter() - started) * 1000),
@@ -356,7 +356,7 @@ def execute_interview_questions(
     _record_model_call(
         db,
         run=run,
-        prompt_version="interview-evidence-v2",
+        prompt_version="interview-evidence-v3",
         input_payload=payload,
         output_payload=questions,
         latency_ms=int((time.perf_counter() - started) * 1000),

@@ -24,6 +24,10 @@ class LLMProviderError(RuntimeError):
         self.retryable = retryable
 
 
+class InterviewOutputError(ValueError):
+    """The provider did not produce a complete, usable interview question set."""
+
+
 def _gemini_error_disposition(exc: Exception) -> tuple[bool, bool]:
     """Return whether to try another model and whether the task should retry."""
     message = str(exc).lower()
@@ -255,6 +259,58 @@ def rewrite_bullets(resume_text: str, jd_text: str, tone: str) -> Dict:
     except Exception:
         return {"bullets": [content], "summary": "Model did not return JSON; raw response in bullets[0]."}
 
+def _parse_interview_questions(content: str, num_questions: int) -> List[Dict]:
+    """Accept JSON arrays and questions objects, including Markdown-wrapped responses."""
+    decoder = json.JSONDecoder()
+    data = None
+    for index, character in enumerate(content):
+        if character not in "[{":
+            continue
+        try:
+            candidate, _ = decoder.raw_decode(content[index:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(candidate, dict):
+            candidate = candidate.get("questions")
+        if isinstance(candidate, list):
+            data = candidate
+            break
+    if data is None:
+        raise InterviewOutputError("The response did not contain a JSON question list.")
+
+    questions = []
+    seen = set()
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        question = item.get("question")
+        coaching_angle = item.get("coaching_angle")
+        evidence_ids = item.get("evidence_ids")
+        if (
+            not isinstance(question, str)
+            or not question.strip()
+            or not isinstance(coaching_angle, str)
+            or not coaching_angle.strip()
+            or not isinstance(evidence_ids, list)
+            or any(not isinstance(value, str) for value in evidence_ids)
+        ):
+            continue
+        identity = " ".join(question.casefold().split()).rstrip(".?!").strip()
+        if identity in seen:
+            continue
+        seen.add(identity)
+        questions.append({
+            "question": question.strip(),
+            "coaching_angle": coaching_angle.strip(),
+            "evidence_ids": evidence_ids,
+        })
+    if len(questions) < num_questions:
+        raise InterviewOutputError(
+            f"Expected {num_questions} distinct questions, received {len(questions)} usable questions."
+        )
+    return questions[:num_questions]
+
+
 def generate_interview_questions(
     job_title: str,
     jd_text: str,
@@ -268,47 +324,55 @@ def generate_interview_questions(
         "for the job description and a concise coaching angle for each. Never write a fictional "
         "first-person model answer or invent candidate history, metrics, skills, or outcomes. "
         "Reference only evidence IDs supplied by the user. If no evidence supports a question, use "
-        "an empty evidence_ids list. Output a JSON list with question, coaching_angle, and evidence_ids."
+        "an empty evidence_ids list. Missing evidence must not reduce the number of questions. "
+        "Return exactly the requested number of distinct, role-specific questions. "
+        "Output only a JSON list; every item must have a non-empty question string, a non-empty "
+        "coaching_angle string, and an evidence_ids list of strings."
     )
     evidence_context = json.dumps(evidence, default=str)[:6000]
     user_content = (
         f"JOB TITLE: {job_title}\n\nJOB DESCRIPTION:\n{jd_text}\n\n"
         f"APPROVED EVIDENCE:\n{evidence_context}\n\nNumber of Qs: {num_questions}"
     )
-    content = _chat(
-        [{"role": "system", "content": system_prompt},
-         {"role": "user", "content": user_content}]
-    )
-
-    try:
-        data = json.loads(content)
-        if not isinstance(data, list):
-            raise ValueError("Interview response was not a list")
-    except Exception:
-        data = [
-            {
-                "question": "Which approved experience best demonstrates your fit for this role?",
-                "coaching_angle": "Choose one relevant example and explain the context, action, and verified result.",
-                "evidence_ids": [],
-            }
-        ]
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_content},
+    ]
+    data = None
+    for attempt in range(2):
+        content = _chat(messages)
+        if not isinstance(content, str):
+            content = ""
+        try:
+            data = _parse_interview_questions(content, num_questions)
+            break
+        except InterviewOutputError as exc:
+            if attempt == 0:
+                messages.extend([
+                    {"role": "assistant", "content": content or "No usable response was returned."},
+                    {
+                        "role": "user",
+                        "content": (
+                            f"The response could not be used: {exc} Return a replacement JSON list "
+                            f"with exactly {num_questions} distinct questions and all required fields. "
+                            "Keep using the original job description and approved evidence. "
+                            "Use empty evidence_ids when no approved fact supports a question."
+                        ),
+                    },
+                ])
+    if data is None:
+        raise InterviewOutputError(
+            f"Could not generate a complete set of {num_questions} interview questions. Please try again."
+        )
 
     evidence_by_id = {str(item.get("id")): item for item in evidence if item.get("id")}
     questions: List[Dict[str, object]] = []
-    for raw_item in data[:num_questions]:
-        if not isinstance(raw_item, dict):
-            continue
-        question = str(raw_item.get("question") or "Explain your relevant experience.").strip()
-        coaching_angle = str(
-            raw_item.get("coaching_angle")
-            or "Explain the context, your action, and the verified result."
-        ).strip()
-        raw_ids = raw_item.get("evidence_ids")
-        evidence_ids = (
-            [str(item) for item in raw_ids if str(item) in allowed_ids]
-            if isinstance(raw_ids, list)
-            else []
-        )
+    for raw_item in data:
+        question = raw_item["question"]
+        coaching_angle = raw_item["coaching_angle"]
+        evidence_ids = list(dict.fromkeys(
+            item for item in raw_item["evidence_ids"] if item in allowed_ids
+        ))
         cited = [evidence_by_id[item] for item in evidence_ids]
         if cited:
             facts = "; ".join(
