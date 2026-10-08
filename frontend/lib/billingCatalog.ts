@@ -47,16 +47,33 @@ export async function getPublicBillingCatalog(): Promise<PublicBillingCatalog | 
   const apiBase = backendApiBase();
   if (!apiBase) return null;
 
-  try {
-    const response = await fetch(`${apiBase}/public/billing/catalog`, {
-      cache: "no-store",
-      headers: { Accept: "application/json" },
-    });
-    if (!response.ok) return null;
+  const controller = new AbortController();
+  let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<null>((resolve) => {
+    deadlineTimer = setTimeout(() => {
+      controller.abort();
+      resolve(null);
+    }, 2_500);
+  });
 
-    const data: unknown = await response.json();
-    return isCatalog(data) ? data : null;
+  try {
+    return await Promise.race([
+      (async () => {
+        const response = await fetch(`${apiBase}/public/billing/catalog`, {
+          cache: "no-store",
+          headers: { Accept: "application/json" },
+          signal: controller.signal,
+        });
+        if (!response.ok) return null;
+
+        const data: unknown = await response.json();
+        return isCatalog(data) ? data : null;
+      })(),
+      deadline,
+    ]);
   } catch {
     return null;
+  } finally {
+    if (deadlineTimer !== undefined) clearTimeout(deadlineTimer);
   }
 }

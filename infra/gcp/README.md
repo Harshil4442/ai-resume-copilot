@@ -21,13 +21,19 @@ the reviewed provider version; commit it after `terraform init -backend=false` v
 Private worker URL and queue environment values are documented in the deployment runbook.
 
 Cloud Run image releases run through the repository Cloud Build configuration and
-`release.sh`. Build a commit image and resolve its digest, execute one migration job,
+`release.sh`. Build a commit image and resolve its digest, prepare the exact serving
+image without startup schema migration, execute one migration job,
 release private workers, stage and verify the API, and promote the exact checked revision.
 Stage the Vercel production deployment separately and promote it after verification.
 The API keeps one service-level minimum instance to reduce idle cold starts, with its
 existing request/concurrency cap and a bounded SQL pool. Idle capacity has a recurring
 infrastructure cost; private batch workers can still scale to zero. This is not a latency
 guarantee, and production Web Vitals are evaluated separately from local mocked checks.
+Serialize releases. The migration preparation refuses an unmatched staged revision,
+so operators must resolve a previous candidate before starting another release. Its
+direct ASGI command supports older images whose entrypoints ignore `AUTO_DB_MIGRATE`;
+the new candidate clears that override. Schema changes must still be backward compatible
+with the prepared serving application.
 Account-deletion object purge uses exact
 object generations. Seven-day GCS soft deletion is part of the declared backup retention.
 Protected release database dumps under `releases/` expire after seven days and remain
@@ -42,6 +48,11 @@ No task token enters command arguments, local files, Terraform state or console 
 Restrict Scheduler read/edit permissions because its server-side HTTP headers include the
 token. The recovery endpoint publishes committed outbox work and requeues unfinished
 artifact purges even while job discovery is disabled. Source refresh still respects its flag.
+The analysis worker must have explicit Cloud Tasks mode, project, location, queue,
+task identity, worker destinations and a matching Secret Manager task-token reference.
+It also needs enqueue permission on each target queue and `iam.serviceAccountUser` on
+the task identity. Do not rely on its legacy environment to provide publisher settings:
+inline maintenance is incompatible with an analysis-only execution scope for employer work.
 
 Authentication contracts:
 [Scheduler OIDC](https://docs.cloud.google.com/scheduler/docs/http-target-auth),

@@ -56,8 +56,16 @@ Async API variables:
 - `ANALYSIS_WORKER_URL`
 - `ANALYSIS_TASK_TOKEN` as defense in depth
 
-The worker needs the database, LLM, observability, task token, and `APP_ENV` variables.
+The analysis worker needs the database, LLM, observability, task token, and `APP_ENV` variables.
 It runs with `SERVICE_ROLE=worker`. The API runs with `SERVICE_ROLE=api`.
+Scheduled maintenance also publishes employer work, so the analysis worker must explicitly
+receive every async publisher variable above plus the employer queue/destination settings.
+Grant its service account enqueue access and scoped `iam.serviceAccountUser` on the task
+identity. Set the task-token Secret Manager reference consistently on both private workers
+and the API. Production requires explicit `cloud_tasks` or the safe `manual` pause mode;
+missing configuration fails before claiming work. Inline execution is restricted to local
+and test environments. Employer destinations cannot fall back to the analysis worker in
+production. A local worker-scope rejection returns the intent to pending with an error.
 
 Employer service variables:
 

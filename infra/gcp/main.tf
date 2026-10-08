@@ -26,6 +26,10 @@ variable "worker_service_account" { type = string }
 variable "tasks_service_account" { type = string }
 variable "database_secret" { type = string }
 variable "task_token_secret" { type = string }
+variable "analysis_queue_name" {
+  type    = string
+  default = "hirewiz-analysis"
+}
 variable "worker_bootstrap_secret" {
   type    = string
   default = "hirewiz-worker-jwt-bootstrap"
@@ -47,6 +51,26 @@ resource "google_service_account_iam_member" "employer_tasks_identity" {
   service_account_id = "projects/${var.project_id}/serviceAccounts/${var.tasks_service_account}"
   role               = "roles/iam.serviceAccountUser"
   member             = "serviceAccount:${google_service_account.employer_worker.email}"
+}
+
+resource "google_service_account_iam_member" "analysis_tasks_identity" {
+  service_account_id = "projects/${var.project_id}/serviceAccounts/${var.tasks_service_account}"
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${var.worker_service_account}"
+}
+
+resource "google_secret_manager_secret_iam_member" "analysis_task_token" {
+  secret_id = var.task_token_secret
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${var.worker_service_account}"
+}
+
+resource "google_cloud_tasks_queue_iam_member" "analysis_enqueue" {
+  project  = var.project_id
+  location = var.region
+  name     = var.analysis_queue_name
+  role     = "roles/cloudtasks.enqueuer"
+  member   = "serviceAccount:${var.worker_service_account}"
 }
 
 locals {

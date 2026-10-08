@@ -16,17 +16,18 @@ tracks implementation evidence and does not replace the wider worldwide coverage
 - [x] Implement deterministic employer-index search, configured result counts and separate prices.
 - [x] Implement original/custom/approved-tailored sealed packages, supported forms and exact approval binding.
 - [x] Verify cancellation, possible-sent recovery and confirmed-only settlement with synthetic fixtures.
-- [ ] Verify live public employer feeds and seed audited employer origins.
+- [x] Verify four live public employer feeds and seed audited employer origins; this closes only the pilot seed scope.
 - [ ] Expand connector catalog and independently measure declared-scope recall.
 - [ ] Complete permitted browser companion, device claims and human checkpoints.
 - [ ] Verify all mandatory AI-disabled fresh-user workflows and optional enhanced modes.
 - [x] Verify connected responsive flows at all five declared widths with local production-build evidence.
 - [x] Validate migration round-trip through `20261008_0008` on PostgreSQL 17 and regenerate API contracts.
-- [ ] Complete private queues/workers, controlled migration job and scheduled recovery.
-- [ ] Run full CI, security/container checks and staging end-to-end tests.
-- [ ] Stage and promote the tested production backend and frontend release.
-- [ ] Confirm complete required environment, worker IAM, Scheduler and production health.
-- [ ] Monitor the actual release and record deployment IDs, commit and observations.
+- [x] Complete pilot private queues/workers, controlled migration job and scheduled recovery.
+- [x] Run full pilot CI, security/container checks and staging end-to-end tests.
+- [x] Stage and promote the tested initial production backend and frontend release.
+- [x] Confirm required pilot environment, worker IAM, Scheduler and production health after repairs.
+- [x] Monitor the initial release and record deployment IDs, commit and observations.
+- [ ] Promote and monitor follow-up configuration, pricing-timeout and mobile-control hardening.
 - [ ] Complete immutable GCS storage and deletion/restore/security drills from the register.
 - [ ] Prove every requirements gate before marking the full development goal complete.
 
@@ -43,7 +44,15 @@ Frontend verification covers search quotes, original/custom/tailored choices, ex
 required answers, approvals, manual/unknown states, cancellation and account-switch
 isolation. BFF and Google-consent mutation guards passed real built-server compatibility
 checks, and tests prove rejected financial/application mutations cannot reach the backend.
-The employer flow passed 65 browser cases at 320, 390, 768, 1024 and 1440 pixels.
+The employer flow passed 65 browser cases at 320, 390, 768, 1024 and 1440 pixels;
+the complete frontend suite passed 155 cases across those widths.
+
+Initial release `7980b624d2fd5a93994621538eb610e2ee4e5181` is live on GCP and Vercel.
+All four reviewed production sources completed scans and held 356 open postings at the
+recorded check. The Scheduler and actual Cloud Tasks executions were observed after
+repairing missing legacy publisher configuration. Exact release identities, independent
+hosted browser evidence and rollout findings are recorded in
+[the production release report](PRODUCTION_RELEASE_2026-10-08.md).
 
 [Thirty synthetic local measurements](evidence/2026-10-08-responsive-lab.json) observed
 LCP 72–264 ms and CLS at most 0.0133 after layout stabilization. They use mocked backend

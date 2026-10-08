@@ -147,7 +147,7 @@ export default function Nav() {
 
           <button
             type="button"
-            className="icon-button xl:hidden"
+            className="icon-button size-11 basis-11 xl:hidden"
             aria-label={mobileOpen ? "Close navigation" : "Open navigation"}
             aria-expanded={mobileOpen}
             aria-controls={mobileOpen ? "mobile-navigation" : undefined}

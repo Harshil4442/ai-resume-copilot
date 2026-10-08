@@ -7,6 +7,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
+from urllib.parse import urlsplit
 
 from google.api_core.exceptions import AlreadyExists
 from google.cloud import tasks_v2
@@ -19,6 +20,21 @@ from .models import DispatchOutbox
 
 log = logging.getLogger("hirewiz.dispatch")
 TOPICS = {"analysis.run", "employer.search", "employer.refresh", "employer.apply", "employer.artifact-delete"}
+LOCAL_ENVIRONMENTS = {"development", "dev", "local", "test"}
+TASK_QUEUE_SETTINGS = {
+    "analysis.run": "ANALYSIS_TASKS_QUEUE",
+    "employer.search": "EMPLOYER_SEARCH_TASKS_QUEUE",
+    "employer.refresh": "EMPLOYER_INGESTION_TASKS_QUEUE",
+    "employer.apply": "EMPLOYER_APPLICATION_TASKS_QUEUE",
+    "employer.artifact-delete": "EMPLOYER_INGESTION_TASKS_QUEUE",
+}
+TASK_WORKER_SETTINGS = {
+    "analysis.run": "ANALYSIS_WORKER_URL",
+    "employer.search": "EMPLOYER_SEARCH_WORKER_URL",
+    "employer.refresh": "EMPLOYER_INGESTION_WORKER_URL",
+    "employer.apply": "EMPLOYER_APPLICATION_WORKER_URL",
+    "employer.artifact-delete": "EMPLOYER_INGESTION_WORKER_URL",
+}
 
 
 class RetryableDispatchError(RuntimeError):
@@ -27,6 +43,63 @@ class RetryableDispatchError(RuntimeError):
 
 class WorkerScopeError(RuntimeError):
     pass
+
+
+class DispatchConfigurationError(RuntimeError):
+    pass
+
+
+def _local_environment() -> bool:
+    return (os.getenv("APP_ENV") or "production").strip().lower() in LOCAL_ENVIRONMENTS
+
+
+def _setting(name: str) -> str:
+    value = (os.getenv(name) or "").strip()
+    if not value:
+        # Names are safe to expose; never include configuration values/tokens.
+        raise DispatchConfigurationError(f"Dispatch requires {name}")
+    return value
+
+
+def _task_route(topic: str) -> tuple[str, str]:
+    if topic not in TOPICS:
+        raise DispatchConfigurationError("Unsupported dispatch topic")
+    queue_name, worker_name = TASK_QUEUE_SETTINGS[topic], TASK_WORKER_SETTINGS[topic]
+    if _local_environment():
+        queue = (os.getenv(queue_name) or "").strip() or _setting("ANALYSIS_TASKS_QUEUE")
+        worker_url = (os.getenv(worker_name) or "").strip() or _setting("ANALYSIS_WORKER_URL")
+    else:
+        # Production cannot silently route employer work to an analysis worker.
+        queue, worker_url = _setting(queue_name), _setting(worker_name)
+    worker_url = worker_url.rstrip("/")
+    try:
+        parsed = urlsplit(worker_url)
+        port = parsed.port
+    except ValueError:
+        raise DispatchConfigurationError(f"Dispatch requires a service HTTPS origin in {worker_name}") from None
+    if (parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password
+            or parsed.query or parsed.fragment or parsed.path or port not in {None, 443}):
+        raise DispatchConfigurationError(f"Dispatch requires a service HTTPS origin in {worker_name}")
+    if any(character.isspace() for character in queue) or "/" in queue:
+        raise DispatchConfigurationError(f"Dispatch requires a queue ID in {queue_name}")
+    return queue, worker_url
+
+
+def _dispatch_mode() -> str:
+    mode = (os.getenv("ANALYSIS_TASKS_MODE") or "").strip().lower()
+    if not mode:
+        if not _local_environment():
+            raise DispatchConfigurationError("Production dispatch requires explicit ANALYSIS_TASKS_MODE")
+        mode = "inline"
+    if mode not in {"manual", "inline", "cloud_tasks"}:
+        raise DispatchConfigurationError("Unsupported dispatch mode")
+    if mode == "inline" and not _local_environment():
+        raise DispatchConfigurationError("Inline dispatch is restricted to local/test environments")
+    if mode == "cloud_tasks":
+        for name in ("GOOGLE_CLOUD_PROJECT", "ANALYSIS_TASKS_LOCATION", "ANALYSIS_TASKS_SERVICE_ACCOUNT"):
+            _setting(name)
+        _task_route("analysis.run")
+    return mode
 
 
 @dataclass(frozen=True)
@@ -58,24 +131,10 @@ def enqueue(
 
 
 def _cloud_task(event: DispatchOutbox | DispatchSnapshot) -> str:
-    project = os.environ["GOOGLE_CLOUD_PROJECT"]
-    location = os.environ["ANALYSIS_TASKS_LOCATION"]
-    queues = {
-        "analysis.run": "ANALYSIS_TASKS_QUEUE",
-        "employer.search": "EMPLOYER_SEARCH_TASKS_QUEUE",
-        "employer.refresh": "EMPLOYER_INGESTION_TASKS_QUEUE",
-        "employer.apply": "EMPLOYER_APPLICATION_TASKS_QUEUE",
-        "employer.artifact-delete": "EMPLOYER_INGESTION_TASKS_QUEUE",
-    }
-    queue = os.getenv(queues[str(event.topic)]) or os.environ["ANALYSIS_TASKS_QUEUE"]
-    worker_urls = {
-        "analysis.run": "ANALYSIS_WORKER_URL",
-        "employer.search": "EMPLOYER_SEARCH_WORKER_URL",
-        "employer.refresh": "EMPLOYER_INGESTION_WORKER_URL",
-        "employer.apply": "EMPLOYER_APPLICATION_WORKER_URL",
-        "employer.artifact-delete": "EMPLOYER_INGESTION_WORKER_URL",
-    }
-    worker_url = (os.getenv(worker_urls[str(event.topic)]) or os.environ["ANALYSIS_WORKER_URL"]).rstrip("/")
+    project = _setting("GOOGLE_CLOUD_PROJECT")
+    location = _setting("ANALYSIS_TASKS_LOCATION")
+    service_account = _setting("ANALYSIS_TASKS_SERVICE_ACCOUNT")
+    queue, worker_url = _task_route(str(event.topic))
     client = tasks_v2.CloudTasksClient()
     parent = client.queue_path(project, location, queue)
     # The stable task name recovers a crash after creation but before DB marking.
@@ -92,7 +151,7 @@ def _cloud_task(event: DispatchOutbox | DispatchSnapshot) -> str:
             "headers": headers,
             "body": json.dumps({"event_id": event.id}).encode(),
             "oidc_token": {
-                "service_account_email": os.environ["ANALYSIS_TASKS_SERVICE_ACCOUNT"],
+                "service_account_email": service_account,
                 "audience": worker_url,
             },
         },
@@ -106,16 +165,19 @@ def _cloud_task(event: DispatchOutbox | DispatchSnapshot) -> str:
 
 def dispatch_pending(*, limit: int = 100, topics: set[str] | None = None) -> dict[str, int]:
     """Publish with short DB claims, leaving failed dispatches durable for a sweep."""
-    mode = (os.getenv("ANALYSIS_TASKS_MODE") or "inline").lower()
+    mode = _dispatch_mode()
     if mode == "manual":
         return {"dispatched": 0, "failed": 0}
-    if mode not in {"inline", "cloud_tasks"}:
-        raise ValueError("Unsupported dispatch mode")
+    if topics and not topics.issubset(TOPICS):
+        raise DispatchConfigurationError("Unsupported dispatch topic")
+    if mode == "cloud_tasks" and topics:
+        for topic in topics:
+            _task_route(topic)
     db = SessionLocal()
     sent = failed = 0
     try:
         now = utcnow()
-        query = db.query(DispatchOutbox.id).filter(
+        query = db.query(DispatchOutbox.id, DispatchOutbox.topic).filter(
             DispatchOutbox.available_at <= now,
             or_(
                 DispatchOutbox.status == "pending",
@@ -127,8 +189,12 @@ def dispatch_pending(*, limit: int = 100, topics: set[str] | None = None) -> dic
         )
         if topics:
             query = query.filter(DispatchOutbox.topic.in_(topics))
-        ids = [row[0] for row in query.order_by(DispatchOutbox.created_at).limit(limit).all()]
-        for event_id in ids:
+        events = query.order_by(DispatchOutbox.created_at).limit(limit).all()
+        # Validate every selected route before claiming even the first event.
+        if mode == "cloud_tasks":
+            for topic in {row[1] for row in events}:
+                _task_route(topic)
+        for event_id, _ in events:
             token = uuid.uuid4().hex
             claimed = db.query(DispatchOutbox).filter(
                 DispatchOutbox.id == event_id,
@@ -143,6 +209,7 @@ def dispatch_pending(*, limit: int = 100, topics: set[str] | None = None) -> dic
                 "status": "publishing", "lease_token": token,
                 "lease_until": now + timedelta(minutes=2), "updated_at": now,
                 "dispatch_attempts": DispatchOutbox.dispatch_attempts + 1,
+                "task_name": "local" if mode == "inline" else DispatchOutbox.task_name,
             }, synchronize_session=False)
             db.commit()
             if not claimed:
@@ -153,20 +220,24 @@ def dispatch_pending(*, limit: int = 100, topics: set[str] | None = None) -> dic
             snapshot = DispatchSnapshot(str(event.id), str(event.topic), int(event.execution_attempts or 0))
             db.rollback()
             try:
-                task_name = _cloud_task(snapshot) if mode == "cloud_tasks" else "local"
-                db.query(DispatchOutbox).filter_by(id=event_id, lease_token=token, status="publishing").update(
-                    {"status": "dispatched", "task_name": task_name, "lease_token": None,
-                     "lease_until": None, "last_error": None, "updated_at": utcnow()},
-                    synchronize_session=False,
-                )
-                db.commit()
                 if mode == "inline":
+                    # Keep the publishing claim until the worker accepts it.
+                    # Scope rejection occurs before the worker's running claim,
+                    # so the publisher can record and retry that failure safely.
                     process_event(event_id)
+                else:
+                    task_name = _cloud_task(snapshot)
+                    db.query(DispatchOutbox).filter_by(id=event_id, lease_token=token, status="publishing").update(
+                        {"status": "dispatched", "task_name": task_name, "lease_token": None,
+                         "lease_until": None, "last_error": None, "updated_at": utcnow()},
+                        synchronize_session=False,
+                    )
+                    db.commit()
                 sent += 1
             except Exception as exc:
                 db.rollback()
                 db.query(DispatchOutbox).filter_by(id=event_id, lease_token=token, status="publishing").update(
-                    {"status": "pending", "lease_token": None, "lease_until": None,
+                    {"status": "pending", "task_name": None, "lease_token": None, "lease_until": None,
                      "available_at": utcnow() + timedelta(seconds=30),
                      "last_error": type(exc).__name__, "updated_at": utcnow()},
                     synchronize_session=False,
