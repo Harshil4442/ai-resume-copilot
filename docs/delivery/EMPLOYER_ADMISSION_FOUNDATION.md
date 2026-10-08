@@ -1,10 +1,12 @@
 # Employer execution admission foundation
 
 Implemented in the isolated `employer-safety-foundation` worktree and integrated into the
-release worktree on 8 October 2026. This stage is locally verified and prepared for the next reviewed release. It builds
+release worktree on 8 October 2026. Exact release `7cc49c2` is now promoted on GCP and
+Vercel with actual production schema `20261008_0009`; see [the release record](PRODUCTION_ADMISSION_RELEASE_2026-10-08.md).
+This stage builds
 backend controls for BI06, FR07 and parts of NF01/G05D–E; it does not close the full
 acceptance gates or authorize employer submissions. Automatic submission still defaults
-to disabled. The earlier immutable discovery pilot is unchanged.
+to disabled. The four-source discovery catalog is unchanged.
 
 ## Behavior delivered
 
@@ -181,7 +183,8 @@ integration; the entitlement and pricing-provenance repairs do not alter its con
 Three dependency deprecation warnings remain. Evidence is retained locally in
 `/tmp/hirewiz-merged-backend-final-20261008.xml` and
 `/tmp/hirewiz-merged-migration-0009-20261008.json`; these are local verification results,
-not a remote CI pass or a production deployment claim.
+not themselves remote CI or deployment proof. Exact-commit CI and production rollout
+subsequently passed; their independent evidence is in the release record linked above.
 
 The opt-in PostgreSQL harness deliberately accepts only `127.0.0.1:55433` with database
 `hirewiz_admission_test` and removes only its own random schemas. It is skipped in ordinary
@@ -189,7 +192,8 @@ environments without `HIREWIZ_TEST_POSTGRES_URL`. CI now provisions that explici
 database using its PostgreSQL 17 service on port 55433 and sets the harness environment
 for the complete backend suite. The new companion CI job separately validates the disabled
 package, unit protocol, dependency audit and localhost synthetic MV3 flow.
-Review a protected backup and migration dry run before deployment. Rolling back 0009
+A protected backup, migration checks and actual controlled production upgrade passed for
+the promoted release. The backup has not been restored. Rolling back 0009
 removes the new safeguards, so outbound execution must remain stopped throughout rollback.
 The pilot-sized backfill has not been benchmarked at a large production catalog size.
 
@@ -208,8 +212,9 @@ The pilot-sized backfill has not been benchmarked at a large production catalog 
   confirmed claims across tenant/group changes; do not infer equivalence from titles.
 - [ ] Measure credential-wide/fleet fairness, Retry-After scheduling and sustained load,
   database/pool outages, recovery, retention and user-facing batch UI performance.
-- [ ] Run protected staging deployment/migration verification and synchronize generated
-  frontend contracts before a separate immutable release.
+- [x] Synchronize generated contracts, pass exact-commit CI, stage and promote the immutable
+  backend/frontend release, verify schema/health/private workers, and observe a real public
+  feed refresh and five-width public smoke. This does not close the wider acceptance gates.
 
 No worldwide recall, greater-than-95% coverage, real auto-apply, production browser command
 or completed G05 acceptance claim is made by this foundation.

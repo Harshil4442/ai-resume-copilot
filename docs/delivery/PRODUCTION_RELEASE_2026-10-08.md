@@ -1,7 +1,8 @@
 # HireWiz pilot release — 8 October 2026
 
-Status: initial pilot and follow-up hardening release promoted. The current live application
-commit is `3565655712c2ceee431bee8306678a020b2f462d`. This report preserves the initial
+Status: historical initial pilot and follow-up hardening release record. Current release
+`7cc49c2` and schema `0009` are recorded in [the admission foundation release](PRODUCTION_ADMISSION_RELEASE_2026-10-08.md).
+The earlier follow-up commit was `3565655712c2ceee431bee8306678a020b2f462d`. This report preserves the initial
 rollout history and records observed results; it does not close the full
 [requirements register](../requirements/JOB_SEARCH_AND_APPLICATION.md).
 
@@ -224,9 +225,9 @@ companion, durable daily/batch admissions, independent recovery epochs and tombs
 file quarantine/isolation, broader coverage evaluation and authorized receipt drills remain
 open in [the remaining requirements register](REMAINING_REQUIREMENTS.md).
 
-The subsequent admission/batch and disabled-companion foundation candidate is under
-development and has not been deployed. It must pass integration, migration and acceptance
-checks before a separate promotion; production remains at schema head `0008`. The
+At this earlier release, the admission/batch and disabled-companion foundation was still
+under development and schema head was `0008`. Its later separate promotion to schema
+`0009` is recorded in the admission foundation report above; full acceptance remains open. The
 [16 additional employer proposals](../../backend/resources/employer_sources.proposed_20261008.json)
 record 969 openings observed during public research, but are explicitly
 `proposed_not_enrolled`. They do not enlarge the live four-source catalog or prove recall.

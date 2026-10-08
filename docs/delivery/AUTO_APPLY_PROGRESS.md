@@ -28,6 +28,9 @@ tracks implementation evidence and does not replace the wider worldwide coverage
 - [x] Confirm required pilot environment, worker IAM, Scheduler and production health after repairs.
 - [x] Monitor the initial release and record deployment IDs, commit and observations.
 - [x] Promote follow-up configuration, pricing-timeout, mobile-control and dispatch recovery hardening; record bounded post-rollout observations.
+- [x] Promote admission/batch and locked-balance foundation `7cc49c2`, actual schema `0009`,
+  private workers and exact Vercel alias; verify exact-commit CI, production refresh and
+  20 public route/width cases. Full browser-executor and recovery acceptance remains open.
 - [ ] Complete sustained field-performance, load and wider operational recovery/security validation.
 - [ ] Complete immutable GCS storage and deletion/restore/security drills from the register.
 - [ ] Prove every requirements gate before marking the full development goal complete.
@@ -49,7 +52,8 @@ The employer flow passed 65 browser cases at 320, 390, 768, 1024 and 1440 pixels
 the complete frontend suite passed 155 cases across those widths.
 
 Initial release `7980b624d2fd5a93994621538eb610e2ee4e5181` was promoted on GCP and
-Vercel. Follow-up release `3565655712c2ceee431bee8306678a020b2f462d` is now live.
+Vercel. Follow-up release `3565655712c2ceee431bee8306678a020b2f462d` was subsequently
+promoted, then superseded by the admission foundation `7cc49c2` described below.
 All four reviewed production sources completed scans and held 356 open postings at the
 recorded check. The Scheduler and actual Cloud Tasks executions were observed after
 repairing missing legacy publisher configuration. Exact release identities, independent
@@ -68,7 +72,7 @@ enough production data. Heavy chart loading, route loading states and owner-boun
 are implemented; the API release keeps one service-level minimum instance for idle latency.
 
 The full acceptance register remains open where there is no independent proof. In
-particular, the companion, daily/batch admission limits, broader scan/catalog operations,
+particular, production companion authority, full daily/batch acceptance, broader scan/catalog operations,
 permissioned live receipts, independent recovery epochs/tombstones, security/isolation
 drills and greater-than-95-percent recall are tracked in
 [the remaining requirements register](REMAINING_REQUIREMENTS.md). Automatic submission
@@ -110,8 +114,33 @@ application was performed. Automatic submission remains disabled.
 The [16 additional source proposals](../../backend/resources/employer_sources.proposed_20261008.json)
 remain `proposed_not_enrolled`; their 969 research-time openings are not production
 availability or coverage claims. The subsequent admission/batch and disabled-companion
-foundation candidate is under development, not deployed. Device/independent authority,
+foundation is now deployed as recorded below. Device/independent authority,
 permitted submission, wider recovery/security and worldwide recall gates remain open.
+
+## Promoted admission foundation
+
+[Release `7cc49c2`](PRODUCTION_ADMISSION_RELEASE_2026-10-08.md) passed exact-commit CI
+with **511 backend tests (26 actual PostgreSQL cases, no skips), 55 frontend unit tests,
+190 browser cases, 55 companion protocol tests and 14 actual Chromium MV3 cases**.
+The controlled production migration reached `20261008_0009`. All three GCP services use
+the same pinned digest; exact API/worker health, privacy/topic scopes and the promoted
+Vercel custom-domain alias passed independent checks. A public-source refresh completed
+through Cloud Tasks once, and bounded post-rollout API/worker logs contained no matching
+ERROR/HTTP-500 entries. Twenty hosted public cases passed across all five declared widths.
+These checks prove the bounded rollout, not field p75, sustained load or real applications.
+
+The new controls refresh financial/analysis balances under the owner lock, bind immutable
+policy/price/opening quotes, enforce daily/rolling/pending limits, and reserve an exact
+batch atomically with its credit holds and outbox events. Unknown sends retain their claim;
+cancelled batches cannot be revived from cached ORM state. The UI separates exact review,
+approval and queue acceptance and exposes per-job outcomes. The companion package is
+disabled and uses localhost fixtures only. All four live sources remain manual-only, and
+automatic submission remains explicitly disabled. No test payment or employer send was used.
+
+The [independent proposal review](PROPOSED_SOURCE_REVIEW_2026-10-08.md) keeps all 16
+additional sources unenrolled. Shared Lever host pacing, source-use review and operational
+evidence are required before enrolling its proposed tenants. Independent recovery/device
+authority, permitted receipts, restore quarantine, field metrics and recall remain open.
 
 ## Commercial defaults
 

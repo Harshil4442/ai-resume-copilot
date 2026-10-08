@@ -1,0 +1,205 @@
+{
+  "origin": "https://www.hirewizhq.com",
+  "phase": "next-7cc49c2",
+  "applicationCommit": "7cc49c2c08a296b33cb30f96e383b959caf214c0",
+  "vercelDeployment": "dpl_Ddh2JvT25wWFBFbQWiibfES9B37e",
+  "releaseIdentitySource": "Supplied by release owner after exact deployment promotion; public UI alone does not prove the commit.",
+  "completedAt": "2026-10-08T16:35:01.734Z",
+  "publicCatalogReads": [
+    {
+      "index": 0,
+      "status": 200,
+      "elapsedMs": 1669,
+      "cacheControl": "private, no-store, max-age=0",
+      "catalogVersion": "inr-2026-10-08-v2",
+      "checkoutEnabled": true,
+      "products": [
+        {
+          "sku": "premium_30d",
+          "amount_minor": 99900,
+          "amount_display": "\u20b9999",
+          "currency": "INR",
+          "duration_days": 30,
+          "entitlement_quantity": 30,
+          "catalog_visible": true,
+          "enabled_for_purchase": true
+        },
+        {
+          "sku": "job_service_500",
+          "amount_minor": 49900,
+          "amount_display": "\u20b9499",
+          "currency": "INR",
+          "duration_days": 0,
+          "entitlement_quantity": 500,
+          "catalog_visible": true,
+          "enabled_for_purchase": true
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "status": 200,
+      "elapsedMs": 366,
+      "cacheControl": "private, no-store, max-age=0",
+      "catalogVersion": "inr-2026-10-08-v2",
+      "checkoutEnabled": true,
+      "products": [
+        {
+          "sku": "premium_30d",
+          "amount_minor": 99900,
+          "amount_display": "\u20b9999",
+          "currency": "INR",
+          "duration_days": 30,
+          "entitlement_quantity": 30,
+          "catalog_visible": true,
+          "enabled_for_purchase": true
+        },
+        {
+          "sku": "job_service_500",
+          "amount_minor": 49900,
+          "amount_display": "\u20b9499",
+          "currency": "INR",
+          "duration_days": 0,
+          "entitlement_quantity": 500,
+          "catalog_visible": true,
+          "enabled_for_purchase": true
+        }
+      ]
+    }
+  ],
+  "catalogFailures": [],
+  "caseCount": 20,
+  "widths": [
+    320,
+    390,
+    768,
+    1024,
+    1440
+  ],
+  "failures": [],
+  "runtimeErrorCount": 0,
+  "consoleErrorCount": 0,
+  "blockedWrites": [],
+  "blockedPrivateReads": [],
+  "resourceWarnings": [
+    {
+      "url": "https://www.hirewizhq.com/pricing",
+      "type": "fetch",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://www.hirewizhq.com/login",
+      "type": "fetch",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://www.hirewizhq.com/login",
+      "type": "fetch",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://www.hirewizhq.com/register",
+      "type": "fetch",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://www.hirewizhq.com/register",
+      "type": "fetch",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://www.hirewizhq.com/login",
+      "type": "fetch",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://www.hirewizhq.com/login",
+      "type": "fetch",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://www.hirewizhq.com/register",
+      "type": "fetch",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://www.hirewizhq.com/pricing",
+      "type": "fetch",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://www.hirewizhq.com/register",
+      "type": "fetch",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://www.hirewizhq.com/register",
+      "type": "fetch",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://www.hirewizhq.com/login",
+      "type": "fetch",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://www.hirewizhq.com/login",
+      "type": "fetch",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://www.hirewizhq.com/register",
+      "type": "fetch",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://www.hirewizhq.com/login",
+      "type": "fetch",
+      "failure": "net::ERR_ABORTED"
+    }
+  ],
+  "routeMediansMs": {
+    "home": {
+      "DCL_median_ms": 433,
+      "LCP_median_ms": 624
+    },
+    "pricing": {
+      "DCL_median_ms": 730,
+      "LCP_median_ms": 864
+    },
+    "login": {
+      "DCL_median_ms": 455,
+      "LCP_median_ms": 476
+    },
+    "jobs-handoff": {
+      "DCL_median_ms": 514,
+      "LCP_median_ms": 864
+    }
+  },
+  "maxObservedCLS": 0.09188368055555556,
+  "limitations": [
+    "One navigation per route and width in unthrottled headless Chromium on the local network; no field/p75/p95, INP or load measurement.",
+    "Automated accessibility and keyboard/visual smoke is not a complete accessibility audit.",
+    "No account authentication, payment, application or personal data; non-GET/HEAD/OPTIONS browser requests blocked."
+  ],
+  "initialRunEvidence": "/tmp/hirewiz-public-smoke-next-7cc49c2-1791476705670/REPORT.md",
+  "harnessCorrections": {
+    "public_provider_read": "Allow verified anonymous NextAuth GET /api/auth/providers configuration; first run incorrectly blocked it and generated bootstrap console/error-log artifacts.",
+    "interaction_readiness": "Await anonymous public session and login-provider bootstrap completion before menu interaction; two first-run 320px menu timeouts did not recur.",
+    "product_changes_between_runs": false,
+    "final_case_retries": 0
+  },
+  "visualReview": {
+    "readable_top_crops": 20,
+    "full_page_contact_sheets": 4,
+    "representative_menu_widths": [
+      320,
+      390,
+      768,
+      1024
+    ],
+    "clipping_found": false,
+    "first_visit_cookie_banner_preserved": true
+  },
+  "resourceWarningClassification": "15 public route fetch net::ERR_ABORTED events during navigation/prefetch, separated from functional failures; all documents and checks passed."
+}
