@@ -1,13 +1,13 @@
 """Typed, identity-only command receipts; not browser/action authority."""
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 
-from .contracts import Contract, Digest, Timestamp, fingerprint
-from .gcp_contracts import JournalReceipt, RegistryPin
+from .contracts import Contract, Digest, Identifier, Timestamp, fingerprint
+from .gcp_contracts import Generation, JournalReceipt, RegistryPin
 from .pairing_contracts import PositiveInteger
 
 PairingCommand = Literal[
@@ -73,3 +73,43 @@ class PairingExecution(Contract):
         if self.status == "UNKNOWN" and (self.journal is not None or self.result is not None):
             raise ValueError("Unknown commit cannot return pairing authority")
         return self
+
+
+class PairingAttemptReceipt(Contract):
+    bucket: Identifier
+    path: Annotated[str, Field(pattern=r"^authority-pairing-attempts/[a-f0-9]{64}/[a-f0-9-]{36}\.json$")]
+    generation: Generation
+    sha256: Digest
+
+
+class _PairingAttemptBinding(Contract):
+    version: Literal[1] = 1
+    operation_id: UUID
+    attempt_id: UUID
+    pin: RegistryPin
+    epoch_generation: PositiveInteger
+    intent_sha256: Digest
+    journal: JournalReceipt
+
+    def matches(self, intent: PairingJournalIntent, receipt: JournalReceipt) -> bool:
+        return (self.operation_id == intent.operation_id and self.pin == intent.pin
+                and self.epoch_generation == intent.epoch_generation
+                and self.intent_sha256 == intent.digest and self.journal == receipt)
+
+
+class PairingAttemptMarker(_PairingAttemptBinding):
+    """Secret-free protected attempt consumption before native admission."""
+
+    kind: Literal["pairing_attempt_consumption"] = "pairing_attempt_consumption"
+
+
+class PairingInvocationClaim(_PairingAttemptBinding):
+    """Immutable attempt consumption, never a resume/dispatch credential."""
+
+    kind: Literal["pairing_invocation_attempt"] = "pairing_invocation_attempt"
+    marker: PairingAttemptReceipt
+
+    def attempt_marker(self) -> PairingAttemptMarker:
+        return PairingAttemptMarker.model_validate({
+            **self.model_dump(mode="json", exclude={"marker"}), "kind": "pairing_attempt_consumption",
+        })

@@ -1,6 +1,9 @@
 # Connected pairing bridge: isolated development proof
 
 Date: 2026-10-09. This is a development slice, not production enablement.
+The original 336-case bridge evidence below is historical. The additive
+[durable invocation admission stage](GCP_PAIRING_INVOCATION_ADMISSION_STAGE_2026-10-09.md)
+supersedes its local-only dispatch admission; the production factory remains unavailable.
 
 The isolated snapshot was copied from tracked source
 `772634d9ce8445acd559564f9b33a503ee7f0943`, including the parent's uncommitted
@@ -68,9 +71,14 @@ coordinator cannot execute. An in-flight clone sees status only, including
 UNKNOWN while no receipt is retained. Failed first attempts consume that local
 plan; a plan is never a public retry credential.
 
-The first attempt checks the fresh fence/lifetime, writes and verifies its typed
-create-only journal intent outside any Firestore transaction, then invokes the
-actual core. `BufferedRegistry.before_attempt` checks the fence/lifetime outside
+The first attempt checks the fresh fence/lifetime and requires a pairing-only
+fresh acknowledged create of its protected intent. Existing or ambiguous original
+uploads are receipt/status-only for that invocation; the generic journal's
+reconciliation behavior is unchanged. Before invoking the actual core it then
+requires a fresh acknowledged protected attempt marker and its own acknowledged
+immutable native invocation claim. All Storage IO is outside native transactions.
+`BufferedRegistry.before_attempt` checks the fence/lifetime and exact protected
+marker generation outside
 each native transaction, including a retry. Only a definite `ABORTED` response
 can rerun the bounded transaction callback; UUID cursor rewind then reuses the
 same allocation sequence. Other sent-Commit failures produce UNKNOWN and never
@@ -146,13 +154,14 @@ a restore-witness operator workflow. Those are required before any real
 identity output or browser authority is enabled. No candidate or application
 submission is covered by this slice.
 
-The one-shot operation latch and issuing capability are coordinator/process-
-local. New coordinators cannot execute old private plans, and only public
-status reconciliation is supported after process loss. This is not a durable
-invocation ledger or multi-process lifetime proof. There is no production plan
-loader. A production integration must independently establish protected durable
-invocation/lifetime and resource policy; it must not reconstruct an old plan
-and treat an absent receipt as permission to retry an unknown mutation.
+The one-shot operation latch and issuing capability remain coordinator/process-
+local checks. The additive protected intent/attempt/native-claim admission is now
+the durable consumption gate, conditional on the independent history, pinned
+resources and current restore fence. New coordinators cannot execute old private
+plans, and public status reconciliation never reconstructs output after process
+loss. There is no production plan loader. Deployment lifetime, protected history,
+resource policy and complete restore coverage remain unproved; native absence
+alone never establishes permission to retry an unknown operation.
 
 Protected command intents contain digests and allocation commitments, not the
 complete replayable key-owner, subject and device-deny effects. Those effects

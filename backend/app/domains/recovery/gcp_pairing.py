@@ -23,11 +23,14 @@ from .contracts import canonical, fingerprint
 from .gcp_buffer import BufferedRegistry, BufferedTransaction
 from .gcp_contracts import AmbiguousCommit, JournalReceipt, OperationStatus, RegistryPin
 from .gcp_journal import Fence, GcsJournal, UnavailableFence
+from .gcp_pairing_attempts import PairingAttemptStore, UnavailablePairingAttempts
 from .gcp_pairing_contracts import (
     ID_COUNTS,
     NONCE_POSITIONS,
+    PairingAttemptMarker,
     PairingCommand,
     PairingExecution,
+    PairingInvocationClaim,
     PairingJournalIntent,
 )
 from .gcp_service import control_record
@@ -80,6 +83,7 @@ class _Replay(GuardUnavailable):
 class _Invocation:
     intent: PairingJournalIntent
     receipt: JournalReceipt
+    claim: PairingInvocationClaim
     allocated_ids: tuple[UUID, ...] = field(repr=False)
     cursor: int = 0
     confirmed: bool = False
@@ -212,6 +216,7 @@ class _PairingStore:
             scope.cursor = start_cursor
             coordinator._fresh(scope.intent)
             coordinator._control(tx)
+            coordinator._claim(tx, scope.claim)
             if tx.get("pairing_operations", str(scope.intent.operation_id)) is not None:
                 raise _Replay("Existing pairing operation is status-only")
             wrapped = _PairingTransaction(tx, coordinator, scope.intent.command)
@@ -224,17 +229,18 @@ class _PairingStore:
                 tx.put("pairing_projections", str(scope.intent.operation_id), projection, immutable=True)
                 tx.put("pairing_operations", str(scope.intent.operation_id), {
                     "intent_sha256": scope.intent.digest, "journal": scope.receipt.model_dump(mode="json"),
+                    "invocation_sha256": fingerprint(scope.claim.model_dump(mode="json")),
                     "projection_sha256": fingerprint(projection), "event_id": wrapped.appended["event_id"],
                 }, immutable=True)
             captured[:] = [result]
             mutated[:] = [wrote]
             coordinator._fresh(scope.intent)
 
-        coordinator.registry.run(stage, before_attempt=lambda: coordinator._before(scope.intent))
+        coordinator.registry.run(stage, before_attempt=lambda: coordinator._before_claim(scope.intent, scope.claim))
         if mutated == [True]:
             scope.confirmed = True
         try:
-            coordinator._before(scope.intent)
+            coordinator._before_claim(scope.intent, scope.claim)
         except (GuardUnavailable, GuardDenied) as exc:
             raise AmbiguousCommit("Pairing output withheld after post-transaction fence failure") from exc
         return captured[0]
@@ -248,7 +254,7 @@ class _FencedClaims:
         scope = self.coordinator._scope.get()
         if scope is None or not scope.confirmed:
             raise GuardUnavailable("Claim signing requires this command's confirmed native commit")
-        self.coordinator._before(scope.intent)
+        self.coordinator._before_claim(scope.intent, scope.claim)
         return self.target.sign(payload)
 
 
@@ -256,12 +262,14 @@ class GcpPairingCoordinator:
     def __init__(self, registry: BufferedRegistry, journal: GcsJournal, pin: RegistryPin, *,
                  epoch_generation: int, fence: Fence | None = None,
                  assertions: AssertionVerifier | None = None, claims: ClaimIssuer | None = None,
+                 attempts: PairingAttemptStore | None = None,
                  now_ms: Callable[[], int] = lambda: time.time_ns() // 1_000_000):
         if registry.rpc.database_resource != pin.database:
             raise GuardDenied("Pairing transport/database pin mismatch")
         pairing_control_record(pin, epoch_generation)
         self.registry, self.journal, self.pin = registry, journal, pin
         self.epoch_generation, self.fence, self.now_ms = epoch_generation, fence or UnavailableFence(), now_ms
+        self.attempts = attempts if attempts is not None else UnavailablePairingAttempts()
         self._issuer = object()
         self._plan_lock = Lock()
         self._issued: dict[UUID, tuple[str, tuple[UUID, ...], bool]] = {}
@@ -368,14 +376,32 @@ class GcpPairingCoordinator:
         self._before(intent)
         if self._attempted(plan, claim=True):
             return self._receipt_only(intent)
-        receipt = self.journal.write(intent)  # No Firestore transaction spans GCS.
-        scope = _Invocation(intent, receipt, plan._allocated_ids)
+        receipt = self.attempts.write_intent(intent)  # No Firestore transaction spans GCS.
+        if receipt is None:
+            return self._receipt_only(intent)
+        self.journal.verify(intent, receipt)
+        self._before(intent)
+        marker = PairingAttemptMarker(operation_id=intent.operation_id, attempt_id=uuid4(), pin=self.pin,
+            epoch_generation=self.epoch_generation, intent_sha256=intent.digest, journal=receipt)
+        consumed = self.attempts.consume(marker)  # Never inside a native transaction.
+        if consumed is None:
+            return self._receipt_only(intent)
+        claim = PairingInvocationClaim.model_validate({**marker.model_dump(mode="json"),
+            "kind": "pairing_invocation_attempt", "marker": consumed.model_dump(mode="json")})
+        try:
+            if not self._admit(intent, claim):
+                return self._receipt_only(intent)
+        except AmbiguousCommit:
+            # Reading a matching retained claim cannot replace this invocation's
+            # missing Commit acknowledgement. It may already have dispatched.
+            return self._unknown(intent)
+        scope = _Invocation(intent, receipt, claim, plan._allocated_ids)
         token = self._scope.set(scope)
         try:
             result = getattr(self.core, intent.command)(**parameters)
             if not scope.confirmed:
                 raise GuardUnavailable("Pairing command has no confirmed mutation receipt")
-            self._before(intent)
+            self._before_claim(intent, claim)
             return PairingExecution(status="COMMITTED", operation_id=intent.operation_id,
                                     intent_sha256=intent.digest, journal=receipt, result=result)
         except _Replay:
@@ -397,17 +423,24 @@ class GcpPairingCoordinator:
             self.fence.check(self.pin)
             key = str(intent.operation_id)
             records = self.registry.read_many((("control", "meta"), ("pairing_control", "current"),
-                ("pairing_operations", key), ("pairing_projections", key), ("head", "global")))
+                ("pairing_operations", key), ("pairing_projections", key),
+                ("pairing_invocations", key), ("head", "global")))
             if not self._controls_match(records["control", "meta"], records["pairing_control", "current"]):
                 raise GuardUnavailable("Pairing status control is unavailable")
             row, projection = records["pairing_operations", key], records["pairing_projections", key]
             if row is None or projection is None:
                 raise GuardUnavailable("Pairing operation has no complete projection")
-            if (set(row) != {"intent_sha256", "journal", "projection_sha256", "event_id"}
+            if (set(row) != {"intent_sha256", "journal", "invocation_sha256", "projection_sha256", "event_id"}
                     or row["intent_sha256"] != intent.digest or fingerprint(projection) != row["projection_sha256"]
                     or set(projection) != {"changes", "event"}):
                 raise GuardUnavailable("Pairing operation projection disagrees")
             receipt = JournalReceipt.model_validate(row["journal"])
+            retained = records["pairing_invocations", key]
+            if retained is None:
+                raise GuardUnavailable("Pairing operation has no matching immutable invocation claim")
+            claim = PairingInvocationClaim.model_validate(retained)
+            if not claim.matches(intent, receipt) or fingerprint(retained) != row["invocation_sha256"]:
+                raise GuardUnavailable("Pairing operation has no matching immutable invocation claim")
             event = _checked_event(projection["event"])
             if (event["event_id"] != row["event_id"] or event["kind"] != _EVENTS[intent.command]
                     or self.registry.read("events", row["event_id"]) != event):
@@ -418,11 +451,64 @@ class GcpPairingCoordinator:
                     or (head["sequence"] == event["sequence"] and head["digest"] != event["digest"])):
                 raise GuardUnavailable("Pairing event is ahead of retained head")
             self.journal.verify(intent, receipt)
+            self.attempts.verify(claim.attempt_marker(), claim.marker)
             self.fence.check(self.pin)
             return OperationStatus(status="COMMITTED", operation_id=intent.operation_id,
                                    intent_sha256=intent.digest, journal=receipt)
         except (GuardUnavailable, ValidationError):
             return OperationStatus(status="UNKNOWN", operation_id=intent.operation_id, intent_sha256=intent.digest)
+
+    def _claim(self, tx: BufferedTransaction, claim: PairingInvocationClaim) -> None:
+        retained = tx.get("pairing_invocations", str(claim.operation_id))
+        if retained is None or canonical(retained) != canonical(claim.model_dump(mode="json")):
+            raise GuardUnavailable("Exact acknowledged invocation claim is no longer current")
+
+    def _before_claim(self, intent: PairingJournalIntent, claim: PairingInvocationClaim) -> None:
+        self._before(intent)
+        self.attempts.verify(claim.attempt_marker(), claim.marker)
+        self._before(intent)
+
+    def _admit(self, intent: PairingJournalIntent, claim: PairingInvocationClaim) -> bool:
+        """Own definite create acknowledgement alone permits the first dispatch.
+
+        Existing claims are consumed even if the core never ran. Neither status
+        reads nor a new process can adopt, expire or reclaim an attempted ID.
+        """
+        if (intent.pin != self.pin or intent.epoch_generation != self.epoch_generation
+                or not claim.matches(intent, claim.journal)):
+            raise GuardDenied("Admission claim is not bound to the exact current intent")
+        created: list[bool] = []
+        def stage(tx: BufferedTransaction) -> None:
+            self._fresh(intent)
+            self._control(tx)
+            clock = _PairingTransaction(tx, self, None).get("clock", "observed")
+            assert clock is not None
+            if self.now_ms() < clock["now_ms"]:
+                raise GuardDenied("Pairing admission cannot move behind the retained clock")
+            prior = tx.get("pairing_invocations", str(intent.operation_id))
+            if prior is not None:
+                try:
+                    matching = PairingInvocationClaim.model_validate(prior).matches(intent, claim.journal)
+                except ValidationError as exc:
+                    raise GuardUnavailable("Retained pairing invocation claim is corrupt") from exc
+                if not matching:
+                    raise GuardDenied("Operation ID belongs to another immutable intent/journal")
+                created[:] = [False]
+                return
+            tx.put("pairing_invocations", str(intent.operation_id), claim.model_dump(mode="json"), immutable=True)
+            created[:] = [True]
+            self._fresh(intent)
+
+        self.registry.run(stage, before_attempt=lambda: self._before_claim(intent, claim))
+        # The buffer returns only after complete Commit acknowledgement, or a
+        # read-only rollback for an existing claim. Fresh IO remains outside it.
+        try:
+            self._before_claim(intent, claim)
+        except (GuardUnavailable, GuardDenied) as exc:
+            if created == [True]:
+                raise AmbiguousCommit("Acknowledged admission output withheld after fence/lifetime loss") from exc
+            raise
+        return created == [True]
 
     def pairing_status(self, pairing_id: str) -> dict:
         """The existing core's redacted lifecycle status, through a read-only scope."""

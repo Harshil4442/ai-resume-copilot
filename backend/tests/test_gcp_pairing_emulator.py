@@ -11,7 +11,7 @@ import hashlib
 import json
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
-from threading import Event
+from threading import Event, Lock, get_ident
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 from urllib.parse import parse_qs, unquote, urlsplit
@@ -40,7 +40,8 @@ from app.domains.recovery.gcp_pairing import (
     PairingCommandPlan,
     pairing_control_record,
 )
-from app.domains.recovery.gcp_pairing_contracts import PairingJournalIntent
+from app.domains.recovery.gcp_pairing_attempts import GcsPairingAttempts
+from app.domains.recovery.gcp_pairing_contracts import PairingAttemptMarker, PairingJournalIntent
 from app.domains.recovery.gcp_rpc import FirestoreRpc
 from app.domains.recovery.gcp_service import control_record
 from app.domains.recovery.pairing_auth import PinnedAssertions, verify_signature
@@ -57,13 +58,41 @@ ENDPOINT = "127.0.0.1:58877"
 PROJECT = "hirewiz-local-authority"
 
 
+def is_admission(writes):
+    return len(writes) == 1 and json.loads(writes[0].raw)["namespace"] == "pairing_invocations"
+
+
+class LocalTransactions:
+    """Prove IO is outside its own transaction even with concurrent replicas."""
+
+    def __init__(self):
+        self.owners, self.lock = {}, Lock()
+
+    def add(self, transaction):
+        with self.lock:
+            self.owners[transaction] = get_ident()
+
+    def discard(self, transaction):
+        with self.lock:
+            self.owners.pop(transaction, None)
+
+    def __bool__(self):
+        with self.lock:
+            return get_ident() in self.owners.values()
+
+    def any(self):
+        with self.lock:
+            return bool(self.owners)
+
+
 class SyntheticJournalHttp:
     def __init__(self, active):
-        self.active, self.allowed, self.objects, self.calls = active, {}, {}, []
+        self.active, self.allowed, self.objects, self.calls, self.intents = active, {}, {}, [], {}
 
     def allow(self, intent):
         path, raw = GcsJournal._intent_bytes(intent)
         self.allowed[path] = raw
+        self.intents[str(intent.operation_id)] = intent
 
     def request(self, method, url, **kwargs):
         assert not self.active, "Storage SDK IO entered a native transaction"
@@ -75,6 +104,18 @@ class SyntheticJournalHttp:
             metadata = kwargs["data"].split(b"\r\n\r\n", 1)[1].split(b"\r\n--", 1)[0]
             path = json.loads(metadata)["name"]
             assert query["ifGenerationMatch"] == ["0"] and query["uploadType"] == ["multipart"]
+            if path.startswith("authority-pairing-attempts/"):
+                raw = kwargs["data"].split(b"\r\n\r\n")[2].rsplit(b"\r\n--", 1)[0]
+                marker = PairingAttemptMarker.model_validate(json.loads(raw))
+                intent = self.intents[str(marker.operation_id)]
+                intent_path, intent_raw = GcsJournal._intent_bytes(intent)
+                assert marker.pin == intent.pin and marker.epoch_generation == intent.epoch_generation
+                assert marker.intent_sha256 == intent.digest
+                assert marker.journal.bucket == "synthetic-pairing-journal"
+                assert marker.journal.path == intent_path and marker.journal.sha256 == hashlib.sha256(intent_raw).hexdigest()
+                assert marker.journal.generation == self.objects[intent_path][1]
+                assert GcsPairingAttempts._bytes(marker) == (path, raw)
+                self.allowed[path] = raw
             assert self.allowed[path] in kwargs["data"]
             if path in self.objects:
                 return response(b'{"error":{"code":412,"message":"synthetic existing object"}}', status=412)
@@ -133,7 +174,7 @@ def case(monkeypatch):
     rpc = FirestoreRpc(client, SimpleNamespace(), database_resource=database, rpc_timeout=5.0)
     registry = BufferedRegistry(rpc, deadline_seconds=10.0)
     pin = RegistryPin(database=database, database_uid=uuid4(), authority_id=uuid4(), incarnation=1, epoch_id=uuid4())
-    active, commits = set(), []
+    active, commits = LocalTransactions(), []
     real_begin, real_commit, real_rollback = rpc.begin, rpc.commit, rpc.rollback
     def begin():
         transaction = real_begin()
@@ -180,13 +221,14 @@ def case(monkeypatch):
     http_session.request.side_effect = http.request
     storage = Client(project=PROJECT, credentials=AnonymousCredentials(), _http=http_session)
     journal = GcsJournal(storage.bucket("synthetic-pairing-journal"))
+    attempts = GcsPairingAttempts(storage.bucket("synthetic-pairing-journal"))
     fence = SyntheticFence(active, pin)
     auth_key, device_key, claim_key = [ec.generate_private_key(ec.SECP256R1()) for _ in range(3)]
     claims = FixtureClaims(claim_key)
-    value = SimpleNamespace(rpc=rpc, registry=registry, pin=pin, journal=journal, fence=fence, http=http,
+    value = SimpleNamespace(rpc=rpc, registry=registry, pin=pin, journal=journal, attempts=attempts, fence=fence, http=http,
         active=active, commits=commits, subject=subject, session=session, principal=principal,
         auth_key=auth_key, device_key=device_key, claim_key=claim_key, claims=claims, now=NOW)
-    value.coordinator = GcpPairingCoordinator(registry, journal, pin, epoch_generation=1, fence=fence,
+    value.coordinator = GcpPairingCoordinator(registry, journal, pin, epoch_generation=1, fence=fence, attempts=attempts,
         assertions=PinnedAssertions(issuer="fixture_auth", public_key=jwk(auth_key)), claims=claims,
         now_ms=lambda: value.now)
     def operator_replace(namespace, key, changed):
@@ -203,6 +245,7 @@ def case(monkeypatch):
     try:
         yield value
     finally:
+        assert not active.any(), "Native transaction cleanup leaked in another thread"
         channel.close()
         storage.close()
 
@@ -277,6 +320,8 @@ def test_definite_aborted_reuses_preallocated_ids_and_fresh_fence(case, monkeypa
     case.http.allow(intent.intent)
     real_commit, attempts = case.rpc.commit, []
     def abort_once(transaction, writes):
+        if is_admission(writes):
+            return real_commit(transaction, writes)
         attempts.append(tuple(write.raw for write in writes))
         if len(attempts) == 1:
             parameters["key"]["x"] = jwk(ec.generate_private_key(ec.SECP256R1()))["x"]
@@ -288,7 +333,7 @@ def test_definite_aborted_reuses_preallocated_ids_and_fresh_fence(case, monkeypa
     monkeypatch.setattr("app.domains.recovery.pairing_service.uuid4", mint_forbidden)
     result = case.coordinator.execute(intent, parameters)
     assert result.status == "COMMITTED" and attempts[0] == attempts[1]
-    assert len(case.commits) == 1 and case.fence.calls >= 5
+    assert len(case.commits) == 2 and sum(map(is_admission, case.commits)) == 1 and case.fence.calls >= 5
     assert result.result["request"]["challenge_id"] == str(intent.intent.allocated_ids[3])
     assert result.result["request"]["public_key"] == jwk(case.device_key)
 
@@ -298,7 +343,10 @@ def test_ambiguous_no_retained_commit_is_status_only_for_cloned_operation(case, 
     plan = case.coordinator.allocate("complete_device", proof)
     case.http.allow(plan.intent)
     attempts = []
+    real_commit = case.rpc.commit
     def unknown_without_retained_row(transaction, writes):
+        if is_admission(writes):
+            return real_commit(transaction, writes)
         attempts.append(writes)
         case.active.discard(transaction)
         raise AmbiguousCommit("Synthetic sent Commit with no known retained outcome")
@@ -325,12 +373,12 @@ def test_concurrent_cloned_plan_never_runs_a_second_core_mutation(case, monkeypa
     plan = case.coordinator.allocate("prepare_request", parameters)
     case.http.allow(plan.intent)
     entered, release = Event(), Event()
-    real_write = case.journal.write
+    real_write = case.attempts.write_intent
     def wait_before_write(intent):
         entered.set()
         assert release.wait(3.0)
         return real_write(intent)
-    monkeypatch.setattr(case.journal, "write", wait_before_write)
+    monkeypatch.setattr(case.attempts, "write_intent", wait_before_write)
     with ThreadPoolExecutor(max_workers=1) as pool:
         pending = pool.submit(case.coordinator.execute, plan, parameters)
         assert entered.wait(3.0)
@@ -341,8 +389,8 @@ def test_concurrent_cloned_plan_never_runs_a_second_core_mutation(case, monkeypa
             release.set()
         winner = pending.result(timeout=5.0)
     assert winner.status == "COMMITTED" and winner.result is not None
-    assert len(case.commits) == 1
-    assert len([method for method, _ in case.http.calls if method == "POST"]) == 1
+    assert len(case.commits) == 2 and sum(map(is_admission, case.commits)) == 1
+    assert len([method for method, _ in case.http.calls if method == "POST"]) == 2  # Intent + consumption marker.
 
 
 def test_journal_hook_cannot_change_bound_nested_key(case, monkeypatch):
@@ -350,11 +398,11 @@ def test_journal_hook_cannot_change_bound_nested_key(case, monkeypatch):
     plan = case.coordinator.allocate("prepare_request", parameters)
     case.http.allow(plan.intent)
     original = jwk(case.device_key)
-    real_write = case.journal.write
+    real_write = case.attempts.write_intent
     def mutate_input(intent):
         parameters["key"].update(jwk(ec.generate_private_key(ec.SECP256R1())))
         return real_write(intent)
-    monkeypatch.setattr(case.journal, "write", mutate_input)
+    monkeypatch.setattr(case.attempts, "write_intent", mutate_input)
     result = case.coordinator.execute(plan, parameters)
     assert result.status == "COMMITTED" and result.result["request"]["public_key"] == original
     assert parameters["key"] != original
@@ -372,12 +420,12 @@ def test_journal_hook_cannot_change_bound_candidate_assertion(case, monkeypatch)
                   "envelope": assertion(case, challenge)}
     plan = case.coordinator.allocate("confirm_candidate", parameters)
     case.http.allow(plan.intent)
-    real_write = case.journal.write
+    real_write = case.attempts.write_intent
     def mutate_input(intent):
         parameters["envelope"]["payload"]["subject_uuid"] = str(uuid4())
         parameters["envelope"]["signature"] = "invalid_mutated_signature"
         return real_write(intent)
-    monkeypatch.setattr(case.journal, "write", mutate_input)
+    monkeypatch.setattr(case.attempts, "write_intent", mutate_input)
     result = case.coordinator.execute(plan, parameters)
     assert result.status == "COMMITTED" and result.result["status"] == "CANDIDATE_CONFIRMED"
     stored = case.registry.read("pairing_confirmations", request["pairing_id"])
@@ -391,17 +439,19 @@ def test_real_native_commit_response_loss_never_signs_or_remints_claim(case, mon
     real_commit = case.rpc.commit
     before = len(case.commits)
     def lose_reply(transaction, writes):
-        real_commit(transaction, writes)
+        committed = real_commit(transaction, writes)
+        if is_admission(writes):
+            return committed
         raise AmbiguousCommit("Synthetic loss after actual successful native commit")
     monkeypatch.setattr(case.rpc, "commit", lose_reply)
     result = case.coordinator.execute(intent, proof)
     assert result.status == "UNKNOWN" and result.result is result.journal is None
-    assert case.claims.calls == 0 and len(case.commits) == before + 1
+    assert case.claims.calls == 0 and len(case.commits) == before + 2
     assert case.coordinator.status(intent.intent).status == "COMMITTED"
     monkeypatch.setattr(case.rpc, "commit", real_commit)
     replay = case.coordinator.execute(intent, proof)
     assert replay.status == "COMMITTED" and replay.result is None and case.claims.calls == 0
-    assert len(case.commits) == before + 1
+    assert len(case.commits) == before + 2
     assert case.registry.read("pairing_key_owners", request["key_sha256"]) is not None
     replacement = case.coordinator.allocate("complete_device", proof)
     case.http.allow(replacement.intent)
@@ -471,6 +521,8 @@ def test_post_commit_fence_or_lifetime_loss_is_unknown_without_claim(case, monke
     before = len(case.commits)
     def close_after_commit(transaction, writes):
         result = real_commit(transaction, writes)
+        if is_admission(writes):
+            return result
         if fault == "fence":
             case.fence.closed = True
         else:
@@ -479,7 +531,7 @@ def test_post_commit_fence_or_lifetime_loss_is_unknown_without_claim(case, monke
     monkeypatch.setattr(case.rpc, "commit", close_after_commit)
     result = case.coordinator.execute(plan, proof)
     assert result.status == "UNKNOWN" and result.result is result.journal is None
-    assert case.claims.calls == 0 and len(case.commits) == before + 1
+    assert case.claims.calls == 0 and len(case.commits) == before + 2
     assert case.registry.read("pairing_key_owners", request["key_sha256"]) is not None
     case.fence.closed = False
     assert case.coordinator.status(plan.intent).status == "COMMITTED"

@@ -39,6 +39,16 @@ and one failure remain historical evidence. These additions are not serving prod
 They do not establish browser pairing, real portal completion, a restore drill, provider
 invoice caps or measured worldwide recall. See [root integration and staging](ROOT_COMPONENT_INTEGRATION_2026-10-09.md).
 
+The subsequent [admission/authentication/KMS integration](PAIRING_AUTH_INTEGRATION_2026-10-09.md)
+passes 1,459 combined backend cases without skips and the full-CI type selection
+on 80 source files. Recent-password IO and KMS signing logging defects were
+repaired and reviewed before integration. Protected durable pairing admission is
+implemented locally; native candidate dispatch, retained account/session writers,
+challenge-scoped admission before signing and actual cloud/browser proof remain
+open. Account deletion also erases unknown model-cost holds in the current source;
+a minimal independent financial ledger and late-settlement repair is required
+before the monetary rollout. Production remains the earlier deployed release.
+
 Compatibility correction `b306f13` passed all four exact remote CI jobs and an immutable
 GCP image build. Its API candidate is ready with generation disabled and **zero production
 traffic**; the prior serving API retains 100%. No queue pause, worker retirement or

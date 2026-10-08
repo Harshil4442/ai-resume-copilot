@@ -64,8 +64,9 @@ jobs:
           tests/fixtures/recovery_sequence_projection.py tests/test_recovery_sequences.py tests/test_recovery_sequences_processes.py
           tests/test_catalog_timing.py
           tests/fixtures/pairing_authority.py tests/test_pairing_crypto.py tests/test_pairing_service.py tests/test_pairing_processes.py
+          tests/test_pairing_kms.py tests/test_password_reauth.py
           tests/test_job_coverage_audit.py
-          tests/test_gcp_rpc.py tests/test_gcp_journal_sdk.py tests/test_gcp_safety_coordinator.py tests/test_gcp_rpc_emulator.py tests/test_gcp_pairing_emulator.py
+          tests/test_gcp_rpc.py tests/test_gcp_journal_sdk.py tests/test_gcp_safety_coordinator.py tests/test_gcp_rpc_emulator.py tests/test_gcp_pairing_emulator.py tests/test_gcp_pairing_admission_emulator.py
           app/domains/recovery/gcp_media.py
           tests/conftest.py tests/model_cost_fixtures.py tests/test_model_cost_budgets.py tests/test_model_cost_budgets_postgres.py
           app/services/model_cost_policy.py app/services/generation_budget.py app/services/llm_client.py
@@ -143,6 +144,8 @@ jobs:
         working-directory: backend
         env:
           HIREWIZ_TEST_POSTGRES_URL: postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55433/hirewiz_admission_test
+          PAIRING_PASSWORD_TEST_POSTGRES_ADMIN_URL: postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55433/postgres
+          PAIRING_PASSWORD_TEST_POSTGRES_REQUIRED: "true"
           EMPLOYER_PACING_TEST_REDIS_URL: redis://127.0.0.1:56379/0
           HIREWIZ_AUTHORITY_EMULATOR_REQUIRED: "true"
         run: |
