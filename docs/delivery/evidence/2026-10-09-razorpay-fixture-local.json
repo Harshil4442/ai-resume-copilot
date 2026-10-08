@@ -1,0 +1,92 @@
+{
+  "scope": "Hand-authored synthetic Razorpay-like loopback form and DOM adapter test scaffold only; not production/MV3/v2 integration",
+  "frozen_patch_sha256": "ead6579ddbbda52ff7b5f1191c4dc6ef02e9d7ca447bd1f6755754fb7c5ed218",
+  "agent_summary_sha256": "7e33a002cff3429a014274d098860ae68963c6b07365227baaac20440f4134e3",
+  "sources": [
+    {
+      "path": "browser-companion/fixtures/razorpay/schema.js",
+      "bytes": 3670,
+      "lines": 33,
+      "sha256": "81f35509815a749d480117f15d1f2e3eaab3bf125d26b3bfcff127231857d310"
+    },
+    {
+      "path": "browser-companion/fixtures/razorpay/form.js",
+      "bytes": 9160,
+      "lines": 39,
+      "sha256": "ff1ef46b4166a78341aba2544e99d077f7e121ddb8748fb1d8265638d98f2a63"
+    },
+    {
+      "path": "browser-companion/fixtures/razorpay/server.js",
+      "bytes": 2899,
+      "lines": 31,
+      "sha256": "c9bd337e79b358d957e326c06ab210b5fb093e18275ac79e24501159839ec584"
+    },
+    {
+      "path": "browser-companion/fixtures/razorpay/adapter.js",
+      "bytes": 7675,
+      "lines": 81,
+      "sha256": "067f047ac05301290b1bddaf9134a966963bbf8f737475a676bf4097f711eb25"
+    },
+    {
+      "path": "browser-companion/fixtures/razorpay/README.md",
+      "bytes": 3756,
+      "lines": 58,
+      "sha256": "0ad52cc69e9c1e1643931ea536068f462c6789f820da78f8c6c0e52b4af1d5da"
+    },
+    {
+      "path": "browser-companion/tests/razorpay-fixture.test.js",
+      "bytes": 3751,
+      "lines": 53,
+      "sha256": "021df11643ff474099a6b00efe1d3aa38bbf041b8dd0de170aeaccfdea04355a"
+    },
+    {
+      "path": "browser-companion/tests/razorpay-browser.test.js",
+      "bytes": 18186,
+      "lines": 253,
+      "sha256": "2262f7351da3a4aea52147a012d184d34841fc4ffc317bd96a31844c352336bc"
+    }
+  ],
+  "repair": {
+    "cause": "Approved answers were treated as already completed fields, omitting blank or mismatched required assisted controls from handoff.",
+    "behavior": "Remaining required assisted controls are derived from unique current DOM value equality with the exact approved value; every required manual control remains in handoff.",
+    "new_regressions": 2,
+    "review": "Parent and independent child source review found no concrete regression within the local-only repair scope.",
+    "unknown_boundary": "DOM equality is not a callback receipt, submission, byte identity, durable checkpoint or production capability."
+  },
+  "superseded_patch_sha256": "ac69208a00ca116e3d2ed44dff8e88096b572747897d2a12231ceed63407419a",
+  "root_integration": {
+    "base_commit": "6f380203c55b8574d2d345420de6ac5e3da1b784",
+    "all_seven_source_hashes_match": true,
+    "protected_sources_unchanged_against_root_HEAD": {
+      "browser-companion/extension/manifest.json": "c0c935cc20c13a689b6745d60dc080db4d7d51df9bce0bc3f01a58b21f84f476",
+      "browser-companion/extension/config.js": "8fa952ac36dad499d8e58ba09096cf41f3f59e8cadbe60b880c990af8b92c188",
+      "browser-companion/extension/protocol.js": "1d5a9844fc6422741f1dadc09c5aa4663618f0e0de05e41e576be61ea7a0d55d",
+      "browser-companion/extension/local-adapter.js": "0701719b4452a67482e9dc38ec70f53264c58bca6ccb4001f6445e6eeaa8d608",
+      "browser-companion/package.json": "1003b545df6680419c300e59025d6009aad3395ceaadb2282e68a42d1f36bcb2",
+      "browser-companion/package-lock.json": "916c52810fe0a1408d85dd22674a7e0b5562a8fb99d0e47ca0de22b8c0c42155",
+      "browser-companion/fixtures/authority.js": "125d6a5c0dd8154d6a5b50ddae940ec4a92f18d22192d2f75d297681e80c0e5f",
+      "browser-companion/scripts/fixture-build.js": "5ba138540781c824d20ca48e814bc82c7b4ef85e88fcc8e56bf5407157a01c1d"
+    },
+    "new_combined_execution": {
+      "command": "node --test tests/razorpay-fixture.test.js tests/razorpay-browser.test.js",
+      "passed": 40,
+      "unit": 5,
+      "chromium": 35,
+      "failed": 0,
+      "skipped": 0,
+      "log_sha256": "e613eabea174305ee1fe3136f88098033a5fbd64055c542c35524227650e7f85"
+    },
+    "ci": "pending exact fixture/documentation commit",
+    "production_changes": false,
+    "mv3_or_v2_integration": false
+  },
+  "not_proved": [
+    "Employer/source-use permission and candidate privacy/controller recipient policy",
+    "Live Greenhouse selectors/conditional options and arbitrary JS egress",
+    "Device pairing, independent recovery authority, SQL/Firestore restore or v2 browser integration",
+    "Byte identity for selected manual files or final employer submission"
+  ],
+  "live_employer_requests": false,
+  "candidate_data_used": false,
+  "application_or_charge_created": false
+}

@@ -1,7 +1,8 @@
 # Bounded catalog latency diagnostics
 
-Status: **integrated source and local verification; exact-commit CI, production rollout
-and production measurements pending**. This adds diagnostics to the authenticated
+Status: **exact-commit CI and GCP/Vercel rollout verified; five direct production catalog
+samples completed and correlated**. Authenticated BFF runtime and improvement remain
+unproved. This adds diagnostics to the authenticated
 employer catalog read. It does not change pricing, search results, application permissions,
 dependencies, schema, region, caching or automatic submission.
 
@@ -57,15 +58,21 @@ fixture now captures one timestamp. An advancing-clock regression verifies all f
 envelope types at their exact limits and rejection at limit plus one millisecond. The
 shipping verifier is unchanged. Local disabled-package checks, **56 protocol tests** and
 **14 actual Chromium MV3 cases** pass after this repair. The integrated repaired commit
-still requires all four remote jobs before release; the first commit is not promoted.
+passed all four remote jobs as `6f38020`; the first commit was not promoted. The verified
+[release report](RECOVERY_AND_CATALOG_RELEASE_2026-10-09.md) records backup, immutable
+image/revisions, matching frontend alias and post-promotion observations. Five direct
+catalog GETs returned HTTP200 with matching generated-ID completion events. Client totals
+were 1196.537–1303.001ms; database acquisition/query phases dominate these bounded samples.
+Connect/ping/RTT/pool/cold-start cause, percentiles and improvement remain unproved. No
+existing operator browser session was used, so authenticated BFF runtime is not measured.
 
 ## Next evidence
 
 - [x] Preserve catalog/auth/stream contracts and verify bounded numeric/private events.
 - [x] Integrate frozen repaired source with merged local verification.
-- [ ] Pass all four remote CI jobs for the immutable integrated commit.
-- [ ] Promote that exact GCP image and Vercel deployment with backup and health evidence.
-- [ ] Collect bounded authenticated catalog samples and correlate generated IDs with events.
+- [x] Pass all four remote CI jobs for immutable `6f38020`.
+- [x] Promote that exact GCP image and Vercel deployment with backup and health evidence.
+- [x] Collect five direct authenticated catalog samples and correlate generated IDs with events.
 - [ ] Use measurements to select a fix and independently verify user-visible improvement.
 - [ ] Prove field p75, sustained load, pool behavior and outage recovery separately.
 

@@ -86,7 +86,7 @@
   "root_integration": {
     "source_hashes_match_frozen_patch": true,
     "independent_review": "requirements_qa read all six files and tests; no confirmed defect within disabled local scope; did not rerun suites",
-    "whole_repository_ci": "pending exact integrated commit",
+    "whole_repository_ci": "passed; see exact_commit_remote_ci",
     "production_enabled": false,
     "canonical_digest_maps_match": true,
     "independent_typed_value_vectors": {
@@ -127,12 +127,30 @@
           "sha256": "0561da96283dc876a4a290ee8288d6983d66d03f19c97d0378ecb51e6842a813"
         }
       },
-      "remote_exact_commit_ci": "pending",
+      "remote_exact_commit_ci": "passed 6f38020 / 37831706133",
       "local_setup_corrections": [
         "Owned disposable Redis was renamed to the existing hardcoded fixture name; unchanged full suite rerun passed.",
         "Required NEXTAUTH_SECRET absent on first local build; unchanged build rerun with synthetic CI settings passed."
       ],
       "production_enabled": false
-    }
+    },
+    "exact_commit_remote_ci": {
+      "commit": "6f380203c55b8574d2d345420de6ac5e3da1b784",
+      "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37831706133",
+      "conclusion": "success",
+      "jobs": {
+        "backend": "success",
+        "browser-companion": "success",
+        "frontend": "success",
+        "security-and-container": "success"
+      },
+      "backend_cases": 780,
+      "backend_skipped": 0,
+      "frontend_units": 71,
+      "frontend_browser_cases": 190,
+      "companion_protocol_cases": 56,
+      "companion_mv3_cases": 14
+    },
+    "production_image_integration": "6f38020 controlled rollout verified; disabled recovery core has no routes/store/auth/browser execution"
   }
 }

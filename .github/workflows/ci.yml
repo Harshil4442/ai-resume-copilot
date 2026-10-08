@@ -199,9 +199,15 @@ jobs:
           npm run check
           npm test
           npm audit --audit-level=high
+      - name: Verify synthetic Razorpay fixture contracts
+        working-directory: browser-companion
+        run: node --test tests/razorpay-fixture.test.js
       - name: Install Playwright Chromium
         working-directory: browser-companion
         run: npx playwright install --with-deps chromium
       - name: Verify local synthetic MV3 flow
         working-directory: browser-companion
         run: npm run test:browser
+      - name: Verify synthetic Razorpay browser boundary
+        working-directory: browser-companion
+        run: node --test tests/razorpay-browser.test.js

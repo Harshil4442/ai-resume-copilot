@@ -1,0 +1,20 @@
+{
+  "createTime": "2026-10-08T19:36:29.549422093Z",
+  "finishTime": "2026-10-08T19:50:05.322231Z",
+  "id": "46868635-7551-4492-8679-e0897e72ef98",
+  "results": {
+    "images": [
+      {
+        "artifactRegistryPackage": "projects/ai-resume-parser-482412/locations/us-central1/repositories/cloud-run-source-deploy/packages/hirewiz/versions/sha256:93905744d294e459f282c7db9934755f36d404d0d5c70c25bd611194cbbcfe49",
+        "digest": "sha256:93905744d294e459f282c7db9934755f36d404d0d5c70c25bd611194cbbcfe49",
+        "name": "us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz:6f380203c55b8574d2d345420de6ac5e3da1b784",
+        "pushTiming": {
+          "endTime": "2026-10-08T19:50:05.066533338Z",
+          "startTime": "2026-10-08T19:50:02.227825401Z"
+        }
+      }
+    ]
+  },
+  "startTime": "2026-10-08T19:36:30.438566149Z",
+  "status": "SUCCESS"
+}

@@ -68,6 +68,7 @@ capability; browser support needs a permitted, reviewed adapter and narrow origi
   never clear the stable claim to advance a form.
 - [ ] Connect reviewed application packages and exact form versions to the companion; prevent
   restored SQL records or queued messages from registering a fresh candidate approval.
+- [x] Integrate the [Razorpay structural fixture](RAZORPAY_FIXTURE_2026-10-09.md) with 40 focused root cases; this is local DOM scaffolding only.
 - [ ] Verify the first permitted employer adapter with conditional fields, checkpoints,
   autosave, cancellation, navigation, offline/restart refusal and narrowly scoped file handling.
 - [ ] Ship clear install/pair/review/pause/fill-only UI and verify mobile review plus desktop
@@ -83,4 +84,4 @@ See [the companion boundary](BROWSER_COMPANION.md),
 [the recovery design](RECOVERY_FOUNDATION_PLAN.md), and
 [Stage 4/5 requirements](../requirements/JOB_SEARCH_AND_APPLICATION.md) for the complete
 contracts. The current deployed release and its limits are recorded in
-[the component release report](BROWSER_FIRST_FOUNDATION_2026-10-08.md).
+[the current component release report](RECOVERY_AND_CATALOG_RELEASE_2026-10-09.md).

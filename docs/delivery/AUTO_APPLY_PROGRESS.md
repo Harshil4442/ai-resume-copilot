@@ -31,11 +31,12 @@ Production pairing and portal-use permission remain open.
   complete 630-test backend suite. Production authority and pairing remain open.
 - [x] Integrate the [disabled local multi-field core](RECOVERY_SEQUENCES_2026-10-09.md),
   with 222 focused cases, independent review and 780 passing merged local backend tests.
-  Exact remote CI and actual browser integration remain pending; no production execution
-  or application charge is enabled.
+  Exact `6f38020` CI and source image rollout are verified; actual browser integration
+  remains pending. No production execution or application charge is enabled.
 - [x] Integrate [bounded catalog timing diagnostics](CATALOG_TIMING_2026-10-09.md) with
   preserved auth/stream contracts and 71 passing merged frontend unit tests. Exact remote
-  CI, rollout, causal diagnosis and measured performance improvement remain pending.
+  CI/rollout and five correlated direct catalog samples are verified as `6f38020`;
+  causal diagnosis, authenticated BFF runtime and performance improvement remain unproved.
 - [ ] Verify all mandatory AI-disabled fresh-user workflows and optional enhanced modes.
 - [x] Verify connected responsive flows at all five declared widths with local production-build evidence.
 - [x] Validate migration round-trip through `20261008_0008` on PostgreSQL 17 and regenerate API contracts.
@@ -54,6 +55,8 @@ Production pairing and portal-use permission remain open.
 - [x] Promote frontend-only `7c59578` after all four exact-commit CI jobs passed (630 backend
   tests, no skips); verify the custom alias and homepage at 320/390/1440 px. GCP remains
   `ec52279`; the disabled recovery core is committed source, not serving production code.
+- [x] Promote [recovery source/catalog diagnostics `6f38020`](RECOVERY_AND_CATALOG_RELEASE_2026-10-09.md) after all four CI jobs; verify exact GCP/Vercel identity, private workers, three hosted widths and five correlated direct catalog reads.
+- [x] Integrate [Razorpay structural fixtures](RAZORPAY_FIXTURE_2026-10-09.md), preserving shipping boundaries; 40 root cases pass, exact fixture-commit CI pending.
 - [ ] Complete sustained field-performance, load and wider operational recovery/security validation.
 - [ ] Complete immutable GCS storage and deletion/restore/security drills from the register.
 - [ ] Prove every requirements gate before marking the full development goal complete.

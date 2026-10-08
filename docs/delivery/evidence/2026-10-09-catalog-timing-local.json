@@ -73,16 +73,16 @@
           "sha256": "0561da96283dc876a4a290ee8288d6983d66d03f19c97d0378ecb51e6842a813"
         }
       },
-      "remote_exact_commit_ci": "pending",
+      "remote_exact_commit_ci": "passed 6f38020 / 37831706133",
       "local_setup_corrections": [
         "Owned disposable Redis was renamed to the existing hardcoded fixture name; unchanged full suite rerun passed.",
         "Required NEXTAUTH_SECRET absent on first local build; unchanged build rerun with synthetic CI settings passed."
       ],
       "production_enabled": false
     },
-    "remote_ci": "pending",
-    "production_rollout": "pending",
-    "production_latency_samples": "pending",
+    "remote_ci": "passed; see exact_commit_remote_ci",
+    "production_rollout": "verified 6f38020 on GCP and Vercel; see sequences-catalog evidence",
+    "production_latency_samples": "five direct backend GETs completed and exact generated-ID events correlated; BFF authenticated runtime unproved",
     "fixture_clock_repair": {
       "first_ci_run": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37830875142",
       "first_commit": "61bdd45c2c544c5f17c772e9a4ef91c6151f9934",
@@ -97,7 +97,25 @@
         "browser-companion/fixtures/authority.js": "125d6a5c0dd8154d6a5b50ddae940ec4a92f18d22192d2f75d297681e80c0e5f",
         "browser-companion/tests/protocol.test.js": "43460e8ba40b85e42e5e3c0c7376099bdaed1cd1e443d7a6b8994d94678a561e"
       },
-      "new_exact_commit_ci": "pending"
-    }
+      "new_exact_commit_ci": "passed 6f38020 / 37831706133"
+    },
+    "exact_commit_remote_ci": {
+      "commit": "6f380203c55b8574d2d345420de6ac5e3da1b784",
+      "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37831706133",
+      "conclusion": "success",
+      "jobs": {
+        "backend": "success",
+        "browser-companion": "success",
+        "frontend": "success",
+        "security-and-container": "success"
+      },
+      "backend_cases": 780,
+      "backend_skipped": 0,
+      "frontend_units": 71,
+      "frontend_browser_cases": 190,
+      "companion_protocol_cases": 56,
+      "companion_mv3_cases": 14
+    },
+    "production_image_integration": "6f38020 controlled rollout verified; disabled recovery core has no routes/store/auth/browser execution"
   }
 }

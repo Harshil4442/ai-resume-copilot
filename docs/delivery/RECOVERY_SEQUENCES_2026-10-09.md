@@ -1,9 +1,9 @@
 # Disabled multi-field browser recovery core
 
-Status: **integrated source with focused and merged local proof; exact-commit remote CI
-and production integration remain pending**. Dates in supporting process evidence use UTC. This adds
+Status: **exact-commit CI passed; source included in the verified production image, with
+production execution still disabled**. Dates in supporting process evidence use UTC. This adds
 no HTTP route, browser execution, production authority, upload, final submission or charge.
-The serving component identities remain in [the release report](BROWSER_FIRST_FOUNDATION_2026-10-08.md).
+The serving component identities remain in [the current release report](RECOVERY_AND_CATALOG_RELEASE_2026-10-09.md).
 
 ## Behavior
 
@@ -67,8 +67,11 @@ independent reviewer read all changed contracts/services/fixtures/tests and foun
 confirmed defect within this disabled local scope. Their review is not an additional
 suite execution. Whole merged local verification passed 780 backend tests without skips,
 71 frontend unit tests, Ruff, Mypy for 58 files, six prompt evaluations, compilation,
-production frontend build and generated-contract drift checks. No exact-commit remote CI
-result is claimed here yet. See the [catalog diagnostics](CATALOG_TIMING_2026-10-09.md)
+production frontend build and generated-contract drift checks. All four remote jobs passed
+for `6f38020`, with 780 backend, 71 frontend unit, 190 browser, 56 companion protocol and
+14 Chromium MV3 cases. Controlled GCP/Vercel rollout is separately recorded in the current
+release report; inclusion in an image supplies no production action authority. See the
+[catalog diagnostics](CATALOG_TIMING_2026-10-09.md)
 for the independent instrumentation scope and local setup corrections.
 
 ## Remaining boundaries
@@ -84,7 +87,7 @@ safety. These limits remain required production gates.
 - [x] Preserve v1 source/test boundaries and independent cross-runtime vectors.
 - [x] Integrate the exact frozen six-file incremental patch and review its limited scope.
 - [x] Pass the whole merged local backend/frontend/contract/static/build checks.
-- [ ] Pass all four exact-commit remote CI jobs.
+- [x] Pass all four exact-commit remote CI jobs for `6f38020`.
 - [ ] Implement independently retained production authority and verified restore barriers.
 - [ ] Verify candidate/device enrollment and current possession against that authority.
 - [ ] Integrate exact sealed packages, actual DOM/value validation and permitted adapters.
