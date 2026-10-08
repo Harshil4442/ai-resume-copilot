@@ -33,10 +33,25 @@ from .gcp_pairing_contracts import (
     PairingInvocationClaim,
     PairingJournalIntent,
 )
+from .gcp_password_attempts import PasswordSigningStore, UnavailablePasswordSigning
+from .gcp_password_contracts import PasswordSigningClaim, PasswordSigningMarker
 from .gcp_service import control_record
 from .pairing_auth import AssertionVerifier, ClaimIssuer, UnavailableClaims
-from .pairing_contracts import JS_SAFE_MAX, canonical_bytes, digest, nonce_digest
+from .pairing_contracts import (
+    JS_SAFE_MAX,
+    CandidateAssertion,
+    canonical_bytes,
+    digest,
+    nonce_digest,
+)
 from .pairing_service import PairingService
+from .password_reauth import (
+    CandidateChallengeProof,
+    CandidateDispatchCommand,
+    CandidateWebSession,
+    RegisteredPasswordIdentity,
+    read_candidate_challenge,
+)
 from .store import GuardDenied, GuardUnavailable, Transaction
 
 _PARAMETERS = {
@@ -87,6 +102,43 @@ class _Invocation:
     allocated_ids: tuple[UUID, ...] = field(repr=False)
     cursor: int = 0
     confirmed: bool = False
+
+
+@dataclass(frozen=True)
+class _PasswordInvocation:
+    claim: PasswordSigningClaim
+    proof: CandidateChallengeProof = field(repr=False)
+    assertion: CandidateAssertion = field(repr=False)
+
+
+class _PasswordReadTransaction:
+    """Only server-resolved account/session keys; never a generic read grant."""
+
+    def __init__(self, tx: BufferedTransaction, coordinator: GcpPairingCoordinator,
+                 context: CandidateWebSession):
+        self._tx, self._base, self._context = tx, _PairingTransaction(tx, coordinator, None), context
+
+    def get(self, namespace: str, key: str) -> dict | None:
+        allowed = {"pairing_account_bindings": str(self._context.account_binding_id),
+                   "pairing_account_tombstones": str(self._context.account_binding_id),
+                   "pairing_web_sessions": str(self._context.session_id)}
+        if namespace in allowed:
+            if key != allowed[namespace]:
+                raise GuardDenied("Password identity read exceeds its resolved context")
+            return self._tx.get(namespace, key)
+        return self._base.get(namespace, key)
+
+    def event(self, event_id: str) -> dict | None:
+        return self._base.event(event_id)
+
+    def head(self) -> tuple[int, str]:
+        return self._base.head()
+
+    def put(self, namespace: str, key: str, value: dict, *, immutable: bool = False) -> None:
+        raise GuardDenied("Password identity reader cannot write authority")
+
+    def append(self, event_id: str, kind: str, payload: dict) -> dict:
+        raise GuardDenied("Password identity reader cannot append authority")
 
 
 @dataclass(frozen=True)
@@ -217,6 +269,7 @@ class _PairingStore:
             coordinator._fresh(scope.intent)
             coordinator._control(tx)
             coordinator._claim(tx, scope.claim)
+            coordinator._password_guard(tx, scope.intent)
             if tx.get("pairing_operations", str(scope.intent.operation_id)) is not None:
                 raise _Replay("Existing pairing operation is status-only")
             wrapped = _PairingTransaction(tx, coordinator, scope.intent.command)
@@ -263,6 +316,7 @@ class GcpPairingCoordinator:
                  epoch_generation: int, fence: Fence | None = None,
                  assertions: AssertionVerifier | None = None, claims: ClaimIssuer | None = None,
                  attempts: PairingAttemptStore | None = None,
+                 password_signing: PasswordSigningStore | None = None,
                  now_ms: Callable[[], int] = lambda: time.time_ns() // 1_000_000):
         if registry.rpc.database_resource != pin.database:
             raise GuardDenied("Pairing transport/database pin mismatch")
@@ -270,6 +324,9 @@ class GcpPairingCoordinator:
         self.registry, self.journal, self.pin = registry, journal, pin
         self.epoch_generation, self.fence, self.now_ms = epoch_generation, fence or UnavailableFence(), now_ms
         self.attempts = attempts if attempts is not None else UnavailablePairingAttempts()
+        self.password_signing = password_signing if password_signing is not None else UnavailablePasswordSigning()
+        self._password_scope: contextvars.ContextVar[_PasswordInvocation | None] = contextvars.ContextVar("gcp_password_dispatch", default=None)
+        self._password_admitted: dict[UUID, tuple[_PasswordInvocation, bool]] = {}
         self._issuer = object()
         self._plan_lock = Lock()
         self._issued: dict[UUID, tuple[str, tuple[UUID, ...], bool]] = {}
@@ -297,6 +354,11 @@ class GcpPairingCoordinator:
             allocated_ids=tuple(item for position, item in enumerate(ids) if position not in positions),
             nonce_commitments=tuple(nonce_digest(str(ids[position])) for position in positions),
             created_at_ms=now, deadline_ms=now + 120_000)
+        password = self._password_scope.get()
+        if password is not None:
+            intent = PairingJournalIntent.model_validate({**intent.model_dump(mode="json"),
+                "password_signing": {"challenge_id": str(password.claim.marker.challenge_id),
+                                     "claim_sha256": password.claim.digest}})
         with self._plan_lock:
             self._issued[intent.operation_id] = (intent.digest, ids, False)
         return PairingCommandPlan(intent, ids, self._issuer)
@@ -371,6 +433,7 @@ class GcpPairingCoordinator:
             raise GuardDenied("Pairing command does not match its immutable intent")
         if self._scope.get() is not None:
             raise GuardDenied("Pairing commands cannot nest or borrow another command's authority")
+        self._password_binding(intent)
         if self._attempted(plan):
             return self._receipt_only(intent)
         self._before(intent)
@@ -452,6 +515,18 @@ class GcpPairingCoordinator:
                 raise GuardUnavailable("Pairing event is ahead of retained head")
             self.journal.verify(intent, receipt)
             self.attempts.verify(claim.attempt_marker(), claim.marker)
+            if intent.password_signing is not None:
+                reference = intent.password_signing
+                signing_raw = self.registry.read("pairing_password_signing_attempts", str(reference.challenge_id))
+                if signing_raw is None:
+                    raise GuardUnavailable("Password operation lacks its signing admission evidence")
+                signing = PasswordSigningClaim.model_validate(signing_raw)
+                if (signing.digest != reference.claim_sha256 or signing.marker.pin != self.pin
+                        or signing.marker.challenge_id != reference.challenge_id
+                        or signing.marker.operation != ("confirm_pairing" if intent.command == "confirm_candidate" else "revoke_device")
+                        or signing.marker.epoch_generation != self.epoch_generation):
+                    raise GuardUnavailable("Password operation signing evidence disagrees")
+                self.password_signing.verify(signing.marker, signing.receipt)
             self.fence.check(self.pin)
             return OperationStatus(status="COMMITTED", operation_id=intent.operation_id,
                                    intent_sha256=intent.digest, journal=receipt)
@@ -463,9 +538,155 @@ class GcpPairingCoordinator:
         if retained is None or canonical(retained) != canonical(claim.model_dump(mode="json")):
             raise GuardUnavailable("Exact acknowledged invocation claim is no longer current")
 
+    def _password_binding(self, intent: PairingJournalIntent) -> _PasswordInvocation | None:
+        password = self._password_scope.get()
+        if intent.password_signing is None:
+            if password is not None:
+                raise GuardDenied("Password dispatch requires its exact protected signing reference")
+            return None
+        reference = intent.password_signing
+        if (password is None or reference.challenge_id != password.claim.marker.challenge_id
+                or reference.claim_sha256 != password.claim.digest
+                or intent.command != ("confirm_candidate" if password.proof.operation == "confirm_pairing" else "revoke_device")):
+            raise GuardDenied("Password dispatch cannot adopt another signing admission")
+        return password
+
+    def _password_before(self, claim: PasswordSigningClaim) -> None:
+        marker = claim.marker
+        if (marker.pin != self.pin or marker.epoch_generation != self.epoch_generation
+                or not marker.created_at_ms <= self.now_ms() < marker.deadline_ms):
+            raise GuardDenied("Signing consumption is outside its pinned lifetime")
+        self.fence.check(self.pin)
+        self.password_signing.verify(marker, claim.receipt)
+        self.fence.check(self.pin)
+        if not marker.created_at_ms <= self.now_ms() < marker.deadline_ms:
+            raise GuardDenied("Signing consumption expired during its fresh witness check")
+
+    def _password_read(self, tx: BufferedTransaction, context: CandidateWebSession,
+                       proof: CandidateChallengeProof) -> tuple[dict, dict, int]:
+        self._control(tx)
+        return read_candidate_challenge(RegisteredPasswordIdentity(self.core.store), self.core,
+            _PasswordReadTransaction(tx, self, context), context, proof)
+
+    def read_password_candidate(self, context: CandidateWebSession,
+                                proof: CandidateChallengeProof) -> tuple[dict, dict, int]:
+        """Typed native reader, never an arbitrary callback or identity bootstrap."""
+        context, proof = CandidateWebSession.model_validate(context), CandidateChallengeProof.model_validate(proof)
+        if self._scope.get() is not None or self._password_scope.get() is not None:
+            raise GuardDenied("Password identity reads cannot borrow a consuming scope")
+        result: list[tuple[dict, dict, int]] = []
+        def read(tx: BufferedTransaction) -> None:
+            result[:] = [self._password_read(tx, context, proof)]
+        self.registry.run(read, before_attempt=lambda: self.fence.check(self.pin))
+        self.fence.check(self.pin)
+        return result[0]
+
+    def _password_check(self, tx: BufferedTransaction, password: _PasswordInvocation,
+                        *, retained: bool) -> None:
+        marker, assertion = password.claim.marker, password.assertion
+        identity, payload, now = self._password_read(tx, marker.context, password.proof)
+        if (any(getattr(assertion, name) != value for name, value in (
+                ("subject_uuid", UUID(identity["subject_uuid"])),
+                ("session_id", UUID(identity["session_id"])),
+                ("principal_sha256", identity["principal_sha256"]),
+                ("auth_generation", identity["auth_generation"])))
+                or assertion.operation != marker.operation or assertion.method != "password_reauth"
+                or assertion.binding_sha256 != digest("candidate-context", payload)
+                or not assertion.authenticated_at_ms <= assertion.issued_at_ms <= now < assertion.expires_at_ms
+                or now - assertion.authenticated_at_ms > 60_000
+                or assertion.expires_at_ms > min(payload["expires_at_ms"], assertion.issued_at_ms + 60_000)
+                or marker.challenge_sha256 != digest("candidate-context", payload)
+                or marker.assertion_sha256 != fingerprint(assertion.model_dump(mode="json"))
+                or marker.nonce_sha256 != nonce_digest(password.proof.nonce.get_secret_value())):
+            raise GuardDenied("Password signing no longer matches the current identity/challenge")
+        if retained:
+            row = tx.get("pairing_password_signing_attempts", str(marker.challenge_id))
+            if row is None or canonical(row) != canonical(password.claim.model_dump(mode="json")):
+                raise GuardUnavailable("Exact acknowledged signing admission is no longer current")
+
+    def _password_guard(self, tx: BufferedTransaction, intent: PairingJournalIntent) -> None:
+        password = self._password_binding(intent)
+        if password is not None:
+            self._password_check(tx, password, retained=True)
+
+    def admit_password_candidate(self, context: CandidateWebSession, proof: CandidateChallengeProof,
+                                 assertion: CandidateAssertion) -> None:
+        """Fresh protected create AND native own ACK before one signer invocation.
+
+        Existing/unknown creates never become a signing permission, including
+        after restart. No signature/nonce/password is stored in the marker.
+        """
+        context = CandidateWebSession.model_validate(context)
+        proof, assertion = CandidateChallengeProof.model_validate(proof), CandidateAssertion.model_validate(assertion)
+        identity, payload, now = self.read_password_candidate(context, proof)
+        marker = PasswordSigningMarker(challenge_id=proof.challenge_id, attempt_id=uuid4(), pin=self.pin,
+            epoch_generation=self.epoch_generation, context=context, operation=proof.operation,
+            subject_uuid=identity["subject_uuid"], principal_sha256=identity["principal_sha256"],
+            auth_generation=identity["auth_generation"], challenge_sha256=digest("candidate-context", payload),
+            assertion_sha256=fingerprint(assertion.model_dump(mode="json")),
+            nonce_sha256=nonce_digest(proof.nonce.get_secret_value()),
+            created_at_ms=assertion.issued_at_ms, deadline_ms=assertion.expires_at_ms)
+        if not marker.created_at_ms <= now < marker.deadline_ms:
+            raise GuardDenied("Signing consumption is outside its assertion lifetime")
+        self.fence.check(self.pin)
+        receipt = self.password_signing.consume(marker)
+        if receipt is None:
+            raise GuardUnavailable("Signing consumption has no fresh acknowledged create")
+        password = _PasswordInvocation(PasswordSigningClaim(marker=marker, receipt=receipt), proof, assertion)
+        created: list[bool] = []
+        def stage(tx: BufferedTransaction) -> None:
+            self._password_check(tx, password, retained=False)
+            previous = tx.get("pairing_password_signing_attempts", str(proof.challenge_id))
+            if previous is not None:
+                created[:] = [False]
+                return
+            tx.put("pairing_password_signing_attempts", str(proof.challenge_id),
+                   password.claim.model_dump(mode="json"), immutable=True)
+            created[:] = [True]
+        self.registry.run(stage, before_attempt=lambda: self._password_before(password.claim))
+        if created != [True]:
+            raise GuardUnavailable("Existing signing admission is status-only")
+        self._password_before(password.claim)
+        with self._plan_lock:
+            if assertion.assertion_id in self._password_admitted:
+                raise GuardDenied("Signing assertion was already admitted")
+            self._password_admitted[assertion.assertion_id] = (password, False)
+
+    def consume_password_candidate(self, command: CandidateDispatchCommand) -> dict:
+        """Actual existing core consumption, through its restricted native lifecycle."""
+        command = CandidateDispatchCommand.model_validate(command)
+        with self._plan_lock:
+            owned = self._password_admitted.get(command.assertion.assertion_id)
+            if owned is None or owned[1]:
+                raise GuardUnavailable("Signing admission cannot be adopted or replayed")
+            password = owned[0]
+            if (command.context != password.claim.marker.context or command.assertion != password.assertion
+                    or command.operation != password.proof.operation or command.challenge_id != password.proof.challenge_id
+                    or command.nonce.get_secret_value() != password.proof.nonce.get_secret_value()):
+                raise GuardDenied("Candidate dispatch does not match its acknowledged signing admission")
+            self._password_admitted[command.assertion.assertion_id] = (password, True)
+        self._password_before(password.claim)  # After KMS, before generic admission or dispatch.
+        parameters = {"challenge_id": str(command.challenge_id), "nonce": command.nonce.get_secret_value(),
+                      "envelope": {"payload": command.assertion.model_dump(mode="json"), "signature": command.signature}}
+        if self._password_scope.get() is not None or self._scope.get() is not None:
+            raise GuardDenied("Password consuming dispatch cannot nest")
+        token = self._password_scope.set(password)
+        try:
+            operation: PairingCommand = "confirm_candidate" if command.operation == "confirm_pairing" else "revoke_device"
+            plan = self.allocate(operation, parameters)
+            result = self.execute(plan, parameters)
+            if result.status != "COMMITTED" or result.result is None:
+                raise GuardUnavailable("Candidate consumption is unknown; status only")
+            return result.result
+        finally:
+            self._password_scope.reset(token)
+
     def _before_claim(self, intent: PairingJournalIntent, claim: PairingInvocationClaim) -> None:
         self._before(intent)
         self.attempts.verify(claim.attempt_marker(), claim.marker)
+        password = self._password_binding(intent)
+        if password is not None:
+            self._password_before(password.claim)
         self._before(intent)
 
     def _admit(self, intent: PairingJournalIntent, claim: PairingInvocationClaim) -> bool:
@@ -481,6 +702,7 @@ class GcpPairingCoordinator:
         def stage(tx: BufferedTransaction) -> None:
             self._fresh(intent)
             self._control(tx)
+            self._password_guard(tx, intent)
             clock = _PairingTransaction(tx, self, None).get("clock", "observed")
             assert clock is not None
             if self.now_ms() < clock["now_ms"]:

@@ -66,7 +66,7 @@ jobs:
           tests/fixtures/pairing_authority.py tests/test_pairing_crypto.py tests/test_pairing_service.py tests/test_pairing_processes.py
           tests/test_pairing_kms.py tests/test_password_reauth.py
           tests/test_job_coverage_audit.py
-          tests/test_gcp_rpc.py tests/test_gcp_journal_sdk.py tests/test_gcp_safety_coordinator.py tests/test_gcp_rpc_emulator.py tests/test_gcp_pairing_emulator.py tests/test_gcp_pairing_admission_emulator.py
+          tests/test_gcp_rpc.py tests/test_gcp_journal_sdk.py tests/test_gcp_safety_coordinator.py tests/test_gcp_rpc_emulator.py tests/test_gcp_pairing_emulator.py tests/test_gcp_pairing_admission_emulator.py tests/test_gcp_password_reauth_emulator.py
           app/domains/recovery/gcp_media.py
           tests/conftest.py tests/model_cost_fixtures.py tests/test_model_cost_budgets.py tests/test_model_cost_budgets_postgres.py
           app/services/model_cost_policy.py app/services/generation_budget.py app/services/llm_client.py

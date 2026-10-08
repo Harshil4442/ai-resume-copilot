@@ -49,6 +49,17 @@ open. Account deletion also erases unknown model-cost holds in the current sourc
 a minimal independent financial ledger and late-settlement repair is required
 before the monetary rollout. Production remains the earlier deployed release.
 
+The subsequent [native candidate integration](NATIVE_PASSWORD_ROOT_INTEGRATION_2026-10-09.md)
+connects dispatch and challenge-scoped signing admission locally. The default backend
+suite now passes **1,504 cases without skips**, and full CI typing passes on 83 files.
+The preceding exact `3b96c79` remote CI run is all four jobs green. Protected account/session
+lifetime writers, complete restore effects, real cloud controls and browser transport
+remain required. A real-stack browser journey passed the author's local run, but its
+independent review found a process-group cleanup defect; that patch is held for repair.
+Independent financial review also reproduced two PostgreSQL result/deletion deadlocks in
+the first liability patch, which is held for repair. Neither held patch is integrated or
+deployed, and no new monetary migration has been promoted.
+
 Compatibility correction `b306f13` passed all four exact remote CI jobs and an immutable
 GCP image build. Its API candidate is ready with generation disabled and **zero production
 traffic**; the prior serving API retains 100%. No queue pause, worker retirement or

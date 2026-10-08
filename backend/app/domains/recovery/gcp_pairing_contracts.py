@@ -8,6 +8,7 @@ from pydantic import Field, model_validator
 
 from .contracts import Contract, Digest, Identifier, Timestamp, fingerprint
 from .gcp_contracts import Generation, JournalReceipt, RegistryPin
+from .gcp_password_contracts import PasswordSigningReference
 from .pairing_contracts import PositiveInteger
 
 PairingCommand = Literal[
@@ -38,6 +39,8 @@ class PairingJournalIntent(Contract):
     nonce_commitments: tuple[Digest, ...]
     created_at_ms: Timestamp
     deadline_ms: Timestamp
+    # Preserve existing v1 canonical intents when this explicit native port is unused.
+    password_signing: PasswordSigningReference | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @model_validator(mode="after")
     def exact_plan(self) -> PairingJournalIntent:
@@ -49,6 +52,8 @@ class PairingJournalIntent(Contract):
             raise ValueError("An exact unique preallocated command ID plan is required")
         if not self.created_at_ms < self.deadline_ms <= self.created_at_ms + 120_000:
             raise ValueError("Pairing command intent exceeds its bounded lifetime")
+        if self.password_signing is not None and self.command not in {"confirm_candidate", "revoke_device"}:
+            raise ValueError("Password signing is restricted to candidate consumption")
         return self
 
     @property

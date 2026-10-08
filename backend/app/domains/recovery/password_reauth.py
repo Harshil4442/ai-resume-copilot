@@ -339,24 +339,78 @@ class DirectPairingCandidateDispatch:
                       {"payload": assertion.model_dump(mode="json"), "signature": command.signature})
 
 
+class CandidateChallengeProof(PairingContract):
+    """Password-free server projection of the validated confirmation request."""
+
+    operation: Literal["confirm_pairing", "revoke_device"]
+    challenge_id: UUID
+    nonce: SecretStr = Field(repr=False)
+
+    @field_validator("nonce", mode="before")
+    @classmethod
+    def exact_nonce(cls, value: object) -> SecretStr:
+        plain = value.get_secret_value() if isinstance(value, SecretStr) else value
+        if type(plain) is not str or len(plain) != 36:
+            raise ValueError("A canonical challenge nonce is required")
+        try:
+            if str(UUID(plain)) != plain:
+                raise ValueError
+        except ValueError:
+            raise ValueError("A canonical challenge nonce is required") from None
+        return SecretStr(plain)
+
+
+class CandidateChallengeReader(Protocol):
+    def read(self, context: CandidateWebSession, proof: CandidateChallengeProof) -> tuple[dict, dict, int]: ...
+
+
+class CandidateSigningAdmission(Protocol):
+    def admit(self, context: CandidateWebSession, proof: CandidateChallengeProof,
+              assertion: CandidateAssertion) -> None: ...
+
+
+def read_candidate_challenge(repository: IndependentPasswordIdentity, core: PairingService,
+                             tx: Transaction, context: CandidateWebSession,
+                             proof: CandidateChallengeProof) -> tuple[dict, dict, int]:
+    """Shared exact reader; caller supplies only its operation-restricted transaction."""
+    now = core._now(tx, record=False)
+    identity = repository.resolve(tx, context, core, now)
+    row = tx.get("pairing_challenges", str(proof.challenge_id))
+    if row is None or row.get("kind") != "candidate" or row.get("consumed_by") is not None:
+        raise GuardDenied(FAILURE)
+    payload = row["payload"]
+    if (payload["challenge_id"] != str(proof.challenge_id) or payload["operation"] != proof.operation
+            or payload["audience"] != "hirewiz:pairing-only" or payload["protocol_version"] != 2
+            or row["expires_at_ms"] != payload["expires_at_ms"]
+            or not payload["issued_at_ms"] <= now < payload["expires_at_ms"]
+            or payload["nonce_sha256"] != nonce_digest(proof.nonce.get_secret_value())
+            or any(payload[name] != value for name, value in identity.items())):
+        raise GuardDenied(FAILURE)
+    core._epoch(core._control(tx), payload)
+    canonical_bytes("candidate-context", payload)
+    return identity, json.loads(json.dumps(payload)), now
+
+
 class PasswordReauthService:
     """Explicit injected adapters only. A confirmed result never contains an assertion.
 
-    The one-shot latch is process-local and not durable restart authorization.
+    The default local one-shot latch is not durable restart authorization.
+    The explicit native ports add protected challenge-scoped signing admission.
     Unknown/signing failures require status/fresh challenge; no automatic replay.
-    A production invocation authority is a remaining enablement prerequisite.
     """
 
     def __init__(self, *, credentials: PasswordCredentials, identity: IndependentPasswordIdentity,
                  pairing: PairingService, signer: CandidateAssertionSigner, issuer: str,
                  dispatch: CandidateAssertionDispatch,
+                 reader: CandidateChallengeReader | None = None,
+                 signing_admission: CandidateSigningAdmission | None = None,
                  max_pending: int = 1024):
         if pairing.store is not identity.store or type(max_pending) is not int or not 0 < max_pending <= 100_000:
             raise GuardUnavailable(UNAVAILABLE)
         # Validate issuer without manufacturing a usable assertion/key.
         self.issuer = TypeAdapter(Identifier).validate_python(issuer)
         self.credentials, self.identity, self.pairing, self.signer = credentials, identity, pairing, signer
-        self.dispatch = dispatch
+        self.dispatch, self.reader, self.signing_admission = dispatch, reader, signing_admission
         self.max_pending = max_pending
         self._attempted: set[str] = set()
         self._lock = Lock()
@@ -386,27 +440,13 @@ class PasswordReauthService:
                 raise GuardUnavailable(UNAVAILABLE)
             self._attempted.add(key)
 
-        def read(tx: Transaction) -> tuple[dict, dict, int]:
-            now = self.pairing._now(tx, record=False)
-            identity = self.identity.resolve(tx, context, self.pairing, now)
-            row = tx.get("pairing_challenges", str(request.challenge_id))
-            if row is None or row.get("kind") != "candidate" or row.get("consumed_by") is not None:
-                raise GuardDenied(FAILURE)
-            payload = row["payload"]
-            if (payload["challenge_id"] != str(request.challenge_id) or payload["operation"] != request.operation
-                    or payload["audience"] != "hirewiz:pairing-only" or payload["protocol_version"] != 2
-                    or row["expires_at_ms"] != payload["expires_at_ms"]
-                    or not payload["issued_at_ms"] <= now < payload["expires_at_ms"]
-                    or payload["nonce_sha256"] != nonce_digest(request.nonce.get_secret_value())
-                    or any(payload[name] != value for name, value in identity.items())):
-                raise GuardDenied(FAILURE)
-            self.pairing._epoch(self.pairing._control(tx), payload)
-            # Freeze exact challenge context, not caller-owned nested objects.
-            canonical_bytes("candidate-context", payload)
-            return identity, json.loads(json.dumps(payload)), now
-
+        proof = CandidateChallengeProof(operation=request.operation, challenge_id=request.challenge_id, nonce=request.nonce)
         try:
-            identity, payload, issued = self.identity.store.transact(read)
+            if self.reader is not None:
+                identity, payload, issued = self.reader.read(context, proof)
+            else:
+                identity, payload, issued = self.identity.store.transact(
+                    lambda tx: read_candidate_challenge(self.identity, self.pairing, tx, context, proof))
         except GuardDenied:
             # A definite failed read has made no signature or consuming write.
             with self._lock:
@@ -419,6 +459,8 @@ class PasswordReauthService:
             method="password_reauth", authenticated_at_ms=authenticated, issued_at_ms=issued,
             expires_at_ms=min(payload["expires_at_ms"], issued + CANDIDATE_MS),
             binding_sha256=digest("candidate-context", payload), confirmed=True).model_dump(mode="json")
+        if self.signing_admission is not None:
+            self.signing_admission.admit(context, proof, CandidateAssertion.model_validate(assertion))
         envelope = self.signer.sign(dict(assertion))
         if type(envelope) is not dict or set(envelope) != {"payload", "signature"} or envelope["payload"] != assertion:
             raise GuardDenied(FAILURE)
