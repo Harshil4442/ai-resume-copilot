@@ -7,7 +7,7 @@ from datetime import UTC, timedelta
 from sqlalchemy.orm import Session
 
 from ..common import public_id, utcnow
-from . import credits, models
+from . import admissions, credits, models
 
 log = logging.getLogger("hirewiz.artifact_cleanup")
 
@@ -98,6 +98,12 @@ def export_account_data(db: Session, user_id: int) -> dict:
         "service_credit_events": [{key: getattr(row, key) for key in (
             "id", "event_type", "amount", "balance_after", "source_type", "source_id", "reason", "created_at",
         )} for row in events],
+        "employer_application_batches": [{key: getattr(row, key) for key in (
+            "id", "status", "package_digest", "items", "admission_snapshot", "quoted_credits", "max_total_credits", "created_at", "expires_at",
+        )} for row in db.query(models.EmployerApplicationBatch).filter_by(user_id=user_id).all()],
+        "employer_admissions": [{key: getattr(row, key) for key in (
+            "id", "application_id", "state", "policy_snapshot", "admitted_at", "possible_send_at", "settled_at",
+        )} for row in db.query(models.EmployerAdmission).filter_by(user_id=user_id).all()],
     }
 
 
@@ -109,13 +115,16 @@ def delete_account_data(db: Session, user_id: int) -> None:
     Financial credit movements remain with the customer identity removed.
     """
     from ..dispatch.service import enqueue
-    applications = db.query(models.EmployerApplication).filter_by(user_id=user_id).with_for_update().all()
+    admissions.lock_application_set(db, user_id)
+    applications = db.query(models.EmployerApplication).filter_by(user_id=user_id).order_by(models.EmployerApplication.id).with_for_update().all()
     from ...models import User
     db.query(User).filter_by(id=user_id).with_for_update().first()
     ids = [row.id for row in applications]
     for application in applications:
         application.cancel_requested = True
         application.approved_digest = None
+        if application.status not in {"submitting", "unknown", "confirmed"}:
+            admissions.finish(db, application, "account_deleted")
         if application.reservation_id and application.status not in {"submitting", "unknown", "confirmed"}:
             reservation = db.query(models.ServiceCreditReservation).filter_by(id=application.reservation_id).with_for_update().one()
             credits.settle(db, reservation, completed_count=0, reason="Account deleted before application launch")
@@ -130,7 +139,10 @@ def delete_account_data(db: Session, user_id: int) -> None:
     if ids:
         db.query(models.EmployerApplicationApproval).filter(models.EmployerApplicationApproval.application_id.in_(ids)).delete(synchronize_session=False)
         db.query(models.EmployerApplicationAttempt).filter(models.EmployerApplicationAttempt.application_id.in_(ids)).delete(synchronize_session=False)
+        db.query(models.EmployerAdmission).filter(models.EmployerAdmission.application_id.in_(ids)).update(
+            {"application_id": None, "user_id": None, "active_key": None}, synchronize_session=False)
     db.query(models.EmployerApplication).filter_by(user_id=user_id).delete(synchronize_session=False)
+    db.query(models.EmployerApplicationBatch).filter_by(user_id=user_id).delete(synchronize_session=False)
     db.query(models.SealedApplicationArtifact).filter_by(user_id=user_id).delete(synchronize_session=False)
     db.query(models.EmployerJobDelivery).filter_by(user_id=user_id).delete(synchronize_session=False)
     db.query(models.EmployerSearch).filter_by(user_id=user_id).delete(synchronize_session=False)

@@ -30,6 +30,9 @@ class EmployerSource(Base):
     )
     id = Column(String(64), primary_key=True)
     employer = Column(String(200), nullable=False)
+    # Operator-verified identity may group multiple ATS tenants; never inferred by AI.
+    employer_key = Column(String(120), nullable=True, index=True)
+    admission_policy = Column(JSON, nullable=True)
     platform = Column(String(40), nullable=False)
     board_token = Column(String(120), nullable=False)
     region = Column(String(16), nullable=False, default="global")
@@ -67,6 +70,7 @@ class EmployerPosting(Base):
     source_id = Column(String(64), ForeignKey("employer_sources.id"), nullable=False, index=True)
     external_id = Column(String(160), nullable=False)
     requisition_id = Column(String(160), nullable=True)
+    opening_key = Column(String(64), nullable=True, index=True)
     title = Column(String(300), nullable=False, index=True)
     employer = Column(String(200), nullable=False)
     location = Column(String(400), nullable=False, default="")
@@ -149,10 +153,12 @@ class EmployerJobDelivery(Base):
     __tablename__ = "employer_job_deliveries"
     __table_args__ = (
         UniqueConstraint("user_id", "posting_id", name="uq_employer_delivery_user_posting"),
+        UniqueConstraint("user_id", "opening_key", name="uq_employer_delivery_user_opening"),
     )
     id = Column(String(64), primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     posting_id = Column(String(64), ForeignKey("employer_postings.id"), nullable=False)
+    opening_key = Column(String(64), nullable=True, index=True)
     search_id = Column(String(64), ForeignKey("employer_searches.id"), nullable=False)
     charged_credits = Column(Integer, nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
@@ -184,6 +190,11 @@ class EmployerApplication(Base):
     id = Column(String(64), primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     posting_id = Column(String(64), ForeignKey("employer_postings.id"), nullable=False, index=True)
+    opening_key = Column(String(64), nullable=True, index=True)
+    employer_key = Column(String(64), nullable=True, index=True)
+    admission_snapshot = Column(JSON, nullable=True)
+    pricing_snapshot = Column(JSON, nullable=True)
+    batch_id = Column(String(64), ForeignKey("employer_application_batches.id"), nullable=True, index=True)
     idempotency_key = Column(String(160), nullable=False)
     input_fingerprint = Column(String(64), nullable=False)
     # Cleared on safely cancelled/failed intents; retained for confirmed/unknown sends.
@@ -213,6 +224,49 @@ class EmployerApplication(Base):
     error_message = Column(String(500), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
     updated_at = Column(DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
+
+
+class EmployerApplicationBatch(Base):
+    __tablename__ = "employer_application_batches"
+    __table_args__ = (UniqueConstraint("user_id", "idempotency_key", name="uq_employer_batch_user_key"),)
+    id = Column(String(64), primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    idempotency_key = Column(String(160), nullable=False)
+    input_fingerprint = Column(String(64), nullable=False)
+    package_digest = Column(String(64), nullable=False)
+    # Immutable enumerated packages, actions, prices and admission configuration.
+    items = Column(JSON, nullable=False)
+    admission_snapshot = Column(JSON, nullable=False)
+    quoted_credits = Column(Integer, nullable=False)
+    max_total_credits = Column(Integer, nullable=False)
+    status = Column(String(24), nullable=False, default="quoted")
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    approved_at = Column(DateTime(timezone=True), nullable=True)
+    cancelled_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class EmployerAdmission(Base):
+    """A pending slot or possible-send budget; uncertainty never expires itself."""
+    __tablename__ = "employer_admissions"
+    __table_args__ = (
+        UniqueConstraint("application_id", name="uq_employer_admission_application"),
+        Index("ix_employer_admission_user_window", "user_id", "state", "possible_send_at"),
+        Index("ix_employer_admission_employer_window", "user_id", "employer_key", "state", "possible_send_at"),
+    )
+    id = Column(String(64), primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    application_id = Column(String(64), ForeignKey("employer_applications.id", ondelete="SET NULL"), nullable=True)
+    employer_key = Column(String(64), nullable=False)
+    opening_key = Column(String(64), nullable=False)
+    active_key = Column(String(160), unique=True, nullable=True)
+    credit_cost = Column(Integer, nullable=False)
+    policy_snapshot = Column(JSON, nullable=False)
+    state = Column(String(24), nullable=False, default="reserved")
+    admitted_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+    possible_send_at = Column(DateTime(timezone=True), nullable=True)
+    settled_at = Column(DateTime(timezone=True), nullable=True)
+    release_reason = Column(String(80), nullable=True)
 
 
 class EmployerApplicationAttempt(Base):

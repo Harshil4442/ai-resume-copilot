@@ -1,0 +1,9 @@
+{
+  "start_utc": "2026-10-08T14:39:33Z",
+  "end_utc": "2026-10-08T15:10:06.454864+00:00",
+  "matching_entries": 0,
+  "result_limit": 1000,
+  "limit_reached": false,
+  "services": {},
+  "scope": "API and both private workers; severity ERROR+ or HTTP500+; no payloads fetched"
+}

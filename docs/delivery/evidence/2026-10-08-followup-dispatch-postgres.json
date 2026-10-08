@@ -1,0 +1,71 @@
+{
+  "database": "isolated synthetic PostgreSQL",
+  "cases": [
+    {
+      "name": "ambiguous_creation_reuses_stored_name",
+      "passed": true,
+      "status": "dispatched",
+      "execution_attempts": 0,
+      "dispatch_attempts": 2,
+      "physical_name_generation": "1"
+    },
+    {
+      "name": "expired_publishing_reuses_stored_name",
+      "passed": true,
+      "status": "dispatched",
+      "execution_attempts": 0,
+      "dispatch_attempts": 2,
+      "physical_name_generation": "1"
+    },
+    {
+      "name": "busy_recovery_creates_fresh_physical_generation",
+      "passed": true,
+      "status": "completed",
+      "execution_attempts": 1,
+      "dispatch_attempts": 2,
+      "physical_name_generation": "2"
+    },
+    {
+      "name": "early_worker_unknown_not_overwritten_after_publisher_failure",
+      "passed": true,
+      "status": "completed",
+      "execution_attempts": 1,
+      "dispatch_attempts": 1,
+      "physical_name_generation": "1"
+    },
+    {
+      "name": "early_worker_completion_not_overwritten",
+      "passed": true,
+      "status": "completed",
+      "execution_attempts": 1,
+      "dispatch_attempts": 1,
+      "physical_name_generation": "1"
+    },
+    {
+      "name": "busy_observation_preserves_actual_failure_budget",
+      "passed": true,
+      "status": "failed",
+      "execution_attempts": 7,
+      "dispatch_attempts": 0
+    },
+    {
+      "name": "six_actual_failures_then_bounded_exhaustion_without_seventh_execution",
+      "passed": true,
+      "actual_handler_failures": 6,
+      "status": "failed"
+    }
+  ],
+  "source_modified": false,
+  "server_version": "17.11",
+  "task_name_case_cast_sql_executed": true,
+  "passed": 7,
+  "failed": 0,
+  "scratch_schema_removed": true,
+  "real_cloud_tasks_created": 0,
+  "real_employer_requests": 0,
+  "task_service": "synthetic Cloud Tasks client; actual PostgreSQL commits and task-name SQL",
+  "source_sha256": {
+    "backend/app/domains/dispatch/service.py": "0bba97d967c0f4a260a3ccbf5487df1366af395c2ee6dc3aac4ebe8898651adc",
+    "backend/tests/test_dispatch_outbox.py": "588d78a6a3179a76fcd03aca249a29281ecafc41892e13aa08da97f0b6272b4c"
+  }
+}

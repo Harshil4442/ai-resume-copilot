@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "HireWiz Companion — disabled foundation",
+  "version": "0.1.0",
+  "description": "Disabled fill-only safety foundation. No real employer adapters, uploads or submissions.",
+  "permissions": ["scripting", "storage"],
+  "host_permissions": [],
+  "optional_host_permissions": [],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "action": { "default_title": "HireWiz fill-only companion", "default_popup": "popup.html" },
+  "content_security_policy": { "extension_pages": "default-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'; frame-src blob:; connect-src 'self'" }
+}

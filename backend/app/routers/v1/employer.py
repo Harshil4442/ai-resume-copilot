@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from ... import models as core
 from ...database import get_db
-from ...domains.employer import artifacts, models, schemas, service
+from ...domains.employer import artifacts, batches, models, schemas, service
 from ...security import get_current_user
 from .admin import require_admin
 
@@ -69,6 +69,31 @@ def execute_package(identity: str, payload: schemas.ExecuteCreate, db: Session =
 @router.post("/applications/{identity}/cancel")
 def cancel_package(identity: str, db: Session = Depends(get_db), user: core.User = Depends(get_current_user)):
     return service.application_response(db, service.cancel_application(db, user.id, identity))
+
+
+@router.post("/application-batches", status_code=201)
+def create_batch(payload: schemas.BatchCreate, db: Session = Depends(get_db), user: core.User = Depends(get_current_user)):
+    return batches.response(db, batches.create(db, user.id, payload))
+
+
+@router.get("/application-batches/{identity}")
+def get_batch(identity: str, db: Session = Depends(get_db), user: core.User = Depends(get_current_user)):
+    return batches.response(db, batches._owned(db, user.id, identity))
+
+
+@router.post("/application-batches/{identity}/approve")
+def approve_batch(identity: str, payload: schemas.ExecuteCreate, db: Session = Depends(get_db), user: core.User = Depends(get_current_user)):
+    return batches.response(db, batches.approve(db, user.id, identity, payload))
+
+
+@router.post("/application-batches/{identity}/execute")
+def execute_batch(identity: str, payload: schemas.ExecuteCreate, db: Session = Depends(get_db), user: core.User = Depends(get_current_user)):
+    return batches.response(db, batches.execute(db, user.id, identity, payload))
+
+
+@router.post("/application-batches/{identity}/cancel")
+def cancel_batch(identity: str, db: Session = Depends(get_db), user: core.User = Depends(get_current_user)):
+    return batches.response(db, batches.cancel(db, user.id, identity))
 
 
 @router.get("/applications/{identity}/artifact")

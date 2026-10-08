@@ -7,10 +7,12 @@ import os
 from datetime import timedelta
 from types import SimpleNamespace
 
+from fastapi import HTTPException
+
 from ...database import SessionLocal
 from ...services.market.skill_extractor import extract_skills_from_text
 from ..common import public_id, utcnow
-from . import artifacts, config, connectors, credits, models, service
+from . import admissions, artifacts, config, connectors, credits, models, service
 
 log = logging.getLogger("hirewiz.artifact_cleanup")
 
@@ -68,6 +70,7 @@ def refresh_source(source_id: str) -> str:
                         continue
                     setattr(row, key, value)
             row.skills = sorted(extract_skills_from_text(data["description"])[0])
+            row.opening_key = admissions.opening_identity(row, source)
             row.is_open, row.closed_at, row.last_checked_at = True, None, checked_at
         # Only a fully parsed, bounded, completed provider scan can close jobs.
         for identity, row in existing.items():
@@ -86,6 +89,7 @@ def _settle_failure(db, application, code, message):
     application.error_code, application.error_message = code, message
     application.active_key = None
     application.approved_digest = None
+    admissions.finish(db, application, code)
     if application.reservation_id:
         reservation = db.query(models.ServiceCreditReservation).filter_by(id=application.reservation_id).with_for_update().one()
         credits.settle(db, reservation, completed_count=0, reason=message)
@@ -95,6 +99,7 @@ def _mark_unknown(db, application, code="submission_outcome_unknown"):
     application.status = "unknown"
     application.error_code = code
     application.error_message = "The employer may have received this application. Credits remain reserved while the outcome is verified; no automatic retry will send it again."
+    admissions.finish(db, application, "unknown")
 
 
 def execute_application(application_id: str) -> str:
@@ -172,6 +177,16 @@ def execute_application(application_id: str) -> str:
             _settle_failure(db, application, "credential_unavailable", "The employer submission credential is unavailable; credits were returned.")
             db.commit()
             return "failed"
+        from .batches import validate_binding
+        try:
+            validate_binding(db, application)
+            admissions.launch(db, application, source)
+        except HTTPException as exc:
+            detail = exc.detail if isinstance(exc.detail, dict) else {"message": str(exc.detail)}
+            _settle_failure(db, application, detail.get("code", "admission_stopped"),
+                            detail.get("message", "Application admission was stopped before sending.") + " Reserved credits were returned.")
+            db.commit()
+            return "failed"
         attempt = models.EmployerApplicationAttempt(id=public_id("attempt"), application_id=application.id,
             launch_token=public_id("launch"), package_digest=digest)
         db.add(attempt)
@@ -204,6 +219,7 @@ def execute_application(application_id: str) -> str:
             reservation = db.query(models.ServiceCreditReservation).filter_by(id=application.reservation_id).with_for_update().one()
             credits.settle(db, reservation, completed_count=1, reason="Verified complete employer application")
             application.charged_credits = reservation.committed_amount
+            admissions.finish(db, application, "confirmed")
         elif failure and failure.startswith("submission_rejected_"):
             attempt.state, attempt.error_code = "failed", failure
             _settle_failure(db, application, failure, "The employer rejected the request before application completion; credits were returned.")

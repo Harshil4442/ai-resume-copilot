@@ -62,8 +62,35 @@ class ExecuteCreate(StrictModel):
     package_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
 
 
+class EmployerAdmissionPolicy(StrictModel):
+    version: str = Field(min_length=3, max_length=80)
+    daily_limit: int = Field(ge=1, le=1000)
+    rolling_limit: int = Field(ge=1, le=1000)
+    rolling_days: int = Field(ge=1, le=365)
+    evidence_url: str = Field(min_length=12, max_length=2000, pattern=r"^https://")
+    evidence_note: str = Field(min_length=20, max_length=1000)
+
+
+class BatchItem(ApprovalCreate):
+    application_id: str = Field(min_length=3, max_length=64)
+
+
+class BatchCreate(StrictModel):
+    items: list[BatchItem] = Field(min_length=1, max_length=100)
+    max_total_credits: int = Field(ge=1, le=100_000)
+    idempotency_key: str = Field(min_length=8, max_length=160, pattern=r"^[A-Za-z0-9_.:-]+$")
+
+    @model_validator(mode="after")
+    def unique_applications(self):
+        if len({item.application_id for item in self.items}) != len(self.items):
+            raise ValueError("Each application may appear only once in a batch")
+        return self
+
+
 class SourceCreate(StrictModel):
     employer: str = Field(min_length=2, max_length=200)
+    employer_key: str | None = Field(default=None, min_length=3, max_length=120, pattern=r"^[A-Za-z0-9_.:-]+$")
+    admission_policy: EmployerAdmissionPolicy | None = None
     platform: Literal["greenhouse", "lever", "ashby", "smartrecruiters", "workable", "personio", "pinpoint"]
     board_token: str = Field(min_length=1, max_length=120, pattern=r"^[A-Za-z0-9_-]+$")
     region: Literal["global", "eu"] = "global"

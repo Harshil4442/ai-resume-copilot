@@ -1,9 +1,33 @@
 # HireWiz pilot release — 8 October 2026
 
-Status: initial pilot promoted; follow-up hardening release in progress. This report records observed results; it does not close the
-full [requirements register](../requirements/JOB_SEARCH_AND_APPLICATION.md).
+Status: initial pilot and follow-up hardening release promoted. The current live application
+commit is `3565655712c2ceee431bee8306678a020b2f462d`. This report preserves the initial
+rollout history and records observed results; it does not close the full
+[requirements register](../requirements/JOB_SEARCH_AND_APPLICATION.md).
 
-## Release identity
+## Promoted follow-up identity
+
+| Item | Recorded identity / result |
+| --- | --- |
+| Application commit | `3565655712c2ceee431bee8306678a020b2f462d` |
+| Exact-commit CI | [37789610598](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37789610598), all three jobs succeeded |
+| Regional Cloud Build | `664bcd48-d110-40bb-b2f9-1583bad245c9`, SUCCESS at `2026-10-08T14:26:16.401Z` |
+| Backend image digest | `sha256:7cbb1bd8c78ffc0266e8b6796397102ec3877c7673624dd53677d4083694b924` |
+| Controlled migration | `hirewiz-schema-migration-tsf5n`, succeeded at `2026-10-08T14:24:31.190Z`; production head remains `20261008_0008` |
+| Promoted API | `ai-resume-parser-00247-val`, 100% traffic |
+| Promoted analysis worker | `hirewiz-analysis-worker-00017-tk5` |
+| Promoted employer worker | `hirewiz-employer-worker-00004-bbc` |
+| Promoted frontend | `dpl_HAp5ndXqK92w6rAURv57qF128yoF`, Ready and promoted to the custom domain; Next.js 16.4.0 |
+| Automatic submission | Disabled |
+
+The [follow-up rollout record](evidence/2026-10-08-followup-release.json) includes the
+protected backup metadata, migration and deployment identities, bounded log observation
+and read-only catalog timings. The protected pre-migration backup was created at
+`2026-10-08T13:49:00Z`, generation `1791467340797255`, with 843,805 bytes and SHA-256
+`0645174330c7e84911df46dcb42992539ac32334ec6f12006f38d5aef8238168`.
+Archive-format and catalogue checks passed; restore verification remains false.
+
+## Initial pilot identity (historical)
 
 | Item | Recorded identity / result |
 | --- | --- |
@@ -24,7 +48,7 @@ A new metadata-only commit used the authenticated repository owner's verified Gi
 noreply identity. No implementation or Git history was rewritten. The blocked deployment
 was not promoted.
 
-## Verification before promotion
+## Verification before initial promotion
 
 - Whole backend suite: **418 passed**; Ruff passed; Mypy passed for **46 files**;
   six prompt evaluation cases passed.
@@ -41,6 +65,35 @@ was not promoted.
 - Development OIDC access to protected Production returned 403. No Trusted Sources
   permissions or Deployment Protection settings were broadened. Public-domain browser
   checks are required after promotion.
+
+## Follow-up verification and observations
+
+- Exact-commit CI passed all three jobs: **455 backend tests**, **45 frontend unit
+  tests** and **155 browser cases**. Focused dispatch verification passed **46 cases**.
+- [Seven independent PostgreSQL 17.11 dispatch scenarios](evidence/2026-10-08-followup-dispatch-postgres.json)
+  passed with actual transactions and task-name SQL, using a synthetic Cloud Tasks client.
+  They cover uncertain creation, expired publishing, fresh execution-recovery generations,
+  early-worker races and bounded actual-failure exhaustion. The scratch schema was removed;
+  no real Cloud Task or employer request was made by this drill.
+- The release preparation actually ran the exact old serving image with a direct ASGI
+  command and observed it healthy without startup migration before the controlled
+  migration and candidate promotion.
+- [A subsequent real public-source refresh](evidence/2026-10-08-followup-production-refresh.json)
+  completed with one dispatch and one execution, a persisted real Cloud Task name ending
+  in `-dispatch-1`, no error and source status `healthy` at
+  `2026-10-08T14:39:32.516319Z`. This was job-feed GET discovery, not an application.
+- A bounded Cloud Run log scan from `2026-10-08T14:26:17Z` to approximately
+  `2026-10-08T14:37Z` returned no entries matching severity ERROR or higher or HTTP
+  status 500 or higher across the API and both workers. Expected anonymous-worker 403
+  warnings were excluded. This observation does not replace sustained monitoring or
+  failure/recovery drills.
+- A [second bounded observation](evidence/2026-10-08-followup-extended-errors.json)
+  from 14:39:33Z to 15:10:06Z also returned no matching API/worker ERROR or HTTP 500
+  records. Only timestamp, severity, service and HTTP status fields were fetched. This
+  does not establish financial concurrency correctness; the subsequent credit repair
+  has separate regression and release gates.
+- Promoted custom-domain public browser verification is recorded below. No customer
+  write, test payment or employer submission was used to verify this release.
 
 ## Page speed and device support
 
@@ -72,10 +125,28 @@ The follow-up frontend change bounds the uncached public pricing-catalog request
 response body to 2.5 seconds, aborting the upstream request and using the existing
 unavailable state on failure. It does not reuse stale prices or checkout-enable state.
 Eight focused timeout/failure/freshness tests, lint, typecheck and a production build
-passed. The mobile menu control now measures 44 × 44 px at 320, 390, 768 and 1024 px;
-desktop navigation is visible at 1440 px. Independent local production-build checks
-passed keyboard/touch activation and found no overflow or runtime errors. These follow-up
-changes are not yet production evidence; their separate deployment is recorded after promotion.
+passed. These changes are now promoted in the follow-up release.
+
+[Follow-up hosted public UI verification](evidence/2026-10-08-followup-hosted-responsive.json)
+passed all **20 route/width cases** for homepage, pricing, login and employer-job login
+handoff at 320, 390, 768, 1024 and 1440 px. All 16 mobile/tablet menu controls measured
+**44 × 44 px** and passed keyboard open/close and tap navigation; the four desktop cases
+showed primary navigation. Both current pricing cards rendered at every width. There were
+zero unresolved failures, runtime errors, console errors, horizontal-overflow cases or
+Axe smoke violations. Visual review found no clipping or bad wraps. Seventeen resource
+warnings were aborted Next.js route-prefetch GETs, with no observed core-asset/HTTP failure.
+Consent was not changed and browser mutations were blocked during the smoke.
+
+Median hosted-lab LCP was 704 ms for home, 1,100 ms for pricing, 560 ms for login and
+568 ms for the job handoff; maximum observed CLS was **0.029**. There was one navigation
+per route and width on unthrottled local-network Chromium. These measurements do not
+establish field p75/p95, INP, load capacity or a complete accessibility audit.
+
+Two fresh public catalog GETs returned 200 in **738 ms and 361 ms**, with
+`private, no-store, max-age=0`; both exposed the current `inr-2026-10-08-v2` prices.
+Two separate read-only authenticated owner catalog observations took **4.902 s and
+1.427 s**, with server-reported time **4.5278 s and 1.0654 s**. These limited samples
+establish neither a latency percentile nor the cause of the timing difference.
 
 ## Rollout findings and repairs
 
@@ -85,7 +156,8 @@ failures while the candidate was staged. The verified new revision was promoted 
 has `AUTO_DB_MIGRATE=false`. The future release script now prepares and verifies the
 exact serving image with a direct ASGI command before advancing the schema, checks
 there is no unmatched staged revision, and clears command overrides on the new candidate.
-That new preparation path passed syntax and independent review but is not yet executed.
+That preparation path passed syntax and independent review, then executed successfully
+for the follow-up release as recorded above.
 Releases must be serialized; these checks are not a distributed deployment lock or a
 proof of arbitrary schema-change compatibility.
 
@@ -124,10 +196,12 @@ dispatch generation. Unknown application and deferred artifact outcomes keep the
 handling. Tests cover real analysis-handler recovery at 17 and 21 minutes, task tombstones,
 publisher/worker races, busy observations and the unchanged bounded actual-failure budget.
 The complete backend suite passed **455 tests**; focused dispatch tests passed **46 cases**.
-Its deployment and final exact-commit CI remain to be recorded. The earlier hardening
-candidate `5dda7a85a26517f81c744629f457d065bcf3cdb5` passed CI but was not deployed.
+This recovery hardening is deployed in follow-up commit
+`3565655712c2ceee431bee8306678a020b2f462d`, whose exact-commit CI and rollout are
+recorded above. The earlier hardening candidate
+`5dda7a85a26517f81c744629f457d065bcf3cdb5` passed CI but was not deployed.
 
-## Production verification to record
+## Recorded production verification
 
 - [x] Protected fresh backup gate and controlled migration execution succeeded.
 - [x] Immutable image digest and exact healthy API revision promoted.
@@ -136,7 +210,10 @@ candidate `5dda7a85a26517f81c744629f457d065bcf3cdb5` passed CI but was not deplo
 - [x] Four reviewed employer origins seeded; completed production scans and opening counts recorded.
 - [x] Exact staged frontend promoted, custom domains checked and five-width public browser checks passed.
 - [x] Read-only authenticated API checks passed without customer writes, payments or employer submissions.
-- [x] Initial pilot post-release queue outcomes and health observed and recorded; follow-up monitoring is pending.
+- [x] Initial pilot post-release queue outcomes and health observed and recorded.
+- [x] Follow-up exact-commit CI, backup, serving-image preparation, controlled migration and backend/frontend promotion recorded.
+- [x] Follow-up real public-source refresh, bounded log observation and five-width public UI checks recorded.
+- [ ] Sustained field-performance, load, independent restore/recovery and broader security drills from the requirements register remain open.
 
 ## Limits of this pilot
 
@@ -146,6 +223,13 @@ remains disabled: public job-feed access supplies no employer write permission. 
 companion, durable daily/batch admissions, independent recovery epochs and tombstones,
 file quarantine/isolation, broader coverage evaluation and authorized receipt drills remain
 open in [the remaining requirements register](REMAINING_REQUIREMENTS.md).
+
+The subsequent admission/batch and disabled-companion foundation candidate is under
+development and has not been deployed. It must pass integration, migration and acceptance
+checks before a separate promotion; production remains at schema head `0008`. The
+[16 additional employer proposals](../../backend/resources/employer_sources.proposed_20261008.json)
+record 969 openings observed during public research, but are explicitly
+`proposed_not_enrolled`. They do not enlarge the live four-source catalog or prove recall.
 
 No real employer application, production test payment or artificial receipt is part of
 release verification. The pre-release backup is protected and expires under the bounded

@@ -27,7 +27,8 @@ tracks implementation evidence and does not replace the wider worldwide coverage
 - [x] Stage and promote the tested initial production backend and frontend release.
 - [x] Confirm required pilot environment, worker IAM, Scheduler and production health after repairs.
 - [x] Monitor the initial release and record deployment IDs, commit and observations.
-- [ ] Promote and monitor follow-up configuration, pricing-timeout and mobile-control hardening.
+- [x] Promote follow-up configuration, pricing-timeout, mobile-control and dispatch recovery hardening; record bounded post-rollout observations.
+- [ ] Complete sustained field-performance, load and wider operational recovery/security validation.
 - [ ] Complete immutable GCS storage and deletion/restore/security drills from the register.
 - [ ] Prove every requirements gate before marking the full development goal complete.
 
@@ -47,7 +48,8 @@ checks, and tests prove rejected financial/application mutations cannot reach th
 The employer flow passed 65 browser cases at 320, 390, 768, 1024 and 1440 pixels;
 the complete frontend suite passed 155 cases across those widths.
 
-Initial release `7980b624d2fd5a93994621538eb610e2ee4e5181` is live on GCP and Vercel.
+Initial release `7980b624d2fd5a93994621538eb610e2ee4e5181` was promoted on GCP and
+Vercel. Follow-up release `3565655712c2ceee431bee8306678a020b2f462d` is now live.
 All four reviewed production sources completed scans and held 356 open postings at the
 recorded check. The Scheduler and actual Cloud Tasks executions were observed after
 repairing missing legacy publisher configuration. Exact release identities, independent
@@ -71,6 +73,45 @@ permissioned live receipts, independent recovery epochs/tombstones, security/iso
 drills and greater-than-95-percent recall are tracked in
 [the remaining requirements register](REMAINING_REQUIREMENTS.md). Automatic submission
 must remain disabled until the relevant tenant and safety gates pass.
+
+## Promoted follow-up evidence
+
+Exact-commit [CI 37789610598](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37789610598)
+passed all three jobs with **455 backend tests**, **45 frontend unit tests** and **155
+browser cases**. Forty-six focused dispatch cases and
+[seven independent real-PostgreSQL scenarios](evidence/2026-10-08-followup-dispatch-postgres.json)
+cover configuration rejection, uncertain publish recovery, fresh task generations,
+publisher/worker races and bounded actual-failure attempts. The PostgreSQL drill used a
+synthetic task client and no live employer requests.
+
+The protected backup and exact old-serving-image preparation succeeded before migration
+`hirewiz-schema-migration-tsf5n`. The controlled migration remained at head `0008`.
+Cloud Build `664bcd48-d110-40bb-b2f9-1583bad245c9` succeeded, API revision
+`ai-resume-parser-00247-val` received 100% traffic, both private workers were updated and
+Vercel deployment `dpl_HAp5ndXqK92w6rAURv57qF128yoF` was promoted to the custom domain.
+[Release metadata](evidence/2026-10-08-followup-release.json) records exact times and the
+immutable image digest. Backup creation and archive checks do not prove a restore drill.
+
+[Hosted follow-up browser evidence](evidence/2026-10-08-followup-hosted-responsive.json)
+passed 20 route/width cases. The mobile/tablet menu controls measured 44 × 44 px, both
+pricing cards were current at all widths, and no unresolved runtime, console, overflow or
+automated accessibility-smoke failure remained. Hosted-lab route-median LCP ranged from
+560 to 1,100 ms; maximum observed CLS was 0.029. These are unthrottled lab observations,
+not field p75/p95, INP, load or a complete accessibility audit. Two fresh public catalog
+GETs returned 200 in 738 and 361 ms. Two authenticated catalog observations took 4.902
+and 1.427 s; this limited sample does not establish a percentile or timing cause.
+
+A [real post-promotion public-source refresh](evidence/2026-10-08-followup-production-refresh.json)
+completed with one dispatch and one execution and source status healthy at 14:39:32.516Z.
+The bounded API/worker log observation found no ERROR-or-higher or HTTP-500-or-higher
+entries between 14:26:17Z and approximately 14:37Z. No live payment or employer
+application was performed. Automatic submission remains disabled.
+
+The [16 additional source proposals](../../backend/resources/employer_sources.proposed_20261008.json)
+remain `proposed_not_enrolled`; their 969 research-time openings are not production
+availability or coverage claims. The subsequent admission/batch and disabled-companion
+foundation candidate is under development, not deployed. Device/independent authority,
+permitted submission, wider recovery/security and worldwide recall gates remain open.
 
 ## Commercial defaults
 

@@ -1,0 +1,449 @@
+{
+  "scope": "Local production build, synthetic employer/candidate fixtures; no live employer POST or production mutation",
+  "final_checks": {
+    "focused_batch_browser_cases": 35,
+    "widths": [
+      320,
+      390,
+      768,
+      1024,
+      1440
+    ],
+    "lint": "passed",
+    "typecheck": "passed",
+    "production_build": "passed",
+    "api_generation": "synchronized"
+  },
+  "prior_checks_before_presentation_only_cleanup": {
+    "full_browser_cases": 190,
+    "baseline_browser_cases": 155,
+    "new_batch_cases": 35,
+    "unit_tests": 55,
+    "full_lint": "passed"
+  },
+  "images": [
+    {
+      "name": "batch-review-desktop-1440-0.png",
+      "width": 1440,
+      "height": 900,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-review-desktop-1440-1.png",
+      "width": 1440,
+      "height": 900,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-review-desktop-1440-2.png",
+      "width": 1440,
+      "height": 900,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-review-desktop-1440-3.png",
+      "width": 1440,
+      "height": 900,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-review-desktop-1440-expanded-full.png",
+      "width": 1440,
+      "height": 2798,
+      "kind": "expanded_full_content"
+    },
+    {
+      "name": "batch-review-laptop-1024-0.png",
+      "width": 1024,
+      "height": 768,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-review-laptop-1024-1.png",
+      "width": 1024,
+      "height": 768,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-review-laptop-1024-2.png",
+      "width": 1024,
+      "height": 768,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-review-laptop-1024-3.png",
+      "width": 1024,
+      "height": 768,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-review-laptop-1024-4.png",
+      "width": 1024,
+      "height": 768,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-review-laptop-1024-expanded-full.png",
+      "width": 1024,
+      "height": 2794,
+      "kind": "expanded_full_content"
+    },
+    {
+      "name": "batch-review-mobile-320-0.png",
+      "width": 880,
+      "height": 1980,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-review-mobile-320-1.png",
+      "width": 880,
+      "height": 1980,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-review-mobile-320-2.png",
+      "width": 880,
+      "height": 1980,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-review-mobile-320-3.png",
+      "width": 880,
+      "height": 1980,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-review-mobile-320-4.png",
+      "width": 880,
+      "height": 1980,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-review-mobile-320-5.png",
+      "width": 880,
+      "height": 1980,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-review-mobile-320-6.png",
+      "width": 880,
+      "height": 1980,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-review-mobile-320-7.png",
+      "width": 880,
+      "height": 1980,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-review-mobile-320-expanded-full.png",
+      "width": 880,
+      "height": 10321,
+      "kind": "expanded_full_content"
+    },
+    {
+      "name": "batch-review-mobile-390-0.png",
+      "width": 1024,
+      "height": 2216,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-review-mobile-390-1.png",
+      "width": 1024,
+      "height": 2216,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-review-mobile-390-2.png",
+      "width": 1024,
+      "height": 2216,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-review-mobile-390-3.png",
+      "width": 1024,
+      "height": 2216,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-review-mobile-390-4.png",
+      "width": 1024,
+      "height": 2216,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-review-mobile-390-5.png",
+      "width": 1024,
+      "height": 2216,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-review-mobile-390-expanded-full.png",
+      "width": 1024,
+      "height": 9114,
+      "kind": "expanded_full_content"
+    },
+    {
+      "name": "batch-review-tablet-768-0.png",
+      "width": 768,
+      "height": 1024,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-review-tablet-768-1.png",
+      "width": 768,
+      "height": 1024,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-review-tablet-768-2.png",
+      "width": 768,
+      "height": 1024,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-review-tablet-768-3.png",
+      "width": 768,
+      "height": 1024,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-review-tablet-768-expanded-full.png",
+      "width": 768,
+      "height": 2934,
+      "kind": "expanded_full_content"
+    },
+    {
+      "name": "batch-status-desktop-1440-0.png",
+      "width": 1440,
+      "height": 900,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-status-desktop-1440-1.png",
+      "width": 1440,
+      "height": 900,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-status-desktop-1440-2.png",
+      "width": 1440,
+      "height": 900,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-status-desktop-1440-3.png",
+      "width": 1440,
+      "height": 900,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-status-desktop-1440-expanded-full.png",
+      "width": 1440,
+      "height": 2624,
+      "kind": "expanded_full_content"
+    },
+    {
+      "name": "batch-status-laptop-1024-0.png",
+      "width": 1024,
+      "height": 768,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-status-laptop-1024-1.png",
+      "width": 1024,
+      "height": 768,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-status-laptop-1024-2.png",
+      "width": 1024,
+      "height": 768,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-status-laptop-1024-3.png",
+      "width": 1024,
+      "height": 768,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-status-laptop-1024-4.png",
+      "width": 1024,
+      "height": 768,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-status-laptop-1024-expanded-full.png",
+      "width": 1024,
+      "height": 2620,
+      "kind": "expanded_full_content"
+    },
+    {
+      "name": "batch-status-mobile-320-0.png",
+      "width": 880,
+      "height": 1980,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-status-mobile-320-1.png",
+      "width": 880,
+      "height": 1980,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-status-mobile-320-2.png",
+      "width": 880,
+      "height": 1980,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-status-mobile-320-3.png",
+      "width": 880,
+      "height": 1980,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-status-mobile-320-4.png",
+      "width": 880,
+      "height": 1980,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-status-mobile-320-5.png",
+      "width": 880,
+      "height": 1980,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-status-mobile-320-6.png",
+      "width": 880,
+      "height": 1980,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-status-mobile-320-expanded-full.png",
+      "width": 880,
+      "height": 9963,
+      "kind": "expanded_full_content"
+    },
+    {
+      "name": "batch-status-mobile-390-0.png",
+      "width": 1024,
+      "height": 2216,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-status-mobile-390-1.png",
+      "width": 1024,
+      "height": 2216,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-status-mobile-390-2.png",
+      "width": 1024,
+      "height": 2216,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-status-mobile-390-3.png",
+      "width": 1024,
+      "height": 2216,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-status-mobile-390-4.png",
+      "width": 1024,
+      "height": 2216,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-status-mobile-390-expanded-full.png",
+      "width": 1024,
+      "height": 8573,
+      "kind": "expanded_full_content"
+    },
+    {
+      "name": "batch-status-tablet-768-0.png",
+      "width": 768,
+      "height": 1024,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-status-tablet-768-1.png",
+      "width": 768,
+      "height": 1024,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-status-tablet-768-2.png",
+      "width": 768,
+      "height": 1024,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-status-tablet-768-3.png",
+      "width": 768,
+      "height": 1024,
+      "kind": "actual_viewport_scroll_frame"
+    },
+    {
+      "name": "batch-status-tablet-768-expanded-full.png",
+      "width": 768,
+      "height": 2752,
+      "kind": "expanded_full_content"
+    }
+  ],
+  "frozen_files": [
+    {
+      "path": "frontend/app/employer-jobs/page.tsx",
+      "sha256": "1960dce65820f14f5c7e8cf8a7bae1854d7102105305dde93811632a3d61599c"
+    },
+    {
+      "path": "frontend/app/employer-jobs/batches/[id]/page.tsx",
+      "sha256": "38dbdf481dfd08c7adab74ac14d59f9befcb58ed9b92c9220848ae5c94ac7443"
+    },
+    {
+      "path": "frontend/components/EmployerApplicationPanel.tsx",
+      "sha256": "83b200b009a1c85fbe3683a7a37ef555284f7fc4f553bb2fb3e0a158386e87f8"
+    },
+    {
+      "path": "frontend/components/EmployerBatchPanel.tsx",
+      "sha256": "0beca9c8e940510ff3c71a5aaeeddff655bf221022eaf41f001e2ca16b9081a9"
+    },
+    {
+      "path": "frontend/lib/employerJobs.ts",
+      "sha256": "f8bc8f4efc5de1fdfe17fd5975c3ca768e2dad0661b9db45a3277fbf41f2c37b"
+    },
+    {
+      "path": "frontend/lib/generated/api.ts",
+      "sha256": "c19de2c1e3ec79ec51b78bf9aacb9058bb4bea956aa8abe7d493b1af1806b4b5"
+    },
+    {
+      "path": "frontend/lib/employerJobs.test.ts",
+      "sha256": "5a4738e5e07ba92f1c5319f49aa43a722486f8f76fd277c3a275276cb01c57ee"
+    },
+    {
+      "path": "frontend/lib/fixtures/employerBatch.ts",
+      "sha256": "30c7dc254037e7b9d9ef7760af1f47bc49ce256ed459020896da8109c18c0245"
+    },
+    {
+      "path": "frontend/e2e/employer-batches.spec.ts",
+      "sha256": "41f46a3d2d1b61b901002157973ed9b71c01ceabfdfcfda2c795e9ed264a1c27"
+    }
+  ],
+  "limitations": [
+    "Current manual sources remain individual handoffs; no live API-submission enablement proof.",
+    "Unapproved quotes have no backend list endpoint; recovery uses the exact batch review link. Approved/queued batches reopen by application batch_id.",
+    "Displayed admission limits are ceilings, not current remaining capacity.",
+    "Changed packages cannot display an earlier immutable review snapshot because no approval-snapshot read endpoint exists; current details are withheld if the digest mismatches.",
+    "Expanded full-content screenshots temporarily expand only the scroll container for readability; responsive evidence uses the original viewport/scroll frames."
+  ],
+  "recorded_date": "2026-10-08",
+  "temporary_screenshot_directory": "/tmp/hirewiz-batch-ui-final-20261008",
+  "final_focused_report": "/tmp/hirewiz-batch-ui-final-20261008/results.json",
+  "pre_presentation_cleanup_full_report": "/tmp/hirewiz-batch-ui-20261008/results.json",
+  "deployment_status": "Local integration only; no production mutation or live employer submission.",
+  "fixture_data": "Synthetic test-only packages; no customer data or credentials."
+}

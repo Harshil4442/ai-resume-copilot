@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from ... import models as core
 from ...services.basic_matching import basic_match
 from ..common import payload_fingerprint, public_id, utcnow
-from . import artifacts, config, connectors, credits, models, schemas
+from . import admissions, artifacts, config, connectors, credits, models, schemas
 
 LOCKED_APPLICATION_STATES = {"queued", "submitting", "confirmed", "unknown", "failed"}
 
@@ -62,7 +62,8 @@ def _source_mode(source, form=None):
 def source_response(source):
     return {key: getattr(source, key) for key in (
         "id", "employer", "platform", "region", "careers_url", "enabled", "status", "verified_at", "last_success_at", "next_refresh_at", "last_error_code",
-    )} | {"application_mode": _source_mode(source)}
+    )} | {"application_mode": _source_mode(source), "employer_key": admissions.employer_identity(source),
+          "admission_policy": config.employer_limits(source)}
 
 
 def catalog(db, user_id):
@@ -71,6 +72,7 @@ def catalog(db, user_id):
     return config.prices() | {
         "balance": int(user.job_service_credits or 0), "enabled": config.discovery_enabled(),
         "auto_submit_enabled": config.submit_enabled(), "sources": [source_response(source) for source in sources],
+        "admission_limits": config.admission_limits(),
         "credit_policy": "New unique verified jobs are charged once. Automatic applications are charged only after a verified complete receipt. Promotional analysis units and Premium are separate.",
         "coverage": {"scope": "Verified enabled employer sources", "worldwide_recall_verified": False},
     }
@@ -80,6 +82,7 @@ def posting_response(posting, source):
     return {key: getattr(posting, key) for key in (
         "id", "source_id", "external_id", "title", "employer", "location", "description", "canonical_url", "apply_url", "publication_at", "first_seen_at", "last_checked_at", "remote", "is_open", "content_sha256",
     )} | {"platform": source.platform, "application_mode": _source_mode(source),
+          "opening_key": admissions.opening_identity(posting, source),
           "publication_kind": "release_or_republication" if source.platform == "smartrecruiters" else "publication" if posting.publication_at else "unknown"}
 
 
@@ -132,18 +135,25 @@ def create_search(db: Session, user_id: int, payload: schemas.SearchCreate):
     truncated = len(candidates) > 1000
     ranked = [(posting, source, basic_match(resume.skills or [], posting.description, posting.title)) for posting, source in candidates[:1000]]
     ranked.sort(key=lambda item: (-item[2]["score"], -int(payload.role.lower() in item[0].title.lower()), item[0].id))
-    selected = ranked[:payload.desired_count]
-    previous = {row.posting_id for row in db.query(models.EmployerJobDelivery).filter_by(user_id=user_id).filter(models.EmployerJobDelivery.posting_id.in_([item[0].id for item in selected])).all()}
-    new_count = sum(posting.id not in previous for posting, _, _ in selected)
+    unique: dict[str, tuple[models.EmployerPosting, models.EmployerSource, dict]] = {}
+    for item in ranked:
+        item[0].opening_key = admissions.opening_identity(item[0], item[1])
+        unique.setdefault(item[0].opening_key, item)
+    selected = list(unique.values())[:payload.desired_count]
+    previous = {row.opening_key for row in db.query(models.EmployerJobDelivery).filter_by(user_id=user_id).filter(models.EmployerJobDelivery.opening_key.in_(list(unique))).all()}
+    # Compatibility for an old delivery whose opening key could not be backfilled.
+    legacy = {row.posting_id for row in db.query(models.EmployerJobDelivery).filter_by(user_id=user_id, opening_key=None).all()}
+    new_count = sum(posting.opening_key not in previous and posting.id not in legacy for posting, _, _ in selected)
     search_id = public_id("search")
     reservation = credits.reserve(db, user_id=user_id, operation="job_search", source_id=search_id,
                                   unit_price=int(prices["search_credits_per_job"]), count=payload.desired_count if new_count else 0)
     items, deliveries = [], []
     for posting, source, fit in selected:
-        amount = 0 if posting.id in previous else reservation.unit_price
+        amount = 0 if posting.opening_key in previous or posting.id in legacy else reservation.unit_price
         items.append({"posting": _json_posting(posting, source), "fit": fit, "charged_credits": amount})
         if amount:
-            deliveries.append(models.EmployerJobDelivery(id=public_id("delivery"), user_id=user_id, posting_id=posting.id, search_id=search_id, charged_credits=amount))
+            deliveries.append(models.EmployerJobDelivery(id=public_id("delivery"), user_id=user_id, posting_id=posting.id,
+                opening_key=posting.opening_key, search_id=search_id, charged_credits=amount))
     search = models.EmployerSearch(
         id=search_id, user_id=user_id, resume_id=resume.id, idempotency_key=payload.idempotency_key,
         input_fingerprint=fingerprint, query=payload.model_dump(exclude={"idempotency_key"}),
@@ -205,7 +215,7 @@ def _artifact_row(sealed, user_id, selection):
 
 
 def _package_digest(application, posting, source, artifact):
-    return payload_fingerprint({
+    content = {
         "employer": source.employer, "source_id": source.id, "platform": source.platform,
         "tenant": source.board_token, "region": source.region, "recipient_hosts": source.allowed_hosts,
         "submission_grant": source.submission_grant, "receipt_contract": source.receipt_contract,
@@ -215,7 +225,22 @@ def _package_digest(application, posting, source, artifact):
         "artifact_sha256": artifact.sha256, "resume_choice": application.resume_choice,
         "answers": application.answers, "consents": application.consents,
         "credit_cost": application.credit_cost, "application_mode": application.application_mode,
-    })
+    }
+    if application.admission_snapshot:
+        content.update({"admission_snapshot": application.admission_snapshot,
+                        "pricing_snapshot": application.pricing_snapshot,
+                        "opening_key": admissions.opening_identity(posting, source),
+                        "employer_policy": config.employer_limits(source)})
+    return payload_fingerprint(content)
+
+
+def _quote_application(application, posting, source):
+    application.employer_key = admissions.employer_identity(source)
+    application.opening_key = admissions.opening_identity(posting, source)
+    posting.opening_key = application.opening_key
+    application.admission_snapshot = admissions.quote(source, posting)
+    application.pricing_snapshot = {"unit_price": application.credit_cost,
+                                    "pricing_version": config.PRICING_VERSION}
 
 
 def missing_fields(application):
@@ -279,6 +304,7 @@ def create_application(db: Session, user_id: int, payload: schemas.ApplicationCr
     except connectors.ConnectorError as exc:
         raise HTTPException(503 if exc.safe_to_retry else 409, "Employer form could not be verified: " + exc.code) from exc
     with artifacts.guarded_storage(db, prepared, user_id=user_id) as (sealed, upload_id):
+        admissions.lock_application_set(db, user_id)
         if not db.query(core.User).filter(core.User.id == user_id).with_for_update().first():
             raise HTTPException(409, "Account was deleted while the application was being prepared")
         existing = db.query(models.EmployerApplication).filter_by(user_id=user_id, idempotency_key=payload.idempotency_key).first()
@@ -286,9 +312,13 @@ def create_application(db: Session, user_id: int, payload: schemas.ApplicationCr
             if existing.input_fingerprint != fingerprint:
                 raise HTTPException(409, "This request key was already used with another application")
             return existing
-        active_key = f"{user_id}:{payload.posting_id}"
-        if db.query(models.EmployerApplication.id).filter_by(active_key=active_key).first():
-            raise HTTPException(409, "An application already exists for this job. Review its status before creating another")
+        opening_key = admissions.opening_identity(posting, source)
+        active_key = f"{user_id}:{opening_key}"
+        if db.query(models.EmployerApplication.id).filter_by(user_id=user_id).filter(
+            or_(models.EmployerApplication.opening_key == opening_key, models.EmployerApplication.posting_id == posting.id),
+            models.EmployerApplication.active_key.is_not(None),
+        ).first():
+            raise HTTPException(409, {"code": "canonical_opening_conflict", "message": "An application already exists for this opening, including another source or language version. Review its status before creating another."})
         open_count = db.query(models.EmployerApplication.id).filter_by(user_id=user_id).filter(
             models.EmployerApplication.status.notin_(["confirmed", "failed", "cancelled"]),
         ).count()
@@ -312,6 +342,7 @@ def create_application(db: Session, user_id: int, payload: schemas.ApplicationCr
             job_content_sha256=posting.content_sha256, application_mode=mode,
             status="needs_action" if form["fields"] else "ready", credit_cost=int(config.prices()["apply_credits_per_job"]),
         )
+        _quote_application(application, posting, source)
         application.package_digest = _package_digest(application, posting, source, artifact)
         db.add(application)
         artifacts.attach_upload(db, upload_id, user_id=user_id)
@@ -342,11 +373,13 @@ def update_package(db, user_id, identity, payload: schemas.PackageUpdate):
         application.approved_at, application.approved_digest, application.approval_expires_at = None, None, None
         db.query(models.EmployerApplicationApproval).filter_by(application_id=application.id, revoked_at=None).update({"revoked_at": utcnow()}, synchronize_session=False)
         application.allowed_actions = []
+        application.batch_id = None
         application.cancel_requested = False
         application.error_code, application.error_message = None, None
         application.status = "needs_action" if missing_fields(application) else "ready"
         posting = _posting(db, application.posting_id)
         source = _source(db, posting.source_id)
+        _quote_application(application, posting, source)
         application.package_digest = _package_digest(application, posting, source, artifact)
         artifacts.attach_upload(db, upload_id, user_id=user_id)
         db.commit()
@@ -358,7 +391,7 @@ def application_response(db, application):
     source = _source(db, posting.source_id)
     artifact = _owned(db, models.SealedApplicationArtifact, application.artifact_id, application.user_id)
     result = {key: getattr(application, key) for key in (
-        "id", "resume_id", "resume_choice", "resume_version_id", "status", "application_mode", "form", "package_digest", "answers", "consents", "credit_cost", "charged_credits", "receipt", "approval_expires_at", "cancel_requested", "created_at", "updated_at",
+        "id", "resume_id", "resume_choice", "resume_version_id", "status", "application_mode", "form", "package_digest", "answers", "consents", "credit_cost", "charged_credits", "receipt", "approval_expires_at", "cancel_requested", "created_at", "updated_at", "opening_key", "employer_key", "admission_snapshot", "pricing_snapshot", "batch_id",
     )}
     result.update({
         "posting": posting_response(posting, source), "missing_fields": missing_fields(application),
@@ -368,6 +401,7 @@ def application_response(db, application):
         "error": {"code": application.error_code, "message": application.error_message} if application.error_code else None,
         "handoff_url": posting.apply_url if application.application_mode == "manual" else None,
         "reserved_credits": 0,
+        "admission": admissions.response(db, application),
     })
     if application.reservation_id:
         reservation = db.query(models.ServiceCreditReservation).filter_by(id=application.reservation_id).one()
@@ -375,7 +409,7 @@ def application_response(db, application):
     return result
 
 
-def approve_application(db, user_id, identity, payload: schemas.ApprovalCreate):
+def approve_application(db, user_id, identity, payload: schemas.ApprovalCreate, *, commit=True):
     application = _owned(db, models.EmployerApplication, identity, user_id, lock=True)
     if application.status in LOCKED_APPLICATION_STATES or application.status == "cancelled":
         raise HTTPException(409, "This application cannot be approved in its current state")
@@ -394,6 +428,9 @@ def approve_application(db, user_id, identity, payload: schemas.ApprovalCreate):
     posting = _posting(db, application.posting_id)
     source = _source(db, posting.source_id)
     artifact = _owned(db, models.SealedApplicationArtifact, application.artifact_id, user_id)
+    admissions._policies(application, source, utcnow())
+    if _package_digest(application, posting, source, artifact) != application.package_digest:
+        raise HTTPException(409, {"code": "package_policy_changed", "message": "The employer policy or application package changed. Save and review the package again."})
     db.add(models.EmployerApplicationApproval(
         id=public_id("approval"), application_id=application.id, package_digest=application.package_digest,
         review_snapshot={"employer": source.employer, "tenant": source.board_token, "source_id": source.id,
@@ -401,15 +438,18 @@ def approve_application(db, user_id, identity, payload: schemas.ApprovalCreate):
                         "answers": copy.deepcopy(application.answers), "consents": copy.deepcopy(application.consents),
                         "artifact_sha256": artifact.sha256, "artifact_id": artifact.id, "filename": artifact.filename,
                         "credit_cost": application.credit_cost, "resume_choice": application.resume_choice,
-                        "receipt_contract": copy.deepcopy(source.receipt_contract), "submission_grant": source.submission_grant},
+                        "receipt_contract": copy.deepcopy(source.receipt_contract), "submission_grant": source.submission_grant,
+                        "admission_snapshot": copy.deepcopy(application.admission_snapshot),
+                        "pricing_snapshot": copy.deepcopy(application.pricing_snapshot), "batch_id": application.batch_id},
         allowed_actions=application.allowed_actions, approved_at=application.approved_at,
         expires_at=application.approval_expires_at,
     ))
-    db.commit()
+    if commit:
+        db.commit()
     return application
 
 
-def request_execution(db, user_id, identity, payload: schemas.ExecuteCreate):
+def request_execution(db, user_id, identity, payload: schemas.ExecuteCreate, *, commit=True):
     application = _owned(db, models.EmployerApplication, identity, user_id, lock=True)
     if application.status in {"queued", "submitting", "confirmed", "unknown"}:
         if payload.package_digest != application.package_digest:
@@ -421,25 +461,34 @@ def request_execution(db, user_id, identity, payload: schemas.ExecuteCreate):
         raise HTTPException(409, "Application approval has expired or was cancelled")
     if application.application_mode == "manual":
         application.status = "manual_handoff"
-        db.commit()
+        if commit:
+            db.commit()
         return application
     posting, source = _posting(db, application.posting_id), None
     source = _source(db, posting.source_id)
     if _source_mode(source, application.form) != "api":
         raise HTTPException(409, "Automatic submission is no longer enabled for this employer")
+    artifact = _owned(db, models.SealedApplicationArtifact, application.artifact_id, user_id)
+    if _package_digest(application, posting, source, artifact) != application.package_digest:
+        raise HTTPException(409, {"code": "package_policy_changed", "message": "The employer policy or application package changed. Save and review the package again."})
+    from .batches import validate_binding
+    validate_binding(db, application)
+    admissions.reserve(db, application, source)
     reservation = credits.reserve(db, user_id=user_id, operation="job_application", source_id=application.id,
-                                  unit_price=application.credit_cost, count=1)
+                                  unit_price=application.credit_cost, count=1,
+                                  pricing_version=application.pricing_snapshot["pricing_version"])
     db.flush([reservation])
     application.reservation_id = reservation.id
     application.status = "queued"
     from ..dispatch.service import enqueue
     enqueue(db, topic="employer.apply", aggregate_id=application.id, payload={"application_id": application.id},
             key=f"employer.apply:{application.id}:{application.package_digest}")
-    db.commit()
+    if commit:
+        db.commit()
     return application
 
 
-def cancel_application(db, user_id, identity):
+def cancel_application(db, user_id, identity, *, commit=True):
     application = _owned(db, models.EmployerApplication, identity, user_id, lock=True)
     if application.status == "confirmed":
         raise HTTPException(409, "The employer already received this application; future work can be stopped but it cannot be recalled here")
@@ -447,17 +496,20 @@ def cancel_application(db, user_id, identity):
         application.cancel_requested = True
         application.approved_digest = None
         application.error_message = "Cancellation requested. Data may already have reached the employer; outcome must be reconciled."
+        admissions.finish(db, application, "unknown")
     else:
         application.status = "cancelled"
         application.cancel_requested = True
         application.cancelled_at = utcnow()
         application.approved_digest = None
         application.active_key = None
+        admissions.finish(db, application, "cancelled")
         if application.reservation_id:
             reservation = db.query(models.ServiceCreditReservation).filter_by(id=application.reservation_id).with_for_update().one()
             credits.settle(db, reservation, completed_count=0, reason="Cancelled before automatic submission")
     db.query(models.EmployerApplicationApproval).filter_by(application_id=application.id, revoked_at=None).update({"revoked_at": utcnow()}, synchronize_session=False)
-    db.commit()
+    if commit:
+        db.commit()
     return application
 
 
@@ -540,12 +592,14 @@ def reconcile_application(db: Session, identity: str, admin, payload: schemas.Re
         credits.settle(db, reservation, completed_count=1, reason="Complete employer application independently verified")
         application.status, application.charged_credits = "confirmed", reservation.committed_amount
         application.error_code, application.error_message = None, None
+        admissions.finish(db, application, "confirmed")
     else:
         credits.settle(db, reservation, completed_count=0, reason="Provider verified no application was submitted")
         application.status, application.active_key = "failed", None
         application.approved_digest = None
         application.error_code = "verified_not_submitted"
         application.error_message = "The employer independently verified that no application was submitted; reserved credits were returned."
+        admissions.finish(db, application, "verified_not_submitted", proven_not_submitted=True)
     db.add(core.AdminAuditEvent(id=public_id("audit"), actor_user_id=admin.id, actor_email=admin.email,
         action="reconcile_employer_application", target_type="employer_application", target_id=application.id,
         reason=payload.reason, before_state=before,

@@ -8,8 +8,8 @@ from __future__ import annotations
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from ...models import User
 from ..common import public_id, utcnow
+from ..entitlements import lock_entitlement_owner
 from .config import PRICING_VERSION
 from .models import ServiceCreditEvent, ServiceCreditReservation
 
@@ -25,8 +25,8 @@ def _event(db, user, reservation, kind, amount, reason):
 
 
 def reserve(db: Session, *, user_id: int, operation: str, source_id: str,
-            unit_price: int, count: int) -> ServiceCreditReservation:
-    user = db.query(User).filter(User.id == user_id).with_for_update().one()
+            unit_price: int, count: int, pricing_version: str = PRICING_VERSION) -> ServiceCreditReservation:
+    user = lock_entitlement_owner(db, user_id)
     amount = unit_price * count
     balance = int(user.job_service_credits or 0)
     if amount < 0:
@@ -40,7 +40,7 @@ def reserve(db: Session, *, user_id: int, operation: str, source_id: str,
     reservation = ServiceCreditReservation(
         id=public_id("resv"), user_id=user_id, operation=operation, source_id=source_id,
         unit_price=unit_price, requested_count=count, reserved_amount=amount,
-        committed_amount=0, released_amount=0, state="reserved", pricing_version=PRICING_VERSION,
+        committed_amount=0, released_amount=0, state="reserved", pricing_version=pricing_version,
     )
     db.add(reservation)
     _event(db, user, reservation, "reserve", -amount, "Reserved prepaid credits for " + operation)
@@ -53,7 +53,7 @@ def settle(db: Session, reservation: ServiceCreditReservation, *, completed_coun
         return
     if not 0 <= completed_count <= reservation.requested_count:
         raise ValueError("Completed count exceeds the reservation")
-    user = db.query(User).filter(User.id == reservation.user_id).with_for_update().one()
+    user = lock_entitlement_owner(db, reservation.user_id)
     committed = completed_count * reservation.unit_price
     refund = reservation.reserved_amount - committed
     user.job_service_credits = int(user.job_service_credits or 0) + refund

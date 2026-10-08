@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from ... import models
 from ..common import public_id, utcnow
+from ..entitlements import lock_entitlement_owner
 
 
 class InsufficientUnitsError(ValueError):
@@ -68,12 +69,7 @@ def reserve_run_usage(
     if run.usage_state != "pending":
         return
 
-    user = (
-        db.query(models.User)
-        .filter(models.User.id == user_id)
-        .with_for_update()
-        .one()
-    )
+    user = lock_entitlement_owner(db, user_id)
     balance = int(user.ai_credits or 0)
     event_key = f"{run.id}:reserve"
 
@@ -118,7 +114,7 @@ def commit_run_usage(db: Session, run: models.AnalysisRun) -> None:
         raise ValueError(f"Cannot commit usage in state {run.usage_state}")
 
     event_key = f"{run.id}:commit"
-    user = db.query(models.User).filter(models.User.id == run.user_id).one()
+    user = lock_entitlement_owner(db, run.user_id)
     if not _event_exists(db, run.user_id, event_key):
         _append_event(
             db,
@@ -144,12 +140,7 @@ def release_run_usage(db: Session, run: models.AnalysisRun, *, reason: str) -> N
         raise ValueError(f"Cannot release usage in state {run.usage_state}")
 
     event_key = f"{run.id}:release"
-    user = (
-        db.query(models.User)
-        .filter(models.User.id == run.user_id)
-        .with_for_update()
-        .one()
-    )
+    user = lock_entitlement_owner(db, run.user_id)
     if not _event_exists(db, run.user_id, event_key):
         user.ai_credits = int(user.ai_credits or 0) + int(run.estimated_units or 0)
         _append_event(

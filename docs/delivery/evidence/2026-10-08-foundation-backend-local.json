@@ -1,0 +1,44 @@
+{
+  "date": "2026-10-08",
+  "scope": "integrated backend admission/batch and entitlement repairs",
+  "suite": {
+    "passed": 511,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "dependency_deprecation_warnings": 3
+  },
+  "real_postgres_cases": 26,
+  "postgres_version": "17.11",
+  "ruff": "exact CI scope passed",
+  "mypy_files": 49,
+  "openapi": "regenerated; repairs did not change integrated contract",
+  "migration": "clean and populated0009 downgrade/upgrade passed",
+  "production_or_employer_writes": false,
+  "auto_submit_enabled_by_this_work": false,
+  "ci_structure": "dedicated local disposable PostgreSQL plus disabled companion job",
+  "migration_version": "20261008_0009",
+  "migration_scenarios": [
+    "clean PostgreSQL head ->0008 ->0009",
+    "populated PostgreSQL downgrade/upgrade preserves unknown holds, source aliases and financial rows",
+    "SQLite downgrade/upgrade"
+  ],
+  "critical_regressions": [
+    "same-session cached authenticated service credits: only one last-credit reservation accepted",
+    "same-session cached authenticated analysis units: only one last-unit reservation accepted",
+    "competing reserves/refunds and concurrent refunds preserve balances and ledgers",
+    "pending sequential batch debits preserved; insufficient batch atomically rolls back all slots/credits/outbox",
+    "Premium entitlement refresh under owner lock",
+    "legacy child-FK insert follows owner lock; only one synthetic provider yield at1unit",
+    "no_autoflush leaves unrelated pending runs untouched",
+    "committed batch cancellation cannot be revived by stale approval",
+    "self-admin cached balance refresh and audit/idempotent replay",
+    "reservation preserves approved historical pricing version"
+  ],
+  "warnings": [
+    "3 existing dependency deprecation warnings: crypt/passlib, StarletteTestClient httpx, Passlib scheme keyword",
+    "No remote CI or protected deployment/backup gate claim from local verification",
+    "Independent restore/recovery authority and production browser endpoints remain unimplemented; auto-submit remains disabled"
+  ],
+  "source_frozen": true
+}

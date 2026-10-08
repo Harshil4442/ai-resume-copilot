@@ -36,3 +36,7 @@ coverage/
 *.tfvars
 *.tfvars.json
 !*.example.tfvars
+
+# Local browser companion fixture artifacts
+browser-companion/test-results/
+browser-companion/playwright-report/

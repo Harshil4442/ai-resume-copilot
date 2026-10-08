@@ -24,7 +24,7 @@ jobs:
           POSTGRES_PASSWORD: hirewiz
           POSTGRES_DB: hirewiz_test
         ports:
-          - 5432:5432
+          - 55433:5432
         options: >-
           --health-cmd "pg_isready -U hirewiz -d hirewiz_test"
           --health-interval 5s
@@ -39,6 +39,14 @@ jobs:
         run: |
           python -m pip install --disable-pip-version-check uv==0.11.32
           uv sync --project backend --frozen --all-groups
+      - name: Provision disposable admission test database
+        working-directory: backend
+        run: |
+          .venv/bin/python - <<'PY'
+          import psycopg
+          with psycopg.connect("postgresql://hirewiz:hirewiz@127.0.0.1:55433/hirewiz_test", autocommit=True) as connection:
+              connection.execute("CREATE DATABASE hirewiz_admission_test")
+          PY
       - name: Ruff modernized modules
         working-directory: backend
         run: >-
@@ -50,7 +58,7 @@ jobs:
           tests/test_resume_layout.py tests/test_pdf_streams.py tests/test_docx_parsing.py tests/test_llm_client.py
           tests/test_ai_efficiency.py tests/test_dispatch_outbox.py tests/test_employer_services.py
           tests/test_employer_connectors.py tests/test_employer_artifact_lifecycle.py tests/test_learning_rag_privacy.py
-          tests/test_employer_feed_adapters.py
+          tests/test_employer_feed_adapters.py tests/test_employer_admissions.py tests/test_employer_admissions_postgres.py
       - name: Type-check modernized modules
         working-directory: backend
         run: >-
@@ -62,13 +70,15 @@ jobs:
         working-directory: backend
         env:
           APP_ENV: test
-          DATABASE_URL: postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:5432/hirewiz_test
+          DATABASE_URL: postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55433/hirewiz_test
         run: |
           .venv/bin/alembic upgrade head
           .venv/bin/alembic downgrade 20260803_0001
           .venv/bin/alembic upgrade head
       - name: Run backend tests
         working-directory: backend
+        env:
+          HIREWIZ_TEST_POSTGRES_URL: postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55433/hirewiz_admission_test
         run: |
           .venv/bin/python scripts/run_prompt_evals.py
           .venv/bin/pytest -q
@@ -138,3 +148,28 @@ jobs:
           detect --source /repo --no-banner --redact
       - name: Build production container
         run: docker build --tag hirewiz-ci:${{ github.sha }} .
+
+  browser-companion:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: browser-companion/package-lock.json
+      - name: Install companion test dependencies
+        working-directory: browser-companion
+        run: npm ci --ignore-scripts
+      - name: Check disabled package and protocol regressions
+        working-directory: browser-companion
+        run: |
+          npm run check
+          npm test
+          npm audit --audit-level=high
+      - name: Install Playwright Chromium
+        working-directory: browser-companion
+        run: npx playwright install --with-deps chromium
+      - name: Verify local synthetic MV3 flow
+        working-directory: browser-companion
+        run: npm run test:browser

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from .. import models
 from ..domains.common import payload_fingerprint, public_id, utcnow
+from ..domains.entitlements import lock_entitlement_owner
 from ..domains.usage import (
     InsufficientUnitsError,
     commit_run_usage,
@@ -35,6 +36,9 @@ def billable_operation(
     if amount < 0:
         raise ValueError("analysis-unit reservation cannot be negative")
 
+    # Lock before inserting the run: its FK otherwise takes a key-share owner
+    # lock, and two concurrent requests can deadlock upgrading to FOR UPDATE.
+    lock_entitlement_owner(db, user_id)
     payload = input_payload or {}
     now = utcnow()
     run = models.AnalysisRun(

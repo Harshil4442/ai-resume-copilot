@@ -11,7 +11,7 @@ guarantee.
 
 - Next.js 16, React 19.2, TypeScript, Tailwind CSS 4, TanStack Query, and Radix UI on Vercel
 - FastAPI, Python 3.12, SQLAlchemy, Alembic, and PostgreSQL on Google Cloud Run
-- Google Cloud Tasks plus a private Cloud Run analysis worker
+- Google Cloud Tasks plus separate private Cloud Run analysis and employer workers
 - Redis for optional caching, never billable or user-work state
 - Razorpay hosted checkout with webhook-confirmed entitlements
 - PostHog and Google Analytics after consent; Sentry in browser, API, and worker
@@ -37,6 +37,15 @@ reach client JavaScript. See [the runtime architecture](docs/ARCHITECTURE.md).
   sensitive-payload retention, and audited support operations
 - One-time 30-day Premium pass through Razorpay, with idempotent webhook fulfilment and
   refund-aware entitlement handling
+- Employer-origin job discovery with selectable result counts and separate paid service
+  credits for search and confirmed automatic applications
+- Exact per-job resume and answer review with original, custom or approved tailored files
+
+The discovery pilot has four reviewed employers. Public feed access supplies no employer
+submission permission; automatic submission remains disabled. Broader coverage and the
+next admission/batch foundation have separate acceptance gates. See
+[the delivery checklist](docs/delivery/AUTO_APPLY_PROGRESS.md) and
+[the production release report](docs/delivery/PRODUCTION_RELEASE_2026-10-08.md).
 
 Legacy backend APIs remain compatible during migration. The old `/jobs` and `/learning`
 pages redirect into Career Workspace, where their replacement flows now live.
@@ -61,8 +70,9 @@ backend/
   app/domains/usage/       Audited unit reservation/commit/release
   app/billing/             Razorpay catalog, adapter, and ledgers
   app/main.py              Customer API
-  app/worker_main.py       Private analysis worker
+  app/worker_main.py       Private topic-scoped worker entrypoint
   openapi.json             Committed API contract
+browser-companion/         Disabled MV3 package and localhost safety fixtures
 docs/
   requirements/            Product and engineering acceptance requirements
   adr/                     Recorded architecture decisions and trade-offs
@@ -72,10 +82,6 @@ frontend/
   app/api/backend/         Authenticated same-origin BFF
   app/workspace/           Career Workspace
   lib/generated/api.ts     Generated OpenAPI types
-docs/
-  PRODUCT_ARCHITECTURE_UPGRADE_PLAN.md
-  ARCHITECTURE.md
-  adr/
 ```
 
 ## Local Development
@@ -133,8 +139,10 @@ cd backend && .venv/bin/python scripts/export_openapi.py
 cd ../frontend && npm run api:generate
 ```
 
-CI additionally validates migrations on PostgreSQL, detects contract drift, scans for
-secrets, audits critical production dependency issues, and builds the production image.
+CI additionally validates migrations and admission races on disposable PostgreSQL,
+detects contract drift, scans for secrets, audits dependencies, builds the production image,
+and tests the disabled companion with localhost Chromium fixtures. See the
+[companion setup](browser-companion/README.md) for its standalone checks.
 
 ## Deployment and Operations
 
@@ -148,6 +156,9 @@ secrets, audits critical production dependency issues, and builds the production
 - [Product and architecture plan](docs/PRODUCT_ARCHITECTURE_UPGRADE_PLAN.md)
 - [Implementation status and production gates](docs/IMPLEMENTATION_STATUS.md)
 - [Local acceptance report](docs/LOCAL_ACCEPTANCE_REPORT.md)
+- [Employer requirements and acceptance gates](docs/requirements/JOB_SEARCH_AND_APPLICATION.md)
+- [Employer release evidence](docs/delivery/PRODUCTION_RELEASE_2026-10-08.md)
+- [Remaining employer development](docs/delivery/REMAINING_REQUIREMENTS.md)
 
 Never commit `.env` files. Rotate any credential that has been exposed in a screenshot,
 chat, terminal output, or Git history before production use.

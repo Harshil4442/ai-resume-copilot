@@ -596,6 +596,77 @@
         "title": "AuthTokenResponse",
         "type": "object"
       },
+      "BatchCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "idempotency_key": {
+            "maxLength": 160,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9_.:-]+$",
+            "title": "Idempotency Key",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BatchItem"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Items",
+            "type": "array"
+          },
+          "max_total_credits": {
+            "maximum": 100000.0,
+            "minimum": 1.0,
+            "title": "Max Total Credits",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "max_total_credits",
+          "idempotency_key"
+        ],
+        "title": "BatchCreate",
+        "type": "object"
+      },
+      "BatchItem": {
+        "additionalProperties": false,
+        "properties": {
+          "allowed_actions": {
+            "items": {
+              "enum": [
+                "fill",
+                "upload",
+                "submit"
+              ],
+              "type": "string"
+            },
+            "maxItems": 3,
+            "minItems": 1,
+            "title": "Allowed Actions",
+            "type": "array"
+          },
+          "application_id": {
+            "maxLength": 64,
+            "minLength": 3,
+            "title": "Application Id",
+            "type": "string"
+          },
+          "package_digest": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Package Digest",
+            "type": "string"
+          }
+        },
+        "required": [
+          "package_digest",
+          "allowed_actions",
+          "application_id"
+        ],
+        "title": "BatchItem",
+        "type": "object"
+      },
       "Body_parse_resume_api_resume_parse_post": {
         "properties": {
           "enrich_skills": {
@@ -997,6 +1068,58 @@
           "feedback"
         ],
         "title": "DimensionScore",
+        "type": "object"
+      },
+      "EmployerAdmissionPolicy": {
+        "additionalProperties": false,
+        "properties": {
+          "daily_limit": {
+            "maximum": 1000.0,
+            "minimum": 1.0,
+            "title": "Daily Limit",
+            "type": "integer"
+          },
+          "evidence_note": {
+            "maxLength": 1000,
+            "minLength": 20,
+            "title": "Evidence Note",
+            "type": "string"
+          },
+          "evidence_url": {
+            "maxLength": 2000,
+            "minLength": 12,
+            "pattern": "^https://",
+            "title": "Evidence Url",
+            "type": "string"
+          },
+          "rolling_days": {
+            "maximum": 365.0,
+            "minimum": 1.0,
+            "title": "Rolling Days",
+            "type": "integer"
+          },
+          "rolling_limit": {
+            "maximum": 1000.0,
+            "minimum": 1.0,
+            "title": "Rolling Limit",
+            "type": "integer"
+          },
+          "version": {
+            "maxLength": 80,
+            "minLength": 3,
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "daily_limit",
+          "rolling_limit",
+          "rolling_days",
+          "evidence_url",
+          "evidence_note"
+        ],
+        "title": "EmployerAdmissionPolicy",
         "type": "object"
       },
       "EvidenceCreate": {
@@ -4340,6 +4463,16 @@
       "SourceCreate": {
         "additionalProperties": false,
         "properties": {
+          "admission_policy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EmployerAdmissionPolicy"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "allowed_hosts": {
             "items": {
               "type": "string"
@@ -4380,6 +4513,20 @@
             "minLength": 2,
             "title": "Employer",
             "type": "string"
+          },
+          "employer_key": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "minLength": 3,
+                "pattern": "^[A-Za-z0-9_.:-]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Employer Key"
           },
           "form_parity_verified": {
             "default": false,
@@ -6982,6 +7129,250 @@
         "summary": "Delete Contact",
         "tags": [
           "career-workspace"
+        ]
+      }
+    },
+    "/api/v1/employer-jobs/application-batches": {
+      "post": {
+        "operationId": "create_batch_api_v1_employer_jobs_application_batches_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Create Batch",
+        "tags": [
+          "employer-jobs"
+        ]
+      }
+    },
+    "/api/v1/employer-jobs/application-batches/{identity}": {
+      "get": {
+        "operationId": "get_batch_api_v1_employer_jobs_application_batches__identity__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "identity",
+            "required": true,
+            "schema": {
+              "title": "Identity",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Batch",
+        "tags": [
+          "employer-jobs"
+        ]
+      }
+    },
+    "/api/v1/employer-jobs/application-batches/{identity}/approve": {
+      "post": {
+        "operationId": "approve_batch_api_v1_employer_jobs_application_batches__identity__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "identity",
+            "required": true,
+            "schema": {
+              "title": "Identity",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExecuteCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Approve Batch",
+        "tags": [
+          "employer-jobs"
+        ]
+      }
+    },
+    "/api/v1/employer-jobs/application-batches/{identity}/cancel": {
+      "post": {
+        "operationId": "cancel_batch_api_v1_employer_jobs_application_batches__identity__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "identity",
+            "required": true,
+            "schema": {
+              "title": "Identity",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Cancel Batch",
+        "tags": [
+          "employer-jobs"
+        ]
+      }
+    },
+    "/api/v1/employer-jobs/application-batches/{identity}/execute": {
+      "post": {
+        "operationId": "execute_batch_api_v1_employer_jobs_application_batches__identity__execute_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "identity",
+            "required": true,
+            "schema": {
+              "title": "Identity",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExecuteCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Execute Batch",
+        "tags": [
+          "employer-jobs"
         ]
       }
     },

@@ -1,0 +1,12 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+const manifest = JSON.parse(await readFile(new URL("../extension/manifest.json", import.meta.url)));
+assert.equal(manifest.manifest_version, 3);
+assert.deepEqual(manifest.host_permissions, []);
+assert.deepEqual(manifest.optional_host_permissions, []);
+assert.deepEqual(manifest.permissions.sort(), ["scripting", "storage"]);
+for (const key of ["externally_connectable", "web_accessible_resources", "content_scripts"]) assert.equal(manifest[key], undefined);
+const config = await readFile(new URL("../extension/config.js", import.meta.url), "utf8");
+assert.match(config, /mode: "disabled"/);
+assert.doesNotMatch(manifest.content_security_policy.extension_pages, /unsafe|https?:/);
+console.log("Disabled MV3 manifest: no host grants, cookies, content scripts, external messages or network authority.");
