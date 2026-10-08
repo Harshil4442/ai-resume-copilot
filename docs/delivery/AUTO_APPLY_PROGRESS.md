@@ -58,7 +58,7 @@ Production pairing and portal-use permission remain open.
 - [x] Promote [recovery source/catalog diagnostics `6f38020`](RECOVERY_AND_CATALOG_RELEASE_2026-10-09.md) after all four CI jobs; verify exact GCP/Vercel identity, private workers, three hosted widths and five correlated direct catalog reads.
 - [x] Integrate [Razorpay structural fixtures](RAZORPAY_FIXTURE_2026-10-09.md), preserving shipping boundaries; 40 root cases and all four exact `a72d9a2` CI jobs pass.
 - [x] Integrate the [pairing-only identity core](PAIRING_ONLY_FOUNDATION_2026-10-09.md) with real Python/Node signatures and process races; production storage/authentication/claim issuance and browser transport remain unavailable.
-- [ ] Release and measure the [single-statement catalog snapshot](CATALOG_SNAPSHOT_2026-10-09.md), preserving authentication, pricing and financial locks.
+- [x] Release and measure the [single-statement catalog snapshot](CATALOG_SNAPSHOT_2026-10-09.md) as `e7d8f2b`, preserving authentication, pricing and financial locks. All four CI jobs, exact GCP/Vercel promotion, three hosted widths and five correlated v2 reads pass; the slow first read is retained. See [the release report](CATALOG_SNAPSHOT_RELEASE_2026-10-09.md). Pairing remains unavailable.
 - [ ] Complete sustained field-performance, load and wider operational recovery/security validation.
 - [ ] Complete immutable GCS storage and deletion/restore/security drills from the register.
 - [ ] Prove every requirements gate before marking the full development goal complete.

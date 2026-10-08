@@ -8,7 +8,7 @@ dependencies, schema, region, caching or automatic submission.
 
 ## Historical v1 measurements and limits
 
-The pending [single-statement snapshot](CATALOG_SNAPSHOT_2026-10-09.md) introduces
+The promoted [single-statement snapshot](CATALOG_SNAPSHOT_2026-10-09.md) introduces
 `catalog_latency_v2`, a distinct combined-query phase and an in-memory extraction
 phase. The two-query descriptions and production observations below apply to the
 promoted `6f38020`, before that optimization. They are preserved as historical

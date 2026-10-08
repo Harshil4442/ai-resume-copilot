@@ -1,0 +1,247 @@
+{
+  "schema": "bounded_catalog_timing_v2",
+  "expected_backend_release": "e7d8f2ba0435fd3d4a504ccdce83fac365ec6835",
+  "expected_backend_revision": "ai-resume-parser-00267-xot",
+  "expected_frontend_release": null,
+  "frontend_identity_basis": "not_collected",
+  "health_before": {
+    "status": 200,
+    "release": "e7d8f2ba0435fd3d4a504ccdce83fac365ec6835",
+    "revision": "ai-resume-parser-00267-xot",
+    "matches_expected": true,
+    "failure": null
+  },
+  "health_after": {
+    "status": 200,
+    "release": "e7d8f2ba0435fd3d4a504ccdce83fac365ec6835",
+    "revision": "ai-resume-parser-00267-xot",
+    "matches_expected": true,
+    "failure": null
+  },
+  "samples": [
+    {
+      "ordinal": 1,
+      "transport": "backend",
+      "status": 200,
+      "generated_correlation_id": "39bc501e34714f6ba1e9a1119aacce62",
+      "header_phases_ms": {
+        "auth_lookup_ms": null,
+        "backend_headers_ms": 3940.0,
+        "catalog_materialize_ms": 0.0,
+        "catalog_owner_lookup_ms": 0.0,
+        "catalog_render_ms": 0.4,
+        "catalog_snapshot_ms": 514.0,
+        "catalog_sources_ms": null,
+        "db_acquire_ms": 3266.5,
+        "dependency_jwt_ms": 0.3,
+        "middleware_jwt_ms": 10.8
+      },
+      "client_headers_ms": 4272.101,
+      "client_total_ms": 4272.493,
+      "body_shape": {
+        "root": "object",
+        "expected_fields": {
+          "search_credits_per_job": "integer",
+          "apply_credits_per_job": "integer",
+          "max_search_jobs": "integer",
+          "pricing_version": "string",
+          "enabled": "boolean",
+          "auto_submit_enabled": "boolean",
+          "sources": "array",
+          "admission_limits": "object",
+          "credit_policy": "string",
+          "coverage": "object"
+        },
+        "matches_expected": true
+      },
+      "source_count": 4,
+      "failure": null,
+      "acquisition_measurement": "composite",
+      "db_connect_ms": null,
+      "db_ping_ms": null,
+      "serving_release": null,
+      "serving_revision": null,
+      "serving_identity_basis": "unproved_until_fixed_event_revision_correlation"
+    },
+    {
+      "ordinal": 2,
+      "transport": "backend",
+      "status": 200,
+      "generated_correlation_id": "274792bc4ad34818b664518e43a56193",
+      "header_phases_ms": {
+        "auth_lookup_ms": null,
+        "backend_headers_ms": 646.5,
+        "catalog_materialize_ms": 0.0,
+        "catalog_owner_lookup_ms": 0.0,
+        "catalog_render_ms": 0.3,
+        "catalog_snapshot_ms": 429.5,
+        "catalog_sources_ms": null,
+        "db_acquire_ms": 212.7,
+        "dependency_jwt_ms": 0.3,
+        "middleware_jwt_ms": 0.3
+      },
+      "client_headers_ms": 962.861,
+      "client_total_ms": 963.495,
+      "body_shape": {
+        "root": "object",
+        "expected_fields": {
+          "search_credits_per_job": "integer",
+          "apply_credits_per_job": "integer",
+          "max_search_jobs": "integer",
+          "pricing_version": "string",
+          "enabled": "boolean",
+          "auto_submit_enabled": "boolean",
+          "sources": "array",
+          "admission_limits": "object",
+          "credit_policy": "string",
+          "coverage": "object"
+        },
+        "matches_expected": true
+      },
+      "source_count": 4,
+      "failure": null,
+      "acquisition_measurement": "composite",
+      "db_connect_ms": null,
+      "db_ping_ms": null,
+      "serving_release": null,
+      "serving_revision": null,
+      "serving_identity_basis": "unproved_until_fixed_event_revision_correlation"
+    },
+    {
+      "ordinal": 3,
+      "transport": "backend",
+      "status": 200,
+      "generated_correlation_id": "d40b1e521fa2474d81fa5565e0c3c661",
+      "header_phases_ms": {
+        "auth_lookup_ms": null,
+        "backend_headers_ms": 649.1,
+        "catalog_materialize_ms": 0.0,
+        "catalog_owner_lookup_ms": 0.0,
+        "catalog_render_ms": 0.3,
+        "catalog_snapshot_ms": 429.7,
+        "catalog_sources_ms": null,
+        "db_acquire_ms": 212.9,
+        "dependency_jwt_ms": 0.2,
+        "middleware_jwt_ms": 0.3
+      },
+      "client_headers_ms": 965.884,
+      "client_total_ms": 966.921,
+      "body_shape": {
+        "root": "object",
+        "expected_fields": {
+          "search_credits_per_job": "integer",
+          "apply_credits_per_job": "integer",
+          "max_search_jobs": "integer",
+          "pricing_version": "string",
+          "enabled": "boolean",
+          "auto_submit_enabled": "boolean",
+          "sources": "array",
+          "admission_limits": "object",
+          "credit_policy": "string",
+          "coverage": "object"
+        },
+        "matches_expected": true
+      },
+      "source_count": 4,
+      "failure": null,
+      "acquisition_measurement": "composite",
+      "db_connect_ms": null,
+      "db_ping_ms": null,
+      "serving_release": null,
+      "serving_revision": null,
+      "serving_identity_basis": "unproved_until_fixed_event_revision_correlation"
+    },
+    {
+      "ordinal": 4,
+      "transport": "backend",
+      "status": 200,
+      "generated_correlation_id": "7fdc001d2acd44b5872eb93d929278ea",
+      "header_phases_ms": {
+        "auth_lookup_ms": null,
+        "backend_headers_ms": 646.1,
+        "catalog_materialize_ms": 0.0,
+        "catalog_owner_lookup_ms": 0.0,
+        "catalog_render_ms": 0.3,
+        "catalog_snapshot_ms": 429.4,
+        "catalog_sources_ms": null,
+        "db_acquire_ms": 212.8,
+        "dependency_jwt_ms": 0.3,
+        "middleware_jwt_ms": 0.3
+      },
+      "client_headers_ms": 958.801,
+      "client_total_ms": 958.989,
+      "body_shape": {
+        "root": "object",
+        "expected_fields": {
+          "search_credits_per_job": "integer",
+          "apply_credits_per_job": "integer",
+          "max_search_jobs": "integer",
+          "pricing_version": "string",
+          "enabled": "boolean",
+          "auto_submit_enabled": "boolean",
+          "sources": "array",
+          "admission_limits": "object",
+          "credit_policy": "string",
+          "coverage": "object"
+        },
+        "matches_expected": true
+      },
+      "source_count": 4,
+      "failure": null,
+      "acquisition_measurement": "composite",
+      "db_connect_ms": null,
+      "db_ping_ms": null,
+      "serving_release": null,
+      "serving_revision": null,
+      "serving_identity_basis": "unproved_until_fixed_event_revision_correlation"
+    },
+    {
+      "ordinal": 5,
+      "transport": "backend",
+      "status": 200,
+      "generated_correlation_id": "f39c809d2275454587ee242684ffec22",
+      "header_phases_ms": {
+        "auth_lookup_ms": null,
+        "backend_headers_ms": 647.2,
+        "catalog_materialize_ms": 0.0,
+        "catalog_owner_lookup_ms": 0.0,
+        "catalog_render_ms": 0.3,
+        "catalog_snapshot_ms": 429.4,
+        "catalog_sources_ms": null,
+        "db_acquire_ms": 212.9,
+        "dependency_jwt_ms": 0.3,
+        "middleware_jwt_ms": 0.3
+      },
+      "client_headers_ms": 963.505,
+      "client_total_ms": 963.693,
+      "body_shape": {
+        "root": "object",
+        "expected_fields": {
+          "search_credits_per_job": "integer",
+          "apply_credits_per_job": "integer",
+          "max_search_jobs": "integer",
+          "pricing_version": "string",
+          "enabled": "boolean",
+          "auto_submit_enabled": "boolean",
+          "sources": "array",
+          "admission_limits": "object",
+          "credit_policy": "string",
+          "coverage": "object"
+        },
+        "matches_expected": true
+      },
+      "source_count": 4,
+      "failure": null,
+      "acquisition_measurement": "composite",
+      "db_connect_ms": null,
+      "db_ping_ms": null,
+      "serving_release": null,
+      "serving_revision": null,
+      "serving_identity_basis": "unproved_until_fixed_event_revision_correlation"
+    }
+  ],
+  "scope": "up_to_five_sequential_catalog_GETs_no_retries_no_session_minting",
+  "measurement_limit": "bounded_lab_samples_not_percentiles_or_causal_diagnosis",
+  "bff_coverage": "unproved_no_existing_session_used",
+  "collection_complete": true
+}

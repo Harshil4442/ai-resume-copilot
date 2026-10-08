@@ -1,0 +1,16 @@
+{
+  "checked_utc": "2026-10-08T21:01:39.918545+00:00",
+  "release": "e7d8f2ba0435fd3d4a504ccdce83fac365ec6835",
+  "deployment_id": "dpl_HwhNvBnH1hnKTmoVC8MP865zPVhT",
+  "url": "https://ai-resume-copilot-jkc74tskb-harshil4442s-projects.vercel.app",
+  "ready_state": "READY",
+  "target": "production",
+  "project_id": "prj_yM58wylX64Ehx97cYUPdBhXvXI3J",
+  "custom_alias": "www.hirewizhq.com",
+  "custom_alias_deployment_id": "dpl_HwhNvBnH1hnKTmoVC8MP865zPVhT",
+  "exact_custom_alias_confirmed": true,
+  "protection_mode": "all_except_custom_domains",
+  "root_directory": "frontend",
+  "node_version": "24.x",
+  "credential_values_retained": false
+}

@@ -1,6 +1,7 @@
 # Recovery source and catalog diagnostics release
 
 Status: **release `6f38020` passed all four CI jobs and is verified on GCP and Vercel**.
+This historical release is superseded by [verified `e7d8f2b`](CATALOG_SNAPSHOT_RELEASE_2026-10-09.md).
 The catalog diagnostics are active. The recovery modules are included in the image but
 remain unavailable for production execution: no routes, pairing, independent store or
 browser bridge is enabled. The wider development goal remains active.

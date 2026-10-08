@@ -113,5 +113,8 @@ new source hash separately.
 The merged root passes 930 backend cases without skips, 72 frontend unit cases,
 Ruff, compilation, six prompt evaluations and Mypy across 61 source files. Focused
 catalog/pairing/PostgreSQL finance verification passes 194 cases. Generated API
-contracts have no drift. Exact new-commit CI and deployment are still pending;
-production pairing remains unavailable regardless of source image inclusion.
+contracts have no drift. Exact `e7d8f2b` passed all four remote CI jobs and was
+included in the pinned GCP image; the matching Vercel deployment is promoted.
+The [release report](CATALOG_SNAPSHOT_RELEASE_2026-10-09.md) records exact
+identities and bounded checks. Production pairing remains unavailable regardless
+of source image inclusion; health and image inclusion do not prove its enablement.

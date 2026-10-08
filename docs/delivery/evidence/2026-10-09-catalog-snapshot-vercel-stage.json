@@ -1,0 +1,23 @@
+{
+  "checked_utc": "2026-10-08T20:33:56.333805+00:00",
+  "release": "e7d8f2ba0435fd3d4a504ccdce83fac365ec6835",
+  "deployment_id": "dpl_HwhNvBnH1hnKTmoVC8MP865zPVhT",
+  "url": "https://ai-resume-copilot-jkc74tskb-harshil4442s-projects.vercel.app",
+  "ready_state": "READY",
+  "target": "production",
+  "project_id": "prj_yM58wylX64Ehx97cYUPdBhXvXI3J",
+  "custom_alias": "www.hirewizhq.com",
+  "custom_alias_deployment_id": "dpl_6SXQf3MekLzV2dFtFWRdQXgjo5Qi",
+  "exact_custom_alias_confirmed": false,
+  "protection_mode": "all_except_custom_domains",
+  "root_directory": "frontend",
+  "node_version": "24.x",
+  "credential_values_retained": false,
+  "read_only_probe": {
+    "anonymous_home_status": 302,
+    "managed_bypass_home_status": 200,
+    "unauthenticated_bff_catalog_status": 401,
+    "mutations": 0,
+    "session_minted": false
+  }
+}

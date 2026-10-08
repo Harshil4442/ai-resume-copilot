@@ -1,24 +1,27 @@
 # Remaining requirements after the discovery pilot
 
-Review date: 9 October 2026 (Asia/Kolkata). This register distinguishes the promoted discovery and admission foundation from full development against `docs/requirements/JOB_SEARCH_AND_APPLICATION.md`. It does not close the full requirements checklist. Exact release IDs, whole-suite results and live checks belong in [the current component release report](RECOVERY_AND_CATALOG_RELEASE_2026-10-09.md).
+Review date: 9 October 2026 (Asia/Kolkata). This register distinguishes the promoted discovery and admission foundation from full development against `docs/requirements/JOB_SEARCH_AND_APPLICATION.md`. It does not close the full requirements checklist. Exact release IDs, whole-suite results and live checks belong in [the current component release report](CATALOG_SNAPSHOT_RELEASE_2026-10-09.md).
 
 Earlier frontend `7c59578` passed exact CI and hosted homepage checks at 320/390/1440 px;
-its GCP API/workers were `ec52279`. That release is superseded by `6f38020` below. The
+its GCP API/workers were `ec52279`. That release is superseded by `e7d8f2b` below. The
 disabled v1 recovery core passed 85 focused cases and the merged 630-test CI suite. It supplies no production
 storage, authentication, pairing, cloud restore or employer permission evidence. Browser
 assistance is the selected first launch path, with human final submission; it remains
 disabled pending these gates. Full execution/recovery requirements below remain open.
 
 The promoted scope is a small employer-origin discovery and application-preparation pilot. Seven public read adapter families are implemented: Greenhouse, Lever, Ashby, SmartRecruiters, Workable, Personio and Pinpoint. The live reviewed catalog contains Razorpay, Freshworks, Figma and Supabase; 356 open postings were observed at the recorded production check. Sixteen additional sources are proposals, not enrolled employers. A permissioned Greenhouse submission implementation exists, but no actual employer write grant or authorized sandbox completion is supplied and automatic submission remains disabled. The admission/batch foundation is promoted as release `7cc49c2` with actual production schema `0009`. Follow-up `ec52279` retains that schema and adds shared Lever pacing plus an advisory catalog query optimization, with 545 backend tests and bounded production proof. Lever remains nonlive until its production coordinator and source-use gates pass. A standalone disabled browser companion passes localhost tests, but has no production pairing or authority. Neither worldwide coverage nor greater than 95% recall has been demonstrated.
-Current `6f38020` is verified on GCP and Vercel with schema `0009`, all four exact CI jobs,
-780 backend cases without skips, three hosted widths and five correlated direct catalog
-reads. Its v2 recovery source remains unavailable for production actions. Additional
+Current `e7d8f2b` is verified on GCP and Vercel with schema `0009`, all four exact CI jobs,
+930 backend cases without skips, 72 frontend units, three hosted widths and five
+correlated direct v2 catalog reads. The first read took 4.272 seconds and the four
+subsequent reads 0.959–0.967 seconds; these bounded observations do not establish
+field percentiles or the first-read cause. Its v2 recovery source remains unavailable
+for production actions. Additional
 [Razorpay structural fixtures](RAZORPAY_FIXTURE_2026-10-09.md) pass 40 root cases but
 are not shipping MV3/v2/authority integration. Pairing, independent retained authority,
 real portal permission/parity and broader acceptance remain open.
 The [pairing-only local source](PAIRING_ONLY_FOUNDATION_2026-10-09.md) now supplies
 128 crypto/lifecycle/process cases, while its production store, recent authentication,
-claim issuer and browser transport remain unavailable. The pending
+claim issuer and browser transport remain unavailable. The promoted
 [catalog snapshot release](CATALOG_SNAPSHOT_2026-10-09.md) passes 930 merged backend
 cases and 72 frontend unit cases; those results do not close production pairing.
 

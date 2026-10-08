@@ -1,6 +1,7 @@
 # Single-statement authenticated catalog snapshot
 
-Status: **merged local verification passed; immutable CI and release pending**.
+Status: **immutable `e7d8f2b` CI passed; GCP/Vercel promotion and bounded live checks verified**.
+Exact identities and observations are in the [component release report](CATALOG_SNAPSHOT_RELEASE_2026-10-09.md).
 This removes one database statement from GET `/api/v1/employer-jobs/catalog`.
 The earlier [diagnostic release](CATALOG_TIMING_2026-10-09.md) measured two
 statements; its five production observations are historical evidence, not proof
@@ -52,12 +53,17 @@ Bounded sequential samples cannot establish field percentiles or load capacity.
 - Independent read-only review found the original timing-label mismatch; the
   versioned explicit phases repair it. Final source review found no confirmed
   defect in the bounded authentication/query/diagnostic scope.
-- [ ] Pass all four exact immutable-commit CI jobs.
-- [ ] Take a fresh protected backup, promote the pinned GCP image and Vercel build,
+- [x] Pass all four exact immutable-commit CI jobs.
+- [x] Take a fresh protected backup, promote the pinned GCP image and Vercel build,
   and verify worker access/configuration and the serving domain.
-- [ ] Measure at most five direct authenticated catalog reads, correlate events,
+- [x] Measure at most five direct authenticated catalog reads, correlate events,
   verify the new phase contract and record observations without percentile claims.
-- [ ] Validate hosted responsive UI and bounded release errors.
+- [x] Validate hosted responsive UI and bounded release errors.
+
+The first catalog read took 4,272.493ms, including 3,266.5ms of composite
+acquisition; the four subsequent reads took 958.989–966.921ms. All five are
+retained. This does not establish the first read's cause, a field percentile,
+sustained speed, or a causal improvement over the differently scoped prior run.
 
 The [pairing-only source](PAIRING_ONLY_FOUNDATION_2026-10-09.md) travels in this
 release but has no routes or available production store/authentication/claim

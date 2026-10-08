@@ -45,7 +45,7 @@ The discovery pilot has four reviewed employers. Public feed access supplies no 
 submission permission; automatic submission remains disabled. Broader coverage and the
 promoted admission/batch foundation have separate acceptance gates. See
 [the delivery checklist](docs/delivery/AUTO_APPLY_PROGRESS.md) and
-[the current production release report](docs/delivery/RECOVERY_AND_CATALOG_RELEASE_2026-10-09.md).
+[the current production release report](docs/delivery/CATALOG_SNAPSHOT_RELEASE_2026-10-09.md).
 
 Legacy backend APIs remain compatible during migration. The old `/jobs` and `/learning`
 pages redirect into Career Workspace, where their replacement flows now live.
