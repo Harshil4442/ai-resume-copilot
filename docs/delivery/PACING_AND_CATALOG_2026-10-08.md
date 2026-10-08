@@ -1,7 +1,9 @@
 # Employer feed pacing and catalog read optimization
 
 Status: **promoted and verified within the scope below**.
-Application release `ec52279d236e82813bc486b9d5de9eb97a80408d` is live on GCP and Vercel.
+Application release `ec52279d236e82813bc486b9d5de9eb97a80408d` was promoted on GCP and
+Vercel. It remains the serving GCP release; the frontend has since advanced to `7c59578`
+as recorded in [the current component report](BROWSER_FIRST_FOUNDATION_2026-10-08.md).
 This report supersedes the current-release pointer in the
 [admission foundation report](PRODUCTION_ADMISSION_RELEASE_2026-10-08.md), while retaining
 that release's incident and five-width browser history. All recorded times are UTC.

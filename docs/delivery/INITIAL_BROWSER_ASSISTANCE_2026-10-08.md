@@ -74,4 +74,4 @@ See [the companion boundary](BROWSER_COMPANION.md),
 [the recovery design](RECOVERY_FOUNDATION_PLAN.md), and
 [Stage 4/5 requirements](../requirements/JOB_SEARCH_AND_APPLICATION.md) for the complete
 contracts. The current deployed release and its limits are recorded in
-[the release report](PACING_AND_CATALOG_2026-10-08.md).
+[the component release report](BROWSER_FIRST_FOUNDATION_2026-10-08.md).

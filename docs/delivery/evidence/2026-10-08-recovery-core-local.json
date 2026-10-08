@@ -91,7 +91,14 @@
     "ruff_exact_ci_scope": "passed",
     "mypy_exact_ci_scope": "passed across 53 source files",
     "production_authority_or_employer_calls": false,
-    "exact_remote_ci": "pending; not yet committed",
+    "exact_remote_ci": {
+      "run_id": 37821078441,
+      "commit": "7c59578d169290a91f45d39552ad48d41ea40d16",
+      "conclusion": "success",
+      "backend_passed": 630,
+      "backend_skipped": 0,
+      "mypy_source_files": 53
+    },
     "source_hashes_match_frozen_patch": true,
     "compile": "passed",
     "prompt_evaluations": {

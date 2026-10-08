@@ -1,6 +1,13 @@
 # Remaining requirements after the discovery pilot
 
-Review date: 8 October 2026. This register distinguishes the promoted discovery and admission foundation from full development against `docs/requirements/JOB_SEARCH_AND_APPLICATION.md`. It does not close the full requirements checklist. Exact release IDs, whole-suite results and live checks belong in [the current release report](PACING_AND_CATALOG_2026-10-08.md).
+Review date: 8 October 2026. This register distinguishes the promoted discovery and admission foundation from full development against `docs/requirements/JOB_SEARCH_AND_APPLICATION.md`. It does not close the full requirements checklist. Exact release IDs, whole-suite results and live checks belong in [the current component release report](BROWSER_FIRST_FOUNDATION_2026-10-08.md).
+
+Frontend `7c59578` passed exact CI and hosted homepage checks at 320/390/1440 px; the
+serving GCP API/workers remain `ec52279`. The committed disabled recovery core passes
+85 focused local cases and the merged 630-test CI suite. It supplies no production
+storage, authentication, pairing, cloud restore or employer permission evidence. Browser
+assistance is the selected first launch path, with human final submission; it remains
+disabled pending these gates. Full execution/recovery requirements below remain open.
 
 The promoted scope is a small employer-origin discovery and application-preparation pilot. Seven public read adapter families are implemented: Greenhouse, Lever, Ashby, SmartRecruiters, Workable, Personio and Pinpoint. The live reviewed catalog contains Razorpay, Freshworks, Figma and Supabase; 356 open postings were observed at the recorded production check. Sixteen additional sources are proposals, not enrolled employers. A permissioned Greenhouse submission implementation exists, but no actual employer write grant or authorized sandbox completion is supplied and automatic submission remains disabled. The admission/batch foundation is promoted as release `7cc49c2` with actual production schema `0009`. Follow-up `ec52279` retains that schema and adds shared Lever pacing plus an advisory catalog query optimization, with 545 backend tests and bounded production proof. Lever remains nonlive until its production coordinator and source-use gates pass. A standalone disabled browser companion passes localhost tests, but has no production pairing or authority. Neither worldwide coverage nor greater than 95% recall has been demonstrated.
 

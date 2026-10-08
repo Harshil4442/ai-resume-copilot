@@ -45,7 +45,7 @@ The discovery pilot has four reviewed employers. Public feed access supplies no 
 submission permission; automatic submission remains disabled. Broader coverage and the
 promoted admission/batch foundation have separate acceptance gates. See
 [the delivery checklist](docs/delivery/AUTO_APPLY_PROGRESS.md) and
-[the current production release report](docs/delivery/PACING_AND_CATALOG_2026-10-08.md).
+[the current production release report](docs/delivery/BROWSER_FIRST_FOUNDATION_2026-10-08.md).
 
 Legacy backend APIs remain compatible during migration. The old `/jobs` and `/learning`
 pages redirect into Career Workspace, where their replacement flows now live.
@@ -157,7 +157,7 @@ and tests the disabled companion with localhost Chromium fixtures. See the
 - [Implementation status and production gates](docs/IMPLEMENTATION_STATUS.md)
 - [Local acceptance report](docs/LOCAL_ACCEPTANCE_REPORT.md)
 - [Employer requirements and acceptance gates](docs/requirements/JOB_SEARCH_AND_APPLICATION.md)
-- [Employer release evidence](docs/delivery/PACING_AND_CATALOG_2026-10-08.md)
+- [Employer release evidence](docs/delivery/BROWSER_FIRST_FOUNDATION_2026-10-08.md)
 - [Remaining employer development](docs/delivery/REMAINING_REQUIREMENTS.md)
 
 Never commit `.env` files. Rotate any credential that has been exposed in a screenshot,

@@ -49,7 +49,10 @@ tombstone and epoch projections. Approver key/executor changes invalidate old ap
 The complete merged root backend suite passed **630 tests with no skips**, including
 26 actual PostgreSQL cases and eight actual Redis cases. Exact CI-scoped Ruff passed;
 Mypy passed across 53 source files. The task-owned Redis container was removed after the
-suite. Remote exact-commit CI and any new rollout remain separate pending work.
+suite. Exact-commit [CI 37821078441](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37821078441)
+also passed the complete 630-test suite, scoped static checks and generated contracts.
+Only the accompanying frontend layout fix was promoted; the new recovery modules are
+not part of the serving `ec52279` GCP image and have no production adapter or route.
 
 ## Limits and next work
 
@@ -67,5 +70,5 @@ actual companion pairing/integration. Keep the committed companion disabled and 
 automatic-submission flags false until their relevant acceptance evidence exists.
 
 The [production recovery architecture](RECOVERY_FOUNDATION_PLAN.md) remains proposed.
-The [current deployed release](PACING_AND_CATALOG_2026-10-08.md) is separate from this
-local, inactive core.
+The [current component release report](BROWSER_FIRST_FOUNDATION_2026-10-08.md) separates
+the promoted frontend from this local, inactive core and the unchanged serving backend.

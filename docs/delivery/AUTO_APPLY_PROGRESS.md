@@ -39,6 +39,9 @@ browser assistance, selected on 8 October. Final submission remains candidate-co
 - [x] Promote pacing/catalog follow-up `ec52279`; verify 545 backend tests with no skips,
   exact GCP/Vercel identities, private workers, a completed public refresh, bounded logs
   and six public mobile/desktop cases. Lever remains unenrolled pending runtime coordination.
+- [x] Promote frontend-only `7c59578` after all four exact-commit CI jobs passed (630 backend
+  tests, no skips); verify the custom alias and homepage at 320/390/1440 px. GCP remains
+  `ec52279`; the disabled recovery core is committed source, not serving production code.
 - [ ] Complete sustained field-performance, load and wider operational recovery/security validation.
 - [ ] Complete immutable GCS storage and deletion/restore/security drills from the register.
 - [ ] Prove every requirements gate before marking the full development goal complete.
@@ -166,6 +169,17 @@ ERROR/HTTP-500 entries. Six public mobile/desktop cases passed. Frontend and com
 code match the previous five-width release. The report retains the 2.82-second pricing
 LCP sample and the 4.442-second authenticated catalog sample without claiming causal or
 field performance improvement. Fresh backup creation is not restore evidence.
+
+## Promoted browser-first frontend follow-up
+
+[Frontend `7c59578`](BROWSER_FIRST_FOUNDATION_2026-10-08.md) passed all four exact-commit
+CI jobs with **630 backend tests without skips**, 55 frontend units, 190 browser cases,
+55 companion protocol cases and 14 Chromium MV3 cases. Its exact Vercel custom alias
+was verified after promotion. The narrow homepage counter fix passed hosted checks at
+320/390/1440 px and all nine screenshots passed visual review. GCP remains `ec52279`;
+no SQL, backend or environment rollout occurred. The new recovery modules remain inactive
+source outside that serving image. Browser assistance, production authority and final
+automatic submission remain unavailable pending their full acceptance gates.
 
 ## Commercial defaults
 
