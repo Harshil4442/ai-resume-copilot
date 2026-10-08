@@ -67,7 +67,11 @@ def source_response(source):
 
 
 def catalog(db, user_id):
-    user = db.query(core.User).filter(core.User.id == user_id).one()
+    # Advisory catalog reads can reuse the authenticated owner in this session.
+    # Financial/admission mutations retain their authoritative locked refreshes.
+    user = db.get(core.User, user_id)
+    if user is None:
+        user = db.query(core.User).filter(core.User.id == user_id).one()
     sources = db.query(models.EmployerSource).filter(models.EmployerSource.enabled.is_(True)).order_by(models.EmployerSource.employer).limit(500).all()
     return config.prices() | {
         "balance": int(user.job_service_credits or 0), "enabled": config.discovery_enabled(),

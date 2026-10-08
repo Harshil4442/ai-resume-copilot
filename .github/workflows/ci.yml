@@ -59,6 +59,7 @@ jobs:
           tests/test_ai_efficiency.py tests/test_dispatch_outbox.py tests/test_employer_services.py
           tests/test_employer_connectors.py tests/test_employer_artifact_lifecycle.py tests/test_learning_rag_privacy.py
           tests/test_employer_feed_adapters.py tests/test_employer_admissions.py tests/test_employer_admissions_postgres.py
+          tests/test_employer_host_pacing.py tests/test_employer_catalog_queries.py
       - name: Type-check modernized modules
         working-directory: backend
         run: >-
@@ -75,13 +76,41 @@ jobs:
           .venv/bin/alembic upgrade head
           .venv/bin/alembic downgrade 20260803_0001
           .venv/bin/alembic upgrade head
+      - name: Provision disposable Lever pacing Redis
+        id: lever-redis
+        timeout-minutes: 3
+        run: |
+          pacing_container_id="$(docker run --detach --name hirewiz-lever-pacing-20261008 \
+            --publish 127.0.0.1:56379:6379 \
+            redis:7.4-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499 \
+            redis-server --save '' --appendonly no --maxmemory-policy noeviction)"
+          printf 'container_id=%s\n' "$pacing_container_id" >> "$GITHUB_OUTPUT"
+          for pacing_attempt in {1..30}; do
+            pacing_response="$(timeout 2s docker exec "$pacing_container_id" redis-cli ping 2>/dev/null || true)"
+            if [[ "$pacing_response" == "PONG" ]]; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo '::error::Disposable Lever pacing Redis did not become ready after 30 bounded checks.'
+          exit 1
       - name: Run backend tests
         working-directory: backend
         env:
           HIREWIZ_TEST_POSTGRES_URL: postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55433/hirewiz_admission_test
+          EMPLOYER_PACING_TEST_REDIS_URL: redis://127.0.0.1:56379/0
         run: |
           .venv/bin/python scripts/run_prompt_evals.py
           .venv/bin/pytest -q
+      - name: Remove disposable Lever pacing Redis
+        if: always()
+        timeout-minutes: 1
+        env:
+          PACING_REDIS_CONTAINER_ID: ${{ steps.lever-redis.outputs.container_id }}
+        run: |
+          if [[ -n "$PACING_REDIS_CONTAINER_ID" ]]; then
+            timeout 15s docker rm --force "$PACING_REDIS_CONTAINER_ID"
+          fi
       - name: Check OpenAPI artifact drift
         working-directory: backend
         env:

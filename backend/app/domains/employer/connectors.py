@@ -5,13 +5,14 @@ permission to submit. HTML is retained only as inert plain text.
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import html
 import json
 import re
 import time
-from contextlib import closing
+from contextlib import asynccontextmanager, closing
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
@@ -23,6 +24,7 @@ from xml.etree import ElementTree as ET
 import httpx
 
 from ..common import payload_fingerprint
+from . import host_pacing
 
 READ_HOSTS = {
     "greenhouse": {"boards.greenhouse.io", "job-boards.greenhouse.io", "boards.eu.greenhouse.io"},
@@ -40,6 +42,8 @@ SMARTRECRUITERS_SCAN_SECONDS = 240
 SMARTRECRUITERS_READ_INTERVAL = 0.15
 SMARTRECRUITERS_READ_ATTEMPTS = 3
 SMARTRECRUITERS_MAX_RETRY_DELAY = 2.0
+LEVER_SCAN_SECONDS = 240.0
+LEVER_READ_ATTEMPTS = 3
 PERSONIO_LANGUAGES = {"de", "en", "fr", "es", "nl", "it", "pt"}
 PINPOINT_LANGUAGES = {"ar", "bg", "cs", "cy", "de", "en", "es", "fr", "it", "ja", "pt", "pt-BR", "ru", "sv", "uk", "zh"}
 XML_MAX_DEPTH = 32
@@ -259,6 +263,127 @@ class _PublicRead:
 
 class _SmartRecruitersRead(_PublicRead):
     pass
+
+
+@asynccontextmanager
+async def _lever_response(client: httpx.AsyncClient, request: httpx.Request, closed: list[bool]):
+    # send() uses the already-sanitized request without merging cookies/default
+    # credentials back in. Cancellation of real HTTPX async I/O closes the socket.
+    closed[0] = False
+    response = await client.send(request, stream=True, auth=None, follow_redirects=False)
+    completed = False
+    try:
+        yield response
+        completed = True
+    except ConnectorError:
+        # A deliberately rejected status/payload can release after its stream
+        # closes successfully; transport/cleanup exceptions stay ambiguous.
+        completed = True
+        raise
+    finally:
+        async with asyncio.timeout(host_pacing.CLOSE_SECONDS):
+            await response.aclose()
+        # HTTPX may set is_closed before its stream's aclose() raises during
+        # iteration. A second idempotent aclose alone cannot prove that cleanup.
+        closed[0] = completed
+
+
+class _LeverRead:
+    """Public GETs with a real total HTTP deadline and a shared host lease."""
+
+    def __init__(self, client: httpx.AsyncClient, coordinator: host_pacing.Coordinator):
+        self.client = client
+        self.coordinator = coordinator
+        self.deadline = time.monotonic() + LEVER_SCAN_SECONDS
+
+    async def get(self, url: str, params: dict) -> list:
+        host = urlsplit(url).hostname or ""
+        for attempt in range(LEVER_READ_ATTEMPTS):
+            permit = self.coordinator.acquire(host, self.deadline)
+            delay = 0.5 * (attempt + 1)
+            uncertain_close = False
+            closed = [True]
+            try:
+                remaining = min(host_pacing.REQUEST_SECONDS, self.deadline - time.monotonic())
+                if remaining <= 0:
+                    raise ConnectorError("scan_time_limit_exceeded")
+                request = self.client.build_request("GET", url, params=params, timeout=remaining)
+                for header in ("Authorization", "X-SmartToken", "Cookie"):
+                    request.headers.pop(header, None)
+                # Fresh ownership immediately before dispatch. A cached grant
+                # cannot survive coordinator restart, loss, or lease expiry.
+                self.coordinator.verify(permit)
+                async with asyncio.timeout(remaining):
+                    async with _lever_response(self.client, request, closed) as response:
+                        if response.status_code == 404:
+                            raise ConnectorError("posting_or_source_closed", safe_to_retry=False)
+                        if response.status_code != 200:
+                            transient = response.status_code in {408, 429, 500, 502, 503, 504}
+                            error = ConnectorError(f"source_http_{response.status_code}", safe_to_retry=transient)
+                            if not transient or attempt + 1 == LEVER_READ_ATTEMPTS:
+                                raise error
+                            retry_after = response.headers.get("Retry-After")
+                            if retry_after:
+                                try:
+                                    delay = float(retry_after)
+                                except ValueError:
+                                    try:
+                                        delay = (parsedate_to_datetime(retry_after) - datetime.now(UTC)).total_seconds()
+                                    except (ValueError, TypeError, OverflowError):
+                                        raise error from None
+                                if not 0 <= delay <= SMARTRECRUITERS_MAX_RETRY_DELAY:
+                                    raise error
+                        else:
+                            content = bytearray()
+                            async for chunk in response.aiter_bytes():
+                                content.extend(chunk)
+                                if len(content) > MAX_RESPONSE_BYTES:
+                                    raise ConnectorError("source_response_too_large")
+                            try:
+                                result = json.loads(content)
+                            except (ValueError, UnicodeError) as exc:
+                                raise ConnectorError("invalid_source_payload") from exc
+                            if not isinstance(result, list):
+                                raise ConnectorError("invalid_source_payload")
+                            return result
+            except TimeoutError as exc:
+                uncertain_close = True
+                # No retry after an absolute deadline: let the durable scheduler
+                # recover a fresh scan, with the host cooldown still enforced.
+                raise ConnectorError("source_request_time_limit_exceeded") from exc
+            except httpx.HTTPError as exc:
+                if not closed[0] or attempt + 1 == LEVER_READ_ATTEMPTS:
+                    raise ConnectorError("source_unavailable") from exc
+            finally:
+                # The stream context closes before releasing the lease. If this
+                # exchange is ambiguous, reject the whole scan; never close jobs.
+                if not uncertain_close and closed[0]:
+                    self.coordinator.release(permit)
+            if time.monotonic() + delay >= self.deadline:
+                raise ConnectorError("scan_time_limit_exceeded")
+            await asyncio.sleep(delay)
+        raise ConnectorError("source_unavailable")
+
+
+async def _lever_rows(source: SourceContract, client: httpx.AsyncClient | None) -> list:
+    owned_client = client is None
+    coordinator = host_pacing.coordinator()
+    client = client or httpx.AsyncClient(timeout=httpx.Timeout(20, connect=5),
+                                       follow_redirects=False,
+                                       headers={"User-Agent": "HireWiz-EmployerConnector/1.0", "Accept": "application/json"})
+    try:
+        reader = _LeverRead(client, coordinator)
+        rows: list = []
+        for skip in range(0, MAX_POSTINGS + 1, 100):
+            page = await reader.get(_endpoint(source), {"mode": "json", "limit": 100, "skip": skip})
+            rows.extend(page)
+            if len(page) < 100:
+                return rows
+        raise ConnectorError("scan_limit_exceeded")
+    finally:
+        coordinator.close()
+        if owned_client:
+            await client.aclose()
 
 
 def _feed_host(source: SourceContract) -> str:
@@ -610,7 +735,25 @@ def _normalize(source: SourceContract, row: dict) -> dict | None:
     return result
 
 
-def fetch_postings(source: SourceContract, client: httpx.Client | None = None) -> list[dict]:
+def fetch_postings(source: SourceContract, client: httpx.Client | httpx.AsyncClient | None = None) -> list[dict]:
+    if source.platform == "lever":
+        # Production entry points are synchronous worker/threadpool functions.
+        # A sync injected transport cannot provide an absolute HTTP deadline.
+        if client is not None and not isinstance(client, httpx.AsyncClient):
+            raise ConnectorError("unsupported_public_transport", safe_to_retry=False)
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            pass
+        else:
+            raise ConnectorError("unsupported_public_execution_context", safe_to_retry=False)
+        try:
+            rows = asyncio.run(_lever_rows(source, client))
+        except host_pacing.PacingError as exc:
+            raise ConnectorError(str(exc)) from exc
+        return _normalized_postings(source, rows)
+    if isinstance(client, httpx.AsyncClient):
+        raise ConnectorError("unsupported_public_transport", safe_to_retry=False)
     owned_client = client is None
     client = client or _client()
     try:
@@ -619,17 +762,6 @@ def fetch_postings(source: SourceContract, client: httpx.Client | None = None) -
             rows = data.get("jobs")
             if not isinstance(rows, list) or (data.get("meta") or {}).get("total", len(rows)) != len(rows):
                 raise ConnectorError("incomplete_scan")
-        elif source.platform == "lever":
-            rows = []
-            for skip in range(0, MAX_POSTINGS + 1, 100):
-                page = _json_get(client, _endpoint(source), {"mode": "json", "limit": 100, "skip": skip})
-                if not isinstance(page, list):
-                    raise ConnectorError("invalid_source_payload")
-                rows.extend(page)
-                if len(page) < 100:
-                    break
-            else:
-                raise ConnectorError("scan_limit_exceeded")
         elif source.platform == "smartrecruiters":
             rows = _smartrecruiters_rows(source, client)
         elif source.platform in {"workable", "personio", "pinpoint"}:
@@ -639,17 +771,24 @@ def fetch_postings(source: SourceContract, client: httpx.Client | None = None) -
             rows = data.get("jobs")
             if not isinstance(rows, list):
                 raise ConnectorError("invalid_source_payload")
-        if len(rows) > MAX_POSTINGS:
-            raise ConnectorError("scan_limit_exceeded")
-        results = [job for row in rows if (job := _normalize(source, row))]
-        if len({job["external_id"] for job in results}) != len(results):
-            raise ConnectorError("duplicate_posting_identifiers")
-        return results
+        return _normalized_postings(source, rows)
     except (KeyError, TypeError, AttributeError) as exc:
         raise ConnectorError("invalid_source_payload") from exc
     finally:
         if owned_client:
             client.close()
+
+
+def _normalized_postings(source: SourceContract, rows: list) -> list[dict]:
+    if len(rows) > MAX_POSTINGS:
+        raise ConnectorError("scan_limit_exceeded")
+    try:
+        results = [job for row in rows if (job := _normalize(source, row))]
+    except (KeyError, TypeError, AttributeError) as exc:
+        raise ConnectorError("invalid_source_payload") from exc
+    if len({job["external_id"] for job in results}) != len(results):
+        raise ConnectorError("duplicate_posting_identifiers")
+    return results
 
 
 def load_form(source: SourceContract, external_id: str, client: httpx.Client | None = None) -> dict:
