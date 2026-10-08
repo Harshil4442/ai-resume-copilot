@@ -6,6 +6,16 @@ tested, provisioned or enabled.
 `EMPLOYER_AUTO_SUBMIT_ENABLED=false` remains required. Local fixture companion work and
 SQL admission tests do not prove these recovery gates or authorize real employer sends.
 
+A [small disabled Python core](RECOVERY_CORE_2026-10-08.md) now has local independent-file
+transaction/crash/application-only restore proof. Its production store remains unavailable;
+it does not implement this plan's cloud authority, retained journal, authentication,
+pairing, authority-rollback protection or physical egress controls.
+
+The [production adapter review](PRODUCTION_RECOVERY_ADAPTER_REVIEW_2026-10-08.md)
+identifies required buffered transaction/journal orchestration and partitioned replay
+boundaries. The [multi-step core proposal](BROWSER_MULTISTEP_CORE_PLAN_2026-10-08.md)
+extends the local one-fill proof; neither is implemented production infrastructure.
+
 This design addresses EX05–08, SE05–06, DP05, G05B–D and G06D in
 [the requirements](../requirements/JOB_SEARCH_AND_APPLICATION.md). It complements
 [transactional dispatch](../adr/003-transactional-work-dispatch.md) and

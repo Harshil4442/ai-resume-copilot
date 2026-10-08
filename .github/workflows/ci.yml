@@ -60,6 +60,7 @@ jobs:
           tests/test_employer_connectors.py tests/test_employer_artifact_lifecycle.py tests/test_learning_rag_privacy.py
           tests/test_employer_feed_adapters.py tests/test_employer_admissions.py tests/test_employer_admissions_postgres.py
           tests/test_employer_host_pacing.py tests/test_employer_catalog_queries.py
+          tests/fixtures/recovery_authority.py tests/test_recovery_authority.py tests/test_recovery_authority_processes.py
       - name: Type-check modernized modules
         working-directory: backend
         run: >-

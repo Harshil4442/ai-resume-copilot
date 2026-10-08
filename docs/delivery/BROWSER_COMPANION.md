@@ -6,6 +6,10 @@ EX02 and parts of EX05–08 / G04A–D in
 This is not a production employer adapter or a completed Stage 4 gate. Stage 5 automatic
 submission remains outside this implementation.
 
+The candidate selected [reviewed browser assistance first](INITIAL_BROWSER_ASSISTANCE_2026-10-08.md)
+on 8 October. This sets the launch order; it does not enable this disabled package or
+convert a human final click into verified automatic completion.
+
 ## Delivery boundary
 
 `browser-companion/extension` is a standalone Manifest V3 extension. Its committed

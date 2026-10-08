@@ -544,6 +544,12 @@ Improve native format preservation, tailored edits and sealed artifact generatio
 
 ### Stage 4 Permitted browser assistance
 
+**Launch-order decision, 8 October 2026:** the candidate selected reviewed browser
+assistance first. See [the delivery decision](../delivery/INITIAL_BROWSER_ASSISTANCE_2026-10-08.md).
+Final submission stays candidate-controlled; fill-only/user-reported outcomes cannot
+settle the automatic-application charge or close Stage 5. Production pairing, independent
+authority and permitted adapters remain required before enabling Stage 4.
+
 Build a narrowly scoped browser companion for tested employer career adapters. Keep candidate sessions local, support checkpoint recovery and pause for human work. Stage 4 remains fill-only or candidate-submit. Any automatic send, including a browser pilot, must first pass G05A–D and the relevant recovery gates.
 
 - [ ] G04A Verify tenant-specific origin permissions, device-bound commands and local session isolation. Evidence: extension security tests. Covers EX02 and SE03.

@@ -4,6 +4,9 @@ Development and deployment authorized on 8 October 2026. The full requirements r
 in [the acceptance register](../requirements/JOB_SEARCH_AND_APPLICATION.md). This file
 tracks implementation evidence and does not replace the wider worldwide coverage target.
 
+The [first launch path](INITIAL_BROWSER_ASSISTANCE_2026-10-08.md) is candidate-reviewed
+browser assistance, selected on 8 October. Final submission remains candidate-controlled.
+
 ## Implementation checkpoints
 
 - [x] Verify latest remote baseline d5c2ea8 and existing GCP/Vercel identities.
@@ -19,6 +22,8 @@ tracks implementation evidence and does not replace the wider worldwide coverage
 - [x] Verify four live public employer feeds and seed audited employer origins; this closes only the pilot seed scope.
 - [ ] Expand connector catalog and independently measure declared-scope recall.
 - [ ] Complete permitted browser companion, device claims and human checkpoints.
+- [x] Integrate the disabled Python recovery core with 85 focused local cases and the
+  complete 630-test backend suite. Production authority, pairing and multi-field steps remain open.
 - [ ] Verify all mandatory AI-disabled fresh-user workflows and optional enhanced modes.
 - [x] Verify connected responsive flows at all five declared widths with local production-build evidence.
 - [x] Validate migration round-trip through `20261008_0008` on PostgreSQL 17 and regenerate API contracts.
