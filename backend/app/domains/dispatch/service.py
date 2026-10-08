@@ -11,7 +11,7 @@ from urllib.parse import urlsplit
 
 from google.api_core.exceptions import AlreadyExists
 from google.cloud import tasks_v2
-from sqlalchemy import and_, or_
+from sqlalchemy import String, and_, case, cast, or_
 from sqlalchemy.orm import Session
 
 from ...database import SessionLocal
@@ -20,6 +20,7 @@ from .models import DispatchOutbox
 
 log = logging.getLogger("hirewiz.dispatch")
 TOPICS = {"analysis.run", "employer.search", "employer.refresh", "employer.apply", "employer.artifact-delete"}
+IN_PROGRESS_RESULTS = {"pending", "queued", "running"}
 LOCAL_ENVIRONMENTS = {"development", "dev", "local", "test"}
 TASK_QUEUE_SETTINGS = {
     "analysis.run": "ANALYSIS_TASKS_QUEUE",
@@ -107,6 +108,7 @@ class DispatchSnapshot:
     id: str
     topic: str
     execution_attempts: int
+    task_name: str | None = None
 
 
 def enqueue(
@@ -137,8 +139,10 @@ def _cloud_task(event: DispatchOutbox | DispatchSnapshot) -> str:
     queue, worker_url = _task_route(str(event.topic))
     client = tasks_v2.CloudTasksClient()
     parent = client.queue_path(project, location, queue)
-    # The stable task name recovers a crash after creation but before DB marking.
-    name = f"{parent}/tasks/{event.id}-{event.execution_attempts}"
+    # The physical name is persisted before creation. Publisher crashes reuse
+    # it; a later execution recovery uses a new dispatch generation even when
+    # observing a busy domain did not consume an execution attempt.
+    name = event.task_name or f"{parent}/tasks/{event.id}-{event.execution_attempts}"
     headers = {"Content-Type": "application/json"}
     token = os.getenv("ANALYSIS_TASK_TOKEN")
     if token:
@@ -194,8 +198,18 @@ def dispatch_pending(*, limit: int = 100, topics: set[str] | None = None) -> dic
         if mode == "cloud_tasks":
             for topic in {row[1] for row in events}:
                 _task_route(topic)
-        for event_id, _ in events:
+        for event_id, topic in events:
             token = uuid.uuid4().hex
+            task_name: Any = "local"
+            if mode == "cloud_tasks":
+                queue, _ = _task_route(topic)
+                parent = f"projects/{_setting('GOOGLE_CLOUD_PROJECT')}/locations/{_setting('ANALYSIS_TASKS_LOCATION')}/queues/{queue}"
+                task_name = case(
+                    (and_(DispatchOutbox.status.in_(["pending", "publishing"]),
+                          DispatchOutbox.task_name.is_not(None),
+                          DispatchOutbox.task_name.startswith(f"{parent}/tasks/", autoescape=True)), DispatchOutbox.task_name),
+                    else_=f"{parent}/tasks/{event_id}-dispatch-" + cast(DispatchOutbox.dispatch_attempts + 1, String),
+                )
             claimed = db.query(DispatchOutbox).filter(
                 DispatchOutbox.id == event_id,
                 or_(
@@ -209,7 +223,7 @@ def dispatch_pending(*, limit: int = 100, topics: set[str] | None = None) -> dic
                 "status": "publishing", "lease_token": token,
                 "lease_until": now + timedelta(minutes=2), "updated_at": now,
                 "dispatch_attempts": DispatchOutbox.dispatch_attempts + 1,
-                "task_name": "local" if mode == "inline" else DispatchOutbox.task_name,
+                "task_name": task_name,
             }, synchronize_session=False)
             db.commit()
             if not claimed:
@@ -217,7 +231,7 @@ def dispatch_pending(*, limit: int = 100, topics: set[str] | None = None) -> dic
             event = db.get(DispatchOutbox, event_id)
             if event is None:
                 continue
-            snapshot = DispatchSnapshot(str(event.id), str(event.topic), int(event.execution_attempts or 0))
+            snapshot = DispatchSnapshot(str(event.id), str(event.topic), int(event.execution_attempts or 0), event.task_name)
             db.rollback()
             try:
                 if mode == "inline":
@@ -237,7 +251,8 @@ def dispatch_pending(*, limit: int = 100, topics: set[str] | None = None) -> dic
             except Exception as exc:
                 db.rollback()
                 db.query(DispatchOutbox).filter_by(id=event_id, lease_token=token, status="publishing").update(
-                    {"status": "pending", "task_name": None, "lease_token": None, "lease_until": None,
+                    {"status": "pending", "task_name": None if mode == "inline" else DispatchOutbox.task_name,
+                     "lease_token": None, "lease_until": None,
                      "available_at": utcnow() + timedelta(seconds=30),
                      "last_error": type(exc).__name__, "updated_at": utcnow()},
                     synchronize_session=False,
@@ -337,6 +352,19 @@ def process_event(event_id: str) -> str:
             # Domain handlers own terminal settlement and possible-sent states.
             # A task retry re-reads those states; it never directly repeats POST.
             raise RetryableDispatchError(type(exc).__name__) from exc
+        if result in IN_PROGRESS_RESULTS:
+            # Domain leases can outlive the dispatch lease. A handler that did
+            # not claim that work must not complete its recovery intent or
+            # consume the bounded execution budget merely by observing it.
+            db.query(DispatchOutbox).filter_by(id=event_id, lease_token=token, status="running").update(
+                {"status": "retry", "lease_token": None, "lease_until": None,
+                 "available_at": utcnow() + timedelta(minutes=5),
+                 "execution_attempts": DispatchOutbox.execution_attempts - 1,
+                 "last_error": "domain_work_in_progress", "updated_at": utcnow()},
+                synchronize_session=False,
+            )
+            db.commit()
+            raise RetryableDispatchError("Domain work is still in progress")
         db.query(DispatchOutbox).filter_by(id=event_id, lease_token=token, status="running").update(
             {"status": "completed", "completed_at": utcnow(), "lease_token": None,
              "lease_until": None, "last_error": None, "updated_at": utcnow()},

@@ -1,11 +1,14 @@
 from datetime import timedelta
+from types import SimpleNamespace
 
 import pytest
 from backend.app import models  # noqa: F401
 from backend.app.database import Base
+from backend.app.domains.analysis import tasks as analysis_tasks
 from backend.app.domains.common import utcnow
 from backend.app.domains.dispatch import service
 from backend.app.domains.dispatch.models import DispatchOutbox
+from google.api_core.exceptions import AlreadyExists
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -83,6 +86,101 @@ def test_stale_publisher_mark_cannot_overwrite_completed_task(factory, monkeypat
         assert db.get(DispatchOutbox, event_id).status == "completed"
 
 
+@pytest.mark.parametrize("fault", ["ambiguous_response", "publisher_crash"])
+def test_physical_task_name_is_stored_before_rpc_and_reused_after_publisher_uncertainty(factory, monkeypatch, fault):
+    event_id = _intent(factory)
+    names, created = [], set()
+
+    class SyntheticPublisherCrash(BaseException):
+        pass
+
+    class SyntheticTasksClient:
+        def queue_path(self, project, location, queue):
+            return f"projects/{project}/locations/{location}/queues/{queue}"
+
+        def create_task(self, *, parent, task):
+            names.append(task.name)
+            with factory() as db:
+                event = db.get(DispatchOutbox, event_id)
+                assert event.status == "publishing" and event.task_name == task.name
+                assert task.name.startswith(f"{parent}/tasks/")
+            if task.name in created:
+                raise AlreadyExists("Synthetic task-name tombstone")
+            created.add(task.name)
+            if fault == "publisher_crash":
+                raise SyntheticPublisherCrash()
+            raise RuntimeError("Synthetic creation response lost")
+
+    monkeypatch.setattr(service.tasks_v2, "CloudTasksClient", SyntheticTasksClient)
+    if fault == "publisher_crash":
+        with pytest.raises(SyntheticPublisherCrash):
+            service.dispatch_pending()
+    else:
+        assert service.dispatch_pending() == {"dispatched": 0, "failed": 1}
+    with factory() as db:
+        event = db.get(DispatchOutbox, event_id)
+        assert event.status == ("publishing" if fault == "publisher_crash" else "pending")
+        assert event.task_name == names[0] and event.execution_attempts == 0
+        event.lease_until = event.available_at = utcnow() - timedelta(seconds=1)
+        db.commit()
+    assert service.dispatch_pending() == {"dispatched": 1, "failed": 0}
+    assert names == [names[0], names[0]]
+    with factory() as db:
+        event = db.get(DispatchOutbox, event_id)
+        assert event.status == "dispatched" and event.dispatch_attempts == 2
+
+
+def test_busy_domain_recovery_uses_new_physical_task_name_after_prior_task_tombstone(factory, monkeypatch):
+    event_id = _intent(factory)
+    names, created = [], set()
+
+    class SyntheticTasksClient:
+        def queue_path(self, project, location, queue):
+            return f"projects/{project}/locations/{location}/queues/{queue}"
+
+        def create_task(self, *, parent, task):
+            names.append(task.name)
+            if task.name in created:
+                raise AlreadyExists("Synthetic exhausted task-name tombstone")
+            created.add(task.name)
+            return SimpleNamespace(name=task.name)
+
+    monkeypatch.setattr(service.tasks_v2, "CloudTasksClient", SyntheticTasksClient)
+    assert service.dispatch_pending() == {"dispatched": 1, "failed": 0}
+    monkeypatch.setattr(service, "_execute", lambda *_: "running")
+    with pytest.raises(service.RetryableDispatchError, match="still in progress"):
+        service.process_event(event_id)
+    with factory() as db:
+        event = db.get(DispatchOutbox, event_id)
+        assert event.execution_attempts == 0 and event.status == "retry"
+        event.available_at = utcnow() - timedelta(seconds=1)
+        db.commit()
+    assert service.dispatch_pending() == {"dispatched": 1, "failed": 0}
+    assert len(created) == 2 and names[0] != names[1]
+    monkeypatch.setattr(service, "_execute", lambda *_: "succeeded")
+    assert service.process_event(event_id) == "succeeded"
+    with factory() as db:
+        event = db.get(DispatchOutbox, event_id)
+        assert (event.status, event.execution_attempts, event.dispatch_attempts) == ("completed", 1, 2)
+
+
+def test_early_worker_unknown_outcome_cannot_be_overwritten_by_ambiguous_publisher_failure(factory, monkeypatch):
+    event_id = _intent(factory)
+    calls = []
+    monkeypatch.setattr(service, "_execute", lambda *_: calls.append("unknown") or "unknown")
+
+    def created_but_response_lost(event):
+        assert service.process_event(event.id) == "unknown"
+        raise RuntimeError("Synthetic creation response lost after worker completed")
+
+    monkeypatch.setattr(service, "_cloud_task", created_but_response_lost)
+    assert service.dispatch_pending() == {"dispatched": 0, "failed": 1}
+    with factory() as db:
+        assert db.get(DispatchOutbox, event_id).status == "completed"
+    assert service.dispatch_pending() == {"dispatched": 0, "failed": 0}
+    assert calls == ["unknown"]
+
+
 def test_live_worker_lease_does_not_execute_twice(factory, monkeypatch):
     event_id = _intent(factory)
     with factory() as db:
@@ -107,6 +205,127 @@ def test_failed_domain_execution_preserves_retry_state(factory, monkeypatch):
         assert db.get(DispatchOutbox, event_id).status == "retry"
     monkeypatch.setattr(service, "_execute", lambda *_: "unknown")
     assert service.process_event(event_id) == "unknown"
+
+
+@pytest.mark.parametrize("result", ["running", "queued", "pending"])
+def test_nonterminal_domain_result_keeps_recovery_without_exhausting_execution_budget(factory, monkeypatch, result):
+    event_id = _intent(factory)
+    calls = []
+    monkeypatch.setattr(service, "_execute", lambda *_: calls.append(result) or result)
+    # Cloud Tasks may retry sooner than the sweep's available_at. Observing a
+    # live domain lease repeatedly must not settle it as delivery exhausted.
+    for _ in range(8):
+        with pytest.raises(service.RetryableDispatchError, match="still in progress"):
+            service.process_event(event_id)
+        with factory() as db:
+            event = db.get(DispatchOutbox, event_id)
+            assert event.status == "retry" and event.execution_attempts == 0
+            assert event.completed_at is event.lease_token is event.lease_until is None
+            assert event.last_error == "domain_work_in_progress"
+            assert event.available_at > utcnow().replace(tzinfo=None)
+    assert calls == [result] * 8
+    monkeypatch.setattr(service, "_execute", lambda *_: "succeeded")
+    assert service.process_event(event_id) == "succeeded"
+    with factory() as db:
+        event = db.get(DispatchOutbox, event_id)
+        assert event.status == "completed" and event.execution_attempts == 1
+
+
+def test_busy_observation_preserves_prior_real_failure_budget(factory, monkeypatch):
+    event_id = _intent(factory)
+    with factory() as db:
+        event = db.get(DispatchOutbox, event_id)
+        event.execution_attempts = 5
+        db.commit()
+    monkeypatch.setattr(service, "_execute", lambda *_: "running")
+    with pytest.raises(service.RetryableDispatchError, match="still in progress"):
+        service.process_event(event_id)
+    with factory() as db:
+        assert db.get(DispatchOutbox, event_id).execution_attempts == 5
+    calls, exhausted = [], []
+
+    def real_failure(*_):
+        calls.append("provider_failure")
+        raise RuntimeError("Synthetic provider failure")
+
+    monkeypatch.setattr(service, "_execute", real_failure)
+    monkeypatch.setattr(service, "_settle_exhausted", lambda topic, aggregate_id: exhausted.append(aggregate_id))
+    with pytest.raises(service.RetryableDispatchError):
+        service.process_event(event_id)
+    with factory() as db:
+        assert db.get(DispatchOutbox, event_id).execution_attempts == 6
+    assert service.process_event(event_id) == "failed"
+    assert calls == ["provider_failure"] and exhausted == ["run_test"]
+
+
+def test_expired_dispatch_lease_preserves_analysis_until_its_domain_lease_can_be_reclaimed(factory, monkeypatch):
+    monkeypatch.setattr(analysis_tasks, "SessionLocal", factory)
+    calls = []
+    monkeypatch.setattr(analysis_tasks, "execute_operation", lambda *_: calls.append("executed") or {"fixture": "completed"})
+    with factory() as db:
+        db.add(models.User(id=1, email="lease-recovery@example.test", ai_credits=4))
+        run = models.AnalysisRun(id="run_test", user_id=1, operation="job_match", status="running",
+            idempotency_key="synthetic-lease-recovery", input_fingerprint="synthetic", input_payload={},
+            started_at=utcnow() - timedelta(minutes=17), attempt_count=1, estimated_units=1, usage_state="reserved")
+        db.add(run)
+        event = service.enqueue(db, topic="analysis.run", aggregate_id=run.id, payload={"run_id": run.id}, key="analysis:run_test")
+        db.commit()
+        event_id = event.id
+        event.status, event.lease_token = "running", "expired-synthetic-worker"
+        event.lease_until = utcnow() - timedelta(seconds=1)
+        event.execution_attempts = 1
+        db.commit()
+    with pytest.raises(service.RetryableDispatchError, match="still in progress"):
+        service.process_event(event_id)
+    with factory() as db:
+        event = db.get(DispatchOutbox, event_id)
+        run = db.get(models.AnalysisRun, "run_test")
+        assert (event.status, event.execution_attempts) == ("retry", 1)
+        assert (run.status, run.usage_state, run.attempt_count) == ("running", "reserved", 1)
+        assert calls == []
+        run.started_at = utcnow() - timedelta(minutes=21)
+        event.available_at = utcnow() - timedelta(seconds=1)
+        db.commit()
+    monkeypatch.setenv("ANALYSIS_TASKS_MODE", "inline")
+    assert service.dispatch_pending() == {"dispatched": 1, "failed": 0}
+    with factory() as db:
+        assert db.get(DispatchOutbox, event_id).status == "completed"
+        run = db.get(models.AnalysisRun, "run_test")
+        assert (run.status, run.usage_state, run.attempt_count) == ("succeeded", "committed", 2)
+        assert calls == ["executed"]
+
+
+def test_refresh_live_domain_lease_defers_dispatch_without_fetching_provider(factory, monkeypatch):
+    from backend.app.domains.employer import config, tasks
+    from backend.app.domains.employer import models as employer_models
+    monkeypatch.setattr(tasks, "SessionLocal", factory)
+    monkeypatch.setattr(config, "discovery_enabled", lambda: True)
+    monkeypatch.setattr(tasks.connectors, "fetch_postings", lambda *_: pytest.fail("Live source lease cannot fetch again"))
+    with factory() as db:
+        source = employer_models.EmployerSource(id="source_test", employer="Synthetic employer", platform="greenhouse",
+            board_token="synthetic", careers_url="https://employer.example.test/careers", enabled=True,
+            verification_url="https://employer.example.test/careers", verification_note="Synthetic verified fixture",
+            scan_token="live-synthetic-scan", scan_started_at=utcnow())
+        db.add(source)
+        event = service.enqueue(db, topic="employer.refresh", aggregate_id=source.id, payload={"source_id": source.id}, key="refresh:source_test")
+        db.commit()
+        event_id = event.id
+    with pytest.raises(service.RetryableDispatchError, match="still in progress"):
+        service.process_event(event_id)
+    with factory() as db:
+        event = db.get(DispatchOutbox, event_id)
+        assert (event.status, event.execution_attempts) == ("retry", 0)
+        assert db.get(employer_models.EmployerSource, "source_test").scan_token == "live-synthetic-scan"
+
+
+@pytest.mark.parametrize("result", ["unknown", "deferred"])
+def test_unknown_send_and_separate_deferred_cleanup_remain_completed_handoffs(factory, monkeypatch, result):
+    event_id = _intent(factory)
+    calls = []
+    monkeypatch.setattr(service, "_execute", lambda *_: calls.append(result) or result)
+    assert service.process_event(event_id) == result
+    assert service.process_event(event_id) == "completed"
+    assert calls == [result]
 
 
 def test_task_payload_never_contains_candidate_data(factory):

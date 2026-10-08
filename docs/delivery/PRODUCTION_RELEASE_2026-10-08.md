@@ -99,7 +99,10 @@ intents were repaired in a guarded, audited transaction: the latest four were re
 four superseded duplicates were cancelled. All had zero execution attempts; no application,
 credit or possible-send state was changed. Scheduler resumed at five-minute intervals.
 
-Cloud Tasks ingestion and eight completed refresh operations were then observed. All four
+Cloud Tasks ingestion and eight completed refresh operations were then observed. The
+[database evidence](evidence/2026-10-08-production-dispatch.json) records eight real
+Cloud Task names, one execution each, no local task names and four superseded cancellations
+with zero executions. All four
 sources were healthy. At `2026-10-08T13:45Z`, production held **356 open jobs**: Figma 150,
 Freshworks 126, Razorpay Software Private Limited 27 and Supabase 53. Counts can change
 as employer postings change. No source has submission permission. Read-only authenticated
@@ -110,9 +113,19 @@ authenticated 200; the deliberate anonymous probes explain matching warning log 
 The follow-up dispatch code requires explicit production mode and complete selected
 Cloud Tasks routes before claims. It rejects production inline execution and employer
 fallback to an analysis destination. Local inline scope rejection retains the publishing
-fence and returns the intent to pending with an error. The complete backend suite passed
-**443 tests** after this change; focused dispatch tests passed **34 cases**. Its deployment
-and exact-commit CI remain to be recorded.
+fence and returns the intent to pending with an error.
+
+Independent review also reproduced a crash-recovery defect: the 16-minute outbox lease
+could expire while the 20-minute analysis lease was still active, and dispatch completed
+when the handler returned `running`. Nonterminal results now retain retry intent without
+consuming an execution attempt. Physical task names are persisted before the publish RPC;
+uncertain publisher recovery reuses that name, while later execution recovery uses a fresh
+dispatch generation. Unknown application and deferred artifact outcomes keep their domain
+handling. Tests cover real analysis-handler recovery at 17 and 21 minutes, task tombstones,
+publisher/worker races, busy observations and the unchanged bounded actual-failure budget.
+The complete backend suite passed **455 tests**; focused dispatch tests passed **46 cases**.
+Its deployment and final exact-commit CI remain to be recorded. The earlier hardening
+candidate `5dda7a85a26517f81c744629f457d065bcf3cdb5` passed CI but was not deployed.
 
 ## Production verification to record
 

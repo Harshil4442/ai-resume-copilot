@@ -1,0 +1,61 @@
+{
+  "checked_at": "2026-10-08T13:54:17.758342+00:00",
+  "scope": "Four audited public employer sources; no customer/application writes",
+  "refresh_dispatch": [
+    {
+      "status": "cancelled",
+      "count": 4,
+      "minimum_execution_attempts": 0,
+      "maximum_execution_attempts": 0,
+      "cloud_task_names": 0,
+      "local_task_names": 0
+    },
+    {
+      "status": "completed",
+      "count": 8,
+      "minimum_execution_attempts": 1,
+      "maximum_execution_attempts": 1,
+      "cloud_task_names": 8,
+      "local_task_names": 0
+    }
+  ],
+  "recorded_errors": [
+    {
+      "status": "cancelled",
+      "last_error": "superseded_unsent_source_refresh",
+      "count": 4
+    }
+  ],
+  "sources": [
+    {
+      "employer": "Figma",
+      "platform": "greenhouse",
+      "status": "healthy",
+      "submission_enabled": false,
+      "open_postings": 150
+    },
+    {
+      "employer": "Freshworks",
+      "platform": "smartrecruiters",
+      "status": "healthy",
+      "submission_enabled": false,
+      "open_postings": 126
+    },
+    {
+      "employer": "Razorpay Software Private Limited",
+      "platform": "greenhouse",
+      "status": "healthy",
+      "submission_enabled": false,
+      "open_postings": 27
+    },
+    {
+      "employer": "Supabase",
+      "platform": "ashby",
+      "status": "healthy",
+      "submission_enabled": false,
+      "open_postings": 53
+    }
+  ],
+  "worldwide_recall_verified": false,
+  "automatic_submission_enabled": false
+}
