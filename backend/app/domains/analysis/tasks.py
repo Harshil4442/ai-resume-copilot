@@ -81,6 +81,15 @@ def enqueue_cloud_task(run_id: str) -> str:
 def process_analysis_run(run_id: str) -> str:
     db = SessionLocal()
     try:
+        from ...services.generation_gate import require_operation_generation
+
+        previous = db.query(
+            models.AnalysisRun.operation, models.AnalysisRun.input_payload, models.AnalysisRun.status,
+        ).filter(models.AnalysisRun.id == run_id).first()
+        if previous and previous.status not in TERMINAL_STATES:
+            # Refuse before the claim/attempt increment; paused work and its
+            # product reservation stay available for reviewed recovery.
+            require_operation_generation(previous.operation, previous.input_payload)
         stale_before = utcnow() - timedelta(minutes=20)
         claimed = (
             db.query(models.AnalysisRun)

@@ -301,11 +301,21 @@ def process_event(event_id: str) -> str:
     db = SessionLocal()
     token = uuid.uuid4().hex
     try:
+        from ... import models
+        from ...services.generation_gate import require_operation_generation
+
         allowed = {part.strip() for part in os.getenv("WORKER_ALLOWED_TOPICS", "").split(",") if part.strip()}
         if allowed:
             event = db.get(DispatchOutbox, event_id)
             if event and event.topic not in allowed:
                 raise WorkerScopeError("This worker cannot execute the requested workload")
+        previous = db.get(DispatchOutbox, event_id)
+        if previous and previous.topic == "analysis.run" and previous.status not in {"completed", "failed"}:
+            run = db.query(
+                models.AnalysisRun.operation, models.AnalysisRun.input_payload, models.AnalysisRun.status,
+            ).filter(models.AnalysisRun.id == previous.aggregate_id).first()
+            if run and run.status not in {"succeeded", "failed", "cancelled"}:
+                require_operation_generation(run.operation, run.input_payload)
         now = utcnow()
         claimed = db.query(DispatchOutbox).filter(
             DispatchOutbox.id == event_id,

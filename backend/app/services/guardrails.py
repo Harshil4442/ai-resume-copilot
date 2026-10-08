@@ -36,6 +36,10 @@ def billable_operation(
     if amount < 0:
         raise ValueError("analysis-unit reservation cannot be negative")
 
+    from .generation_gate import check_generation_admission
+
+    check_generation_admission(operation, input_payload)
+
     # Lock before inserting the run: its FK otherwise takes a key-share owner
     # lock, and two concurrent requests can deadlock upgrading to FOR UPDATE.
     lock_entitlement_owner(db, user_id)

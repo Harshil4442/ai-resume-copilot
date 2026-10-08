@@ -224,7 +224,12 @@ async def parse_resume(
     enrichment_state = "not_requested"
     enrichment_units = 0
     warnings: list[str] = []
-    if enrich_skills:
+    from ..services.generation_gate import generation_enabled
+
+    if enrich_skills and not generation_enabled():
+        enrichment_state = "failed"
+        warnings.append("Optional AI enrichment is temporarily paused. Your original resume was parsed without AI and no enrichment units were charged.")
+    elif enrich_skills:
         from ..services.guardrails import billable_operation
 
         class NoUsefulEnrichment(ValueError):
