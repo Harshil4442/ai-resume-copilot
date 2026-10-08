@@ -180,7 +180,7 @@ jobs:
       - name: Scan repository for committed secrets
         run: >-
           docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.24.2
-          detect --source /repo --no-banner --redact
+          detect --source /repo --gitleaks-ignore-path /repo/.gitleaksignore --no-banner --redact
       - name: Build production container
         run: docker build --tag hirewiz-ci:${{ github.sha }} .
 

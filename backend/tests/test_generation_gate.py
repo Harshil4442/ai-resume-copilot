@@ -56,7 +56,7 @@ def factory(monkeypatch):
         engine.dispose()
 
 
-def create(factory, operation="job_match", mode=None, key="gate-synthetic-001"):
+def create(factory, operation="job_match", mode=None, key="gate-001"):
     data = {"resume_id": 1, "job_description": "Build Python and Docker services for customers."} if operation == "job_match" else {}
     if mode is not None:
         data["mode"] = mode
@@ -230,7 +230,7 @@ def test_paused_admission_replays_exact_and_semantically_equivalent_requests(fac
         changed = analysis_schemas.AnalysisRunCreate(operation="job_match", opportunity_id="opp_gate",
             input={"resume_id": 1, "mode": "enhanced", "job_description": "A different Python position with different requirements."})
         with pytest.raises(HTTPException) as conflict:
-            analysis_service.create_run(db, user_id=1, payload=changed, header_idempotency_key="gate-synthetic-001")
+            analysis_service.create_run(db, user_id=1, payload=changed, header_idempotency_key="gate-001")
         assert conflict.value.status_code == 409
         with pytest.raises(HTTPException) as paused:
             analysis_service.create_run(db, user_id=1, payload=changed, header_idempotency_key="new-generation-001")
