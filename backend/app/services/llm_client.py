@@ -99,6 +99,9 @@ if not LLM_MODEL:
     LLM_MODEL = "gpt-4o-mini"
 
 def _chat(messages: list[dict]) -> str:
+    from .generation_gate import require_generation
+
+    require_generation()
     from .generation_budget import GenerationBudgetExhausted, generation_budget
     from .prompt_privacy import redact_messages
 
@@ -115,6 +118,9 @@ def _chat(messages: list[dict]) -> str:
 
 
 def _chat_with_budget(messages: list[dict], budget) -> str:
+    from .generation_gate import require_generation
+
+    require_generation()
     if LLM_MODEL.startswith("gemini"):
         try:
             from google import genai
@@ -131,6 +137,7 @@ def _chat_with_budget(messages: list[dict], budget) -> str:
         last_error = None
         saw_transient = False
         for model in _gemini_models(LLM_MODEL.strip("\"' \r\n")):
+            require_generation()
             record = budget.admit("google", model, messages)
             started = time.perf_counter()
             try:
@@ -152,6 +159,7 @@ def _chat_with_budget(messages: list[dict], budget) -> str:
     headers = {"Authorization": f"Bearer {_api_key()}", "Content-Type": "application/json"}
     payload = {"model": LLM_MODEL, "messages": messages, "temperature": 0.3}
     while True:
+        require_generation()
         record = budget.admit(provider, LLM_MODEL, messages)
         started = time.perf_counter()
         try:

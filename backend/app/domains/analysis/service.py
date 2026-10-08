@@ -187,6 +187,8 @@ def create_run(
         opportunity_id=payload.opportunity_id,
         payload=input_payload,
     )
+    from ...services.generation_gate import check_generation_admission
+
     # Serialize admission for one owner, including equivalent requests with
     # different client keys. This short lock ends before any worker/model call.
     db.query(models.User.id).filter(models.User.id == user_id).with_for_update().one()
@@ -247,6 +249,9 @@ def create_run(
             db.commit()
             return reusable, False
 
+    # Existing immutable requests/results above are safe to replay while
+    # generation is paused. Apply the gate only before admitting new work.
+    check_generation_admission(payload.operation, input_payload)
     now = utcnow()
     run = models.AnalysisRun(
         id=public_id("run"),

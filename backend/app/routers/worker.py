@@ -14,6 +14,7 @@ from ..domains.dispatch.service import (
     process_event,
 )
 from ..domains.operations import run_maintenance
+from ..services.generation_gate import PAUSED_MESSAGE, GenerationPaused
 
 router = APIRouter(prefix="/internal/tasks", tags=["internal-worker"])
 
@@ -27,6 +28,8 @@ def execute_dispatch_task(
     _verify_task_request(x_cloudtasks_taskname, x_hirewiz_task_token)
     try:
         status = process_event(event_id)
+    except GenerationPaused as exc:
+        raise HTTPException(status_code=503, detail=PAUSED_MESSAGE) from exc
     except WorkerScopeError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except RetryableDispatchError as exc:
@@ -60,6 +63,8 @@ def execute_analysis_task(
         raise HTTPException(status_code=403, detail="This worker cannot execute analysis")
     try:
         status = process_analysis_run(run_id)
+    except GenerationPaused as exc:
+        raise HTTPException(status_code=503, detail=PAUSED_MESSAGE) from exc
     except RetryableRunError as exc:
         raise HTTPException(status_code=503, detail="Retryable provider failure") from exc
     if status == "missing":

@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches: [main, codex/employer-application-system-design]
 
 permissions:
   contents: read
@@ -64,11 +64,13 @@ jobs:
           tests/fixtures/recovery_sequence_projection.py tests/test_recovery_sequences.py tests/test_recovery_sequences_processes.py
           tests/test_catalog_timing.py
           tests/fixtures/pairing_authority.py tests/test_pairing_crypto.py tests/test_pairing_service.py tests/test_pairing_processes.py
+          app/services/generation_gate.py tests/test_generation_gate.py
       - name: Type-check modernized modules
         working-directory: backend
         run: >-
           .venv/bin/mypy app/domains app/services/guardrails.py app/services/resume_artifacts.py app/services/resume_layout.py app/services/pdf_streams.py app/routers/v1
           app/routers/worker.py app/worker_main.py app/observability.py app/catalog_timing.py app/main.py app/security.py app/feature_flags.py app/migrate.py
+          app/services/generation_gate.py
       - name: Compile backend
         run: backend/.venv/bin/python -m compileall -q backend/app
       - name: Validate PostgreSQL migrations
@@ -178,7 +180,7 @@ jobs:
       - name: Scan repository for committed secrets
         run: >-
           docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.24.2
-          detect --source /repo --no-banner --redact
+          detect --source /repo --gitleaks-ignore-path /repo/.gitleaksignore --no-banner --redact
       - name: Build production container
         run: docker build --tag hirewiz-ci:${{ github.sha }} .
 
