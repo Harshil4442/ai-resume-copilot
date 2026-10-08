@@ -20,9 +20,9 @@ export const metadata: Metadata = {
 
 const PREMIUM_FEATURES = [
   "Unlimited job-description comparison reports during the 30-day access period",
-  "Unlimited Ask AI queries and resume-bullet suggestions during the access period",
+  "Role-specific interview preparation and evidence-backed resume tailoring",
   "Market skill-demand analyses based on the available job-posting sample",
-  "Learning-path and project suggestions",
+  "Skill priorities and career workspace insights",
   "No analysis-unit deductions while Premium is active",
 ];
 
@@ -31,6 +31,7 @@ export default async function PricingPage() {
   const premium = catalog?.products.find(
     (product) => product.sku === "premium_30d" && product.catalog_visible,
   );
+  const servicePack = catalog?.products.find((product) => product.sku === "job_service_500" && product.catalog_visible);
   const canPurchase = Boolean(catalog?.checkout_enabled && premium?.enabled_for_purchase);
 
   return (
@@ -42,8 +43,8 @@ export default async function PricingPage() {
 
       <PageHeader
         badge="Public Pricing"
-        title="One clear price. No automatic renewal."
-        subtitle="HireWiz currently offers one paid product for customers in India: a one-time, 30-day Premium access pass charged in Indian Rupees."
+        title="Clear pricing. No automatic renewal."
+        subtitle="Choose a 30-day Premium pass or prepaid job service credits. One-time purchases for customers in India, charged in Indian Rupees."
       />
 
       <FadeIn delay={0.1}>
@@ -99,6 +100,8 @@ export default async function PricingPage() {
         )}
       </FadeIn>
 
+      {servicePack ? <GlassCard className="max-w-2xl mx-auto p-8 md:p-10" hoverEffect={false}><p className="data-label">Employer search and apply</p><h2 className="font-display mt-2 text-2xl">{servicePack.name}</h2><p className="mt-3 text-sm leading-6 text-muted-foreground">{servicePack.description}</p><p className="mt-5 text-4xl font-semibold">{servicePack.amount_display}</p><p className="mt-3 text-sm leading-6">{servicePack.entitlement_quantity} service credits. Separate from complimentary analysis units and Premium access. Search prices and automatic-apply prices are shown before use; automatic apply is charged only on a confirmed complete submission.</p><p className="mt-3 text-xs leading-5 text-muted-foreground">Employer coverage and automatic submission depend on currently verified sources and permissioned integrations. A manual portal handoff is not a completed application.</p><Link href="/billing" className="mt-5 inline-flex font-semibold text-primary underline underline-offset-4">{catalog?.checkout_enabled && servicePack.enabled_for_purchase ? "Review credit pack" : "Review availability"}</Link></GlassCard> : null}
+
       <FadeIn delay={0.15}>
         <GlassCard className="p-8 md:p-10 text-foreground leading-relaxed space-y-5" hoverEffect={false}>
           <h2 className="font-display text-xl font-normal text-foreground tracking-tight">Included analysis units</h2>
@@ -112,7 +115,7 @@ export default async function PricingPage() {
           <p>
             Most metered operations use one unit. A market skill-demand analysis currently uses five units and a
             full tailored-resume draft uses ten units. The confirmation button shows the unit cost before an
-            operation starts. At launch, HireWiz does not sell standalone units or top-up packs.
+            operation starts. Standalone analysis units are not sold. Paid job service credit packs are a separate allowance for employer search and confirmed automatic applications.
           </p>
           <p className="text-sm text-muted-foreground">
             If a technical failure consumes units without delivering a result, contact support with the time and

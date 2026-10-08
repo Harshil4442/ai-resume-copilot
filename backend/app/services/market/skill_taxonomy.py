@@ -1,7 +1,5 @@
-from typing import Dict, List
 
-
-SKILL_TAXONOMY: Dict[str, List[str]] = {
+SKILL_TAXONOMY: dict[str, list[str]] = {
     "Programming Languages": [
         "Python", "Java", "JavaScript", "TypeScript", "Go", "C++", "C", "C#",
         "Rust", "Kotlin", "Swift", "SQL", "Ruby", "PHP", "Scala", "R",
@@ -61,10 +59,25 @@ SKILL_TAXONOMY: Dict[str, List[str]] = {
         "Communication", "Collaboration", "Leadership", "Problem Solving",
         "Analytical Thinking", "Ownership", "Stakeholder Management",
     ],
+    "Business and Operations": [
+        "Project Management", "Product Management", "Business Analysis",
+        "Customer Service", "Customer Success", "Sales", "Account Management",
+        "Market Research", "Digital Marketing", "SEO", "Content Writing",
+        "Supply Chain", "Procurement", "Inventory Management", "Operations Management",
+    ],
+    "Finance and People": [
+        "Accounting", "Bookkeeping", "Financial Analysis", "Financial Modeling",
+        "Budgeting", "Auditing", "Payroll", "Recruitment", "Human Resources",
+        "Training", "Compliance", "Microsoft Excel",
+    ],
+    "Design": [
+        "Figma", "User Research", "UX Design", "UI Design", "Graphic Design",
+        "Prototyping", "Accessibility", "Adobe Photoshop", "Adobe Illustrator", "AutoCAD",
+    ],
 }
 
 
-ALIASES: Dict[str, str] = {
+ALIASES: dict[str, str] = {
     "js": "JavaScript",
     "node": "Node.js",
     "nodejs": "Node.js",
@@ -105,6 +118,10 @@ ALIASES: Dict[str, str] = {
     "message queues": "Message Queues",
     "open telemetry": "OpenTelemetry",
     "opentelemetry": "OpenTelemetry",
+    "excel": "Microsoft Excel",
+    "search engine optimization": "SEO",
+    "user experience design": "UX Design",
+    "user interface design": "UI Design",
 }
 
 
@@ -133,12 +150,11 @@ def skill_category(skill: str) -> str:
     return CANONICAL_TO_CATEGORY.get(canonical.lower(), "Other")
 
 
-def all_search_terms() -> Dict[str, List[str]]:
-    terms: Dict[str, List[str]] = {}
+def all_search_terms() -> dict[str, list[str]]:
+    terms: dict[str, list[str]] = {}
     for category_skills in SKILL_TAXONOMY.values():
         for skill in category_skills:
             terms.setdefault(skill, []).append(skill)
     for alias, canonical in ALIASES.items():
         terms.setdefault(canonical, []).append(alias)
     return terms
-

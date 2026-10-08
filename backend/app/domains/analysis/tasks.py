@@ -27,6 +27,8 @@ class RetryableRunError(RuntimeError):
 def _retryable(exc: Exception) -> bool:
     current: BaseException | None = exc
     while current is not None:
+        if getattr(current, "budget_exhausted", False):
+            return False
         if getattr(current, "retryable", False):
             return True
         message = str(current).lower()
@@ -117,7 +119,10 @@ def process_analysis_run(run_id: str) -> str:
             return run.status
 
         try:
-            result = execute_operation(db, run)
+            from ...services.generation_budget import persistent_run_budget
+
+            with persistent_run_budget(SessionLocal, run.id):
+                result = execute_operation(db, run)
             db.flush()
             db.refresh(run)
             if run.cancel_requested:

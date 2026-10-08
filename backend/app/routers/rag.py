@@ -38,16 +38,26 @@ def ask_ai_about_match(
     if not resume:
         raise HTTPException(status_code=404, detail="Resume not found for this user")
 
+    evidence = (
+        db.query(models.EvidenceItem)
+        .filter(models.EvidenceItem.user_id == current_user.id,
+                models.EvidenceItem.resume_id == resume.id,
+                models.EvidenceItem.approval_state == "approved")
+        .order_by(models.EvidenceItem.created_at).limit(40).all()
+    )
+
     with billable_operation(
         user_id=current_user.id,
         db=db,
         operation="match_question",
         amount=1,
-        input_payload={"job_match_id": match.id, "resume_id": resume.id},
+        input_payload={"job_match_id": match.id, "resume_id": resume.id, "mode": payload.mode},
     ):
         return ask_match_ai(
             resume=resume,
             match=match,
             question=payload.question.strip(),
             recent_messages=payload.recent_messages,
+            mode=payload.mode,
+            approved_evidence=[{"id": item.id, "title": item.title, "text": item.evidence_text} for item in evidence],
         )

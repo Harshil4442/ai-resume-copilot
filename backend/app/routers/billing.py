@@ -9,7 +9,7 @@ from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from ..billing.catalog import CATALOG_VERSION, CatalogProduct, get_product, public_catalog
+from ..billing.catalog import CATALOG_VERSION, CatalogProduct, get_product, product_purchase_enabled, public_catalog
 from ..billing.razorpay import RazorpayAdapter, RazorpayProviderError, RazorpaySettings
 from ..billing.service import WebhookValidationError, as_aware, process_razorpay_webhook
 from ..database import get_db
@@ -119,11 +119,13 @@ def create_order(
         # Fail closed. Never reveal which key/approval/configuration item is
         # absent, and never fall back to a mock payment.
         raise HTTPException(status_code=503, detail="Checkout is not available yet.")
+    if not product_purchase_enabled(product, checkout_enabled=settings.checkout_enabled):
+        raise HTTPException(status_code=503, detail="This service purchase is not available yet.")
 
     user = db.query(User).filter(User.id == current_user.id).with_for_update().first()
     if user is None:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    if user.is_premium_active():
+    if product.entitlement_kind == "premium_access" and user.is_premium_active():
         raise HTTPException(status_code=409, detail="Premium access is already active.")
 
     open_orders = (
@@ -375,6 +377,8 @@ def _order_status_payload(db: Session, order: PaymentOrder) -> dict:
         "provider_order_id": order.provider_order_id,
         "payment_reference": transaction.provider_payment_id if transaction else None,
         "sku": order.sku,
+        "entitlement_kind": order.entitlement_kind,
+        "entitlement_quantity": order.entitlement_quantity,
         "status": _normalized_order_status(order),
         "fulfilled": fulfilled,
         "amount_minor": order.gross_amount_minor,

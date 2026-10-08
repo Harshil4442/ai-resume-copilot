@@ -122,7 +122,8 @@ async def jwt_validation_middleware(request: Request, call_next):
 
 @app.get("/api/health")
 def health():
-    return {"ok": True}
+    return {"ok": True, "release": os.getenv("APP_RELEASE", "development"),
+            "revision": os.getenv("K_REVISION", "development")}
 
 # Routers
 app.include_router(auth.router, prefix="/api")

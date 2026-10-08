@@ -70,6 +70,7 @@ const nextConfig = {
         '/dashboard/:path*',
         '/resume/:path*',
         '/jobs/:path*',
+        '/employer-jobs/:path*',
         '/workspace/:path*',
         '/market/:path*',
         '/learning/:path*',

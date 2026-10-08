@@ -42,7 +42,7 @@ function formatDue(value: string) {
 export default function DashboardPage() {
   const profile = useQuery({ queryKey: ["profile"], queryFn: () => apiGet<UserProfile>("/auth/profile") });
   const analytics = useQuery({ queryKey: ["analytics-summary"], queryFn: () => apiGet<AnalyticsSummary>("/analytics/summary") });
-  const features = useQuery({ queryKey: ["features"], queryFn: () => apiGet<FeatureResponse>("/v1/features") });
+  const features = useQuery({ queryKey: ["feature-decisions"], queryFn: () => apiGet<FeatureResponse>("/v1/features"), staleTime: 60_000 });
   const upgradeTracked = useRef(false);
   const workspaceEnabled = features.data?.features.career_workspace?.enabled !== false;
   const opportunities = useQuery({ queryKey: ["opportunities"], queryFn: () => apiGet<OpportunityList>("/v1/opportunities?limit=8"), enabled: features.isSuccess && workspaceEnabled });

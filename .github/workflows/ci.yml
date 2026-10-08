@@ -48,6 +48,9 @@ jobs:
           tests/test_usage_guardrails.py tests/test_feature_flags.py tests/test_operations_platform.py
           tests/test_prompt_evaluations.py tests/test_resume_source.py tests/test_resume_source_migrations.py
           tests/test_resume_layout.py tests/test_pdf_streams.py tests/test_docx_parsing.py tests/test_llm_client.py
+          tests/test_ai_efficiency.py tests/test_dispatch_outbox.py tests/test_employer_services.py
+          tests/test_employer_connectors.py tests/test_employer_artifact_lifecycle.py tests/test_learning_rag_privacy.py
+          tests/test_employer_feed_adapters.py
       - name: Type-check modernized modules
         working-directory: backend
         run: >-

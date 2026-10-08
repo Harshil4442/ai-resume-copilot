@@ -3,7 +3,7 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import GoogleProvider from "next-auth/providers/google";
 import { cookies } from "next/headers";
 
-const POLICY_VERSION = "2026-07-11";
+const POLICY_VERSION = "2026-10-08";
 const GOOGLE_CONSENT_COOKIE = "hirewiz_google_registration_consent";
 
 type BackendAuthToken = {

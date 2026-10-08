@@ -53,8 +53,17 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return data as T;
 }
 
-export async function apiGet<T>(path: string): Promise<T> {
-  return request<T>(path);
+export async function apiGet<T>(path: string, signal?: AbortSignal): Promise<T> {
+  return request<T>(path, { signal });
+}
+
+export async function apiBlob(path: string, signal?: AbortSignal): Promise<Blob> {
+  const response = await fetch(`${API_BASE}${path}`, { cache: "no-store", signal });
+  if (!response.ok) {
+    const data = await parseResponse(response);
+    throw new ApiError(errorMessage(data, `File request failed (${response.status})`), response.status, data);
+  }
+  return response.blob();
 }
 
 export async function apiPostJson<T>(

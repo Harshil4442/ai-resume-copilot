@@ -1,15 +1,13 @@
 import math
 import re
 from collections import Counter
-from typing import Dict, List, Tuple
 
 from .chunking import EvidenceChunk
-
 
 Intent = str
 
 
-INTENT_KEYWORDS: Dict[Intent, List[str]] = {
+INTENT_KEYWORDS: dict[Intent, list[str]] = {
     "missing_skills": ["missing", "gap", "lack", "skills", "requirement", "required"],
     "score_explanation": ["score", "low", "high", "why", "grade", "match", "fit"],
     "evidence_or_proof": ["prove", "proven", "evidence", "show", "demonstrate", "resume"],
@@ -19,7 +17,7 @@ INTENT_KEYWORDS: Dict[Intent, List[str]] = {
 }
 
 
-SOURCE_BOOSTS: Dict[Intent, Dict[str, float]] = {
+SOURCE_BOOSTS: dict[Intent, dict[str, float]] = {
     "missing_skills": {
         "true_gaps": 1.4,
         "required_skills": 1.0,
@@ -69,7 +67,7 @@ SOURCE_BOOSTS: Dict[Intent, Dict[str, float]] = {
 }
 
 
-def tokenize(text: str) -> List[str]:
+def tokenize(text: str) -> list[str]:
     return [
         t for t in re.findall(r"[a-zA-Z0-9+#.]+", (text or "").lower())
         if len(t) > 1
@@ -88,7 +86,7 @@ def classify_intent(question: str) -> Intent:
     return best_intent
 
 
-def _idf(chunks: List[EvidenceChunk]) -> Dict[str, float]:
+def _idf(chunks: list[EvidenceChunk]) -> dict[str, float]:
     doc_count = max(len(chunks), 1)
     freq: Counter[str] = Counter()
     for chunk in chunks:
@@ -96,7 +94,7 @@ def _idf(chunks: List[EvidenceChunk]) -> Dict[str, float]:
     return {term: math.log((doc_count + 1) / (count + 1)) + 1 for term, count in freq.items()}
 
 
-def _tfidf_similarity(question_terms: List[str], chunk_terms: List[str], idf: Dict[str, float]) -> float:
+def _tfidf_similarity(question_terms: list[str], chunk_terms: list[str], idf: dict[str, float]) -> float:
     if not question_terms or not chunk_terms:
         return 0.0
     q_counts = Counter(question_terms)
@@ -110,7 +108,7 @@ def _tfidf_similarity(question_terms: List[str], chunk_terms: List[str], idf: Di
     return numerator / (q_norm * c_norm)
 
 
-def rank_chunks(question: str, chunks: List[EvidenceChunk], top_k: int = 7) -> Tuple[Intent, List[EvidenceChunk]]:
+def rank_chunks(question: str, chunks: list[EvidenceChunk], top_k: int = 7) -> tuple[Intent, list[EvidenceChunk]]:
     intent = classify_intent(question)
     if not chunks:
         return intent, []
@@ -118,7 +116,7 @@ def rank_chunks(question: str, chunks: List[EvidenceChunk], top_k: int = 7) -> T
     q_terms = tokenize(question)
     boosts = SOURCE_BOOSTS.get(intent, SOURCE_BOOSTS["general"])
 
-    scored: List[Tuple[float, EvidenceChunk]] = []
+    scored: list[tuple[float, EvidenceChunk]] = []
     for chunk in chunks:
         terms = tokenize(f"{chunk.title} {chunk.text}")
         lexical = _tfidf_similarity(q_terms, terms, idf)

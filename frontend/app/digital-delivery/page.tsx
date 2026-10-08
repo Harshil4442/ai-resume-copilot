@@ -46,6 +46,7 @@ export default function DigitalDeliveryPage() {
             <h3 className="text-lg font-bold text-foreground mb-3">1. What you receive</h3>
             <ul className="list-disc pl-6 space-y-2 text-muted-foreground">
               <li><strong>Premium 30-Day Pass:</strong> a one-time purchase that enables Premium access on the purchasing HireWiz account for 30 days.</li>
+              <li><strong>Employer service-credit pack:</strong> a separate one-time purchase that adds the displayed quantity of service credits to the purchasing account. Search and supported automatic applications have separate displayed costs; Premium does not waive them.</li>
               <li><strong>Free accounts:</strong> 50 complimentary analysis units are provided at account creation; HireWiz does not currently sell standalone unit packs.</li>
             </ul>
           </div>
@@ -53,7 +54,7 @@ export default function DigitalDeliveryPage() {
           <div>
             <h3 className="text-lg font-bold text-foreground mb-3">2. When access is delivered</h3>
             <p>
-              Premium access is activated <strong>only after confirmed payment</strong>. In normal conditions the
+              Premium access or service credits are delivered <strong>only after verified captured payment</strong>. In normal conditions the
               purchasing account is updated shortly after confirmation. A pending, failed, abandoned, disputed, or
               unverified payment does not create paid access.
             </p>
@@ -70,7 +71,7 @@ export default function DigitalDeliveryPage() {
           <div>
             <h3 className="text-lg font-bold text-foreground mb-3">4. If activation is delayed</h3>
             <p>
-              If your payment is confirmed but Premium is not visible in your account within a few hours, email{" "}
+              If your payment is confirmed but Premium or service credits are not visible in your account within a few hours, email{" "}
               <a href={`mailto:${SITE.supportEmail}`} className="text-primary hover:underline">{SITE.supportEmail}</a>{" "}
               from your registered email address with the transaction ID. We will investigate the payment status and
               either correct eligible access or explain the next step under the Refund Policy.

@@ -266,7 +266,7 @@ def test_repaired_interview_output_saves_eight_questions_and_charges_once(monkey
                 payload=schemas.AnalysisRunCreate(
                     operation="interview_questions",
                     opportunity_id="opp_repaired_interview",
-                    input={"num_questions": 8},
+                    input={"num_questions": 8, "mode": "enhanced"},
                 ),
                 header_idempotency_key="repaired-interview-output-001",
             )
@@ -340,7 +340,7 @@ def test_invalid_interview_output_fails_without_charging_or_saving_a_result(
                 payload=schemas.AnalysisRunCreate(
                     operation="interview_questions",
                     opportunity_id="opp_interview",
-                    input={"num_questions": 8},
+                    input={"num_questions": 8, "mode": "enhanced"},
                 ),
                 header_idempotency_key="invalid-interview-output-001",
             )
@@ -441,7 +441,7 @@ def test_evidence_tailoring_creates_a_traceable_version_and_commits_once(monkeyp
             assert run.usage_state == "committed"
             assert run.committed_units == 10
             assert run.attempt_count == 1
-            assert run.prompt_version == "resume-source-v4"
+            assert run.prompt_version == "resume-source-v5"
             assert db.get(User, 1).ai_credits == 40
             assert version.generation_run_id == run_id
             assert version.evidence_ids == ["evd_approved"]
@@ -582,7 +582,7 @@ def test_mixed_pdf_tailoring_saves_only_the_proven_safe_edits_and_charges_once(m
             version = db.query(ResumeVersion).one()
             assert run.status == "succeeded" and run.attempt_count == 1
             assert run.usage_state == "committed" and run.committed_units == 10
-            assert run.prompt_version == "resume-source-v4"
+            assert run.prompt_version == "resume-source-v5"
             assert db.get(User, 1).ai_credits == 40
             assert version.generation_run_id == run_id
             assert version.structured_content["source_edits"] == [safe]

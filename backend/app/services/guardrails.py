@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from typing import Any
 
 from fastapi import HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from .. import models
 from ..domains.common import payload_fingerprint, public_id, utcnow
@@ -69,7 +69,10 @@ def billable_operation(
         ) from exc
 
     try:
-        yield run
+        from .generation_budget import persistent_run_budget
+
+        with persistent_run_budget(sessionmaker(bind=db.get_bind()), run.id):
+            yield run
     except Exception as exc:
         db.rollback()
         current = db.get(models.AnalysisRun, run.id)

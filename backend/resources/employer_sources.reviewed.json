@@ -1,0 +1,62 @@
+{
+  "reviewed_at": "2026-10-08",
+  "scope": "Small verified employer-origin discovery pilot; no worldwide coverage claim or submission permission",
+  "sources": [
+    {
+      "employer": "Razorpay Software Private Limited",
+      "platform": "greenhouse",
+      "board_token": "razorpaysoftwareprivatelimited",
+      "region": "global",
+      "careers_url": "https://razorpay.com/careers/",
+      "allowed_hosts": [
+        "razorpay.com"
+      ],
+      "verification_url": "https://razorpay.com/careers/",
+      "verification_note": "Verified 8 October 2026: the official Razorpay careers page SEE ALL JOBS links directly to https://job-boards.greenhouse.io/razorpaysoftwareprivatelimited. Public published-job discovery only; no employer submission credential or write permission is supplied.",
+      "submission_enabled": false,
+      "form_parity_verified": false
+    },
+    {
+      "employer": "Freshworks",
+      "platform": "smartrecruiters",
+      "board_token": "Freshworks",
+      "region": "global",
+      "careers_url": "https://www.freshworks.com/company/careers/",
+      "allowed_hosts": [
+        "www.freshworks.com"
+      ],
+      "verification_url": "https://www.freshworks.com/company/careers/",
+      "verification_note": "Verified 8 October 2026: the official careers page Explore jobs link targets https://careers.smartrecruiters.com/Freshworks. The public documented listing API returns Freshworks technical roles in India and other countries. Discovery only; no submission permission or credential is supplied.",
+      "submission_enabled": false,
+      "form_parity_verified": false
+    },
+    {
+      "employer": "Figma",
+      "platform": "greenhouse",
+      "board_token": "figma",
+      "region": "global",
+      "careers_url": "https://www.figma.com/careers/",
+      "allowed_hosts": [
+        "www.figma.com"
+      ],
+      "verification_url": "https://www.figma.com/careers/",
+      "verification_note": "Verified 8 October 2026: official careers Job Openings links include https://boards.greenhouse.io/figma/jobs/5707966004, redirecting to the same figma tenant on job-boards.greenhouse.io. The public board API returns published openings. Discovery only; no employer write permission or credential is supplied.",
+      "submission_enabled": false,
+      "form_parity_verified": false
+    },
+    {
+      "employer": "Supabase",
+      "platform": "ashby",
+      "board_token": "supabase",
+      "region": "global",
+      "careers_url": "https://supabase.com/careers",
+      "allowed_hosts": [
+        "supabase.com"
+      ],
+      "verification_url": "https://supabase.com/careers",
+      "verification_note": "Verified 8 October 2026: the official careers page Software Engineer - Auth link targets https://jobs.ashbyhq.com/supabase/e569b7f7-fa8f-4139-86f6-4f52b456882d. The public job-board API returns global/region-scoped remote technical openings. Discovery only; no write permission or credential is supplied.",
+      "submission_enabled": false,
+      "form_parity_verified": false
+    }
+  ]
+}

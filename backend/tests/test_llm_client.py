@@ -615,7 +615,7 @@ def test_gemini_transient_failure_uses_next_stable_model(monkeypatch):
     assert attempts == ["gemini-3.5-flash", "gemini-3.6-flash"]
 
 
-def test_exhausted_transient_models_remain_retryable(monkeypatch):
+def test_exhausted_total_model_budget_does_not_allow_worker_retry(monkeypatch):
     class UnavailableModels:
         def generate_content(self, *, model, contents, config):
             raise RuntimeError("503 UNAVAILABLE: temporary provider capacity issue")
@@ -631,8 +631,8 @@ def test_exhausted_transient_models_remain_retryable(monkeypatch):
     with pytest.raises(llm_client.LLMProviderError) as exc_info:
         llm_client._chat([{"role": "user", "content": "Analyze this role"}])
 
-    assert exc_info.value.retryable is True
-    assert tasks._retryable(exc_info.value) is True
+    assert exc_info.value.retryable is False
+    assert tasks._retryable(exc_info.value) is False
 
 
 def test_retryable_detection_inspects_wrapped_provider_error():

@@ -1,5 +1,5 @@
 const API_BASE = "/api/backend";
-const POLICY_VERSION = "2026-07-11";
+const POLICY_VERSION = "2026-10-08";
 
 export async function prepareGoogleRegistrationConsent() {
   const res = await fetch("/api/auth/google-consent", {

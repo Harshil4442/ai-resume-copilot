@@ -3,6 +3,7 @@ export type UserMeResponse = {
   email: string;
   tier: string;
   ai_credits: number;
+  job_service_credits?: number;
 };
 
 export type UserProfile = {
@@ -26,6 +27,7 @@ export type UserProfile = {
   certifications?: string | null;
   tier: string;
   ai_credits: number;
+  job_service_credits?: number;
   premium_until?: string | null;
 };
 
@@ -47,6 +49,10 @@ export type ResumeListResponse = {
 };
 
 export type ResumeParseResponse = ResumeSourceMetadata & {
+  extraction_mode?: "deterministic" | "enriched";
+  enrichment_state?: "not_requested" | "completed" | "unchanged" | "insufficient_units" | "failed";
+  enrichment_units?: number;
+  warnings?: string[];
   resume_id: number;
   skills: string[];
   experience_years: number;

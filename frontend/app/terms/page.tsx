@@ -39,12 +39,22 @@ export default function TermsOfService() {
             HireWiz is automated, self-service software. You provide your own resume and, optionally, job-description
             text. The service can parse resume text, calculate HireWiz compatibility estimates, identify possible
             skill gaps, analyze a sample of job-posting data, and generate wording, learning, and project suggestions.
+            Employer Jobs searches enabled, verified employer sources and prepares an application using the resume
+            you select. Automatic submission is available only for an employer connector with verified permission,
+            complete form support, and confirmation handling. The interface states the available route for each job.
           </p>
           <p className="mt-4">
             HireWiz is not a recruitment agency, staffing company, job-placement service, job board, human coaching
-            service, or automated application service. We do not make employment decisions, submit applications,
-            recruit or place candidates, sell candidate databases, or guarantee ATS acceptance, interviews, offers,
+            service. We do not make employment decisions, recruit or place candidates, sell candidate databases,
+            or guarantee ATS acceptance, interviews, offers,
             or employment. HireWiz estimates are not scores produced by an employer or a specific applicant-tracking system.
+          </p>
+          <p className="mt-4">
+            Before supported automatic execution, you review and approve the exact employer destination, resume,
+            answers, consents, permitted actions, and displayed credit cost for that job. Changing that package needs
+            fresh approval. Unsupported portals use a clearly labelled employer-portal handoff. You handle login,
+            verification challenges, and assessments. An uncertain submission is held for reconciliation and is not
+            retried automatically.
           </p>
         </section>
 
@@ -65,13 +75,17 @@ export default function TermsOfService() {
         <section>
           <h2 className="font-display text-2xl font-normal text-foreground mb-4">4. Public price and paid access</h2>
           <p>
-            The current paid product is shown on the public <Link href="/pricing" className="text-primary hover:underline">Pricing page</Link>.
+            Current paid products are shown on the public <Link href="/pricing" className="text-primary hover:underline">Pricing page</Link>.
             For the India launch, HireWiz offers a one-time Premium pass that provides 30 days of access. It is not a
             recurring subscription, does not create an automatic-renewal mandate, and does not automatically charge
             you again when it expires. HireWiz does not currently sell standalone analysis-unit packs.
+            A separate one-time service-credit pack pays for employer job discovery and supported automatic
+            applications. Premium does not waive these charges. Search and application prices are shown separately
+            before you start; unused search reservations are returned, and application credits are committed only
+            after a verified complete submission. Unknown outcomes retain the displayed reservation until reconciled.
           </p>
           <ul className="list-disc pl-6 mt-4 space-y-2">
-            <li>The final order summary shows the product, INR total, tax treatment, duration, and renewal status before payment.</li>
+            <li>The final order summary shows the product, INR total, tax treatment, access duration or credit quantity, and renewal status before payment.</li>
             <li>You authorize the payment processor used for checkout to charge the payment method you select.</li>
             <li>HireWiz does not collect or store raw card details, CVV, UPI PIN, or bank-login credentials.</li>
             <li>Access is granted only after payment confirmation and may be paused for fraud, mismatch, refund, or dispute review.</li>
@@ -82,6 +96,12 @@ export default function TermsOfService() {
             <Link href="/digital-delivery" className="text-primary hover:underline">Digital Service Delivery &amp; Shipping Policy</Link>{" "}
             and <Link href="/refund" className="text-primary hover:underline">Refund &amp; Cancellation Policy</Link>.
             Nothing in these Terms limits rights that cannot lawfully be waived.
+          </p>
+          <p className="mt-4">
+            Paid service credits are account-specific feature allowances, separate from complimentary analysis units.
+            They cannot be transferred, withdrawn, or used outside HireWiz. They do not automatically expire while
+            the account is open. A refunded pack removes the corresponding credits; credits already spent can leave
+            a negative balance that prevents new paid operations until resolved. Refund rules apply to the purchase.
           </p>
         </section>
 

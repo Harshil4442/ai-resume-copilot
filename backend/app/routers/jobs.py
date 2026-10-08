@@ -47,6 +47,7 @@ def match_job(
                     "job_title": payload.job_title,
                     "company": payload.company or "",
                     "job_description": jd_text,
+                    "mode": payload.mode,
                 },
             )
     except HTTPException:
@@ -67,6 +68,10 @@ def match_job(
         dimensions=[schemas.DimensionScore(**item) for item in result["dimensions"]],
         fit_summary=result["fit_summary"],
         improvement_tips=result["improvement_tips"],
+        mode=result["mode"],
+        provenance=result["provenance"],
+        scoring_version=result["scoring_version"],
+        uncertainties=result.get("uncertainties", []),
     )
 
 @router.get("/matches", response_model=schemas.JobMatchHistoryResponse)

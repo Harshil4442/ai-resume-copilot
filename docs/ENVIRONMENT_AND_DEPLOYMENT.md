@@ -1,5 +1,11 @@
 # Environment and Deployment Contract
 
+The [employer requirements](requirements/JOB_SEARCH_AND_APPLICATION.md) and
+[delivery evidence](delivery/AUTO_APPLY_PROGRESS.md) distinguish implemented pilot
+capabilities from wider coverage and permission-dependent application expansion.
+GCP infrastructure is managed in `infra/gcp`; the immutable backend release runs
+through `cloudbuild.yaml` and `infra/gcp/release.sh` after verification and backup.
+
 Never commit credentials. Vercel and Cloud Run hold production values; `.env` files are
 for local development and are ignored by Git.
 
@@ -53,6 +59,36 @@ Async API variables:
 The worker needs the database, LLM, observability, task token, and `APP_ENV` variables.
 It runs with `SERVICE_ROLE=worker`. The API runs with `SERVICE_ROLE=api`.
 
+Employer service variables:
+
+| Variable | Production pilot value / purpose |
+| --- | --- |
+| `AUTO_DB_MIGRATE` | `false` on API; the isolated migration job upgrades first |
+| `EMPLOYER_DISCOVERY_ENABLED` | `true` after verified source enrollment |
+| `EMPLOYER_AUTO_SUBMIT_ENABLED` | `false`; enable only for separately validated tenant grants and receipts |
+| `EMPLOYER_SEARCH_CREDITS_PER_JOB` | `1`, charged per new qualifying delivered job |
+| `EMPLOYER_APPLY_CREDITS_PER_JOB` | `5`, charged per verified complete automatic application |
+| `EMPLOYER_MAX_SEARCH_JOBS` | `100`, server-enforced count bound |
+| `EMPLOYER_ARTIFACT_BUCKET` | Private, uniform-access, public-access-prevented GCS bucket |
+| `EMPLOYER_SEARCH_TASKS_QUEUE` | `hirewiz-employer-search` |
+| `EMPLOYER_INGESTION_TASKS_QUEUE` | `hirewiz-employer-ingestion` |
+| `EMPLOYER_APPLICATION_TASKS_QUEUE` | `hirewiz-employer-application` |
+| `EMPLOYER_*_WORKER_URL` | Corresponding private worker origin |
+| `WORKER_ALLOWED_TOPICS` | Analysis worker: `analysis.run`; employer worker: employer topics only |
+| `DB_POOL_SIZE` / `DB_MAX_OVERFLOW` | API `4/2`, private workers `2/0`, migration `1/0` |
+| `DB_POOL_TIMEOUT_SECONDS` / `DB_POOL_RECYCLE_SECONDS` | `10/300` |
+| `RATE_LIMIT_STORAGE_URL` | Shared Redis rate limit store; defaults to existing `REDIS_URL` |
+
+The employer worker uses its own `hirewiz-employer-worker` service account and has no
+model, payment, or market-provider credentials. `DATABASE_URL`, task token and the
+worker bootstrap key are Secret Manager references. API/analysis settings retain their
+existing scoped configuration; never copy the API's complete environment to an employer worker.
+
+The transactional dispatch table stores identifiers, not resumes or answers. A scheduled
+maintenance sweep recovers committed work after queue failures. Artifact deletion is
+generation-fenced and uses the same durable recovery path. Application `unknown` holds
+require independently evidenced reconciliation; queue retries never initiate another send.
+
 AI cost and retention variables:
 
 | Variable | Default | Purpose |
@@ -76,8 +112,9 @@ Lifecycle and support variables:
 
 Do not enable lifecycle email until the sender domain is verified. Invoke
 `POST /internal/tasks/maintenance` on the private worker from Cloud Scheduler every
-15 minutes with OIDC authentication. Configure the `X-CloudScheduler: true` header
-and, when used, `X-HireWiz-Task-Token`.
+5 minutes with OIDC authentication. Cloud Scheduler supplies `X-CloudScheduler: true`;
+`infra/gcp/configure_maintenance.py` configures the required defence-in-depth task token
+from Secret Manager without writing it into local files or command arguments.
 
 Server rollout variables follow this pattern:
 
@@ -109,10 +146,17 @@ Optional market variables are `THEIRSTACK_API_KEY`, `ADZUNA_APP_ID`, `ADZUNA_APP
 
 1. Back up and verify the production database.
 2. Build the immutable image.
-3. Run `python -m app.migrate` once; the API entrypoint does this under an advisory lock.
-4. Deploy the API and smoke `/api/health`.
-5. Deploy the private worker and smoke its authenticated `/api/health`.
-6. Update `ANALYSIS_WORKER_URL`, then enable `ANALYSIS_TASKS_MODE=cloud_tasks`.
-7. Deploy Vercel and run registration, workspace, failed-analysis, and billing smoke tests.
-8. Roll out Career Workspace through server flags before making it universal.
-9. Create the private maintenance scheduler, then verify one test lifecycle message and one retention dry run.
+3. Run the one-task `hirewiz-schema-migration` job under an advisory lock and await success.
+4. Release bounded private workers, their workload scope and queue URLs before API promotion.
+5. Stage the API with zero traffic, verify HTTP health, commit and actual `K_REVISION`.
+6. Promote that verified revision by its name; never use `--to-latest` after a health check.
+7. Stage a Vercel production build with `--skip-domain`, verify it, then promote that exact deployment.
+8. Seed reviewed employer sources with the audited CLI, then check complete origin-feed ingestion.
+9. Configure private maintenance Scheduler OIDC, its required headers, and observe a real recovery run.
+10. Monitor revision health, errors, queues and credit/state transitions; record deployment IDs and limits.
+
+Seven-day GCS soft deletion is backup retention, not an immediate irrecoverability claim.
+Before schema promotion, store and validate a protected PostgreSQL custom archive. Do not
+restore production backups into generic development fixtures. Recovery drills must apply
+independently retained deletion/revocation records before user access or execution resumes;
+these wider recovery gates remain tracked separately until tested.

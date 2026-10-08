@@ -27,3 +27,12 @@ app.db
 frontend/playwright-report/
 frontend/test-results/
 coverage/
+.vercel
+.env*
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+*.tfvars.json
+!*.example.tfvars

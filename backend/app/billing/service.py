@@ -276,7 +276,7 @@ def _grant_entitlement(db: Session, order: PaymentOrder, now: datetime) -> bool:
     entitlement_kind = order.entitlement_kind
     entitlement_quantity = order.entitlement_quantity
     if (
-        entitlement_kind not in {"premium_access", "analysis_units"}
+        entitlement_kind not in {"premium_access", "analysis_units", "job_service_credits"}
         or type(entitlement_quantity) is not int
         or entitlement_quantity <= 0
     ):
@@ -297,6 +297,19 @@ def _grant_entitlement(db: Session, order: PaymentOrder, now: datetime) -> bool:
     elif entitlement_kind == "analysis_units":
         starts_at = now
         user.ai_credits = int(user.ai_credits or 0) + entitlement_quantity
+    elif entitlement_kind == "job_service_credits":
+        from ..domains.common import public_id
+        from ..domains.employer.models import ServiceCreditEvent
+
+        starts_at = now
+        user.job_service_credits = int(user.job_service_credits or 0) + entitlement_quantity
+        db.add(ServiceCreditEvent(
+            id=public_id("credit"), user_id=user.id, event_type="grant",
+            amount=entitlement_quantity, balance_after=user.job_service_credits,
+            idempotency_key=f"job-service-grant:{order.public_id}",
+            source_type="payment_order", source_id=order.public_id,
+            reason="Captured prepaid job service purchase", created_at=now,
+        ))
 
     db.add(
         EntitlementLedger(
@@ -353,6 +366,9 @@ def _revoke_entitlement(db: Session, order: PaymentOrder, now: datetime) -> None
     if entitlement.entitlement_kind == "analysis_units":
         user.ai_credits = max(0, int(user.ai_credits or 0) - entitlement.quantity)
         return
+    if entitlement.entitlement_kind == "job_service_credits":
+        _adjust_service_credit_refund(db, order, now)
+        return
 
     other_entitlements = (
         db.query(EntitlementLedger)
@@ -371,6 +387,42 @@ def _revoke_entitlement(db: Session, order: PaymentOrder, now: datetime) -> None
     ]
     user.premium_until = max(future_expiries) if future_expiries else None
     user.tier = "premium" if future_expiries else "free"
+
+
+def _adjust_service_credit_refund(db: Session, order: PaymentOrder, now: datetime) -> None:
+    """Revoke the proportional grant; spent credits become debt, never free use."""
+    if order.entitlement_kind != "job_service_credits" or order.user_id is None:
+        return
+    from sqlalchemy import func
+    from ..domains.common import public_id
+    from ..domains.employer.models import ServiceCreditEvent
+
+    entitlement = db.query(EntitlementLedger).filter_by(source_order_id=order.id).first()
+    if not entitlement:
+        return
+    target = min(order.entitlement_quantity, (
+        int(order.refunded_amount_minor or 0) * order.entitlement_quantity
+        + order.gross_amount_minor - 1
+    ) // order.gross_amount_minor)
+    previous = int(db.query(func.coalesce(func.sum(ServiceCreditEvent.amount), 0)).filter(
+        ServiceCreditEvent.source_type == "payment_order",
+        ServiceCreditEvent.source_id == order.public_id,
+        ServiceCreditEvent.event_type == "refund",
+    ).scalar() or 0)
+    delta = target + previous
+    if delta <= 0:
+        return
+    user = db.query(User).filter_by(id=order.user_id).with_for_update().first()
+    if not user:
+        return
+    user.job_service_credits = int(user.job_service_credits or 0) - delta
+    db.add(ServiceCreditEvent(
+        id=public_id("credit"), user_id=user.id, event_type="refund", amount=-delta,
+        balance_after=user.job_service_credits,
+        idempotency_key=f"job-service-refund:{order.public_id}:{target}",
+        source_type="payment_order", source_id=order.public_id,
+        reason="Processed refund of prepaid service credits", created_at=now,
+    ))
 
 
 def _process_capture(
@@ -449,9 +501,11 @@ def _process_capture(
         # A processed partial refund can precede the capture notification. The
         # delayed capture still fulfils the remaining paid order exactly once.
         _grant_entitlement(db, order, now)
+        _adjust_service_credit_refund(db, order, now)
     elif order.status not in {"paid", "refunded", "paid_unfulfilled"}:
         order.status = "paid"
         _grant_entitlement(db, order, now)
+        _adjust_service_credit_refund(db, order, now)
     return order.public_id
 
 
@@ -642,6 +696,8 @@ def _process_refund(
         # The signed refund payload includes a captured payment entity. Grant
         # access now; a later capture event will see the unique ledger row.
         _grant_entitlement(db, order, now)
+        db.flush()
+        _adjust_service_credit_refund(db, order, now)
     return order.public_id
 
 

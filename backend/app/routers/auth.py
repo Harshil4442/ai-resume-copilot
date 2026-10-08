@@ -44,7 +44,7 @@ from ..security import create_access_token, get_current_user, hash_password, ver
 from ..rate_limiter import limiter
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-CURRENT_POLICY_VERSION = "2026-07-11"
+CURRENT_POLICY_VERSION = "2026-10-08"
 
 PROFILE_FIELDS = [
     ("full_name", "Full name"),
@@ -250,7 +250,7 @@ def google_login(request: Request, payload: AuthGoogleLoginRequest, db: Session 
 
 @router.get("/me", response_model=UserMeResponse)
 def me(current_user: User = Depends(get_current_user)):
-    return UserMeResponse(id=current_user.id, email=current_user.email, tier=current_user.tier, ai_credits=current_user.ai_credits)
+    return UserMeResponse(id=current_user.id, email=current_user.email, tier=current_user.tier, ai_credits=current_user.ai_credits, job_service_credits=current_user.job_service_credits)
 
 @router.get("/profile", response_model=UserProfileResponse)
 def get_profile(
@@ -322,6 +322,15 @@ def delete_account(
         order.user_id = None
 
     db.query(ModelCallEvent).filter(ModelCallEvent.user_id == uid).delete(synchronize_session=False)
+    from ..domains.analysis.models import AnalysisRequestKey
+    from ..domains.dispatch.models import DispatchOutbox
+    from ..domains.employer.service import delete_account_data
+
+    delete_account_data(db, uid)
+    run_ids = [identity for (identity,) in db.query(AnalysisRun.id).filter_by(user_id=uid).all()]
+    if run_ids:
+        db.query(DispatchOutbox).filter(DispatchOutbox.topic == "analysis.run", DispatchOutbox.aggregate_id.in_(run_ids)).delete(synchronize_session=False)
+    db.query(AnalysisRequestKey).filter_by(user_id=uid).delete(synchronize_session=False)
     db.query(NotificationOutbox).filter(NotificationOutbox.user_id == uid).delete(synchronize_session=False)
     db.query(AdminAuditEvent).filter(AdminAuditEvent.actor_user_id == uid).update(
         {AdminAuditEvent.actor_user_id: None}, synchronize_session=False
@@ -362,6 +371,8 @@ def export_account(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    from ..domains.employer.service import export_account_data
+
     uid = current_user.id
     profile = db.query(UserProfile).filter(UserProfile.user_id == uid).first()
     payment_orders = db.query(PaymentOrder).filter(PaymentOrder.user_id == uid).all()
@@ -372,6 +383,7 @@ def export_account(
             "email": current_user.email,
             "tier": current_user.tier,
             "analysis_units": current_user.ai_credits,
+            "job_service_credits": current_user.job_service_credits,
             "premium_until": current_user.premium_until,
         },
         "profile": (
@@ -390,6 +402,7 @@ def export_account(
         "career_memory": _rows(db, CareerMemoryEntry, uid),
         "analysis_runs": _rows(db, AnalysisRun, uid),
         "usage_events": _rows(db, UsageEvent, uid),
+        "employer_services": export_account_data(db, uid),
         "model_call_events": _rows(db, ModelCallEvent, uid),
         "payment_orders": [
             {

@@ -30,6 +30,7 @@ class User(Base):
     password_hash = Column(String, default="")
     tier = Column(String, default="free")
     ai_credits = Column(Integer, default=FREE_SIGNUP_ANALYSIS_UNITS, nullable=False)
+    job_service_credits = Column(Integer, default=0, nullable=False)
     # When premium access expires. NULL while free; NULL on a legacy/lifetime
     # premium grant is treated as still-active.
     premium_until = Column(DateTime, nullable=True)
@@ -346,6 +347,8 @@ class AnalysisRun(Base):
     error_code = Column(String(80), nullable=True)
     error_message = Column(String(500), nullable=True)
     attempt_count = Column(Integer, nullable=False, default=0)
+    generation_attempt_limit = Column(Integer, nullable=False, default=3)
+    generation_attempt_count = Column(Integer, nullable=False, default=0)
     cancel_requested = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime, nullable=False, default=_utcnow)
     updated_at = Column(DateTime, nullable=False, default=_utcnow, onupdate=_utcnow)
@@ -503,6 +506,8 @@ class ModelCallEvent(Base):
     prompt_version = Column(String(64), nullable=False)
     input_tokens = Column(Integer, nullable=False, default=0)
     output_tokens = Column(Integer, nullable=False, default=0)
+    tokens_estimated = Column(Boolean, nullable=False, default=True)
+    attempt_number = Column(Integer, nullable=True)
     latency_ms = Column(Integer, nullable=False, default=0)
     estimated_cost_micros = Column(Integer, nullable=False, default=0)
     status = Column(String(24), nullable=False)
@@ -573,3 +578,11 @@ class AdminAuditEvent(Base):
     after_state = Column(JSON, nullable=False, default=dict)
     correlation_id = Column(String(64), nullable=True)
     created_at = Column(DateTime, nullable=False, default=_utcnow)
+
+
+# Register employer-domain tables for metadata and controlled Alembic releases.
+from .domains.employer import models as _employer_models  # noqa: E402,F401
+from .domains.dispatch import models as _dispatch_models  # noqa: E402,F401
+
+# Register private admission aliases after the core run model is defined.
+from .domains.analysis import models as _analysis_models  # noqa: E402,F401

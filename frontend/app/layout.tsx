@@ -9,7 +9,7 @@ import { SITE } from "../lib/site";
 
 const dmSans = DM_Sans({ subsets: ['latin'], variable: '--font-dm-sans', display: 'swap' });
 const crimsonText = Crimson_Text({ subsets: ['latin'], weight: ['400', '600'], style: ['normal', 'italic'], variable: '--font-crimson-text', display: 'swap' });
-const robotoMono = Roboto_Mono({ subsets: ['latin'], weight: ['400', '500'], variable: '--font-roboto-mono', display: 'swap' });
+const robotoMono = Roboto_Mono({ subsets: ['latin'], weight: ['400', '500'], variable: '--font-roboto-mono', display: 'swap', preload: false });
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE.canonicalUrl),
@@ -40,7 +40,7 @@ export const metadata: Metadata = {
   },
 };
 
-const GA_MEASUREMENT_ID = process.env.NEXT_PUBLIC_GA_ID?.trim() || null;
+const GA_MEASUREMENT_ID = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID?.trim() || process.env.NEXT_PUBLIC_GA_ID?.trim() || null;
 const POSTHOG_KEY = process.env.NEXT_PUBLIC_POSTHOG_KEY?.trim() || null;
 const POSTHOG_HOST = process.env.NEXT_PUBLIC_POSTHOG_HOST?.trim() || "https://us.i.posthog.com";
 
@@ -71,7 +71,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="flex min-h-screen flex-col bg-background text-foreground selection:bg-accent/30 selection:text-foreground">
         <SessionProviderWrapper>
           <Nav />
-          <div className="flex flex-grow flex-col pt-16">{children}</div>
+          <div className="flex min-h-svh flex-grow flex-col pt-16">{children}</div>
           <Footer />
           <AnalyticsConsent
             gaMeasurementId={GA_MEASUREMENT_ID}

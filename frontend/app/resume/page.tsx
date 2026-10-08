@@ -29,6 +29,7 @@ function ResumeUploadContent() {
   const [data, setData] = useState<ResumeParseResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [enrichSkills, setEnrichSkills] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
@@ -74,6 +75,7 @@ function ResumeUploadContent() {
     trackEvent("resume_upload_started", { file_type: file.type, size_bytes: file.size });
     const form = new FormData();
     form.append("file", file);
+    form.append("enrich_skills", String(enrichSkills));
     try {
       const parsed = await apiPostForm<ResumeParseResponse>("/resume/parse", form);
       setData(parsed);
@@ -143,6 +145,7 @@ function ResumeUploadContent() {
               <h2 className="font-display mt-5 max-w-full break-words text-lg font-normal text-foreground">{file ? file.name : "Choose a resume"}</h2>
               <p className="mt-2 text-sm text-muted-foreground">{file ? `${(file.size / 1024 / 1024).toFixed(2)} MB, ready to parse` : "Drop the file here or open your file browser"}</p>
             </label>
+            <label className="mt-4 flex items-start gap-3 text-sm leading-6"><input type="checkbox" className="mt-1 h-4 w-4 shrink-0 accent-primary" checked={enrichSkills} disabled={loading || connecting} onChange={(event) => setEnrichSkills(event.target.checked)} /><span>Optional AI skill enrichment · 1 analysis unit<span className="mt-1 block text-xs leading-5 text-muted-foreground">Default parsing extracts text and catalog skills without generative AI. Enable this to send resume text for additional source-supported AI skill suggestions. One unit is charged only if useful additional skills are found; current Premium analysis policy applies. Review the results before using them.</span></span></label>
             <Button type="submit" className="mt-4 w-full" disabled={!file || loading || connecting}>
               {loading ? "Extracting evidence..." : "Parse resume"} <ArrowRight size={16} />
             </Button>
@@ -165,6 +168,8 @@ function ResumeUploadContent() {
               <div>
                 <div className="flex items-center gap-2 text-sm font-bold text-primary"><CheckCircle2 size={17} /> Resume parsed</div>
                 <h2 className="font-display mt-3 text-2xl font-normal text-foreground">Review the extracted signals</h2>
+                {data.extraction_mode ? <p className="mt-2 text-xs font-semibold text-primary">{data.extraction_mode === "enriched" ? `AI-enriched skills · ${data.enrichment_units ?? 0} analysis units charged` : "Deterministic parsing · no generative AI"}</p> : null}
+                {data.warnings?.map((warning) => <p key={warning} className="mt-2 text-sm leading-6 text-muted-foreground" role="status">{warning}</p>)}
                 <p className="mt-2 text-sm text-muted-foreground">Estimated experience: {data.experience_years} years. These values remain editable source material, not verified claims.</p>
                 {data.source_available && data.source_format ? <p className="mt-3 text-sm font-semibold text-primary">Original {data.source_format.toUpperCase()} retained for preview and tailoring.</p> : <p className="mt-3 text-sm text-coral">The original file is unavailable. Upload your source again before tailoring.</p>}
                 <div className="mt-5 flex flex-wrap gap-2">

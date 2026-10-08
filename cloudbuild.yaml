@@ -2,64 +2,20 @@ substitutions:
   _REGION: us-central1
   _ARTIFACT_REPOSITORY: cloud-run-source-deploy
   _IMAGE_NAME: hirewiz
-  _API_SERVICE: ai-resume-parser
-  _WORKER_SERVICE: hirewiz-analysis-worker
-
+  _BACKUP_OBJECT: ''
 steps:
   - id: build
     name: gcr.io/cloud-builders/docker
-    args:
-      - build
-      - --tag=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REPOSITORY}/${_IMAGE_NAME}:$COMMIT_SHA
-      - --tag=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REPOSITORY}/${_IMAGE_NAME}:latest
-      - .
-
+    args: [build, '--tag=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REPOSITORY}/${_IMAGE_NAME}:$COMMIT_SHA', .]
   - id: push-commit
     name: gcr.io/cloud-builders/docker
-    args:
-      - push
-      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REPOSITORY}/${_IMAGE_NAME}:$COMMIT_SHA
-
-  - id: push-latest
-    name: gcr.io/cloud-builders/docker
-    args:
-      - push
-      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REPOSITORY}/${_IMAGE_NAME}:latest
-
-  - id: deploy-api
-    name: gcr.io/google.com/cloudsdktool/cloud-sdk
-    entrypoint: gcloud
-    args:
-      - run
-      - deploy
-      - ${_API_SERVICE}
-      - --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REPOSITORY}/${_IMAGE_NAME}:$COMMIT_SHA
-      - --region=${_REGION}
-      - --platform=managed
-      - --update-env-vars=SERVICE_ROLE=api,APP_RELEASE=$COMMIT_SHA
-      - --quiet
-
-  - id: deploy-worker-if-bootstrapped
+    args: [push, '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REPOSITORY}/${_IMAGE_NAME}:$COMMIT_SHA']
+  - id: migrate-stage-verify-promote
     name: gcr.io/google.com/cloudsdktool/cloud-sdk
     entrypoint: bash
-    args:
-      - -ceu
-      - |
-        if gcloud run services describe "${_WORKER_SERVICE}" --region "${_REGION}" >/dev/null 2>&1; then
-          gcloud run deploy "${_WORKER_SERVICE}" \
-            --image "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REPOSITORY}/${_IMAGE_NAME}:$COMMIT_SHA" \
-            --region "${_REGION}" \
-            --platform managed \
-            --no-allow-unauthenticated \
-            --update-env-vars "SERVICE_ROLE=worker,APP_RELEASE=$COMMIT_SHA" \
-            --quiet
-        else
-          echo "Worker not bootstrapped; API deployed. Follow docs/GCP_ASYNC_WORKER_RUNBOOK.md once."
-        fi
-
+    args: ['/workspace/infra/gcp/release.sh', '$PROJECT_ID', '${_REGION}', '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REPOSITORY}/${_IMAGE_NAME}:$COMMIT_SHA', '$COMMIT_SHA', '${_BACKUP_OBJECT}']
 images:
   - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REPOSITORY}/${_IMAGE_NAME}:$COMMIT_SHA
-  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REPOSITORY}/${_IMAGE_NAME}:latest
-
+timeout: 2400s
 options:
   logging: CLOUD_LOGGING_ONLY

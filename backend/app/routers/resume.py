@@ -1,17 +1,19 @@
+import hashlib
 import io
 import zipfile
 from pathlib import Path
 from urllib.parse import quote
 
-from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, Request
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import Response
+from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
-from ..database import get_db
 from .. import models, schemas
-from ..services.parsing import parse_resume_file
-from ..security import get_current_user
+from ..database import get_db
 from ..rate_limiter import limiter
+from ..security import get_current_user
+from ..services.parsing import enrich_resume_skills, parse_resume_file
 
 router = APIRouter(prefix="/resume", tags=["resume"])
 
@@ -174,8 +176,8 @@ def _validated_resume_upload(filename: str, content_type: str, data: bytes) -> t
                 total_size += entry.file_size
                 if total_size > MAX_DOCX_UNCOMPRESSED_BYTES:
                     raise HTTPException(status_code=413, detail="The DOCX expands beyond the safe limit.")
-    except zipfile.BadZipFile:
-        raise HTTPException(status_code=400, detail="The uploaded file is not a valid DOCX document.")
+    except zipfile.BadZipFile as exc:
+        raise HTTPException(status_code=400, detail="The uploaded file is not a valid DOCX document.") from exc
     return safe_name, "docx"
 
 
@@ -184,6 +186,7 @@ def _validated_resume_upload(filename: str, content_type: str, data: bytes) -> t
 async def parse_resume(
     request: Request,
     file: UploadFile = File(...),
+    enrich_skills: bool = Form(False),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
@@ -199,8 +202,8 @@ async def parse_resume(
             detail=f"File is larger than {MAX_UPLOAD_BYTES // (1024 * 1024)}MB limit.",
         )
     filename, source_format = _validated_resume_upload(filename, content_type, file_bytes)
-    raw_text, sections, skills, exp_years, contact_info = parse_resume_file(
-        file_bytes, filename=filename, use_llm=True
+    raw_text, sections, skills, exp_years, contact_info = await run_in_threadpool(
+        parse_resume_file, file_bytes, filename=filename, use_llm=False
     )
 
     resume = models.Resume(
@@ -218,6 +221,40 @@ async def parse_resume(
     db.commit()
     db.refresh(resume)
 
+    enrichment_state = "not_requested"
+    enrichment_units = 0
+    warnings: list[str] = []
+    if enrich_skills:
+        from ..services.guardrails import billable_operation
+
+        class NoUsefulEnrichment(ValueError):
+            pass
+
+        try:
+            with billable_operation(
+                user_id=current_user.id, db=db, operation="resume_enrichment", amount=1,
+                input_payload={"resume_id": resume.id, "source_sha256": hashlib.sha256(file_bytes).hexdigest(), "mode": "enhanced"},
+            ) as enrichment_run:
+                enriched = await run_in_threadpool(enrich_resume_skills, raw_text, skills)
+                if enriched == skills:
+                    raise NoUsefulEnrichment("No additional supported skills were found")
+                resume.skills = enriched
+                db.flush()
+            skills = enriched
+            enrichment_state = "completed"
+            enrichment_units = enrichment_run.committed_units
+        except NoUsefulEnrichment:
+            enrichment_state = "unchanged"
+            warnings.append("Enrichment found no additional source-supported skills. No analysis units were charged.")
+        except HTTPException as exc:
+            if exc.status_code != 402:
+                raise
+            enrichment_state = "insufficient_units"
+            warnings.append("Optional enrichment requires 1 analysis unit. Your original resume was parsed without AI.")
+        except Exception:
+            enrichment_state = "failed"
+            warnings.append("Optional enrichment was unavailable. Your original resume was parsed without AI and no enrichment units were charged.")
+
     return schemas.ResumeParseResponse(
         resume_id=resume.id,
         skills=skills,
@@ -226,4 +263,8 @@ async def parse_resume(
         contact_info=schemas.ContactInfo(**contact_info),
         source_available=bool(resume.source_available),
         source_format=resume.source_format,
+        extraction_mode="enriched" if enrichment_state == "completed" else "deterministic",
+        enrichment_state=enrichment_state,
+        enrichment_units=enrichment_units,
+        warnings=warnings,
     )

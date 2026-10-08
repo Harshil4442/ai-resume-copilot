@@ -2,6 +2,16 @@
 .github
 .env
 .env.*
+**/.env*
+**/.vercel
+**/.terraform
+**/*.tfstate*
+**/*.tfplan
+**/*.tfvars
+**/*.tfvars.json
+**/*.pem
+**/*.key
+**/credentials.json
 *.db
 *.log
 *.pyc

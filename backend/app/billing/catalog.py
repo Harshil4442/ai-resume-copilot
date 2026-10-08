@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import Dict
 
 
-CATALOG_VERSION = "inr-2026-07-11-v1"
+CATALOG_VERSION = "inr-2026-10-08-v2"
 
 
 @dataclass(frozen=True)
@@ -32,11 +32,13 @@ class CatalogProduct:
             "auto_renews": self.auto_renews,
             "catalog_visible": True,
             "enabled_for_purchase": enabled_for_purchase,
+            "entitlement_kind": self.entitlement_kind,
+            "entitlement_quantity": self.entitlement_quantity,
         }
 
 
-# This catalog is intentionally narrow for the first domestic launch. Generic
-# credits/top-ups are not offered unless Razorpay approves that model in writing.
+# Service credits are closed-loop HireWiz entitlements fulfilled through the same
+# approved checkout. They cannot be transferred or redeemed as money.
 PRODUCTS: Dict[str, CatalogProduct] = {
     "premium_30d": CatalogProduct(
         sku="premium_30d",
@@ -51,11 +53,30 @@ PRODUCTS: Dict[str, CatalogProduct] = {
         entitlement_kind="premium_access",
         entitlement_quantity=30,
     ),
+    "job_service_500": CatalogProduct(
+        sku="job_service_500",
+        name="HireWiz Job Service — 500 credits",
+        description="500 prepaid credits for employer job search and supported auto-apply.",
+        amount_minor=49_900,
+        amount_display="₹499",
+        currency="INR",
+        billing_type="one_time",
+        duration_days=0,
+        auto_renews=False,
+        entitlement_kind="job_service_credits",
+        entitlement_quantity=500,
+    ),
 }
 
 
 def get_product(sku: str) -> CatalogProduct | None:
     return PRODUCTS.get(sku)
+
+
+def product_purchase_enabled(product: CatalogProduct, *, checkout_enabled: bool) -> bool:
+    if not checkout_enabled:
+        return False
+    return True
 
 
 def public_catalog(*, checkout_enabled: bool) -> dict:
@@ -66,7 +87,7 @@ def public_catalog(*, checkout_enabled: bool) -> dict:
         # Do not present an inactive/unapproved processor as available.
         "provider": "razorpay" if checkout_enabled else None,
         "products": [
-            product.public_dict(enabled_for_purchase=checkout_enabled)
+            product.public_dict(enabled_for_purchase=product_purchase_enabled(product, checkout_enabled=checkout_enabled))
             for product in PRODUCTS.values()
         ],
     }

@@ -22,7 +22,7 @@ import { LoadingBlock } from "../../components/ui/LoadingBlock";
 import { trackEvent } from "../../lib/analytics";
 
 const RAZORPAY_CHECKOUT_SRC = "https://checkout.razorpay.com/v1/checkout.js";
-const SUPPORTED_SKUS = ["premium_30d"] as const;
+const SUPPORTED_SKUS = ["premium_30d", "job_service_500"] as const;
 const CONFIRMATION_ATTEMPTS = 24;
 const CONFIRMATION_INTERVAL_MS = 2500;
 
@@ -38,6 +38,8 @@ interface BillingProduct {
   currency: "INR";
   billing_type: "one_time";
   duration_days: number;
+  entitlement_kind: "premium_access" | "job_service_credits";
+  entitlement_quantity: number;
   auto_renews: false;
   catalog_visible: boolean;
   enabled_for_purchase: boolean;
@@ -190,6 +192,12 @@ function formatPrice(amountMinor: number, currency: string): string {
 }
 
 function productFacts(product: BillingProduct): string[] {
+  if (product.entitlement_kind === "job_service_credits") return [
+    `${product.entitlement_quantity} job service credits`,
+    "Paid employer search and confirmed automatic applications",
+    "Separate from analysis units and Premium access",
+    "One-time payment with no automatic renewal",
+  ];
   return [
     `${product.duration_days} days of Premium access`,
     "Unlimited AI-assisted operations during the access period",
@@ -221,6 +229,7 @@ export default function BillingPage() {
   const [currentTier, setCurrentTier] = useState<string | null>(null);
   const [premiumUntil, setPremiumUntil] = useState<string | null>(null);
   const [analysisUnits, setAnalysisUnits] = useState(0);
+  const [serviceCredits, setServiceCredits] = useState(0);
   const [usageHistory, setUsageHistory] = useState<UsageHistoryResponse | null>(null);
   const [usageLoading, setUsageLoading] = useState(true);
   const [indiaBillingConfirmed, setIndiaBillingConfirmed] = useState(false);
@@ -229,10 +238,11 @@ export default function BillingPage() {
   const [error, setError] = useState<string | null>(null);
 
   const refreshProfile = useCallback(async () => {
-    const profile = await apiGet<{ tier?: string; ai_credits?: number; premium_until?: string | null }>("/auth/profile");
+    const profile = await apiGet<{ tier?: string; ai_credits?: number; job_service_credits?: number; premium_until?: string | null }>("/auth/profile");
     if (!mountedRef.current) return;
     setCurrentTier(profile.tier || "free");
     setAnalysisUnits(profile.ai_credits ?? 0);
+    setServiceCredits(profile.job_service_credits ?? 0);
     setPremiumUntil(profile.premium_until || null);
   }, []);
 
@@ -318,7 +328,8 @@ export default function BillingPage() {
   const purchaseAllowed = Boolean(
     checkoutEnabled &&
       selectedProduct?.enabled_for_purchase &&
-      currentTier === "free" &&
+      currentTier !== null &&
+      !(currentTier === "premium" && selectedProduct?.entitlement_kind === "premium_access") &&
       indiaBillingConfirmed,
   );
   const checkoutBusy = phase === "opening" || phase === "confirming";
@@ -564,15 +575,16 @@ export default function BillingPage() {
             <p className="eyebrow mt-6">Verified fulfilment</p>
             <h1 id="payment-confirmed-heading" className="font-display mt-2 text-4xl font-normal text-foreground sm:text-5xl">Payment confirmed</h1>
             <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
-              The server received verified payment confirmation and activated the purchased HireWiz access.
+              The server received verified payment confirmation and delivered your purchased {currentOrder.sku === "job_service_500" ? "job service credits" : "Premium access"}.
             </p>
             <div className="mx-auto mt-6 max-w-xl border-y border-border py-4 text-xs leading-5 text-muted-foreground">
               <p className="break-all">Order reference: {currentOrder.order_id}</p>
               {currentOrder.payment_reference ? <p className="break-all">Payment reference: {currentOrder.payment_reference}</p> : null}
             </div>
             <div className="mt-7 flex flex-col justify-center gap-3 sm:flex-row">
-              <Button asChild><Link href="/dashboard">Continue to dashboard</Link></Button>
-              <Button asChild variant="secondary"><Link href="/contact">Billing support</Link></Button>
+              <Button asChild><Link href={currentOrder.sku === "job_service_500" ? "/employer-jobs" : "/dashboard"}>Continue to {currentOrder.sku === "job_service_500" ? "employer jobs" : "dashboard"}</Link></Button>
+              <Button variant="secondary" onClick={() => { setPhase("idle"); setCurrentOrder(null); setIndiaBillingConfirmed(false); }}>Review another purchase</Button>
+              <Button asChild variant="ghost"><Link href="/contact">Billing support</Link></Button>
             </div>
           </section>
         </div>
@@ -586,8 +598,8 @@ export default function BillingPage() {
         <header className="grid gap-6 border-b border-border pb-7 lg:grid-cols-[1fr_auto] lg:items-end">
           <div>
             <p className="eyebrow">Account billing</p>
-            <h1 className="font-display mt-2 text-4xl font-normal text-foreground sm:text-5xl">Premium access</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">One INR payment for 30 days, with no trial, stored mandate, or automatic renewal.</p>
+            <h1 className="font-display mt-2 text-4xl font-normal text-foreground sm:text-5xl">Access and service credits</h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Review Premium access and prepaid job service credits. Both use one-time INR payments with no automatic renewal.</p>
           </div>
           <div className="flex items-center gap-3">
             <span className="icon-tile">{currentTier === "premium" ? <Crown size={19} className="text-primary" /> : <CircleGauge size={19} />}</span>
@@ -595,8 +607,9 @@ export default function BillingPage() {
           </div>
         </header>
 
-        <section className="grid gap-5 border-y border-border py-6 sm:grid-cols-2" aria-label="Current entitlement">
+        <section className="grid gap-5 border-y border-border py-6 sm:grid-cols-3" aria-label="Current entitlement">
           <div><p className="data-label">Analysis units</p><p className="mt-2 text-3xl font-semibold text-primary">{currentTier === "premium" ? "Included" : currentTier === "free" ? analysisUnits : "..."}</p><p className="mt-1 text-xs text-muted-foreground">{currentTier === "premium" ? "No unit deductions while Premium is active." : "Durable balance after reservations and releases."}</p></div>
+          <div className="sm:border-l sm:border-border sm:pl-6"><p className="data-label">Job service credits</p><p className="mt-2 text-3xl font-semibold text-primary">{currentTier ? serviceCredits : "..."}</p><p className="mt-1 text-xs text-muted-foreground">Employer search and automatic apply. Charged separately, including for Premium members.</p></div>
           <div className="sm:border-l sm:border-border sm:pl-6"><p className="data-label">Access period</p><p className="mt-2 text-lg font-semibold text-foreground">{currentTier === "premium" && premiumUntil ? `Through ${new Date(premiumUntil).toLocaleDateString("en-IN")}` : currentTier === "premium" ? "Active" : "Free tier"}</p><p className="mt-1 text-xs text-muted-foreground">Premium ends automatically. No renewal payment is scheduled.</p></div>
         </section>
 
@@ -605,7 +618,7 @@ export default function BillingPage() {
         {catalogLoading ? <LoadingBlock rows={6} /> : (
           <div className="grid gap-10 lg:grid-cols-[minmax(0,1.08fr)_minmax(360px,0.92fr)] lg:items-start">
             <section aria-labelledby="products-heading">
-              <div><p className="data-label">Available product</p><h2 id="products-heading" className="font-display mt-2 text-2xl font-normal text-foreground">Premium pass</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">Price and entitlement terms come from the server catalog.</p></div>
+              <div><p className="data-label">Available products</p><h2 id="products-heading" className="font-display mt-2 text-2xl font-normal text-foreground">Choose your purchase</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">Price and entitlement terms come from the server catalog.</p></div>
               <div className="mt-6 grid gap-4">
                 {visibleProducts.length ? visibleProducts.map((product) => {
                   const selected = product.sku === effectiveSelectedSku;
@@ -613,17 +626,17 @@ export default function BillingPage() {
                     <article key={product.sku} className={`surface-panel p-5 sm:p-7 ${selected ? "border-primary/70" : ""}`}>
                       <div className="grid gap-6 sm:grid-cols-[1fr_auto] sm:items-start">
                         <div className="min-w-0">
-                          <div className="flex items-start gap-3"><span className="icon-tile"><Crown size={19} className="text-primary" /></span><div><h3 className="text-xl font-semibold text-foreground">{product.name}</h3><p className="mt-1 text-xs font-bold uppercase text-muted-foreground">One-time purchase | no renewal</p></div></div>
+                          <div className="flex items-start gap-3"><span className="icon-tile">{product.entitlement_kind === "job_service_credits" ? <CreditCard size={19} className="text-primary" /> : <Crown size={19} className="text-primary" />}</span><div><h3 className="text-xl font-semibold text-foreground">{product.name}</h3><p className="mt-1 text-xs font-bold uppercase text-muted-foreground">One-time purchase | no renewal</p></div></div>
                           <p className="mt-5 text-sm leading-6 text-muted-foreground">{product.description}</p>
                           <ul className="mt-5 grid gap-2.5">{productFacts(product).map((fact) => <li key={fact} className="flex items-start gap-2 text-sm text-muted-foreground"><CheckCircle2 size={15} className="mt-0.5 shrink-0 text-primary" /><span>{fact}</span></li>)}</ul>
                         </div>
-                        <div className="sm:min-w-44 sm:text-right"><p className="text-3xl font-semibold text-primary">{formatPrice(product.amount_minor, product.currency)}</p><p className="mt-1 text-xs text-muted-foreground">INR total</p><Button type="button" variant={selected ? "secondary" : "primary"} className="mt-4 w-full" onClick={() => { setSelectedSku(product.sku); trackEvent("checkout_product_selected", { sku: product.sku, amount_minor: product.amount_minor, currency: product.currency }); }} disabled={currentTier !== "free"}>{currentTier === "premium" ? "Already active" : currentTier === null ? "Checking status" : selected ? "Selected" : "Review purchase"}</Button></div>
+                        <div className="sm:min-w-44 sm:text-right"><p className="text-3xl font-semibold text-primary">{formatPrice(product.amount_minor, product.currency)}</p><p className="mt-1 text-xs text-muted-foreground">INR total</p><Button type="button" variant={selected ? "secondary" : "primary"} className="mt-4 w-full" onClick={() => { setSelectedSku(product.sku); trackEvent("checkout_product_selected", { sku: product.sku, amount_minor: product.amount_minor, currency: product.currency }); }} disabled={currentTier === null || (currentTier === "premium" && product.entitlement_kind === "premium_access")}>{currentTier === "premium" && product.entitlement_kind === "premium_access" ? "Already active" : currentTier === null ? "Checking status" : selected ? "Selected" : "Review purchase"}</Button></div>
                       </div>
                     </article>
                   );
                 }) : <div className="border-y border-border py-8"><p className="font-bold text-foreground">No paid product is currently available.</p><p className="mt-2 text-sm text-muted-foreground">No checkout provider has been loaded.</p></div>}
               </div>
-              <div className="mt-8 border-y border-border py-6 text-sm leading-6 text-muted-foreground"><h3 className="font-semibold text-foreground">About analysis units</h3><p className="mt-2">Analysis units are software usage allowances, not money or stored value. They cannot be withdrawn, resold, or transferred.</p><Link href="/pricing" className="mt-3 inline-flex items-center gap-1 font-bold text-primary hover:underline">Read full pricing and usage details <ExternalLink size={13} /></Link></div>
+              <div className="mt-8 border-y border-border py-6 text-sm leading-6 text-muted-foreground"><h3 className="font-semibold text-foreground">About analysis units</h3><p className="mt-2">Analysis units are software usage allowances, not money or stored value. They cannot be withdrawn, resold, or transferred. Job service credits are a separate prepaid allowance for employer search and confirmed automatic applications; Premium does not waive those charges.</p><Link href="/pricing" className="mt-3 inline-flex items-center gap-1 font-bold text-primary hover:underline">Read full pricing and usage details <ExternalLink size={13} /></Link></div>
             </section>
 
             <section aria-labelledby="checkout-heading">
@@ -632,11 +645,11 @@ export default function BillingPage() {
                 {selectedProduct ? <div>
                   <div className={`border-l-2 pl-4 ${checkoutEnabled ? "border-primary" : "border-primary/30"}`}><div className="flex items-start gap-3">{checkoutEnabled ? <Shield className="mt-0.5 shrink-0 text-primary" size={18} /> : <Clock3 className="mt-0.5 shrink-0 text-primary" size={18} />}<div><h3 className="font-semibold text-foreground">{checkoutEnabled ? "Secure checkout available" : "Checkout is not available yet"}</h3><p className="mt-1 text-sm leading-6 text-muted-foreground">{checkoutEnabled ? "Confirm India billing, then continue to Razorpay hosted checkout." : "The product remains visible while purchases are paused."}</p></div></div></div>
                   <div className="mt-6 grid grid-cols-[1fr_auto] gap-4 border-y border-border py-5"><div><p className="data-label">Product</p><p className="mt-2 font-semibold text-foreground">{selectedProduct.name}</p></div><div className="text-right"><p className="data-label">Due today</p><p className="mt-2 text-2xl font-semibold text-primary">{formatPrice(selectedProduct.amount_minor, selectedProduct.currency)}</p></div></div>
-                  <dl className="divide-y divide-border text-sm">{[["Purchase type", "One-time payment"], ["Automatic renewal", "No"], ["Trial", "None"], ["Billing country", "India"], ["Seller", "HireWiz, operated by SAVALIYA HARSHIL YOGESHBHAI"], ["Delivery", "Digital account access after verified payment"]].map(([term, value]) => <div key={term} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)] gap-4 py-3"><dt className="text-muted-foreground">{term}</dt><dd className="text-right font-semibold text-foreground">{value}</dd></div>)}</dl>
+                  <dl className="divide-y divide-border text-sm">{[["Purchase type", "One-time payment"], ["Automatic renewal", "No"], ["Trial", "None"], ["Billing country", "India"], ["Seller", "HireWiz, operated by SAVALIYA HARSHIL YOGESHBHAI"], ["Delivery", selectedProduct.entitlement_kind === "job_service_credits" ? `${selectedProduct.entitlement_quantity} service credits after verified payment` : "Digital account access after verified payment"]].map(([term, value]) => <div key={term} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)] gap-4 py-3"><dt className="text-muted-foreground">{term}</dt><dd className="text-right font-semibold text-foreground">{value}</dd></div>)}</dl>
                   <p className="border-y border-border py-4 text-xs leading-5 text-muted-foreground">The server locks this total before checkout. Compare the same amount in the hosted payment window before authorizing payment.</p>
-                  <label className="mt-5 flex cursor-pointer items-start gap-3 text-sm leading-6 text-muted-foreground"><input type="checkbox" checked={indiaBillingConfirmed} onChange={(event) => setIndiaBillingConfirmed(event.target.checked)} disabled={currentTier !== "free" || !checkoutEnabled} className="mt-1 h-4 w-4 shrink-0 accent-primary" /><span>I confirm my billing country is India and this INR pass is for domestic use.</span></label>
+                  <label className="mt-5 flex cursor-pointer items-start gap-3 text-sm leading-6 text-muted-foreground"><input type="checkbox" checked={indiaBillingConfirmed} onChange={(event) => setIndiaBillingConfirmed(event.target.checked)} disabled={currentTier === null || (currentTier === "premium" && selectedProduct.entitlement_kind === "premium_access") || !checkoutEnabled} className="mt-1 h-4 w-4 shrink-0 accent-primary" /><span>I confirm my billing country is India and this INR purchase is for domestic use.</span></label>
                   <div className="mt-5">
-                    {currentTier === "premium" ? <div className="flex items-start gap-3 border-y border-border py-4 text-sm text-muted-foreground"><Lock size={17} className="mt-0.5 shrink-0" />Additional purchases are disabled while Premium is active.</div> : currentTier === null ? <div className="flex items-start gap-3 border-y border-border py-4 text-sm text-muted-foreground"><Lock size={17} className="mt-0.5 shrink-0" />Checkout waits for account status.</div> : checkoutEnabled && selectedProduct.enabled_for_purchase ? <Button type="button" onClick={handleCheckout} disabled={!purchaseAllowed || checkoutBusy} className="w-full">{checkoutBusy ? <><RefreshCw size={17} className="animate-spin" />{phase === "confirming" ? "Waiting for verified confirmation" : "Opening hosted checkout"}</> : <><CreditCard size={17} />Pay with Razorpay | {formatPrice(selectedProduct.amount_minor, selectedProduct.currency)}</>}</Button> : <Button type="button" variant="secondary" disabled className="w-full">Checkout unavailable</Button>}
+                    {currentTier === "premium" && selectedProduct.entitlement_kind === "premium_access" ? <div className="flex items-start gap-3 border-y border-border py-4 text-sm text-muted-foreground"><Lock size={17} className="mt-0.5 shrink-0" />Premium is already active. You can still purchase job service credits.</div> : currentTier === null ? <div className="flex items-start gap-3 border-y border-border py-4 text-sm text-muted-foreground"><Lock size={17} className="mt-0.5 shrink-0" />Checkout waits for account status.</div> : checkoutEnabled && selectedProduct.enabled_for_purchase ? <Button type="button" onClick={handleCheckout} disabled={!purchaseAllowed || checkoutBusy} className="w-full">{checkoutBusy ? <><RefreshCw size={17} className="animate-spin" />{phase === "confirming" ? "Waiting for verified confirmation" : "Opening hosted checkout"}</> : <><CreditCard size={17} />Pay with Razorpay | {formatPrice(selectedProduct.amount_minor, selectedProduct.currency)}</>}</Button> : <Button type="button" variant="secondary" disabled className="w-full">Checkout unavailable</Button>}
                   </div>
                 </div> : <div className="py-8 text-center"><FileText className="mx-auto text-muted-foreground" size={28} /><p className="mt-3 font-bold text-foreground">Select a product to review it.</p></div>}
 

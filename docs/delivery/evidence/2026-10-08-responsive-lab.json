@@ -1,0 +1,281 @@
+{
+  "observed_at": "2026-10-08",
+  "environment": "production Next.js build on localhost with synthetic mocked backend",
+  "fixture_backend": true,
+  "network_throttling": false,
+  "cpu_throttling": false,
+  "field_p75_proven": false,
+  "sample_count": 30,
+  "measurements": [
+    {
+      "width": 1440,
+      "path": "/employer-jobs",
+      "lcp_ms": 140,
+      "cls": 0.006122243111483518,
+      "ttfb_ms": 5,
+      "script_transfer_bytes": 438127,
+      "script_count": 22
+    },
+    {
+      "width": 1440,
+      "path": "/dashboard",
+      "lcp_ms": 76,
+      "cls": 0.006504069437411587,
+      "ttfb_ms": 3,
+      "script_transfer_bytes": 438127,
+      "script_count": 22
+    },
+    {
+      "width": 1440,
+      "path": "/workspace",
+      "lcp_ms": 80,
+      "cls": 0.0063383660712850445,
+      "ttfb_ms": 2.9000000059604645,
+      "script_transfer_bytes": 488740,
+      "script_count": 29
+    },
+    {
+      "width": 1440,
+      "path": "/workspace/opp_existing_fixture",
+      "lcp_ms": 92,
+      "cls": 0.005739609078615291,
+      "ttfb_ms": 4.5999999940395355,
+      "script_transfer_bytes": 455964,
+      "script_count": 24
+    },
+    {
+      "width": 1440,
+      "path": "/resume",
+      "lcp_ms": 72,
+      "cls": 0.005739609078615291,
+      "ttfb_ms": 2.399999976158142,
+      "script_transfer_bytes": 488740,
+      "script_count": 29
+    },
+    {
+      "width": 1440,
+      "path": "/billing",
+      "lcp_ms": 76,
+      "cls": 0.005910479853542417,
+      "ttfb_ms": 2.5,
+      "script_transfer_bytes": 438127,
+      "script_count": 22
+    },
+    {
+      "width": 1024,
+      "path": "/employer-jobs",
+      "lcp_ms": 180,
+      "cls": 0.007032832208399971,
+      "ttfb_ms": 6.699999988079071,
+      "script_transfer_bytes": 375228,
+      "script_count": 16
+    },
+    {
+      "width": 1024,
+      "path": "/dashboard",
+      "lcp_ms": 92,
+      "cls": 0.013257654888244966,
+      "ttfb_ms": 9.200000017881393,
+      "script_transfer_bytes": 447671,
+      "script_count": 19
+    },
+    {
+      "width": 1024,
+      "path": "/workspace",
+      "lcp_ms": 96,
+      "cls": 0.0035403884636859098,
+      "ttfb_ms": 6.0999999940395355,
+      "script_transfer_bytes": 447671,
+      "script_count": 19
+    },
+    {
+      "width": 1024,
+      "path": "/workspace/opp_existing_fixture",
+      "lcp_ms": 104,
+      "cls": 0.0021528118910888834,
+      "ttfb_ms": 9.800000011920929,
+      "script_transfer_bytes": 425340,
+      "script_count": 19
+    },
+    {
+      "width": 1024,
+      "path": "/resume",
+      "lcp_ms": 88,
+      "cls": 0.0021528118910888834,
+      "ttfb_ms": 3.2999999821186066,
+      "script_transfer_bytes": 405946,
+      "script_count": 17
+    },
+    {
+      "width": 1024,
+      "path": "/billing",
+      "lcp_ms": 84,
+      "cls": 0.002548792709906896,
+      "ttfb_ms": 3.800000011920929,
+      "script_transfer_bytes": 360359,
+      "script_count": 14
+    },
+    {
+      "width": 320,
+      "path": "/employer-jobs",
+      "lcp_ms": 264,
+      "cls": 0,
+      "ttfb_ms": 27,
+      "script_transfer_bytes": 375228,
+      "script_count": 16
+    },
+    {
+      "width": 320,
+      "path": "/dashboard",
+      "lcp_ms": 96,
+      "cls": 0,
+      "ttfb_ms": 4.4000000059604645,
+      "script_transfer_bytes": 398717,
+      "script_count": 16
+    },
+    {
+      "width": 320,
+      "path": "/workspace",
+      "lcp_ms": 108,
+      "cls": 0,
+      "ttfb_ms": 4.5,
+      "script_transfer_bytes": 438885,
+      "script_count": 18
+    },
+    {
+      "width": 320,
+      "path": "/workspace/opp_existing_fixture",
+      "lcp_ms": 216,
+      "cls": 0,
+      "ttfb_ms": 101.80000001192093,
+      "script_transfer_bytes": 416554,
+      "script_count": 18
+    },
+    {
+      "width": 320,
+      "path": "/resume",
+      "lcp_ms": 92,
+      "cls": 0,
+      "ttfb_ms": 4.0999999940395355,
+      "script_transfer_bytes": 356992,
+      "script_count": 14
+    },
+    {
+      "width": 320,
+      "path": "/billing",
+      "lcp_ms": 92,
+      "cls": 0,
+      "ttfb_ms": 4.300000011920929,
+      "script_transfer_bytes": 360359,
+      "script_count": 14
+    },
+    {
+      "width": 390,
+      "path": "/employer-jobs",
+      "lcp_ms": 264,
+      "cls": 0,
+      "ttfb_ms": 27.100000023841858,
+      "script_transfer_bytes": 375228,
+      "script_count": 16
+    },
+    {
+      "width": 390,
+      "path": "/dashboard",
+      "lcp_ms": 92,
+      "cls": 0,
+      "ttfb_ms": 4.299999982118607,
+      "script_transfer_bytes": 398717,
+      "script_count": 16
+    },
+    {
+      "width": 390,
+      "path": "/workspace",
+      "lcp_ms": 108,
+      "cls": 0,
+      "ttfb_ms": 4.5999999940395355,
+      "script_transfer_bytes": 438885,
+      "script_count": 18
+    },
+    {
+      "width": 390,
+      "path": "/workspace/opp_existing_fixture",
+      "lcp_ms": 196,
+      "cls": 0,
+      "ttfb_ms": 86.40000000596046,
+      "script_transfer_bytes": 416554,
+      "script_count": 18
+    },
+    {
+      "width": 390,
+      "path": "/resume",
+      "lcp_ms": 96,
+      "cls": 0,
+      "ttfb_ms": 4,
+      "script_transfer_bytes": 356992,
+      "script_count": 14
+    },
+    {
+      "width": 390,
+      "path": "/billing",
+      "lcp_ms": 92,
+      "cls": 0,
+      "ttfb_ms": 4.5,
+      "script_transfer_bytes": 360359,
+      "script_count": 14
+    },
+    {
+      "width": 768,
+      "path": "/employer-jobs",
+      "lcp_ms": 140,
+      "cls": 0.0030395389379312596,
+      "ttfb_ms": 6.700000017881393,
+      "script_transfer_bytes": 375228,
+      "script_count": 16
+    },
+    {
+      "width": 768,
+      "path": "/dashboard",
+      "lcp_ms": 92,
+      "cls": 0.0034136355776960654,
+      "ttfb_ms": 5.300000011920929,
+      "script_transfer_bytes": 420527,
+      "script_count": 19
+    },
+    {
+      "width": 768,
+      "path": "/workspace",
+      "lcp_ms": 88,
+      "cls": 0.0022425066369275255,
+      "ttfb_ms": 3.199999988079071,
+      "script_transfer_bytes": 447671,
+      "script_count": 19
+    },
+    {
+      "width": 768,
+      "path": "/workspace/opp_existing_fixture",
+      "lcp_ms": 108,
+      "cls": 0.0021528118910888834,
+      "ttfb_ms": 8.900000005960464,
+      "script_transfer_bytes": 465508,
+      "script_count": 21
+    },
+    {
+      "width": 768,
+      "path": "/resume",
+      "lcp_ms": 76,
+      "cls": 0.0021528118910888834,
+      "ttfb_ms": 3,
+      "script_transfer_bytes": 405946,
+      "script_count": 17
+    },
+    {
+      "width": 768,
+      "path": "/billing",
+      "lcp_ms": 88,
+      "cls": 0.0021528118910888834,
+      "ttfb_ms": 4.200000017881393,
+      "script_transfer_bytes": 360359,
+      "script_count": 14
+    }
+  ]
+}

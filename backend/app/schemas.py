@@ -38,6 +38,7 @@ class UserMeResponse(BaseModel):
     email: EmailStr
     tier: str
     ai_credits: int
+    job_service_credits: int = 0
 
 class UserProfileBase(BaseModel):
     full_name: Optional[str] = None
@@ -85,6 +86,10 @@ class ResumeParseResponse(BaseModel):
     contact_info: ContactInfo
     source_available: bool = False
     source_format: Literal["pdf", "docx"] | None = None
+    extraction_mode: Literal["deterministic", "enriched"] = "deterministic"
+    enrichment_state: str = "not_requested"
+    enrichment_units: int = 0
+    warnings: List[str] = Field(default_factory=list)
 
 # -------------------------
 # Resume list (for dropdown)
@@ -109,6 +114,7 @@ class JobMatchRequest(BaseModel):
     job_title: str
     company: Optional[str] = None
     job_description: Union[str, List[str]]
+    mode: Literal["basic", "enhanced"] = "basic"
 
 class PartialMatch(BaseModel):
     skill:    str
@@ -132,6 +138,10 @@ class JobMatchResponse(BaseModel):
     dimensions:              List[DimensionScore]
     fit_summary:             str
     improvement_tips:        List[str]
+    mode: Literal["basic", "enhanced"] | None = None
+    provenance: str | None = None
+    scoring_version: str | None = None
+    uncertainties: List[str] = Field(default_factory=list)
 
 class JobMatchHistoryItem(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -150,6 +160,7 @@ class JobMatchHistoryResponse(BaseModel):
 # -------------------------
 class LearningStrategyRequest(BaseModel):
     match_id: int
+    mode: Literal["curated", "enhanced"] = "curated"
 
 class LearningResource(BaseModel):
     title: str
@@ -195,6 +206,8 @@ class LearningStrategyResponse(BaseModel):
     project_recommendations: List[ProjectRecommendation]
     timeline: List[LearningTimelineItem]
     generated_by: str = "llm"
+    provenance: str = "curated"
+    warnings: List[str] = Field(default_factory=list)
 
 # -------------------------
 # Stateless Ask AI / RAG
@@ -208,11 +221,15 @@ class RagAskRequest(BaseModel):
     question: str = Field(min_length=2, max_length=1000)
     resume_id: Optional[int] = None
     recent_messages: List[RagMessage] = Field(default_factory=list)
+    mode: Literal["basic", "enhanced"] = "basic"
 
 class RagAskResponse(BaseModel):
     answer: str
     confidence: Literal["high", "medium", "low"] = "medium"
     suggested_followups: List[str] = Field(default_factory=list)
+    sources: List[str] = Field(default_factory=list)
+    mode: Literal["direct", "enhanced", "unavailable"] = "direct"
+    provenance: str = "stored_data"
 
 # -------------------------
 # Market skill trends

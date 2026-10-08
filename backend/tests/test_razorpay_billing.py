@@ -99,7 +99,7 @@ def enabled_checkout(monkeypatch):
     calls = []
 
     def fake_create(self, *, product, local_order_id, receipt):
-        assert product.amount_minor == 99_900
+        assert product.amount_minor == {"premium_30d": 99_900, "job_service_500": 49_900}[product.sku]
         assert product.currency == "INR"
         assert len(receipt) <= 40
         calls.append(local_order_id)
@@ -119,6 +119,71 @@ def _create_order(client):
     )
     assert response.status_code == 200, response.text
     return response.json()
+
+
+def _service_order(client):
+    response = client.post("/api/billing/orders", json={"sku": "job_service_500", "billing_country": "IN"})
+    assert response.status_code == 200, response.text
+    assert response.json()["amount_minor"] == 49_900
+    return response.json()
+
+
+def test_paid_job_credits_can_be_purchased_by_premium_and_granted_only_once(client, enabled_checkout, session_factory):
+    from backend.app.domains.employer.models import ServiceCreditEvent
+    with session_factory() as db:
+        user = db.query(User).one()
+        user.tier = "premium"
+        db.commit()
+    created = _service_order(client)
+    with session_factory() as db:
+        assert db.query(User).one().job_service_credits == 0
+        order = db.query(PaymentOrder).filter_by(public_id=created["order_id"]).one()
+        capture = _capture_payload(order)
+        second = _capture_payload(order, event="order.paid")
+    assert _post_event(client, "evt_service_paid", capture).status_code == 200
+    assert _post_event(client, "evt_service_paid_duplicate", second).status_code == 200
+    with session_factory() as db:
+        user = db.query(User).one()
+        assert user.job_service_credits == 500
+        assert user.ai_credits == 20
+        assert db.query(ServiceCreditEvent).filter_by(event_type="grant").count() == 1
+
+
+def test_service_partial_refund_revokes_proportionally_and_spent_refund_is_debt(client, enabled_checkout, session_factory):
+    from backend.app.domains.employer.models import ServiceCreditEvent
+    created = _service_order(client)
+    with session_factory() as db:
+        order = db.query(PaymentOrder).filter_by(public_id=created["order_id"]).one()
+        capture = _capture_payload(order)
+    assert _post_event(client, "evt_service_capture", capture).status_code == 200
+    with session_factory() as db:
+        user = db.query(User).one()
+        user.job_service_credits = 100  # 400 credits already consumed by services.
+        order = db.query(PaymentOrder).filter_by(public_id=created["order_id"]).one()
+        partial = _refund_payload(order, "rfnd_service_half", 24_950)
+        remainder = _refund_payload(order, "rfnd_service_rest", 24_950)
+        db.commit()
+    assert _post_event(client, "evt_service_half_refund", partial).status_code == 200
+    assert _post_event(client, "evt_service_half_refund", partial).status_code == 200
+    with session_factory() as db:
+        assert db.query(User).one().job_service_credits == -150
+    assert _post_event(client, "evt_service_full_refund", remainder).status_code == 200
+    with session_factory() as db:
+        assert db.query(User).one().job_service_credits == -400
+        assert sum(event.amount for event in db.query(ServiceCreditEvent).filter_by(event_type="refund")) == -500
+
+
+def test_service_refund_before_capture_does_not_regrant_refunded_units(client, enabled_checkout, session_factory):
+    created = _service_order(client)
+    with session_factory() as db:
+        order = db.query(PaymentOrder).filter_by(public_id=created["order_id"]).one()
+        partial = _refund_payload(order, "rfnd_service_early", 24_950)
+        capture = _capture_payload(order)
+    assert _post_event(client, "evt_service_early_refund", partial).status_code == 200
+    assert _post_event(client, "evt_service_late_capture", capture).status_code == 200
+    with session_factory() as db:
+        assert db.query(User).one().job_service_credits == 250
+        assert db.query(EntitlementLedger).count() == 1
 
 
 def _signature(raw: bytes) -> str:
@@ -223,21 +288,13 @@ def test_catalog_and_checkout_fail_closed(client, monkeypatch, session_factory):
     catalog = catalog_response.json()
     assert catalog["checkout_enabled"] is False
     assert catalog["provider"] is None
-    assert catalog["products"] == [
-        {
-            "sku": "premium_30d",
-            "name": "HireWiz Premium — 30 days",
-            "description": "One-time purchase of 30 days of HireWiz Premium access.",
-            "amount_minor": 99_900,
-            "amount_display": "₹999",
-            "currency": "INR",
-            "billing_type": "one_time",
-            "duration_days": 30,
-            "auto_renews": False,
-            "catalog_visible": True,
-            "enabled_for_purchase": False,
-        }
-    ]
+    products = {product["sku"]: product for product in catalog["products"]}
+    assert set(products) == {"premium_30d", "job_service_500"}
+    assert all(not product["enabled_for_purchase"] for product in products.values())
+    assert products["premium_30d"]["amount_minor"] == 99_900
+    assert products["job_service_500"]["amount_minor"] == 49_900
+    assert products["job_service_500"]["entitlement_quantity"] == 500
+    assert products["job_service_500"]["entitlement_kind"] == "job_service_credits"
 
     config_response = client.get("/api/billing/config")
     assert config_response.headers["cache-control"] == "no-store, private"

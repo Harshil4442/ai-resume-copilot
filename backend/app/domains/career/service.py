@@ -353,6 +353,18 @@ def latest_opportunity_match(
     )
     if not match:
         raise HTTPException(status_code=404, detail="Match analysis not found")
+    analysis = (
+        db.query(models.AnalysisRun)
+        .filter(
+            models.AnalysisRun.user_id == user_id,
+            models.AnalysisRun.opportunity_id == opportunity_id,
+            models.AnalysisRun.operation == "job_match",
+            models.AnalysisRun.status == "succeeded",
+            models.AnalysisRun.result_payload["match_id"].as_integer() == match.id,
+        )
+        .order_by(models.AnalysisRun.created_at.desc()).first()
+    )
+    metadata = dict(analysis.result_payload or {}) if analysis else {}
     return schemas.OpportunityMatchResponse(
         match_id=match.id,
         match_score=float(match.match_score or 0),
@@ -366,6 +378,10 @@ def latest_opportunity_match(
         fit_summary=match.fit_summary or "",
         improvement_tips=list(match.improvement_tips or []),
         created_at=match.created_at,
+        mode=metadata.get("mode"),
+        provenance=metadata.get("provenance"),
+        scoring_version=metadata.get("scoring_version"),
+        uncertainties=metadata.get("uncertainties", []),
     )
 
 

@@ -53,6 +53,8 @@ the original file to be uploaded again before generating a new preserved-format 
 backend/
   alembic/                 Versioned database migrations
   app/domains/analysis/    Durable runs, task dispatch, operations, model telemetry
+  app/domains/employer/    Verified employer jobs, paid search, reviewed applications
+  app/domains/dispatch/    Transactional queue intent and fenced worker delivery
   app/domains/career/      Workspace, evidence, versions, reminders, memory, Skill ROI
   app/domains/notifications/ Durable lifecycle-message outbox and delivery
   app/domains/operations/  Scheduled retention and delivery maintenance
@@ -61,6 +63,11 @@ backend/
   app/main.py              Customer API
   app/worker_main.py       Private analysis worker
   openapi.json             Committed API contract
+docs/
+  requirements/            Product and engineering acceptance requirements
+  adr/                     Recorded architecture decisions and trade-offs
+  delivery/                Implementation and release evidence
+infra/                     Deployment and environment configuration
 frontend/
   app/api/backend/         Authenticated same-origin BFF
   app/workspace/           Career Workspace

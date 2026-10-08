@@ -1,8 +1,10 @@
 import { getToken } from "next-auth/jwt";
 import { NextRequest, NextResponse } from "next/server";
+import { isTrustedRequestOrigin } from "../../../../lib/requestOrigin";
 
 const PUBLIC_PATHS = new Set(["auth/register"]);
 const FORWARDED_HEADERS = ["accept", "content-type", "idempotency-key", "x-correlation-id"];
+const MUTATION_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 function backendOrigin() {
   const configured = process.env.BACKEND_URL?.trim().replace(/\/+$/, "");
@@ -22,6 +24,9 @@ async function forward(
   request: NextRequest,
   context: { params: Promise<{ path: string[] }> },
 ) {
+  if (MUTATION_METHODS.has(request.method) && !isTrustedRequestOrigin(request)) {
+    return NextResponse.json({ detail: "Cross-site mutation requests are not allowed" }, { status: 403 });
+  }
   const { path } = await context.params;
   if (!path.length || path.some((segment) => segment === ".." || segment.includes("/"))) {
     return NextResponse.json({ detail: "Invalid backend path" }, { status: 400 });
