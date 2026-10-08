@@ -50,6 +50,15 @@ required name, and the unchanged build was rerun with the exact synthetic CI env
 Neither repair changed application code or production credentials. Three preexisting
 backend dependency deprecation warnings remain.
 
+The first exact-commit [remote run for `61bdd45`](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37830875142)
+found an existing synthetic companion fixture defect before its epoch-revocation assertion:
+two clock reads could issue a maximum-lifetime command one millisecond too long. The
+fixture now captures one timestamp. An advancing-clock regression verifies all five
+envelope types at their exact limits and rejection at limit plus one millisecond. The
+shipping verifier is unchanged. Local disabled-package checks, **56 protocol tests** and
+**14 actual Chromium MV3 cases** pass after this repair. The integrated repaired commit
+still requires all four remote jobs before release; the first commit is not promoted.
+
 ## Next evidence
 
 - [x] Preserve catalog/auth/stream contracts and verify bounded numeric/private events.

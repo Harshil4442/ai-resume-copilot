@@ -10,7 +10,7 @@ export const artifact = new TextEncoder().encode("%PDF-1.4\n1 0 obj<</Type/Catal
 
 // This in-memory synthetic authority is a test double, never production durable
 // permission, enrollment, recovery or application state. No employer is contacted.
-export async function fixtureAuthority(portalOrigin = "http://127.0.0.1:4407") {
+export async function fixtureAuthority(portalOrigin = "http://127.0.0.1:4407", { now = Date.now } = {}) {
   const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
   const authorityKey = await crypto.subtle.exportKey("jwk", pair.publicKey);
   const configuration = { mode: "local_fixture", authorityOrigin: portalOrigin, portalOrigin, authorityKey, keyId: "ephemeral-fixture-authority" };
@@ -18,7 +18,10 @@ export async function fixtureAuthority(portalOrigin = "http://127.0.0.1:4407") {
     fail_begin_response: false, fail_complete_response: false, offline: false, actions: [], requests: [], mutateCommand: null, bad_artifact: false,
     beforeAuthorize: null, beforeBegin: null, beforeComplete: null, begin_delay_ms: 0 };
   const commands = new Map(); const approvals = new Map(); const permits = new Map(); const begun = new Set(); const completed = new Set(); const devices = new Map();
-  const envelope = (payload, type, life = 10_000) => sign({ ...payload, version: 1, type, jti: crypto.randomUUID(), issued_at: Date.now(), expires_at: Date.now() + life }, pair.privateKey, configuration.keyId);
+  const envelope = (payload, type, life = 10_000) => {
+    const issuedAt = now();
+    return sign({ ...payload, version: 1, type, jti: crypto.randomUUID(), issued_at: issuedAt, expires_at: issuedAt + life }, pair.privateKey, configuration.keyId);
+  };
   function current(command, claim) {
     if (state.offline || !state.device_active || !state.permit || state.cancelled || claim.user_id !== state.user_id || command.user_id !== state.user_id
       || command.execution_epoch !== state.epoch || command.approval.revision !== state.approval_revision || state.package_changed) throw new Error("Current device, permission, account, epoch or approval was revoked");

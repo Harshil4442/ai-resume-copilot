@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { Companion, base64url, decode64, digest, sign } from "../extension/protocol.js";
+import { Companion, base64url, decode64, digest, sign, verify } from "../extension/protocol.js";
 import { fixtureAuthority, fields } from "../fixtures/authority.js";
 
 async function fixture() {
@@ -159,3 +159,19 @@ for (const size of [250_000, 5_000_000]) test(`exact artifact base64 round-trip 
   const decoded = decode64(base64url(bytes)); assert.equal(await digest(decoded), await digest(bytes)); assert.equal(decoded.length, size);
 });
 test("shipping disabled configuration refuses enrollment", async () => { const f = await fixture(); f.engine.configuration = { mode: "disabled" }; await assert.rejects(f.engine.enroll("local-owner-grant"), /disabled/); assert.equal(f.writes.length, 0); });
+
+
+test("fixture envelopes capture one clock read and preserve strict verifier lifetimes", async () => {
+  let clock = 1_700_000_000_000; let calls = 0;
+  const authority = await fixtureAuthority(undefined, { now: () => { calls += 1; return clock++; } });
+  for (const [type, life] of [["action_begun", 2_000], ["approval", 10_000], ["action_permit", 10_000], ["command", 120_000], ["device_claim", 300_000]]) {
+    const issuedAt = clock; const before = calls;
+    const signed = type === "approval" ? await authority.envelope({}, type) : await authority.envelope({}, type, life);
+    assert.equal(calls, before + 1);
+    assert.equal(signed.payload.issued_at, issuedAt);
+    assert.equal(signed.payload.expires_at, issuedAt + life);
+    await verify(signed, authority.configuration, type, issuedAt);
+    const tooLong = await sign({ ...signed.payload, expires_at: issuedAt + life + 1 }, authority.pair.privateKey, authority.configuration.keyId);
+    await assert.rejects(verify(tooLong, authority.configuration, type, issuedAt), /Expired or invalid authority command/);
+  }
+});
