@@ -23,7 +23,8 @@ remains open. All recorded times are UTC.
 
 [Build metadata](evidence/2026-10-08-admission-cloudbuild.json),
 [Vercel identity and alias metadata](evidence/2026-10-08-admission-vercel.json), and
-[independent production checks](evidence/2026-10-08-admission-production-verification.json)
+[independent production checks](evidence/2026-10-08-admission-production-verification.json), and
+[sanitized service/revision inventory](evidence/2026-10-08-admission-runtime-inventory.json)
 retain the observed results. All three services use digest-pinned images, production
 Cloud Tasks dispatch and explicit project/location settings. Anonymous worker requests
 returned 403; authenticated health returned 200. The employer worker has no LLM,
