@@ -198,6 +198,20 @@ no SQL, backend or environment rollout occurred. The new recovery modules remain
 source outside that serving image. Browser assistance, production authority and final
 automatic submission remain unavailable pending their full acceptance gates.
 
+## Root component integration on 9 October
+
+The next reviewed source set passes **1,261 default backend tests without failures or
+skips**, plus static and generated contract checks. It adds persisted model spending
+limits, GCP native safety adapters, independent coverage-audit tooling, a fresh no-AI
+backend journey and a release guard. Compatibility source passed all four CI jobs and
+an immutable build; its generation-disabled API candidate has zero production traffic.
+The serving release/schema remain `e7d8f2b`/`0009`. See [the root integration report](ROOT_COMPONENT_INTEGRATION_2026-10-09.md).
+
+The 0010 money migration and production browser pairing remain unavailable pending
+verified writer fencing and the independent authentication/recovery/cloud integration
+gates. The connected pairing bridge is reviewed separately; no real application or
+payment was performed.
+
 ## Commercial defaults
 
 Initial search price: 1 paid service credit per new qualifying delivered job.

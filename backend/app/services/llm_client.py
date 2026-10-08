@@ -6,6 +6,7 @@ import re
 import time
 from collections import Counter
 from functools import lru_cache
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -99,7 +100,11 @@ if not LLM_MODEL:
     LLM_MODEL = "gpt-4o-mini"
 
 def _chat(messages: list[dict]) -> str:
-    from .generation_budget import GenerationBudgetExhausted, generation_budget
+    from .generation_gate import require_generation
+
+    require_generation()
+    from .generation_budget import generation_budget
+    from .model_cost_policy import ModelCostUnavailable
     from .prompt_privacy import redact_messages
 
     if not _api_key():
@@ -108,54 +113,80 @@ def _chat(messages: list[dict]) -> str:
     with generation_budget() as budget:
         try:
             return _chat_with_budget(messages, budget)
-        except GenerationBudgetExhausted as exc:
+        except ModelCostUnavailable as exc:
             error = LLMProviderError(str(exc), retryable=False)
             error.budget_exhausted = True
             raise error from exc
 
 
 def _chat_with_budget(messages: list[dict], budget) -> str:
+    from .generation_gate import require_generation
+
+    require_generation()
     if LLM_MODEL.startswith("gemini"):
         try:
             from google import genai
             from google.genai import types
         except ImportError as exc:
             raise RuntimeError("google-genai package is not installed.") from exc
-        client = genai.Client(api_key=_api_key().strip("\"' \r\n"))
         system_text = "\n\n".join(m["content"] for m in messages if m["role"] == "system")
         contents = [
             {"role": "model" if m["role"] == "assistant" else "user", "parts": [{"text": m["content"]}]}
             for m in messages if m["role"] != "system"
         ]
-        config = types.GenerateContentConfig(system_instruction=system_text or None)
-        last_error = None
         saw_transient = False
         for model in _gemini_models(LLM_MODEL.strip("\"' \r\n")):
-            record = budget.admit("google", model, messages)
+            require_generation()
+            record = budget.admit("google", model, messages, api_base="https://generativelanguage.googleapis.com")
             started = time.perf_counter()
+            client = None
             try:
+                # SDK retries are external attempts too: disable its hidden
+                # retries and admit every fallback through our durable ledger.
+                client = genai.Client(
+                    vertexai=False,
+                    api_key=_api_key().strip("\"' \r\n"),
+                    http_options=types.HttpOptions(
+                        base_url="https://generativelanguage.googleapis.com",
+                        timeout=90_000,
+                        api_version="v1beta", retry_options=types.HttpRetryOptions(attempts=1),
+                        client_args={"follow_redirects": False},
+                    ),
+                )
+                config = types.GenerateContentConfig(
+                    system_instruction=system_text or None,
+                    candidate_count=1,
+                    max_output_tokens=record["max_output_tokens"],
+                )
                 response = client.models.generate_content(model=model, contents=contents, config=config)
             except Exception as exc:
                 budget.finish(record, latency_ms=int((time.perf_counter() - started) * 1000), error=exc)
-                last_error = exc
                 fallback, transient = _gemini_error_disposition(exc)
                 saw_transient = saw_transient or transient
                 if fallback:
                     continue
-                raise LLMProviderError("Gemini provider rejected the request.") from exc
+                raise LLMProviderError("Gemini provider rejected the request.") from None
+            finally:
+                if client is not None and hasattr(client, "close"):
+                    try:
+                        client.close()
+                    except Exception:
+                        logger.warning("Could not close the model HTTP client.")
             budget.finish(record, latency_ms=int((time.perf_counter() - started) * 1000), response=response)
             return getattr(response, "text", "") or ""
-        raise LLMProviderError("No configured Gemini model is currently available.", retryable=saw_transient) from last_error
+        raise LLMProviderError("No configured Gemini model is currently available.", retryable=saw_transient) from None
 
     url = f"{LLM_API_BASE.rstrip('/')}/chat/completions"
-    provider = "openai" if "openai.com" in LLM_API_BASE else "openai_compatible"
+    provider = "openai" if urlsplit(LLM_API_BASE).hostname == "api.openai.com" else "openai_compatible"
     headers = {"Authorization": f"Bearer {_api_key()}", "Content-Type": "application/json"}
     payload = {"model": LLM_MODEL, "messages": messages, "temperature": 0.3}
     while True:
-        record = budget.admit(provider, LLM_MODEL, messages)
+        require_generation()
+        record = budget.admit(provider, LLM_MODEL, messages, api_base=LLM_API_BASE)
+        payload[record["output_limit_parameter"]] = record["max_output_tokens"]
         started = time.perf_counter()
         try:
-            response = httpx.post(url, json=payload, headers=headers, timeout=httpx.Timeout(90, connect=10))
+            response = httpx.post(url, json=payload, headers=headers, follow_redirects=False, timeout=httpx.Timeout(90, connect=10))
             response.raise_for_status()
             data = response.json()
             text = data["choices"][0]["message"]["content"]
@@ -165,7 +196,7 @@ def _chat_with_budget(messages: list[dict], budget) -> str:
                 isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code in {408, 429, 500, 502, 503, 504}
             )
             if not retryable:
-                raise LLMProviderError("LLM provider rejected the request or returned unusable data.") from exc
+                raise LLMProviderError("LLM provider rejected the request or returned unusable data.") from None
             # The next admission uses the SAME budget as repairs and workers.
             # There is no separate five-attempt retry loop here.
             if budget.used < budget.limit:

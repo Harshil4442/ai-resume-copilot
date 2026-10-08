@@ -1,0 +1,3 @@
+# Isolated disabled adapter SDK proof only; no production factory or dependency rollout.
+google-cloud-firestore==2.34.0
+google-cloud-storage==3.13.0

@@ -594,7 +594,7 @@ def test_tailoring_plural_acronym_does_not_borrow_unreferenced_evidence(monkeypa
         llm_client.tailor_resume_from_evidence(**inputs)
 
 
-def test_gemini_transient_failure_uses_next_stable_model(monkeypatch):
+def test_gemini_transient_failure_uses_next_stable_model(monkeypatch, persisted_model_budget):
     attempts = []
 
     class FakeModels:
@@ -615,7 +615,7 @@ def test_gemini_transient_failure_uses_next_stable_model(monkeypatch):
     assert attempts == ["gemini-3.5-flash", "gemini-3.6-flash"]
 
 
-def test_exhausted_total_model_budget_does_not_allow_worker_retry(monkeypatch):
+def test_exhausted_total_model_budget_does_not_allow_worker_retry(monkeypatch, persisted_model_budget):
     class UnavailableModels:
         def generate_content(self, *, model, contents, config):
             raise RuntimeError("503 UNAVAILABLE: temporary provider capacity issue")

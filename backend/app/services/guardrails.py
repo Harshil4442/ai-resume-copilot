@@ -18,6 +18,13 @@ from ..domains.usage import (
 )
 
 
+class OptionalGenerationUnavailable(HTTPException):
+    """Typed configuration refusal; unrelated provider errors are not swallowed."""
+
+    def __init__(self, detail: str):
+        super().__init__(status_code=503, detail=detail)
+
+
 @contextmanager
 def billable_operation(
     *,
@@ -35,6 +42,10 @@ def billable_operation(
     """
     if amount < 0:
         raise ValueError("analysis-unit reservation cannot be negative")
+
+    from .generation_gate import check_generation_admission
+
+    check_generation_admission(operation, input_payload)
 
     # Lock before inserting the run: its FK otherwise takes a key-share owner
     # lock, and two concurrent requests can deadlock upgrading to FOR UPDATE.
@@ -57,6 +68,19 @@ def billable_operation(
         updated_at=now,
         started_at=now,
     )
+    # Mixed legacy operations can finish deterministically with no AI policy.
+    # Their first actual provider attempt freezes a quote before any network.
+    # Explicit generation freezes it before execution and product reservation.
+    if payload.get("mode") == "enhanced" or operation in {
+        "resume_tailor_legacy", "rewrite_bullets", "interview_questions_legacy",
+    }:
+        from .model_cost_policy import ModelCostUnavailable, freeze_run_quote
+
+        try:
+            freeze_run_quote(run)
+        except ModelCostUnavailable as exc:
+            db.rollback()
+            raise OptionalGenerationUnavailable(str(exc)) from exc
     db.add(run)
     db.flush()
     try:

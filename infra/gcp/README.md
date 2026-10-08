@@ -20,8 +20,32 @@ protected environment-specific variable files. The checked-in provider lockfile 
 the reviewed provider version; commit it after `terraform init -backend=false` validation.
 Private worker URL and queue environment values are documented in the deployment runbook.
 
-Cloud Run image releases run through the repository Cloud Build configuration and
-`release.sh`. Build a commit image and resolve its digest, prepare the exact serving
+Cloud Run images are built through the repository Cloud Build configuration. The legacy
+`release.sh` starts with an offline source preflight before any cloud call, including
+Artifact Registry or backup metadata reads. It requires a Git checkout whose full HEAD
+matches the requested release, with clean source and tracked file bytes matching that
+commit. It parses local migration declarations without executing them, and accepts only
+the single reviewed chain ending at `20261008_0009`. Monetary schema0010, unknown heads,
+branches, incomplete ancestry and unverifiable source are refused. No environment flag
+or local JSON assertion can waive the refusal. A separate approved monetary cutover entry
+point with independently verified legacy-writer fencing is required and is not implemented.
+
+Run this legacy script from the exact clean checked commit. Archive-only workspaces lack
+Git identity and are refused; `.gcloudignore` intentionally excludes Git metadata, so an
+archive-based Cloud Build deploy step cannot use this entry point unchanged. The parent
+integration removes the third `migrate-stage-verify-promote` step from `cloudbuild.yaml`;
+Cloud Build now builds and pushes the immutable image only. Migration, staging and
+promotion require an explicitly controlled release after exact CI and backup checks.
+No source archive can invoke the unsafe monetary cutover automatically. Merely
+setting a `COMMIT_SHA` substitution does not verify source identity. Local source checks
+also do not bind an already uploaded image to that commit: image provenance, exact CI,
+digest verification and serving-release health remain separate required release checks.
+This preflight makes no claim that old writer processes or credentials have been retired.
+Permitting local schema0009 source does not verify the current database schema or make
+this script a safe post0010 rollback entry point. After monetary cutover, rollback must
+use the separately approved paused-image/fence procedure with accounting history retained.
+
+For a permitted schema0009 release, build a commit image and resolve its digest, prepare the exact serving
 image without startup schema migration, execute one migration job,
 release private workers, stage and verify the API, and promote the exact checked revision.
 Stage the Vercel production deployment separately and promote it after verification.

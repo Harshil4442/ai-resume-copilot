@@ -78,18 +78,24 @@ fastapi==0.141.1
 google-api-core==2.33.0
     # via
     #   google-cloud-core
+    #   google-cloud-firestore
     #   google-cloud-storage
     #   google-cloud-tasks
 google-auth==2.56.2
     # via
     #   google-api-core
     #   google-cloud-core
+    #   google-cloud-firestore
     #   google-cloud-storage
     #   google-cloud-tasks
     #   google-genai
     #   hirewiz-backend
 google-cloud-core==2.6.0
-    # via google-cloud-storage
+    # via
+    #   google-cloud-firestore
+    #   google-cloud-storage
+google-cloud-firestore==2.34.0
+    # via hirewiz-backend
 google-cloud-storage==3.13.0
     # via hirewiz-backend
 google-cloud-tasks==2.23.0
@@ -114,6 +120,7 @@ grpc-google-iam-v1==0.14.4
 grpcio==1.83.0
     # via
     #   google-api-core
+    #   google-cloud-firestore
     #   google-cloud-tasks
     #   googleapis-common-protos
     #   grpc-google-iam-v1
@@ -188,10 +195,12 @@ preshed==3.0.13
 proto-plus==1.28.2
     # via
     #   google-api-core
+    #   google-cloud-firestore
     #   google-cloud-tasks
 protobuf==7.35.1
     # via
     #   google-api-core
+    #   google-cloud-firestore
     #   google-cloud-tasks
     #   googleapis-common-protos
     #   grpc-google-iam-v1

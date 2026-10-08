@@ -37,7 +37,7 @@ def match_job(
             db=db,
             operation="job_match_legacy",
             amount=1,
-            input_payload={"resume_id": resume.id, "job_title": payload.job_title},
+            input_payload={"resume_id": resume.id, "job_title": payload.job_title, "mode": payload.mode},
         ):
             result = execute_job_match(
                 db,

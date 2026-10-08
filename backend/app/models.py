@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     Column,
     DateTime,
@@ -349,6 +350,11 @@ class AnalysisRun(Base):
     attempt_count = Column(Integer, nullable=False, default=0)
     generation_attempt_limit = Column(Integer, nullable=False, default=3)
     generation_attempt_count = Column(Integer, nullable=False, default=0)
+    model_cost_quote = Column(JSON, nullable=True)
+    model_cost_ceiling_micros = Column(BigInteger, nullable=True)
+    model_cost_reserved_micros = Column(BigInteger, nullable=False, default=0)
+    model_cost_settled_micros = Column(BigInteger, nullable=False, default=0)
+    model_cost_state = Column(String(32), nullable=False, default="unquoted")
     cancel_requested = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime, nullable=False, default=_utcnow)
     updated_at = Column(DateTime, nullable=False, default=_utcnow, onupdate=_utcnow)
@@ -509,7 +515,15 @@ class ModelCallEvent(Base):
     tokens_estimated = Column(Boolean, nullable=False, default=True)
     attempt_number = Column(Integer, nullable=True)
     latency_ms = Column(Integer, nullable=False, default=0)
-    estimated_cost_micros = Column(Integer, nullable=False, default=0)
+    estimated_cost_micros = Column(BigInteger, nullable=True)
+    pricing_quote = Column(JSON, nullable=True)
+    reserved_cost_micros = Column(BigInteger, nullable=True)
+    settled_cost_micros = Column(BigInteger, nullable=True)
+    cost_state = Column(String(32), nullable=False, default="unavailable")
+    token_estimate_provenance = Column(String(64), nullable=True)
+    usage_provenance = Column(String(64), nullable=True)
+    output_token_limit = Column(Integer, nullable=True)
+    settled_at = Column(DateTime, nullable=True)
     status = Column(String(24), nullable=False)
     error_code = Column(String(80), nullable=True)
     cache_status = Column(String(24), nullable=True)

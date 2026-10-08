@@ -247,6 +247,9 @@ def create_run(
             db.commit()
             return reusable, False
 
+    from ...services.generation_gate import check_generation_admission
+
+    check_generation_admission(payload.operation, input_payload)
     now = utcnow()
     run = models.AnalysisRun(
         id=public_id("run"),
@@ -266,6 +269,14 @@ def create_run(
         created_at=now,
         updated_at=now,
     )
+    if run.generation_attempt_limit:
+        from ...services.model_cost_policy import ModelCostUnavailable, freeze_run_quote
+
+        try:
+            freeze_run_quote(run)
+        except ModelCostUnavailable as exc:
+            db.rollback()
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
     db.add(run)
     try:
         db.flush()

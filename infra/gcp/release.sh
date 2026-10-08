@@ -8,6 +8,10 @@ release="${4:?full commit}"
 backup_object="${5:?protected pre-release PostgreSQL backup URI}"
 [[ "$project" == ai-resume-parser-482412 && "$region" == us-central1 && "$release" =~ ^[a-f0-9]{40}$ ]]
 [[ "$image_tag" == "${region}-docker.pkg.dev/${project}/cloud-run-source-deploy/hirewiz:${release}" ]]
+# Refuse unknown source and monetary schema cutovers before even read-only cloud calls.
+# This legacy entry point cannot establish retirement of earlier generation writers.
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+python3 -I "${script_dir}/release_preflight.py" "$release"
 digest="$(gcloud artifacts docker images describe "$image_tag" --project "$project" --format='value(image_summary.digest)')"
 [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
 image="${image_tag%:*}@${digest}"

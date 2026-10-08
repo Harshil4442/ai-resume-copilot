@@ -2,7 +2,6 @@ substitutions:
   _REGION: us-central1
   _ARTIFACT_REPOSITORY: cloud-run-source-deploy
   _IMAGE_NAME: hirewiz
-  _BACKUP_OBJECT: ''
 steps:
   - id: build
     name: gcr.io/cloud-builders/docker
@@ -10,10 +9,6 @@ steps:
   - id: push-commit
     name: gcr.io/cloud-builders/docker
     args: [push, '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REPOSITORY}/${_IMAGE_NAME}:$COMMIT_SHA']
-  - id: migrate-stage-verify-promote
-    name: gcr.io/google.com/cloudsdktool/cloud-sdk
-    entrypoint: bash
-    args: ['/workspace/infra/gcp/release.sh', '$PROJECT_ID', '${_REGION}', '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REPOSITORY}/${_IMAGE_NAME}:$COMMIT_SHA', '$COMMIT_SHA', '${_BACKUP_OBJECT}']
 images:
   - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REPOSITORY}/${_IMAGE_NAME}:$COMMIT_SHA
 timeout: 2400s

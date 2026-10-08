@@ -1,0 +1,28 @@
+{
+  "services": [
+    {
+      "service": "ai-resume-parser",
+      "revision": "ai-resume-parser-00267-xot",
+      "app_release": "e7d8f2ba0435fd3d4a504ccdce83fac365ec6835",
+      "model": "gemini-1.5-flash",
+      "api_base_hostname": "generativelanguage.googleapis.com",
+      "cost_policy_present": false,
+      "legacy_rate_input_present": false,
+      "legacy_rate_output_present": false,
+      "key_present_without_value": true
+    },
+    {
+      "service": "hirewiz-analysis-worker",
+      "revision": "hirewiz-analysis-worker-00021-5zd",
+      "app_release": "e7d8f2ba0435fd3d4a504ccdce83fac365ec6835",
+      "model": "gemini-1.5-flash",
+      "api_base_hostname": "generativelanguage.googleapis.com",
+      "cost_policy_present": false,
+      "legacy_rate_input_present": false,
+      "legacy_rate_output_present": false,
+      "key_present_without_value": true
+    }
+  ],
+  "generation_performed": false,
+  "credential_values_retained": false
+}

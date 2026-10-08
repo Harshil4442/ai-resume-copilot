@@ -224,8 +224,13 @@ async def parse_resume(
     enrichment_state = "not_requested"
     enrichment_units = 0
     warnings: list[str] = []
-    if enrich_skills:
-        from ..services.guardrails import billable_operation
+    from ..services.generation_gate import generation_enabled
+
+    if enrich_skills and not generation_enabled():
+        enrichment_state = "unavailable"
+        warnings.append("Optional AI enrichment is temporarily paused. Your original resume was parsed without AI and no enrichment units were charged.")
+    elif enrich_skills:
+        from ..services.guardrails import OptionalGenerationUnavailable, billable_operation
 
         class NoUsefulEnrichment(ValueError):
             pass
@@ -246,6 +251,9 @@ async def parse_resume(
         except NoUsefulEnrichment:
             enrichment_state = "unchanged"
             warnings.append("Enrichment found no additional source-supported skills. No analysis units were charged.")
+        except OptionalGenerationUnavailable:
+            enrichment_state = "unavailable"
+            warnings.append("Optional AI enrichment is unavailable because its reviewed model-cost authorization is not ready. Your original resume was parsed without AI; no enrichment units were charged.")
         except HTTPException as exc:
             if exc.status_code != 402:
                 raise

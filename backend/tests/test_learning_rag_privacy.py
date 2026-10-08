@@ -77,7 +77,7 @@ def test_structured_prompt_filter_excludes_sensitive_keys_without_altering_origi
     assert original['password'] == 'secret-password'
 
 
-def test_real_model_boundary_redacts_identifiers_credentials_and_protected_declarations(monkeypatch):
+def test_real_model_boundary_redacts_identifiers_credentials_and_protected_declarations(monkeypatch, persisted_model_budget):
     sent = []
     class Models:
         def generate_content(self, **kwargs):

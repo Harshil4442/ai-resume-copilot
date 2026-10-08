@@ -10,7 +10,6 @@ from backend.app.models import AnalysisRun, ModelCallEvent, Opportunity, Resume,
 from backend.app.routers.public_endpoints import OptimizeBulletRequest, optimize_bullet
 from backend.app.services import llm_client, parsing
 from backend.app.services.basic_matching import basic_match
-from backend.app.services.generation_budget import GenerationBudget, generation_budget
 from backend.app.services.interview_catalog import curated_interview_questions
 from backend.app.services.market.skill_extractor import extract_skill_mentions
 from docx import Document
@@ -144,7 +143,7 @@ def test_dependency_reuse_avoids_charge_and_invalidates_changed_resume(monkeypat
         engine.dispose()
 
 
-def test_total_attempt_budget_covers_fallback_and_a_second_logical_call(monkeypatch):
+def test_total_attempt_budget_covers_fallback_and_a_second_logical_call(monkeypatch, persisted_model_budget):
     calls = []
     class Models:
         def generate_content(self, *, model, **kwargs):
@@ -155,10 +154,9 @@ def test_total_attempt_budget_covers_fallback_and_a_second_logical_call(monkeypa
     monkeypatch.setenv('LLM_API_KEY', 'synthetic')
     monkeypatch.setattr(llm_client, 'LLM_MODEL', 'gemini-3.6-flash')
     monkeypatch.setattr(genai, 'Client', lambda **kwargs: SimpleNamespace(models=Models()))
-    with generation_budget(GenerationBudget(limit=3)):
-        assert llm_client._chat([{'role': 'user', 'content': 'synthetic'}]) == 'result'
-        with pytest.raises(llm_client.LLMProviderError) as error:
-            llm_client._chat([{'role': 'user', 'content': 'repair synthetic'}])
+    assert llm_client._chat([{'role': 'user', 'content': 'synthetic'}]) == 'result'
+    with pytest.raises(llm_client.LLMProviderError) as error:
+        llm_client._chat([{'role': 'user', 'content': 'repair synthetic'}])
     assert len(calls) == 3
     assert tasks._retryable(error.value) is False
 
@@ -185,6 +183,8 @@ def test_persisted_attempts_survive_domain_failure_and_worker_redelivery(monkeyp
             events = db.query(ModelCallEvent).filter_by(analysis_run_id=run_id).all()
             assert len(events) == 3
             assert all(event.status == 'failed' and event.tokens_estimated for event in events)
+            assert run.model_cost_reserved_micros == sum(event.reserved_cost_micros for event in events) > 0
+            assert run.model_cost_settled_micros == 0
             assert db.get(User, 1).ai_credits == 100
     finally:
         engine.dispose()
@@ -226,7 +226,7 @@ def test_enhanced_mode_preserves_generation_and_records_actual_model_and_tokens(
             assert 'EDUCATION:' in contents[-1]['parts'][0]['text']
             if len(calls) == 1:
                 raise RuntimeError('404 model not found')
-            return SimpleNamespace(text=json.dumps(output), usage_metadata=SimpleNamespace(prompt_token_count=123, candidates_token_count=45))
+            return SimpleNamespace(text=json.dumps(output), usage_metadata=SimpleNamespace(prompt_token_count=123, candidates_token_count=45, thoughts_token_count=0))
     monkeypatch.setattr(tasks, 'SessionLocal', factory)
     monkeypatch.setenv('LLM_API_KEY', 'synthetic')
     monkeypatch.setattr(llm_client, 'LLM_MODEL', 'gemini-3.6-flash')
@@ -265,7 +265,7 @@ def test_optional_upload_enrichment_is_explicit_refundable_and_preserves_origina
             if outcome == 'failure':
                 raise RuntimeError('400 invalid provider request')
             skills = ['Python', 'BespokeCRM'] if outcome == 'success' else ['Python']
-            return SimpleNamespace(text=json.dumps(skills), usage_metadata=SimpleNamespace(prompt_token_count=40, candidates_token_count=10))
+            return SimpleNamespace(text=json.dumps(skills), usage_metadata=SimpleNamespace(prompt_token_count=40, candidates_token_count=10, thoughts_token_count=0))
     monkeypatch.setenv('LLM_API_KEY', 'synthetic')
     monkeypatch.setattr(llm_client, 'LLM_MODEL', 'gemini-3.6-flash')
     monkeypatch.setattr(genai, 'Client', lambda **kwargs: SimpleNamespace(models=Models()))

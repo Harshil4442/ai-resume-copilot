@@ -158,11 +158,6 @@ def _record_model_call(
     output_text = json.dumps(output_payload, default=str)
     input_tokens = max(1, len(input_text) // 4)
     output_tokens = max(0, len(output_text) // 4)
-    input_rate = _nonnegative_int_env("LLM_INPUT_COST_MICROS_PER_MILLION", 0)
-    output_rate = _nonnegative_int_env("LLM_OUTPUT_COST_MICROS_PER_MILLION", 0)
-    estimated_cost_micros = round(
-        ((input_tokens * input_rate) + (output_tokens * output_rate)) / 1_000_000
-    )
     db.add(
         models.ModelCallEvent(
             id=public_id("mdl"),
@@ -174,7 +169,11 @@ def _record_model_call(
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             latency_ms=latency_ms,
-            estimated_cost_micros=estimated_cost_micros,
+            # A logical adapter result without an admitted provider attempt
+            # has no verified price/usage. Missing rates never mean free.
+            estimated_cost_micros=None,
+            cost_state="unavailable",
+            token_estimate_provenance="logical-character-estimate-v1",
             status=status,
             error_code=error_code,
             created_at=utcnow(),
@@ -183,13 +182,6 @@ def _record_model_call(
     run.provider = provider
     run.model = model
     run.prompt_version = prompt_version
-
-
-def _nonnegative_int_env(name: str, default: int) -> int:
-    try:
-        return max(0, int(os.getenv(name, str(default))))
-    except ValueError:
-        return default
 
 
 def execute_job_match(

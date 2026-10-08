@@ -64,11 +64,22 @@ jobs:
           tests/fixtures/recovery_sequence_projection.py tests/test_recovery_sequences.py tests/test_recovery_sequences_processes.py
           tests/test_catalog_timing.py
           tests/fixtures/pairing_authority.py tests/test_pairing_crypto.py tests/test_pairing_service.py tests/test_pairing_processes.py
+          tests/test_job_coverage_audit.py
+          tests/test_gcp_rpc.py tests/test_gcp_journal_sdk.py tests/test_gcp_safety_coordinator.py tests/test_gcp_rpc_emulator.py
+          app/domains/recovery/gcp_media.py
+          tests/conftest.py tests/model_cost_fixtures.py tests/test_model_cost_budgets.py tests/test_model_cost_budgets_postgres.py
+          app/services/model_cost_policy.py app/services/generation_budget.py app/services/llm_client.py
+          app/services/generation_gate.py tests/test_generation_gate.py
+          tests/test_fresh_user_no_ai_journey.py
+          ../infra/gcp/release_preflight.py ../tests/test_release_preflight.py
       - name: Type-check modernized modules
         working-directory: backend
         run: >-
           .venv/bin/mypy app/domains app/services/guardrails.py app/services/resume_artifacts.py app/services/resume_layout.py app/services/pdf_streams.py app/routers/v1
           app/routers/worker.py app/worker_main.py app/observability.py app/catalog_timing.py app/main.py app/security.py app/feature_flags.py app/migrate.py
+          app/services/model_cost_policy.py app/services/generation_budget.py app/services/llm_client.py
+          app/services/generation_gate.py
+          ../infra/gcp/release_preflight.py
       - name: Compile backend
         run: backend/.venv/bin/python -m compileall -q backend/app
       - name: Validate PostgreSQL migrations
@@ -98,11 +109,42 @@ jobs:
           done
           echo '::error::Disposable Lever pacing Redis did not become ready after 30 bounded checks.'
           exit 1
+      - name: Provision disposable Firestore data emulator
+        id: authority-emulator
+        working-directory: backend
+        timeout-minutes: 3
+        run: |
+          authority_container_id="$(docker run --detach --name hirewiz-authority-emulator-20261009 \
+            --label hirewiz.test=authority-emulator-20261009 \
+            --publish 127.0.0.1:58877:8080 --cpus=1 --memory=1g \
+            --cap-drop=ALL --security-opt=no-new-privileges \
+            --env CLOUDSDK_CONFIG=/tmp/hirewiz-cloudsdk \
+            --env CLOUDSDK_CORE_DISABLE_USAGE_REPORTING=true --workdir=/tmp \
+            gcr.io/google.com/cloudsdktool/google-cloud-cli:573.0.0-emulators@sha256:1b083a6a9647024a98d4f38c2b51906a0f61ca36adcba11672b8933544962efe \
+            gcloud emulators firestore start --project=hirewiz-local-authority \
+              --host-port=0.0.0.0:8080 --quiet)"
+          printf 'container_id=%s\n' "$authority_container_id" >> "$GITHUB_OUTPUT"
+          .venv/bin/python - <<'PY'
+          import time
+          import grpc
+          with grpc.insecure_channel("127.0.0.1:58877") as channel:
+              deadline = time.monotonic() + 60
+              while time.monotonic() < deadline:
+                  try:
+                      grpc.channel_ready_future(channel).result(timeout=2)
+                      print("Disposable localhost Firestore data emulator is ready.")
+                      break
+                  except grpc.FutureTimeoutError:
+                      time.sleep(1)
+              else:
+                  raise RuntimeError("Disposable localhost Firestore data emulator did not become ready")
+          PY
       - name: Run backend tests
         working-directory: backend
         env:
           HIREWIZ_TEST_POSTGRES_URL: postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55433/hirewiz_admission_test
           EMPLOYER_PACING_TEST_REDIS_URL: redis://127.0.0.1:56379/0
+          HIREWIZ_AUTHORITY_EMULATOR_REQUIRED: "true"
         run: |
           .venv/bin/python scripts/run_prompt_evals.py
           .venv/bin/pytest -q
@@ -114,6 +156,15 @@ jobs:
         run: |
           if [[ -n "$PACING_REDIS_CONTAINER_ID" ]]; then
             timeout 15s docker rm --force "$PACING_REDIS_CONTAINER_ID"
+          fi
+      - name: Remove disposable Firestore data emulator
+        if: always()
+        timeout-minutes: 1
+        env:
+          AUTHORITY_EMULATOR_CONTAINER_ID: ${{ steps.authority-emulator.outputs.container_id }}
+        run: |
+          if [[ -n "$AUTHORITY_EMULATOR_CONTAINER_ID" ]]; then
+            timeout 15s docker rm --force "$AUTHORITY_EMULATOR_CONTAINER_ID"
           fi
       - name: Check OpenAPI artifact drift
         working-directory: backend
