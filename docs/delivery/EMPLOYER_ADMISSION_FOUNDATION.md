@@ -1,8 +1,10 @@
 # Employer execution admission foundation
 
 Implemented in the isolated `employer-safety-foundation` worktree and integrated into the
-release worktree on 8 October 2026. Exact release `7cc49c2` is now promoted on GCP and
+release worktree on 8 October 2026. Exact release `7cc49c2` was promoted on GCP and
 Vercel with actual production schema `20261008_0009`; see [the release record](PRODUCTION_ADMISSION_RELEASE_2026-10-08.md).
+The [current pacing/catalog follow-up](PACING_AND_CATALOG_2026-10-08.md) retains that
+schema and admission behavior.
 This stage builds
 backend controls for BI06, FR07 and parts of NF01/G05D–E; it does not close the full
 acceptance gates or authorize employer submissions. Automatic submission still defaults

@@ -1,7 +1,8 @@
 # HireWiz admission and batch foundation — 8 October 2026
 
-Status: **promoted and verified within the scope below**. Application release
-`7cc49c2c08a296b33cb30f96e383b959caf214c0` is live on GCP and Vercel. This report
+Status: **historical promoted admission foundation, verified within the scope below**.
+Application release `7cc49c2c08a296b33cb30f96e383b959caf214c0` was promoted on GCP and
+Vercel and is superseded by [release `ec52279`](PACING_AND_CATALOG_2026-10-08.md). This report
 supersedes the current-release pointer in the [earlier pilot report](PRODUCTION_RELEASE_2026-10-08.md)
 without replacing its incident history. The full [requirements register](REMAINING_REQUIREMENTS.md)
 remains open. All recorded times are UTC.

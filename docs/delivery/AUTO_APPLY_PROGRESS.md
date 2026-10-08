@@ -31,6 +31,9 @@ tracks implementation evidence and does not replace the wider worldwide coverage
 - [x] Promote admission/batch and locked-balance foundation `7cc49c2`, actual schema `0009`,
   private workers and exact Vercel alias; verify exact-commit CI, production refresh and
   20 public route/width cases. Full browser-executor and recovery acceptance remains open.
+- [x] Promote pacing/catalog follow-up `ec52279`; verify 545 backend tests with no skips,
+  exact GCP/Vercel identities, private workers, a completed public refresh, bounded logs
+  and six public mobile/desktop cases. Lever remains unenrolled pending runtime coordination.
 - [ ] Complete sustained field-performance, load and wider operational recovery/security validation.
 - [ ] Complete immutable GCS storage and deletion/restore/security drills from the register.
 - [ ] Prove every requirements gate before marking the full development goal complete.
@@ -141,6 +144,23 @@ The [independent proposal review](PROPOSED_SOURCE_REVIEW_2026-10-08.md) keeps al
 additional sources unenrolled. Shared Lever host pacing, source-use review and operational
 evidence are required before enrolling its proposed tenants. Independent recovery/device
 authority, permitted receipts, restore quarantine, field metrics and recall remain open.
+
+## Promoted pacing and catalog follow-up
+
+[Release `ec52279`](PACING_AND_CATALOG_2026-10-08.md) passed all four exact-commit CI jobs
+with **545 backend tests, no skips**, including 30 host-pacing cases (eight actual Redis),
+26 actual PostgreSQL cases and four advisory catalog ownership/query cases. It removes
+one redundant authenticated catalog SELECT while preserving locked financial refreshes.
+Lever discovery acquires a shared host permit for each page/retry and rejects incompatible
+coordination; no production Redis or new Lever source was added.
+
+The controlled rollout retained schema `0009`. All three ready services share the exact
+build digest, workers remain private, and the frontend custom-domain alias is verified.
+The normal public-source refresh completed once; a bounded log scan found no matching
+ERROR/HTTP-500 entries. Six public mobile/desktop cases passed. Frontend and companion
+code match the previous five-width release. The report retains the 2.82-second pricing
+LCP sample and the 4.442-second authenticated catalog sample without claiming causal or
+field performance improvement. Fresh backup creation is not restore evidence.
 
 ## Commercial defaults
 

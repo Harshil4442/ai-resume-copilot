@@ -1,7 +1,7 @@
 # HireWiz pilot release — 8 October 2026
 
 Status: historical initial pilot and follow-up hardening release record. Current release
-`7cc49c2` and schema `0009` are recorded in [the admission foundation release](PRODUCTION_ADMISSION_RELEASE_2026-10-08.md).
+`ec52279` and schema `0009` are recorded in [the pacing and catalog release](PACING_AND_CATALOG_2026-10-08.md).
 The earlier follow-up commit was `3565655712c2ceee431bee8306678a020b2f462d`. This report preserves the initial
 rollout history and records observed results; it does not close the full
 [requirements register](../requirements/JOB_SEARCH_AND_APPLICATION.md).

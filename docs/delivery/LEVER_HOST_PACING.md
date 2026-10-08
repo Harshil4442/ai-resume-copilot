@@ -1,8 +1,9 @@
 # Public Lever GET host pacing
 
 Scope: discovery and manual-form revalidation through documented public Lever GETs.
-No source is enrolled, submission enabled, grant inferred, cloud provisioned, or runtime
-environment changed by this patch. Current employer-worker configuration has no verified
+The implementation is promoted in [release `ec52279`](PACING_AND_CATALOG_2026-10-08.md),
+with 545 backend tests passing locally and in exact-commit CI. No source enrollment,
+submission permission or new production Redis coordinator was added. The employer-worker has no verified
 Redis reference; **Lever must remain nonlive until the prerequisites below are verified**.
 
 ## Contract and bounds
