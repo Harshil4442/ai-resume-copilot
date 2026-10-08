@@ -6,7 +6,13 @@ unproved. This adds diagnostics to the authenticated
 employer catalog read. It does not change pricing, search results, application permissions,
 dependencies, schema, region, caching or automatic submission.
 
-## Measurements and limits
+## Historical v1 measurements and limits
+
+The pending [single-statement snapshot](CATALOG_SNAPSHOT_2026-10-09.md) introduces
+`catalog_latency_v2`, a distinct combined-query phase and an in-memory extraction
+phase. The two-query descriptions and production observations below apply to the
+promoted `6f38020`, before that optimization. They are preserved as historical
+evidence and must not be treated as the new phase contract.
 
 Only GET `/api/v1/employer-jobs/catalog` gets a request-owned collector. Backend spans
 cover middleware/dependency JWT validation, composite database acquisition, authenticated

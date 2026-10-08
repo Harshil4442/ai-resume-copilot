@@ -20,6 +20,7 @@ CATALOG_PATH = "/api/v1/employer-jobs/catalog"
 PHASES = frozenset({
     "middleware_jwt", "dependency_jwt", "db_acquire", "auth_lookup",
     "catalog_owner_lookup", "catalog_sources", "catalog_render",
+    "catalog_snapshot", "catalog_materialize",
 })
 HEADER_PHASES = PHASES | {"backend_headers"}
 DURATION_FIELDS = {f"{phase}_ms" for phase in HEADER_PHASES} | {
@@ -54,7 +55,7 @@ class CatalogTimingEvent:
     def payload(self) -> dict[str, object]:
         # Rebuild the schema even for a malformed record; never merge caller extras.
         return {
-            "event": "catalog_latency_v1",
+            "event": "catalog_latency_v2",
             "request_id": self.request_id if _ID.fullmatch(self.request_id) else None,
             "outcome": self.outcome if self.outcome in {"complete", "incomplete", "error", "cancelled"} else "incomplete",
             "status_class": self.status_class if self.status_class in {"1xx", "2xx", "3xx", "4xx", "5xx"} else "not_started",
@@ -178,7 +179,7 @@ class CatalogTimingMiddleware:
             event = collector.finish(outcome, status)
             _current.reset(token)
             try:
-                _log.info("catalog_latency_v1", extra={"catalog_timing": event})
+                _log.info("catalog_latency_v2", extra={"catalog_timing": event})
             except Exception:
                 # Observability cannot fail an authenticated read.
                 pass

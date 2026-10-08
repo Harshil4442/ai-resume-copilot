@@ -76,7 +76,13 @@
       "skipped": 0,
       "log_sha256": "e613eabea174305ee1fe3136f88098033a5fbd64055c542c35524227650e7f85"
     },
-    "ci": "pending exact fixture/documentation commit",
+    "ci": {
+      "commit": "a72d9a24a79295cf2dfc3690c24056224b3027ca",
+      "run_id": 37836366224,
+      "attempt": 2,
+      "all_four_jobs": "success",
+      "evidence": "2026-10-09-razorpay-fixture-ci.json"
+    },
     "production_changes": false,
     "mv3_or_v2_integration": false
   },

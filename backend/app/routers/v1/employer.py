@@ -9,15 +9,15 @@ from sqlalchemy.orm import Session
 from ... import models as core
 from ...database import get_db
 from ...domains.employer import artifacts, batches, models, schemas, service
-from ...security import get_current_user
+from ...security import decode_access_token_user_id, get_current_user, oauth2_scheme
 from .admin import require_admin
 
 router = APIRouter(prefix="/employer-jobs", tags=["employer-jobs"])
 
 
 @router.get("/catalog")
-def get_catalog(db: Session = Depends(get_db), user: core.User = Depends(get_current_user)):
-    return service.catalog(db, user.id)
+def get_catalog(db: Session = Depends(get_db), token: str = Depends(oauth2_scheme)):
+    return service.catalog_for_verified_subject(db, decode_access_token_user_id(token))
 
 
 @router.post("/searches", status_code=201)

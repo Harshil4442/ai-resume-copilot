@@ -87,7 +87,7 @@ def test_actual_catalog_concurrency_ownership_query_count_and_thread_context(app
         owners, responses = asyncio.run(run())
     finally:
         event.remove(engine, "before_cursor_execute", record)
-    assert count == len(responses) * 2  # Existing auth SELECT + existing source SELECT.
+    assert count == len(responses)  # Fresh combined owner/source snapshot per request.
     events = timing_events(caplog)
     assert len(events) == len(responses)
     assert len({item["request_id"] for item in events}) == len(events)
@@ -103,7 +103,12 @@ def test_actual_catalog_concurrency_ownership_query_count_and_thread_context(app
         assert item["outcome"] == "complete"
         assert item["db_connect_ms"] is None and item["db_ping_ms"] is None
         assert item["acquisition_measurement"] == "composite"
-        assert all(item[f"{phase}_ms"] is not None for phase in timing.PHASES)
+        assert item["event"] == "catalog_latency_v2"
+        assert all(item[f"{phase}_ms"] is not None for phase in
+                   timing.PHASES - {"auth_lookup", "catalog_sources"})
+        assert item["auth_lookup_ms"] is None and item["catalog_sources_ms"] is None
+        assert "auth_lookup;" not in response.headers["server-timing"]
+        assert "catalog_sources;" not in response.headers["server-timing"]
         assert "backend_body_send" not in response.headers["server-timing"]
         assert "backend_cleanup" not in response.headers["server-timing"]
         assert "app;dur" not in response.headers["server-timing"]
@@ -168,14 +173,15 @@ def test_missing_authenticated_owner_preserves_401_with_no_source_query(applicat
     assert response.json() == {"detail": "Not authenticated"}
     assert executed.call_count == 1
     item, = timing_events(caplog)
-    assert item["auth_lookup_ms"] is not None and item["catalog_sources_ms"] is None
+    assert item["catalog_snapshot_ms"] is not None and item["catalog_materialize_ms"] is None
+    assert item["auth_lookup_ms"] is None and item["catalog_sources_ms"] is None
 
 
 def test_framework_500_body_is_observed_without_exception_text(application, caplog):
     app, _engine = application
     caplog.set_level(logging.INFO, logger="catalog_latency")
     db = Mock()
-    db.query.return_value.filter.return_value.first.side_effect = RuntimeError("PRIVATE_SQL_PARAMS_TOKEN_URL")
+    db.query.return_value.select_from.return_value.outerjoin.return_value.filter.return_value.order_by.return_value.populate_existing.return_value.all.side_effect = RuntimeError("PRIVATE_SQL_PARAMS_TOKEN_URL")
     app.dependency_overrides[get_db] = lambda: db
 
     async def run():
@@ -187,7 +193,7 @@ def test_framework_500_body_is_observed_without_exception_text(application, capl
     assert response.json()["detail"] == "Internal server error"
     item, = timing_events(caplog)
     assert item["status_class"] == "5xx" and item["outcome"] == "error"
-    assert item["error_phase"] == "auth_lookup"
+    assert item["error_phase"] == "catalog_snapshot"
     assert item["backend_body_send_ms"] is not None and item["backend_cleanup_ms"] is not None
     assert response.headers["x-correlation-id"] == item["request_id"]
     assert "PRIVATE" not in json.dumps(item)

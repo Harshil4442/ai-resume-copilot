@@ -72,10 +72,8 @@ def create_access_token(*, subject: str, expires_delta: Optional[timedelta] = No
     return jwt.encode(to_encode, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
-def get_current_user(
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db),
-) -> User:
+def decode_access_token_user_id(token: str) -> int:
+    """Validate the bearer independently of middleware; existence needs a DB read."""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Not authenticated",
@@ -89,7 +87,15 @@ def get_current_user(
                 raise credentials_exception
             user_id = int(sub)
         except (JWTError, ValueError):
-            raise credentials_exception
+            raise credentials_exception from None
+    return user_id
+
+
+def get_current_user(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+) -> User:
+    user_id = decode_access_token_user_id(token)
 
     if current_catalog_timing() is not None:
         with catalog_span("db_acquire"):
@@ -97,5 +103,9 @@ def get_current_user(
     with catalog_span("auth_lookup"):
         user = db.query(User).filter(User.id == user_id).first()
     if not user:
-        raise credentials_exception
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     return user

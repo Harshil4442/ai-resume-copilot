@@ -1,7 +1,7 @@
 # Razorpay structural browser fixture
 
 Status: **seven frozen additive files integrated; 40/40 root focused cases passed;
-exact fixture-commit CI pending**. This hand-authored loopback scaffold uses the
+all four exact fixture-commit CI jobs passed**. This hand-authored loopback scaffold uses the
 [public portal review](RAZORPAY_BROWSER_PILOT_2026-10-09.md) as a structural reference.
 It is not an enabled Razorpay adapter, extension, authenticated authority or production
 application service. GCP/Vercel still serve the separately verified `6f38020` release.
@@ -43,9 +43,17 @@ selectors, option behavior, arbitrary scripts/egress or portal-use permission.
 - [x] Integrate the exact repaired seven-file patch and preserve shipping boundaries.
 - [x] Execute the complete 40-case focused suite in the merged root.
 - [x] Add explicit unit/browser CI commands without changing shipping build entry points.
-- [ ] Pass the exact fixture/documentation commit's remote CI.
+- [x] Pass the exact fixture/documentation commit's remote CI.
 - [ ] Connect verified pairing/authority, reviewed packages and permitted real DOM actions.
 - [ ] Prove actual browser lifecycle, egress/privacy policy and staging acceptance.
 
 See the [fixture README](../../browser-companion/fixtures/razorpay/README.md) for commands
 and [browser-first checklist](INITIAL_BROWSER_ASSISTANCE_2026-10-08.md) for release gates.
+
+Exact commit `a72d9a24a79295cf2dfc3690c24056224b3027ca` passed
+[CI run 37836366224](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37836366224),
+attempt 2: 780 backend cases, 71 frontend unit cases, 190 browser cases, the unchanged
+56 protocol/14 MV3 cases and new 5 unit/35 Razorpay browser cases. Attempt 1's frontend
+Turbopack Google-font build failed; its logs are preserved. The single failed-job retry
+passed without application or dependency changes. Its cause is not established. This
+test/documentation-only commit did not require replacing the serving `6f38020` components.

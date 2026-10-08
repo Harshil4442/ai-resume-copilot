@@ -16,6 +16,11 @@ reads. Its v2 recovery source remains unavailable for production actions. Additi
 [Razorpay structural fixtures](RAZORPAY_FIXTURE_2026-10-09.md) pass 40 root cases but
 are not shipping MV3/v2/authority integration. Pairing, independent retained authority,
 real portal permission/parity and broader acceptance remain open.
+The [pairing-only local source](PAIRING_ONLY_FOUNDATION_2026-10-09.md) now supplies
+128 crypto/lifecycle/process cases, while its production store, recent authentication,
+claim issuer and browser transport remain unavailable. The pending
+[catalog snapshot release](CATALOG_SNAPSHOT_2026-10-09.md) passes 930 merged backend
+cases and 72 frontend unit cases; those results do not close production pairing.
 
 ## Gap register
 

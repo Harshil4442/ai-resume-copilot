@@ -1,6 +1,7 @@
 const BACKEND_PHASES = new Set([
   "backend_headers", "middleware_jwt", "dependency_jwt", "db_acquire", "auth_lookup",
   "catalog_owner_lookup", "catalog_sources", "catalog_render",
+  "catalog_snapshot", "catalog_materialize",
 ]);
 const MAX_DURATION_MS = 3_600_000;
 

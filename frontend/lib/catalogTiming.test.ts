@@ -2,6 +2,15 @@ import { describe, expect, it } from "vitest";
 import { catalogTimingHeaders } from "./catalogTiming";
 
 describe("catalog timing allowlist", () => {
+  it("preserves distinct snapshot-query and in-memory materialization phases", () => {
+    const headers = catalogTimingHeaders(new Headers({
+      "server-timing": "catalog_snapshot;dur=401.2, catalog_materialize;dur=0.1",
+    }), 1, 405);
+    expect(headers.get("server-timing")).toBe("catalog_snapshot;dur=401.2, catalog_materialize;dur=0.1, bff_session;dur=1.0, bff_backend_headers;dur=405.0");
+    expect(headers.get("server-timing")).not.toContain("auth_lookup");
+    expect(headers.get("server-timing")).not.toContain("catalog_sources");
+  });
+
   it("rebuilds finite known numeric durations without copying descriptions or injected data", () => {
     const headers = catalogTimingHeaders(new Headers({
       "server-timing": "auth_lookup;dur=3.5, catalog_sources;dur=4;desc=PRIVATE_SQL, PRIVATE_TOKEN;dur=1, db_connect;dur=9, backend_headers;dur=7.2",

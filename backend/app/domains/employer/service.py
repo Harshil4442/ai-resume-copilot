@@ -8,11 +8,11 @@ from types import SimpleNamespace
 from urllib.parse import urlsplit
 
 from fastapi import HTTPException
-from sqlalchemy import func, literal_column, or_, text
-from sqlalchemy.orm import Session
+from sqlalchemy import func, literal_column, or_, text, true
+from sqlalchemy.orm import Session, aliased
 
 from ... import models as core
-from ...catalog_timing import catalog_span
+from ...catalog_timing import catalog_span, current_catalog_timing
 from ...services.basic_matching import basic_match
 from ..common import payload_fingerprint, public_id, utcnow
 from . import admissions, artifacts, config, connectors, credits, models, schemas
@@ -77,13 +77,46 @@ def catalog(db, user_id):
     with catalog_span("catalog_sources"):
         sources = db.query(models.EmployerSource).filter(models.EmployerSource.enabled.is_(True)).order_by(models.EmployerSource.employer).limit(500).all()
     with catalog_span("catalog_render"):
-        return config.prices() | {
-            "balance": int(user.job_service_credits or 0), "enabled": config.discovery_enabled(),
-            "auto_submit_enabled": config.submit_enabled(), "sources": [source_response(source) for source in sources],
-            "admission_limits": config.admission_limits(),
-            "credit_policy": "New unique verified jobs are charged once. Automatic applications are charged only after a verified complete receipt. Promotional analysis units and Premium are separate.",
-            "coverage": {"scope": "Verified enabled employer sources", "worldwide_recall_verified": False},
-        }
+        return _catalog_response(user.job_service_credits, sources)
+
+
+def catalog_for_verified_subject(db: Session, user_id: int):
+    """Read owner existence/balance and bounded sources in one fresh SQL snapshot.
+
+    The route validates the JWT first. This advisory read never replaces financial
+    locks or uses a cached ORM owner; password/contact columns are not projected.
+    """
+    if current_catalog_timing() is not None:
+        with catalog_span("db_acquire"):
+            db.connection()
+    with catalog_span("catalog_snapshot"):
+        bounded = db.query(models.EmployerSource).filter(
+            models.EmployerSource.enabled.is_(True),
+        ).order_by(models.EmployerSource.employer, models.EmployerSource.id).limit(500).subquery()
+        source = aliased(models.EmployerSource, bounded)
+        rows = db.query(core.User.id, core.User.job_service_credits, source).select_from(
+            core.User,
+        ).outerjoin(source, true()).filter(core.User.id == user_id).order_by(
+            source.employer, source.id,
+        ).populate_existing().all()
+    if not rows:
+        raise HTTPException(401, "Not authenticated", headers={"WWW-Authenticate": "Bearer"})
+    with catalog_span("catalog_owner_lookup"):
+        balance = rows[0][1]
+    with catalog_span("catalog_materialize"):
+        sources = [row[2] for row in rows if row[2] is not None]
+    with catalog_span("catalog_render"):
+        return _catalog_response(balance, sources)
+
+
+def _catalog_response(balance, sources):
+    return config.prices() | {
+        "balance": int(balance or 0), "enabled": config.discovery_enabled(),
+        "auto_submit_enabled": config.submit_enabled(), "sources": [source_response(source) for source in sources],
+        "admission_limits": config.admission_limits(),
+        "credit_policy": "New unique verified jobs are charged once. Automatic applications are charged only after a verified complete receipt. Promotional analysis units and Premium are separate.",
+        "coverage": {"scope": "Verified enabled employer sources", "worldwide_recall_verified": False},
+    }
 
 
 def posting_response(posting, source):

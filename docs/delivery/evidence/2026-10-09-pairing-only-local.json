@@ -1,0 +1,173 @@
+{
+  "schema": 1,
+  "stage": "frozen_isolated_pairing_only",
+  "date": "2026-10-09",
+  "base_commit": "6f380203c55b8574d2d345420de6ac5e3da1b784",
+  "archive": "/tmp/hirewiz-pairing-only-20261009.bcfyhgqc/ai-resume-copilot",
+  "patch": "/tmp/hirewiz-pairing-only-20261009.patch",
+  "patch_sha256": "a62bf0d63fb861f4f58a3fec47afd5c9c43e07e8300cc4527bd6168b19737e66",
+  "scope": {
+    "additive_files": 8,
+    "lines_added": 2262,
+    "existing_files_modified": 0,
+    "baseline_files_verified_unchanged": 446
+  },
+  "tests": {
+    "new_pairing": {
+      "passed": 128,
+      "skipped": 0,
+      "crypto": 51,
+      "lifecycle": 57,
+      "spawned_process": 20
+    },
+    "unchanged_v1_v2_authority": {
+      "passed": 222,
+      "skipped": 0
+    },
+    "ruff_python_files": 7,
+    "mypy_core_files": 3
+  },
+  "ordering": "UNPROVEN -> REQUESTED -> CANDIDATE_CONFIRMED -> COMPLETED; candidate challenge consumed by exact confirmation, separate device challenge consumed at completion",
+  "independent_review": {
+    "agent": "/root/requirements_qa/razorpay_fixture_audit",
+    "confirmed_defects_repaired": [
+      "Revocation must compare subject/session/principal/auth-generation against exact challenge.",
+      "Fresh-owner cancellation must rely on exact historical confirmation ownership, not old session/expiry/epoch permission."
+    ],
+    "final_bounded_review": "No remaining confirmed defect in reviewed new hardening; source-only review, checks executed by parent."
+  },
+  "files": [
+    {
+      "path": "backend/app/domains/recovery/pairing_auth.py",
+      "sha256": "f48bb94d47f1334cd5324b04ce9d1afa680d9a5b657f9deee3af2ccecc0e6452",
+      "bytes": 7296,
+      "lines": 160
+    },
+    {
+      "path": "backend/app/domains/recovery/pairing_contracts.py",
+      "sha256": "85835df7ca5c76f6894a7f77bd8f572c1c0f38922ea0819ca84e95c95cf042a1",
+      "bytes": 6333,
+      "lines": 183
+    },
+    {
+      "path": "backend/app/domains/recovery/pairing_service.py",
+      "sha256": "b51bce5129c3dcb090143f7585cd58881efad9218fe986994c09c5000aba6156",
+      "bytes": 31994,
+      "lines": 503
+    },
+    {
+      "path": "backend/tests/fixtures/pairing_authority.py",
+      "sha256": "bb925bc2bc58cd7eafc94616d9543871b04760fc6e2c16064892e5e9a1f9cb40",
+      "bytes": 13386,
+      "lines": 267
+    },
+    {
+      "path": "backend/tests/test_pairing_crypto.py",
+      "sha256": "25cb6345b35b3d6a9c55097f3efa396b3705a44f9e2c31adf3bffdf080224ac4",
+      "bytes": 14007,
+      "lines": 290
+    },
+    {
+      "path": "backend/tests/test_pairing_processes.py",
+      "sha256": "fa4b7e368a2f1dba58246ab7928bc992e0229994bd59e974a16ed52e404267b4",
+      "bytes": 13453,
+      "lines": 270
+    },
+    {
+      "path": "backend/tests/test_pairing_service.py",
+      "sha256": "c97f10f13488db111e5a54b0a0e78dcbeaf9dc361a292d2f5e53180d34b47986",
+      "bytes": 27160,
+      "lines": 488
+    },
+    {
+      "path": "docs/delivery/PAIRING_ONLY_FOUNDATION_2026-10-09.md",
+      "sha256": "e786275f4a938d1ea8d0535d4a7d05118161a767fc216d7e8a00a872d7bd31bc",
+      "bytes": 7195,
+      "lines": 101
+    }
+  ],
+  "logs": {
+    "mypy.log": {
+      "path": "/tmp/hirewiz-pairing-only-20261009-evidence/mypy.log",
+      "sha256": "8228fcc5ce46d42d01caf3cd941f4e9c5f2bcc372bb5b147a2f0572d2dd675a8",
+      "last_line": "Success: no issues found in 3 source files"
+    },
+    "ruff.log": {
+      "path": "/tmp/hirewiz-pairing-only-20261009-evidence/ruff.log",
+      "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+      "last_line": "All checks passed!"
+    },
+    "unchanged-recovery-tests.log": {
+      "path": "/tmp/hirewiz-pairing-only-20261009-evidence/unchanged-recovery-tests.log",
+      "sha256": "8882323ad7398f115a9da86c7340d8b26cfcdaffc46c2eec624dcb8211b602fc",
+      "last_line": "222 passed in 9.57s"
+    },
+    "pairing-tests.log": {
+      "path": "/tmp/hirewiz-pairing-only-20261009-evidence/pairing-tests.log",
+      "sha256": "8379426f09410ab8c34b79d68b3e03fc6813f3a4446d4f6ebb57528400829f0a",
+      "last_line": "128 passed in 4.40s"
+    }
+  },
+  "limits": [
+    "Disabled Python-only identity model; no HTTP routes, shipping MV3/v1/v2 edits, SQL migrations, employer actions, financial writes, cloud or browser calls.",
+    "Production independent store, genuine recent candidate authentication and claim issuer remain unavailable by default; trusted injection only.",
+    "Local FULL/WAL fixture does not prove production retention/IAM, independent whole-authority rollback detection, protected replay/closure or cross-service ambiguous commit handling.",
+    "No physical machine/human/installation attestation or one-account-per-physical-installation guarantee; key ownership is permanent and account switching requires separate browser transport/buffer policy.",
+    "Candidate-only revoke implemented; device-signed unpair, operator/deletion orchestration, legacy subject bootstrap/principal linking/rate limits and same-owner sealed-package/v2 bridge remain future gates.",
+    "This is not production pairing, deployed proof, employer permission, action capability, disclosure recall or a whole backend acceptance suite."
+  ],
+  "proof_status": "local_disabled_only",
+  "production_execution": false,
+  "root_source_edits": false,
+  "baseline_manifest": "/tmp/hirewiz-pairing-only-20261009.bcfyhgqc/baseline-source-hashes.json",
+  "apply_check": {
+    "worktree": "/Users/harshil/.codex/worktrees/hirewiz-area-redesign/ai-resume-copilot",
+    "command": "git apply --check /tmp/hirewiz-pairing-only-20261009.patch",
+    "exit_code": 0,
+    "read_only": true
+  },
+  "root_integration": {
+    "baseline": "a72d9a24a79295cf2dfc3690c24056224b3027ca",
+    "narrow_change": "assert challenge is not None immediately after the creation-proof denial check; whole-domain Mypy now resolves the store protocol optional result",
+    "new_pairing_cases": 128,
+    "merged_backend_cases": 930,
+    "skipped": 0,
+    "whole_backend_log_sha256": "9e091c300fa08d2a3c1c9db47a624a6811a250046acf448e93ccbe21ab5c46a4",
+    "focused_catalog_pairing_finance_cases": 194,
+    "whole_domain_mypy_files": 51,
+    "frontend_unit_cases": 72,
+    "remote_ci": "pending new immutable commit",
+    "deployed": false,
+    "production_pairing_enabled": false,
+    "integrated_files": [
+      {
+        "path": "backend/app/domains/recovery/pairing_auth.py",
+        "sha256": "f48bb94d47f1334cd5324b04ce9d1afa680d9a5b657f9deee3af2ccecc0e6452"
+      },
+      {
+        "path": "backend/app/domains/recovery/pairing_contracts.py",
+        "sha256": "85835df7ca5c76f6894a7f77bd8f572c1c0f38922ea0819ca84e95c95cf042a1"
+      },
+      {
+        "path": "backend/app/domains/recovery/pairing_service.py",
+        "sha256": "ce1e6c998a18d646d7c7c5258f194c28ae545fc97413260de95b2cad1d9b5924"
+      },
+      {
+        "path": "backend/tests/fixtures/pairing_authority.py",
+        "sha256": "bb925bc2bc58cd7eafc94616d9543871b04760fc6e2c16064892e5e9a1f9cb40"
+      },
+      {
+        "path": "backend/tests/test_pairing_crypto.py",
+        "sha256": "25cb6345b35b3d6a9c55097f3efa396b3705a44f9e2c31adf3bffdf080224ac4"
+      },
+      {
+        "path": "backend/tests/test_pairing_processes.py",
+        "sha256": "fa4b7e368a2f1dba58246ab7928bc992e0229994bd59e974a16ed52e404267b4"
+      },
+      {
+        "path": "backend/tests/test_pairing_service.py",
+        "sha256": "c97f10f13488db111e5a54b0a0e78dcbeaf9dc361a292d2f5e53180d34b47986"
+      }
+    ]
+  }
+}

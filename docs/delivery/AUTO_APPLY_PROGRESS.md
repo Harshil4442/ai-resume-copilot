@@ -56,7 +56,9 @@ Production pairing and portal-use permission remain open.
   tests, no skips); verify the custom alias and homepage at 320/390/1440 px. GCP remains
   `ec52279`; the disabled recovery core is committed source, not serving production code.
 - [x] Promote [recovery source/catalog diagnostics `6f38020`](RECOVERY_AND_CATALOG_RELEASE_2026-10-09.md) after all four CI jobs; verify exact GCP/Vercel identity, private workers, three hosted widths and five correlated direct catalog reads.
-- [x] Integrate [Razorpay structural fixtures](RAZORPAY_FIXTURE_2026-10-09.md), preserving shipping boundaries; 40 root cases pass, exact fixture-commit CI pending.
+- [x] Integrate [Razorpay structural fixtures](RAZORPAY_FIXTURE_2026-10-09.md), preserving shipping boundaries; 40 root cases and all four exact `a72d9a2` CI jobs pass.
+- [x] Integrate the [pairing-only identity core](PAIRING_ONLY_FOUNDATION_2026-10-09.md) with real Python/Node signatures and process races; production storage/authentication/claim issuance and browser transport remain unavailable.
+- [ ] Release and measure the [single-statement catalog snapshot](CATALOG_SNAPSHOT_2026-10-09.md), preserving authentication, pricing and financial locks.
 - [ ] Complete sustained field-performance, load and wider operational recovery/security validation.
 - [ ] Complete immutable GCS storage and deletion/restore/security drills from the register.
 - [ ] Prove every requirements gate before marking the full development goal complete.

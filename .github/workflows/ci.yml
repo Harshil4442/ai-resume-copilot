@@ -63,6 +63,7 @@ jobs:
           tests/fixtures/recovery_authority.py tests/test_recovery_authority.py tests/test_recovery_authority_processes.py
           tests/fixtures/recovery_sequence_projection.py tests/test_recovery_sequences.py tests/test_recovery_sequences_processes.py
           tests/test_catalog_timing.py
+          tests/fixtures/pairing_authority.py tests/test_pairing_crypto.py tests/test_pairing_service.py tests/test_pairing_processes.py
       - name: Type-check modernized modules
         working-directory: backend
         run: >-

@@ -1,0 +1,62 @@
+{
+  "release": "a72d9a24a79295cf2dfc3690c24056224b3027ca",
+  "run_id": 37836366224,
+  "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37836366224",
+  "attempt": 2,
+  "status": "completed",
+  "conclusion": "success",
+  "jobs": [
+    {
+      "name": "frontend",
+      "databaseId": 113517277510,
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T20:08:44Z",
+      "completedAt": "2026-10-08T20:17:55Z",
+      "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37836366224/job/113517277510"
+    },
+    {
+      "name": "browser-companion",
+      "databaseId": 113517278977,
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T20:01:48Z",
+      "completedAt": "2026-10-08T20:02:43Z",
+      "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37836366224/job/113517278977"
+    },
+    {
+      "name": "security-and-container",
+      "databaseId": 113517279832,
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T20:01:48Z",
+      "completedAt": "2026-10-08T20:03:32Z",
+      "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37836366224/job/113517279832"
+    },
+    {
+      "name": "backend",
+      "databaseId": 113517337450,
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T20:01:48Z",
+      "completedAt": "2026-10-08T20:04:10Z",
+      "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37836366224/job/113517337450"
+    }
+  ],
+  "counts": {
+    "backend": 780,
+    "frontend_unit": 71,
+    "frontend_browser": 190,
+    "companion_protocol": 56,
+    "companion_mv3": 14,
+    "razorpay_unit": 5,
+    "razorpay_browser": 35
+  },
+  "first_failure": {
+    "job": "frontend",
+    "phase": "next_google_font_build",
+    "cause_established": false,
+    "log_sha256": "11487376fcf8534351d647b90b219d9641411c9da08082e05c73b196283f9eb2"
+  },
+  "application_code_or_dependency_change_on_retry": false
+}
