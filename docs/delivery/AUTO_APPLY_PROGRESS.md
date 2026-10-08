@@ -212,6 +212,12 @@ verified writer fencing and the independent authentication/recovery/cloud integr
 gates. The connected pairing bridge is reviewed separately; no real application or
 payment was performed.
 
+The reviewed connected pairing bridge is integrated locally. Its parent whole-suite
+checkpoint passes **1,279 tests without failures or skips**, including 18 native
+Firestore emulator cases through the actual PairingService. Full CI typing passes
+on 77 source files. [Bridge evidence](GCP_PAIRING_BRIDGE_STAGE_2026-10-09.md) retains
+the missing production authentication, durable restart/recovery and transport gates.
+
 ## Commercial defaults
 
 Initial search price: 1 paid service credit per new qualifying delivered job.

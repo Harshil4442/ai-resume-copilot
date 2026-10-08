@@ -59,11 +59,15 @@ def _exact(value: dict | None, expected: dict) -> bool:
 class PairingService:
     def __init__(self, store: AuthorityStore | None = None, *,
                  assertions: AssertionVerifier | None = None, claims: ClaimIssuer | None = None,
-                 now_ms: Callable[[], int] | None = None):
+                 now_ms: Callable[[], int] | None = None,
+                 allocate_uuid: Callable[[], UUID] | None = None):
         self.store = store if store is not None else production_store()
         self.assertions = assertions if assertions is not None else UnavailableAssertions()
         self.claims = claims if claims is not None else UnavailableClaims()
         self.now_ms = now_ms if now_ms is not None else lambda: time_ns() // 1_000_000
+        # Native transaction retries inject a preallocated operation-local plan.
+        # The existing default retains fresh server allocation for local stores.
+        self.allocate_uuid = allocate_uuid if allocate_uuid is not None else lambda: uuid4()
 
     def _now(self, tx: Transaction, *, record: bool = True) -> int:
         now = self.now_ms()
@@ -160,12 +164,12 @@ class PairingService:
         def operation(tx: Transaction) -> dict:
             control, now = self._control(tx), self._now(tx)
             self._extension(tx, extension_id, revision)
-            nonce = str(uuid4())
-            request = PairingRequest(operation_id=uuid4(), pairing_id=uuid4(), device_id=uuid4(),
+            nonce = str(self.allocate_uuid())
+            request = PairingRequest(operation_id=self.allocate_uuid(), pairing_id=self.allocate_uuid(), device_id=self.allocate_uuid(),
                 authority_id=control["authority_id"], authority_incarnation=control["incarnation"],
                 epoch_id=control["epoch_id"], epoch_generation=control["generation"],
                 extension_id=extension_id, executor_revision=revision, public_key=key,
-                key_sha256=key_fingerprint(key), challenge_id=uuid4(), nonce_sha256=nonce_digest(nonce),
+                key_sha256=key_fingerprint(key), challenge_id=self.allocate_uuid(), nonce_sha256=nonce_digest(nonce),
                 issued_at_ms=now, expires_at_ms=now + REQUEST_MS)
             payload = request.model_dump(mode="json")
             tx.put("pairing_requests", str(request.pairing_id), {"request": payload,
@@ -174,7 +178,7 @@ class PairingService:
                    {"pairing_id": str(request.pairing_id)}, immutable=True)
             tx.put("pairing_challenges", str(request.challenge_id), {"kind": "create",
                 "payload": payload, "expires_at_ms": now + DEVICE_MS, "consumed_by": None}, immutable=True)
-            tx.append(str(uuid4()), "PAIRING_PREPARED", {"pairing_id": str(request.pairing_id)})
+            tx.append(str(self.allocate_uuid()), "PAIRING_PREPARED", {"pairing_id": str(request.pairing_id)})
             return {"request": payload, "nonce": nonce}
         return self.store.transact(operation)
 
@@ -203,7 +207,7 @@ class PairingService:
             assert challenge is not None
             tx.put("pairing_challenges", str(current.challenge_id), {**challenge, "consumed_by": pairing_id})
             tx.put("pairing_requests", pairing_id, {**row, "state": "REQUESTED"})
-            tx.append(str(uuid4()), "PAIRING_REQUESTED", {"pairing_id": pairing_id})
+            tx.append(str(self.allocate_uuid()), "PAIRING_REQUESTED", {"pairing_id": pairing_id})
             return {"pairing_id": pairing_id, "device_id": str(current.device_id), "status": "REQUESTED"}
         return self.store.transact(operation)
 
@@ -211,7 +215,7 @@ class PairingService:
                              operation: str, context: dict, expires: int, now: int) -> dict:
         subject = self._subject(tx, _uuid(subject_id))
         _uuid(session_id)
-        nonce, challenge_id = str(uuid4()), str(uuid4())
+        nonce, challenge_id = str(self.allocate_uuid()), str(self.allocate_uuid())
         payload = {**context, "protocol_version": 2, "operation": operation,
             "audience": "hirewiz:pairing-only", "challenge_id": challenge_id,
             "subject_uuid": subject_id, "session_id": session_id,
@@ -219,7 +223,7 @@ class PairingService:
             "nonce_sha256": nonce_digest(nonce), "issued_at_ms": now, "expires_at_ms": expires}
         tx.put("pairing_challenges", challenge_id, {"kind": "candidate", "payload": payload,
                "expires_at_ms": expires, "consumed_by": None}, immutable=True)
-        tx.append(str(uuid4()), "PAIRING_CANDIDATE_CHALLENGE", {"challenge_id": challenge_id})
+        tx.append(str(self.allocate_uuid()), "PAIRING_CANDIDATE_CHALLENGE", {"challenge_id": challenge_id})
         return {"payload": payload, "nonce": nonce, "binding_sha256": digest("candidate-context", payload)}
 
     def candidate_challenge(self, pairing_id: str, subject_id: str, session_id: str) -> dict:
@@ -255,7 +259,7 @@ class PairingService:
             _require(all(str(getattr(assertion, name)) == str(payload[name]) for name in (
                 "subject_uuid", "session_id", "principal_sha256", "auth_generation",
             )), "Candidate assertion belongs to another challenge principal/session")
-            confirmation = {"confirmation_id": str(uuid4()), "challenge_id": challenge_id,
+            confirmation = {"confirmation_id": str(self.allocate_uuid()), "challenge_id": challenge_id,
                 "context": payload, "assertion": assertion.model_dump(mode="json")}
             confirmation_sha = digest("confirmation", confirmation)
             tx.put("pairing_confirmations", payload["pairing_id"], confirmation, immutable=True)
@@ -264,7 +268,7 @@ class PairingService:
             tx.put("pairing_challenges", challenge_id, {**challenge, "consumed_by": confirmation_sha})
             tx.put("pairing_requests", payload["pairing_id"], {**row, "state": "CANDIDATE_CONFIRMED",
                    "confirmation_sha256": confirmation_sha})
-            tx.append(str(uuid4()), "PAIRING_CANDIDATE_CONFIRMED", {"pairing_id": payload["pairing_id"],
+            tx.append(str(self.allocate_uuid()), "PAIRING_CANDIDATE_CONFIRMED", {"pairing_id": payload["pairing_id"],
                 "confirmation_sha256": confirmation_sha})
             return {"pairing_id": payload["pairing_id"], "device_id": str(request.device_id),
                     "status": "CANDIDATE_CONFIRMED"}
@@ -312,7 +316,7 @@ class PairingService:
             confirmation = self._confirmed(tx, row, request)
             self._device_denied(tx, confirmation["context"]["subject_uuid"], str(request.device_id))
             _require(row.get("device_challenge_id") is None, "Device completion challenge is single-use")
-            nonce, challenge_id = str(uuid4()), str(uuid4())
+            nonce, challenge_id = str(self.allocate_uuid()), str(self.allocate_uuid())
             payload = {**confirmation["context"], "operation": "complete_pairing",
                 "challenge_id": challenge_id, "nonce_sha256": nonce_digest(nonce),
                 "confirmation_sha256": row["confirmation_sha256"], "issued_at_ms": now,
@@ -321,12 +325,12 @@ class PairingService:
                 "public_key": request.public_key, "expires_at_ms": payload["expires_at_ms"],
                 "consumed_by": None}, immutable=True)
             tx.put("pairing_requests", pairing_id, {**row, "device_challenge_id": challenge_id})
-            tx.append(str(uuid4()), "PAIRING_DEVICE_CHALLENGE", {"challenge_id": challenge_id})
+            tx.append(str(self.allocate_uuid()), "PAIRING_DEVICE_CHALLENGE", {"challenge_id": challenge_id})
             return {"payload": payload, "nonce": nonce}
         return self.store.transact(operation)
 
     def _claim(self, device: dict, control: dict, event: dict, now: int) -> dict:
-        return DeviceClaim(claim_id=uuid4(), device_id=device["device_id"], subject_uuid=device["subject_uuid"],
+        return DeviceClaim(claim_id=self.allocate_uuid(), device_id=device["device_id"], subject_uuid=device["subject_uuid"],
             key_sha256=device["key_sha256"], key_generation=device["key_generation"],
             auth_generation=device["auth_generation"], authority_id=control["authority_id"],
             authority_incarnation=control["incarnation"], epoch_id=control["epoch_id"],
@@ -364,7 +368,7 @@ class PairingService:
                    {"device_id": device_id, "subject_uuid": subject_id}, immutable=True)
             tx.put("pairing_challenges", challenge_id, {**challenge, "consumed_by": device_id})
             tx.put("pairing_requests", payload["pairing_id"], {**row, "state": "COMPLETED"})
-            event = tx.append(str(uuid4()), "PAIRING_COMPLETED", {"device_id": device_id,
+            event = tx.append(str(self.allocate_uuid()), "PAIRING_COMPLETED", {"device_id": device_id,
                 "pairing_id": payload["pairing_id"], "confirmation_sha256": row["confirmation_sha256"]})
             return self._claim(device, self._control(tx), event, now)
         claim = self.store.transact(operation)
@@ -391,7 +395,7 @@ class PairingService:
         def operation(tx: Transaction) -> dict:
             control, now = self._control(tx), self._now(tx)
             device = self._device(tx, device_id)
-            nonce, challenge_id = str(uuid4()), str(uuid4())
+            nonce, challenge_id = str(self.allocate_uuid()), str(self.allocate_uuid())
             payload = {"protocol_version": 2, "operation": "refresh_claim", "audience": "hirewiz:pairing-only",
                 "challenge_id": challenge_id, "device_id": device_id, "subject_uuid": device["subject_uuid"],
                 "key_sha256": device["key_sha256"], "key_generation": device["key_generation"],
@@ -402,7 +406,7 @@ class PairingService:
             tx.put("pairing_challenges", challenge_id, {"kind": "refresh", "payload": payload,
                 "public_key": device["public_key"], "expires_at_ms": payload["expires_at_ms"],
                 "consumed_by": None}, immutable=True)
-            tx.append(str(uuid4()), "PAIRING_REFRESH_CHALLENGE", {"challenge_id": challenge_id})
+            tx.append(str(self.allocate_uuid()), "PAIRING_REFRESH_CHALLENGE", {"challenge_id": challenge_id})
             return {"payload": payload, "nonce": nonce}
         return self.store.transact(operation)
 
@@ -420,8 +424,8 @@ class PairingService:
             _require(all(device[key] == payload[key] for key in (
                 "subject_uuid", "key_sha256", "key_generation", "auth_generation",
             )), "Refresh ownership changed")
-            tx.put("pairing_challenges", challenge_id, {**challenge, "consumed_by": str(uuid4())})
-            event = tx.append(str(uuid4()), "PAIRING_CLAIM_REFRESHED", {"device_id": payload["device_id"],
+            tx.put("pairing_challenges", challenge_id, {**challenge, "consumed_by": str(self.allocate_uuid())})
+            event = tx.append(str(self.allocate_uuid()), "PAIRING_CLAIM_REFRESHED", {"device_id": payload["device_id"],
                 "challenge_id": challenge_id})
             return self._claim(device, control, event, now)
         claim = self.store.transact(operation)
@@ -476,7 +480,7 @@ class PairingService:
             tx.put("pairing_device_tombstones", device_id, tombstone, immutable=True)
             tx.put("pairing_assertions", str(assertion.assertion_id), {"revoked_device_id": device_id}, immutable=True)
             tx.put("pairing_challenges", challenge_id, {**challenge, "consumed_by": device_id})
-            event = tx.append(str(uuid4()), "PAIRING_DEVICE_REVOKED", tombstone)
+            event = tx.append(str(self.allocate_uuid()), "PAIRING_DEVICE_REVOKED", tombstone)
             return {"status": "REVOKED", "device_id": device_id, "event_sequence": event["sequence"]}
         return self.store.transact(operation)
 

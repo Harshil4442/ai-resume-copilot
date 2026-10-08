@@ -1,7 +1,7 @@
 {
   "checked_at_utc": "2026-10-08T22:43:54.275829+00:00",
   "base_commit": "772634d9ce8445acd559564f9b33a503ee7f0943",
-  "source_status": "Reviewed root source, not yet committed or promoted",
+  "source_status": "Committed reviewed 1,261-case component checkpoint; later pairing integration is recorded separately.",
   "source_sha256": {
     ".github/workflows/ci.yml": "aa7a185bf36419fb65cf0c2a0ce6d04ff3cfdd3081fa9eb5803399a1d2ce4a67",
     "backend/alembic/versions/20261009_0010_model_cost_budgets.py": "ecf677e3a87a7416206f4f688dce1bc4343e1b669cdf6ed49a634c14ef69bbdf",
@@ -86,5 +86,6 @@
   "production_schema": "20261008_0009",
   "paired_browser_enabled": false,
   "automatic_submission_enabled": false,
-  "model_money_cutover_complete": false
+  "model_money_cutover_complete": false,
+  "integration_commit": "9ebfc7dafd220f059f91a72cf83e4324a77f8642"
 }

@@ -31,7 +31,10 @@ The current reviewed root integration adds persisted model-cost ceilings, a fail
 pricing policy, generation quiescence, a GCP journal/registry SDK adapter, a coverage
 audit harness, a fresh-user no-AI backend journey and a release guard. After correcting
 the emulator's unsupported contention-schedule assumption, the default combined suite
-passes **1,261 tests without failures or skips**. The first expanded run's 1,235 passes
+passed **1,261 tests without failures or skips**. The subsequent reviewed connected
+pairing bridge raises the complete root result to **1,279 passing tests without skips**,
+with full-CI Mypy passing on 77 source files. Production authentication, durable
+invocation/recovery and browser transport remain unenabled. The first expanded run's 1,235 passes
 and one failure remain historical evidence. These additions are not serving production.
 They do not establish browser pairing, real portal completion, a restore drill, provider
 invoice caps or measured worldwide recall. See [root integration and staging](ROOT_COMPONENT_INTEGRATION_2026-10-09.md).

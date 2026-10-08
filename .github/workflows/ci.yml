@@ -65,7 +65,7 @@ jobs:
           tests/test_catalog_timing.py
           tests/fixtures/pairing_authority.py tests/test_pairing_crypto.py tests/test_pairing_service.py tests/test_pairing_processes.py
           tests/test_job_coverage_audit.py
-          tests/test_gcp_rpc.py tests/test_gcp_journal_sdk.py tests/test_gcp_safety_coordinator.py tests/test_gcp_rpc_emulator.py
+          tests/test_gcp_rpc.py tests/test_gcp_journal_sdk.py tests/test_gcp_safety_coordinator.py tests/test_gcp_rpc_emulator.py tests/test_gcp_pairing_emulator.py
           app/domains/recovery/gcp_media.py
           tests/conftest.py tests/model_cost_fixtures.py tests/test_model_cost_budgets.py tests/test_model_cost_budgets_postgres.py
           app/services/model_cost_policy.py app/services/generation_budget.py app/services/llm_client.py
@@ -228,7 +228,7 @@ jobs:
         run: npm audit --omit=dev --audit-level=critical
       - name: Scan repository for committed secrets
         run: >-
-          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.24.2
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.24.2@sha256:b5918eb91b8d2473cec722f066abb4352e4ffdc4ec9f4283ec143aba9ec9ebc4
           detect --source /repo --no-banner --redact
       - name: Build production container
         run: docker build --tag hirewiz-ci:${{ github.sha }} .

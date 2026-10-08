@@ -145,7 +145,8 @@ class BufferedRegistry:
         self.rpc, self.max_attempts = rpc, max_attempts
         self.deadline_seconds, self.monotonic = deadline_seconds, monotonic
 
-    def run(self, operation: Callable[[BufferedTransaction], None]) -> None:
+    def run(self, operation: Callable[[BufferedTransaction], None], *,
+            before_attempt: Callable[[], None] | None = None) -> None:
         deadline = self.monotonic() + self.deadline_seconds
         def check_deadline() -> None:
             if self.monotonic() >= deadline:
@@ -153,6 +154,11 @@ class BufferedRegistry:
 
         for attempt in range(self.max_attempts):
             check_deadline()
+            # Fresh external witnesses belong outside every native transaction,
+            # including retries that follow only a definite ABORTED response.
+            if before_attempt is not None:
+                before_attempt()
+                check_deadline()
             try:
                 transaction_id = self.rpc.begin()
             except Aborted:
