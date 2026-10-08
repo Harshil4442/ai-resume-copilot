@@ -15,6 +15,8 @@ from pathlib import Path
 from typing import TypeVar
 from uuid import UUID, uuid4
 
+from backend.tests.fixtures.recovery_sequence_projection import verify_sequences
+
 from app.domains.recovery.contracts import (
     AuthenticatedActor,
     Binding,
@@ -36,6 +38,9 @@ class FileTransaction:
         row = self.connection.execute("SELECT payload FROM records WHERE namespace=? AND key=?",
                                       (namespace, key)).fetchone()
         return json.loads(row[0]) if row else None
+
+    def keys(self, namespace: str) -> set[str]:
+        return {row[0] for row in self.connection.execute("SELECT key FROM records WHERE namespace=?", (namespace,))}
 
     def put(self, namespace: str, key: str, value: dict, *, immutable: bool = False) -> None:
         prior = self.get(namespace, key)
@@ -86,6 +91,7 @@ class FileTransaction:
             raise GuardUnavailable("Authority control is missing or replaced")
         sequence, previous = 0, ZERO_DIGEST
         projected_control: tuple[str, int, str] | None = None
+        events = []
         for row in self.connection.execute("SELECT sequence,event_id,kind,payload,digest,previous_digest "
                                            "FROM events ORDER BY sequence"):
             event = self._event(row)
@@ -93,6 +99,7 @@ class FileTransaction:
             if (event["sequence"] != sequence + 1 or event["previous_digest"] != previous or
                     fingerprint(event) != digest):
                 raise GuardUnavailable("Authority journal is corrupt or incomplete")
+            events.append(event)
             payload = event["payload"]
             if event["kind"] in {"CREATED_CLOSED", "EPOCH_CLOSED", "EPOCH_OPENED"}:
                 status = "OPEN" if event["kind"] == "EPOCH_OPENED" else "CLOSED"
@@ -131,6 +138,7 @@ class FileTransaction:
             raise GuardUnavailable("Authority journal is absent")
         if projected_control != (control.get("epoch_id"), control.get("generation"), control.get("status")):
             raise GuardUnavailable("Epoch closure evidence is incomplete")
+        verify_sequences(self, events)
 
 
 class FileAuthority:

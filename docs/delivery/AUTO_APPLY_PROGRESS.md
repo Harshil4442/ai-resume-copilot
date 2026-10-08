@@ -7,6 +7,11 @@ tracks implementation evidence and does not replace the wider worldwide coverage
 The [first launch path](INITIAL_BROWSER_ASSISTANCE_2026-10-08.md) is candidate-reviewed
 browser assistance, selected on 8 October. Final submission remains candidate-controlled.
 
+First browser adapter: [Razorpay / Greenhouse](RAZORPAY_BROWSER_PILOT_2026-10-09.md),
+selected by the candidate on 9 October. Actual host fields exceed the public API schema
+and current static subset; native attachment and final submission remain manual.
+Production pairing and portal-use permission remain open.
+
 ## Implementation checkpoints
 
 - [x] Verify latest remote baseline d5c2ea8 and existing GCP/Vercel identities.
@@ -23,7 +28,14 @@ browser assistance, selected on 8 October. Final submission remains candidate-co
 - [ ] Expand connector catalog and independently measure declared-scope recall.
 - [ ] Complete permitted browser companion, device claims and human checkpoints.
 - [x] Integrate the disabled Python recovery core with 85 focused local cases and the
-  complete 630-test backend suite. Production authority, pairing and multi-field steps remain open.
+  complete 630-test backend suite. Production authority and pairing remain open.
+- [x] Integrate the [disabled local multi-field core](RECOVERY_SEQUENCES_2026-10-09.md),
+  with 222 focused cases, independent review and 780 passing merged local backend tests.
+  Exact remote CI and actual browser integration remain pending; no production execution
+  or application charge is enabled.
+- [x] Integrate [bounded catalog timing diagnostics](CATALOG_TIMING_2026-10-09.md) with
+  preserved auth/stream contracts and 71 passing merged frontend unit tests. Exact remote
+  CI, rollout, causal diagnosis and measured performance improvement remain pending.
 - [ ] Verify all mandatory AI-disabled fresh-user workflows and optional enhanced modes.
 - [x] Verify connected responsive flows at all five declared widths with local production-build evidence.
 - [x] Validate migration round-trip through `20261008_0008` on PostgreSQL 17 and regenerate API contracts.

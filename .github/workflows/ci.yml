@@ -51,7 +51,7 @@ jobs:
         working-directory: backend
         run: >-
           .venv/bin/ruff check app/domains app/services/guardrails.py app/services/resume_artifacts.py app/services/resume_layout.py app/services/pdf_streams.py app/routers/v1
-          app/routers/worker.py app/worker_main.py app/observability.py app/feature_flags.py app/migrate.py scripts
+          app/routers/worker.py app/worker_main.py app/observability.py app/catalog_timing.py app/feature_flags.py app/migrate.py scripts
           tests/test_analysis_runs.py tests/test_career_workspace.py tests/test_alembic_schema.py
           tests/test_usage_guardrails.py tests/test_feature_flags.py tests/test_operations_platform.py
           tests/test_prompt_evaluations.py tests/test_resume_source.py tests/test_resume_source_migrations.py
@@ -61,11 +61,13 @@ jobs:
           tests/test_employer_feed_adapters.py tests/test_employer_admissions.py tests/test_employer_admissions_postgres.py
           tests/test_employer_host_pacing.py tests/test_employer_catalog_queries.py
           tests/fixtures/recovery_authority.py tests/test_recovery_authority.py tests/test_recovery_authority_processes.py
+          tests/fixtures/recovery_sequence_projection.py tests/test_recovery_sequences.py tests/test_recovery_sequences_processes.py
+          tests/test_catalog_timing.py
       - name: Type-check modernized modules
         working-directory: backend
         run: >-
           .venv/bin/mypy app/domains app/services/guardrails.py app/services/resume_artifacts.py app/services/resume_layout.py app/services/pdf_streams.py app/routers/v1
-          app/routers/worker.py app/worker_main.py app/observability.py app/feature_flags.py app/migrate.py
+          app/routers/worker.py app/worker_main.py app/observability.py app/catalog_timing.py app/main.py app/security.py app/feature_flags.py app/migrate.py
       - name: Compile backend
         run: backend/.venv/bin/python -m compileall -q backend/app
       - name: Validate PostgreSQL migrations

@@ -1,0 +1,87 @@
+{
+  "base_commit": "7c59578d169290a91f45d39552ad48d41ea40d16",
+  "base_tree": "11e90e74ec9d6c7e3bae7456ce8e5932937dec1d",
+  "snapshot": "/tmp/hirewiz-catalog-latency-20261009.3k8MnX",
+  "patch": "/tmp/hirewiz-catalog-latency-20261009.patch",
+  "patch_sha256": "afaeab6882c38325d3c39e05da6be2114c14e8e8fdb8a0ac76a2aad75b1e5aae",
+  "changed_files_sha256": {
+    "backend/app/catalog_timing.py": "97535f9a78930ab552fea8548fb7c8b7e56e7ba0378b9903b6865825e71459be",
+    "backend/app/domains/employer/service.py": "3ba2ba025bc132a645d75835976b5be43e95c507467600e938383ce65314a7fc",
+    "backend/app/main.py": "f2c6b0abbadeca472d1f10a7a072ad000a3d53024f0d156948d0a94edcbbd1a0",
+    "backend/app/observability.py": "22c0888578e43de0b5759f931ad3bbb25618c1ea2cf29145faa022901feeb859",
+    "backend/app/security.py": "ec6826d56a859d7cc76ab583858dd8bb85081f83e6c07fb0df4af55bf11be213",
+    "backend/tests/test_catalog_timing.py": "f4e05afa3ba765c1395a44911b2484950389f83956b4e09e3e85fd021048bd46",
+    "frontend/app/api/backend/[...path]/route.test.ts": "5c2b9e9f80c354acf8b9b32b88d4f3c7a95dcce29c932505b74cd82bbeba0b19",
+    "frontend/app/api/backend/[...path]/route.ts": "ae90a782362cbb80bb656813f381225fbfe13a3bc730b23d23e2729e188f7334",
+    "frontend/lib/catalogTiming.test.ts": "2e29a95e0da3ac7c6a7014a96b0f15f59a78a8165af84aa81f75e958db148ecb",
+    "frontend/lib/catalogTiming.ts": "79d1ae843e20908b660860ee58569ba32d895f6e41c2b238dea65da28ee548e5"
+  },
+  "unchanged_dependency_files_sha256": {
+    "backend/pyproject.toml": "027747c1c9ec93738f8d12cc07d5130a377decc6561c8ef923837fac14eded7e",
+    "backend/uv.lock": "736dce5cbba50c7347a2f703b690342250f569d6219c9884540b86f87c8dfdea",
+    "backend/requirements.txt": "3389d4d873642c97ebf0e6eb4d85196046007611f2888246b88a18efed8e4bfd",
+    "frontend/package.json": "187c3662b81ebcaa3061779d710e31b3e14a5a944b86d5cc8269b1b279da8b09",
+    "frontend/package-lock.json": "996945f1f4552c3ed73cce66338635ef74ba2b11cf580ba2a411dbe03cc1a323"
+  },
+  "revision": "v2-failed-fetch-headers-unavailable",
+  "superseded_v1": {
+    "patch": "/tmp/hirewiz-catalog-latency-20261009-superseded-v1.patch",
+    "patch_sha256": "a579615fb24fe8abfc08da86e274f2c40a734e6a024145248a31c1faade788b4",
+    "evidence": "/tmp/hirewiz-catalog-latency-20261009-evidence-superseded-v1.md",
+    "evidence_sha256": "7a39307af7a7b2b497e65a225cc839a84788ea00c3f8ce059d77c20569396fdc",
+    "manifest": "/tmp/hirewiz-catalog-latency-20261009-hashes-superseded-v1.json",
+    "manifest_sha256": "6b1c914e4f147b53b347bff05cac4203849cc61ddab74c8006382a54b44a59f5"
+  },
+  "scope": "Catalog-only diagnostic spans and BFF header filtering; no performance improvement claim",
+  "focused_verification": {
+    "backend_cases": 21,
+    "frontend_cases": 35,
+    "review": "Independent source review; repaired failed-fetch phase label; no remaining confirmed scoped defect"
+  },
+  "root_integration": {
+    "source_hashes_match": true,
+    "dependencies_unchanged": true,
+    "merged_local": {
+      "backend": {
+        "tests": 780,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "backend_warnings": 3,
+      "frontend_unit_tests": 71,
+      "ruff": "passed exact current CI scope",
+      "mypy": "passed 58 source files",
+      "prompt_evaluations": 6,
+      "compile": "passed",
+      "frontend_lint": "passed",
+      "frontend_typecheck": "passed",
+      "frontend_production_build": "passed exact synthetic CI settings",
+      "backend_openapi_drift": "zero",
+      "frontend_generated_api_drift": "zero",
+      "logs": {
+        "backend": {
+          "path": "/tmp/hirewiz-sequences-catalog-merged-backend-recheck-20261009.log",
+          "sha256": "84dfeac10b2772ff0c3b12e165767063a082f60801491cde4926a044fbb6917d"
+        },
+        "backend_junit": {
+          "path": "/tmp/hirewiz-sequences-catalog-merged-backend-recheck-20261009.xml",
+          "sha256": "a6fde6f92f8dd310f5297be3f7479e65163d060ab9016cb86a495895b344b60e"
+        },
+        "frontend_build": {
+          "path": "/tmp/hirewiz-sequences-catalog-frontend-build-recheck-20261009.log",
+          "sha256": "0561da96283dc876a4a290ee8288d6983d66d03f19c97d0378ecb51e6842a813"
+        }
+      },
+      "remote_exact_commit_ci": "pending",
+      "local_setup_corrections": [
+        "Owned disposable Redis was renamed to the existing hardcoded fixture name; unchanged full suite rerun passed.",
+        "Required NEXTAUTH_SECRET absent on first local build; unchanged build rerun with synthetic CI settings passed."
+      ],
+      "production_enabled": false
+    },
+    "remote_ci": "pending",
+    "production_rollout": "pending",
+    "production_latency_samples": "pending"
+  }
+}

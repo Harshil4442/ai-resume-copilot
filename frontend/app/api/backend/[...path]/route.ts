@@ -1,6 +1,7 @@
 import { getToken } from "next-auth/jwt";
 import { NextRequest, NextResponse } from "next/server";
 import { isTrustedRequestOrigin } from "../../../../lib/requestOrigin";
+import { catalogTimingHeaders } from "../../../../lib/catalogTiming";
 
 const PUBLIC_PATHS = new Set(["auth/register"]);
 const FORWARDED_HEADERS = ["accept", "content-type", "idempotency-key", "x-correlation-id"];
@@ -32,7 +33,10 @@ async function forward(
     return NextResponse.json({ detail: "Invalid backend path" }, { status: 400 });
   }
 
+  const isCatalog = request.method === "GET" && path.join("/") === "v1/employer-jobs/catalog";
+  const sessionStarted = isCatalog ? performance.now() : 0;
   const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+  const sessionMs = isCatalog ? performance.now() - sessionStarted : 0;
   const accessToken = typeof token?.accessToken === "string" ? token.accessToken : null;
   if (!isPublicPath(path) && !accessToken) {
     return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
@@ -47,9 +51,11 @@ async function forward(
     if (value) headers.set(name, value);
   }
   if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
+  if (isCatalog) headers.delete("x-correlation-id");
 
   const hasBody = !["GET", "HEAD"].includes(request.method);
   const body = hasBody ? await request.arrayBuffer() : undefined;
+  const backendStarted = isCatalog ? performance.now() : 0;
   try {
     const response = await fetch(target, {
       method: request.method,
@@ -63,8 +69,13 @@ async function forward(
       Pragma: "no-cache",
     });
     for (const name of ["content-type", "content-disposition", "x-correlation-id", "retry-after"]) {
+      if (isCatalog && name === "x-correlation-id") continue;
       const value = response.headers.get(name);
       if (value) responseHeaders.set(name, value);
+    }
+    if (isCatalog) {
+      catalogTimingHeaders(response.headers, sessionMs, performance.now() - backendStarted)
+        .forEach((value, name) => responseHeaders.set(name, value));
     }
     return new NextResponse(response.body, {
       status: response.status,
@@ -72,10 +83,15 @@ async function forward(
     });
   } catch (error) {
     const timedOut = error instanceof DOMException && error.name === "TimeoutError";
-    return NextResponse.json(
+    const response = NextResponse.json(
       { detail: timedOut ? "The backend request timed out" : "The backend is unavailable" },
       { status: timedOut ? 504 : 502 },
     );
+    if (isCatalog) {
+      catalogTimingHeaders(null, sessionMs, null)
+        .forEach((value, name) => response.headers.set(name, value));
+    }
+    return response;
   }
 }
 

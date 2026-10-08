@@ -9,6 +9,7 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
+from .catalog_timing import catalog_span, current_catalog_timing
 from .database import get_db
 from .models import User
 
@@ -80,16 +81,21 @@ def get_current_user(
         detail="Not authenticated",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        sub = payload.get("sub")
-        if sub is None:
+    with catalog_span("dependency_jwt"):
+        try:
+            payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+            sub = payload.get("sub")
+            if sub is None:
+                raise credentials_exception
+            user_id = int(sub)
+        except (JWTError, ValueError):
             raise credentials_exception
-        user_id = int(sub)
-    except (JWTError, ValueError):
-        raise credentials_exception
 
-    user = db.query(User).filter(User.id == user_id).first()
+    if current_catalog_timing() is not None:
+        with catalog_span("db_acquire"):
+            db.connection()
+    with catalog_span("auth_lookup"):
+        user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise credentials_exception
     return user

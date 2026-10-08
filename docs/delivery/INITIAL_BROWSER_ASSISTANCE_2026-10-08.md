@@ -5,6 +5,13 @@ than supplying an employer/ATS test tenant. Keep the existing GCP backend, Verce
 and GitHub release workflow. This changes launch order, not the permission requirements or
 the wider automatic-application acceptance gates.
 
+The candidate selected **Razorpay / Greenhouse first** on 9 October (Asia/Kolkata).
+The [public portal review](RAZORPAY_BROWSER_PILOT_2026-10-09.md) confirms the exact tenant,
+extra required DOM fields and earlier-than-submit disclosure paths. This is a local-fixture
+reference and rollout priority, not a new browser permission or an enabled integration.
+The [pairing boundary review](BROWSER_PAIRING_BOUNDARY_2026-10-09.md) identifies the
+stable-account/authentication and independent lifecycle records required before pairing.
+
 ## Candidate flow
 
 1. Upload a resume and confirm extracted facts and job preferences. Search the verified
@@ -55,8 +62,10 @@ capability; browser support needs a permitted, reviewed adapter and narrow origi
   account switching, unpairing and minimum origin permissions.
 - [ ] Integrate independently retained epochs, fresh approval registration, append-only begun
   evidence and deletion/revocation tombstones; verify the actual production authority.
-- [ ] Extend the bounded one-fill core to attempt-bound multi-field steps while keeping the
-  stable opening claim across devices, epochs and packages. Never clear it to advance a form.
+- [x] Add the [disabled local multi-field core](RECOVERY_SEQUENCES_2026-10-09.md) with
+  222 focused cases, preserving the stable opening claim across attempts/devices/epochs.
+- [ ] Integrate that sequence with actual production authority and verified browser fields;
+  never clear the stable claim to advance a form.
 - [ ] Connect reviewed application packages and exact form versions to the companion; prevent
   restored SQL records or queued messages from registering a fresh candidate approval.
 - [ ] Verify the first permitted employer adapter with conditional fields, checkpoints,
