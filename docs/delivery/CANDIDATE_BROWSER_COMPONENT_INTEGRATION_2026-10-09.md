@@ -37,6 +37,13 @@ full-suite completion. Parsed Python AST, including every literal, is unchanged.
 remote CI must verify the resulting committed source. An ignored TypeScript incremental
 build artifact was excluded from integration; existing workspace output was preserved.
 
+The first exact-commit CI history scan additionally flagged 16 source-file SHA256 values
+whose JSON keys contained authentication/password filenames. Each value was recomputed
+from its exact historical Git blob and confirmed to be a file digest. The evidence now
+uses separate `path` and `sha256` fields. Only those 16 exact historical commit/file/rule/
+line fingerprints are excluded; the repository scan remains enabled for all other input.
+The initial CI finding and independent local history-scan reproduction remain preserved.
+
 The serving backend/schema remain `e7d8f2b` / `20261008_0009`, and the frontend remains
 `06cc112` on HireWiz's domains. No new backend migration, authority, signing key, runtime
 factory, automatic employer application, test payment or production submission was enabled.
