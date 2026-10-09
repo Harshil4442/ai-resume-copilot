@@ -1,8 +1,8 @@
 # Public employer-feed compatibility — 9 October 2026
 
-Status: author verification complete; independent component/source-use review and
-production enrollment remain pending. This checkpoint does not establish worldwide
-coverage or enable applications.
+Status: initial author verification and exact CI complete; independent review retains
+an inherited-query defect. Repair/recheck, source-use review and production enrollment
+remain pending. This checkpoint does not establish worldwide coverage or enable applications.
 
 ## Workable discovery repair
 
@@ -64,10 +64,18 @@ response bytes remain in the owned local evidence directory, rather than the rep
 - [x] Verify exact employer-to-tenant links and public feed behavior.
 - [x] Repair the observed account-scoped Workable redirect and verify refusal boundaries.
 - [x] Save three discovery proposals with no submission grants or production writes.
+- [x] Complete all five exact `4911d1f` CI jobs, including 2,002 backend cases.
 - [ ] Independently review the exact patch and applicable source-use scope.
-- [ ] Complete new exact CI and an explicitly reviewed enrollment/release.
+- [ ] Repair and recheck inherited HTTP-client defaults, then verify the exact new CI.
+- [ ] Complete an explicitly reviewed enrollment/release.
 - [ ] Expand the employer inventory and measure independently defined recall.
 
-The successful `69fbc22` CI predates this patch and is not evidence for the new source
-revision. No production source enrollment, deployment, payment, application, model call
-or candidate disclosure occurred during this checkpoint.
+The successful `4911d1f` [CI run](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37933390559)
+covers the initial patch. Independent review reproduces all 69 feed cases and 14
+additional checks, but two intended assertions fail: an injected HTTPX client's default
+query parameters can change the otherwise fixed public GET URLs. One controlled input
+contains a synthetic query credential; this is not an observed production leak.
+The original failing probes remain retained while a separate request-construction repair
+is authored. Green CI does not close that finding or authorize source enrollment.
+No production enrollment, deployment, payment, application, model call or candidate
+disclosure occurred during this checkpoint.

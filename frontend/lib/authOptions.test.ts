@@ -49,3 +49,13 @@ it("clears prior password context on verified legacy Google sign-in", async () =
   const result = await callback({ token: { browserPairingSession: context }, user: { id: "12", email: "candidate@example.com" }, account: { provider: "google", id_token: "synthetic-google-id-token" } } as Parameters<typeof callback>[0]);
   expect(result.browserPairingSession).toBeUndefined();
 });
+
+
+it("never propagates raw backend JSON errors or provider credentials from Google callback", async () => {
+  const log = vi.spyOn(console, "error").mockImplementation(() => {});
+  vi.stubGlobal("fetch", vi.fn(async () => new Response("synthetic-private-provider-response")));
+  await expect(callback({ token: {}, user: { id: "12", email: "candidate@example.com" },
+    account: { provider: "google", id_token: "synthetic-private-google-token" } } as Parameters<typeof callback>[0])).rejects.toThrow("AUTH_UNAVAILABLE");
+  expect(JSON.stringify(log.mock.calls)).not.toContain("synthetic-private-provider-response");
+  expect(JSON.stringify(log.mock.calls)).not.toContain("synthetic-private-google-token");
+});

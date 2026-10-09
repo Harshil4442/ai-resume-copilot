@@ -13,7 +13,8 @@ import secrets
 import time
 from collections.abc import Callable
 from datetime import UTC
-from uuid import uuid4
+from typing import Protocol
+from uuid import UUID, uuid4
 
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -28,6 +29,12 @@ from .retention import CandidateLifetimeRetention
 FAILURE = "Candidate password authentication failed"
 UNAVAILABLE = "Candidate account lifetime is unavailable"
 SESSION_MS = 86_400_000
+
+
+class CandidateCookieLogout(Protocol):
+    def deny_cookie_session(self, context: CandidateWebSession, revision: CandidateCredentialRevision,
+                            operation_id: UUID) -> bool: ...
+    def confirm_deleted_cookie(self, context: CandidateWebSession, *, auth_generation: int) -> bool: ...
 
 
 def credential_digest(encoded: str) -> str:
@@ -51,12 +58,33 @@ def mapped_account(db: Session, candidate_id: int) -> CandidatePasswordAccount |
 
 class CandidateAccountService:
     def __init__(self, engine: Engine, retention: CandidateLifetimeRetention, *,
-                 now_ms: Callable[[], int] = lambda: time.time_ns() // 1_000_000):
+                 now_ms: Callable[[], int] = lambda: time.time_ns() // 1_000_000,
+                 cookie_logout: CandidateCookieLogout | None = None):
         if not isinstance(engine, Engine) or engine.hide_parameters is not True:
             raise GuardUnavailable(UNAVAILABLE)
         self.sessions = sessionmaker(bind=engine, expire_on_commit=False)
         self._dummy_hash = hash_password(secrets.token_urlsafe(32))
         self.retention, self.now_ms = retention, now_ms
+        self.cookie_logout = cookie_logout
+
+    def registration_status(self, *, email: str, password: str) -> str:
+        """Credential-verified status only; never adopt an enrollment ACK."""
+        if type(password) is not str or not 0 < len(password.encode()) <= 1024:
+            raise GuardDenied(FAILURE)
+        with self.sessions() as db:
+            user = db.query(User).filter_by(email=email.strip().lower()).one_or_none()
+            valid = verify_password(password, user.password_hash if user is not None else self._dummy_hash)
+            if user is None or not valid:
+                raise GuardDenied(FAILURE)
+            row = mapped_account(db, user.id)
+            if row is None:
+                return "LEGACY_ENROLLMENT_UNAVAILABLE"
+            if row.state == "PENDING":
+                return "PENDING_REVIEW_REQUIRED"
+            revision = revision_from_row(row, user.password_hash)
+        if self.retention.check_account(revision) is not True:
+            raise GuardUnavailable(UNAVAILABLE)
+        return "ENROLLED"
 
     def register(self, *, email: str, password: str, policy_version: str) -> int:
         if not 10 <= len(password) <= 128:
@@ -140,6 +168,26 @@ class CandidateAccountService:
     def logout(self, context: CandidateWebSession) -> None:
         revision = self._current(context)
         if self.retention.revoke_session(context, revision) is not True:
+            raise GuardUnavailable(UNAVAILABLE)
+
+    def logout_cookie(self, context: CandidateWebSession, *, auth_generation: int, operation_id: UUID) -> None:
+        """Only clears a cookie after an exact retained denial; never grants."""
+        if self.cookie_logout is None:
+            raise GuardUnavailable(UNAVAILABLE)
+        with self.sessions() as db:
+            row = mapped_account(db, context.candidate_id)
+            user = db.query(User).filter_by(id=context.candidate_id).one_or_none()
+            if row is None or user is None or row.state == "DELETE_DENIED":
+                revision = None
+            else:
+                revision = revision_from_row(row, user.password_hash)
+        if revision is None:
+            if self.cookie_logout.confirm_deleted_cookie(context, auth_generation=auth_generation) is not True:
+                raise GuardUnavailable(UNAVAILABLE)
+            return
+        if (context.account_binding_id != revision.account_binding_id
+                or auth_generation != revision.auth_generation
+                or self.cookie_logout.deny_cookie_session(context, revision, operation_id) is not True):
             raise GuardUnavailable(UNAVAILABLE)
 
     def change_password(self, context: CandidateWebSession, *, current_password: str, new_password: str) -> None:

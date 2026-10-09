@@ -15,6 +15,9 @@ report closes only the behavior and environment it actually verifies.
 
 ## Reviewed source awaiting deployment
 
+- [Candidate website integration](CANDIDATE_WEB_ROOT_INTEGRATION_2026-10-09.md):
+  exact reviewed account transport and actual local browser/API/data checks.
+  Private ingress, protected browser connection and deployment remain open.
 - [Recovery and monetary integration](RECOVERY_MONETARY_INTEGRATION_2026-10-09.md):
   exact reviewed publication and database-checking source, with activation limits.
 - [Monetary cutover preparation](MONETARY_CUTOVER_PREPARATION_2026-10-09.md):

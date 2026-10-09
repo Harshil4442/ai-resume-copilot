@@ -17,6 +17,7 @@ declare module "next-auth" {
 
 declare module "next-auth/jwt" {
   interface JWT {
+    candidateLogoutRequest?: string;
     /** Installed only by future retained native session provisioning; never exposed by session(). */
     browserPairingSession?: unknown;
     accessToken?: string;

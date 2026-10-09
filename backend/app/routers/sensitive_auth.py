@@ -1,6 +1,7 @@
 """Bound sensitive JSON before FastAPI parsing; never reflect authentication input.
 
-Only auth-router body models containing credential fields use this route boundary.
+Auth models containing credential fields and explicitly opted-in candidate
+lifecycle bodies use this route boundary.
 The budget is for bytes retained/read at the application boundary; the ASGI server
 still owns HTTP framing and its incoming chunk/header limits.
 """
@@ -106,6 +107,8 @@ def _failure(status_code: int) -> JSONResponse:
 
 
 class SensitiveAuthRoute(APIRoute):
+    bound_auth_body = False
+
     def get_route_handler(self) -> Callable:
         handler = super().get_route_handler()
         allowed: frozenset[str] = frozenset()
@@ -113,7 +116,7 @@ class SensitiveAuthRoute(APIRoute):
             model = field.field_info.annotation
             if isinstance(model, type) and issubclass(model, BaseModel):
                 names = frozenset(cast(type[BaseModel], model).model_fields)
-                if names & _CREDENTIAL_FIELDS:
+                if names & _CREDENTIAL_FIELDS or self.bound_auth_body:
                     allowed = names
         if not allowed:
             return handler

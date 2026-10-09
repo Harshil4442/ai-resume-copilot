@@ -97,6 +97,9 @@ async def jwt_validation_middleware(request: Request, call_next):
         path == "/api/auth/register" or
         path == "/api/auth/candidate/v1/register" or
         path == "/api/auth/candidate/v1/login" or
+        path == "/api/auth/candidate/v1/availability" or
+        path == "/api/auth/candidate/v1/registration-status" or
+        path == "/api/auth/candidate/v1/web-logout" or
         path.startswith("/api/public") or
         path == "/api/billing/webhooks/razorpay" or
         path.startswith("/api/v1/browser-pairing/")

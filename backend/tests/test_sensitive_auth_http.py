@@ -86,7 +86,7 @@ def test_unexpected_google_provider_exception_never_logs_token_or_raw_error(monk
     assert PRIVATE not in result.text + caplog.text and "private provider response" not in caplog.text
 
 
-async def asgi_request(chunks, *, headers=(), delayed=None):
+async def asgi_request(chunks, *, headers=(), delayed=None, path="/api/auth/candidate/v1/login"):
     app = privacy_app()
     calls, sent = [], []
     pending = iter(chunks)
@@ -103,7 +103,7 @@ async def asgi_request(chunks, *, headers=(), delayed=None):
     async def send(message):
         sent.append(message)
     scope = {"type": "http", "asgi": {"version": "3.0"}, "method": "POST",
-             "path": "/api/auth/candidate/v1/login", "raw_path": b"/api/auth/candidate/v1/login",
+             "path": path, "raw_path": path.encode(),
              "query_string": b"", "root_path": "", "scheme": "http", "http_version": "1.1",
              "headers": [(b"content-type", b"application/json"), *headers],
              "client": ("127.0.0.1", 12345), "server": ("localhost", 80)}
@@ -189,3 +189,29 @@ def test_openapi_documents_actual_fixed_errors_only_on_sensitive_auth_routes():
         assert schema["properties"]["detail"]["const"] == sensitive_auth.AUTH_INPUT_ERROR
         assert schema["additionalProperties"] is False
     assert "413" not in document["paths"]["/api/auth/profile"]["put"]["responses"]
+
+
+@pytest.mark.parametrize("path", ["/api/auth/candidate/v1/registration-status", "/api/auth/candidate/v1/web-logout"])
+@pytest.mark.parametrize("raw,expected", [
+    (b'{"private_unknown":"synthetic-private-auth-value"}', 422),
+    (b'{"operation_id":"x","operation_id":"synthetic-private-auth-value"}', 422),
+    (b'{"operation_id":NaN}', 422),
+    (b'x' * 8193, 413),
+])
+def test_new_candidate_status_and_cookie_denial_routes_remain_bounded_nonreflecting(path, raw, expected):
+    status, calls, _ = asyncio.run(asgi_request([chunk(raw)], path=path))
+    assert status == expected and calls == 1
+
+
+def test_cookie_denial_deadline_also_precedes_any_token_or_native_authority(monkeypatch):
+    monkeypatch.setattr(sensitive_auth, "AUTH_JSON_READ_DEADLINE_SECONDS", 0.050)
+    status, calls, cancelled = asyncio.run(asgi_request([chunk(b"{", True)], delayed=0.200,
+        path="/api/auth/candidate/v1/web-logout"))
+    assert status == 408 and calls == 1 and cancelled == [True]
+
+
+def test_default_candidate_capability_is_unavailable_without_disabling_legacy_routes():
+    with TestClient(privacy_app()) as client:
+        result = client.get("/api/auth/candidate/v1/availability")
+    assert result.status_code == 200
+    assert result.json() == {"fresh_registration": False, "legacy_enrollment": False}

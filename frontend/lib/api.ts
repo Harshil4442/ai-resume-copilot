@@ -1,4 +1,4 @@
-const API_BASE = "/api/backend";
+import { accountApiPath, accountMutationHeaders } from "./accountTransportClient";
 
 export class ApiError extends Error {
   constructor(
@@ -38,7 +38,11 @@ function errorMessage(data: unknown, fallback: string): string {
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const target = accountApiPath(path);
+  if (target.startsWith("/api/account/") && ["POST", "PUT", "PATCH", "DELETE"].includes(init.method || "GET")) {
+    init = { ...init, headers: { ...await accountMutationHeaders(), ...init.headers } };
+  }
+  const res = await fetch(target, {
     cache: "no-store",
     ...init,
   });
@@ -58,7 +62,7 @@ export async function apiGet<T>(path: string, signal?: AbortSignal): Promise<T> 
 }
 
 export async function apiBlob(path: string, signal?: AbortSignal): Promise<Blob> {
-  const response = await fetch(`${API_BASE}${path}`, { cache: "no-store", signal });
+  const response = await fetch(accountApiPath(path), { cache: "no-store", signal });
   if (!response.ok) {
     const data = await parseResponse(response);
     throw new ApiError(errorMessage(data, `File request failed (${response.status})`), response.status, data);
@@ -106,7 +110,7 @@ export async function apiPostForm<T>(path: string, form: FormData): Promise<T> {
 }
 
 export async function apiDownload(path: string, fallbackFilename: string): Promise<void> {
-  const response = await fetch(`${API_BASE}${path}`, { cache: "no-store" });
+  const response = await fetch(accountApiPath(path), { cache: "no-store" });
   if (!response.ok) {
     const data = await parseResponse(response);
     throw new ApiError(errorMessage(data, `Download failed (${response.status})`), response.status, data);

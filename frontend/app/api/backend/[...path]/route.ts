@@ -1,9 +1,11 @@
 import { getToken } from "next-auth/jwt";
 import { NextRequest, NextResponse } from "next/server";
 import { isTrustedRequestOrigin } from "../../../../lib/requestOrigin";
+import { handleAccount, SAFE_ACCOUNT_ALIASES } from "../../../../lib/accountTransportServer";
+import { candidateAuthSecret } from "../../../../lib/candidateAuthServer";
 import { catalogTimingHeaders } from "../../../../lib/catalogTiming";
 
-const PUBLIC_PATHS = new Set(["auth/register"]);
+
 const FORWARDED_HEADERS = ["accept", "content-type", "idempotency-key", "x-correlation-id"];
 const MUTATION_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
@@ -17,8 +19,7 @@ function backendOrigin() {
 }
 
 function isPublicPath(path: string[]) {
-  const joined = path.join("/");
-  return PUBLIC_PATHS.has(joined) || path[0] === "public";
+  return path[0] === "public";
 }
 
 async function forward(
@@ -29,16 +30,28 @@ async function forward(
     return NextResponse.json({ detail: "Cross-site mutation requests are not allowed" }, { status: 403 });
   }
   const { path } = await context.params;
+  // Authentication is never a generic proxy operation. In particular a
+  // caller cannot obtain an issuer bearer or pick a private logout request.
+  if (path[0] === "auth") {
+    // These exact compatibility aliases terminate in the dedicated handler;
+    // they cannot select an issuer/native lifecycle path or stream its reply.
+    if (path.length === 2 && Object.hasOwn(SAFE_ACCOUNT_ALIASES, path[1])) {
+      return handleAccount(request, SAFE_ACCOUNT_ALIASES[path[1]], true);
+    }
+    return NextResponse.json({ detail: "Use the dedicated account transport" }, { status: 403,
+      headers: { "Cache-Control": "private, no-store" } });
+  }
   if (path[0] === "v1" && path[1] === "browser-pairing") {
     return NextResponse.json({ detail: "Use the dedicated browser pairing transport" }, { status: 403 });
   }
-  if (!path.length || path.some((segment) => segment === ".." || segment.includes("/"))) {
+  if (!path.length || path.length > 20 || path.some((segment) => segment === "." || segment === ".."
+      || segment.length > 256 || !/^[A-Za-z0-9_.-]+$/.test(segment))) {
     return NextResponse.json({ detail: "Invalid backend path" }, { status: 400 });
   }
 
   const isCatalog = request.method === "GET" && path.join("/") === "v1/employer-jobs/catalog";
   const sessionStarted = isCatalog ? performance.now() : 0;
-  const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+  const token = await getToken({ req: request, secret: candidateAuthSecret() });
   const sessionMs = isCatalog ? performance.now() - sessionStarted : 0;
   const accessToken = typeof token?.accessToken === "string" ? token.accessToken : null;
   if (!isPublicPath(path) && !accessToken) {
@@ -62,6 +75,7 @@ async function forward(
   try {
     const response = await fetch(target, {
       method: request.method,
+      redirect: "error",
       headers,
       body,
       cache: "no-store",

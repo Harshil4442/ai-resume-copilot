@@ -1,5 +1,5 @@
 {
-  "status": "AUTHOR_WORKABLE_REDIRECT_FIX_AND_SOURCE_PROPOSALS_INDEPENDENT_REVIEW_PENDING",
+  "status": "INDEPENDENT_HOLD_PUBLIC_QUERY_COMPOSITION_REPAIR_IN_PROGRESS",
   "base_head": "69fbc22fcc7020b7dac29b3be138c525818f6975",
   "runtime_source": [
     {
@@ -647,5 +647,70 @@
     "Streams rejected before body consumption have empty partial raw artifacts, not hashes of complete error pages.",
     "Initial two Workable source_http_302 observations remain preserved; fixed reads include exact legacy302 and destination200, twice per complete scan."
   ],
-  "initial_affected_skips_reason": "Actual disposable PostgreSQL/Redis environment missing; original 104 passed/19 skipped XML retained. Configured rerun 123 passed/zero skips."
+  "initial_affected_skips_reason": "Actual disposable PostgreSQL/Redis environment missing; original 104 passed/19 skipped XML retained. Configured rerun 123 passed/zero skips.",
+  "initial_author_status": "AUTHOR_WORKABLE_REDIRECT_FIX_AND_SOURCE_PROPOSALS_INDEPENDENT_REVIEW_PENDING",
+  "exact_ci": {
+    "commit": "4911d1f637c0dab28817e10a41ed352e56d166a3",
+    "run_id": 37933390559,
+    "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37933390559",
+    "status": "completed",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "name": "frontend",
+        "status": "completed",
+        "conclusion": "success",
+        "databaseId": 113829365190,
+        "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37933390559/job/113829365190"
+      },
+      {
+        "name": "backend",
+        "status": "completed",
+        "conclusion": "success",
+        "databaseId": 113829365522,
+        "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37933390559/job/113829365522"
+      },
+      {
+        "name": "browser-companion",
+        "status": "completed",
+        "conclusion": "success",
+        "databaseId": 113829365615,
+        "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37933390559/job/113829365615"
+      },
+      {
+        "name": "cold-browser-journey",
+        "status": "completed",
+        "conclusion": "success",
+        "databaseId": 113829365664,
+        "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37933390559/job/113829365664"
+      },
+      {
+        "name": "security-and-container",
+        "status": "completed",
+        "conclusion": "success",
+        "databaseId": 113829366163,
+        "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37933390559/job/113829366163"
+      }
+    ],
+    "backend": {
+      "passed": 2002,
+      "warnings": 413,
+      "seconds": 521.99,
+      "log_path": "/tmp/hirewiz-4911d1f-backend-ci-success-20261009.log",
+      "log_sha256": "03038fcaa6c41509afe2d84b2474f8ebdbbb42b43257e2a1b867a1c593638784"
+    },
+    "production_deployment": false
+  },
+  "independent_original_review": {
+    "status": "HOLD_PUBLIC_QUERY_COMPOSITION",
+    "report_path": "/var/folders/ck/cyzkgt2d1yx6hzpsdflcg83c0000gn/T/hirewiz-workable-independent-20261009-nx1eosue/review-freeze/independent-review.json",
+    "report_sha256": "864dc1609fcb0d041e4ee0894e37fcf4b6b9e157be529f0ff6116612cf83a4cf",
+    "manifest_sha256": "e40bb0664c43bf149f454aef0f716d927ee26b418ec6b1e9474172666fa24ea1",
+    "verified_artifacts": 10,
+    "reproduced_feed_cases": 69,
+    "additional_probe_passes": 14,
+    "additional_intended_assertion_failures": 2,
+    "finding": "Inherited HTTPX client query parameters can change both fixed public request targets. Synthetic injected api_key/defaultdetails only; no observed production leak.",
+    "repair": "separate owned author request-construction repair; root source unchanged pending review"
+  }
 }

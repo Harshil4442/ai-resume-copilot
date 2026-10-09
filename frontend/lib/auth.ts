@@ -1,4 +1,4 @@
-const API_BASE = "/api/backend";
+import { accountMutationHeaders } from "./accountTransportClient";
 const POLICY_VERSION = "2026-10-08";
 
 export async function prepareGoogleRegistrationConsent() {
@@ -15,9 +15,9 @@ export async function prepareGoogleRegistrationConsent() {
 }
 
 export async function register(email: string, password: string) {
-  const res = await fetch(`${API_BASE}/auth/register`, {
+  const res = await fetch("/api/account/register", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: await accountMutationHeaders(),
     body: JSON.stringify({
       email,
       password,

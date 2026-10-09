@@ -1,9 +1,8 @@
 "use client";
 
 import { AlertCircle, BriefcaseBusiness, CheckCircle2, Crown, Download, Link as LinkIcon, Save, ShieldOff, Trash2, User } from "lucide-react";
-import { signOut } from "next-auth/react";
+import { guardedSignOut } from "../../lib/candidateAuthClient";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import CareerMemoryPanel from "../../components/CareerMemoryPanel";
@@ -38,7 +37,6 @@ function splitSkills(text: string) {
 }
 
 export default function ProfilePage() {
-  const router = useRouter();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [form, setForm] = useState<ProfileForm>(emptyForm);
   const [loading, setLoading] = useState(true);
@@ -104,9 +102,9 @@ export default function ProfilePage() {
     try {
       await apiPostJson("/auth/delete-account", {});
       trackEvent("account_deleted");
+      await guardedSignOut();
       resetAnalyticsIdentity();
-      await signOut({ redirect: false });
-      router.push("/register");
+      window.location.replace(new URL("/register", window.location.origin).href);
     } catch (accountError) {
       setError(accountError instanceof Error ? accountError.message : "Could not delete account.");
       setAccountBusy(false);

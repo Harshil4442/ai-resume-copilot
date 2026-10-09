@@ -3,9 +3,10 @@ from __future__ import annotations
 
 from datetime import timedelta
 from typing import Literal
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from jose import jwt
+from jose import JWTError, jwt
 from pydantic import ConfigDict, EmailStr, Field, SecretStr, field_validator
 from sqlalchemy.orm import Session
 
@@ -26,7 +27,21 @@ from ..security import (
 )
 from .sensitive_auth import SensitiveAuthRoute
 
-router = APIRouter(prefix="/auth/candidate/v1", tags=["candidate-password-lifecycle"], route_class=SensitiveAuthRoute)
+
+class CandidateAuthRoute(SensitiveAuthRoute):
+    bound_auth_body = True
+
+
+router = APIRouter(prefix="/auth/candidate/v1", tags=["candidate-password-lifecycle"], route_class=CandidateAuthRoute)
+
+
+@router.get("/availability")
+def availability():
+    try:
+        production_candidate_accounts()
+    except GuardUnavailable:
+        return {"fresh_registration": False, "legacy_enrollment": False}
+    return {"fresh_registration": True, "legacy_enrollment": False}
 
 
 class RegisterCandidate(PairingContract):
@@ -54,6 +69,10 @@ class ChangeCandidatePassword(PairingContract):
     model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
     current_password: SecretStr = Field(min_length=1, max_length=128, repr=False)
     new_password: SecretStr = Field(min_length=10, max_length=128, repr=False)
+
+
+class LogoutCookie(PairingContract):
+    operation_id: UUID
 
 
 def _failure(error: Exception) -> HTTPException:
@@ -87,6 +106,17 @@ def login(request: Request, payload: LoginCandidate):
                              browser_pairing_session=result.context.model_dump(mode="json"))
 
 
+@router.post("/registration-status")
+@limiter.limit("10/minute")
+def registration_status(request: Request, payload: LoginCandidate):
+    try:
+        status = production_candidate_accounts().registration_status(
+            email=str(payload.email), password=payload.password.get_secret_value())
+    except (GuardDenied, GuardUnavailable) as error:
+        raise _failure(error) from None
+    return {"status": status}
+
+
 @router.post("/logout")
 def logout(current_user: User = Depends(get_current_user), token: str = Depends(oauth2_scheme),
            db: Session = Depends(get_db)):
@@ -98,6 +128,32 @@ def logout(current_user: User = Depends(get_current_user), token: str = Depends(
     except (GuardDenied, GuardUnavailable) as error:
         raise _failure(error) from None
     return {"status": "REVOKED"}
+
+
+@router.post("/web-logout")
+def logout_cookie(payload: LogoutCookie, token: str = Depends(oauth2_scheme)):
+    try:
+        # Expiry may deny candidate actions already. This endpoint verifies the
+        # signature but grants only cookie-local denial confirmation.
+        claims = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM], options={"verify_exp": False})
+        subject = claims.get("sub")
+        if type(subject) is not str or not subject.isascii() or not subject.isdigit():
+            raise GuardDenied("Candidate session authentication failed")
+        context, generation = context_from_claims(claims, candidate_id=int(subject))
+        production_candidate_accounts().logout_cookie(context, auth_generation=generation,
+                                                      operation_id=payload.operation_id)
+    except (GuardDenied, GuardUnavailable, JWTError) as error:
+        raise _failure(error) from None
+    return {"status": "COOKIE_DENIAL_RETAINED"}
+
+
+@router.get("/session")
+def current_session_status(current_user: User = Depends(get_current_user), token: str = Depends(oauth2_scheme)):
+    try:
+        context_from_claims(jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM]), candidate_id=int(current_user.id))
+    except (GuardDenied, JWTError):
+        raise HTTPException(status_code=401, detail="Retained password session required") from None
+    return {"status": "ELIGIBLE"}
 
 
 @router.post("/password")

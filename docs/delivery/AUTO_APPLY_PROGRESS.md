@@ -35,8 +35,8 @@ completion claim or a percentage of the full goal.
 | Per-candidate protected publication and normal denial component | [x] Revision 2 independently clear for bounded component: 169 reproduced and 17 independent cases pass, including actual native/SQL composition | [ ] Normal reset, protected pairing/action consumption and production custody remain open |
 | Combined candidate/browser component integration | [x] Local 1,953 backend / 120 frontend tests and all five exact `46274a5` CI jobs pass, including history scan and container build. Earlier failures remain recorded | [ ] Backend deployment pending |
 | Normal password-change and actual MV3 runtime integration | [x] Independent disabled-component reviews: 74 + 16 reset cases, 3 reset addendum cases and 103 + 12 browser cases pass. Combined local 1,987 backend / 124 frontend tests and build pass; all five exact `69fbc22` CI jobs pass. Initial zero-winner concurrency failure remains an unresolved availability concern | [ ] Protected first connection, reset availability and deployment pending |
-| Candidate website lifecycle transport review | [ ] Actual review found generic auth login exposing private context and generic logout accepting a client UUID; repaired browser transport and private backend ingress need independent proof | [ ] Not enabled; original website patch remains unintegrated |
-| Workable public-feed redirect compatibility and additional employer origins | [ ] Author fix passes 69 feed cases and reads 6 actual Workable/Common App openings; unchanged Pinpoint feed reads 3. Three exact-origin proposals need independent component/source-use review | [ ] New proposals remain unenrolled; no broader coverage claim |
+| Candidate website lifecycle transport review and integration | [x] Independent R2 review clears the preserved issuer/logout defects; exact 38-path combined repair integrated. 190 frontend, 46 actual browser and 2,030 unique backend cases verified across the initial run and 180 configured setup recoveries. New exact CI remains pending | [ ] Private ingress, HTTP 429 repair and protected browser connection remain open; not deployed |
+| Workable public-feed redirect compatibility and additional employer origins | [ ] Initial author fix passes 69 feed cases and exact `4911d1f` CI; independent review preserves two inherited-query assertion failures. Repair/recheck and source-use review remain required | [ ] Three new proposals remain unenrolled; no broader coverage claim |
 | Scalable per-candidate recovery and action admission | [ ] Complete protected challenge/approval consumption, action export, production custody and broader scale proof remain open | [ ] Not enabled |
 | Permitted Razorpay/Greenhouse browser assistance | [ ] Real portal parity, permission and complete reviewed flow remain open | [ ] Not enabled |
 | Credential retirement, controlled monetary migration and full backend rollout | [ ] Consumer resolution, writer fencing and queue drain remain open | [ ] Not performed |
@@ -52,6 +52,8 @@ The [candidate/browser integration report](CANDIDATE_BROWSER_COMPONENT_INTEGRATI
 records the previous local checkpoint and [successful exact CI](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37924962950).
 The [reset/MV3 integration report](RESET_MV3_COMPONENT_INTEGRATION_2026-10-09.md)
 records the newer local checkpoint, retained availability concern and website transport HOLD.
+The [candidate website integration report](CANDIDATE_WEB_ROOT_INTEGRATION_2026-10-09.md)
+records the repaired browser transport, actual local account flow and separate ingress/release gates.
 The detailed implementation history below preserves earlier checkpoint evidence.
 
 ## Implementation checkpoints

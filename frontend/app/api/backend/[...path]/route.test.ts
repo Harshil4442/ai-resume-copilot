@@ -81,18 +81,18 @@ describe("BFF mutation request origin", () => {
     expect(fetchBackend).toHaveBeenCalledTimes(1);
   });
 
-  it("preserves public browser registration without a session while rejecting cross-site registration", async () => {
+  it("blocks ordinary signup through the generic route; dedicated account transport owns it", async () => {
     getToken.mockResolvedValue(null);
     const registration = context(["auth", "register"]);
-    expect((await POST(request("POST", { origin: site, "sec-fetch-site": "same-origin" }), registration)).status).toBe(200);
-    expect(fetchBackend.mock.calls[0][1].headers.has("Authorization")).toBe(false);
+    expect((await POST(request("POST", { origin: site, "sec-fetch-site": "same-origin" }), registration)).status).toBe(403);
+    expect(fetchBackend).not.toHaveBeenCalled();
     fetchBackend.mockClear();
     expect((await POST(request("POST", { origin: "https://attacker.example" }), registration)).status).toBe(403);
     expect(fetchBackend).not.toHaveBeenCalled();
   });
 
   it("does not change authenticated read requests", async () => {
-    const response = await GET(request("GET", { origin: "https://other.example", "sec-fetch-site": "cross-site" }), context(["auth", "profile"]));
+    const response = await GET(request("GET", { origin: "https://other.example", "sec-fetch-site": "cross-site" }), context(["v1", "resumes"]));
     expect(response.status).toBe(200);
     expect(fetchBackend).toHaveBeenCalledTimes(1);
   });
@@ -143,7 +143,7 @@ describe("catalog-only latency propagation", () => {
   it("does not propagate backend timing on any other route or method", async () => {
     const backend = () => new Response("{}", { headers: { "server-timing": "PRIVATE_SQL;dur=1", "x-correlation-id": "existing-correlation" } });
     fetchBackend.mockImplementation(backend);
-    const response = await GET(request("GET", { "x-correlation-id": "existing-client-id" }), context(["auth", "profile"]));
+    const response = await GET(request("GET", { "x-correlation-id": "existing-client-id" }), context(["v1", "resumes"]));
     expect(response.headers.has("server-timing")).toBe(false);
     expect(fetchBackend.mock.calls[0][1].headers.get("x-correlation-id")).toBe("existing-client-id");
     expect(response.headers.get("x-correlation-id")).toBe("existing-correlation");
@@ -168,5 +168,25 @@ describe("catalog-only latency propagation", () => {
     expect(response.status).toBe(401);
     expect(await response.json()).toEqual({ detail: "Not authenticated" });
     expect(fetchBackend).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("generic proxy cannot reach credential or private native operations", () => {
+  it.each([ ["auth","login"], ["auth","google-login"], ["auth","register"],
+    ...["login","register","registration-status","availability","session","password","logout","web-logout"].map((name)=>["auth","candidate","v1",name]),
+  ])("denies auth path %j before cookie, body or backend reads", async (...path) => {
+    const response=await POST(request("POST",{origin:site}),context(path));
+    expect(response.status).toBe(403);expect(getToken).not.toHaveBeenCalled();expect(fetchBackend).not.toHaveBeenCalled();
+    expect(await response.text()).not.toContain("access_token");
+  });
+  it.each([["%61uth","login"],["auth/login"],["public","..","auth","login"],["public","%2e%2e","auth","login"],
+    ["v1","foo\\bar"],["v1","%2561uth"]])("rejects encoded/separator traversal %j before forwarding",async(...path)=>{
+    const response=await POST(request("POST",{origin:site}),context(path));
+    expect(response.status).toBeGreaterThanOrEqual(400);expect(fetchBackend).not.toHaveBeenCalled();expect(getToken).not.toHaveBeenCalled();
+  });
+  it("never follows a backend redirect into another authority path",async()=>{
+    await GET(request("GET"),context(["v1","resumes"]));
+    expect(fetchBackend.mock.calls[0][1].redirect).toBe("error");
   });
 });
