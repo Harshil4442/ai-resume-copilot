@@ -23,7 +23,7 @@ try:
 except Exception:
     pass
 
-from .routers import auth, resume, jobs, recommendations, llm, analytics, rag, market, billing, public_endpoints  # noqa: E402
+from .routers import candidate_accounts, auth, resume, jobs, recommendations, llm, analytics, rag, market, billing, public_endpoints  # noqa: E402
 from .routers.v1 import router as v1_router  # noqa: E402
 from .rate_limiter import limiter
 from slowapi.errors import RateLimitExceeded
@@ -95,8 +95,11 @@ async def jwt_validation_middleware(request: Request, call_next):
         path == "/api/auth/login" or
         path == "/api/auth/google-login" or
         path == "/api/auth/register" or
+        path == "/api/auth/candidate/v1/register" or
+        path == "/api/auth/candidate/v1/login" or
         path.startswith("/api/public") or
-        path == "/api/billing/webhooks/razorpay"
+        path == "/api/billing/webhooks/razorpay" or
+        path.startswith("/api/v1/browser-pairing/")
     ):
         with catalog_span("middleware_jwt"):
             auth_header = request.headers.get("Authorization")
@@ -137,6 +140,7 @@ def health():
 
 # Routers
 app.include_router(auth.router, prefix="/api")
+app.include_router(candidate_accounts.router, prefix="/api")
 app.include_router(resume.router, prefix="/api")
 app.include_router(jobs.router, prefix="/api")
 app.include_router(recommendations.router, prefix="/api")

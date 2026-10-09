@@ -20,7 +20,21 @@ from sqlalchemy.pool import NullPool
 
 MAX_INPUT_BYTES = 131072
 MAX_ROWS = 256
-SCHEMAS = {"20261008_0009", "20261009_0010"}
+SCHEMAS = {"20261008_0009", "20261009_0010", "20261009_0011"}
+FINANCIAL_SCHEMAS = {"20261009_0010", "20261009_0011"}
+CANDIDATE_TABLES = {"candidate_password_accounts", "candidate_lifetime_history"}
+CANDIDATE_COLUMNS = {
+    "candidate_lifetime_history": {"registration_id": "character varying(36)"},
+    "candidate_password_accounts": {
+        "user_id": "integer",
+        "subject_uuid": "character varying(36)",
+        "account_binding_id": "character varying(36)",
+        "principal_sha256": "character varying(64)",
+        "credential_sha256": "character varying(64)",
+        "auth_generation": "bigint",
+        "state": "character varying(24)",
+    },
+}
 TABLES = (
     "analysis_runs",
     "model_call_events",
@@ -89,8 +103,8 @@ class Inventory(Strict):
     serving_commit: str = Field(pattern=r"^[a-f0-9]{40}$")
     candidate_commit: str = Field(pattern=r"^[a-f0-9]{40}$")
     candidate_image: str = Field(pattern=r"^sha256:[a-f0-9]{64}$")
-    expected_database_schema: Literal["20261008_0009", "20261009_0010"]
-    candidate_schema: Literal["20261009_0010"]
+    expected_database_schema: Literal["20261008_0009", "20261009_0010", "20261009_0011"]
+    candidate_schema: Literal["20261009_0010", "20261009_0011"]
     expected_system_identifier_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     expected_database_oid: int = Field(gt=0)
     database_namespace: str = Field(pattern=r"^[a-z][a-z0-9_]{0,62}$")
@@ -409,6 +423,30 @@ def _definer_capabilities(
     }
 
 
+def _candidate_projection_shape(connection: Any, namespace_oid: int) -> None:
+    # Catalog metadata only: no candidate row, credential or subject is loaded.
+    # This certifies the narrow schema shape, not account/native authority.
+    rows = connection.execute(
+        text(
+            "SELECT c.relname, c.relkind, a.attname, "
+            "pg_catalog.format_type(a.atttypid,a.atttypmod) AS column_type, a.attnotnull "
+            "FROM pg_catalog.pg_class c JOIN pg_catalog.pg_attribute a ON a.attrelid=c.oid "
+            "WHERE c.relnamespace=:namespace AND c.relname = ANY(CAST(:tables AS text[])) "
+            "AND a.attnum > 0 AND NOT a.attisdropped ORDER BY c.oid,a.attnum LIMIT 257"
+        ),
+        {"namespace": namespace_oid, "tables": sorted(CANDIDATE_TABLES)},
+    ).mappings().all()
+    if len(rows) > MAX_ROWS:
+        raise Denied("database_candidate_projection_inventory_bound")
+    found: dict[str, dict[str, str]] = {}
+    for row in rows:
+        if row["relkind"] != "r" or row["attnotnull"] is not True:
+            raise Denied("database_candidate_projection_shape_mismatch")
+        found.setdefault(str(row["relname"]), {})[str(row["attname"])] = str(row["column_type"])
+    if found != CANDIDATE_COLUMNS:
+        raise Denied("database_candidate_projection_shape_mismatch")
+
+
 def observe(
     engine: Engine,
     inventory: Inventory,
@@ -468,9 +506,18 @@ def observe(
             if len(versions) != 1 or versions[0] not in SCHEMAS:
                 raise Denied("database_schema_unsupported")
             version = str(versions[0])
-            if version == "20261009_0010" and "model_cost_liabilities" not in table_oids:
+            # A schema0010 release cannot silently adopt a schema0011 database.
+            if version == "20261009_0011" and inventory.candidate_schema != "20261009_0011":
+                raise Denied("database_schema_unsupported")
+            if version in FINANCIAL_SCHEMAS and "model_cost_liabilities" not in table_oids:
                 raise Denied("database_liability_table_missing")
             if version == "20261008_0009" and "model_cost_liabilities" in table_oids:
+                raise Denied("database_schema_shape_mismatch")
+            if version == "20261009_0011":
+                if not CANDIDATE_TABLES.issubset(table_oids):
+                    raise Denied("database_candidate_projection_tables_missing")
+                _candidate_projection_shape(connection, int(schema_oid))
+            elif CANDIDATE_TABLES.intersection(table_oids):
                 raise Denied("database_schema_shape_mismatch")
             # Visibility is required: otherwise another role's sessions may have NULL
             # activity fields. Counts alone cannot prove old executors absent.
@@ -616,7 +663,7 @@ def observe(
             }
             invalid_model_budget_runs = 0
             invalid_model_call_states = 0
-            if version == "20261009_0010":
+            if version in FINANCIAL_SCHEMAS:
                 invalid_model_budget_runs = _count(
                     connection,
                     f"SELECT count(*) FROM {quoted}.analysis_runs WHERE model_cost_reserved_micros <> 0 OR model_cost_settled_micros < 0 OR model_cost_state NOT IN ('unquoted','active') OR (model_cost_state = 'unquoted' AND (model_cost_quote IS NOT NULL OR model_cost_settled_micros <> 0)) OR (model_cost_state = 'active' AND (model_cost_quote IS NULL OR model_cost_ceiling_micros IS NULL OR model_cost_ceiling_micros <= 0 OR model_cost_settled_micros > model_cost_ceiling_micros))",

@@ -34,10 +34,21 @@ def checkout(tmp_path: Path) -> tuple[Path, Path, Path]:
         shutil.copyfile(SOURCE / "infra/gcp" / name, scripts / name)
     migrations = root / "backend/alembic/versions"
     migrations.mkdir(parents=True)
-    for source in (SOURCE / "backend/alembic/versions").glob("*.py"):
-        # Only the real reviewed0009 ancestry belongs to the positive fixture.
-        if "0010" not in source.name:
-            shutil.copyfile(source, migrations / source.name)
+    # Freeze the reviewed0009 ancestry explicitly. New migrations are tested by
+    # the negative DAG probes below and must not enter this positive fixture.
+    reviewed_0009 = (
+        "20260803_0001_legacy_baseline.py",
+        "20260803_0002_career_platform.py",
+        "20260803_0003_operations.py",
+        "20261007_0004_resume_source.py",
+        "20261008_0005_generation_budgets.py",
+        "20261008_0006_employer_services.py",
+        "20261008_0007_dispatch_outbox.py",
+        "20261008_0008_artifact_lifecycle.py",
+        "20261008_0009_employer_admissions.py",
+    )
+    for name in reviewed_0009:
+        shutil.copyfile(SOURCE / "backend/alembic/versions" / name, migrations / name)
     shutil.copyfile(SOURCE / "backend/alembic.ini", root / "backend/alembic.ini")
     (root / "README.md").write_text("Synthetic source; no accounts or credentials.\n")
     git(root, "init", "-q")

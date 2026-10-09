@@ -182,4 +182,4 @@ def test_postgres_downgrade_refuses_high_value_history_without_truncation(pg_cos
         assert db.get(models.ModelCallEvent, record["event_id"]).estimated_cost_micros == 2_147_483_648
         assert db.get(models.AnalysisRun, run_id).model_cost_quote is not None
     with pg_engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20261009_0010"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20261009_0011"

@@ -343,8 +343,10 @@ class GcpPublicationCoordinator:
 
 
 def retain_before_upload(
-    publication: GcpPublicationCoordinator | None, raw: bytes, bucket: str
+    publication: object, raw: bytes, bucket: str
 ) -> None:
-    if type(publication) is not GcpPublicationCoordinator:
+    from .gcp_partitioned_publication import PartitionedPublicationCoordinator
+    if type(publication) not in {GcpPublicationCoordinator, PartitionedPublicationCoordinator}:
         raise GuardUnavailable("Protected publication admission configuration is unavailable")
+    assert isinstance(publication, (GcpPublicationCoordinator, PartitionedPublicationCoordinator))
     publication.retain(raw, bucket)

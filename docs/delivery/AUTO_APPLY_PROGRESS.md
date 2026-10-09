@@ -12,6 +12,43 @@ selected by the candidate on 9 October. Actual host fields exceed the public API
 and current static subset; native attachment and final submission remain manual.
 Production pairing and portal-use permission remain open.
 
+## Current checkpoint board — 9 October 2026
+
+Progress updates show a checked item only after its stated verification passes. A local
+component, independent review, integrated release and production deployment are separate
+checkpoints. Report each newly completed checkpoint to the candidate with its evidence
+and keep the remaining items visible. Do not convert fixture success into a production
+completion claim or a percentage of the full goal.
+
+| Checkpoint | Development / verification | Production deployment |
+| --- | --- | --- |
+| Employer-origin search pilot, requested result count and separate search/application pricing | [x] Implemented and verified for the disclosed pilot | [x] Pilot backend `e7d8f2b`, schema `0009` |
+| Original/custom resume choice and exact package approval | [x] Connected browser/API/database proof; external transports are synthetic | [x] Preparation/manual handoff; automatic application remains unavailable |
+| Credit purchase links and responsive mobile navigation | [x] Five-width staged/live checks and exact CI | [x] Frontend `06cc112` on both HireWiz domains |
+| Reviewed bounded recovery publication and monetary SQL checks | [x] Integrated `e6a9484`; 1,760 backend tests and all five exact CI jobs pass | [ ] New backend source remains unpromoted; bounded recovery foundation remains disabled |
+| Financial observation compatibility with candidate schema `0011` | [x] Independently clear and locally integrated: 19 reproduced and 27 independent actual PostgreSQL cases pass; owned review resources cleaned up | [ ] Exact remote CI/deployment pending; does not authorize cutover |
+| Fresh-user no-AI browser journey | [x] Exact `e6a9484` CI artifact: zero AI calls, search reserve/charge/release, unchanged analysis units, no automatic fee for manual handoff, successful owned cleanup | [ ] Broader real-provider and production acceptance remains open |
+| Firestore / Cloud KMS API prerequisites | [x] Read-only resource inventory and service-enable verification recorded | [x] Both APIs enabled; no authority database, bucket, signing key or action permission created |
+| Browser pairing transport author repair | [x] Revision 3 independently clear for bounded transport; 111 website, 65 companion and 12 independent route probes pass. Initial findings remain preserved | [ ] Actual MV3 connection and production authority remain open |
+| Browser pairing independent review | [x] Revision 3 recheck clears the four preserved BFF cancellation failures without changing the probes | [ ] Review completion does not enable authority |
+| Genuine candidate account/session lifecycle component | [x] Revision 2 independently clear for disabled lifecycle: 119 affected, 43 independent and 9 private NextAuth cases pass; privacy and real bcrypt repairs verified | [ ] Actual website lifecycle and production construction remain open |
+| Per-candidate protected publication and normal denial component | [x] Revision 2 independently clear for bounded component: 169 reproduced and 17 independent cases pass, including actual native/SQL composition | [ ] Normal reset, protected pairing/action consumption and production custody remain open |
+| Combined candidate/browser component integration | [x] Final local run: 1,953 backend and 120 frontend tests pass; production build, lint/types, contract regeneration and source scan pass. Earlier failures remain recorded | [ ] Exact remote CI and deployment pending |
+| Scalable per-candidate recovery and action admission | [ ] Complete protected challenge/approval consumption, action export, production custody and broader scale proof remain open | [ ] Not enabled |
+| Permitted Razorpay/Greenhouse browser assistance | [ ] Real portal parity, permission and complete reviewed flow remain open | [ ] Not enabled |
+| Credential retirement, controlled monetary migration and full backend rollout | [ ] Consumer resolution, writer fencing and queue drain remain open | [ ] Not performed |
+| Broader job coverage, resume fidelity, load, recovery and field performance | [ ] Acceptance evidence remains open in the requirements register | [ ] Full service release remains open |
+
+Previous verified exact source CI: [run 37904804361](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37904804361).
+Its connected journey uses actual Chromium, NextAuth, BFF, FastAPI and disposable PostgreSQL;
+payment/feed transports are synthetic. The full development and deployment goal remains active.
+The [GCP prerequisite evidence](evidence/2026-10-09-protected-authority-prerequisites.json)
+records API enablement and an actual zero-database observation; it does not prove a
+deployed protected authority or alter the serving backend/schema.
+The [candidate/browser integration report](CANDIDATE_BROWSER_COMPONENT_INTEGRATION_2026-10-09.md)
+records the new local source checkpoint, preserved concurrency failure and pending remote CI.
+The detailed implementation history below preserves earlier checkpoint evidence.
+
 ## Implementation checkpoints
 
 - [x] Verify latest remote baseline d5c2ea8 and existing GCP/Vercel identities.

@@ -579,6 +579,18 @@
             "title": "Access Token",
             "type": "string"
           },
+          "browser_pairing_session": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Browser Pairing Session"
+          },
           "token_type": {
             "default": "bearer",
             "title": "Token Type",
@@ -785,6 +797,33 @@
           "value"
         ],
         "title": "CareerMemoryUpsert",
+        "type": "object"
+      },
+      "ChangeCandidatePassword": {
+        "additionalProperties": false,
+        "properties": {
+          "current_password": {
+            "format": "password",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Current Password",
+            "type": "string",
+            "writeOnly": true
+          },
+          "new_password": {
+            "format": "password",
+            "maxLength": 128,
+            "minLength": 10,
+            "title": "New Password",
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "current_password",
+          "new_password"
+        ],
+        "title": "ChangeCandidatePassword",
         "type": "object"
       },
       "CheckoutResultRequest": {
@@ -1904,6 +1943,30 @@
           "deliverable"
         ],
         "title": "LearningTimelineItem",
+        "type": "object"
+      },
+      "LoginCandidate": {
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "format": "email",
+            "title": "Email",
+            "type": "string"
+          },
+          "password": {
+            "format": "password",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "LoginCandidate",
         "type": "object"
       },
       "MarketAnalyzeRequest": {
@@ -3748,6 +3811,42 @@
         "title": "ReconciliationCreate",
         "type": "object"
       },
+      "RegisterCandidate": {
+        "additionalProperties": false,
+        "properties": {
+          "accepted_terms": {
+            "const": true,
+            "title": "Accepted Terms",
+            "type": "boolean"
+          },
+          "confirmed_age_18": {
+            "const": true,
+            "title": "Confirmed Age 18",
+            "type": "boolean"
+          },
+          "email": {
+            "format": "email",
+            "title": "Email",
+            "type": "string"
+          },
+          "password": {
+            "format": "password",
+            "maxLength": 128,
+            "minLength": 10,
+            "title": "Password",
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "email",
+          "password",
+          "accepted_terms",
+          "confirmed_age_18"
+        ],
+        "title": "RegisterCandidate",
+        "type": "object"
+      },
       "ReminderCreate": {
         "additionalProperties": false,
         "properties": {
@@ -5248,6 +5347,484 @@
         ]
       }
     },
+    "/api/auth/candidate/v1/login": {
+      "post": {
+        "operationId": "login_api_auth_candidate_v1_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginCandidate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthTokenResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "408": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          }
+        },
+        "summary": "Login",
+        "tags": [
+          "candidate-password-lifecycle"
+        ]
+      }
+    },
+    "/api/auth/candidate/v1/logout": {
+      "post": {
+        "operationId": "logout_api_auth_candidate_v1_logout_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Logout",
+        "tags": [
+          "candidate-password-lifecycle"
+        ]
+      }
+    },
+    "/api/auth/candidate/v1/password": {
+      "post": {
+        "operationId": "change_password_api_auth_candidate_v1_password_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangeCandidatePassword"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "408": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Change Password",
+        "tags": [
+          "candidate-password-lifecycle"
+        ]
+      }
+    },
+    "/api/auth/candidate/v1/register": {
+      "post": {
+        "operationId": "register_api_auth_candidate_v1_register_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterCandidate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "408": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          }
+        },
+        "summary": "Register",
+        "tags": [
+          "candidate-password-lifecycle"
+        ]
+      }
+    },
     "/api/auth/delete-account": {
       "post": {
         "description": "Deletes account/profile/resume/job data and unlinks retained financial\nrecords. Payment, refund, and webhook audit rows are retained for fraud,\nreconciliation, tax, and legal obligations without a live User foreign key.",
@@ -5321,15 +5898,125 @@
             },
             "description": "Successful Response"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "408": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
           "422": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
           }
         },
         "summary": "Google Login",
@@ -5362,15 +6049,125 @@
             },
             "description": "Successful Response"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "408": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
           "422": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
           }
         },
         "summary": "Login",
@@ -5499,15 +6296,125 @@
             },
             "description": "Successful Response"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "408": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
           "422": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
           }
         },
         "summary": "Register",
@@ -6975,6 +7882,374 @@
         "summary": "List Applications",
         "tags": [
           "career-workspace"
+        ]
+      }
+    },
+    "/api/v1/browser-pairing/candidate/{operation}": {
+      "post": {
+        "operationId": "candidate_api_v1_browser_pairing_candidate__operation__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "operation",
+            "required": true,
+            "schema": {
+              "enum": [
+                "challenge",
+                "confirm",
+                "revoke-challenge",
+                "revoke"
+              ],
+              "title": "Operation",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "pairing_id": {
+                        "format": "uuid",
+                        "title": "Pairing Id",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "pairing_id"
+                    ],
+                    "title": "PairingSelection",
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "device_id": {
+                        "format": "uuid",
+                        "title": "Device Id",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "device_id"
+                    ],
+                    "title": "DeviceSelection",
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "description": "Only client confirmation inputs; identity, clocks and issuer are server-owned.",
+                    "properties": {
+                      "challenge_id": {
+                        "format": "uuid",
+                        "title": "Challenge Id",
+                        "type": "string"
+                      },
+                      "confirmed": {
+                        "const": true,
+                        "title": "Confirmed",
+                        "type": "boolean"
+                      },
+                      "method": {
+                        "const": "password_reauth",
+                        "default": "password_reauth",
+                        "title": "Method",
+                        "type": "string"
+                      },
+                      "nonce": {
+                        "format": "password",
+                        "title": "Nonce",
+                        "type": "string",
+                        "writeOnly": true
+                      },
+                      "operation": {
+                        "enum": [
+                          "confirm_pairing",
+                          "revoke_device"
+                        ],
+                        "title": "Operation",
+                        "type": "string"
+                      },
+                      "password": {
+                        "format": "password",
+                        "title": "Password",
+                        "type": "string",
+                        "writeOnly": true
+                      },
+                      "protocol_version": {
+                        "const": 2,
+                        "title": "Protocol Version",
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "protocol_version",
+                      "operation",
+                      "challenge_id",
+                      "nonce",
+                      "password",
+                      "confirmed"
+                    ],
+                    "title": "PasswordReauthRequest",
+                    "type": "object"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Candidate",
+        "tags": [
+          "browser-pairing"
+        ]
+      }
+    },
+    "/api/v1/browser-pairing/device/{operation}": {
+      "post": {
+        "operationId": "device_api_v1_browser_pairing_device__operation__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "operation",
+            "required": true,
+            "schema": {
+              "enum": [
+                "prepare",
+                "create",
+                "challenge",
+                "complete",
+                "status",
+                "refresh-challenge",
+                "refresh"
+              ],
+              "title": "Operation",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "extension_id": {
+                        "pattern": "^[A-Za-z0-9_-]{1,160}$",
+                        "title": "Extension Id",
+                        "type": "string"
+                      },
+                      "issued_at_ms": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "title": "Issued At Ms",
+                        "type": "integer"
+                      },
+                      "key": {
+                        "additionalProperties": {
+                          "type": "string"
+                        },
+                        "title": "Key",
+                        "type": "object"
+                      },
+                      "operation": {
+                        "const": "prepare_request",
+                        "title": "Operation",
+                        "type": "string"
+                      },
+                      "protocol_version": {
+                        "const": 2,
+                        "title": "Protocol Version",
+                        "type": "integer"
+                      },
+                      "request_id": {
+                        "format": "uuid",
+                        "title": "Request Id",
+                        "type": "string"
+                      },
+                      "revision": {
+                        "pattern": "^[A-Za-z0-9_-]{1,160}$",
+                        "title": "Revision",
+                        "type": "string"
+                      },
+                      "signature": {
+                        "pattern": "^[A-Za-z0-9_-]{86}$",
+                        "title": "Signature",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "protocol_version",
+                      "operation",
+                      "key",
+                      "extension_id",
+                      "revision",
+                      "request_id",
+                      "issued_at_ms",
+                      "signature"
+                    ],
+                    "title": "PrepareRequest",
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "identity": {
+                        "format": "uuid",
+                        "title": "Identity",
+                        "type": "string"
+                      },
+                      "issued_at_ms": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "title": "Issued At Ms",
+                        "type": "integer"
+                      },
+                      "operation": {
+                        "enum": [
+                          "device_challenge",
+                          "status",
+                          "refresh_challenge"
+                        ],
+                        "title": "Operation",
+                        "type": "string"
+                      },
+                      "protocol_version": {
+                        "const": 2,
+                        "title": "Protocol Version",
+                        "type": "integer"
+                      },
+                      "request_id": {
+                        "format": "uuid",
+                        "title": "Request Id",
+                        "type": "string"
+                      },
+                      "signature": {
+                        "pattern": "^[A-Za-z0-9_-]{86}$",
+                        "title": "Signature",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "protocol_version",
+                      "operation",
+                      "identity",
+                      "request_id",
+                      "issued_at_ms",
+                      "signature"
+                    ],
+                    "title": "DeviceLookup",
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "nonce": {
+                        "format": "uuid",
+                        "title": "Nonce",
+                        "type": "string"
+                      },
+                      "pairing_id": {
+                        "format": "uuid",
+                        "title": "Pairing Id",
+                        "type": "string"
+                      },
+                      "signature": {
+                        "pattern": "^[A-Za-z0-9_-]{86}$",
+                        "title": "Signature",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "pairing_id",
+                      "nonce",
+                      "signature"
+                    ],
+                    "title": "CreationProof",
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "challenge_id": {
+                        "format": "uuid",
+                        "title": "Challenge Id",
+                        "type": "string"
+                      },
+                      "nonce": {
+                        "format": "uuid",
+                        "title": "Nonce",
+                        "type": "string"
+                      },
+                      "signature": {
+                        "pattern": "^[A-Za-z0-9_-]{86}$",
+                        "title": "Signature",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "challenge_id",
+                      "nonce",
+                      "signature"
+                    ],
+                    "title": "ChallengeProof",
+                    "type": "object"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Device",
+        "tags": [
+          "browser-pairing"
         ]
       }
     },

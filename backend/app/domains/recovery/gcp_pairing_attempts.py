@@ -17,6 +17,7 @@ from .gcp_pairing_contracts import PairingAttemptMarker, PairingAttemptReceipt, 
 from .store import GuardDenied, GuardUnavailable
 
 if TYPE_CHECKING:
+    from .gcp_partitioned_publication import PartitionedPublicationCoordinator
     from .gcp_publication import GcpPublicationCoordinator
 
 
@@ -39,7 +40,7 @@ class UnavailablePairingAttempts:
 
 class GcsPairingAttempts:
     def __init__(self, bucket: Bucket, *, rpc_timeout: float = 2.0,
-                 publication: GcpPublicationCoordinator | None = None):
+                 publication: GcpPublicationCoordinator | PartitionedPublicationCoordinator | None = None):
         # Use the same pinned SDK bound/configuration as the intent journal.
         GcsJournal(bucket, rpc_timeout=rpc_timeout)
         self.bucket, self.rpc_timeout = bucket, rpc_timeout

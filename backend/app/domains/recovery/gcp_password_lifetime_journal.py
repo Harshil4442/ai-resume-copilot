@@ -14,6 +14,7 @@ from .gcp_password_lifetime_contracts import PasswordLifetimeIntent
 from .store import GuardDenied, GuardUnavailable
 
 if TYPE_CHECKING:
+    from .gcp_partitioned_publication import PartitionedPublicationCoordinator
     from .gcp_publication import GcpPublicationCoordinator
 
 
@@ -32,7 +33,7 @@ class UnavailablePasswordLifetimeJournal:
 
 class GcsPasswordLifetimeJournal:
     def __init__(self, bucket: Bucket, *, rpc_timeout: float = 2.0,
-                 publication: GcpPublicationCoordinator | None = None):
+                 publication: GcpPublicationCoordinator | PartitionedPublicationCoordinator | None = None):
         self.bucket, self.rpc_timeout = bucket, rpc_timeout
         self.publication = publication
         self._creator = GcsPairingAttempts(bucket, rpc_timeout=rpc_timeout)

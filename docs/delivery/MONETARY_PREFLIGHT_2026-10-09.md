@@ -1,10 +1,10 @@
 # Read-only monetary database preflight
 
-This tool supplies one operational gate for the 0009 → 0010 rollout in
+This tool supplies one operational gate for the 0009 → 0010/0011 rollout in
 [the coordinated cutover sequence](MONETARY_CUTOVER_PREPARATION_2026-10-09.md).
 It does **not** enable generation, deploy a release, authorize migration or retire a
 credential. The legacy `infra/gcp/release.sh` guard remains unchanged and still
-refuses monetary schema 0010. No production observation or mutation is included in
+refuses monetary schema 0010 and candidate schema 0011. No production observation or mutation is included in
 the local development proof for this tool.
 
 ## Inputs and execution
@@ -17,8 +17,10 @@ are rejected. Include:
 - `format_version: 1`, UTC `reviewed_at`, and
   `scope: "named_project_and_declared_external_consumers"`.
 - Full `serving_commit`, `candidate_commit`, immutable `candidate_image` digest,
-  `candidate_schema: "20261009_0010"`, and the expected current database schema
-  (`20261008_0009` before migration, `20261009_0010` afterward).
+  explicit `candidate_schema` (`20261009_0010` or `20261009_0011`), and the expected
+  current database schema (`20261008_0009` before migration, or the exact reviewed
+  `20261009_0010`/`20261009_0011` afterward). A candidate pinned to 0010 cannot
+  silently adopt an observed 0011 database.
 - Independently recorded `expected_system_identifier_sha256`,
   `expected_database_oid` and `database_namespace`. Obtain these through the reviewed
   database inventory; accepting values observed for the first time by this command
@@ -78,7 +80,12 @@ even if its role was explicitly listed as an operator. The tool grants no privil
 The sanitized `observed_database` records:
 
 - Cluster/database/schema pin matches and presence of required monetary/application
-  tables. A 0009 marker with a liability table, or 0010 without one, is refused.
+  tables. A 0009 marker with a liability table, or 0010/0011 without one, is refused.
+  Revision 0011 additionally requires both physical candidate projection tables and
+  their exact nonnullable column names/types. A 0009/0010 marker cannot hide either
+  candidate table. Only catalog metadata is read: no candidate row, email, password
+  hash or native identity is loaded. This narrow shape check does not certify
+  ownership triggers, lifecycle activation, native authority or migration permission.
 - Actual retired-role LOGIN, elevated/direct/member capabilities, effective table and column
   writes, all currently reachable `SET ROLE` paths, schema CREATE and **existing sessions**. Any reachable `ADMIN OPTION` membership is conservatively treated as a capability to enable writes, even with INHERIT and SET initially disabled. NOLOGIN alone never passes an old
   active-session check. Scan all LOGIN roles for effective table/schema writers;
@@ -101,7 +108,7 @@ The sanitized `observed_database` records:
 - Nonterminal analysis work, unknown terminal-run financial states, attempted/unclassified model-call and financial states, uncertain
   application rows/attempts, unbalanced/open service-credit holds and prepared
   transactions. Unknown future states are retained as blockers.
-- On 0010, detached liabilities are counted and their reserved/settled monetary values
+- On 0010 and 0011, detached liabilities are counted and their reserved/settled monetary values
   reported without touching them. Reserved, unknown, unavailable, overrun, missing
   usage/settlement, unknown provider/provenance, invalid frozen quotes and inconsistent amounts remain blockers. A settled label needs complete nonnegative returned tokens, a closed known-provider provenance, the exact bounded quote fields and reserve/settlement arithmetic matching that quote. Reported monetary totals are estimates, never invoice proof. Even a settled row stays
   in the ledger; this tool never downgrades or deletes financial evidence.
@@ -146,7 +153,7 @@ successful. Reconcile through the existing documented provider/accounting proced
 - [ ] Run this tool, retain sanitized evidence and reconcile every blocker.
 - [ ] Independently review cloud/provider/queue/consumer/backup evidence. A passing
   database subgate alone authorizes no action.
-- [ ] Execute the separate reviewed 0010 migration/immutable rollout and rerun the
+- [ ] Execute the separate reviewed 0010/0011 migration/immutable rollout and rerun the
   post-migration SQL observation, preserving liabilities and unknown outcomes.
 
 

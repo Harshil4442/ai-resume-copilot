@@ -56,6 +56,24 @@ class User(Base):
         return expires > datetime.now(timezone.utc)
 
 
+class CandidatePasswordAccount(Base):
+    """Nullable-by-absence enrollment projection; retained authority owns its lifetime."""
+    __tablename__ = "candidate_password_accounts"
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    subject_uuid = Column(String(36), nullable=False, unique=True)
+    account_binding_id = Column(String(36), nullable=False, unique=True)
+    principal_sha256 = Column(String(64), nullable=False)
+    credential_sha256 = Column(String(64), nullable=False)
+    auth_generation = Column(BigInteger, nullable=False)
+    state = Column(String(24), nullable=False)
+
+
+class CandidateLifetimeHistory(Base):
+    """Detached schema-use marker; user deletion cannot authorize unsafe downgrade."""
+    __tablename__ = "candidate_lifetime_history"
+    registration_id = Column(String(36), primary_key=True)
+
+
 class PaymentOrder(Base):
     """Provider-neutral, server-priced checkout order.
 

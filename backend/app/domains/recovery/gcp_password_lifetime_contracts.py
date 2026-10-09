@@ -19,6 +19,27 @@ class BindPasswordAccount(PairingContract):
     principal_sha256: Digest
 
 
+class EnrollPasswordAccount(PairingContract):
+    """Fresh credential registration only; no SQL/email-derived past lifetime."""
+
+    kind: Literal["enroll_password_account"] = "enroll_password_account"
+    candidate_id: PositiveInteger
+    account_binding_id: UUID
+    subject_uuid: UUID
+    principal_sha256: Digest
+    credential_sha256: Digest
+    subject_registration_event_id: UUID
+
+
+class CreateVerifiedPasswordWebSession(PairingContract):
+    kind: Literal["create_verified_password_web_session"] = "create_verified_password_web_session"
+    account_binding_id: UUID
+    session_id: UUID
+    expected_auth_generation: PositiveInteger
+    credential_sha256: Digest
+    expires_at_ms: Timestamp
+
+
 class CreatePasswordWebSession(PairingContract):
     kind: Literal["create_password_web_session"] = "create_password_web_session"
     account_binding_id: UUID
@@ -51,7 +72,7 @@ class DeletePasswordSubject(PairingContract):
 
 
 PasswordLifetimeCommand = Annotated[
-    BindPasswordAccount | CreatePasswordWebSession | RevokePasswordWebSession
+    BindPasswordAccount | CreatePasswordWebSession | EnrollPasswordAccount | CreateVerifiedPasswordWebSession | RevokePasswordWebSession
     | AdvancePasswordAuthGeneration | TombstonePasswordAccount | DeletePasswordSubject,
     Field(discriminator="kind"),
 ]
@@ -76,7 +97,7 @@ class LifetimeRecord(Contract):
         "control", "pairing_control", "pairing_clock", "head", "events", "subjects", "revocations",
         "pairing_account_bindings", "pairing_account_tombstones", "pairing_web_sessions", "pairing_sessions",
         "pairing_subject_accounts", "pairing_sql_accounts", "pairing_web_session_tombstones",
-        "pairing_auth_high_water", "password_lifetime_operations",
+        "pairing_auth_high_water", "password_lifetime_operations", "password_credential_revisions",
     ]
     key: Annotated[str, Field(min_length=1, max_length=200)]
     value: dict | None
@@ -129,3 +150,22 @@ class PasswordLifetimeIntent(Contract):
     @property
     def partition(self) -> str:
         return fingerprint({"subject_uuid": str(self.subject_uuid)})
+
+
+class LifetimeGrantEvidence(Contract):
+    """Export of an original owned ACK, never a browser or detached status grant."""
+
+    version: Literal[1] = 1
+    intent: PasswordLifetimeIntent
+    status: dict
+
+    @model_validator(mode="after")
+    def exact_committed(self) -> LifetimeGrantEvidence:
+        from .gcp_contracts import OperationStatus
+        status = OperationStatus.model_validate(self.status)
+        if (status.status != "COMMITTED" or status.journal is None
+                or status.operation_id != self.intent.operation_id
+                or status.intent_sha256 != self.intent.digest
+                or not isinstance(self.intent.command, (EnrollPasswordAccount, CreateVerifiedPasswordWebSession))):
+            raise ValueError("Only exact original credential enrollment/session ACK evidence is accepted")
+        return self

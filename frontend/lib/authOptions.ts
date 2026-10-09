@@ -2,6 +2,7 @@ import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import GoogleProvider from "next-auth/providers/google";
 import { cookies } from "next/headers";
+import { retainedBrowserSession } from "./browserPairingGateway";
 
 const POLICY_VERSION = "2026-10-08";
 const GOOGLE_CONSENT_COOKIE = "hirewiz_google_registration_consent";
@@ -9,6 +10,7 @@ const GOOGLE_CONSENT_COOKIE = "hirewiz_google_registration_consent";
 type BackendAuthToken = {
   access_token?: unknown;
   user_id?: unknown;
+  browser_pairing_session?: unknown;
 };
 
 const configuredNextAuthSecret = process.env.NEXTAUTH_SECRET?.trim();
@@ -56,17 +58,20 @@ export const authOptions: NextAuthOptions = {
           if (!res.ok) return null;
           
           const user = (await res.json()) as BackendAuthToken;
-          if (typeof user.access_token === "string" && typeof user.user_id === "number") {
+          if (typeof user.access_token === "string" && typeof user.user_id === "number" && Number.isSafeInteger(user.user_id) && user.user_id > 0) {
+            const candidateSession = user.browser_pairing_session == null ? null : retainedBrowserSession({ browserPairingSession: user.browser_pairing_session });
+            if (user.browser_pairing_session != null && (!candidateSession || candidateSession.candidate_id !== user.user_id)) return null;
             return {
               id: String(user.user_id),
               email: credentials.email,
               accessToken: user.access_token,
               hirewizUserId: user.user_id,
+              browserPairingSession: candidateSession ?? undefined,
             };
           }
           return null;
-        } catch (e) {
-          console.error("Authorize error:", e);
+        } catch {
+          console.error("Credential sign-in is unavailable.");
           return null;
         }
       },
@@ -105,13 +110,17 @@ export const authOptions: NextAuthOptions = {
           }
           token.accessToken = data.access_token;
           token.hirewizUserId = data.user_id;
+          delete token.browserPairingSession;
         } catch (e) {
-          console.error("Google backend login error:", e);
+          console.error("Google backend sign-in is unavailable.");
           throw e;
         }
       } else if (user?.accessToken && user.hirewizUserId) {
         token.accessToken = user.accessToken;
         token.hirewizUserId = user.hirewizUserId;
+        const candidateSession = retainedBrowserSession({ browserPairingSession: user.browserPairingSession });
+        if (candidateSession && candidateSession.candidate_id === user.hirewizUserId) token.browserPairingSession = candidateSession;
+        else delete token.browserPairingSession;
       }
       return token;
     },

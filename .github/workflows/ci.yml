@@ -35,6 +35,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Node runtime for native HTTP to TypeScript contract checks
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4, verified official ref
+        with:
+          node-version: "24"
       - name: Install uv and locked dependencies
         run: |
           python -m pip install --disable-pip-version-check uv==0.11.32
@@ -65,6 +69,7 @@ jobs:
           tests/test_catalog_timing.py
           tests/fixtures/pairing_authority.py tests/fixtures/firestore_emulator.py tests/test_pairing_crypto.py tests/test_pairing_service.py tests/test_pairing_processes.py
           tests/test_pairing_kms.py tests/test_password_reauth.py
+          tests/test_browser_pairing_http.py
           tests/test_job_coverage_audit.py
           tests/test_gcp_rpc.py tests/test_gcp_journal_sdk.py tests/test_gcp_safety_coordinator.py tests/test_gcp_rpc_emulator.py tests/test_gcp_pairing_emulator.py tests/test_gcp_pairing_admission_emulator.py tests/test_gcp_password_reauth_emulator.py
           tests/test_gcp_password_lifetime_emulator.py
@@ -76,9 +81,21 @@ jobs:
           app/services/model_cost_policy.py app/services/generation_budget.py app/services/llm_client.py app/services/result_commit.py
           app/services/generation_gate.py tests/test_generation_gate.py
           tests/test_monetary_cutover_preflight_postgres.py
+          app/routers/candidate_accounts.py app/routers/sensitive_auth.py
+          tests/test_sensitive_auth_http.py tests/test_legacy_password_compatibility.py
+          tests/test_candidate_account_lifecycle.py tests/test_candidate_legacy_auth_guards.py
+          tests/test_candidate_lifetime_migration_postgres.py tests/test_candidate_native_enrollment_emulator.py
+          tests/fixtures/gcp_partitioned_publication.py tests/test_candidate_scoped_lifecycle_emulator.py
+          tests/test_gcp_partitioned_export_emulator.py tests/test_gcp_partitioned_publication_emulator.py
+          tests/test_gcp_publication_scan_emulator.py tests/test_gcp_scoped_authority_emulator.py
+          tests/test_monetary_cutover_schema11_postgres.py
+          tests/test_migration_logging_postgres.py
           tests/test_fresh_user_no_ai_journey.py
           tests/fixtures/cold_browser_app.py tests/test_cold_browser_runner.py
           ../infra/gcp/release_preflight.py ../tests/test_release_preflight.py
+      - name: Check modified legacy authentication imports
+        working-directory: backend
+        run: .venv/bin/ruff check --select I,F app/routers/auth.py app/security.py app/schemas.py
       - name: Type-check modernized modules
         working-directory: backend
         run: >-
@@ -87,6 +104,7 @@ jobs:
           app/services/model_cost_policy.py app/services/generation_budget.py app/services/llm_client.py app/services/result_commit.py
           app/services/generation_gate.py
           scripts/monetary_cutover_preflight.py
+          app/routers/candidate_accounts.py app/routers/sensitive_auth.py
           ../infra/gcp/release_preflight.py
       - name: Compile backend
         run: backend/.venv/bin/python -m compileall -q backend/app

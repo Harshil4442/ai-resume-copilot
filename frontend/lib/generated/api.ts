@@ -21,6 +21,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/candidate/v1/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Login */
+        post: operations["login_api_auth_candidate_v1_login_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/candidate/v1/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Logout */
+        post: operations["logout_api_auth_candidate_v1_logout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/candidate/v1/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Change Password */
+        post: operations["change_password_api_auth_candidate_v1_password_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/candidate/v1/register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Register */
+        post: operations["register_api_auth_candidate_v1_register_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/delete-account": {
         parameters: {
             query?: never;
@@ -728,6 +796,40 @@ export interface paths {
         get: operations["list_applications_api_v1_applications_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/browser-pairing/candidate/{operation}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Candidate */
+        post: operations["candidate_api_v1_browser_pairing_candidate__operation__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/browser-pairing/device/{operation}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Device */
+        post: operations["device_api_v1_browser_pairing_device__operation__post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1650,6 +1752,10 @@ export interface components {
         AuthTokenResponse: {
             /** Access Token */
             access_token: string;
+            /** Browser Pairing Session */
+            browser_pairing_session?: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Token Type
              * @default bearer
@@ -1723,6 +1829,19 @@ export interface components {
             source_ref?: string | null;
             /** Value */
             value: unknown;
+        };
+        /** ChangeCandidatePassword */
+        ChangeCandidatePassword: {
+            /**
+             * Current Password
+             * Format: password
+             */
+            current_password: string;
+            /**
+             * New Password
+             * Format: password
+             */
+            new_password: string;
         };
         /** CheckoutResultRequest */
         CheckoutResultRequest: {
@@ -2087,6 +2206,19 @@ export interface components {
             focus: string;
             /** Phase */
             phase: string;
+        };
+        /** LoginCandidate */
+        LoginCandidate: {
+            /**
+             * Email
+             * Format: email
+             */
+            email: string;
+            /**
+             * Password
+             * Format: password
+             */
+            password: string;
         };
         /** MarketAnalyzeRequest */
         MarketAnalyzeRequest: {
@@ -2710,6 +2842,29 @@ export interface components {
             /** Reason */
             reason: string;
         };
+        /** RegisterCandidate */
+        RegisterCandidate: {
+            /**
+             * Accepted Terms
+             * @constant
+             */
+            accepted_terms: true;
+            /**
+             * Confirmed Age 18
+             * @constant
+             */
+            confirmed_age_18: true;
+            /**
+             * Email
+             * Format: email
+             */
+            email: string;
+            /**
+             * Password
+             * Format: password
+             */
+            password: string;
+        };
         /** ReminderCreate */
         ReminderCreate: {
             /**
@@ -3220,6 +3375,314 @@ export interface operations {
             };
         };
     };
+    login_api_auth_candidate_v1_login_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginCandidate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthTokenResponse"];
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+        };
+    };
+    logout_api_auth_candidate_v1_logout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    change_password_api_auth_candidate_v1_password_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangeCandidatePassword"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+        };
+    };
+    register_api_auth_candidate_v1_register_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegisterCandidate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+        };
+    };
     delete_account_api_auth_delete_account_post: {
         parameters: {
             query?: never;
@@ -3282,13 +3745,76 @@ export interface operations {
                     "application/json": components["schemas"]["AuthTokenResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Authentication input rejected without reflecting private values */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
                 };
             };
         };
@@ -3315,13 +3841,76 @@ export interface operations {
                     "application/json": components["schemas"]["AuthTokenResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Authentication input rejected without reflecting private values */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
                 };
             };
         };
@@ -3421,13 +4010,76 @@ export interface operations {
                     "application/json": components["schemas"]["UserMeResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Authentication input rejected without reflecting private values */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
                 };
             };
         };
@@ -4445,6 +5097,204 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OpportunityListResponse"];
+                };
+            };
+        };
+    };
+    candidate_api_v1_browser_pairing_candidate__operation__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                operation: "challenge" | "confirm" | "revoke-challenge" | "revoke";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * Pairing Id
+                     * Format: uuid
+                     */
+                    pairing_id: string;
+                } | {
+                    /**
+                     * Device Id
+                     * Format: uuid
+                     */
+                    device_id: string;
+                } | {
+                    /**
+                     * Challenge Id
+                     * Format: uuid
+                     */
+                    challenge_id: string;
+                    /**
+                     * Confirmed
+                     * @constant
+                     */
+                    confirmed: true;
+                    /**
+                     * Method
+                     * @default password_reauth
+                     * @constant
+                     */
+                    method?: "password_reauth";
+                    /**
+                     * Nonce
+                     * Format: password
+                     */
+                    nonce: string;
+                    /**
+                     * Operation
+                     * @enum {string}
+                     */
+                    operation: "confirm_pairing" | "revoke_device";
+                    /**
+                     * Password
+                     * Format: password
+                     */
+                    password: string;
+                    /**
+                     * Protocol Version
+                     * @constant
+                     */
+                    protocol_version: 2;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    device_api_v1_browser_pairing_device__operation__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                operation: "prepare" | "create" | "challenge" | "complete" | "status" | "refresh-challenge" | "refresh";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Extension Id */
+                    extension_id: string;
+                    /** Issued At Ms */
+                    issued_at_ms: number;
+                    /** Key */
+                    key: {
+                        [key: string]: string;
+                    };
+                    /**
+                     * Operation
+                     * @constant
+                     */
+                    operation: "prepare_request";
+                    /**
+                     * Protocol Version
+                     * @constant
+                     */
+                    protocol_version: 2;
+                    /**
+                     * Request Id
+                     * Format: uuid
+                     */
+                    request_id: string;
+                    /** Revision */
+                    revision: string;
+                    /** Signature */
+                    signature: string;
+                } | {
+                    /**
+                     * Identity
+                     * Format: uuid
+                     */
+                    identity: string;
+                    /** Issued At Ms */
+                    issued_at_ms: number;
+                    /**
+                     * Operation
+                     * @enum {string}
+                     */
+                    operation: "device_challenge" | "status" | "refresh_challenge";
+                    /**
+                     * Protocol Version
+                     * @constant
+                     */
+                    protocol_version: 2;
+                    /**
+                     * Request Id
+                     * Format: uuid
+                     */
+                    request_id: string;
+                    /** Signature */
+                    signature: string;
+                } | {
+                    /**
+                     * Nonce
+                     * Format: uuid
+                     */
+                    nonce: string;
+                    /**
+                     * Pairing Id
+                     * Format: uuid
+                     */
+                    pairing_id: string;
+                    /** Signature */
+                    signature: string;
+                } | {
+                    /**
+                     * Challenge Id
+                     * Format: uuid
+                     */
+                    challenge_id: string;
+                    /**
+                     * Nonce
+                     * Format: uuid
+                     */
+                    nonce: string;
+                    /** Signature */
+                    signature: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -29,6 +29,9 @@ async function forward(
     return NextResponse.json({ detail: "Cross-site mutation requests are not allowed" }, { status: 403 });
   }
   const { path } = await context.params;
+  if (path[0] === "v1" && path[1] === "browser-pairing") {
+    return NextResponse.json({ detail: "Use the dedicated browser pairing transport" }, { status: 403 });
+  }
   if (!path.length || path.some((segment) => segment === ".." || segment.includes("/"))) {
     return NextResponse.json({ detail: "Invalid backend path" }, { status: 400 });
   }

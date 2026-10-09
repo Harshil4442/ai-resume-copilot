@@ -19,6 +19,7 @@ from .gcp_pairing_contracts import PairingJournalIntent
 from .store import GuardDenied, GuardUnavailable
 
 if TYPE_CHECKING:
+    from .gcp_partitioned_publication import PartitionedPublicationCoordinator
     from .gcp_publication import GcpPublicationCoordinator
 
 
@@ -94,7 +95,7 @@ def _exact_bytes(bucket: Bucket, path: str, expected: bytes, *, generation: str 
 
 class GcsJournal:
     def __init__(self, bucket: Bucket, *, rpc_timeout: float = 2.0,
-                 publication: GcpPublicationCoordinator | None = None) -> None:
+                 publication: GcpPublicationCoordinator | PartitionedPublicationCoordinator | None = None) -> None:
         if (type(rpc_timeout) not in {int, float} or not 0 < rpc_timeout <= 10
                 or not math.isfinite(rpc_timeout)):
             raise ValueError("Journal RPC timeout is invalid")

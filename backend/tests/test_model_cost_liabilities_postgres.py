@@ -190,7 +190,7 @@ def test_postgres_retained_unknown_liability_refuses_downgrade_atomically(factor
     with pytest.raises(RuntimeError, match="retained model-cost liabilities without loss"):
         _migrate(pg_engine, "20261008_0009", direction="downgrade")
     with pg_engine.connect() as db:
-        assert db.scalar(text("SELECT version_num FROM alembic_version")) == "20261009_0010"
+        assert db.scalar(text("SELECT version_num FROM alembic_version")) == "20261009_0011"
         assert db.scalar(text("SELECT reserved_cost_micros FROM model_cost_liabilities")) == 1267
         assert db.scalar(text("SELECT settled_cost_micros FROM model_cost_liabilities")) is None
 

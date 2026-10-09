@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
-from threading import Barrier
+from threading import Barrier, Lock
 from uuid import UUID, uuid4
 
 import pytest
@@ -309,9 +309,15 @@ def test_two_native_writers_one_exact_cut_wins_without_retargeting(lifetime, mon
     bind(c)
     a, b = [c.lifetime.allocate(CreatePasswordWebSession(account_binding_id=c.binding_id,
         session_id=uuid4(), expected_auth_generation=1, expires_at_ms=c.now + 1_000)) for _ in range(2)]
-    create, barrier = c.lifetime_journal.create, Barrier(2)
+    create, barrier, publication_lock = c.lifetime_journal.create, Barrier(2), Lock()
     def paired(intent):
-        receipt = create(intent)
+        # This case proves the ordinary-native effect cut. Admit both journal
+        # owners before racing that cut; independent bounded publication
+        # contention can legitimately refuse an upload owner and is a separate
+        # gate, not evidence that both native commit contenders were reached.
+        with publication_lock:
+            receipt = create(intent)
+            assert receipt is not None
         barrier.wait(timeout=10)
         return receipt
     monkeypatch.setattr(c.lifetime_journal, "create", paired)

@@ -1,6 +1,8 @@
 from datetime import datetime
 from typing import Dict, List, Literal, Optional, Union
+
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
+
 
 # -------------------------
 # Auth
@@ -32,6 +34,7 @@ class AuthTokenResponse(BaseModel):
     access_token: str
     user_id: int
     token_type: str = "bearer"
+    browser_pairing_session: dict | None = None
 
 class UserMeResponse(BaseModel):
     id: int

@@ -24,7 +24,10 @@ from .gcp_password_lifetime_contracts import (
     AdvancePasswordAuthGeneration,
     BindPasswordAccount,
     CreatePasswordWebSession,
+    CreateVerifiedPasswordWebSession,
     DeletePasswordSubject,
+    EnrollPasswordAccount,
+    LifetimeGrantEvidence,
     LifetimeRecord,
     PasswordLifetimeCommand,
     PasswordLifetimeEffects,
@@ -45,7 +48,10 @@ from .store import GuardDenied, GuardUnavailable
 _COMMAND = TypeAdapter(PasswordLifetimeCommand)
 _SESSION_MS = 86_400_000
 _COMMAND_TYPES = (BindPasswordAccount, CreatePasswordWebSession, RevokePasswordWebSession,
-                  AdvancePasswordAuthGeneration, TombstonePasswordAccount, DeletePasswordSubject)
+                  AdvancePasswordAuthGeneration, TombstonePasswordAccount, DeletePasswordSubject,
+                  EnrollPasswordAccount, CreateVerifiedPasswordWebSession)
+_DENIAL_TYPES = (RevokePasswordWebSession, AdvancePasswordAuthGeneration,
+                 TombstonePasswordAccount, DeletePasswordSubject)
 
 
 def _same(left: dict | None, right: dict | None) -> bool:
@@ -88,9 +94,18 @@ def _intent_copy(raw: bytes) -> PasswordLifetimeIntent:
 
 
 @dataclass(frozen=True)
+class PasswordLifetimeOwnedAck:
+    """Opaque identity capability retained by its actual issuer until consumed once."""
+
+    _raw: bytes = field(repr=False)
+    _issuer: object = field(repr=False, compare=False)
+
+
+@dataclass(frozen=True)
 class PasswordLifetimeExecution:
     status: OperationStatus
     context: CandidateWebSession | None = None
+    owned_ack: PasswordLifetimeOwnedAck | None = None
 
 
 class _Snapshot:
@@ -139,6 +154,8 @@ class GcpPasswordLifetimeCoordinator:
         self._issuer = object()
         self._issued: dict[UUID, _OwnedLifetimePlan] = {}
         self._lock = Lock()
+        self._owned_acks: dict[UUID, PasswordLifetimeOwnedAck] = {}
+        self._consumed_acks: set[UUID] = set()
 
     def _fresh(self, intent: PasswordLifetimeIntent) -> None:
         now = self.now_ms()
@@ -235,7 +252,8 @@ class GcpPasswordLifetimeCoordinator:
     def _prepare(self, tx: BufferedTransaction, command: PasswordLifetimeCommand, *,
                  operation_id: UUID, event_id: UUID, now: int,
                  _preclose_validation: bool = False) -> tuple[UUID, PasswordLifetimeEffects]:
-        if (not isinstance(command, (BindPasswordAccount, CreatePasswordWebSession))
+        if (not isinstance(command, (BindPasswordAccount, CreatePasswordWebSession,
+                EnrollPasswordAccount, CreateVerifiedPasswordWebSession))
                 and self.closed_denial is None and not _preclose_validation):
             raise GuardUnavailable("A protected acknowledged closure is required before retaining a denial")
         if self.closed_denial is not None and not self.closed_denial.command_matches(command):
@@ -257,7 +275,47 @@ class GcpPasswordLifetimeCoordinator:
         def change(namespace: str, key: str, value: dict) -> None:
             snap.get(namespace, key)
             changes.append(LifetimeRecord(namespace=namespace, key=key, value=value))
-        if isinstance(command, BindPasswordAccount):
+        enrollment_event = None
+        if isinstance(command, EnrollPasswordAccount):
+            subject_id = command.subject_uuid
+            if head["sequence"] >= JS_SAFE_MAX - 1:
+                raise GuardUnavailable("Enrollment needs two event sequence slots")
+            if command.subject_registration_event_id in {event_id, operation_id}:
+                raise GuardDenied("Enrollment event identities must be distinct")
+            scope = Revocation(subject_uuid=subject_id, kind="subject", target=str(subject_id), revision=0)
+            for namespace, key in (("subjects", str(subject_id)), ("revocations", scope.key),
+                    ("events", str(command.subject_registration_event_id)),
+                    ("password_credential_revisions", str(subject_id)),
+                    ("pairing_account_bindings", str(command.account_binding_id)),
+                    ("pairing_account_tombstones", str(command.account_binding_id)),
+                    ("pairing_subject_accounts", str(subject_id)),
+                    ("pairing_sql_accounts", fingerprint({"candidate_id": command.candidate_id})),
+                    ("pairing_auth_high_water", str(subject_id))):
+                snap.absent(namespace, key)
+            subject = RegisteredSubject(active=True, registration_event_id=command.subject_registration_event_id,
+                principal_sha256=command.principal_sha256, auth_generation=1)
+            change("subjects", str(subject_id), subject.model_dump(mode="json"))
+            change("password_credential_revisions", str(subject_id), {"subject_uuid": str(subject_id),
+                "auth_generation": 1, "credential_sha256": command.credential_sha256})
+            binding = PasswordAccountBinding(account_binding_id=command.account_binding_id,
+                candidate_id=command.candidate_id, subject_uuid=subject_id,
+                principal_sha256=command.principal_sha256, registration_event_id=event_id)
+            change("pairing_account_bindings", str(command.account_binding_id), binding.model_dump(mode="json"))
+            owner = self._owner(binding)
+            change("pairing_subject_accounts", str(subject_id), owner)
+            change("pairing_sql_accounts", fingerprint({"candidate_id": command.candidate_id}), owner)
+            change("pairing_auth_high_water", str(subject_id), {"subject_uuid": str(subject_id),
+                "auth_generation": 1, "principal_sha256": command.principal_sha256})
+            enrollment_event = {"sequence": head["sequence"] + 1, "previous": head["digest"],
+                "kind": "SUBJECT_REGISTERED", "payload": {"subject_uuid": str(subject_id)},
+                "event_id": str(command.subject_registration_event_id)}
+            enrollment_event["digest"] = hashlib.sha256(canonical(enrollment_event).encode()).hexdigest()
+            changes.append(LifetimeRecord(namespace="events", key=str(command.subject_registration_event_id),
+                value=enrollment_event))
+            head = {"sequence": enrollment_event["sequence"], "digest": enrollment_event["digest"]}
+            kind = "PASSWORD_ACCOUNT_BOUND"
+            payload = binding.model_dump(mode="json", exclude={"registration_event_id"})
+        elif isinstance(command, BindPasswordAccount):
             subject_id = command.subject_uuid
             subject = self._subject(snap, subject_id, initial=True)
             if subject.principal_sha256 != command.principal_sha256:
@@ -281,7 +339,12 @@ class GcpPasswordLifetimeCoordinator:
         else:
             binding, subject = self._binding(snap, command.account_binding_id)
             subject_id = binding.subject_uuid
-            if isinstance(command, CreatePasswordWebSession):
+            if isinstance(command, (CreatePasswordWebSession, CreateVerifiedPasswordWebSession)):
+                if isinstance(command, CreateVerifiedPasswordWebSession):
+                    revision = {"subject_uuid": str(subject_id), "auth_generation": command.expected_auth_generation,
+                        "credential_sha256": command.credential_sha256}
+                    if not _same(snap.get("password_credential_revisions", str(subject_id)), revision):
+                        raise GuardDenied("Exact independently retained credential revision is required")
                 if command.expected_auth_generation != subject.auth_generation:
                     raise GuardDenied("New session belongs to a stale authentication generation")
                 if not now < command.expires_at_ms <= now + _SESSION_MS:
@@ -353,7 +416,7 @@ class GcpPasswordLifetimeCoordinator:
         whose independent account/session/subject provenance is invalid cannot
         close unrelated subjects. A later close race still sacrifices availability.
         """
-        if self.closed_denial is not None or type(command) not in _COMMAND_TYPES[2:]:
+        if self.closed_denial is not None or type(command) not in _DENIAL_TYPES:
             raise GuardDenied("Only an OPEN typed denial can be validated before closure")
         command = _COMMAND.validate_python(command.model_dump(mode="json"))
         now = self.now_ms()
@@ -434,6 +497,14 @@ class GcpPasswordLifetimeCoordinator:
                         immutable=record.namespace in {"pairing_account_bindings", "pairing_subject_accounts",
                             "pairing_sql_accounts", "pairing_web_sessions", "pairing_account_tombstones",
                             "pairing_web_session_tombstones", "revocations"})
+            if isinstance(attempt.command, EnrollPasswordAccount):
+                registered = next(record.value for record in effects.after if record.namespace == "events"
+                    and record.key == str(attempt.command.subject_registration_event_id))
+                assert registered is not None
+                actual = tx.append(str(attempt.command.subject_registration_event_id), "SUBJECT_REGISTERED",
+                    {"subject_uuid": str(attempt.subject_uuid)})
+                if not _same(actual, registered):
+                    raise GuardDenied("Enrollment registration event cut changed")
             event = tx.append(str(attempt.event_id), effects.event["kind"], effects.event["payload"])
             if not _same(event, attempt.effects.event):
                 raise GuardDenied("Lifetime event cut changed")
@@ -457,14 +528,42 @@ class GcpPasswordLifetimeCoordinator:
         status = OperationStatus(status="COMMITTED", operation_id=intent.operation_id,
                                  intent_sha256=owned.sha256, journal=receipt)
         context = None
-        if isinstance(intent.command, CreatePasswordWebSession):
+        if isinstance(intent.command, (CreatePasswordWebSession, CreateVerifiedPasswordWebSession)):
             binding = next(item.value for item in intent.effects.before
                 if item.namespace == "pairing_account_bindings" and item.key == str(intent.command.account_binding_id))
             assert binding is not None
             context = CandidateWebSession(candidate_id=binding["candidate_id"],
                 account_binding_id=intent.command.account_binding_id, session_id=intent.command.session_id)
         self._checked(raw, owned=owned)
-        return PasswordLifetimeExecution(status, context)
+        ack = None
+        if isinstance(intent.command, (EnrollPasswordAccount, CreateVerifiedPasswordWebSession)):
+            evidence = LifetimeGrantEvidence(intent=intent, status=status.model_dump(mode="json"))
+            ack = PasswordLifetimeOwnedAck(canonical(evidence.model_dump(mode="json")).encode(), self._issuer)
+            with self._lock:
+                self._owned_acks[intent.operation_id] = ack
+        return PasswordLifetimeExecution(status, context, ack)
+
+    def consume_owned_ack(self, ack: PasswordLifetimeOwnedAck) -> LifetimeGrantEvidence:
+        """One-shot final protected activation prerequisite; status never recreates it."""
+        if type(ack) is not PasswordLifetimeOwnedAck or ack._issuer is not self._issuer:
+            raise GuardDenied("Original owned lifetime acknowledgement is required")
+        try:
+            evidence = LifetimeGrantEvidence.model_validate_json(ack._raw)
+        except (ValidationError, ValueError, TypeError):
+            raise GuardDenied("Original acknowledgement bytes are invalid") from None
+        operation = evidence.intent.operation_id
+        with self._lock:
+            if self._owned_acks.get(operation) is not ack or operation in self._consumed_acks:
+                raise GuardDenied("Original acknowledgement is absent or already consumed")
+            self._consumed_acks.add(operation)
+        if canonical(evidence.model_dump(mode="json")).encode() != ack._raw:
+            raise GuardDenied("Original acknowledgement canonical bytes changed")
+        self._fresh(evidence.intent)
+        actual = self.status(evidence.intent)
+        if canonical(actual.model_dump(mode="json")) != canonical(evidence.status):
+            raise GuardUnavailable("Owned acknowledgement no longer has exact retained evidence")
+        self._fresh(evidence.intent)
+        return LifetimeGrantEvidence.model_validate_json(ack._raw)
 
     def status(self, intent: PasswordLifetimeIntent) -> OperationStatus:
         raw = _intent_raw(intent)

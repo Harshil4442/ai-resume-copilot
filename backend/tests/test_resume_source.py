@@ -10,7 +10,7 @@ from backend.app.models import AnalysisRun, EvidenceItem, Opportunity, Resume, U
 from backend.app.rate_limiter import limiter
 from backend.app.routers import auth
 from backend.app.routers import resume as resume_router
-from backend.app.security import get_current_user
+from backend.app.security import create_access_token, get_current_user
 from docx import Document
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
@@ -135,7 +135,10 @@ def test_upload_retains_exact_source_and_exposes_private_metadata(monkeypatch, s
         assert exported["source_available"] is True
         assert exported["source_format"] == source_format
 
-        deleted = client.post("/api/auth/delete-account")
+        deleted = client.post(
+            "/api/auth/delete-account",
+            headers={"Authorization": f"Bearer {create_access_token(subject='1')}"},
+        )
         assert deleted.status_code == 200, deleted.text
         with factory() as db:
             assert db.get(Resume, resume_id) is None
