@@ -93,9 +93,9 @@ Two AI reduction defects have priority: the parser fallback uses unsafe substrin
 
 ### Paid search and auto apply
 
-Search and automatic application execution are separate paid services. Use a dedicated prepaid job service balance rather than free signup analysis units. Premium does not waive job service charges. The introductory catalog offers 500 closed-loop service credits for INR 499 through the existing webhook-confirmed Razorpay checkout. These credits cannot be transferred or redeemed as money. Optional resume tailoring keeps its existing separately displayed analysis-unit pricing; selecting a tailored resume never silently purchases another operation.
+Search and automatic application execution are separate paid services. Use a dedicated prepaid job service balance rather than free signup analysis units. Premium does not waive job service charges. The initial introductory catalog offered 500 closed-loop service credits for INR 499 through the existing webhook-confirmed Razorpay checkout. The owner subsequently requested exactly three finite prepaid bundles priced against estimated expense and margin; unlimited usage must no longer be offered. Show job-service credits and AI-analysis units separately within each bundle and grant/refund all promised components atomically. These credits cannot be transferred or redeemed as money. Optional resume tailoring keeps separately displayed, versioned analysis-unit pricing; selecting a tailored resume never silently purchases another operation. Preserve accepted historical orders and quotes.
 
-The initial configurable price is x = 1 service credit per newly delivered qualifying job and y = 5 service credits per confirmed complete automatic application. This prices ingestion and deterministic retrieval below the more expensive form preparation, execution, receipt verification and support work. Store immutable price versions on every reservation. Revisit future prices from measured provider, infrastructure and support costs; configuration changes cannot reprice an approved package or historical charge.
+The initial configurable defaults are x = 1 service credit per newly delivered qualifying job and y = 5 service credits per confirmed complete automatic application. These are introductory defaults, not validated production margin floors. Under BI08, new production prices must cover the measured and conservatively bounded expenses of each service and its allocated platform costs. Store immutable price versions on every reservation; configuration changes cannot reprice an approved package or historical charge.
 
 **BI01 Result count and quote.** Must let the candidate select a desired result count from 1 to a configurable launch maximum of 100. Show the search unit price, requested count and maximum reservation before execution. The result count is an upper bound, not a promise to find unavailable vacancies.
 
@@ -110,6 +110,8 @@ The initial configurable price is x = 1 service credit per newly delivered quali
 **BI06 Ledger and controls.** Provide balance, held amount, operation, unit price, quantity, settled cost and refund/release history separately for search and application. Enforce insufficient-balance errors before paid work. Batch approvals enumerate the exact jobs and total costs; enforce per-candidate daily limits and one active possible send per opening.
 
 **BI07 Pricing transparency.** Display paid service credits separately from analysis units and Premium. Show optional tailoring charges separately, allow original or custom resumes without tailoring, and keep price quotations immutable until their stated expiry. Do not advertise unlimited auto-apply or paid search with Premium.
+
+**BI08 Expense-based pricing and margin protection.** Before activating a new catalog or service-price version, validate every purchasable pack and allowed discount against a versioned expense policy. Include provider attempts/fallbacks, failed or unknown work, document compilation/scanning, cloud compute/storage/database/queue/egress, source licenses, payment fees and nonrecoverable tax, refunds/chargebacks, support, currency conversion, fixed platform allocation and a contingency allowance. Use the lowest net revenue per credit among all allowed packs and promotions, integer/Decimal arithmetic with upward cost rounding, and a positive target contribution margin after costs. Enforce bounded expenses before execution and preserve unresolved cost liabilities. Missing, stale or incompatible cost evidence cannot silently become zero cost. Existing orders, entitlements and accepted quotes retain their exact promised terms; new prices need new quotes. Optional AI tailoring remains separately quoted, and manual handoff still has no automatic-application fee. Reconcile actual vendor invoices and net settlements with forecasts monthly, evaluate low-volume break-even and alert or restrict new costly operations before their budget is exceeded. Positive unit margin does not prove whole-business profitability without enough paying usage to recover fixed expenses. See [the staged expense-pricing policy](../delivery/COST_PRICING_POLICY_2026-10-09.md).
 
 For example, requesting 20 new results reserves at most 20 service credits. If only 14 qualifying new jobs are delivered, charge 14 and release 6. Approving 10 supported applications reserves 50 separately. If 8 are confirmed and 2 fail safely before sending, charge 40 and release 10. The total paid service cost is 54 credits, with any explicitly requested resume tailoring itemized separately.
 
@@ -522,7 +524,7 @@ Implement durable outbox and workload budgets, deterministic facts and basic-fit
 - [ ] G01C Prove outbox crash recovery, duplicate-task handling, bounded DB pools and total provider attempt cap. Evidence: fault-injection logs. Covers SD01–SD02, AI04.
 - [ ] G01D Replace invented fallback; verify exact billing transitions and no generation on navigation. Evidence: route tests and telemetry. Covers AI06–AI08.
 
-- [ ] G01E Verify independent paid service balance, captured-payment grants, concurrent reservations, proportional refunds and search/application settlement. Covers BI01–BI07.
+- [ ] G01E Verify independent paid service balance, captured-payment grants, concurrent reservations, proportional refunds, search/application settlement and expense-policy margin floors. Covers BI01–BI08.
 
 ### Stage 2 Verified discovery pilot
 
@@ -566,7 +568,7 @@ Enable employer or partner APIs only after grants and application parity are ver
 - [ ] G05C Prove cancellation races, stale approval, account deletion and late valid receipts resolve safely. Evidence: state-transition tests. Covers EX05, EX08–EX09 and SE05.
 - [ ] G05D Verify per-job batch approval, candidate limits, actual confirmations and connector kill switches. Evidence: controlled pilot metrics. Covers FR07–FR09 and DP03.
 
-- [ ] G05E Verify visible per-job and batch quotes, immutable price snapshots, holds on unknown outcomes and audited reconciliation without a repeated send. Covers BI02–BI07.
+- [ ] G05E Verify visible per-job and batch quotes, immutable price/cost snapshots, holds on unknown outcomes, below-floor pack/promotion refusal and audited reconciliation without a repeated send. Covers BI02–BI08.
 
 ### Stage 6 Wider coverage and production readiness
 

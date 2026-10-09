@@ -157,6 +157,8 @@ def test_actual_signed_cookie_denial_route_survives_sql_erasure_only_for_origina
 
     from app.routers import candidate_accounts
     from app.security import create_access_token
+    from backend.tests.fixtures.candidate_ingress import create, signed_headers
+    from app.domains.candidate_ingress import replay
     c = service
     login = fresh(c)
     c.account_service.prepare_delete(login.context)
@@ -170,14 +172,18 @@ def test_actual_signed_cookie_denial_route_survives_sql_erasure_only_for_origina
     monkeypatch.setattr(candidate_accounts, "production_candidate_accounts", lambda: c.account_service)
     claims = {"version": 1, "context": login.context.model_dump(mode="json"), "auth_generation": 1}
     token = create_access_token(subject=str(login.context.candidate_id), candidate_lifetime=claims)
-    with TestClient(app) as client:
-        result = client.post("/api/auth/candidate/v1/web-logout", json={"operation_id": str(uuid4())},
-            headers={"Authorization": "Bearer " + token})
+    ingress = create()
+    monkeypatch.setattr(replay, "production_candidate_ingress", lambda: ingress.ingress)
+    with TestClient(app, base_url="https://testserver") as client:
+        path = "/api/auth/candidate/v1/web-logout"
+        raw = json.dumps({"operation_id": str(uuid4())}).encode()
+        result = client.post(path, content=raw, headers=signed_headers(ingress, path, raw, authorization="Bearer " + token))
         assert result.status_code == 200 and result.json() == {"status": "COOKIE_DENIAL_RETAINED"}
         claims["auth_generation"] = 2
         wrong = create_access_token(subject=str(login.context.candidate_id), candidate_lifetime=claims)
-        result = client.post("/api/auth/candidate/v1/web-logout", json={"operation_id": str(uuid4())},
-            headers={"Authorization": "Bearer " + wrong})
+        raw = json.dumps({"operation_id": str(uuid4())}).encode()
+        result = client.post(path, content=raw, headers=signed_headers(ingress, path, raw, authorization="Bearer " + wrong))
         assert result.status_code == 401
+    ingress.channel.close()
     with c.account_service.sessions() as db:
         assert db.query(User).count() == 0 and db.query(CandidatePasswordAccount).count() == 0

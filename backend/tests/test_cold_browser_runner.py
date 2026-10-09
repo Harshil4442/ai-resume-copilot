@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import ssl
 import subprocess
 import sys
 import time
@@ -11,6 +12,7 @@ import pytest
 from backend.scripts import run_cold_browser_journey as journey_runner
 from backend.scripts.run_cold_browser_journey import (
     _browser_failure_summary,
+    _create_owned_tls,
     _owned_status,
     _run_bounded,
     _spawn_owned,
@@ -160,6 +162,40 @@ def test_browser_failure_summary_reports_missing_browser_without_raw_global_erro
     report = tmp_path / "playwright.json"
     report.write_text(json.dumps({"errors": [{"message": "browserType.launch: Executable doesn't exist at /private/home/token"}]}))
     assert _browser_failure_summary(report) == {"report_state": "read", "failures": [{"category": "browser_not_installed"}]}
+
+
+def test_browser_failure_summary_uses_fixed_spec_coordinates_when_stack_is_absent(tmp_path):
+    report = tmp_path / "playwright.json"
+    report.write_text(json.dumps({"errors": [{
+        "message": "Error: expect(page with private token).toHaveURL(expected)",
+        "location": {"file": "/private/owned/source/frontend/journey/cold-no-ai.spec.ts", "line": 46, "column": 22},
+    }, {"message": "unknown secret", "location": {"file": "/private/other.ts", "line": 7, "column": 8}}]}))
+    assert _browser_failure_summary(report) == {"report_state": "read", "failures": [
+        {"category": "assertion", "spec_line": 46, "spec_column": 22}, {"category": "browser_error"}]}
+
+
+def test_owned_tls_keeps_hostname_and_certificate_verification_enabled(tmp_path):
+    key, certificate = tmp_path / "key.pem", tmp_path / "certificate.pem"
+    context = _create_owned_tls(key, certificate)
+    try:
+        assert context.verify_mode == ssl.CERT_REQUIRED
+        assert context.check_hostname is True
+        assert key.stat().st_mode & 0o777 == 0o600
+        assert context.cert_store_stats()["x509_ca"] >= 1
+    finally:
+        key.unlink(missing_ok=True)
+
+
+def test_owned_tls_setup_failure_removes_the_partial_private_key(tmp_path, monkeypatch):
+    key, certificate = tmp_path / "key.pem", tmp_path / "certificate.pem"
+    def failed(command, **kwargs):
+        key.write_text("synthetic incomplete private key")
+        certificate.write_text("synthetic incomplete certificate")
+        raise subprocess.TimeoutExpired(command, 10)
+    monkeypatch.setattr(journey_runner.subprocess, "run", failed)
+    with pytest.raises(subprocess.TimeoutExpired):
+        _create_owned_tls(key, certificate)
+    assert not key.exists() and not certificate.exists()
 
 
 def test_browser_failure_summary_is_bounded_and_handles_missing_invalid_reports(tmp_path):

@@ -10,5 +10,7 @@ export default defineConfig({
   timeout: 120_000,
   reporter: [["list"], ["json", { outputFile: process.env.COLD_BROWSER_REPORT }]],
   use: { ...devices["Desktop Chrome"], baseURL: process.env.COLD_BROWSER_FRONTEND_URL,
+    // Only this disposable loopback journey uses its own self-signed certificate.
+    ignoreHTTPSErrors: true,
     actionTimeout: 15_000, navigationTimeout: 30_000, trace: "off", screenshot: "off", video: "off" },
 });

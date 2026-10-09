@@ -208,6 +208,9 @@ def test_http_registration_login_bearer_and_logout_use_genuine_credential_native
     from app.domains.candidate_accounts import service as service_module
     from app.rate_limiter import limiter
     from app.routers import auth, candidate_accounts
+    from app.domains.candidate_ingress import replay
+    from backend.tests.fixtures.candidate_ingress import create, signed_headers
+    import json
     service, _, _ = lifecycle
     monkeypatch.setattr(service_module, "production_candidate_accounts", lambda: service)
     monkeypatch.setenv("CANDIDATE_ACCOUNT_LIFECYCLE_ENABLED", "true")
@@ -221,18 +224,24 @@ def test_http_registration_login_bearer_and_logout_use_genuine_credential_native
         with service.sessions() as db:
             yield db
     app.dependency_overrides[get_db] = database
-    with TestClient(app) as client:
-        registered = client.post("/api/auth/register", json={"email": "candidate@example.com",
+    ingress = create()
+    monkeypatch.setattr(replay, "production_candidate_ingress", lambda: ingress.ingress)
+    with TestClient(app, base_url="https://testserver") as client:
+        def post(path, value=None, authorization=""):
+            raw = json.dumps(value).encode() if value is not None else b""
+            return client.post(path, content=raw, headers=signed_headers(ingress, path, raw, authorization=authorization))
+        registered = post("/api/auth/register", {"email": "candidate@example.com",
             "password": PASSWORD, "accepted_terms": True, "confirmed_age_18": True})
         assert registered.status_code == 200 and registered.json()["ai_credits"] == 50
-        authenticated = client.post("/api/auth/login", json={"email": "candidate@example.com", "password": PASSWORD})
+        authenticated = post("/api/auth/login", {"email": "candidate@example.com", "password": PASSWORD})
         assert authenticated.status_code == 200
         body = authenticated.json()
         assert body["browser_pairing_session"]["candidate_id"] == registered.json()["id"]
         bearer = {"Authorization": "Bearer " + body["access_token"]}
         assert client.get("/api/auth/me", headers=bearer).status_code == 200
-        assert client.post("/api/auth/candidate/v1/logout", headers=bearer).status_code == 200
+        assert post("/api/auth/candidate/v1/logout", authorization=bearer["Authorization"]).status_code == 200
         assert client.get("/api/auth/me", headers=bearer).status_code == 401
+    ingress.channel.close()
 
 
 def test_genuine_bcrypt_credential_native_enrollment_login_keeps_exact_commitment(lifecycle, monkeypatch):

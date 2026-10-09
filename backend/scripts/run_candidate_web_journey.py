@@ -91,6 +91,7 @@ def main():
     env = {**os.environ, "APP_ENV": "test", "DATABASE_URL": scoped_url.render_as_string(hide_password=False),
         "HIREWIZ_CANDIDATE_SOCKET_FIXTURE": "1", "HIREWIZ_CANDIDATE_FIXTURE_DIRECTORY": str(directory),
         "HIREWIZ_AUTHORITY_EMULATOR_PORT": "58882", "BROWSER_PAIRING_WEBSITE_ORIGIN": origin,
+        "CANDIDATE_AUTH_TRANSPORT_SECRET": (b"n" * 32).hex(), "CANDIDATE_AUTH_TRANSPORT_KEY_ID": "fixture_ingress_v1",
         "BROWSER_PAIRING_GATEWAY_SECRET": "a" * 64, "HIREWIZ_TEST_EXTENSION_ID": extension,
         "HIREWIZ_TEST_EXTENSION_REVISION": revision, "JWT_SECRET": "synthetic-native-web-jwt-secret-20261009-only",
         "NEXTAUTH_SECRET": "synthetic-nextauth-candidate-web-secret-20261009-only",

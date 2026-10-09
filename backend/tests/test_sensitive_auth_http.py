@@ -173,9 +173,9 @@ def test_exact_body_budget_still_preserves_legitimate_login_contract():
     raw = json.dumps(VALID).encode()
     raw += b" " * (sensitive_auth.AUTH_JSON_MAX_BYTES - len(raw))
     status, calls, _ = asyncio.run(asgi_request([chunk(raw)]))
-    # Valid candidate login reaches the deliberately unavailable production
-    # lifecycle factory; it is not misclassified as a parsing error.
-    assert status == 503 and calls == 1
+    # Valid bounded input reaches the new private transport rejection; public
+    # callers cannot enter the lifecycle factory, even in disabled mode.
+    assert status == 403 and calls == 1
 
 
 def test_openapi_documents_actual_fixed_errors_only_on_sensitive_auth_routes():
@@ -213,5 +213,5 @@ def test_cookie_denial_deadline_also_precedes_any_token_or_native_authority(monk
 def test_default_candidate_capability_is_unavailable_without_disabling_legacy_routes():
     with TestClient(privacy_app()) as client:
         result = client.get("/api/auth/candidate/v1/availability")
-    assert result.status_code == 200
-    assert result.json() == {"fresh_registration": False, "legacy_enrollment": False}
+    assert result.status_code == 403
+    assert result.json() == {"detail": "Private candidate transport authentication failed"}

@@ -60,10 +60,10 @@ function createFixture() {
       if (location.protocol !== "http:" && location.protocol !== "https:") return;
       localStorage.setItem("hirewiz_cookie_consent", JSON.stringify({ version: 2, preference: "essential", savedAt: new Date().toISOString() }));
     });
-    await context.route("**/api/backend/**", async (route) => {
+    await context.route((url) => url.pathname.startsWith("/api/backend/") || url.pathname === "/api/account/profile", async (route) => {
       const request = route.request();
       const url = new URL(request.url());
-      const path = url.pathname.replace("/api/backend", "");
+      const path = url.pathname.replace(/^\/api\/account\/profile$/, "/auth/profile").replace("/api/backend", "");
       const method = request.method();
       const body = method === "GET" ? undefined : request.headers()["content-type"]?.includes("application/json") ? request.postDataJSON() : request.postData();
       const record = { path, method, query: url.search, body };

@@ -153,7 +153,8 @@ if __name__ == "__main__":
     worker = threading.Thread(target=dispatch_loop, daemon=True)
     worker.start()
     try:
-        uvicorn.run(app, host="127.0.0.1", port=int(os.environ["COLD_BROWSER_BACKEND_PORT"]), access_log=False)
+        uvicorn.run(app, host="127.0.0.1", port=int(os.environ["COLD_BROWSER_BACKEND_PORT"]), access_log=False,
+                    ssl_keyfile=os.environ["HIREWIZ_TEST_TLS_KEY"], ssl_certfile=os.environ["HIREWIZ_TEST_TLS_CERT"])
     finally:
         STOP.set()
         worker.join(timeout=5)

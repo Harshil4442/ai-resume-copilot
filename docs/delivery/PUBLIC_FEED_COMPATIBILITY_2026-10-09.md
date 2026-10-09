@@ -1,8 +1,8 @@
 # Public employer-feed compatibility — 9 October 2026
 
-Status: initial author verification and exact CI complete; independent review retains
-an inherited-query defect. Repair/recheck, source-use review and production enrollment
-remain pending. This checkpoint does not establish worldwide coverage or enable applications.
+Status: the inherited-query defect is repaired, independently rechecked and integrated
+locally. Source-use review, new exact-source CI and production enrollment remain pending.
+This checkpoint does not establish worldwide coverage or enable applications.
 
 ## Workable discovery repair
 
@@ -65,8 +65,10 @@ response bytes remain in the owned local evidence directory, rather than the rep
 - [x] Repair the observed account-scoped Workable redirect and verify refusal boundaries.
 - [x] Save three discovery proposals with no submission grants or production writes.
 - [x] Complete all five exact `4911d1f` CI jobs, including 2,002 backend cases.
-- [ ] Independently review the exact patch and applicable source-use scope.
-- [ ] Repair and recheck inherited HTTP-client defaults, then verify the exact new CI.
+- [x] Independently review and repair the inherited HTTP-client request defaults.
+- [x] Recheck the exact repair: 73 feed cases, 16 unchanged independent probes and six
+  new independent cases pass; Ruff and Mypy pass.
+- [ ] Verify new exact-source CI and applicable source-use scope.
 - [ ] Complete an explicitly reviewed enrollment/release.
 - [ ] Expand the employer inventory and measure independently defined recall.
 
@@ -75,7 +77,15 @@ covers the initial patch. Independent review reproduces all 69 feed cases and 14
 additional checks, but two intended assertions fail: an injected HTTPX client's default
 query parameters can change the otherwise fixed public GET URLs. One controlled input
 contains a synthetic query credential; this is not an observed production leak.
-The original failing probes remain retained while a separate request-construction repair
-is authored. Green CI does not close that finding or authorize source enrollment.
+The original failing probes remain retained. The subsequent two-path repair builds a
+standalone public request with its exact URL, declared query and headers, explicit
+timeout and no authentication. It excludes injected client's default query, headers,
+Host, cookies and authentication before either Workable GET. The unchanged independent
+probes now pass, as do new cross-adapter and retry cases; all 123 affected PostgreSQL/
+Redis cases pass. Client transport, event hooks, mounts and proxy settings still run;
+this is a bounded public-request repair, not arbitrary client isolation. Root verified
+the frozen patch and all 23 independent artifacts before integration. The earlier
+public feed observations above were not rerun or relabeled as new observations.
+Green CI does not authorize source enrollment.
 No production enrollment, deployment, payment, application, model call or candidate
 disclosure occurred during this checkpoint.

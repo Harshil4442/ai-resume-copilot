@@ -26,7 +26,7 @@ describe("dedicated safe account operations",()=>{
   const fetch=vi.fn(async()=>Response.json(profile));vi.stubGlobal("fetch",fetch);
   const res=await handleAccount(await req("profile"),"profile");expect(await res.json()).toEqual(profile);
   const [url,init]=fetch.mock.calls[0] as unknown as [string,RequestInit];expect(url).toBe("https://backend.example.com/api/auth/profile");
-  expect((init.headers as Record<string,string>).Authorization).toBe("Bearer synthetic-private-bearer");expect(init.redirect).toBe("error");
+  expect(new Headers(init.headers).get("Authorization")).toBe("Bearer synthetic-private-bearer");expect(init.redirect).toBe("error");
  });
  it("preserves ordinary anonymous registration and projects status only",async()=>{
   vi.stubGlobal("fetch",vi.fn(async()=>Response.json({id:12,email:"synthetic@example.com",tier:"free",ai_credits:2,job_service_credits:0})));
@@ -35,6 +35,12 @@ describe("dedicated safe account operations",()=>{
  });
  it("blocks signup while any account cookie is retained",async()=>{
   const fetch=vi.fn();vi.stubGlobal("fetch",fetch);expect((await handleAccount(await req("register","POST"),"register")).status).toBe(409);expect(fetch).not.toHaveBeenCalled();
+ });
+ it.each(["register","profile"])("preserves rate refusal on %s with a fixed public message",async(operation)=>{
+  const fetch=vi.fn(async()=>Response.json({detail:"synthetic-private-refusal",access_token:"synthetic-private-token"},{status:429}));vi.stubGlobal("fetch",fetch);
+  const res=await handleAccount(await req(operation,operation==="register"?"POST":"PUT",{anonymous:operation==="register"}),operation);
+  expect(res.status).toBe(429);expect(await res.json()).toEqual({detail:"Too many account requests. Please wait before trying again."});
+  expect(res.headers.get("cache-control")).toBe("private, no-store");expect(fetch).toHaveBeenCalledTimes(1);
  });
  it.each([{...profile,access_token:"synthetic-private-token"},{...profile,browser_pairing_session:{}},{...profile,bio:{nested:{refresh_token:"synthetic-private-token"}}}])("fails closed on credential/capability reply instead of stripping it",async(value)=>{
   vi.stubGlobal("fetch",vi.fn(async()=>Response.json(value)));const res=await handleAccount(await req("profile"),"profile");

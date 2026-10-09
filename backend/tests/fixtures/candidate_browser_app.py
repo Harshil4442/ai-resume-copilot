@@ -77,6 +77,8 @@ from test_gcp_pairing_emulator import (  # noqa: E402
 
 from app import database, security  # noqa: E402
 from app.domains.candidate_accounts import service as candidate_service  # noqa: E402
+from app.domains.candidate_ingress import replay as ingress_replay  # noqa: E402
+from backend.tests.fixtures.candidate_ingress import create as create_ingress  # noqa: E402
 from app.domains.candidate_accounts.retention import NativeCandidateLifetimeRetention  # noqa: E402
 from app.domains.candidate_accounts.service import CandidateAccountService  # noqa: E402
 from app.domains.recovery.browser_pairing import GatewayVerifier, NativeBrowserPairing  # noqa: E402
@@ -183,9 +185,38 @@ fence = SyntheticFence(active, pin)
 lifetime = GcpPasswordLifetimeCoordinator(registry, pin, epoch_generation=1,
     journal=lifetime_journal, fence=fence, now_ms=clock)
 scoped = ScopedCandidateAuthority(publication, now_ms=clock)
+ingress_case = create_ingress(origin=origin, action_pins=(pin, publication.resource.pin.authority.registry), clock=clock)
+atexit.register(ingress_case.channel.close)
+ingress_replay.production_candidate_ingress = lambda: ingress_case.ingress
 accounts = CandidateAccountService(database.engine,
     NativeCandidateLifetimeRetention(lifetime, GcpProtectedCandidateLifetimes(scoped)),
     now_ms=clock, cookie_logout=GcpCandidateCookieLogout(scoped))
+
+# Private metadata-only instrumentation around the actual service methods. No
+# argument, result, credential or session is retained in this local evidence.
+lifecycle_counts = {}
+def counted(name, method):
+    def call(*args, **kwargs):
+        lifecycle_counts[name] = lifecycle_counts.get(name, 0) + 1
+        (directory / "lifecycle-counts.json").write_text(json.dumps(lifecycle_counts, sort_keys=True))
+        return method(*args, **kwargs)
+    return call
+for lifecycle_method in ("register", "login", "validate", "registration_status", "logout", "logout_cookie", "change_password", "prepare_delete"):
+    setattr(accounts, lifecycle_method, counted(lifecycle_method, getattr(accounts, lifecycle_method)))
+(directory / "lifecycle-counts.json").write_text("{}")
+ingress_commit = ingress_case.rpc.commit
+def ingress_fault_commit(tx, writes):
+    fault = directory / "ingress-unknown"
+    if fault.is_file():
+        persisted = fault.read_text() == "persisted"
+        fault.unlink()
+        if persisted:
+            ingress_commit(tx, writes)
+        else:
+            ingress_case.rpc.rollback(tx)
+        raise AmbiguousCommit("Owned synthetic fixture lost ingress Commit acknowledgement")
+    return ingress_commit(tx, writes)
+ingress_case.rpc.commit = ingress_fault_commit
 
 # Explicit fixture-only constructor injection; neither HTTP identities nor
 # final activation callbacks are overridden or seeded.
@@ -231,10 +262,11 @@ def fault_commit(tx, writes):
     return protected_commit(tx, writes)
 publication.registry.rpc.commit = fault_commit
 metadata = {"ordinary_database": pin.database, "protected_database": publication.registry.rpc.database_resource,
+    "private_ingress_database": ingress_case.resource.registry.database, "private_ingress_native_replay": True,
     "extension_id": extension, "executor_revision": release, "public_claim_jwk": jwk(claim_key),
     "claim_issuer": "hirewiz-pairing",
     "candidate_identities_seeded": 0, "actual_postgresql": True, "actual_native_v3": True,
-    "synthetic_custody": ["operator UID witness", "Storage HTTP", "local signing custody"],
+    "synthetic_custody": ["operator UID witness", "Storage HTTP", "local signing custody", "private ingress operator UID/restore/clock witness"],
     "pairing_admission": "UNAVAILABLE_PENDING_REVIEWED_SAME_AUTHORITY_JOIN",
     "ambient_credentials_forbidden": True, "secure_cloud_transport_forbidden": True, "external_http_forbidden": True}
 (directory / "metadata.json").write_text(json.dumps(metadata, sort_keys=True))

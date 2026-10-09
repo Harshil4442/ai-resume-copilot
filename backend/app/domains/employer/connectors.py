@@ -210,12 +210,11 @@ class _PublicRead:
         for attempt in range(SMARTRECRUITERS_READ_ATTEMPTS):
             self._wait()
             self.next_request_at = time.monotonic() + SMARTRECRUITERS_READ_INTERVAL
-            request = self.client.build_request("GET", url, params=params,
-                                               timeout=min(20, self.deadline - time.monotonic()))
-            # Even an injected client cannot turn a public scan into an internal
-            # credentialed read. Never follow the provider's arbitrary ref URL.
-            for header in ("Authorization", "X-SmartToken", "Cookie"):
-                request.headers.pop(header, None)
+            # Client defaults can include credential query parameters and headers.
+            # Construct the public request independently; retain only its transport.
+            request = httpx.Request("GET", url, params=params,
+                headers={"User-Agent": "HireWiz-EmployerConnector/1.0", "Accept": "application/json"},
+                extensions={"timeout": httpx.Timeout(min(20, self.deadline - time.monotonic())).as_dict()})
             delay = 0.5 * (attempt + 1)
             try:
                 with closing(self.client.send(request, stream=True, auth=None, follow_redirects=False)) as response:

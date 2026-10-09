@@ -1,0 +1,131 @@
+{
+  "status": "LOCAL_BOUNDED_SAFETY_CLEAR_AVAILABILITY_AND_PRODUCTION_HOLD",
+  "base_head": "0993b23443b13b56da8f2beba576cfb6c0ea501d",
+  "private_ingress": {
+    "author_freeze": "/var/folders/ck/cyzkgt2d1yx6hzpsdflcg83c0000gn/T/hirewiz-candidate-private-ingress-freeze-20261009-q8jurw2w",
+    "independent_freeze": "/var/folders/ck/cyzkgt2d1yx6hzpsdflcg83c0000gn/T/hirewiz-private-ingress-independent-20261009-yz0scy6o/review-freeze",
+    "root_backend_passed": 171,
+    "root_frontend_passed": 206,
+    "root_native_actual_browser_passed": 46,
+    "root_actual_public_rate_limit_passed": 7,
+    "preserved_public_projection_red": {
+      "passed": 31,
+      "failed": 6
+    },
+    "independent_contention_availability": "HOLD_two_unknown_original_exactly_one_assertion_failure",
+    "default_factory": "unavailable",
+    "root_public_projection_independently_reviewed": false
+  },
+  "exact_base_ci": {
+    "run": 37939583249,
+    "backend": {
+      "passed": 2030,
+      "job": 113850234053
+    },
+    "security_container": "success",
+    "browser_companion": "success",
+    "frontend": {
+      "passed": 185,
+      "failed": 20,
+      "job": 113850234304
+    },
+    "cold_browser": {
+      "status": "failed",
+      "job": 113850234421
+    }
+  },
+  "root_cold_https_composition": {
+    "directory": "/var/folders/ck/cyzkgt2d1yx6hzpsdflcg83c0000gn/T/hirewiz-private-ingress-root-cold-composition-20261009-qmr197i1/evidence",
+    "summary_sha256": "c1309921d7f50a0d3f69c31e42ece3934217aa4f21bcb22ea88401fe1e75cdc1",
+    "status": "passed",
+    "scope": "Local production Next + Chromium + actual FastAPI/auth/SQL; finite synthetic external providers only",
+    "sql": {
+      "model_calls": 0,
+      "analysis_runs": 0,
+      "analysis_units_unchanged": 50,
+      "posting_index": 4,
+      "owned_docx_sources": 2,
+      "service_credit_grants": 1,
+      "service_balance": 496,
+      "search_reserved": 6,
+      "search_charged": 4,
+      "search_released": 2,
+      "application_fee": 0,
+      "application_attempts": 0,
+      "employer_apply_outbox": 0,
+      "approval_records": 2,
+      "revoked_approvals": 1,
+      "final_submit_grants": 0,
+      "current_exact_custom_artifact": true,
+      "employer_receipt": null,
+      "migration": "20261009_0011"
+    },
+    "browser": {
+      "source_bytes_exact": true,
+      "custom_bytes_exact": true,
+      "cold_user_created_via_ui": true,
+      "real_nextauth": true,
+      "no_bff_interception": true,
+      "no_credits_before_webhook": true,
+      "https_loopback_transport": true,
+      "secure_http_only_session_cookie": true,
+      "public_registration_projection": true,
+      "generic_auth_proxy_denied": true,
+      "stale_approval_rejected": true,
+      "cross_owner_denied": true,
+      "final_status": "manual_handoff",
+      "search": {
+        "desired": 3,
+        "delivered": 2,
+        "reserved": 6,
+        "charged": 4,
+        "released": 2
+      },
+      "automatic_application_charged": 0,
+      "employer_submit_receipt": null,
+      "external": [
+        "synthetic_checkout_script"
+      ],
+      "reviewed_widths": [
+        320,
+        390,
+        768,
+        1024,
+        1440
+      ],
+      "axe_violations": 0,
+      "page_errors": 0,
+      "server_errors": 0
+    },
+    "cleanup_reported": {
+      "owned_processes_stopped": true,
+      "group_verification": [
+        {
+          "group_id": 22384,
+          "verified_stopped": true,
+          "verification": "unreaped owned leader; no live group members"
+        },
+        {
+          "group_id": 22383,
+          "verified_stopped": true,
+          "verification": "unreaped owned leader; no live group members"
+        }
+      ],
+      "errors": [],
+      "own_schema_removed": true,
+      "owned_tls_private_key_removed": true
+    },
+    "server_dependencies": "actual local Next production HTTPS/Chromium/FastAPI/PostgreSQL; synthetic payment/feed; native journey measured separately",
+    "real_employer_contact": false,
+    "real_payment": false
+  },
+  "responsive_repair": "2026-10-09-responsive-ci-compatibility.json",
+  "root_static": {
+    "ruff": "pass",
+    "mypy_files": 95,
+    "mypy": "pass"
+  },
+  "new_exact_source_ci": "pending",
+  "deployment": false,
+  "gcp_or_vercel_mutations": false
+}

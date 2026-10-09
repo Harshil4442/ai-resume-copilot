@@ -9,7 +9,7 @@ storage, authentication, pairing, cloud restore or employer permission evidence.
 assistance is the selected first launch path, with human final submission; it remains
 disabled pending these gates. Full execution/recovery requirements below remain open.
 
-The promoted scope is a small employer-origin discovery and application-preparation pilot. Seven public read adapter families are implemented: Greenhouse, Lever, Ashby, SmartRecruiters, Workable, Personio and Pinpoint. The live reviewed catalog contains Razorpay, Freshworks, Figma and Supabase; 356 open postings were observed at the recorded production check. Nineteen additional sources are proposals, not enrolled employers: the earlier sixteen and three new exact-origin proposals. The Workable redirect repair retains an independent inherited-query HOLD; these additional Workable and Pinpoint feeds remain unenrolled. A permissioned Greenhouse submission implementation exists, but no actual employer write grant or authorized sandbox completion is supplied and automatic submission remains disabled. The admission/batch foundation is promoted as release `7cc49c2` with actual production schema `0009`. Follow-up `ec52279` retains that schema and adds shared Lever pacing plus an advisory catalog query optimization, with 545 backend tests and bounded production proof. Lever remains nonlive until its production coordinator and source-use gates pass. A standalone disabled browser companion passes localhost tests, but has no production pairing or authority. Neither worldwide coverage nor greater than 95% recall has been demonstrated.
+The promoted scope is a small employer-origin discovery and application-preparation pilot. Seven public read adapter families are implemented: Greenhouse, Lever, Ashby, SmartRecruiters, Workable, Personio and Pinpoint. The live reviewed catalog contains Razorpay, Freshworks, Figma and Supabase; 356 open postings were observed at the recorded production check. Nineteen additional sources are proposals, not enrolled employers: the earlier sixteen and three new exact-origin proposals. The Workable inherited-query repair is independently clear and integrated locally; source-use and release review remain open and these additional Workable and Pinpoint feeds remain unenrolled. A permissioned Greenhouse submission implementation exists, but no actual employer write grant or authorized sandbox completion is supplied and automatic submission remains disabled. The admission/batch foundation is promoted as release `7cc49c2` with actual production schema `0009`. Follow-up `ec52279` retains that schema and adds shared Lever pacing plus an advisory catalog query optimization, with 545 backend tests and bounded production proof. Lever remains nonlive until its production coordinator and source-use gates pass. A standalone disabled browser companion passes localhost tests, but has no production pairing or authority. Neither worldwide coverage nor greater than 95% recall has been demonstrated.
 Current `e7d8f2b` is verified on GCP and Vercel with schema `0009`, all four exact CI jobs,
 930 backend cases without skips, 72 frontend units, three hosted widths and five
 correlated direct v2 catalog reads. The first read took 4.272 seconds and the four
@@ -26,6 +26,21 @@ claim issuer and browser transport remain unavailable. The promoted
 cases and 72 frontend unit cases; those results do not close production pairing.
 
 ## Gap register
+
+The [private-ingress/root follow-up](PRIVATE_INGRESS_ROOT_INTEGRATION_2026-10-09.md)
+records bounded independent transport clearance, actual HTTP 429 projection, the
+repaired cold HTTPS journey and 205 responsive cases. The original contention
+UNKNOWN/availability failure and both `0993b23` CI browser failures remain preserved.
+New exact CI and production authority/rollout remain open.
+
+The owner added expense-based pricing requirement BI08 on 9 October. The
+[expense policy](COST_PRICING_POLICY_2026-10-09.md) requires every pack, promotion,
+Premium allowance and operation quote to cover bounded expense and allocated fixed
+cost. Versioned guards, funded Premium limits, actual invoice reconciliation and
+validated prospective rates are in development; current introductory prices are not
+asserted profitable. Actual GCP billing export/invoices and merchant fee/tax treatment
+remain unknown. This adds work to the full goal rather than closing it.
+
 
 The current reviewed root integration adds persisted model-cost ceilings, a fail-closed
 pricing policy, generation quiescence, a GCP journal/registry SDK adapter, a coverage

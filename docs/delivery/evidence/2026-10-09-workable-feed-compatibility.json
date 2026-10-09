@@ -1,16 +1,6 @@
 {
-  "status": "INDEPENDENT_HOLD_PUBLIC_QUERY_COMPOSITION_REPAIR_IN_PROGRESS",
+  "status": "LOCAL_INDEPENDENT_CLEAR_PUBLIC_REQUEST_DEFAULTS_REPAIR_ENROLLMENT_OPEN",
   "base_head": "69fbc22fcc7020b7dac29b3be138c525818f6975",
-  "runtime_source": [
-    {
-      "path": "backend/app/domains/employer/connectors.py",
-      "sha256": "371993562303794db9005294c6e8ce8edb57d6fd4b6c61ccb5d2d85c4e7d97dd"
-    },
-    {
-      "path": "backend/tests/test_employer_feed_adapters.py",
-      "sha256": "fc5a1ce0d7082f91830a464240d574d342c6ef1def471520cd25b131dd0c1bed"
-    }
-  ],
   "public_feed_results": [
     {
       "employer": "Workable",
@@ -712,5 +702,40 @@
     "additional_intended_assertion_failures": 2,
     "finding": "Inherited HTTPX client query parameters can change both fixed public request targets. Synthetic injected api_key/defaultdetails only; no observed production leak.",
     "repair": "separate owned author request-construction repair; root source unchanged pending review"
+  },
+  "preserved_initial_runtime_source": [
+    {
+      "path": "backend/app/domains/employer/connectors.py",
+      "sha256": "371993562303794db9005294c6e8ce8edb57d6fd4b6c61ccb5d2d85c4e7d97dd"
+    },
+    {
+      "path": "backend/tests/test_employer_feed_adapters.py",
+      "sha256": "fc5a1ce0d7082f91830a464240d574d342c6ef1def471520cd25b131dd0c1bed"
+    }
+  ],
+  "current_runtime_source": {
+    "paths": [
+      "backend/app/domains/employer/connectors.py",
+      "backend/tests/test_employer_feed_adapters.py"
+    ],
+    "sha256": [
+      "0351497ee425258759dddda41e337114cfc14219307dc2477457e735be7e49d9",
+      "5423d088822489d468713f2c19258b214a9ecc1169991c73640567b9123b7298"
+    ]
+  },
+  "defaults_repair": {
+    "author_freeze": "/var/folders/ck/cyzkgt2d1yx6hzpsdflcg83c0000gn/T/hirewiz-workable-defaults-author-freeze-20261009-ttlgjzbo",
+    "independent_freeze": "/var/folders/ck/cyzkgt2d1yx6hzpsdflcg83c0000gn/T/hirewiz-workable-defaults-independent-20261009-3_zkhkks/review-freeze",
+    "author_patch_sha256": "95a007164c21120c4010d953ea88352f0c097525ade0352d39a131c1d8ad91d6",
+    "independent_report_sha256": "3f8f15f93f969f7a1fc7d322ce240a46db4371fba62f77139db49499772478c3",
+    "independent_artifact_manifest_sha256": "d12ee234a2f7ec8df90c0f781369f0ac30edc48fc9b2d5da5c13109d74c304ae",
+    "independent_passed": 95,
+    "unchanged_original_probes_passed": 16,
+    "all_independent_artifacts_verified": 23,
+    "root_affected_pg_redis_passed": 123,
+    "new_exact_CI": "pending",
+    "production_enrollment": false,
+    "public_feed_observations_rerun": false,
+    "limits": "HTTPX transport/event hooks/mounts/proxies remain active; scoped public request construction only"
   }
 }

@@ -112,6 +112,57 @@ def test_workable_exact_public_redirect_closes_before_sanitized_target_read():
     assert row["external_id"] == "ABC123" and len(closed) == 2
 
 
+def test_workable_redirect_never_inherits_client_query_or_header_credentials():
+    legacy = "https://www.workable.com/api/accounts/example?details=true"
+    target = "https://apply.workable.com/api/v1/widget/accounts/example?details=true"
+    calls = []
+
+    def handler(request):
+        calls.append(str(request.url))
+        assert str(request.url) in {legacy, target}
+        assert request.headers["Host"] == request.url.host
+        assert not any(key in request.headers for key in (
+            "Authorization", "Cookie", "X-SmartToken", "X-Api-Key"))
+        if str(request.url) == legacy:
+            return httpx.Response(302, headers={"Location": target})
+        return httpx.Response(200, json=workable())
+
+    with httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=True,
+            params={"api_key": "synthetic-only", "details": "false"},
+            headers={"X-Api-Key": "synthetic-only", "Host": "untrusted.example"},
+            auth=("synthetic", "synthetic"), cookies={"session": "synthetic-only"}) as client:
+        assert connectors.fetch_postings(source("workable"), client)[0]["external_id"] == "ABC123"
+    assert calls == [legacy, target, legacy, target]
+
+
+@pytest.mark.parametrize("platform", ["workable", "personio", "pinpoint"])
+def test_public_feed_request_uses_only_declared_query_and_public_headers(platform):
+    expected = {
+        "workable": "https://www.workable.com/api/accounts/example?details=true",
+        "personio": "https://example.jobs.personio.com/xml?language=fr",
+        "pinpoint": "https://example.pinpointhq.com/pt-BR/postings.json",
+    }[platform]
+    calls = []
+    data = {"workable": workable, "personio": personio, "pinpoint": pinpoint}[platform]()
+
+    def handler(request):
+        calls.append(request)
+        assert str(request.url) == expected
+        assert request.headers["Host"] == request.url.host
+        assert request.headers["Accept"] == "application/json"
+        assert request.headers["User-Agent"] == "HireWiz-EmployerConnector/1.0"
+        assert not any(key in request.headers for key in (
+            "Authorization", "Cookie", "X-SmartToken", "X-Api-Key"))
+        return httpx.Response(200, content=data) if isinstance(data, bytes) else httpx.Response(200, json=data)
+
+    with httpx.Client(transport=httpx.MockTransport(handler),
+            params={"api_key": "synthetic-only", "language": "wrong", "details": "false"},
+            headers={"X-SmartToken": "synthetic-only", "X-Api-Key": "synthetic-only", "Host": "untrusted.example"},
+            auth=("synthetic", "synthetic"), cookies={"session": "synthetic-only"}) as client:
+        assert len(connectors.fetch_postings(source(platform), client)) == 1
+    assert len(calls) == 2
+
+
 @pytest.mark.parametrize("location", [
     "https://untrusted.example/api/v1/widget/accounts/example?details=true",
     "http://apply.workable.com/api/v1/widget/accounts/example?details=true",

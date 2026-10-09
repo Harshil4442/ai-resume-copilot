@@ -18,7 +18,9 @@ from fastapi import HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
+from slowapi.errors import RateLimitExceeded
+from starlette.concurrency import run_in_threadpool
 from starlette.requests import ClientDisconnect
 from starlette.responses import Response
 
@@ -55,7 +57,7 @@ def _float(value: str) -> float:
     return parsed
 
 
-async def _read_json(request: Request, allowed: frozenset[str]) -> None:
+async def _read_bytes(request: Request) -> bytes:
     encoding = request.headers.get("content-encoding", "identity").strip().lower()
     if encoding != "identity":
         raise _RejectedAuthInput(415)
@@ -87,9 +89,13 @@ async def _read_json(request: Request, allowed: frozenset[str]) -> None:
         raise _RejectedAuthInput(400) from None
     if expected is not None and len(body) != expected:
         raise _RejectedAuthInput(400)
-    raw = bytes(body)
+    return bytes(body)
+
+
+async def _read_json(request: Request, allowed: frozenset[str], *, allow_empty: bool = False) -> None:
+    raw = await _read_bytes(request)
     try:
-        parsed = json.loads(raw.decode("utf-8"), object_pairs_hook=_pairs,
+        parsed = {} if allow_empty and raw == b"" else json.loads(raw.decode("utf-8"), object_pairs_hook=_pairs,
                             parse_constant=_constant, parse_float=_float)
     except (ValueError, UnicodeError, RecursionError):
         raise _RejectedAuthInput(422) from None
@@ -99,6 +105,7 @@ async def _read_json(request: Request, allowed: frozenset[str]) -> None:
     # stream or uses its permissive duplicate/nonfinite parser.
     request._body = raw
     request._json = parsed
+    request.state._bounded_sensitive_body = raw
 
 
 def _failure(status_code: int) -> JSONResponse:
@@ -108,17 +115,21 @@ def _failure(status_code: int) -> JSONResponse:
 
 class SensitiveAuthRoute(APIRoute):
     bound_auth_body = False
+    private_candidate_ingress = False
 
     def get_route_handler(self) -> Callable:
         handler = super().get_route_handler()
         allowed: frozenset[str] = frozenset()
+        sensitive_model: type[BaseModel] | None = None
         for field in self.dependant.body_params:
             model = field.field_info.annotation
             if isinstance(model, type) and issubclass(model, BaseModel):
                 names = frozenset(cast(type[BaseModel], model).model_fields)
                 if names & _CREDENTIAL_FIELDS or self.bound_auth_body:
                     allowed = names
-        if not allowed:
+                    sensitive_model = model
+        empty_bound = self.path in {"/auth/delete-account", "/api/auth/delete-account"}
+        if not allowed and not self.private_candidate_ingress and not empty_bound:
             return handler
         # Describe the actual fixed error envelope instead of advertising
         # FastAPI's default validation-error input serialization on these routes.
@@ -133,15 +144,32 @@ class SensitiveAuthRoute(APIRoute):
 
         async def sensitive(request: Request) -> Response:
             try:
-                await _read_json(request, allowed)
-                return await handler(request)
+                await _read_json(request, allowed, allow_empty=not allowed)
+                from .candidate_ingress import (
+                    native_bearer_requires_private_ingress,
+                    require_candidate_ingress,
+                )
+                private = self.private_candidate_ingress or (empty_bound and native_bearer_requires_private_ingress(request))
+                if private:
+                    # Pure local validation precedes transport admission without
+                    # invoking authentication dependencies or native lifecycle.
+                    if sensitive_model is not None:
+                        try:
+                            sensitive_model.model_validate(request._json)
+                        except ValidationError:
+                            return _failure(422)
+                    await run_in_threadpool(require_candidate_ingress, request)
+                response = await handler(request)
+                response.headers["Cache-Control"] = "no-store, private"
+                response.headers["Pragma"] = "no-cache"
+                return response
             except _RejectedAuthInput as error:
                 return _failure(error.status_code)
             except RequestValidationError:
                 # hide_input_in_errors does not sanitize FastAPI errors() JSON.
                 # Never serialize, log or stringify this sensitive exception.
                 return _failure(422)
-            except HTTPException:
+            except (HTTPException, RateLimitExceeded):
                 raise  # Existing fixed authentication/rate-limit responses.
             except Exception:
                 # Provider/SQL exception text and tracebacks can hold credentials.

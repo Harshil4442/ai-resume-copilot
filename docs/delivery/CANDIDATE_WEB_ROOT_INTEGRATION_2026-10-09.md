@@ -1,7 +1,8 @@
 # Candidate website integration — 9 October 2026
 
-Status: independently reviewed website transport integrated and locally verified.
-Private backend ingress, browser connection and production release remain open.
+Status: independently reviewed website transport and bounded private ingress integrated
+and locally verified. Contention availability, protected browser connection and
+production release remain open.
 
 The candidate signs up or signs in through the actual NextAuth website, performs
 owned account actions through dedicated BFF handlers, and receives public status
@@ -43,20 +44,26 @@ locked project interpreter was used afterward.
 
 The prior exact `4911d1f` [CI run](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37933390559)
 passes all five jobs, including 2,002 backend cases. It predates this website patch;
-new exact-source CI is still required.
+it does not cover the website patch. The exact `0993b23` run subsequently passes all
+2,030 backend cases, security/container and companion jobs, but fails the frontend
+responsive job (20 failures) and cold browser job. These failures are preserved in
+the [follow-up integration report](PRIVATE_INGRESS_ROOT_INTEGRATION_2026-10-09.md).
+Both fixture compatibility repairs pass locally; new exact-source CI remains required.
 
 - [x] Verify the independent frozen source and combine both reviewed revisions.
 - [x] Integrate the exact 38-path result and regenerate unchanged API contracts.
 - [x] Verify actual account browser/API/data flow and owned cleanup.
 - [x] Verify frontend/static checks and all unique local backend cases.
-- [ ] Complete exact new-source CI.
-- [ ] Review and integrate private ingress and the intended HTTP 429 regression.
+- [ ] Complete all five exact new-source CI jobs after the compatibility repairs.
+- [x] Review and integrate bounded private ingress; verify the intended HTTP 429
+  through the actual website BFF, with separate limits recorded in the follow-up report.
 - [ ] Complete genuine protected browser connection and contention availability.
 - [ ] Provision protected production resources, retire writers, migrate and deploy.
 
-The independent R2 review retains the sixth native signup's HTTP 500 instead of
-the intended 429. Its separately authored repair is not part of this integrated
-source. Earlier mixed-fault browser waits and the initial reset concurrency failure
+The independent R2 review's original sixth native signup HTTP 500, and the original
+ingress review's BFF projection to HTTP 503, remain preserved. Separate integrated
+backend/public projection repairs now produce fixed HTTP 429 through the actual BFF.
+Earlier mixed-fault browser waits and the initial reset concurrency failure
 remain open; later passing probes do not diagnose them. A separate protected-join
 review was interrupted by automated review as possible cybersecurity risk and has
 no final independent clearance.

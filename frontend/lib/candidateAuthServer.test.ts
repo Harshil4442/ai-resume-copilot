@@ -15,7 +15,7 @@ beforeEach(() => {
   vi.restoreAllMocks();
   vi.stubEnv("NEXTAUTH_URL", origin);
   vi.stubEnv("NEXTAUTH_SECRET", secret);
-  vi.stubEnv("BACKEND_URL", "https://backend.example.com");
+  vi.stubEnv("BACKEND_URL", "https://backend.example.com"); vi.stubEnv("CANDIDATE_AUTH_TRANSPORT_SECRET", "6e".repeat(32)); vi.stubEnv("CANDIDATE_AUTH_TRANSPORT_KEY_ID", "fixture_ingress_v1");
 });
 
 async function request(path = "signout", options: { legacy?: boolean; origin?: string; body?: string } = {}) {

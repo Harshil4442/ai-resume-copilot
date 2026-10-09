@@ -30,6 +30,7 @@ from .sensitive_auth import SensitiveAuthRoute
 
 class CandidateAuthRoute(SensitiveAuthRoute):
     bound_auth_body = True
+    private_candidate_ingress = True
 
 
 router = APIRouter(prefix="/auth/candidate/v1", tags=["candidate-password-lifecycle"], route_class=CandidateAuthRoute)

@@ -3469,6 +3469,78 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
+            /** @description Authentication input rejected without reflecting private values */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
         };
     };
     login_api_auth_candidate_v1_login_post: {
@@ -3583,6 +3655,78 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
                 };
             };
         };
@@ -3893,6 +4037,78 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
+            /** @description Authentication input rejected without reflecting private values */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
         };
     };
     logout_cookie_api_auth_candidate_v1_web_logout_post: {
@@ -4007,6 +4223,78 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
                 };
             };
         };

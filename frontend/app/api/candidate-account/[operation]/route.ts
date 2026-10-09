@@ -44,6 +44,7 @@ export async function POST(request: NextRequest, context: Context) {
     }
     const raw = await boundedPairingBytes(request.body, AUTH_BODY_LIMIT);
     const reply = await backendAuth(`candidate/v1/${operation}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: raw });
+    if (reply.status === 429) return NextResponse.json({ status: "RATE_LIMITED" }, { status: 429, headers: HEADERS });
     if (!reply.ok) return NextResponse.json({ status: reply.status === 401 ? "AUTHENTICATION_FAILED" : "UNAVAILABLE" }, { status: reply.status === 401 ? 401 : 503, headers: HEADERS });
     if (operation === "register" && reply.data.status === "ENROLLED"
         && typeof reply.data.user_id === "number" && Number.isSafeInteger(reply.data.user_id) && reply.data.user_id > 0

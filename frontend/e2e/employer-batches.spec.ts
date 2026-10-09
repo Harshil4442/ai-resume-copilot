@@ -26,8 +26,8 @@ function fixture() {
       await route.continue();
     });
     await context.route("**/api/auth/session", async (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ user: { id: owner === "a" ? "424242" : "424243", email: `${owner}@fixture.example`, name: "Taylor Fixture" }, expires: "2099-01-01T00:00:00Z" }) }));
-    await context.route("**/api/backend/**", async (route) => {
-      const request = route.request(), path = new URL(request.url()).pathname.replace("/api/backend", ""), method = request.method();
+    await context.route((url) => url.pathname.startsWith("/api/backend/") || url.pathname === "/api/account/profile", async (route) => {
+      const request = route.request(), path = new URL(request.url()).pathname.replace(/^\/api\/account\/profile$/, "/auth/profile").replace("/api/backend", ""), method = request.method();
       const body = request.postData() ? request.postDataJSON() as Record<string, unknown> : {};
       requests.push({ path, method, body, owner });
       let value: unknown, status = 200;

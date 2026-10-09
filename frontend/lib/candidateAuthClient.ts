@@ -2,10 +2,18 @@ import { accountMutationHeaders } from "./accountTransportClient";
 
 export type RegistrationState = "ENROLLED" | "PENDING_REVIEW_REQUIRED" | "LEGACY_ENROLLMENT_UNAVAILABLE";
 
+export class CandidateRegistrationRateLimitError extends Error {
+  constructor() {
+    super("Too many registration requests. Please wait before trying again.");
+    this.name = "CandidateRegistrationRateLimitError";
+  }
+}
+
 export async function candidateRegistration(operation: "register" | "registration-status", email: string, password: string) {
   const result = await fetch(`/api/candidate-account/${operation}`, { method: "POST", cache: "no-store", redirect: "error",
     signal: AbortSignal.timeout(20000), headers: await accountMutationHeaders(),
     body: JSON.stringify({ email, password, ...(operation === "register" ? { accepted_terms: true, confirmed_age_18: true } : {}) }) });
+  if (result.status === 429) throw new CandidateRegistrationRateLimitError();
   if (!result.ok) throw new Error(result.status === 401
     ? "The account could not be verified. Check your email and password."
     : "The secure registration outcome is unavailable. Check registration status before trying again.");

@@ -12,7 +12,7 @@ test("fresh candidate: real Chromium → BFF → API → SQL, no AI and reviewed
   page.on("pageerror", (error) => failures.push(error.message));
   page.on("response", (response) => {
     const path = new URL(response.url()).pathname;
-    if (path.startsWith("/api/backend/")) {
+    if (path.startsWith("/api/backend/") || path.startsWith("/api/account/")) {
       responses.push({ path: path.replace(/\/(?:opp|app|search|approval|artifact|order|source)_[^/]+/g, "/:id"), status: response.status() });
       if (response.status() >= 500) backendFailures.push(response.status());
     }
@@ -36,14 +36,25 @@ test("fresh candidate: real Chromium → BFF → API → SQL, no AI and reviewed
   const custom = await readFile(process.env.COLD_BROWSER_CUSTOM!);
   const anonymous = await request.get(`${baseURL}/api/backend/resume/list`);
   expect(anonymous.status()).toBe(401);
+  expect(new URL(baseURL!).protocol).toBe("https:");
+  // Authentication remains unavailable through the generic data proxy.
+  expect((await request.get(`${baseURL}/api/backend/auth/login`)).status()).toBe(403);
   const providers = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/auth/providers");
   await page.goto("/register");
   await providers; // The real mount effect confirms hydrated event handlers.
   await page.getByLabel("Email address", { exact: true }).fill("candidate.browser@example.com");
   await page.getByLabel("Password", { exact: true }).fill("synthetic-browser-password-123");
   await page.getByRole("checkbox", { name: /I am at least 18/ }).check();
+  const registration = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/account/register" && response.request().method() === "POST");
   await page.getByRole("button", { name: "Create account", exact: true }).click();
+  const registered = await registration;
+  expect(registered.status()).toBe(200);
+  expect(await registered.json()).toEqual({ status: "REGISTERED" });
   await expect(page).toHaveURL(/\/resume$/);
+  const sessionCookies = (await context.cookies()).filter((cookie) => cookie.name === "__Secure-next-auth.session-token");
+  expect(sessionCookies).toHaveLength(1);
+  expect(sessionCookies[0].secure).toBe(true);
+  expect(sessionCookies[0].httpOnly).toBe(true);
   await expect(page.getByRole("checkbox", { name: /Optional AI skill enrichment/ })).not.toBeChecked();
   await page.locator('input[type="file"]').setInputFiles(process.env.COLD_BROWSER_ORIGINAL!);
   const parseResponse = page.waitForResponse((r) => r.url().endsWith("/api/backend/resume/parse") && r.request().method() === "POST");
@@ -62,7 +73,7 @@ test("fresh candidate: real Chromium → BFF → API → SQL, no AI and reviewed
   await page.getByLabel("Skills", { exact: true }).fill("Python, PostgreSQL, Docker");
   await page.getByRole("button", { name: "Save profile", exact: true }).click();
   await expect(page.getByText("Saved", { exact: true })).toBeVisible();
-  const profile = await request.get(`${baseURL}/api/backend/auth/profile`);
+  const profile = await request.get(`${baseURL}/api/account/profile`);
   expect((await profile.json()).target_role).toBe("Python Engineer");
   await page.goto("/employer-jobs");
   await page.getByRole("combobox", { name: "Resume", exact: true }).selectOption(String(parsed.resume_id));
@@ -101,7 +112,7 @@ test("fresh candidate: real Chromium → BFF → API → SQL, no AI and reviewed
   } } } };
   const raw = JSON.stringify(payload);
   const signature = createHmac("sha256", "synthetic-browser-webhook-secret").update(raw).digest("hex");
-  const provider = await requestFactory.newContext(); // No candidate cookies at the provider boundary.
+  const provider = await requestFactory.newContext({ ignoreHTTPSErrors: true }); // Own loopback TLS, no candidate cookies at the provider boundary.
   try { for (let i = 0; i < 2; i++) {
     const webhook = await provider.post(`${process.env.COLD_BROWSER_BACKEND_URL}/api/billing/webhooks/razorpay`, { data: raw, headers: { "content-type": "application/json", "x-razorpay-signature": signature, "x-razorpay-event-id": "evt_synthetic_browser" } });
     expect(webhook.ok()).toBeTruthy();
@@ -179,7 +190,7 @@ test("fresh candidate: real Chromium → BFF → API → SQL, no AI and reviewed
     }
   }
   // Independent second real browser identity must not retrieve the first owner's file/package.
-  const outsider = await context.browser()!.newContext();
+  const outsider = await context.browser()!.newContext({ ignoreHTTPSErrors: true });
   await outsider.route((url) => url.origin !== baseURL, guardExternal);
   const otherPage = await outsider.newPage();
   const otherProviders = otherPage.waitForResponse((response) => new URL(response.url()).pathname === "/api/auth/providers");
@@ -200,6 +211,8 @@ test("fresh candidate: real Chromium → BFF → API → SQL, no AI and reviewed
     source_bytes_exact: true, custom_bytes_exact: true, original_sha256: createHash("sha256").update(original).digest("hex"),
     custom_sha256: createHash("sha256").update(custom).digest("hex"), cold_user_created_via_ui: true,
     real_nextauth: true, no_bff_interception: true, no_credits_before_webhook: true,
+    https_loopback_transport: true, secure_http_only_session_cookie: true,
+    public_registration_projection: true, generic_auth_proxy_denied: true,
     stale_approval_rejected: true, cross_owner_denied: true, final_status: final.status,
     search: { desired: 3, delivered: 2, reserved: 6, charged: 4, released: 2 },
     automatic_application_charged: 0, employer_submit_receipt: null, external,

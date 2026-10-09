@@ -1,5 +1,5 @@
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
@@ -51,6 +51,7 @@ from ..security import (
     oauth2_scheme,
     verify_password,
 )
+from .candidate_ingress import require_candidate_ingress
 from .sensitive_auth import SensitiveAuthRoute
 
 router = APIRouter(prefix="/auth", tags=["auth"], route_class=SensitiveAuthRoute)
@@ -141,6 +142,7 @@ def register(request: Request, payload: AuthRegisterRequest, db: Session = Depen
         from ..domains.candidate_accounts.service import production_candidate_accounts
         from ..domains.recovery.store import GuardDenied, GuardUnavailable
         db.rollback()  # No SQL transaction held across native enrollment IO.
+        require_candidate_ingress(request)
         try:
             uid = production_candidate_accounts().register(email=email, password=payload.password,
                 policy_version=CURRENT_POLICY_VERSION)
@@ -154,7 +156,7 @@ def register(request: Request, payload: AuthRegisterRequest, db: Session = Depen
         return UserMeResponse(id=enrolled.id, email=enrolled.email, tier=enrolled.tier,
             ai_credits=enrolled.ai_credits, job_service_credits=enrolled.job_service_credits)
 
-    accepted_at = datetime.now(timezone.utc)
+    accepted_at = datetime.now(UTC)
     u = User(
         email=email,
         password_hash=hash_password(payload.password),
@@ -207,6 +209,7 @@ def login(request: Request, payload: AuthLoginRequest, db: Session = Depends(get
         # current credentials and independently retained generation/session.
         uid = u.id
         db.rollback()  # Release request SQL transaction before native issuance IO.
+        require_candidate_ingress(request)
         try:
             result = production_candidate_accounts().login(email=email, password=payload.password)
         except GuardDenied:
@@ -263,7 +266,7 @@ def google_login(request: Request, payload: AuthGoogleLoginRequest, db: Session 
             )
         # Google-only users have no usable local password. Their identity is
         # re-verified by Google on every new OAuth sign-in.
-        accepted_at = datetime.now(timezone.utc)
+        accepted_at = datetime.now(UTC)
         u = User(
             email=email,
             password_hash="",
@@ -335,6 +338,7 @@ def update_profile(
 
 @router.post("/delete-account")
 def delete_account(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
     token: str = Depends(oauth2_scheme),
@@ -354,12 +358,13 @@ def delete_account(
         try:
             context, _ = context_from_claims(jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM]), candidate_id=uid)
             db.rollback()  # Release SQL transaction before independently protected denial IO.
+            require_candidate_ingress(request)
             production_candidate_accounts().prepare_delete(context)
         except GuardDenied:
             raise HTTPException(status_code=401, detail="Not authenticated") from None
         except GuardUnavailable:
             raise HTTPException(status_code=503, detail="Candidate account lifetime is unavailable") from None
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     from ..domains.employer.admissions import lock_application_set
 
@@ -451,7 +456,7 @@ def export_account(
     profile = db.query(UserProfile).filter(UserProfile.user_id == uid).first()
     payment_orders = db.query(PaymentOrder).filter(PaymentOrder.user_id == uid).all()
     payload = {
-        "exported_at": datetime.now(timezone.utc),
+        "exported_at": datetime.now(UTC),
         "account": {
             "id": current_user.id,
             "email": current_user.email,

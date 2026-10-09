@@ -9,7 +9,7 @@ import { useEffect, useState } from "react";
 import { Button } from "../../components/ui/Button";
 import { trackEvent } from "../../lib/analytics";
 import { prepareGoogleRegistrationConsent, register } from "../../lib/auth";
-import { candidateRegistration, postLoginPath } from "../../lib/candidateAuthClient";
+import { CandidateRegistrationRateLimitError, candidateRegistration, postLoginPath } from "../../lib/candidateAuthClient";
 import { useHydrated } from "../../lib/useHydrated";
 
 export default function RegisterPage() {
@@ -60,9 +60,10 @@ export default function RegisterPage() {
       trackEvent("registration_completed", { method: "credentials" });
       router.push(postLoginPath("/resume"));
     } catch (registerError) {
-      setError(nativeSignup ? "Secure registration could not be confirmed. Check its status before creating another account."
+      const rateLimited = registerError instanceof CandidateRegistrationRateLimitError;
+      setError(nativeSignup && !rateLimited ? "Secure registration could not be confirmed. Check its status before creating another account."
         : registerError instanceof Error ? registerError.message : "Registration failed");
-      if (nativeSignup) setCheckPending(true);
+      if (nativeSignup && !rateLimited) setCheckPending(true);
       trackEvent("registration_failed", { method: "credentials" });
     } finally {
       setLoading(false);
@@ -80,7 +81,8 @@ export default function RegisterPage() {
         ? "Your existing account can sign in normally. Browser enrollment for existing accounts is not available yet."
         : "Secure registration is complete. Sign in with your password to continue.");
       if (status === "ENROLLED") setCreated(true);
-    } catch { setError("Registration status could not be verified. Check your credentials or retry later."); }
+    } catch (statusError) { setError(statusError instanceof CandidateRegistrationRateLimitError ? statusError.message
+      : "Registration status could not be verified. Check your credentials or retry later."); }
     finally { setPassword(""); setLoading(false); }
   }
 

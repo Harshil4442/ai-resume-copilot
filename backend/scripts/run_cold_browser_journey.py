@@ -13,6 +13,7 @@ import re
 import selectors
 import signal
 import socket
+import ssl
 import subprocess
 import sys
 import time
@@ -35,17 +36,32 @@ def _port():
         return listener.getsockname()[1]
 
 
-def _wait(url, process, seconds=90):
+def _wait(url, process, seconds=90, *, verify=True):
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:
         assert _owned_status(process) is None, "Owned server exited before readiness; inspect local log"
         try:
-            if httpx.get(url, timeout=2).status_code == 200:
+            if httpx.get(url, timeout=2, verify=verify).status_code == 200:
                 return
         except httpx.HTTPError:
             pass
         time.sleep(0.2)
     raise AssertionError("Owned local server did not become ready within the deadline")
+
+
+def _create_owned_tls(key: Path, certificate: Path) -> ssl.SSLContext:
+    """Trust one invocation's loopback certificate without relaxing auth guards."""
+    try:
+        subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
+            "-keyout", str(key), "-out", str(certificate), "-subj", "/CN=127.0.0.1",
+            "-addext", "subjectAltName=IP:127.0.0.1", "-addext", "basicConstraints=critical,CA:TRUE"],
+            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+        key.chmod(0o600)
+        return ssl.create_default_context(cafile=str(certificate))
+    except BaseException:
+        key.unlink(missing_ok=True)
+        certificate.unlink(missing_ok=True)
+        raise
 
 
 # Never reap a session leader before signalling its group: an unreaped owned child
@@ -217,6 +233,15 @@ def _browser_failure_summary(report: Path) -> dict[str, object]:
                     if location is not None:
                         failure["spec_line"] = int(location[1])
                         failure["spec_column"] = int(location[2])
+                    else:
+                        # Playwright assertion errors can omit stack entirely.
+                        # Keep only fixed-spec numeric coordinates, never its path.
+                        point = error.get("location")
+                        if isinstance(point, dict) and str(point.get("file", "")).replace("\\", "/").endswith("/journey/cold-no-ai.spec.ts"):
+                            for source, target in (("line", "spec_line"), ("column", "spec_column")):
+                                coordinate = point.get(source)
+                                if type(coordinate) is int and 1 <= coordinate <= 999999:
+                                    failure[target] = coordinate
                     if failure not in failures:
                         failures.append(failure)
                     if len(failures) >= 8:
@@ -251,8 +276,8 @@ def _post(client, path, data, expected=200, headers=None):
     return response.json()
 
 
-def _seed_http(backend):
-    with httpx.Client(base_url=backend, timeout=10) as client:
+def _seed_http(backend, *, verify=True):
+    with httpx.Client(base_url=backend, timeout=10, verify=verify) as client:
         _post(client, "/api/auth/register", {"email": "operator.browser@example.com", "password": "synthetic-browser-password-123", "accepted_terms": True, "confirmed_age_18": True})
         login = _post(client, "/api/auth/login", {"email": "operator.browser@example.com", "password": "synthetic-browser-password-123"})
         headers = {"Authorization": "Bearer " + login["access_token"]}
@@ -328,6 +353,9 @@ def run_journey(evidence: Path):
     source_hashes = {name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest() for name in (
         "frontend/components/EmployerApplicationPanel.tsx", "frontend/journey/cold-no-ai.spec.ts",
         "frontend/playwright.cold.config.ts", "frontend/app/api/backend/[...path]/route.ts",
+        "frontend/tests/candidate-https-server.mjs", "frontend/app/api/account/[operation]/route.ts",
+        "frontend/lib/accountTransportServer.ts", "frontend/lib/accountTransportClient.ts",
+        "frontend/lib/candidateAuthServer.ts", "frontend/lib/auth.ts", "frontend/app/register/page.tsx",
         "frontend/lib/authOptions.ts", "frontend/package-lock.json", "backend/app/main.py",
         "backend/app/database.py", "backend/app/security.py", "backend/app/domains/employer/service.py",
         "backend/app/domains/employer/credits.py", "backend/app/billing/service.py",
@@ -341,7 +369,8 @@ def run_journey(evidence: Path):
     phase = "setup"
     env = {key: os.environ[key] for key in ("PATH", "HOME", "TMPDIR", "LANG") if key in os.environ}
     backend_port, frontend_port = _port(), _port()
-    backend_url, frontend_url = f"http://127.0.0.1:{backend_port}", f"http://127.0.0.1:{frontend_port}"
+    backend_url, frontend_url = f"https://127.0.0.1:{backend_port}", f"https://127.0.0.1:{frontend_port}"
+    key, certificate = evidence / "loopback-key.pem", evidence / "loopback-cert.pem"
     database_url = pg.set(query={"options": f"-csearch_path={schema} -clock_timeout=4000 -cstatement_timeout=10000"}).render_as_string(hide_password=False)
     env.update({
         "APP_ENV": "test", "DATABASE_URL": database_url, "JWT_SECRET": "synthetic-browser-jwt-secret-over-thirty-two-characters",
@@ -355,6 +384,8 @@ def run_journey(evidence: Path):
         "RAZORPAY_WEBHOOK_SECRET": "synthetic-browser-webhook-secret",
         "NEXTAUTH_SECRET": "synthetic-nextauth-browser-secret-over-thirty-two-characters", "NEXTAUTH_URL": frontend_url,
         "BACKEND_URL": backend_url, "NEXT_TELEMETRY_DISABLED": "1", "PYTHONPATH": f"{ROOT}:{ROOT / 'backend'}",
+        "NODE_EXTRA_CA_CERTS": str(certificate), "HIREWIZ_TEST_TLS_CERT": str(certificate),
+        "HIREWIZ_TEST_TLS_KEY": str(key), "PORT": str(frontend_port),
         "COLD_BROWSER_BACKEND_PORT": str(backend_port), "COLD_BROWSER_BACKEND_URL": backend_url,
         "COLD_BROWSER_FRONTEND_URL": frontend_url, "COLD_BROWSER_PROVIDER_PROOF": str(evidence / "provider.json"),
         "COLD_BROWSER_BROWSER_PROOF": str(evidence / "browser.json"), "COLD_BROWSER_REPORT": str(evidence / "playwright.json"),
@@ -374,23 +405,25 @@ def run_journey(evidence: Path):
         with engine.connect() as db:
             for table in ("users", "resumes", "employer_postings", "model_call_events", "employer_searches", "skill_coverage"):
                 assert db.execute(text(f"SELECT count(*) FROM {table}")).scalar_one() == 0
+        phase = "owned_loopback_tls"
+        tls = _create_owned_tls(key, certificate)
         phase = "production_build"
         build = _run_bounded(["npm", "run", "build"], cwd=ROOT / "frontend", env=env, timeout=240)
         (evidence / "build.log").write_text(build.stdout + build.stderr)
         assert build.returncode == 0, "Archive production build failed; inspect local build log"
         for name, command, cwd in (
             ("api", [sys.executable, "-m", "backend.tests.fixtures.cold_browser_app"], ROOT),
-            ("next", ["npm", "run", "start", "--", "-H", "127.0.0.1", "-p", str(frontend_port)], ROOT / "frontend"),
+            ("next", ["node", "tests/candidate-https-server.mjs"], ROOT / "frontend"),
         ):
             log = (evidence / f"{name}.log").open("w")
             logs.append(log)
             processes.append(_spawn_owned(command, cwd=cwd, env=env, stdout=log, stderr=log))
         phase = "api_startup"
-        _wait(backend_url + "/api/health", processes[0])
+        _wait(backend_url + "/api/health", processes[0], verify=tls)
         phase = "next_startup"
-        _wait(frontend_url + "/register", processes[1])
+        _wait(frontend_url + "/register", processes[1], verify=tls)
         phase = "source_refresh"
-        _seed_http(backend_url)
+        _seed_http(backend_url, verify=tls)
         with engine.connect() as db:
             assert db.execute(text("SELECT count(*) FROM employer_postings")).scalar_one() == 4, "Finite fixture feed must normalize four actual postings"
         phase = "browser"
@@ -425,8 +458,10 @@ def run_journey(evidence: Path):
         with admin.begin() as db:
             db.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
         admin.dispose()
+        key.unlink(missing_ok=True)
         summary["cleanup"] = {"owned_processes_stopped": not cleanup_errors and len(groups) == len(processes),
-                              "group_verification": groups, "errors": cleanup_errors, "own_schema_removed": True}
+                              "group_verification": groups, "errors": cleanup_errors, "own_schema_removed": True,
+                              "owned_tls_private_key_removed": not key.exists()}
         if cleanup_errors:
             summary.update({"status": "failed", "failed_phase": "process_cleanup"})
         (evidence / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")

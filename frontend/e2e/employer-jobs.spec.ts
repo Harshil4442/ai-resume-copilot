@@ -48,9 +48,9 @@ function fixture() {
     const token = await encode({ secret: process.env.PLAYWRIGHT_AUTH_SECRET || "playwright-secret-at-least-thirty-two-characters", token: { sub: "424242", email: "fixture@example.com", name: "Taylor Example", hirewizUserId: 424242, accessToken: "local-fixture-token" }, maxAge: 3600 });
     await context.addCookies([{ name: "next-auth.session-token", value: token, url: baseURL, httpOnly: true, sameSite: "Lax" }]);
     await context.addInitScript(() => { localStorage.setItem("hirewiz_cookie_consent", JSON.stringify({ version: 2, preference: "essential", savedAt: new Date().toISOString() })); });
-    await context.route("**/api/backend/**", async (route) => {
+    await context.route((url) => url.pathname.startsWith("/api/backend/") || url.pathname === "/api/account/profile", async (route) => {
       const request = route.request();
-      const path = new URL(request.url()).pathname.replace("/api/backend", "");
+      const path = new URL(request.url()).pathname.replace(/^\/api\/account\/profile$/, "/auth/profile").replace("/api/backend", "");
       const method = request.method();
       const body = request.headers()["content-type"]?.includes("application/json") ? request.postDataJSON() as Record<string, unknown> : {};
       requests.push({ path, method, body });
@@ -113,9 +113,9 @@ test("account switching clears the previous search, resume cache, and reviewed a
   await context.route("**/api/auth/session", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ user: { id: owner === "a" ? "424242" : "424243", email: `${owner}@fixture.example`, name: `Owner ${owner}` }, expires: "2099-01-01T00:00:00.000Z" }) });
   });
-  await context.route("**/api/backend/**", async (route) => {
+  await context.route((url) => url.pathname.startsWith("/api/backend/") || url.pathname === "/api/account/profile", async (route) => {
     if (owner === "a") { await route.fallback(); return; }
-    const path = new URL(route.request().url()).pathname.replace("/api/backend", "");
+    const path = new URL(route.request().url()).pathname.replace(/^\/api\/account\/profile$/, "/auth/profile").replace("/api/backend", "");
     nextOwnerRequests.push({ path, method: route.request().method() });
     let value: unknown;
     if (path === "/resume/list") value = { resumes: [{ id: 3, filename: "New-owner-resume.docx", source_available: true, source_format: "docx", created_at: now }] };

@@ -9,7 +9,7 @@ const origin = "https://candidate.example.com", secret = "synthetic-candidate-bf
 const context = { candidate_id: 12, account_binding_id: "01234567-89ab-cdef-0123-456789abcdef",
   session_id: "11234567-89ab-cdef-0123-456789abcdef" };
 const retained = { hirewizUserId: 12, accessToken: "synthetic-private-server-bearer", browserPairingSession: context };
-beforeEach(() => { vi.restoreAllMocks(); vi.stubEnv("NEXTAUTH_URL", origin); vi.stubEnv("NEXTAUTH_SECRET", secret); vi.stubEnv("BACKEND_URL", "https://backend.example.com"); });
+beforeEach(() => { vi.restoreAllMocks(); vi.stubEnv("NEXTAUTH_URL", origin); vi.stubEnv("NEXTAUTH_SECRET", secret); vi.stubEnv("BACKEND_URL", "https://backend.example.com"); vi.stubEnv("CANDIDATE_AUTH_TRANSPORT_SECRET", "6e".repeat(32)); vi.stubEnv("CANDIDATE_AUTH_TRANSPORT_KEY_ID", "fixture_ingress_v1"); });
 async function request(operation: string, token?: Record<string, unknown>, body?: string, foreign = false) {
   const csrf="a".repeat(64);
   const cookie = (token ? `__Secure-next-auth.session-token=${await encode({token, secret})}; ` : "")
@@ -63,5 +63,14 @@ describe("candidate website projected BFF contracts", () => {
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({user_id:12,status:"ENROLLED"})));
     const result = await POST(await request("register", undefined, "{}"), params("register"));
     expect(await result.json()).toEqual({status:"ENROLLED"});
+  });
+  it.each(["register", "registration-status"])("preserves rate refusal for %s without forwarding backend details", async (operation) => {
+    const fetch = vi.fn(async () => Response.json({detail: "synthetic-private-refusal", access_token: "synthetic-private-token"}, {status:429}));
+    vi.stubGlobal("fetch", fetch);
+    const result = await POST(await request(operation, undefined, "{}"), params(operation));
+    expect(result.status).toBe(429);
+    expect(await result.json()).toEqual({status:"RATE_LIMITED"});
+    expect(result.headers.get("cache-control")).toBe("private, no-store");
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 });
