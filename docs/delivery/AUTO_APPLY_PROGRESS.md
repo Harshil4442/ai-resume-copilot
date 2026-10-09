@@ -14,6 +14,11 @@ Production pairing and portal-use permission remain open.
 
 ## Current checkpoint board — 10 October 2026
 
+The latest [finite rollout preparation](MONETARY_ROLLOUT_PREPARATION_2026-10-10.md)
+records explicit checkout closure, the corrected regional build observation and a
+native current-key check. The current credential remains active; global monetary
+activation remains HOLD. This does not change the separate protected browser gates.
+
 Progress updates show a checked item only after its stated verification passes. A local
 component, independent review, integrated release and production deployment are separate
 checkpoints. Report each newly completed checkpoint to the candidate with its evidence
@@ -48,6 +53,8 @@ completion claim or a percentage of the full goal.
 | Retirement of new legacy Premium/unlimited purchases | [x] Exact-serving checkout flag independently reviewed; all accepted payment/refund paths retained | [x] Existing e7 digest promoted with checkout=false only; 100% traffic and all remaining public API tags verified on 10 October IST. Purchase-screen retirement `67a51f2` promoted to both HireWiz domains; ten hydrated public cases across all five widths independently pass, with zero overflow/errors/Axe violations; finite packs not activated |
 | Payment/refund expense observation retention | [x] Exact three-path R2 independently CLEAR; 88 regressions and 22 actual PostgreSQL cases pass, zero skips; five former timestamp/refund counterexamples retained unchanged; all five exact `44e0d92` source CI jobs pass | [ ] Backend deployment pending; accepted capture/refund paths preserved |
 | Native monetary deployment entrypoint foundation | [x] Seven paths independently CLEAR; 111 checks including 11 actual PostgreSQL and four original independent boundary probes pass; explicit CI source pins | [ ] Native external/provider consumer fence is deliberately unavailable; observe works, execute refuses; no production cutover |
+| Explicit checkout closure and regional native build observation | [x] Independently reviewed source repairs; root combined 145 affected checks, Ruff and Mypy pass; original refusal probes retained | [ ] Exact native Git image build and joined production cutover remain separate gates |
+| Read-only Google credential observation | [x] Standalone observer independently CLEAR; actual current-key binding/list/get completes with active status and zero generation or mutations | [ ] Historical provider/issuer coverage, shared continuity and database retirement remain HOLD |
 | Credential retirement, controlled monetary migration and full backend rollout | [ ] Consumer resolution, writer fencing and queue drain remain open | [ ] Not performed |
 | Broader job coverage, resume fidelity, load, recovery and field performance | [ ] Acceptance evidence remains open in the requirements register | [ ] Full service release remains open |
 

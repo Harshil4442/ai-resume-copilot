@@ -512,3 +512,101 @@ def test_native_context_retains_original_observer_operator_alias_guards(plan, mo
     monkeypatch.delenv("HIREWIZ_CUTOVER_DATABASE_URL", raising=False)
     with pytest.raises(release.ReleaseDenied, match=reason):
         boundary._database_context(plan, "20261008_0009")
+
+
+def test_native_stage_overrides_inherited_open_checkout_and_preserves_payment_callbacks(plan, monkeypatch):
+    boundary = release.NativeBoundary(ROOT)
+    service = release.SERVICES[0]
+    inherited = {"RAZORPAY_CHECKOUT_ENABLED": "true", "RAZORPAY_KEY_ID": "rzp_test_synthetic"}
+    existing_payment_refs = {"RAZORPAY_WEBHOOK_SECRET": "hirewiz-payment-webhook:7"}
+    def cloud(*args):
+        assert args[:3] == ("run", "deploy", service)
+        assert args[args.index("--no-traffic")] == "--no-traffic"
+        updates = args[args.index("--update-env-vars") + 1]
+        assert updates.startswith("^|^")
+        inherited.update(part.split("=", 1) for part in updates[3:].split("|"))
+        removals = args[args.index("--remove-env-vars") + 1].split(",")
+        assert not set(removals) & (set(inherited) | set(existing_payment_refs))
+        secret_updates = args[args.index("--update-secrets") + 1]
+        assert secret_updates == f"DATABASE_URL={plan.runtime_secret},HIREWIZ_EXPENSE_POLICY_JSON={plan.expense_secret}"
+        return {"status": {"latestCreatedRevisionName": service + "-00042-test"}}
+    monkeypatch.setattr(boundary, "_cloud", cloud)
+    assert boundary.stage(plan, service) == service + "-00042-test"
+    assert inherited["RAZORPAY_CHECKOUT_ENABLED"] == "false"
+    assert inherited["RAZORPAY_KEY_ID"] == "rzp_test_synthetic"
+    assert existing_payment_refs == {"RAZORPAY_WEBHOOK_SECRET": "hirewiz-payment-webhook:7"}
+
+
+
+@pytest.mark.parametrize("checkout", ["true", None, "false"])
+def test_native_revision_requires_explicit_closed_checkout_without_disabling_payment_callbacks(plan, monkeypatch, checkout):
+    boundary = release.NativeBoundary(ROOT)
+    service = release.SERVICES[0]
+    environment = {**release.SAFE_ENV, "APP_RELEASE": plan.release, "SERVICE_ROLE": "api",
+                   "RAZORPAY_KEY_ID": "rzp_test_synthetic"}
+    if checkout is None:
+        environment.pop("RAZORPAY_CHECKOUT_ENABLED", None)
+    else:
+        environment["RAZORPAY_CHECKOUT_ENABLED"] = checkout
+    env = [{"name": name, "value": value} for name, value in environment.items()]
+    for name, secret in (("DATABASE_URL", plan.runtime_secret), ("HIREWIZ_EXPENSE_POLICY_JSON", plan.expense_secret),
+                         ("RAZORPAY_WEBHOOK_SECRET", "hirewiz-payment-webhook:7")):
+        secret_name, key = secret.split(":")
+        env.append({"name": name, "valueFrom": {"secretKeyRef": {"name": secret_name, "key": key}}})
+    revision = {"metadata": {"labels": {"serving.knative.dev/service": service}},
+                "spec": {"serviceAccountName": plan.runtime_service_account, "containers": [{"env": env}]},
+                "status": {"imageDigest": plan.image, "conditions": [{"type": "Ready", "status": "True"}]}}
+    health = []
+    def cloud(*args):
+        assert args[:3] == ("run", "revisions", "describe")
+        return revision
+    monkeypatch.setattr(boundary, "_cloud", cloud)
+    monkeypatch.setattr(boundary, "_verify_http_health", lambda *args: health.append(args))
+    if checkout != "false":
+        with pytest.raises(release.ReleaseDenied, match="joined_revision_identity_or_safety_mismatch"):
+            boundary.verify_revision(plan, service, service + "-00042-test")
+        assert health == []
+    else:
+        boundary.verify_revision(plan, service, service + "-00042-test")
+        assert len(health) == 1
+        assert env[-1] == {"name": "RAZORPAY_WEBHOOK_SECRET", "valueFrom": {"secretKeyRef": {"name": "hirewiz-payment-webhook", "key": "7"}}}
+
+
+
+def test_complete_release_reports_checkout_admission_closed(plan):
+    result = run(plan, Boundary())
+    assert result["checkout_enabled"] is False
+    assert result["queue_admission"] == "closed" and result["goal_complete"] is False
+
+
+@pytest.mark.parametrize("ambient_region", [None, "global", "europe-west1"])
+def test_native_build_read_uses_release_region_when_cli_default_differs(plan, monkeypatch, ambient_region):
+    import os
+
+    plan, boundary, calls = native_identity(plan, monkeypatch)
+    fixture_command = boundary._command
+    fixture_cloud = boundary._cloud
+    build_reads = []
+    if ambient_region is None:
+        monkeypatch.delenv("CLOUDSDK_BUILDS_REGION", raising=False)
+    else:
+        monkeypatch.setenv("CLOUDSDK_BUILDS_REGION", ambient_region)
+
+    def command(executable, *args):
+        if executable != "gcloud":
+            return fixture_command(executable, *args)
+        if args[:2] == ("builds", "describe"):
+            # Match the documented native CLI selection: explicit flag, then
+            # builds/region, then global. This build exists only in us-central1.
+            region = (args[args.index("--region") + 1] if "--region" in args
+                      else os.environ.get("CLOUDSDK_BUILDS_REGION", "global"))
+            build_reads.append((args[2], region))
+            if region != release.REGION:
+                raise release.ReleaseDenied("cloud_operation_unavailable_or_outcome_unknown")
+        return json.dumps(fixture_cloud(*args)).encode()
+
+    monkeypatch.setattr(boundary, "_command", command)
+    monkeypatch.setattr(boundary, "_cloud", release.NativeBoundary._cloud.__get__(boundary))
+    boundary.verify_identity_and_policy(plan)
+    assert build_reads == [(plan.build_id, release.REGION)]
+    assert not any("deploy" in call or "execute" in call for call in calls)

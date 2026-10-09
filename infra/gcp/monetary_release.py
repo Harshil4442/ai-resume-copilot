@@ -34,6 +34,7 @@ CHAIN = (*source_guard.ALLOWED_CHAIN, "20261009_0010", "20261009_0011", "2026100
 SAFE_ENV = {
     "APP_ENV": "production", "AUTO_DB_MIGRATE": "false",
     "OPTIONAL_AI_GENERATION_ENABLED": "false", "EMPLOYER_AUTO_SUBMIT_ENABLED": "false",
+    "RAZORPAY_CHECKOUT_ENABLED": "false",
     "CANDIDATE_ACCOUNT_LIFECYCLE_ENABLED": "false",
     "EMPLOYER_SEARCH_CREDITS_PER_JOB": "1", "EMPLOYER_APPLY_CREDITS_PER_JOB": "20",
 }
@@ -196,7 +197,7 @@ def run_release(
     _fresh_fence(boundary, plan, clock)
     return {"release": plan.release, "image_digest": plan.image_digest, "schema": CHAIN[-1],
             "joined_revisions": revisions, "production_released": True,
-            "queue_admission": "closed", "optional_generation": False,
+            "queue_admission": "closed", "checkout_enabled": False, "optional_generation": False,
             "automatic_submission": False, "native_lifecycle": False,
             "goal_complete": False}
 
@@ -258,7 +259,7 @@ class NativeBoundary:
                 or {item.get("name") for item in jobs} != CI_JOBS
                 or any(item.get("status") != "completed" or item.get("conclusion") != "success" for item in jobs)):
             raise ReleaseDenied("exact_release_five_ci_jobs_not_successful")
-        build = self._cloud("builds", "describe", plan.build_id)
+        build = self._cloud("builds", "describe", plan.build_id, "--region", REGION)
         # Only a native Cloud Build Git-source attestation is supported. Uploaded
         # local archives, labels or caller source-hash files are not provenance.
         provenance = build.get("sourceProvenance", {}).get("resolvedGitSource", {})

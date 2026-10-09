@@ -31,6 +31,30 @@ Credential values and database role aliases stay in the operator environment. `l
 same runtime/migration credentials or accounts, duplicate input keys and unknown plan
 fields are refused. No provider-fence or consumer-completeness assertion is accepted.
 
+## Exact native Git build shape
+
+`infra/gcp/cloudbuild-monetary.yaml` uses the existing repository-root `Dockerfile`,
+which copies the locked backend dependencies and `backend/` source. Both Docker steps
+run at the repository root. After source review and exact-head CI, an authorized
+operator can submit a native Git build with the same full reviewed SHA in both places:
+
+```sh
+release_sha=FULL_REVIEWED_COMMIT_SHA
+[[ "$release_sha" =~ ^[a-f0-9]{40}$ ]]
+gcloud builds submit https://github.com/Harshil4442/ai-resume-copilot.git \
+  --project=ai-resume-parser-482412 --region=us-central1 \
+  --git-source-dir=. --git-source-revision="$release_sha" \
+  --config=infra/gcp/cloudbuild-monetary.yaml --substitutions="_RELEASE=$release_sha"
+```
+
+This configuration only builds and pushes; it cannot authorize migration or traffic.
+The existing native verifier still requires the exact resolved Git source revision,
+fixed root build/push steps and returned immutable image digest. Source archives and
+image labels cannot substitute for those observations. No build was submitted during
+author tests. [GitSource/BuildStep semantics](https://docs.cloud.google.com/build/docs/api/reference/rest/v1/projects.builds)
+and [native Git submission flags](https://docs.cloud.google.com/sdk/gcloud/reference/builds/submit)
+define the configuration.
+
 ## Implemented forward sequence, currently gated
 
 1. Verify clean immutable source and the exact0009→0010→0011→0012→0013 chain. Verify
@@ -80,7 +104,9 @@ fields are refused. No provider-fence or consumer-completeness assertion is acce
    unresolved and refused, including custom roles. This is not an organization-wide IAM audit.
 8. Recheck the joined set, source/policy, admission, fences and database before promotion.
    Promote workers, then API; observe exact100% revision traffic and health. Keep task
-   admission closed, optional generation, automatic submission and native lifecycle off.
+   admission and `RAZORPAY_CHECKOUT_ENABLED` explicitly closed, optional generation,
+   automatic submission and native lifecycle off. The inherited payment callback/refund
+   configuration is preserved; only admission for new checkout is closed.
    Compiler/authority configuration remains absent until its independent gates pass.
    Resume and end-to-end product/field monitoring remain separate required release work.
 

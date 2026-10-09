@@ -112,6 +112,7 @@ jobs:
           tests/fixtures/cold_browser_app.py tests/test_cold_browser_runner.py
           ../infra/gcp/release_preflight.py ../infra/gcp/monetary_release.py ../tests/test_release_preflight.py
           tests/test_monetary_release_entrypoint.py tests/test_monetary_schema_step_postgres.py
+          tests/test_model_key_revocation_observer.py
       - name: Check modified legacy authentication imports
         working-directory: backend
         run: .venv/bin/ruff check --select I,F app/routers/auth.py app/security.py app/schemas.py
@@ -126,6 +127,7 @@ jobs:
           app/billing/cost_policy.py
           app/routers/candidate_accounts.py app/routers/sensitive_auth.py app/routers/candidate_ingress.py
           ../infra/gcp/release_preflight.py ../infra/gcp/monetary_release.py scripts/monetary_schema_step.py
+          scripts/model_key_revocation_observer.py
       - name: Compile backend
         run: backend/.venv/bin/python -m compileall -q backend/app
       - name: Validate PostgreSQL migrations
