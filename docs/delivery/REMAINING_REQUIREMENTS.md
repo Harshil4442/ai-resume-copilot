@@ -70,6 +70,18 @@ pending-denial barrier, complete restore, actual cloud authority, browser transp
 real portal acceptance remain open. The [monetary inventory and cutover sequence](MONETARY_CUTOVER_PREPARATION_2026-10-09.md)
 does not claim legacy credential retirement or promote schema 0010.
 
+The subsequent [credit-link and Linux repair](PAID_BILLING_LINUX_REPAIR_2026-10-09.md)
+records the terminal `aab73da` result: 1,604 backend tests and four CI jobs pass, while
+the newly added Linux browser job fails. An owned Linux reproduction identified and
+repaired a credit-pack selection race. All three actual service-credit purchase links
+now select the intended catalog pack; root lint/types, 72 units, 15 targeted responsive
+checks and a new actual no-AI browser journey pass. Exact new-source hosted CI and
+frontend promotion remain pending. The earlier staged frontend passes public and
+unauthenticated checks, but is not the new source or the live custom-domain release.
+Two separate proposals are held outside root: journal-cut completeness has a late-writer
+race, and monetary SQL preflight has independently reproduced false-green privilege
+and liability checks. Neither proposal authorizes a migration or browser launch.
+
 Compatibility correction `b306f13` passed all four exact remote CI jobs and an immutable
 GCP image build. Its API candidate is ready with generation disabled and **zero production
 traffic**; the prior serving API retains 100%. No queue pause, worker retirement or

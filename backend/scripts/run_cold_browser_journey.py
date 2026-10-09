@@ -9,6 +9,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import selectors
 import signal
 import socket
@@ -162,6 +163,73 @@ def _run_bounded(command, *, cwd, env, timeout):
     return subprocess.CompletedProcess(command, process.returncode,
         b"".join(streams[process.stdout]).decode("utf-8", errors="replace"),
         b"".join(streams[process.stderr]).decode("utf-8", errors="replace"))
+
+
+
+def _browser_failure_summary(report: Path) -> dict[str, object]:
+    """Export bounded diagnostic categories/locations, never raw browser errors.
+
+    Playwright errors can contain credentials, candidate content or request data.
+    The raw report remains local; only fixed categories and this spec's numeric
+    locations may enter the uploaded summary.
+    """
+    if not report.is_file():
+        return {"report_state": "absent"}
+    if report.stat().st_size > 2_000_000:
+        return {"report_state": "too_large"}
+    try:
+        content = json.loads(report.read_text())
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return {"report_state": "unreadable"}
+    failures: list[dict[str, object]] = []
+
+    def visit(value: object) -> None:
+        if len(failures) >= 8:
+            return
+        if isinstance(value, dict):
+            errors = value.get("errors")
+            if isinstance(errors, list):
+                for error in errors[:8]:
+                    if not isinstance(error, dict):
+                        continue
+                    message = error.get("message")
+                    message = message if isinstance(message, str) else ""
+                    if "Executable doesn't exist" in message:
+                        category = "browser_not_installed"
+                    elif "missing dependencies" in message:
+                        category = "browser_dependencies"
+                    elif "browserType.launch" in message:
+                        category = "browser_launch"
+                    elif "Test timeout" in message:
+                        category = "test_timeout"
+                    elif "page.goto" in message:
+                        category = "navigation"
+                    elif "expect(" in message:
+                        category = "assertion"
+                    elif "locator." in message:
+                        category = "locator"
+                    else:
+                        category = "browser_error"
+                    failure: dict[str, object] = {"category": category}
+                    stack = error.get("stack")
+                    stack = stack if isinstance(stack, str) else ""
+                    location = re.search(r"cold-no-ai\.spec\.ts:(\d{1,6}):(\d{1,6})(?:\D|$)", stack)
+                    if location is not None:
+                        failure["spec_line"] = int(location[1])
+                        failure["spec_column"] = int(location[2])
+                    if failure not in failures:
+                        failures.append(failure)
+                    if len(failures) >= 8:
+                        break
+            for key, item in value.items():
+                if key != "errors":
+                    visit(item)
+        elif isinstance(value, list):
+            for item in value:
+                visit(item)
+
+    visit(content)
+    return {"report_state": "read", "failures": failures}
 
 
 def _docx(path, label):
@@ -328,6 +396,8 @@ def run_journey(evidence: Path):
         phase = "browser"
         browser = _run_bounded(["npx", "playwright", "test", "-c", "playwright.cold.config.ts"], cwd=ROOT / "frontend", env=env, timeout=180)
         (evidence / "browser.log").write_text(browser.stdout + browser.stderr)
+        if browser.returncode != 0:
+            summary["browser_failure"] = _browser_failure_summary(evidence / "playwright.json")
         assert browser.returncode == 0, "Actual Chromium journey failed; inspect local browser log"
         phase = "sql_verification"
         proof = _sql_proof(engine)

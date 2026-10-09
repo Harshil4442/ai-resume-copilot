@@ -72,12 +72,16 @@ test("fresh candidate: real Chromium → BFF → API → SQL, no AI and reviewed
   await expect(page.getByRole("button", { name: "Find jobs", exact: true })).toBeDisabled();
   const initialCatalog = await request.get(`${baseURL}/api/backend/v1/employer-jobs/catalog`);
   expect((await initialCatalog.json()).balance).toBe(0);
-  await page.goto("/billing?sku=job_service_500");
-  // URL SKU may not be consumed by older route versions: select the exact pack.
+  await page.goto("/billing");
+  // Explicitly select the credit pack, independently of billing deep links.
   const pack = page.locator("article").filter({ hasText: "500 credits" });
   await expect(pack).toBeVisible();
   const select = pack.getByRole("button", { name: "Review purchase", exact: true });
-  if (await select.count()) await select.click();
+  // The pack renders before account status resolves. Wait for its enabled
+  // action; an instantaneous count can skip selection while it says "Checking status".
+  await expect(select).toBeEnabled();
+  await select.click();
+  await expect(pack.getByRole("button", { name: "Selected", exact: true })).toBeVisible();
   await page.getByRole("checkbox", { name: /I confirm my billing country/ }).check();
   const orderResponse = page.waitForResponse((r) => r.url().endsWith("/api/backend/billing/orders") && r.request().method() === "POST");
   const callbackResponse = page.waitForResponse((r) => r.url().includes("/checkout-result") && r.request().method() === "POST");

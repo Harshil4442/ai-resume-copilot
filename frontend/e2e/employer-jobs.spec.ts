@@ -215,6 +215,45 @@ test("Premium can purchase service credits and only server fulfillment confirms 
   f.state.recentPaidPack = true; await page.reload(); await expect(page.getByRole("heading", { name: "Payment confirmed" })).toBeVisible(); await expect(page.getByText(/delivered your purchased job service credits/)).toBeVisible(); await page.getByRole("button", { name: "Review another purchase" }).click(); await expect(pack.getByRole("button", { name: "Review purchase" })).toBeEnabled(); await checkLayout(page); expect(f.unexpected).toEqual([]);
 });
 
+test("service credit checkout links select the requested pack without starting a purchase", async ({ page, context, baseURL }) => {
+  const f = fixture();
+  await f.install(context, baseURL!);
+  await page.goto("/employer-jobs");
+  const buy = page.getByRole("link", { name: "Buy credits", exact: true });
+  await expect(buy).toHaveAttribute("href", "/billing?sku=job_service_500");
+  await buy.click();
+  await expect(page).toHaveURL(/\/billing\?sku=job_service_500$/);
+  const pack = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "500 service credits" }) });
+  const premium = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Premium pass" }) });
+  await expect(pack.getByRole("button", { name: "Selected", exact: true })).toBeEnabled();
+  await expect(premium.getByRole("button", { name: "Review purchase", exact: true })).toBeEnabled();
+  expect(f.requests.some((r) => r.path === "/billing/orders")).toBe(false);
+  await page.getByRole("checkbox", { name: /I confirm my billing country/ }).check();
+  await page.getByRole("button", { name: /Pay with Razorpay/ }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "Fixture checkout disabled" })).toBeVisible();
+  expect(f.requests.find((r) => r.path === "/billing/orders")?.body).toEqual({ sku: "job_service_500", billing_country: "IN" });
+  await checkLayout(page);
+  expect(f.unexpected).toEqual([]);
+});
+
+test("billing links keep manual choice and ignore an unsupported product", async ({ page, context, baseURL }) => {
+  const f = fixture();
+  await f.install(context, baseURL!);
+  await page.goto("/billing?sku=job_service_500");
+  const pack = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "500 service credits" }) });
+  const premium = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Premium pass" }) });
+  await expect(pack.getByRole("button", { name: "Selected", exact: true })).toBeEnabled();
+  await premium.getByRole("button", { name: "Review purchase", exact: true }).click();
+  await expect(premium.getByRole("button", { name: "Selected", exact: true })).toBeEnabled();
+  await expect(pack.getByRole("button", { name: "Review purchase", exact: true })).toBeEnabled();
+  await page.goto("/billing?sku=unsupported_product");
+  await expect(premium.getByRole("button", { name: "Selected", exact: true })).toBeEnabled();
+  await expect(page.getByRole("button", { name: /Pay with Razorpay/ })).toBeDisabled();
+  expect(f.requests.some((r) => r.path === "/billing/orders")).toBe(false);
+  await checkLayout(page);
+  expect(f.unexpected).toEqual([]);
+});
+
 
 test("exact PDF MIME failures block approval and allow a safe preview retry", async ({ page, context, baseURL }) => {
   const f = fixture(); f.state.applicationsVisible = true; f.state.badPdf = true; f.application.status = "ready"; f.application.missing_fields = []; f.application.artifact!.media_type = "application/pdf"; f.application.artifact!.filename = "Taylor.pdf"; await f.install(context, baseURL!);

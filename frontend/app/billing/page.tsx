@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   CheckCircle2,
@@ -145,8 +146,8 @@ declare global {
 
 let checkoutScriptPromise: Promise<void> | null = null;
 
-function isSupportedSku(value: string): value is SupportedSku {
-  return SUPPORTED_SKUS.includes(value as SupportedSku);
+function isSupportedSku(value: unknown): value is SupportedSku {
+  return typeof value === "string" && SUPPORTED_SKUS.includes(value as SupportedSku);
 }
 
 function loadHostedCheckout(): Promise<void> {
@@ -219,13 +220,13 @@ function usageEventLabel(event: UsageEvent): string {
   return event.event_type.replaceAll("_", " ");
 }
 
-export default function BillingPage() {
+function BillingContent({ requestedSku }: { requestedSku: string | null }) {
   const mountedRef = useRef(true);
   const pollRunRef = useRef(0);
   const confirmedOrderRef = useRef(new Set<string>());
   const [catalog, setCatalog] = useState<BillingCatalog | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(true);
-  const [selectedSku, setSelectedSku] = useState<SupportedSku | null>(null);
+  const [selection, setSelection] = useState<{ sku: SupportedSku; querySku: string | null } | null>(null);
   const [currentTier, setCurrentTier] = useState<string | null>(null);
   const [premiumUntil, setPremiumUntil] = useState<string | null>(null);
   const [analysisUnits, setAnalysisUnits] = useState(0);
@@ -312,6 +313,9 @@ export default function BillingPage() {
     return catalog.products.filter((product) => product.catalog_visible);
   }, [catalog]);
 
+  const selectedSku = selection?.querySku === requestedSku
+    ? selection.sku
+    : isSupportedSku(requestedSku) ? requestedSku : null;
   const effectiveSelectedSku =
     selectedSku && visibleProducts.some((product) => product.sku === selectedSku)
       ? selectedSku
@@ -630,7 +634,7 @@ export default function BillingPage() {
                           <p className="mt-5 text-sm leading-6 text-muted-foreground">{product.description}</p>
                           <ul className="mt-5 grid gap-2.5">{productFacts(product).map((fact) => <li key={fact} className="flex items-start gap-2 text-sm text-muted-foreground"><CheckCircle2 size={15} className="mt-0.5 shrink-0 text-primary" /><span>{fact}</span></li>)}</ul>
                         </div>
-                        <div className="sm:min-w-44 sm:text-right"><p className="text-3xl font-semibold text-primary">{formatPrice(product.amount_minor, product.currency)}</p><p className="mt-1 text-xs text-muted-foreground">INR total</p><Button type="button" variant={selected ? "secondary" : "primary"} className="mt-4 w-full" onClick={() => { setSelectedSku(product.sku); trackEvent("checkout_product_selected", { sku: product.sku, amount_minor: product.amount_minor, currency: product.currency }); }} disabled={currentTier === null || (currentTier === "premium" && product.entitlement_kind === "premium_access")}>{currentTier === "premium" && product.entitlement_kind === "premium_access" ? "Already active" : currentTier === null ? "Checking status" : selected ? "Selected" : "Review purchase"}</Button></div>
+                        <div className="sm:min-w-44 sm:text-right"><p className="text-3xl font-semibold text-primary">{formatPrice(product.amount_minor, product.currency)}</p><p className="mt-1 text-xs text-muted-foreground">INR total</p><Button type="button" variant={selected ? "secondary" : "primary"} className="mt-4 w-full" onClick={() => { setSelection({ sku: product.sku, querySku: requestedSku }); trackEvent("checkout_product_selected", { sku: product.sku, amount_minor: product.amount_minor, currency: product.currency }); }} disabled={currentTier === null || (currentTier === "premium" && product.entitlement_kind === "premium_access")}>{currentTier === "premium" && product.entitlement_kind === "premium_access" ? "Already active" : currentTier === null ? "Checking status" : selected ? "Selected" : "Review purchase"}</Button></div>
                       </div>
                     </article>
                   );
@@ -668,4 +672,13 @@ export default function BillingPage() {
       </div>
     </main>
   );
+}
+
+function BillingQuery() {
+  const searchParams = useSearchParams();
+  return <BillingContent requestedSku={searchParams.get("sku")} />;
+}
+
+export default function BillingPage() {
+  return <Suspense fallback={<main className="app-page"><div className="page-container"><LoadingBlock rows={5} /></div></main>}><BillingQuery /></Suspense>;
 }

@@ -10,6 +10,7 @@ import time
 import pytest
 from backend.scripts import run_cold_browser_journey as journey_runner
 from backend.scripts.run_cold_browser_journey import (
+    _browser_failure_summary,
     _owned_status,
     _run_bounded,
     _spawn_owned,
@@ -140,3 +141,35 @@ time.sleep(30)
     assert time.monotonic() - started < 10
     with pytest.raises(ProcessLookupError):
         os.kill(int(marker.read_text()), 0)
+
+
+def test_browser_failure_summary_exposes_only_fixed_categories_and_spec_location(tmp_path):
+    report = tmp_path / "playwright.json"
+    report.write_text(json.dumps({"suites": [{"specs": [{"tests": [{"results": [{"errors": [{
+        "message": "Error: expect(secret-candidate-content).toBe(expected-token)",
+        "stack": "secret password at /private/work/frontend/journey/cold-no-ai.spec.ts:47:19\nBearer token",
+        "location": {"file": "/private/path", "line": 77, "column": 8},
+        "actual": "secret-session-cookie", "request": {"headers": {"Authorization": "secret"}},
+    }]}]}]}]}]}))
+    result = _browser_failure_summary(report)
+    assert result == {"report_state": "read", "failures": [{"category": "assertion", "spec_line": 47, "spec_column": 19}]}
+    assert "secret" not in json.dumps(result) and "/private/" not in json.dumps(result)
+
+
+def test_browser_failure_summary_reports_missing_browser_without_raw_global_error(tmp_path):
+    report = tmp_path / "playwright.json"
+    report.write_text(json.dumps({"errors": [{"message": "browserType.launch: Executable doesn't exist at /private/home/token"}]}))
+    assert _browser_failure_summary(report) == {"report_state": "read", "failures": [{"category": "browser_not_installed"}]}
+
+
+def test_browser_failure_summary_is_bounded_and_handles_missing_invalid_reports(tmp_path):
+    report = tmp_path / "playwright.json"
+    assert _browser_failure_summary(report) == {"report_state": "absent"}
+    report.write_text("not JSON; secret-password")
+    assert _browser_failure_summary(report) == {"report_state": "unreadable"}
+    report.write_text(" " * 2_000_001)
+    assert _browser_failure_summary(report) == {"report_state": "too_large"}
+    report.write_text(json.dumps({"errors": [{"message": "unknown error", "stack": f"cold-no-ai.spec.ts:{line}:1"} for line in range(1, 20)]}))
+    result = _browser_failure_summary(report)
+    assert len(result["failures"]) == 8
+    assert all(error["category"] == "browser_error" for error in result["failures"])
