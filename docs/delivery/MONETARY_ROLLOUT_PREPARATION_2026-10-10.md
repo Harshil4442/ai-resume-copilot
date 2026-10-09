@@ -64,6 +64,17 @@ The [registry acquisition repair](CI_PUBLIC_REGISTRY_ACQUISITION_2026-10-10.md)
 preserves pinned image content and requires a fresh full-source CI result. The
 earlier native build cannot be joined to a different source revision's CI result.
 
+The next exact `0fb4784` native Git build also completed successfully at 21:22 UTC;
+[its independent source/image evidence](evidence/2026-10-10-native-git-registry-repair-build.json)
+records the distinct immutable digest. Its [full CI attempt](evidence/2026-10-10-precheckout-postgres-throttling.json)
+verified security, frontend and companion lanes, including the actual cache reload,
+193-commit secret scan and production container build. Both PostgreSQL-backed jobs
+failed before checkout when Actions exhausted Docker Hub service-image pulls.
+Backend/native compiler and full cold-browser checks did not run.
+The [same-image PostgreSQL distribution repair](CI_POSTGRES_PUBLIC_DISTRIBUTION_2026-10-10.md)
+requires its own exact new-head CI/image proof. Neither previous build is a deployment
+or a substitute for CI on the new source.
+
 - [ ] Establish whether old credentials are shared with other applications.
 - [ ] Complete native provider/issuer and database writer retirement, with new
   restricted identities and exact secret versions.
