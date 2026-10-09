@@ -18,18 +18,18 @@ Historical Premium orders and their unexpired accepted access terms are preserve
 
 ## Expense estimates and calculation
 
-The candidate JSON is `docs/examples/expense-policy-estimated-candidate-2026-10-09.json`. It deliberately has `review_status: candidate` and `reviewed_by: operator-review-required`; it cannot silently activate. Dates expire within 31 days, and actual-variance review and monthly reconciliation acknowledgement are required. Missing, expired, malformed, mismatched, or unsafe authority denies new cost-bearing checkout, quotes and provider attempts.
+The original candidate JSON remains historical planning input. The stronger [reviewed estimate](../examples/expense-policy-estimated-reviewed-2026-10-09.json) has independently cleared offline calculation review under the owner’s authorization to estimate costs. Its [review report](EXPENSE_POLICY_REVIEW_2026-10-09.md) records assumptions and unknowns. It expires on 16 October 2026 at 18:37:32 UTC and has not been activated in production. Actual-variance review and monthly reconciliation remain required. Missing, expired, malformed, mismatched, or unsafe authority denies new cost-bearing checkout, quotes and provider attempts.
 
 All accounting uses integer paise and integer USD microdollars with exact Fraction arithmetic. Expense components and credit floors round upward; receipts round downward. The current planning assumptions are estimates, not invoices or legal tax determinations:
 
 - ₹100 per USD adverse exchange bound.
 - ₹13,000 monthly platform/operations plus ₹2,000 marketing/exposure allowance; 100 paid packs/month allocation yields ₹150 per pack. Cloud costs may exceed this bounded low/moderate-volume forecast; full-capacity estimates and actual account facts remain in the parent cost policy document.
-- 3% payment fee plus 18% tax on that fee, conservative 18% inclusive sale-tax reserve, and 5% gross refund/chargeback reserve. Unknown actual fees and fixed expenses are not reported as zero.
+- 5% payment fee plus 18% tax on that fee, ₹1 fixed processing allowance and ₹10 settlement/FX allowance per purchase, conservative 18% inclusive sale-tax reserve, and 5% gross refund/chargeback reserve. Unknown actual fees and fixed expenses are not reported as zero.
 - ₹0.25 per delivered search job and ₹5 per confirmed browser-assisted application including normal preparation/failure allowance. A separately bounded paid search request may prepare up to the existing 1,000-candidate limit; its failed/empty preparation estimate is ₹0.50 per request plus 20% contingency, rather than charging the full delivered-job cost for every undelivered requested result.
 - Maximum ₹26.50 per AI unit: USD0.25 at the adverse FX bound plus ₹1.50 worker overhead for up to three attempts. Tailoring's total operation provider ceiling is USD0.50 for two units; other configured operation ceilings are bounded explicitly. Runtime cash admission counts ₹0.50 for every provider attempt, including failed, tiny, unknown and detached historical attempts. This cash overhead never becomes a fabricated provider invoice amount.
 - Internal 40% contribution target and 20% contingency; neither is asserted as an industry rule or guaranteed profit.
 
-Worst full use includes every service credit in its most expensive permitted mix, every promised AI unit, platform allocation, and all permitted maximum discount/bonus combinations. Current no-promotion net receipts are 49,457 / 83,749 / 167,575 paise. Buffered allocated costs are 27,360 / 46,080 / 86,700 paise; modeled margins are approximately 44.68% / 44.98% / 48.26%. The upward service floors are search1/application14; chosen application20 gives headroom. Starter at ten packs/month still projects a ₹13,990.30 monthly deficit; fifty packs project ₹2,048.50 contribution after the forecast fixed budget. These are forecast results, not actual profitability.
+Worst full use includes every service credit in its most expensive permitted mix, every promised AI unit, platform allocation, and all permitted maximum discount/bonus combinations. The stronger reviewed no-promotion estimate yields net receipts of 46,825 / 80,055 / 161,285 paise. Buffered allocated costs are 27,360 / 46,080 / 86,700 paise; modeled allocated margins are approximately 41.57% / 42.44% / 46.24%. The upward service floors are search1/application17; chosen application20 gives headroom. At the forecast ₹15,000 monthly fixed budget, homogeneous full-use purchases break even at approximately 49 Starter, 35 Growth or 20 Scale packs. Low sales volume can still lose money. These are forecast results, not actual profitability; the prior candidate’s lower-fee numbers remain historical input only.
 
 `backend/scripts/audit_expense_policy.py` produces the deterministic pack audit and 10/50/100-volume forecast. Its optional explicit database mode is read-only, aggregates recorded payment/refund/provider facts, reports unknowns, and does not invent actual shared fixed expenses or a profit result.
 
@@ -63,7 +63,7 @@ Use a guarded writer-drain maintenance window for the ordinary index build, with
 
 ## Verification checklist and remaining release gates
 
-- [x] Finite three-pack catalog and customer disclosures; historical offer closed for new purchases.
+- [x] Finite three-pack source catalog and customer disclosures; historical offers closed in new release source. [Live legacy checkout retirement](LIVE_CHECKOUT_RETIREMENT_2026-10-10.md) is now verified separately; finite-pack purchase activation remains pending.
 - [x] Worst-use/discount/bonus/adverse-FX calculator and required-expiry/review failure cases.
 - [x] Atomic two-balance capture, replay, partial/full refund and spent-grant debt checks.
 - [x] NEW-FIRST mixed legacy/current service and AI reserve/release/top-up tests, including spoof rejection and telemetry purge.
@@ -71,9 +71,10 @@ Use a guarded writer-drain maintenance window for the ordinary index build, with
 - [x] Settled-but-uncommitted prepaid model result retains risk; provider invoice ledger remains separate from overhead.
 - [x] Frozen candidate source and preimage/hash manifests for independent review.
 - [x] Independent financial review of exact V2 source: 108 baseline checks, 22 actual PostgreSQL baseline passes and five distinct actual PostgreSQL boundary checks. The root now integrates the two-file historical-fixture/head repair; 40 actual PostgreSQL checks and four composed boundary checks pass without weakening the financial-history guard.
-- [x] Root final connected cold browser → BFF → backend → SQL replay passed, with 240 frontend unit checks, production build, and affected search/application UI at all five widths. First packaging and stale-selector failures remain preserved; complete remote CI remains pending.
-- [x] Root preimage-checked 46-path composition with reviewed account, preferences and native resume changes; regenerated contracts. Published commit `92d1cc5` passed four CI lanes; its backend lane passed 2,337 tests and failed four stale integration-fixture expectations. The reviewed three-file test-only repair passes 87 focused checks; fresh complete CI remains pending.
-- [ ] Operator review of actual/estimated current authority, finite dates, known variance, funded legacy exposure, alerts and monthly reconciliation.
+- [x] Root final connected cold browser → BFF → backend → SQL replay passed, with 240 frontend unit checks, production build, and affected search/application UI at all five widths. First packaging and stale-selector failures remain preserved. All five exact `29919c2` CI lanes now pass; the backend suite passes 2,341 tests without skips.
+- [x] Root preimage-checked 46-path composition with reviewed account, preferences and native resume changes; regenerated contracts. Published commit `92d1cc5` passed four CI lanes; its backend lane passed 2,337 tests and failed four stale integration-fixture expectations. The reviewed three-file test-only repair passes 87 focused checks; exact `29919c2` complete CI subsequently passes all five lanes, including 2,341 backend tests without skips. This is source verification; production activation remains pending.
+- [x] Owner-authorized stronger estimated expense policy independently reviewed offline; [bounded review evidence](evidence/2026-10-09-estimated-expense-policy-review.json) retains actual unknowns.
+- [ ] Current runtime authority, known variance, funded legacy exposure, alerts, monthly reconciliation and live catalog verified after deployment.
 - [ ] Guarded migration, approved deployment and production verification by the root task.
 
 No live payment, model, employer form submission, provider credential update or cloud mutation is performed by this authoring work. Independent scope clearance and complete deployment remain separate release requirements.

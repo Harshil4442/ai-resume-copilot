@@ -147,6 +147,21 @@ def _validate_order_notes(notes: Any, order: PaymentOrder) -> None:
             raise WebhookValidationError("order_ownership_mismatch")
 
 
+def _validate_payment_expenses(
+    payment: dict[str, Any], order: PaymentOrder
+) -> tuple[int | None, int | None]:
+    """Validate monetary facts without imposing capture-only payment status."""
+    fee = _optional_minor(payment, "fee")
+    tax = _optional_minor(payment, "tax")
+    if fee is not None and fee > order.gross_amount_minor:
+        raise WebhookValidationError("invalid_fee")
+    if tax is not None and (fee is None or tax > fee):
+        # Razorpay documents `fee` as inclusive of its GST and `tax` as the
+        # GST component of that provider fee.
+        raise WebhookValidationError("invalid_provider_fee_tax")
+    return fee, tax
+
+
 def _validate_payment(
     payment: dict[str, Any], order: PaymentOrder, *, require_captured: bool
 ) -> tuple[str, int | None, int | None, str | None, bool | None]:
@@ -167,14 +182,7 @@ def _validate_payment(
     elif payment.get("status") != "failed":
         raise WebhookValidationError("payment_not_failed")
 
-    fee = _optional_minor(payment, "fee")
-    tax = _optional_minor(payment, "tax")
-    if fee is not None and fee > order.gross_amount_minor:
-        raise WebhookValidationError("invalid_fee")
-    if tax is not None and (fee is None or tax > fee):
-        # Razorpay documents `fee` as inclusive of its GST and `tax` as the
-        # GST component of that provider fee.
-        raise WebhookValidationError("invalid_provider_fee_tax")
+    fee, tax = _validate_payment_expenses(payment, order)
     method = payment.get("method")
     if method is not None and (not isinstance(method, str) or len(method) > 32):
         raise WebhookValidationError("invalid_payment_method")
@@ -216,6 +224,7 @@ def _payment_transaction(
     tax: int | None,
     payment_method: str | None = None,
     instrument_international: bool | None = None,
+    expense_event: PaymentEvent | None = None,
 ) -> PaymentTransaction:
     transaction = (
         db.query(PaymentTransaction)
@@ -247,11 +256,34 @@ def _payment_transaction(
         and transaction.status in {"partially_refunded", "refunded"}
     ):
         transaction.status = status
+    if status == "captured":
+        # Distinct signed capture events can omit or disagree on optional fees.
+        # Keep the largest reported expense from either retained projection;
+        # absence is unknown, never evidence that an earlier cost disappeared.
+        # Conflicts retain the event's payload digest for provider reconciliation.
+        fee_reports = [value for value in (
+            fee, transaction.provider_fee_amount_minor, order.provider_fee_amount_minor,
+        ) if value is not None]
+        tax_reports = [value for value in (
+            tax, transaction.provider_fee_tax_minor, order.provider_fee_tax_minor,
+        ) if value is not None]
+        if expense_event is not None and (
+            len(set(fee_reports)) > 1 or len(set(tax_reports)) > 1
+        ):
+            expense_event.error_code = "provider_expense_conflict"
+        fee = max(fee_reports) if fee_reports else None
+        tax = max(tax_reports) if tax_reports else None
     transaction.provider_fee_amount_minor = fee
     transaction.provider_fee_tax_minor = tax
     transaction.estimated_net_amount_minor = (
         order.gross_amount_minor - fee if fee is not None else None
     )
+    if status == "captured":
+        # A signed refund payment also proves capture and may arrive first.
+        # Keep the expense projection used by funding aligned with the receipt.
+        order.provider_fee_amount_minor = fee
+        order.provider_fee_tax_minor = tax
+        order.estimated_net_amount_minor = transaction.estimated_net_amount_minor
     if payment_method:
         transaction.payment_method = payment_method
     if instrument_international is not None:
@@ -510,6 +542,7 @@ def _process_capture(
         tax=tax,
         payment_method=payment_method,
         instrument_international=instrument_international,
+        expense_event=event,
     )
     if instrument_international is True:
         log.warning(
@@ -519,8 +552,8 @@ def _process_capture(
     captured_at = as_aware(transaction.captured_at)
     if captured_at is None or now < captured_at:
         transaction.captured_at = now
-    order.provider_fee_tax_minor = tax
-    order.provider_fee_amount_minor = fee
+    order.provider_fee_tax_minor = transaction.provider_fee_tax_minor
+    order.provider_fee_amount_minor = transaction.provider_fee_amount_minor
     order.estimated_net_amount_minor = transaction.estimated_net_amount_minor
     paid_at = as_aware(order.paid_at)
     if paid_at is None or now < paid_at:
@@ -589,7 +622,9 @@ def _process_failure(
     return order.public_id
 
 
-def _validate_refund_payment(payment: dict[str, Any], order: PaymentOrder) -> str:
+def _validate_refund_payment(
+    payment: dict[str, Any], order: PaymentOrder
+) -> tuple[str, int | None, int | None]:
     if payment.get("entity") != "payment":
         raise WebhookValidationError("invalid_payment_entity")
     payment_id = _required_string(payment, "id", prefix="pay_")
@@ -602,7 +637,8 @@ def _validate_refund_payment(payment: dict[str, Any], order: PaymentOrder) -> st
     if payment.get("captured") is not True:
         raise WebhookValidationError("payment_not_captured")
     _validate_order_notes(payment.get("notes"), order)
-    return payment_id
+    fee, tax = _validate_payment_expenses(payment, order)
+    return payment_id, fee, tax
 
 
 def _process_refund(
@@ -665,20 +701,23 @@ def _process_refund(
         raise WebhookValidationError("currency_mismatch")
     if refund_amount > order.gross_amount_minor:
         raise WebhookValidationError("refund_amount_mismatch")
+    fee = tax = None
     if payment is not None:
-        verified_payment_id = _validate_refund_payment(payment, order)
+        verified_payment_id, fee, tax = _validate_refund_payment(payment, order)
         if verified_payment_id != payment_id:
             raise WebhookValidationError("refund_payment_mismatch")
 
-    if transaction is None:
-        transaction = _payment_transaction(
-            db,
-            order=order,
-            payment_id=payment_id,
-            status="captured",
-            fee=None,
-            tax=None,
-        )
+    first_transaction = transaction is None
+    transaction = _payment_transaction(
+        db,
+        order=order,
+        payment_id=payment_id,
+        status="captured",
+        fee=fee,
+        tax=tax,
+        expense_event=event,
+    )
+    if first_transaction:
         transaction.captured_at = order.paid_at
         db.flush()
 
@@ -842,7 +881,10 @@ def process_razorpay_webhook(
         raise
 
     event.processing_status = processing_status
-    event.error_code = processing_status if processing_status in RETRYABLE_EVENT_STATUSES else None
+    if processing_status in RETRYABLE_EVENT_STATUSES:
+        event.error_code = processing_status
+    elif event.error_code != "provider_expense_conflict":
+        event.error_code = None
     event.processed_at = utcnow()
     db.commit()
     return WebhookResult(

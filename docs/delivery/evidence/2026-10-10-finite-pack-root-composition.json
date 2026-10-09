@@ -1,0 +1,115 @@
+{
+  "base_commit": "29919c2de38fb9e2b45975fad7ea9d822b2442fb",
+  "scope": "Finite-policy documentation, reviewed payment-cost observation R2, and native monetary release foundation. Full finite-purchase production activation remains HOLD.",
+  "source_reviewed": true,
+  "goal_complete": false,
+  "changes": [
+    {
+      "path": ".github/workflows/ci.yml",
+      "before_sha256": "f087d16861bcd6d3412df8812ed266de028adaef567e1b7b48695a56ccbe6962",
+      "after_sha256": "c0ad06b48bd3743d6e62162abc83eaa9001bc77fb213a31a8db51b4ca16c1ee0"
+    },
+    {
+      "path": "backend/app/billing/cost_policy.py",
+      "before_sha256": "3249e6c7323418b6bd2ff73dea88456e44539cfa128383fdb12c2d2c61e8a4b7",
+      "after_sha256": "fd8b14de7f4bb89708e3d0b34a6c5f8da92063b6bd01825da17fbba21bf94059"
+    },
+    {
+      "path": "backend/app/billing/service.py",
+      "before_sha256": "1130ff9e37aa10886d32e8837713b55eed08cffaefc67fbecbc84ac694b7897a",
+      "after_sha256": "820dc94718e5b5a3044f8bc6003ee08bac033e62f0f5a1e54193abf25bf53941"
+    },
+    {
+      "path": "backend/scripts/monetary_schema_step.py",
+      "before_sha256": null,
+      "after_sha256": "bdeb63f075f9d7ede0131daf0e818b52ff114533ea238ab93d0a73efcc0b362f"
+    },
+    {
+      "path": "backend/tests/test_monetary_release_entrypoint.py",
+      "before_sha256": null,
+      "after_sha256": "5e7be5362be044b71de392bd0b77fb9b9b9952d9a3be94f40441fdb6ee0411cf"
+    },
+    {
+      "path": "backend/tests/test_monetary_schema_step_postgres.py",
+      "before_sha256": null,
+      "after_sha256": "32d28433c8f929c9a29fd9f6c338cc12d9724c912bf2662ccf89f7495917989e"
+    },
+    {
+      "path": "backend/tests/test_razorpay_billing.py",
+      "before_sha256": "96890ac4498ae3fd6e9257c8dc8015863f2a5c53d5a6fa1d01e813f9d7c7cf94",
+      "after_sha256": "872eef1d3879128210a1e1e66941e123c4c6801d48ec18dc31dd69f9ec0e2f5a"
+    },
+    {
+      "path": "docs/delivery/AUTO_APPLY_PROGRESS.md",
+      "before_sha256": "5fce99f3098c8b77b507ef9274e26e236459c4d741251b5c0673544da780ad6c",
+      "after_sha256": "06e64a999fbb7cc6d69ea7903fbb708bf6c40a19c13fceea17ad7135922d47fc"
+    },
+    {
+      "path": "docs/delivery/EXPENSE_POLICY_REVIEW_2026-10-09.md",
+      "before_sha256": null,
+      "after_sha256": "0f51f9c9798727e9a6237420cc2a2abd87fe63f27dafcbc5584ee9e80152f8fb"
+    },
+    {
+      "path": "docs/delivery/FINITE_PACK_IMPLEMENTATION_2026-10-09.md",
+      "before_sha256": "07b85eeee313af87f76032f42eb0fa082aee00fb2f58dba5ea86b42f913f8e15",
+      "after_sha256": "a682c689ab5a6c6512a79a8a1a17c4dc38819889a3dcaf4d99b1b1b2a13e6d27"
+    },
+    {
+      "path": "docs/delivery/MONETARY_RELEASE_ENTRYPOINT_2026-10-10.md",
+      "before_sha256": null,
+      "after_sha256": "54f2cf4c0132c1ff92de7d2134b97a2501b72fb6258017b187e8682110d5e029"
+    },
+    {
+      "path": "docs/delivery/evidence/2026-10-09-estimated-expense-policy-review.json",
+      "before_sha256": null,
+      "after_sha256": "d201ec7de9122ec0fb9e10c6990e85e41659c89a40085e4392e95edd98177dcf"
+    },
+    {
+      "path": "docs/delivery/evidence/2026-10-09-finite-pack-exact-ci-success.json",
+      "before_sha256": null,
+      "after_sha256": "261b1ff60e1717d3402e1748640092e7f327f08101166a5da788f3b51814cd24"
+    },
+    {
+      "path": "docs/delivery/evidence/2026-10-10-monetary-entrypoint-source-review.json",
+      "before_sha256": null,
+      "after_sha256": "870c884fafccd39fcae3cd7ee5cb7e16e96ede5b0989c10cb440b65c4308e91e"
+    },
+    {
+      "path": "docs/delivery/evidence/2026-10-10-payment-expense-observation-review.json",
+      "before_sha256": null,
+      "after_sha256": "90b4d380a28af8494f14ea3aaec18af9657b4f24361ae6a3a86dbda7788c1c50"
+    },
+    {
+      "path": "docs/examples/expense-policy-estimated-reviewed-2026-10-09.json",
+      "before_sha256": null,
+      "after_sha256": "8ce31e98039c768340a1d6137d798e345e5c02c432b3d84d54331256828d1631"
+    },
+    {
+      "path": "infra/gcp/monetary_release.py",
+      "before_sha256": null,
+      "after_sha256": "335c07df86c09b3d2cc6771c4e24ba125bd3e44511c4671ce405f99685274d39"
+    },
+    {
+      "path": "infra/gcp/release_preflight.py",
+      "before_sha256": "4188c1174505fb4f658a2f4680b52083bb82d32a3891d2c16c3a2980c08f1710",
+      "after_sha256": "d11335699f642216a3d39a669128472dcdd7a817e6931c1fdb8af90c2a3c039a"
+    }
+  ],
+  "component_evidence": [
+    "docs/delivery/evidence/2026-10-10-payment-expense-observation-review.json",
+    "docs/delivery/evidence/2026-10-10-monetary-entrypoint-source-review.json",
+    "docs/delivery/evidence/2026-10-09-estimated-expense-policy-review.json",
+    "docs/delivery/evidence/2026-10-09-finite-pack-exact-ci-success.json"
+  ],
+  "composition_validation": {
+    "passed": 172,
+    "skipped": 0,
+    "log_sha256": "2bc164f386b2a1163bfcad9ccfd7a66bfabe045bfecdca64d47506ebef876b28",
+    "configured_ruff": "PASS",
+    "configured_mypy": "PASS: 97 source files",
+    "diff_check": "PASS",
+    "setup_refusal": "Original local DSN pointed at postgres; root refused before tests and explicitly selected existing dedicated hirewiz_admission_test database."
+  },
+  "live_activation": "Legacy new purchases disabled and verified; finite-pack/backend activation not performed.",
+  "exact_composed_hosted_CI": "pending"
+}

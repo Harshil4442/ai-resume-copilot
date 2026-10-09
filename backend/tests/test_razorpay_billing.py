@@ -796,3 +796,289 @@ def test_missing_expense_policy_blocks_checkout_before_provider_or_order(client,
     assert client.post("/api/billing/orders",json={"sku":"starter_bundle","billing_country":"IN"}).status_code==503
     assert enabled_checkout==[]
     with session_factory() as db: assert db.query(PaymentOrder).count()==0
+
+
+@pytest.mark.parametrize("first_event", ["payment.captured", "order.paid"])
+@pytest.mark.parametrize("omission", ["absent", "null"])
+def test_capture_expense_missing_signed_event_retains_known_overrun(
+    client, enabled_checkout, session_factory, first_event, omission
+):
+    from backend.app.billing.cost_policy import (
+        CostPolicyUnavailable,
+        ExpensePolicy,
+        assert_actual_variance,
+    )
+    from backend.tests.expense_policy_fixtures import estimated_expense_policy
+
+    created = _create_order(client)
+    with session_factory() as db:
+        order = db.query(PaymentOrder).filter_by(public_id=created["order_id"]).one()
+        first = _capture_payload(order, event=first_event)
+        later = _capture_payload(
+            order, event="order.paid" if first_event == "payment.captured" else "payment.captured"
+        )
+    first["payload"]["payment"]["entity"].update(fee=20_000, tax=3_000)
+    for field in ("fee", "tax"):
+        if omission == "absent":
+            later["payload"]["payment"]["entity"].pop(field)
+        else:
+            later["payload"]["payment"]["entity"][field] = None
+    assert _post_event(client, "evt_known_expense", first).status_code == 200
+    with session_factory() as db:
+        with pytest.raises(CostPolicyUnavailable, match="actual payment"):
+            assert_actual_variance(db, ExpensePolicy.model_validate(estimated_expense_policy()))
+    assert _post_event(client, "evt_distinct_missing_expense", later).status_code == 200
+    replay = _post_event(client, "evt_distinct_missing_expense", later)
+    assert replay.status_code == 200 and replay.json()["status"] == "duplicate"
+    with session_factory() as db:
+        with pytest.raises(CostPolicyUnavailable, match="actual payment"):
+            assert_actual_variance(db, ExpensePolicy.model_validate(estimated_expense_policy()))
+        order, tx = db.query(PaymentOrder).one(), db.query(PaymentTransaction).one()
+        assert order.provider_fee_amount_minor == tx.provider_fee_amount_minor == 20_000
+        assert order.provider_fee_tax_minor == tx.provider_fee_tax_minor == 3_000
+        assert order.estimated_net_amount_minor == tx.estimated_net_amount_minor == 44_900
+        assert order.status == "paid" and tx.status == "captured"
+        assert db.query(EntitlementLedger).count() == 1
+        user = db.query(User).one()
+        assert user.job_service_credits == 100 and user.ai_credits == 22
+        events = db.query(PaymentEvent).order_by(PaymentEvent.id).all()
+        assert len(events) == 2 and all(e.processing_status == "processed" for e in events)
+        assert events[0].payload_sha256 != events[1].payload_sha256
+
+
+@pytest.mark.parametrize("known_source", ["order_only", "transaction_only"])
+@pytest.mark.parametrize("later_fee,later_tax", [(None, None), (2_000, 300), (25_000, 2_000)])
+def test_capture_expense_reconciles_order_and_transaction_high_water_facts(
+    client, enabled_checkout, session_factory, known_source, later_fee, later_tax
+):
+    from backend.app.billing.cost_policy import (
+        CostPolicyUnavailable,
+        ExpensePolicy,
+        assert_actual_variance,
+    )
+    from backend.tests.expense_policy_fixtures import estimated_expense_policy
+
+    created = _create_order(client)
+    with session_factory() as db:
+        order = db.query(PaymentOrder).one()
+        first = _capture_payload(order)
+    first["payload"]["payment"]["entity"].update(fee=20_000, tax=3_000)
+    assert _post_event(client, "evt_known_high_water", first).status_code == 200
+    with session_factory() as db:
+        order, tx = db.query(PaymentOrder).one(), db.query(PaymentTransaction).one()
+        missing = tx if known_source == "order_only" else order
+        missing.provider_fee_amount_minor = None
+        missing.provider_fee_tax_minor = None
+        missing.estimated_net_amount_minor = None
+        later = _capture_payload(order, event="order.paid")
+        later["payload"]["payment"]["entity"].update(fee=later_fee, tax=later_tax)
+        db.commit()
+    assert _post_event(client, "evt_reconcile_high_water", later).status_code == 200
+    with session_factory() as db:
+        with pytest.raises(CostPolicyUnavailable, match="actual payment"):
+            assert_actual_variance(db, ExpensePolicy.model_validate(estimated_expense_policy()))
+        order, tx = db.query(PaymentOrder).one(), db.query(PaymentTransaction).one()
+        expected_fee = max(20_000, later_fee or 0)
+        assert order.provider_fee_amount_minor == tx.provider_fee_amount_minor == expected_fee
+        assert order.provider_fee_tax_minor == tx.provider_fee_tax_minor == 3_000
+        assert order.estimated_net_amount_minor == tx.estimated_net_amount_minor == 64_900 - expected_fee
+        marker = db.query(PaymentEvent).filter_by(provider_event_id="evt_reconcile_high_water").one()
+        assert marker.processing_status == "processed"
+        assert marker.error_code == ("provider_expense_conflict" if later_fee is not None else None)
+        assert db.query(EntitlementLedger).count() == 1
+        user = db.query(User).one()
+        assert user.job_service_credits == 100 and user.ai_credits == 22
+    response = client.get(f"/api/billing/orders/{created['order_id']}")
+    assert response.status_code == 200 and response.json()["fulfilled"] is True
+
+
+def test_capture_expense_known_overrun_keeps_callbacks_and_refunds_available(
+    client, enabled_checkout, session_factory
+):
+    from backend.app.billing.cost_policy import (
+        CostPolicyUnavailable,
+        ExpensePolicy,
+        assert_actual_variance,
+    )
+    from backend.tests.expense_policy_fixtures import estimated_expense_policy
+
+    created = _create_order(client)
+    with session_factory() as db:
+        order = db.query(PaymentOrder).one()
+        capture = _capture_payload(order)
+    capture["payload"]["payment"]["entity"].update(fee=20_000, tax=3_000)
+    assert _post_event(client, "evt_expensive_capture", capture).status_code == 200
+    payment_id = capture["payload"]["payment"]["entity"]["id"]
+    callback_signature = hmac.new(
+        TEST_KEY_SECRET.encode(),
+        f"{created['provider_order_id']}|{payment_id}".encode(),
+        hashlib.sha256,
+    ).hexdigest()
+    callback = client.post(
+        f"/api/billing/orders/{created['order_id']}/checkout-result",
+        json={"razorpay_payment_id": payment_id,
+              "razorpay_order_id": created["provider_order_id"],
+              "razorpay_signature": callback_signature},
+    )
+    assert callback.status_code == 200
+    with session_factory() as db:
+        order = db.query(PaymentOrder).one()
+        refund = _refund_payload(order, "rfnd_overrun_partial", 32_450)
+        late = _capture_payload(order, event="order.paid")
+        late["payload"]["payment"]["entity"].pop("fee")
+        late["payload"]["payment"]["entity"].pop("tax")
+    assert _post_event(client, "evt_expensive_partial_refund", refund).status_code == 200
+    assert _post_event(client, "evt_expensive_partial_refund", refund).json()["status"] == "duplicate"
+    assert _post_event(client, "evt_late_capture_after_refund", late).status_code == 200
+    with session_factory() as db:
+        with pytest.raises(CostPolicyUnavailable, match="actual payment"):
+            assert_actual_variance(db, ExpensePolicy.model_validate(estimated_expense_policy()))
+        order, tx = db.query(PaymentOrder).one(), db.query(PaymentTransaction).one()
+        assert order.status == tx.status == "partially_refunded"
+        assert order.provider_fee_amount_minor == tx.provider_fee_amount_minor == 20_000
+        assert order.provider_fee_tax_minor == tx.provider_fee_tax_minor == 3_000
+        assert db.query(PaymentRefund).count() == 1
+        assert db.query(EntitlementLedger).count() == 1
+        user = db.query(User).one()
+        assert user.job_service_credits == 50 and user.ai_credits == 21
+
+
+@pytest.mark.parametrize("later_expenses", ["missing", "same_known"])
+def test_older_distinct_capture_cannot_hide_observed_adverse_fee_from_variance_guard(client, enabled_checkout, session_factory, later_expenses):
+    from datetime import datetime, timedelta, timezone
+
+    from backend.app.billing.cost_policy import CostPolicyUnavailable, ExpensePolicy, assert_actual_variance
+    from backend.tests.expense_policy_fixtures import estimated_expense_policy
+
+    _create_order(client)
+    policy = ExpensePolicy.model_validate(estimated_expense_policy())
+    with session_factory() as db:
+        first = _capture_payload(db.query(PaymentOrder).one())
+    first['created_at'] = int(datetime.now(timezone.utc).timestamp())
+    first['payload']['payment']['entity'].update(fee=20000, tax=3000)
+    assert _post_event(client, 'evt_independent_observed_overrun', first).status_code == 200
+    with session_factory() as db:
+        with pytest.raises(CostPolicyUnavailable, match='actual payment'):
+            assert_actual_variance(db, policy)
+        older = _capture_payload(db.query(PaymentOrder).one(), event='order.paid')
+    older['created_at'] = int((policy.reconciled_through - timedelta(hours=1)).timestamp())
+    older['payload']['payment']['entity'].update(
+        fee=None if later_expenses == 'missing' else 20000,
+        tax=None if later_expenses == 'missing' else 3000,
+    )
+    assert _post_event(client, 'evt_independent_older_capture', older).status_code == 200
+    with session_factory() as db:
+        order, transaction = db.query(PaymentOrder).one(), db.query(PaymentTransaction).one()
+        assert order.provider_fee_amount_minor == transaction.provider_fee_amount_minor == 20000
+        assert order.provider_fee_tax_minor == transaction.provider_fee_tax_minor == 3000
+        with pytest.raises(CostPolicyUnavailable, match='actual payment'):
+            assert_actual_variance(db, policy)
+
+
+@pytest.mark.parametrize('previous_report', ['none', 'failed_projection'])
+def test_partial_refund_before_capture_retains_known_expenses_and_pauses_new_work(client, enabled_checkout, session_factory, previous_report, record_property):
+    from backend.app.billing.cost_policy import CostPolicyUnavailable, ExpensePolicy, assert_actual_variance
+    from backend.tests.expense_policy_fixtures import estimated_expense_policy
+
+    _create_order(client)
+    with session_factory() as db:
+        order = db.query(PaymentOrder).one()
+        refund = _refund_payload(order, 'rfnd_independent_first', 100)
+        failure = _capture_payload(order)
+    if previous_report == 'failed_projection':
+        failure['event'] = 'payment.failed'
+        failure['payload']['payment']['entity'].update(status='failed', captured=False, fee=20000, tax=3000)
+        assert _post_event(client, 'evt_independent_failed_expense', failure).status_code == 200
+        refund['payload']['payment']['entity'].update(fee=None, tax=None)
+    else:
+        refund['payload']['payment']['entity'].update(fee=20000, tax=3000)
+    assert _post_event(client, 'evt_independent_refund_first', refund).status_code == 200
+    with session_factory() as db:
+        order, transaction, user = db.query(PaymentOrder).one(), db.query(PaymentTransaction).one(), db.query(User).one()
+        assert order.status == transaction.status == 'partially_refunded'
+        assert order.refunded_amount_minor == 100
+        assert db.query(EntitlementLedger).count() == 1
+        assert user.job_service_credits == 99 and user.ai_credits == 21
+        record_property('expense_projection_observation', json.dumps({
+            'order_fee': order.provider_fee_amount_minor,
+            'transaction_fee': transaction.provider_fee_amount_minor,
+            'order_tax': order.provider_fee_tax_minor,
+            'transaction_tax': transaction.provider_fee_tax_minor,
+        }))
+        with pytest.raises(CostPolicyUnavailable, match='actual payment'):
+            assert_actual_variance(db, ExpensePolicy.model_validate(estimated_expense_policy()))
+        assert order.provider_fee_amount_minor == transaction.provider_fee_amount_minor == 20000
+        assert order.provider_fee_tax_minor == transaction.provider_fee_tax_minor == 3000
+
+
+def test_newly_processed_old_dated_refund_consumes_current_variance_reserve(client, enabled_checkout, session_factory):
+    from datetime import datetime, timedelta, timezone
+
+    from backend.app.billing.cost_policy import CostPolicyUnavailable, ExpensePolicy, assert_actual_variance
+    from backend.tests.expense_policy_fixtures import estimated_expense_policy
+
+    _create_order(client)
+    policy = ExpensePolicy.model_validate(estimated_expense_policy())
+    with session_factory() as db:
+        capture = _capture_payload(db.query(PaymentOrder).one())
+    capture['created_at'] = int(datetime.now(timezone.utc).timestamp())
+    capture['payload']['payment']['entity'].update(fee=1500, tax=229)
+    assert _post_event(client, 'evt_independent_refund_budget_capture', capture).status_code == 200
+    with session_factory() as db:
+        assert_actual_variance(db, policy)
+        refund = _refund_payload(db.query(PaymentOrder).one(), 'rfnd_independent_old_dated', 10000)
+    refund['created_at'] = int((policy.reconciled_through - timedelta(days=1)).timestamp())
+    refund['payload']['payment']['entity'].update(fee=1500, tax=229)
+    assert _post_event(client, 'evt_independent_old_dated_refund', refund).status_code == 200
+    with session_factory() as db:
+        assert db.query(PaymentOrder).one().refunded_amount_minor == 10000
+        with pytest.raises(CostPolicyUnavailable, match='refund expenses'):
+            assert_actual_variance(db, policy)
+
+
+
+@pytest.mark.parametrize("fee,tax", [(True, 0), (65_000, 0), (1_000, 1_001)])
+def test_invalid_refund_expenses_cannot_mutate_balances(
+    client, enabled_checkout, session_factory, fee, tax
+):
+    _create_order(client)
+    with session_factory() as db:
+        refund = _refund_payload(db.query(PaymentOrder).one(), "rfnd_invalid_expense", 100)
+    refund["payload"]["payment"]["entity"].update(fee=fee, tax=tax)
+    assert _post_event(client, "evt_invalid_refund_expense", refund).status_code == 400
+    with session_factory() as db:
+        assert db.query(PaymentRefund).count() == 0
+        assert db.query(PaymentTransaction).count() == 0
+        assert db.query(EntitlementLedger).count() == 0
+        assert db.query(PaymentEvent).one().processing_status == "rejected"
+        user = db.query(User).one()
+        assert user.job_service_credits == 0 and user.ai_credits == 20
+
+
+def test_full_refund_before_capture_keeps_expenses_with_unknown_paid_date(
+    client, enabled_checkout, session_factory
+):
+    from backend.app.billing.cost_policy import (
+        CostPolicyUnavailable, ExpensePolicy, assert_actual_variance,
+    )
+    from backend.tests.expense_policy_fixtures import estimated_expense_policy
+
+    _create_order(client)
+    policy = ExpensePolicy.model_validate(estimated_expense_policy())
+    with session_factory() as db:
+        refund = _refund_payload(db.query(PaymentOrder).one(), "rfnd_full_expense_first", 64_900)
+    refund["created_at"] = int((policy.reconciled_through - timedelta(days=1)).timestamp())
+    refund["payload"]["payment"]["entity"].update(fee=20_000, tax=3_000)
+    assert _post_event(client, "evt_full_expense_first", refund).status_code == 200
+    with session_factory() as db:
+        order, transaction = db.query(PaymentOrder).one(), db.query(PaymentTransaction).one()
+        assert order.status == transaction.status == "refunded"
+        assert order.paid_at is None
+        assert order.provider_fee_amount_minor == transaction.provider_fee_amount_minor == 20_000
+        assert order.provider_fee_tax_minor == transaction.provider_fee_tax_minor == 3_000
+        assert order.refunded_amount_minor == 64_900
+        assert db.query(EntitlementLedger).count() == 0
+        user = db.query(User).one()
+        assert user.job_service_credits == 0 and user.ai_credits == 20
+        with pytest.raises(CostPolicyUnavailable, match="actual payment"):
+            assert_actual_variance(db, policy)

@@ -65,7 +65,7 @@ def checked_files(root: Path, release: str) -> set[str]:
     return tracked
 
 
-def migration_head(root: Path, tracked: set[str]) -> str:
+def migration_chain(root: Path, tracked: set[str]) -> tuple[str, ...]:
     configuration = configparser.ConfigParser(interpolation=None)
     configuration.read(root / "backend/alembic.ini")
     script_location = configuration.get("alembic", "script_location", fallback="")
@@ -129,12 +129,19 @@ def migration_head(root: Path, tracked: set[str]) -> str:
             raise PreflightDenied("Migration ancestry contains a cycle.")
         chain.append(cursor)
         cursor = revisions[cursor]
-    if len(chain) != len(revisions) or tuple(reversed(chain)) != ALLOWED_CHAIN:
+    if len(chain) != len(revisions):
+        raise PreflightDenied("Migration ancestry is disconnected.")
+    return tuple(reversed(chain))
+
+
+def migration_head(root: Path, tracked: set[str]) -> str:
+    chain = migration_chain(root, tracked)
+    if chain != ALLOWED_CHAIN:
         raise PreflightDenied(
             "Legacy release.sh accepts only the reviewed schema0009 chain. "
             "Monetary/unknown migrations require a separate approved cutover entry point, not yet implemented."
         )
-    return head
+    return chain[-1]
 
 
 def verify_source(root: Path, release: str) -> str:

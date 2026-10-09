@@ -1,0 +1,74 @@
+{
+  "release": "29919c2de38fb9e2b45975fad7ea9d822b2442fb",
+  "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37974127610",
+  "status": "completed",
+  "conclusion": "success",
+  "jobs": [
+    {
+      "name": "frontend",
+      "conclusion": "success",
+      "completed_at": "2026-10-09T18:43:35Z",
+      "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37974127610/job/113967950132"
+    },
+    {
+      "name": "backend",
+      "conclusion": "success",
+      "completed_at": "2026-10-09T18:46:18Z",
+      "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37974127610/job/113967950331"
+    },
+    {
+      "name": "security-and-container",
+      "conclusion": "success",
+      "completed_at": "2026-10-09T18:35:16Z",
+      "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37974127610/job/113967950399"
+    },
+    {
+      "name": "cold-browser-journey",
+      "conclusion": "success",
+      "completed_at": "2026-10-09T18:36:09Z",
+      "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37974127610/job/113967950460"
+    },
+    {
+      "name": "browser-companion",
+      "conclusion": "success",
+      "completed_at": "2026-10-09T18:34:34Z",
+      "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37974127610/job/113967950575"
+    }
+  ],
+  "backend": {
+    "passed": 2341,
+    "failed": 0,
+    "skipped": 0,
+    "warnings": 453,
+    "duration_seconds": 638.03,
+    "raw_log_sha256": "3e8128835788afb1dd39dd42b7f2385f98edbdc2510c2c70317cfb6f4e341d73"
+  },
+  "native_compiler": {
+    "image_id": "sha256:0881e95274b2026144fc67a2f73ceec624278cda45b51c0264d7909727c15a80",
+    "platform": "linux/amd64",
+    "ci_attestation_step": "success"
+  },
+  "production_activation": false,
+  "scope": "Exact source CI only; no production traffic, credentials, migration, payment or employer submission occurred.",
+  "previous_failed_run": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37971964270",
+  "previous_failed_backend": {
+    "passed": 2337,
+    "failed": 4,
+    "reason": "stale migration/catalog fixtures; exact three-file repair recorded separately"
+  },
+  "tested_source_identity": {
+    "release_commit": "29919c2de38fb9e2b45975fad7ea9d822b2442fb",
+    "ci_checkout_commits": {
+      "frontend": "28adc0bcd2d6b0af6e56c15f82ac4fee58d33df2",
+      "backend": "28adc0bcd2d6b0af6e56c15f82ac4fee58d33df2",
+      "security-and-container": "28adc0bcd2d6b0af6e56c15f82ac4fee58d33df2",
+      "cold-browser-journey": "28adc0bcd2d6b0af6e56c15f82ac4fee58d33df2",
+      "browser-companion": "28adc0bcd2d6b0af6e56c15f82ac4fee58d33df2"
+    },
+    "release_tree": "1bee2c96d0609035c2991c0a57501f389e48026d",
+    "tested_tree": "1bee2c96d0609035c2991c0a57501f389e48026d",
+    "trees_identical": true,
+    "raw_log_sha256": "9cbdb4de31e6a58a162eb3b84dbd80d09f1727b32b3259e80c6be95fffcb1d58",
+    "note": "PR checkout uses synthesized merge commit; all five actual checkouts have the identical tracked source tree as the feature release."
+  }
+}

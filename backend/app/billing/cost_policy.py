@@ -280,7 +280,7 @@ def assert_actual_variance(db, policy: ExpensePolicy) -> None:
     """
     from sqlalchemy import Numeric, cast, func, or_
 
-    from ..models import PaymentOrder, PaymentRefund
+    from ..models import PaymentEvent, PaymentOrder, PaymentRefund
 
     def rounded(value, denominator):
         return func.floor((cast(value, Numeric(30, 0)) + denominator - 1) / denominator)
@@ -294,10 +294,25 @@ def assert_actual_variance(db, policy: ExpensePolicy) -> None:
         + policy.settlement_fx_minor
     )
     tax_bound = rounded(gross * policy.sale_tax_reserve_bps, 10_000 + policy.sale_tax_reserve_bps)
+    # Provider timestamps describe historical payment chronology. A delayed
+    # authoritative event can introduce expenses after this review even when
+    # paid_at is older or unknown. Use the durable server processing receipt;
+    # retryable/rejected events and exact duplicate delivery cannot mint one.
+    recently_observed = (
+        db.query(PaymentEvent.id)
+        .filter(
+            PaymentEvent.order_id == PaymentOrder.id,
+            PaymentEvent.provider == PaymentOrder.provider,
+            PaymentEvent.event_type.in_(("payment.captured", "order.paid", "refund.processed")),
+            PaymentEvent.processing_status == "processed",
+            PaymentEvent.processed_at >= policy.reconciled_through,
+        )
+        .exists()
+    )
     if (
         db.query(PaymentOrder.id)
         .filter(
-            PaymentOrder.paid_at >= policy.reconciled_through,
+            or_(PaymentOrder.paid_at >= policy.reconciled_through, recently_observed),
             or_(
                 PaymentOrder.provider_fee_amount_minor > bound,
                 PaymentOrder.customer_tax_amount_minor > tax_bound,
@@ -317,7 +332,12 @@ def assert_actual_variance(db, policy: ExpensePolicy) -> None:
     )
     refunded = int(
         db.query(func.coalesce(func.sum(PaymentRefund.amount_minor), 0))
-        .filter(PaymentRefund.processed_at >= policy.reconciled_through)
+        .filter(
+            or_(
+                PaymentRefund.processed_at >= policy.reconciled_through,
+                PaymentRefund.created_at >= policy.reconciled_through,
+            )
+        )
         .scalar()
         or 0
     )
