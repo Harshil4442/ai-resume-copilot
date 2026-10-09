@@ -63,6 +63,14 @@ reports its own server groups stopped, SQL schema removed and private TLS key re
 Component test emulator namespaces intentionally retained for evidence are not
 claimed globally cleaned.
 
+The follow-up exact `24253ec` [CI run](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37948018682)
+passes frontend (including the full responsive suite), cold browser, companion and
+security/container jobs. Backend stops before tests on a test-file import-order lint
+error. The original failure is retained; root corrected only the import order and
+passed the complete configured CI Ruff and Mypy commands (115 source files). No test
+assertion or product code changed in that correction. A new complete exact-source
+backend/CI run is required; four successful jobs are not a whole-suite pass.
+
 ## Remaining release checkpoints
 
 - [x] Integrate the exact bounded independently reviewed private transport.

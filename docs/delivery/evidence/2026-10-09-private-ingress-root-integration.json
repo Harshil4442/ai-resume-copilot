@@ -127,5 +127,28 @@
   },
   "new_exact_source_ci": "pending",
   "deployment": false,
-  "gcp_or_vercel_mutations": false
+  "gcp_or_vercel_mutations": false,
+  "follow_up_exact_ci": {
+    "commit": "24253ec07276a2acea708d19c2ed2985f9460a82",
+    "run": 37948018682,
+    "conclusion": "failure",
+    "frontend": "success",
+    "cold_browser_journey": "success",
+    "browser_companion": "success",
+    "security_container": "success",
+    "backend": {
+      "status": "failed_before_tests",
+      "step": "Ruff modernized modules",
+      "finding": "I001 in test_candidate_account_lifecycle.py:204",
+      "runtime_tests_run": false
+    },
+    "preserved_backend_log_sha256": "fb22417ca8adb86c5dfc8e9cf2dfe5143ba62e078093dba13a7e522a0d885935",
+    "root_repair": "test-only import order correction, assertions unchanged",
+    "full_exact_ci_ruff_root": "pass",
+    "full_exact_ci_mypy_root": {
+      "pass": true,
+      "files": 115
+    },
+    "next_exact_source_ci": "pending"
+  }
 }

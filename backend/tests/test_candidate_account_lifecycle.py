@@ -201,16 +201,17 @@ def test_legacy_password_row_never_becomes_candidate_identity_at_login(lifecycle
 
 
 def test_http_registration_login_bearer_and_logout_use_genuine_credential_native_issuer(lifecycle, monkeypatch):
+    import json
+
+    from backend.tests.fixtures.candidate_ingress import create, signed_headers
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
     from app.database import get_db
     from app.domains.candidate_accounts import service as service_module
+    from app.domains.candidate_ingress import replay
     from app.rate_limiter import limiter
     from app.routers import auth, candidate_accounts
-    from app.domains.candidate_ingress import replay
-    from backend.tests.fixtures.candidate_ingress import create, signed_headers
-    import json
     service, _, _ = lifecycle
     monkeypatch.setattr(service_module, "production_candidate_accounts", lambda: service)
     monkeypatch.setenv("CANDIDATE_ACCOUNT_LIFECYCLE_ENABLED", "true")

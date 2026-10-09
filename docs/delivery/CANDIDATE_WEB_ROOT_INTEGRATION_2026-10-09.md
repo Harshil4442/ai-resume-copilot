@@ -43,8 +43,7 @@ An earlier host-Python preflight lacked SQLAlchemy and did not invoke pytest; th
 locked project interpreter was used afterward.
 
 The prior exact `4911d1f` [CI run](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37933390559)
-passes all five jobs, including 2,002 backend cases. It predates this website patch;
-it does not cover the website patch. The exact `0993b23` run subsequently passes all
+passes all five jobs, including 2,002 backend cases; it predates the website patch. The exact `0993b23` run subsequently passes all
 2,030 backend cases, security/container and companion jobs, but fails the frontend
 responsive job (20 failures) and cold browser job. These failures are preserved in
 the [follow-up integration report](PRIVATE_INGRESS_ROOT_INTEGRATION_2026-10-09.md).
