@@ -187,6 +187,10 @@ def _client() -> httpx.Client:
                         headers={"User-Agent": "HireWiz-EmployerConnector/1.0", "Accept": "application/json"})
 
 
+class _VerifiedPublicRedirect(Exception):
+    """A fixed public GET destination; the originating stream must close first."""
+
+
 class _PublicRead:
     """Unauthenticated public reads, bounded below the source worker's lease."""
 
@@ -202,7 +206,7 @@ class _PublicRead:
         if delay:
             time.sleep(delay)
 
-    def body(self, url: str, params: dict | None = None) -> bytes:
+    def body(self, url: str, params: dict | None = None, *, expected_redirect: str | None = None) -> bytes:
         for attempt in range(SMARTRECRUITERS_READ_ATTEMPTS):
             self._wait()
             self.next_request_at = time.monotonic() + SMARTRECRUITERS_READ_INTERVAL
@@ -215,6 +219,11 @@ class _PublicRead:
             delay = 0.5 * (attempt + 1)
             try:
                 with closing(self.client.send(request, stream=True, auth=None, follow_redirects=False)) as response:
+                    if (response.status_code == 302 and expected_redirect is not None
+                            and response.headers.get("Location") == expected_redirect):
+                        # Only the caller's fixed vendor/account path is accepted.
+                        # Raising exits/closes this response before the next GET.
+                        raise _VerifiedPublicRedirect
                     if response.status_code == 404:
                         raise ConnectorError("posting_or_source_closed", safe_to_retry=False)
                     if response.status_code != 200:
@@ -251,9 +260,15 @@ class _PublicRead:
         raise ConnectorError("source_unavailable")
 
 
-    def get(self, url: str, params: dict | None = None) -> dict:
+    def get(self, url: str, params: dict | None = None, *, expected_redirect: str | None = None) -> dict:
         try:
-            data = json.loads(self.body(url, params))
+            try:
+                body = self.body(url, params, expected_redirect=expected_redirect)
+            except _VerifiedPublicRedirect:
+                assert expected_redirect is not None
+                # Same reader/deadline/pacing and stripped credentials; no second hop.
+                body = self.body(expected_redirect)
+            data = json.loads(body)
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
             raise ConnectorError("invalid_source_payload") from exc
         if not isinstance(data, dict):
@@ -501,13 +516,17 @@ def _public_feed_rows(source: SourceContract, client: httpx.Client) -> list[dict
     reader = _PublicRead(client)
     params = {"details": "true"} if source.platform == "workable" else {"language": _feed_language(source)} if source.platform == "personio" else None
     endpoint = _endpoint(source)
+    # Workable's documented public URL now returns this exact account-scoped 302.
+    # Never enable generic redirects, guess a tenant, or enter its credentialed SPI.
+    redirect = (f"https://apply.workable.com/api/v1/widget/accounts/{source.board_token}?details=true"
+                if source.platform == "workable" else None)
     if source.platform == "personio":
         rows = _personio_rows(source, reader.body(endpoint, params))
         verification = _personio_rows(source, reader.body(endpoint, params))
     else:
-        data = reader.get(endpoint, params)
+        data = reader.get(endpoint, params, expected_redirect=redirect)
         rows = _complete_feed_collection(data, "jobs" if source.platform == "workable" else "data")
-        check = reader.get(endpoint, params)
+        check = reader.get(endpoint, params, expected_redirect=redirect)
         verification = _complete_feed_collection(check, "jobs" if source.platform == "workable" else "data")
     # These public endpoints document complete collections, not page traversal.
     # Reject any pagination indicators instead of guessing an undocumented API.

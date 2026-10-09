@@ -4,7 +4,8 @@ The reviewed disabled password-change component and actual MV3 runtime are integ
 into source. The combined local backend run passes **1,987 tests**, with zero failures,
 errors or skips; frontend **124 tests**, lint, types and production build pass. Companion
 checks pass **76 unit, 6 actual Chromium runtime/socket and 14 existing Chromium safety
-cases**. Production deployment, protected first connection and the full application
+cases**. All five exact `69fbc22` CI jobs pass, including an ordinary uninstrumented
+Linux backend run of **1,987 tests**. Production deployment, protected first connection and the full application
 service remain incomplete.
 
 ## Exact component review and local changes
@@ -20,7 +21,9 @@ fixture. Exhausted definite pre-commit ABORT retries produce UNKNOWN with no ori
 acknowledgement, no credential projection and no new-generation eligibility. Old sessions
 remain denied, the unrelated candidate remains usable and repeat execution is status
 only. Every original reset test/function/class AST is unchanged. CI now checks this test
-and runs the actual MV3 restart/failure suite.
+and runs the actual MV3 restart/failure suite. The added test has a separate independent
+review: its reproduction and two further actual native transaction probes pass, with zero
+skips. All original test AST and the six other reset source files were verified unchanged.
 
 ## Preserved failures and limits
 
@@ -31,7 +34,8 @@ The subsequent expanded full run passed with a privacy-safe diagnostic observer 
 the actual original methods. It records only phase/type classifications, never request
 bodies, passwords, hashes, tokens or session values. The initial failure remains an
 unresolved availability concern; no retry limit, assertion or production guard was weakened.
-The next exact remote CI must verify ordinary uninstrumented execution.
+The ordinary uninstrumented exact Linux CI also passes. This additional success does not
+explain or repair the earlier failure, which remains an open availability gate.
 
 The first local frontend build correctly refused a missing production NextAuth signing
 secret. A process-only synthetic build secret corrected the local environment; the final
@@ -51,8 +55,10 @@ connection. Device identity alone grants no application action, upload or submis
 
 The previous runtime integration has all five successful exact jobs at
 [`46274a5`](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37924962950),
-including 1,953 backend tests and repository history scanning. New source CI remains
-pending. The previous history scan's source-digest false positives and narrow correction
+including 1,953 backend tests and repository history scanning. The newer exact
+[`69fbc22` run](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37929696893)
+passes all five jobs, including 1,987 backend tests, frontend, security/container,
+cold-browser journey and browser companion. The previous history scan's source-digest false positives and narrow correction
 are preserved separately.
 
 Read-only production checks still observe backend `e7d8f2b` on API revision

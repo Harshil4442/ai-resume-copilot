@@ -1,5 +1,5 @@
 {
-  "status": "LOCAL_RESET_MV3_COMPONENT_INTEGRATION_VERIFIED_REMOTE_CI_PENDING",
+  "status": "RESET_MV3_COMPONENT_INTEGRATION_EXACT_CI_VERIFIED_PRODUCTION_PENDING",
   "base_commit": "46274a5ef6acc8c96eb9198fa306301a3274fe85",
   "reviews": [
     {
@@ -11,6 +11,17 @@
       "path": "/var/folders/ck/cyzkgt2d1yx6hzpsdflcg83c0000gn/T/hirewiz-mv3-ui-independent-20261009-o0pyuydd/independent-review.json",
       "sha256": "3f1aef76c4415d61f9040a8753b5f39fc543248d302ddddab04fb1e23e1c5c00",
       "status": "CLEAR_FOR_EXACT_DISABLED_MV3_RUNTIME_AND_WEBSITE_CONTRACT_COMPONENT_ONLY"
+    },
+    {
+      "path": "/var/folders/ck/cyzkgt2d1yx6hzpsdflcg83c0000gn/T/hirewiz-reset-abort-addendum-independent-20261009-ddgq8c5i/independent-review.json",
+      "sha256": "bf6007e029f970fd73a6c63c7afc19ade1e88e1917fa62598b8eca5a093cbd6a",
+      "manifest_sha256": "3ce56a54ec936cf2a13185e832aa6432543965b7f307b3a481a26ac3a86f2ea0",
+      "status": "CLEAR_FOR_EXACT_DISABLED_RESET_TEST_ADDENDUM_ONLY",
+      "reproduced": 1,
+      "independent": 2,
+      "skipped": 0,
+      "source_unchanged_original_ast": true,
+      "production": "HOLD"
     }
   ],
   "source_sha256": [
@@ -246,14 +257,60 @@
     "schema": "20261008_0009",
     "schema_scope": "Previously verified; not reread this checkpoint",
     "frontend": "06cc112278e94aadb358fbe347f5430e373c4eb1",
-    "frontend_scope": "Previously verified release; no new deployment"
+    "frontend_scope": "Previously verified release; no new deployment",
+    "latest_source_ci_is_not_deployment": true
   },
   "remaining_gates": [
-    "Ordinary uninstrumented exact Linux CI/container/contract scan",
     "Website R2 and private backend transport review",
     "Genuine protected challenge/signing/dispatch/activation/device join review and cold browser composition",
     "Reset availability/recovery and original-owner projection repair",
     "Production custody/credential retirement/monetary migration/schema/env/rollout",
     "Full permitted employer application flow, global coverage, resume fidelity, load and recovery requirements"
-  ]
+  ],
+  "current_runtime_ci": {
+    "headSha": "69fbc22fcc7020b7dac29b3be138c525818f6975",
+    "status": "completed",
+    "conclusion": "success",
+    "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37929696893",
+    "run_id": 37929696893,
+    "jobs": [
+      {
+        "name": "backend",
+        "status": "completed",
+        "conclusion": "success",
+        "databaseId": 113817107904
+      },
+      {
+        "name": "frontend",
+        "status": "completed",
+        "conclusion": "success",
+        "databaseId": 113817108081
+      },
+      {
+        "name": "security-and-container",
+        "status": "completed",
+        "conclusion": "success",
+        "databaseId": 113817108123
+      },
+      {
+        "name": "cold-browser-journey",
+        "status": "completed",
+        "conclusion": "success",
+        "databaseId": 113817108235
+      },
+      {
+        "name": "browser-companion",
+        "status": "completed",
+        "conclusion": "success",
+        "databaseId": 113817108372
+      }
+    ],
+    "backend_pass_lines": [
+      "1987 passed, 413 warnings in 546.66s (0:09:06)"
+    ],
+    "backend_log": {
+      "path": "/tmp/hirewiz-69fbc22-backend-ci-success-20261009.log",
+      "sha256": "699038058c2d0a9f223cc3186e8ec7e46939ae8ba0a2e18c9eb197842fa88be7"
+    }
+  }
 }

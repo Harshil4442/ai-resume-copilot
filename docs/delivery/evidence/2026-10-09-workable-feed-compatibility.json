@@ -1,0 +1,651 @@
+{
+  "status": "AUTHOR_WORKABLE_REDIRECT_FIX_AND_SOURCE_PROPOSALS_INDEPENDENT_REVIEW_PENDING",
+  "base_head": "69fbc22fcc7020b7dac29b3be138c525818f6975",
+  "runtime_source": [
+    {
+      "path": "backend/app/domains/employer/connectors.py",
+      "sha256": "371993562303794db9005294c6e8ce8edb57d6fd4b6c61ccb5d2d85c4e7d97dd"
+    },
+    {
+      "path": "backend/tests/test_employer_feed_adapters.py",
+      "sha256": "fc5a1ce0d7082f91830a464240d574d342c6ef1def471520cd25b131dd0c1bed"
+    }
+  ],
+  "public_feed_results": [
+    {
+      "employer": "Workable",
+      "platform": "workable",
+      "board_token": "careers",
+      "careers_url": "https://apply.workable.com/careers/",
+      "allowed_hosts": [
+        "www.workable.com",
+        "apply.workable.com",
+        "careers.workable.com"
+      ],
+      "verification_url": "https://www.workable.com/about",
+      "observed_utc": "2026-10-09T12:49:32.434702+00:00",
+      "method": "shipping adapter with exact bounded Workable redirect patch; no mock HTTP responses",
+      "submission_enabled": false,
+      "status": "SUPPORTED_FEED_SCAN_COMPLETE",
+      "normalized_jobs": 2,
+      "normalized_artifact": "workable-repaired-normalized-workable-careers.json",
+      "normalized_sha256": "a8085d1a1417e34b774b1f79726787522d8f817ca9a1faeaf34acf16ea3f6e1e",
+      "publication_dates_known": 2,
+      "sample": [
+        {
+          "external_id": "94F9E30E22",
+          "title": "Renewals Coordinator",
+          "location": "Athens, Greece",
+          "canonical_url": "https://apply.workable.com/j/94F9E30E22",
+          "apply_url": "https://apply.workable.com/j/94F9E30E22/apply",
+          "language": "und"
+        },
+        {
+          "external_id": "A3269A621A",
+          "title": "Senior Product Manager",
+          "location": "Athens, Attica, Greece",
+          "canonical_url": "https://apply.workable.com/j/A3269A621A",
+          "apply_url": "https://apply.workable.com/j/A3269A621A/apply",
+          "language": "und"
+        }
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "url": "https://www.workable.com/api/accounts/careers?details=true",
+          "observed_utc": "2026-10-09T12:49:32.573072+00:00",
+          "status_code": 302,
+          "location": "https://apply.workable.com/api/v1/widget/accounts/careers?details=true",
+          "content_type": "text/html; charset=UTF-8",
+          "artifact": "workable-repaired-response-0.bin",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "fully_consumed": false,
+          "digest_semantics": "raw HTTP entity bytes before content decompression"
+        },
+        {
+          "method": "GET",
+          "url": "https://apply.workable.com/api/v1/widget/accounts/careers?details=true",
+          "observed_utc": "2026-10-09T12:49:33.005314+00:00",
+          "status_code": 200,
+          "location": null,
+          "content_type": "application/json; charset=utf-8",
+          "artifact": "workable-repaired-response-1.bin",
+          "bytes": 4476,
+          "sha256": "09aa075446d926c1ddc317b8c4d030c2de05d66bba52d2148e339307e30abca0",
+          "fully_consumed": true,
+          "digest_semantics": "raw HTTP entity bytes before content decompression"
+        },
+        {
+          "method": "GET",
+          "url": "https://www.workable.com/api/accounts/careers?details=true",
+          "observed_utc": "2026-10-09T12:49:33.083421+00:00",
+          "status_code": 302,
+          "location": "https://apply.workable.com/api/v1/widget/accounts/careers?details=true",
+          "content_type": "text/html; charset=UTF-8",
+          "artifact": "workable-repaired-response-2.bin",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "fully_consumed": false,
+          "digest_semantics": "raw HTTP entity bytes before content decompression"
+        },
+        {
+          "method": "GET",
+          "url": "https://apply.workable.com/api/v1/widget/accounts/careers?details=true",
+          "observed_utc": "2026-10-09T12:49:33.479102+00:00",
+          "status_code": 200,
+          "location": null,
+          "content_type": "application/json; charset=utf-8",
+          "artifact": "workable-repaired-response-3.bin",
+          "bytes": 4476,
+          "sha256": "09aa075446d926c1ddc317b8c4d030c2de05d66bba52d2148e339307e30abca0",
+          "fully_consumed": true,
+          "digest_semantics": "raw HTTP entity bytes before content decompression"
+        }
+      ]
+    },
+    {
+      "employer": "Common App",
+      "platform": "workable",
+      "board_token": "commonapp",
+      "careers_url": "https://commonapp.workable.com/",
+      "allowed_hosts": [
+        "www.commonapp.org",
+        "commonapp.workable.com",
+        "apply.workable.com"
+      ],
+      "verification_url": "https://www.commonapp.org/careers/",
+      "observed_utc": "2026-10-09T12:49:33.481068+00:00",
+      "method": "shipping adapter with exact bounded Workable redirect patch; no mock HTTP responses",
+      "submission_enabled": false,
+      "status": "SUPPORTED_FEED_SCAN_COMPLETE",
+      "normalized_jobs": 4,
+      "normalized_artifact": "workable-repaired-normalized-workable-commonapp.json",
+      "normalized_sha256": "f37e84c71116e6fb6cf9fcd20c5d52d4e1c519f56471ac3259b700112afbfdb6",
+      "publication_dates_known": 4,
+      "sample": [
+        {
+          "external_id": "DDE2831CC6",
+          "title": "Analytics Engineer - U.S. Based Hybrid Opportunity",
+          "location": "Arlington, Virginia, United States",
+          "canonical_url": "https://apply.workable.com/j/DDE2831CC6",
+          "apply_url": "https://apply.workable.com/j/DDE2831CC6/apply",
+          "language": "und"
+        },
+        {
+          "external_id": "463B12C8E0",
+          "title": "Enterprise Risk & Compliance Manager - U.S. Based Remote Opportunity",
+          "location": "Arlington, Virginia, United States",
+          "canonical_url": "https://apply.workable.com/j/463B12C8E0",
+          "apply_url": "https://apply.workable.com/j/463B12C8E0/apply",
+          "language": "und"
+        },
+        {
+          "external_id": "911AAC78A4",
+          "title": "Senior Manager, Strategic Product Adoption - U.S. Based Remote Opportuni",
+          "location": "Arlington, Virginia, United States",
+          "canonical_url": "https://apply.workable.com/j/911AAC78A4",
+          "apply_url": "https://apply.workable.com/j/911AAC78A4/apply",
+          "language": "und"
+        }
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "url": "https://www.workable.com/api/accounts/commonapp?details=true",
+          "observed_utc": "2026-10-09T12:49:33.545448+00:00",
+          "status_code": 302,
+          "location": "https://apply.workable.com/api/v1/widget/accounts/commonapp?details=true",
+          "content_type": "text/html; charset=UTF-8",
+          "artifact": "workable-repaired-response-4.bin",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "fully_consumed": false,
+          "digest_semantics": "raw HTTP entity bytes before content decompression"
+        },
+        {
+          "method": "GET",
+          "url": "https://apply.workable.com/api/v1/widget/accounts/commonapp?details=true",
+          "observed_utc": "2026-10-09T12:49:34.042233+00:00",
+          "status_code": 200,
+          "location": null,
+          "content_type": "application/json; charset=utf-8",
+          "artifact": "workable-repaired-response-5.bin",
+          "bytes": 8354,
+          "sha256": "d67e185169566858114732adf04f9266bc1219ba1d6f028916509bda397e4518",
+          "fully_consumed": true,
+          "digest_semantics": "raw HTTP entity bytes before content decompression"
+        },
+        {
+          "method": "GET",
+          "url": "https://www.workable.com/api/accounts/commonapp?details=true",
+          "observed_utc": "2026-10-09T12:49:34.110971+00:00",
+          "status_code": 302,
+          "location": "https://apply.workable.com/api/v1/widget/accounts/commonapp?details=true",
+          "content_type": "text/html; charset=UTF-8",
+          "artifact": "workable-repaired-response-6.bin",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "fully_consumed": false,
+          "digest_semantics": "raw HTTP entity bytes before content decompression"
+        },
+        {
+          "method": "GET",
+          "url": "https://apply.workable.com/api/v1/widget/accounts/commonapp?details=true",
+          "observed_utc": "2026-10-09T12:49:34.561720+00:00",
+          "status_code": 200,
+          "location": null,
+          "content_type": "application/json; charset=utf-8",
+          "artifact": "workable-repaired-response-7.bin",
+          "bytes": 8354,
+          "sha256": "d67e185169566858114732adf04f9266bc1219ba1d6f028916509bda397e4518",
+          "fully_consumed": true,
+          "digest_semantics": "raw HTTP entity bytes before content decompression"
+        }
+      ]
+    },
+    {
+      "employer": "Pinpoint",
+      "platform": "pinpoint",
+      "board_token": "workwithus",
+      "careers_url": "https://workwithus.pinpointhq.com/",
+      "allowed_hosts": [
+        "www.pinpointhq.com",
+        "workwithus.pinpointhq.com"
+      ],
+      "verification_url": "https://www.pinpointhq.com/",
+      "observed_utc": "2026-10-09T12:44:49.487175+00:00",
+      "method": "unchanged shipping fetch_postings adapter",
+      "submission_enabled": false,
+      "status": "SUPPORTED_FEED_SCAN_COMPLETE",
+      "normalized_jobs": 3,
+      "normalized_artifact": "normalized-pinpoint-workwithus.json",
+      "normalized_sha256": "3ed4d54825ad5919ced9c4d90e3cd9b1d5f0fda0881e39625f24ddf74da8f4a9",
+      "publication_dates_known": 0,
+      "sample": [
+        {
+          "external_id": "559663",
+          "title": "Founding Legal Counsel",
+          "location": "Remote",
+          "canonical_url": "https://workwithus.pinpointhq.com/en/postings/ce6c9e5c-a2d3-42b0-a01e-9edeae315b04",
+          "apply_url": "https://workwithus.pinpointhq.com/en/postings/ce6c9e5c-a2d3-42b0-a01e-9edeae315b04",
+          "language": "en"
+        },
+        {
+          "external_id": "567495",
+          "title": "Enterprise Implementation Manager",
+          "location": "United Kingdom",
+          "canonical_url": "https://workwithus.pinpointhq.com/en/postings/8fa6a0e0-0beb-4233-8ab0-409fe6bfccb1",
+          "apply_url": "https://workwithus.pinpointhq.com/en/postings/8fa6a0e0-0beb-4233-8ab0-409fe6bfccb1",
+          "language": "en"
+        },
+        {
+          "external_id": "591998",
+          "title": "Staff Product Designer",
+          "location": "Remote",
+          "canonical_url": "https://workwithus.pinpointhq.com/en/postings/fa79e602-e5a1-4ee7-9cee-3bb2a13eb20a",
+          "apply_url": "https://workwithus.pinpointhq.com/en/postings/fa79e602-e5a1-4ee7-9cee-3bb2a13eb20a",
+          "language": "en"
+        }
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "url": "https://workwithus.pinpointhq.com/en/postings.json",
+          "observed_utc": "2026-10-09T12:44:50.292590+00:00",
+          "status_code": 200,
+          "location": null,
+          "content_type": "application/json; charset=utf-8",
+          "artifact": "feed-response-4.bin",
+          "bytes": 31692,
+          "sha256": "d1dcb5cac0632d71c055207d635ae46dc2957dc0f7bc1d4b4cf12bf4029be31c",
+          "fully_consumed": true,
+          "digest_semantics": "raw HTTP entity bytes before content decompression"
+        },
+        {
+          "method": "GET",
+          "url": "https://workwithus.pinpointhq.com/en/postings.json",
+          "observed_utc": "2026-10-09T12:44:50.778802+00:00",
+          "status_code": 200,
+          "location": null,
+          "content_type": "application/json; charset=utf-8",
+          "artifact": "feed-response-5.bin",
+          "bytes": 31692,
+          "sha256": "d1dcb5cac0632d71c055207d635ae46dc2957dc0f7bc1d4b4cf12bf4029be31c",
+          "fully_consumed": true,
+          "digest_semantics": "raw HTTP entity bytes before content decompression"
+        }
+      ]
+    }
+  ],
+  "origin_proofs": [
+    {
+      "initial_url": "https://www.workable.com/about",
+      "observed_utc": "2026-10-09T12:42:18.199102+00:00",
+      "method": "GET",
+      "status_code": 200,
+      "final_url": "https://www.workable.com/about",
+      "redirects": [],
+      "content_type": "text/html",
+      "bytes": 97174,
+      "sha256": "c5ba09e7b18d560010e2b4e0b3970098c3a3fd88ce4dbebe41eaa2c3a80ed990",
+      "observed_career_links": [
+        "https://apply.workable.com/careers",
+        "https://chatgpt.com/?q=I%E2%80%99m%20a%20recruiter%20%2F%20HR%20professional%20trying%20to%20learn%20about%20Workable.%20Can%20you%20explain%20what%20it%20is%2C%20what%20it%E2%80%99s%20mainly%20used%20for%2C%20and%20what%20kinds%20of%20companies%20or%20teams%20usually%20get%20the%20most%20value%20from%20it%3F",
+        "https://claude.ai/new?q=I%E2%80%99m%20a%20recruiter%20%2F%20HR%20professional%20trying%20to%20learn%20about%20Workable.%20Can%20you%20explain%20what%20it%20is%2C%20what%20it%E2%80%99s%20mainly%20used%20for%2C%20and%20what%20kinds%20of%20companies%20or%20teams%20usually%20get%20the%20most%20value%20from%20it%3F",
+        "https://gemini.google.com/app?q=I%E2%80%99m%20a%20recruiter%20%2F%20HR%20professional%20trying%20to%20learn%20about%20Workable.%20Can%20you%20explain%20what%20it%20is%2C%20what%20it%E2%80%99s%20mainly%20used%20for%2C%20and%20what%20kinds%20of%20companies%20or%20teams%20usually%20get%20the%20most%20value%20from%20it%3F",
+        "https://get.workable.com",
+        "https://get.workable.com/awards",
+        "https://get.workable.com/hubfs/coded-files/cookie-banner-min.css",
+        "https://help.workable.com",
+        "https://itunes.apple.com/us/app/workablehr/id1164841670?ls=1&mt=8",
+        "https://jobs.workable.com",
+        "https://jobs.workable.com/",
+        "https://partners.workable.com",
+        "https://play.google.com/store/apps/details?id=com.workable.ats",
+        "https://resources.workable.com",
+        "https://resources.workable.com/backstage-at-workable/",
+        "https://workable.statuspage.io/",
+        "https://www.facebook.com/workable",
+        "https://www.instagram.com/workable/",
+        "https://www.linkedin.com/company/workable-software",
+        "https://www.perplexity.ai/search?q=I%E2%80%99m%20a%20recruiter%20%2F%20HR%20professional%20trying%20to%20learn%20about%20Workable.%20Can%20you%20explain%20what%20it%20is%2C%20what%20it%E2%80%99s%20mainly%20used%20for%2C%20and%20what%20kinds%20of%20companies%20or%20teams%20usually%20get%20the%20most%20value%20from%20it%3F",
+        "https://www.workable.com/about",
+        "https://www.workable.com/static/android-chrome-192x192.png",
+        "https://www.workable.com/static/android-chrome-512x512.png",
+        "https://www.workable.com/static/apple-touch-icon.png",
+        "https://www.workable.com/static/favicon-16x16.png",
+        "https://www.workable.com/static/favicon-32x32.png",
+        "https://www.workable.com/static/favicon-48x48.png",
+        "https://www.workable.com/static/favicon-64x64.png",
+        "https://www.workable.com/static/favicon.ico",
+        "https://www.workable.com/static/favicon.svg",
+        "https://www.workable.com/static/safari-pinned-tab.svg",
+        "https://www.workable.com/workable-ai",
+        "https://www.workable.com/workable-data-selling-CCPA-policy",
+        "https://www.youtube.com/@WorkableSoftware",
+        "https://x.com/i/grok?text=I%E2%80%99m%20a%20recruiter%20%2F%20HR%20professional%20trying%20to%20learn%20about%20Workable.%20Can%20you%20explain%20what%20it%20is%2C%20what%20it%E2%80%99s%20mainly%20used%20for%2C%20and%20what%20kinds%20of%20companies%20or%20teams%20usually%20get%20the%20most%20value%20from%20it%3F",
+        "https://x.com/workable"
+      ],
+      "literal_ats_references": [
+        "https://apply.workable.com/careers",
+        "https://get.workable.com",
+        "https://get.workable.com/hubfs/coded-files/cookie-banner-min.css",
+        "https://help.workable.com",
+        "https://id.workable.com",
+        "https://id.workabledemo.com",
+        "https://jobs.workable.com",
+        "https://jobs.workable.com/",
+        "https://partners.workable.com",
+        "https://resources.workable.com",
+        "https://resources.workable.com/backstage-at-workable/",
+        "https://shield.shared.workablestaging.com",
+        "https://workablestg10-shield.dev-apps.workableops.net",
+        "https://www.workable.com",
+        "https://www.workable.com/about",
+        "https://www.workable.com/static/images/workable_meta_image.jpg?v=ef01a5b39b9363d3b07f63fc46338c82",
+        "https://x.com/workable"
+      ]
+    },
+    {
+      "initial_url": "https://www.pinpointhq.com/",
+      "observed_utc": "2026-10-09T12:42:19.135422+00:00",
+      "method": "GET",
+      "status_code": 200,
+      "final_url": "https://www.pinpointhq.com/",
+      "redirects": [],
+      "content_type": "text/html; charset=utf-8",
+      "bytes": 352012,
+      "sha256": "ef03fa811ff08a1382e323be8b08cfed0c9649cd611abeca00e6f1083d87bc4e",
+      "observed_career_links": [
+        "https://app.pinpointhq.com/users/sign_in",
+        "https://cdn.prod.website-files.com/69a5adfb47c38980c6216884/69ba80801625bc9868b07d6d_pinpoint-assets-3x2-navigation-templates.webp",
+        "https://cdn.prod.website-files.com/69a5adfb47c38980c6216884/69ba808022af86b2ccba4c84_pinpoint-assets-3x2-navigation-product-releases.webp",
+        "https://cdn.prod.website-files.com/69a5adfb47c38980c6216884/69ba80807b4ffd89ad451164_pinpoint-assets-3x2-navigation-customer-stories.webp",
+        "https://cdn.prod.website-files.com/69a5adfb47c38980c6216884/69ba8080d64d1f7544d8fd8b_pinpoint-assets-3x2-navigation-events.webp",
+        "https://cdn.prod.website-files.com/69a5adfb47c38980c6216884/69ba8080eb8a1e31ca8761f6_pinpoint-assets-3x2-navigation-guides.webp",
+        "https://cdn.prod.website-files.com/69a5adfb47c38980c6216884/69ba81c75b443dd3d2b85cfc_pinpoint-assets-3x2-resource-03.avif",
+        "https://cdn.prod.website-files.com/69a5adfb47c38980c6216884/69ba9fc88ad195135c0cc9ca_Branded%20Careers%20Site.svg",
+        "https://cdn.prod.website-files.com/69a5adfb47c38980c6216884/69babea1cfb1a0b6c0e3c6a0_Early%20Careers.svg",
+        "https://cdn.prod.website-files.com/69a5adfb47c38980c6216884/69d4e6545575f220da92bd10_Pinpoint%20Logo.svg",
+        "https://cdn.prod.website-files.com/69a5adfb47c38980c6216884/69f065548b6334d9ea8fc857_Locations%20Jobs%20%F0%9F%9F%A0.svg",
+        "https://cdn.prod.website-files.com/69a5adfb47c38980c6216884/69f0b5faa01dd6c1e1b45c97_pinpoint-content-image-support.avif",
+        "https://cdn.prod.website-files.com/69a5adfb47c38980c6216884/69f87be94c609aaad612120f_Pinpoint%20Platform%20AI.svg",
+        "https://cdn.prod.website-files.com/69a5adfb47c38980c6216884/css/pinpointhq.shared.f4ad1a8db.css",
+        "https://cdn.prod.website-files.com/69a5adfb47c38980c6216884/js/pinpointhq.711204da.249b0a0303cea267.js",
+        "https://help.pinpoint.support/en/",
+        "https://status.pinpoint.support/",
+        "https://trends.pinpointhq.com/",
+        "https://workwithus.pinpointhq.com/",
+        "https://www.linkedin.com/company/pinpointhq/",
+        "https://www.pinpointhq.com",
+        "https://www.pinpointhq.com/",
+        "https://www.pinpointhq.com/case-studies/",
+        "https://www.pinpointhq.com/contact/pinpoint-demo",
+        "https://www.pinpointhq.com/events/",
+        "https://www.pinpointhq.com/features/careers-website",
+        "https://www.pinpointhq.com/guides/",
+        "https://www.pinpointhq.com/how-to-series",
+        "https://www.pinpointhq.com/insights/",
+        "https://www.pinpointhq.com/insights/pinpoint-iso-42001-certified",
+        "https://www.pinpointhq.com/news/",
+        "https://www.pinpointhq.com/pinpoint-ai",
+        "https://www.pinpointhq.com/pinpoint-demo-video-b",
+        "https://www.pinpointhq.com/product-releases",
+        "https://www.pinpointhq.com/security-privacy/pinpoint-ai-approach",
+        "https://www.pinpointhq.com/tools/",
+        "https://www.pinpointhq.com/use-cases/ats-early-careers-hiring"
+      ],
+      "literal_ats_references": [
+        "https://app.pinpointhq.com/users/sign_in",
+        "https://cdn.prod.website-files.com/69a5adfb47c38980c6216884/69ba80801625bc9868b07d6d_pinpoint-assets-3x2-navigation-templates-p-500.webp",
+        "https://cdn.prod.website-files.com/69a5adfb47c38980c6216884/69ba80801625bc9868b07d6d_pinpoint-assets-3x2-navigation-templates.webp",
+        "https://cdn.prod.website-files.com/69a5adfb47c38980c6216884/69ba808022af86b2ccba4c84_pinpoint-assets-3x2-navigation-product-releases-p-500.webp",
+        "https://cdn.prod.website-files.com/69a5adfb47c38980c6216884/69ba808022af86b2ccba4c84_pinpoint-assets-3x2-navigation-product-releases.webp",
+        "https://cdn.prod.website-files.com/69a5adfb47c38980c6216884/69ba80807b4ffd89ad451164_pinpoint-assets-3x2-navigation-customer-stories-p-500.webp",
+        "https://cdn.prod.website-files.com/69a5adfb47c38980c6216884/69ba80807b4ffd89ad451164_pinpoint-assets-3x2-navigation-customer-stories.webp",
+        "https://cdn.prod.website-files.com/69a5adfb47c38980c6216884/69ba8080d64d1f7544d8fd8b_pinpoint-assets-3x2-navigation-events-p-500.webp",
+        "https://cdn.prod.website-files.com/69a5adfb47c38980c6216884/69ba8080d64d1f7544d8fd8b_pinpoint-assets-3x2-navigation-events.webp",
+        "https://cdn.prod.website-files.com/69a5adfb47c38980c6216884/69ba8080eb8a1e31ca8761f6_pinpoint-assets-3x2-navigation-guides-p-500.webp",
+        "https://cdn.prod.website-files.com/69a5adfb47c38980c6216884/69ba8080eb8a1e31ca8761f6_pinpoint-assets-3x2-navigation-guides.webp",
+        "https://cdn.prod.website-files.com/69a5adfb47c38980c6216884/69ba81c75b443dd3d2b85cfc_pinpoint-assets-3x2-resource-03-p-500.avif",
+        "https://cdn.prod.website-files.com/69a5adfb47c38980c6216884/69ba81c75b443dd3d2b85cfc_pinpoint-assets-3x2-resource-03-p-800.avif",
+        "https://cdn.prod.website-files.com/69a5adfb47c38980c6216884/69ba81c75b443dd3d2b85cfc_pinpoint-assets-3x2-resource-03.avif",
+        "https://cdn.prod.website-files.com/69a5adfb47c38980c6216884/69f0b5faa01dd6c1e1b45c97_pinpoint-content-image-support-p-1080.avif",
+        "https://cdn.prod.website-files.com/69a5adfb47c38980c6216884/69f0b5faa01dd6c1e1b45c97_pinpoint-content-image-support-p-1600.avif",
+        "https://cdn.prod.website-files.com/69a5adfb47c38980c6216884/69f0b5faa01dd6c1e1b45c97_pinpoint-content-image-support-p-500.avif",
+        "https://cdn.prod.website-files.com/69a5adfb47c38980c6216884/69f0b5faa01dd6c1e1b45c97_pinpoint-content-image-support-p-800.avif",
+        "https://cdn.prod.website-files.com/69a5adfb47c38980c6216884/69f0b5faa01dd6c1e1b45c97_pinpoint-content-image-support.avif",
+        "https://cdn.prod.website-files.com/69a5adfb47c38980c6216884/69f8bb2da799564c3177e5e9_pinpoint%20open%20graph.avif",
+        "https://cdn.prod.website-files.com/69a5adfb47c38980c6216884/6aabc3c4bb95ba5839f50afe_pinpoint_platform-17SEP2026.riv",
+        "https://cdn.prod.website-files.com/69a5adfb47c38980c6216884/css/pinpointhq.shared.f4ad1a8db.css",
+        "https://cdn.prod.website-files.com/69a5adfb47c38980c6216884/js/pinpointhq.711204da.249b0a0303cea267.js",
+        "https://help.pinpoint.support/en/",
+        "https://status.pinpoint.support/",
+        "https://trends.pinpointhq.com/",
+        "https://workwithus.pinpointhq.com/",
+        "https://www.linkedin.com/company/pinpoint-ats/",
+        "https://www.linkedin.com/company/pinpointhq/",
+        "https://www.pinpointhq.com",
+        "https://www.pinpointhq.com/",
+        "https://www.pinpointhq.com/#organization",
+        "https://www.pinpointhq.com/#website",
+        "https://www.pinpointhq.com/case-studies/",
+        "https://www.pinpointhq.com/events/",
+        "https://www.pinpointhq.com/features/mcp",
+        "https://www.pinpointhq.com/features/mcp#webpage",
+        "https://www.pinpointhq.com/guides/",
+        "https://www.pinpointhq.com/how-to-series",
+        "https://www.pinpointhq.com/insights/",
+        "https://www.pinpointhq.com/news/",
+        "https://www.pinpointhq.com/product-releases",
+        "https://www.pinpointhq.com/tools/"
+      ]
+    },
+    {
+      "initial_url": "https://www.commonapp.org/careers",
+      "observed_utc": "2026-10-09T12:43:33.673227+00:00",
+      "method": "GET",
+      "status_code": 200,
+      "final_url": "https://www.commonapp.org/careers/",
+      "redirects": [
+        {
+          "status": 301,
+          "url": "https://www.commonapp.org/careers",
+          "location": "/careers/"
+        }
+      ],
+      "bytes": 507790,
+      "sha256": "c3e0683d216a6502535c628a7ad5763f16575e0b9e49b2d76cad7c0e88949725",
+      "career_references": [
+        "https://apply.commonapp.org/createaccount",
+        "https://commonapp.workable.com/",
+        "https://www.commonapp.org/apply",
+        "https://www.commonapp.org/apply/essay-prompts",
+        "https://www.commonapp.org/apply/student-guides-and-resources",
+        "https://www.commonapp.org/careers",
+        "https://www.commonapp.org/page-data/careers/page-data.json",
+        "https://www.commonapp.org/static/careers-1-7f528565ad7b9574507ef0e7db932370.svg",
+        "https://www.commonapp.org/static/careers-3-0fd9e1d251a9c470c7c460207ef13f1d.svg"
+      ],
+      "literal_personio_references": []
+    }
+  ],
+  "deferrals": [
+    {
+      "employer": "Innerspace",
+      "platform": "personio",
+      "board_token": "innerspace",
+      "careers_url": "https://innerspace.jobs.personio.com/?language=en",
+      "allowed_hosts": [
+        "www.innerspace.eu",
+        "innerspace.jobs.personio.com"
+      ],
+      "verification_url": "https://www.innerspace.eu/careers/",
+      "observed_utc": "2026-10-09T12:44:48.276786+00:00",
+      "method": "unchanged shipping fetch_postings adapter",
+      "submission_enabled": false,
+      "status": "DEFERRED_ADAPTER_OR_FEED_GAP",
+      "failure_code": "posting_or_source_closed",
+      "requests": [
+        {
+          "method": "GET",
+          "url": "https://innerspace.jobs.personio.com/xml?language=en",
+          "observed_utc": "2026-10-09T12:44:48.857713+00:00",
+          "status_code": 404,
+          "location": null,
+          "content_type": "text/html; charset=utf-8",
+          "artifact": "feed-response-0.bin",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "fully_consumed": false,
+          "digest_semantics": "raw HTTP entity bytes before content decompression"
+        }
+      ]
+    },
+    {
+      "employer": "entero AG",
+      "platform": "personio",
+      "board_token": "entero",
+      "careers_url": "https://entero.jobs.personio.de/?language=de",
+      "allowed_hosts": [
+        "www.entero.de",
+        "entero.jobs.personio.de"
+      ],
+      "verification_url": "https://www.entero.de/stellenangebote/salesforce-developer-mwd/",
+      "observed_utc": "2026-10-09T12:44:48.858920+00:00",
+      "method": "unchanged shipping fetch_postings adapter",
+      "submission_enabled": false,
+      "status": "DEFERRED_ADAPTER_OR_FEED_GAP",
+      "failure_code": "posting_or_source_closed",
+      "requests": [
+        {
+          "method": "GET",
+          "url": "https://entero.jobs.personio.de/xml?language=de",
+          "observed_utc": "2026-10-09T12:44:49.357826+00:00",
+          "status_code": 404,
+          "location": null,
+          "content_type": "text/html; charset=utf-8",
+          "artifact": "feed-response-1.bin",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "fully_consumed": false,
+          "digest_semantics": "raw HTTP entity bytes before content decompression"
+        }
+      ]
+    }
+  ],
+  "preserved_initial_workable_failures": [
+    {
+      "employer": "Workable",
+      "platform": "workable",
+      "board_token": "careers",
+      "careers_url": "https://apply.workable.com/careers/",
+      "allowed_hosts": [
+        "www.workable.com",
+        "apply.workable.com",
+        "careers.workable.com"
+      ],
+      "verification_url": "https://www.workable.com/about",
+      "observed_utc": "2026-10-09T12:44:49.359158+00:00",
+      "method": "unchanged shipping fetch_postings adapter",
+      "submission_enabled": false,
+      "status": "DEFERRED_ADAPTER_OR_FEED_GAP",
+      "failure_code": "source_http_302",
+      "requests": [
+        {
+          "method": "GET",
+          "url": "https://www.workable.com/api/accounts/careers?details=true",
+          "observed_utc": "2026-10-09T12:44:49.415851+00:00",
+          "status_code": 302,
+          "location": "https://apply.workable.com/api/v1/widget/accounts/careers?details=true",
+          "content_type": "text/html; charset=UTF-8",
+          "artifact": "feed-response-2.bin",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "fully_consumed": false,
+          "digest_semantics": "raw HTTP entity bytes before content decompression"
+        }
+      ]
+    },
+    {
+      "employer": "Common App",
+      "platform": "workable",
+      "board_token": "commonapp",
+      "careers_url": "https://commonapp.workable.com/",
+      "allowed_hosts": [
+        "www.commonapp.org",
+        "commonapp.workable.com",
+        "apply.workable.com"
+      ],
+      "verification_url": "https://www.commonapp.org/careers/",
+      "observed_utc": "2026-10-09T12:44:49.416896+00:00",
+      "method": "unchanged shipping fetch_postings adapter",
+      "submission_enabled": false,
+      "status": "DEFERRED_ADAPTER_OR_FEED_GAP",
+      "failure_code": "source_http_302",
+      "requests": [
+        {
+          "method": "GET",
+          "url": "https://www.workable.com/api/accounts/commonapp?details=true",
+          "observed_utc": "2026-10-09T12:44:49.485803+00:00",
+          "status_code": 302,
+          "location": "https://apply.workable.com/api/v1/widget/accounts/commonapp?details=true",
+          "content_type": "text/html; charset=UTF-8",
+          "artifact": "feed-response-3.bin",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "fully_consumed": false,
+          "digest_semantics": "raw HTTP entity bytes before content decompression"
+        }
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "scope": "author",
+      "path": "/tmp/hirewiz-workable-feed-author-20261009.xml",
+      "sha256": "87ff0e5595263e5d632d69c5de7895bc6b2921bb18a473902cd257df7af1b2a5",
+      "tests": 69,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "scope": "affected",
+      "path": "/tmp/hirewiz-workable-feed-affected-20261009.xml",
+      "sha256": "c3d7db3ca447f2b9ed31ae0cb1ba5d57280c78ca90cfa21b32908dd5beafea7b",
+      "tests": 123,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 19
+    },
+    {
+      "scope": "affected_configured_actual_postgresql_redis",
+      "path": "/tmp/hirewiz-workable-feed-affected-real-20261009.xml",
+      "sha256": "5687cc2d0c96140fe68dffae053c202f1581faec80f2aaa2034ac565300f7287",
+      "tests": 123,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  ],
+  "static": {
+    "ruff": "PASS",
+    "configured_mypy": "PASS (1 file)"
+  },
+  "proposal_source_count": 3,
+  "observation_jobs": 9,
+  "production_enrollment": false,
+  "automatic_submission": false,
+  "ai_calls": 0,
+  "public_evidence_directory": "/var/folders/ck/cyzkgt2d1yx6hzpsdflcg83c0000gn/T/hirewiz-public-origin-research-20261009-swchar1s",
+  "limits": [
+    "Author checks only; independent review and current exact CI are pending.",
+    "Snapshot counts cover these feeds only; no worldwide or India recall measurement.",
+    "No source-use or employer submission grant obtained.",
+    "Streams rejected before body consumption have empty partial raw artifacts, not hashes of complete error pages.",
+    "Initial two Workable source_http_302 observations remain preserved; fixed reads include exact legacy302 and destination200, twice per complete scan."
+  ],
+  "initial_affected_skips_reason": "Actual disposable PostgreSQL/Redis environment missing; original 104 passed/19 skipped XML retained. Configured rerun 123 passed/zero skips."
+}

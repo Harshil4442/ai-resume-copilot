@@ -83,6 +83,94 @@ def test_workable_public_collection_has_scoped_get_details_and_publication():
     assert "Python services" in row["description"] and "bad()" not in row["description"]
 
 
+def test_workable_exact_public_redirect_closes_before_sanitized_target_read():
+    calls, closed = [], []
+    legacy = "https://www.workable.com/api/accounts/example?details=true"
+    target = "https://apply.workable.com/api/v1/widget/accounts/example?details=true"
+
+    class RedirectStream(httpx.SyncByteStream):
+        def __iter__(self):
+            pytest.fail("Redirect bodies must not be read")
+            yield b""
+
+        def close(self):
+            closed.append(True)
+
+    def handler(request):
+        calls.append(request)
+        assert not any(h in request.headers for h in ("Authorization", "Cookie", "X-SmartToken"))
+        if str(request.url) == legacy:
+            return httpx.Response(302, headers={"Location": target}, stream=RedirectStream())
+        assert str(request.url) == target and len(closed) == len(calls) // 2
+        return httpx.Response(200, json=workable())
+
+    with httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=True,
+                      headers={"Authorization": "Bearer synthetic", "Cookie": "synthetic=1",
+                               "X-SmartToken": "synthetic"}, auth=("synthetic", "synthetic")) as client:
+        row = connectors.fetch_postings(source("workable"), client)[0]
+    assert [str(r.url) for r in calls] == [legacy, target, legacy, target]
+    assert row["external_id"] == "ABC123" and len(closed) == 2
+
+
+@pytest.mark.parametrize("location", [
+    "https://untrusted.example/api/v1/widget/accounts/example?details=true",
+    "http://apply.workable.com/api/v1/widget/accounts/example?details=true",
+    "https://apply.workable.com/api/v1/widget/accounts/another?details=true",
+    "https://apply.workable.com/api/v1/widget/accounts/example?details=false",
+    "https://apply.workable.com/api/v1/widget/accounts/example?details=true&extra=1",
+    "https://apply.workable.com/api/v1/widget/accounts/example?details=true#fragment",
+    "https://apply.workable.com:444/api/v1/widget/accounts/example?details=true",
+    "https://user@apply.workable.com/api/v1/widget/accounts/example?details=true",
+    "https://example.workable.com/spi/v3/jobs",
+    "/api/v1/widget/accounts/example?details=true",
+    "https://apply.workable.com/api/v1/widget/accounts/%65xample?details=true",
+    "https://apply.workable.com/api/v1/widget/accounts/example/../another?details=true",
+])
+def test_workable_redirect_cannot_change_account_host_path_query_or_credentials(location):
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        assert len(calls) == 1
+        return httpx.Response(302, headers={"Location": location})
+
+    with pytest.raises(connectors.ConnectorError, match="source_http_302"):
+        scan("workable", handler=handler)
+    assert len(calls) == 1
+
+
+def test_workable_public_redirect_cannot_follow_a_second_hop():
+    calls = []
+    target = "https://apply.workable.com/api/v1/widget/accounts/example?details=true"
+
+    def handler(request):
+        calls.append(request)
+        assert len(calls) <= 2
+        return httpx.Response(302, headers={"Location": target})
+
+    with pytest.raises(connectors.ConnectorError, match="source_http_302"):
+        scan("workable", handler=handler)
+    assert len(calls) == 2
+
+
+def test_workable_redirected_second_snapshot_change_invalidates_whole_scan():
+    reads = []
+    target = "https://apply.workable.com/api/v1/widget/accounts/example?details=true"
+
+    def handler(request):
+        if request.url.host == "www.workable.com":
+            return httpx.Response(302, headers={"Location": target})
+        reads.append(request)
+        data = workable()
+        if len(reads) == 2:
+            data["jobs"][0]["description"] = "Changed requirements."
+        return httpx.Response(200, json=data)
+
+    with pytest.raises(connectors.ConnectorError, match="source_changed_during_scan"):
+        scan("workable", handler=handler)
+    assert len(reads) == 2
+
+
 def test_personio_com_locale_native_text_identity_and_unknown_publication():
     calls = []
     def handler(request):
