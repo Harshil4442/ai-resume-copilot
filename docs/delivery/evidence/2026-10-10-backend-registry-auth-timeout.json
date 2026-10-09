@@ -1,0 +1,145 @@
+{
+  "created_at_utc": "2026-10-09T21:42:05.091281+00:00",
+  "sha": "c26ef1a18ddfd80b2749951e4c1aa93712394516",
+  "tree": "158b1f06020387c12bedda42e78c4ddcfb37d888",
+  "repository": "Harshil4442/ai-resume-copilot",
+  "run_id": 37993930130,
+  "attempt": 1,
+  "run_url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37993930130",
+  "workflow_path": ".github/workflows/ci.yml",
+  "conclusion": "failure",
+  "actual_checkout_count": 5,
+  "all_five_actual_checkout_outputs_verified": true,
+  "PostgreSQL_initialization": [
+    {
+      "job": "backend",
+      "image": "public.ecr.aws/docker/library/postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24",
+      "native_pull_digest": "sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24",
+      "healthy": true,
+      "evidence": [
+        {
+          "line": 52,
+          "text": "2026-10-09T21:31:11.6929423Z ##[command]/usr/bin/docker pull public.ecr.aws/docker/library/postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24"
+        },
+        {
+          "line": 96,
+          "text": "2026-10-09T21:31:17.3849942Z Digest: sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24"
+        },
+        {
+          "line": 118,
+          "text": "2026-10-09T21:31:23.5470472Z postgres service is healthy."
+        }
+      ]
+    },
+    {
+      "job": "cold-browser-journey",
+      "image": "public.ecr.aws/docker/library/postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24",
+      "native_pull_digest": "sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24",
+      "healthy": true,
+      "evidence": [
+        {
+          "line": 53,
+          "text": "2026-10-09T21:31:11.5405870Z ##[command]/usr/bin/docker pull public.ecr.aws/docker/library/postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24"
+        },
+        {
+          "line": 96,
+          "text": "2026-10-09T21:31:22.0825558Z Digest: sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24"
+        },
+        {
+          "line": 118,
+          "text": "2026-10-09T21:31:28.1188206Z postgres service is healthy."
+        }
+      ]
+    }
+  ],
+  "backend_runtime_cache_and_continuity": {
+    "configuration": "written and native dockerd validate output configuration OK",
+    "HUP_and_live_mirror_verifier": "executed successfully before failing prepull under bash -e",
+    "continuity": "before/after container ID, running state, PID and health equality check passed before prepull",
+    "immutable_debian_prepull": "failed registry auth endpoint timeout",
+    "compiler_attestation": "not reached",
+    "backend_tests": "not reached"
+  },
+  "successful_lanes": {
+    "frontend": {
+      "unit_tests_passed": 240,
+      "unit_files_passed": 22,
+      "responsive_accessibility_cases_passed": 215
+    },
+    "browser-companion": {
+      "batches": [
+        76,
+        5,
+        14,
+        6,
+        35
+      ],
+      "counts": {
+        "tests": 136,
+        "pass": 136,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    },
+    "security-and-container": {
+      "full_history_commits_scanned": 194,
+      "leaks_found": 0,
+      "production_container_build": "success"
+    },
+    "cold-browser-journey": {
+      "harness_tests_passed": 14,
+      "native_artifact_id": 11646830615,
+      "native_artifact_zip_digest_verified": "sha256:6f84253fb472d3e3efdc25df3709ab2c0578de406176c62493e418fbc92819bb",
+      "summary_sha256": "7faabaa855408c0980b85b835031769ef785ae43fa99ba81e7f5da3ab417eaa5",
+      "source_bundle_sha256": "3790414fd5b4323e19d01c05f2c5580754c86c8f368eb6ece35662bf1c1d11e3",
+      "actual_disposable_FastAPI_Next_Chromium_SQL": true,
+      "production_proof": false,
+      "real_payment": false,
+      "real_employer_contact": false,
+      "sql_model_calls": 0,
+      "sql_analysis_runs": 0,
+      "AI_operation_debits": 0,
+      "bundle_analysis_grant": 2,
+      "analysis_balance_after_no_AI_work": 52,
+      "schema": "20261009_0013",
+      "final_status": "manual_handoff",
+      "automatic_application_charge": 0,
+      "employer_submit_receipt": null,
+      "five_widths": [
+        320,
+        390,
+        768,
+        1024,
+        1440
+      ],
+      "Axe_violations": 0,
+      "page_errors": 0,
+      "server_errors": 0,
+      "cleanup": {
+        "owned_processes_stopped": true,
+        "all_owned_groups_verified_stopped": true,
+        "own_schema_removed": true,
+        "owned_tls_private_key_removed": true,
+        "errors": []
+      }
+    }
+  },
+  "skip_distinction": "Successful frontend/browser/cold test evidence reports no skipped test cases. Backend compiler and full test steps were never reached and were skipped by its job failure. This is not a globally zero-skip or five-lane green run.",
+  "security_warning": "Existing dependency audit reported seven noncritical vulnerabilities (two moderate, five high); configured critical gate passed, no remediation claimed.",
+  "not_proved": [
+    "The original pinned Debian prepull, native TeX compiler build/attestation and full backend tests did not pass or execute.",
+    "This failed run cannot satisfy the release five-lane exact-source CI gate and is not production deployment/provider/fence proof."
+  ],
+  "mutations": "Read-only native GitHub metadata/job/artifact downloads and private evidence only. No rerun, source/shared edit, cloud/build/deployment/model/payment/employer action.",
+  "harness_note": "Initial metadata redirection used a nonexistent owned-directory suffix before any GitHub request; corrected immediately, with no file written or remote action.",
+  "schema_version": 1,
+  "independent_report_sha256": "0c1c659ccadf854c836d869a4f471ccefc474c7803dc3da087cef154461bad0e",
+  "original_artifact_manifest_sha256": "e1dd3ebeabe5a4e4bc186e20f20453712681a2c5e832ef242d9516f3830a94a7",
+  "failed_lane": "backend",
+  "failure_reason": "Existing immutable Debian prepull timed out awaiting headers from Docker Hub auth endpoint; compiler/native/backend tests not reached",
+  "historical_cache_miss_proved": false,
+  "full_five_lane_gate_passed": false,
+  "production_activation": false
+}

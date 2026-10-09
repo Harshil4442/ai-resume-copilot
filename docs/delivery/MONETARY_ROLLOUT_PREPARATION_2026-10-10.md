@@ -75,6 +75,21 @@ The [same-image PostgreSQL distribution repair](CI_POSTGRES_PUBLIC_DISTRIBUTION_
 requires its own exact new-head CI/image proof. Neither previous build is a deployment
 or a substitute for CI on the new source.
 
+The exact `c26ef1a` Git build completed successfully at 21:36 UTC;
+[its native proof](evidence/2026-10-10-native-git-postgres-repair-build.json) binds the
+separate source and image. Its [full CI attempt](evidence/2026-10-10-backend-registry-auth-timeout.json)
+verified all five source checkouts and both healthy PostgreSQL services. Security,
+frontend, companion and the connected no-AI browser/SQL journey passed. Backend
+passed cache reload and PostgreSQL continuity, then stopped at a Docker Hub
+authentication timeout during the immutable Debian pre-pull. Compiler/backend tests
+never ran; historical cache absence is not established.
+The [exact Debian/Redis distribution repair](CI_NATIVE_BASE_PUBLIC_DISTRIBUTION_2026-10-10.md)
+preserves both digests and all compiler guards. Its changed Dockerfile hash requires
+fresh compiler attestation and full new-head CI. Original failures remain recorded.
+Root [actual local ARM64 proof](evidence/2026-10-10-native-registry-repair-arm64.json)
+now verifies the new source hash and 41 scoped tests, including both actual compiler
+cases, with zero skips. It cannot replace hosted AMD64/full-backend verification.
+
 - [ ] Establish whether old credentials are shared with other applications.
 - [ ] Complete native provider/issuer and database writer retirement, with new
   restricted identities and exact secret versions.

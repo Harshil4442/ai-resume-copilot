@@ -105,7 +105,7 @@ def test_workflow_preserves_required_exact_source_compiler_and_security_contract
     assert '"$postgres_before" = "$postgres_after"' in cache_step
     assert '"true healthy"' in cache_step and "job.services.postgres.id" in cache_step
     assert "|| true" not in cache_step and "continue-on-error" not in cache_step
-    assert "docker pull --platform linux/amd64 debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587" in cache_step
+    assert "docker pull --platform linux/amd64 public.ecr.aws/docker/library/debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587" in cache_step
     security = workflow.split("  security-and-container:\n", 1)[1].split("\n  browser-companion:", 1)[0]
     security_cache = security.split("      - name: Configure verified public cache", 1)[1].split("      - name:", 1)[0]
     for command in (
@@ -128,4 +128,4 @@ def test_workflow_preserves_required_exact_source_compiler_and_security_contract
     assert "scripts/native_tex_test_image.py" in workflow
     assert "--platform linux/amd64 --github-env" in workflow
     assert ".venv/bin/pytest -q" in workflow
-    assert (root / "infra/native-tex/Dockerfile").read_text().splitlines()[2] == "FROM debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587"
+    assert (root / "infra/native-tex/Dockerfile").read_text().splitlines()[2] == "FROM public.ecr.aws/docker/library/debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587"

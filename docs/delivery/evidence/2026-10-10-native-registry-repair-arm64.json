@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "scope": "Actual local ARM64 native compiler and scoped source/acquisition tests; not hosted AMD64 or production proof",
+  "base_head": "c26ef1a18ddfd80b2749951e4c1aa93712394516",
+  "reviewed_source_sha256": {
+    "Dockerfile": "fa796f995995c9dad57a078edc913034f37b097c528d2027d447dc9e90720be7",
+    "processor.py": "23bf30c70dbe4ea5778deea8b4101eddb71e427cab5174d2771b9328f7209188",
+    "service.py": "b2fa0b220bf8e78f799d816e55d337237cf90aa75a99963185601b48b90f111a"
+  },
+  "native_image": {
+    "image_id": "sha256:ef611cb87d0a216d84ddc9bf404cbcb725c950fc046f8d5adef2d83af3247c2d",
+    "platform": "linux/arm64",
+    "source_sha256": {
+      "Dockerfile": "fa796f995995c9dad57a078edc913034f37b097c528d2027d447dc9e90720be7",
+      "processor.py": "23bf30c70dbe4ea5778deea8b4101eddb71e427cab5174d2771b9328f7209188",
+      "service.py": "b2fa0b220bf8e78f799d816e55d337237cf90aa75a99963185601b48b90f111a"
+    },
+    "worker_sha256": {
+      "processor.py": "23bf30c70dbe4ea5778deea8b4101eddb71e427cab5174d2771b9328f7209188",
+      "service.py": "b2fa0b220bf8e78f799d816e55d337237cf90aa75a99963185601b48b90f111a"
+    }
+  },
+  "native_helper_sha256": "36fbdcec4c933922df4d622c1f10c77ef8c2728f7edfb691dbe40f8b732a92e2",
+  "tests_passed": 41,
+  "tests_skipped": 0,
+  "actual_image_binding_case_executed": true,
+  "actual_strict_umask_compile_case_executed": true,
+  "test_log_sha256": "e1cc623bcaf299ab33dc0f47a1de62222c2315a3941451656782a202549b9095",
+  "build_log_sha256": "fe909e472c1a04332f251d6883b660fdfcb79ce71568705c424178ab896756ad",
+  "ruff": "passed four files",
+  "mypy": "passed two files",
+  "hosted_amd64_required": true,
+  "full_new_source_ci_required": true,
+  "production_proof": false,
+  "model_calls": 0,
+  "payment_calls": 0,
+  "employer_submissions": 0
+}
