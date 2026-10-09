@@ -16,7 +16,7 @@ import {
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 
 import { apiGet } from "../lib/api";
 import Logo from "./ui/Logo";
@@ -53,12 +53,17 @@ const publicLinks: NavLink[] = [
   { href: "/contact", label: "Contact", icon: User },
 ];
 
+const subscribeHydration = () => () => {};
+const clientHydrationSnapshot = () => true;
+const serverHydrationSnapshot = () => false;
+
 export default function Nav() {
   const queryClient = useQueryClient();
   const pathname = usePathname();
   const { data: session, status } = useSession();
   const authenticated = status === "authenticated";
   const [mobileOpen, setMobileOpen] = useState(false);
+  const hydrated = useSyncExternalStore(subscribeHydration, clientHydrationSnapshot, serverHydrationSnapshot);
   const profile = useQuery({
     queryKey: ["nav-profile", session?.user?.email],
     queryFn: () => apiGet<ProfileSummary>("/auth/profile"),
@@ -151,6 +156,7 @@ export default function Nav() {
             aria-label={mobileOpen ? "Close navigation" : "Open navigation"}
             aria-expanded={mobileOpen}
             aria-controls={mobileOpen ? "mobile-navigation" : undefined}
+            disabled={!hydrated}
             onClick={() => setMobileOpen((value) => !value)}
           >
             {mobileOpen ? <X size={19} /> : <Menu size={19} />}

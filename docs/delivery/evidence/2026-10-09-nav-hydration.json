@@ -1,0 +1,75 @@
+{
+  "scope": "Navigation hydration readiness and preceding credit-link release checkpoint; no production activation claimed",
+  "base_commit": "bdc46a19907fb7472fa2bbfe43e822ec4239571c",
+  "source_files": [
+    {
+      "path": "frontend/components/Nav.tsx",
+      "sha256": "9ad46ef5283bd016e209c00ca3b9b262436d06aaabf4ac124cb17947e85d2dc7"
+    },
+    {
+      "path": "frontend/e2e/nav-hydration.spec.ts",
+      "sha256": "cfbe972f9472c03329365516756d892537ffc0acf521aa1234c9f450500c23e5"
+    }
+  ],
+  "review": {
+    "path": "/tmp/hirewiz-nav-hydration-independent-review-20261009.json",
+    "sha256": "55205d954a3af59cbac2ac355833fa4221f69c1ef3275ead13b5ac869d699159"
+  },
+  "baseline_reproduction": {
+    "path": "/tmp/hirewiz-nav-hydration-baseline-attempt2-20261009/summary.json",
+    "sha256": "bd105bc1b6aae94fa21793983298382b825ae4ce969fb13f2ba240c7fb490b9a"
+  },
+  "guarded_validation": {
+    "path": "/tmp/hirewiz-nav-hydration-guarded-attempt1-20261009/summary.json",
+    "sha256": "4ef5c8d1181e08bc195d77216d567afc22a4e3173fa2e3c591181de369d02631"
+  },
+  "browser_passed": 5,
+  "widths": [
+    320,
+    390,
+    768,
+    1024,
+    1440
+  ],
+  "retries": 0,
+  "skipped": 0,
+  "hosted_first_failure_cause_proven": false,
+  "prior_exact_ci": {
+    "commit": "bdc46a19907fb7472fa2bbfe43e822ec4239571c",
+    "run": 37869798071,
+    "all_five_jobs": "success",
+    "backend_passed": 1607,
+    "responsive_passed": 200,
+    "metadata": {
+      "path": "/tmp/hirewiz-bdc46a1-ci-20261009.json",
+      "sha256": "1164650a81313a3a9129857829f837dfa2f55b15e540976ab5958e17ab2a0c1a"
+    },
+    "counts": {
+      "path": "/tmp/hirewiz-bdc46a1-ci-counts-20261009.json",
+      "sha256": "f125a04cc7f419681d32fb585eb244327df583896c71ef09641d1bf6494dd0fa"
+    },
+    "connected_browser": {
+      "path": "/tmp/hirewiz-bdc46a1-ci-connected-proof-20261009/summary.json",
+      "sha256": "174e5a3f5bd77678223e501a24eaab246ed6f1ac8a2601b395fd2d0b54293a31"
+    }
+  },
+  "prior_stage": {
+    "deployment": "dpl_2FnbgX6QNfpJwRFqSEvTNZLXqR2w",
+    "promoted": false,
+    "initial_failed": {
+      "path": "/tmp/hirewiz-manual-staging-bdc46a1-20261009/summary.json",
+      "sha256": "3e6ec2f78fe2bc772803c2b43bf37ca44c644316a91bcfdbfff85a27d3425962"
+    },
+    "diagnostic_passed": {
+      "path": "/tmp/hirewiz-manual-staging-bdc46a1-diagnostic-20261009/summary.json",
+      "sha256": "d459d93e7f17e0558e257f3cb6b0148c7afb164b27ec2b27bf3c815c3048410f"
+    },
+    "views": 15,
+    "private_401": 4
+  },
+  "new_exact_ci": "pending",
+  "new_stage": "pending",
+  "production_backend_release": "e7d8f2ba0435fd3d4a504ccdce83fac365ec6835",
+  "production_schema": "20261008_0009",
+  "full_goal_complete": false
+}

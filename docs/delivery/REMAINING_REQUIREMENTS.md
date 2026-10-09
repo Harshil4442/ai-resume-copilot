@@ -78,6 +78,13 @@ now select the intended catalog pack; root lint/types, 72 units, 15 targeted res
 checks and a new actual no-AI browser journey pass. Exact new-source hosted CI and
 frontend promotion remain pending. The earlier staged frontend passes public and
 unauthenticated checks, but is not the new source or the live custom-domain release.
+The subsequent [mobile navigation checkpoint](MOBILE_NAV_READINESS_2026-10-09.md) records
+all five exact `bdc46a1` CI jobs passing, including 1,607 backend and 200 responsive cases.
+Its unpromoted stage passes the diagnostic public/empty-session checks; the first failed
+hosted run remains preserved and undiagnosed. A concrete cold JavaScript-loading probe
+then reproduced the enabled server-rendered mobile toggle. The independently reviewed
+readiness guard passes five production-browser widths; new exact CI/staging remain required.
+
 Two separate proposals are held outside root: journal-cut completeness has a late-writer
 race, and monetary SQL preflight has independently reproduced false-green privilege
 and liability checks. Neither proposal authorizes a migration or browser launch.
