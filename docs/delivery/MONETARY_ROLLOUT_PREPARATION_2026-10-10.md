@@ -16,6 +16,15 @@ forecasts, not guaranteed profits or observed invoices. The
 [expense review](EXPENSE_POLICY_REVIEW_2026-10-09.md) defines fees, reserves,
 tax estimates, workload limits, expiry and the consequences of lower purchase volume.
 
+A [fresh live recheck](evidence/2026-10-10-live-retirement-recheck.json) completed
+at 22:12 UTC on 9 October. Native API traffic and the public catalog keep checkout
+closed; both HireWiz domains return healthy home/pricing pages and unavailable
+purchase disclosures. These were bounded anonymous HTML GETs, not fresh hydrated
+responsive tests. Live search/application prices still read 1/5; the new 1/20 pricing
+and finite bundles are not activated. The serving analysis worker remains revision
+21; generation=false on its latest revision 22 receives zero traffic and cannot
+establish generation shutdown. No fresh SQL/schema observation was made.
+
 ## Verified source changes
 
 - [x] Explicitly pin `RAZORPAY_CHECKOUT_ENABLED=false` in staging and revision
@@ -89,6 +98,28 @@ fresh compiler attestation and full new-head CI. Original failures remain record
 Root [actual local ARM64 proof](evidence/2026-10-10-native-registry-repair-arm64.json)
 now verifies the new source hash and 41 scoped tests, including both actual compiler
 cases, with zero skips. It cannot replace hosted AMD64/full-backend verification.
+
+The exact `7d07b55` native Git build completed successfully at 21:53 UTC;
+[its native proof](evidence/2026-10-10-native-git-dependency-repair-build.json) binds
+that source and immutable image. Its [full CI attempt](evidence/2026-10-10-frontend-font-import-failure.json)
+now verifies the fresh hosted AMD64 compiler, both official image pulls,
+PostgreSQL continuity, migrations through 0013 and all 2,529 backend tests, with
+453 warnings and no reported skipped backend cases. Security, companion and the
+actual no-AI browser/SQL journey also passed. Frontend passed 240 units, then its
+normal Next.js 16.4.0/Turbopack build failed with 12 generated Roboto Mono import
+mapping errors; the 215-case responsive step did not run. The log does not prove
+a TLS/network failure. This is not a five-lane green release or production rollout.
+Original failure logs remain sealed; a supported local-font repair requires its
+own normal production build, responsive checks and exact new-source CI/image proof.
+
+The [supported local-font repair](evidence/2026-10-10-local-font-repair.json)
+has independent exact-source clearance. Normal Turbopack compilation, lint/types,
+240 units and all 215 unchanged browser cases pass locally. Font glyph data and
+licenses, SEO/JSX, dependency locks and all release gates are retained. Current
+loaded-font comparison records its small DM Sans differences and 151,020 extra
+preloaded bytes; it does not claim faster first rendering or identical historical
+fonts. Final published composition needs a fresh five-lane CI and native Git image;
+local proof cannot substitute for either or close the monetary/provider fence.
 
 - [ ] Establish whether old credentials are shared with other applications.
 - [ ] Complete native provider/issuer and database writer retirement, with new

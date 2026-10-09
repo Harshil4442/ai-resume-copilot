@@ -1,0 +1,1199 @@
+{
+  "upstream_repository": "https://github.com/google/fonts",
+  "upstream_commit": "bd8f81ddb5c74d5c8897b36ad88b440266245103",
+  "method": "fontTools.ttLib.woff2.compress(transform_tables=set())",
+  "tool_versions": {
+    "Python": "3.14.6",
+    "fonttools": "4.66.1",
+    "brotli": "1.2.0"
+  },
+  "subsetting": false,
+  "axis_instantiation": false,
+  "WOFF_metadata_added": false,
+  "files": [
+    {
+      "upstream": {
+        "family": "dmsans",
+        "file": "DMSans[opsz,wght].ttf",
+        "URL": "https://raw.githubusercontent.com/google/fonts/bd8f81ddb5c74d5c8897b36ad88b440266245103/ofl/dmsans/DMSans%5Bopsz%2Cwght%5D.ttf",
+        "bytes": 240164,
+        "git_blob_sha1": "c672f98060af9b2c85fca704ebd5ad9a8717c1df",
+        "sha256": "8cd08d97e89c24d0aa92edd2f0f4c8ee6195eee9b7c9f154865a58b02f0c1c0d"
+      },
+      "output": "DMSans-Variable.woff2",
+      "output_sha256": "54a3316fba1fff4716a381aed951f989752fe040d4aade00d5cfbb6591f80902",
+      "output_bytes": 91708,
+      "all_font_data_identical_except_WOFF2_head_container_fields": true,
+      "head_container_exceptions": {
+        "checkSumAdjustment_before": 1943938857,
+        "checkSumAdjustment_after": 1673861125,
+        "flags_before": 3,
+        "flags_after": 2051
+      },
+      "tables": [
+        {
+          "tag": "GDEF",
+          "sha256": "6cb218a464b7e2528426749f145a25beec92f60c066031f620310d04b07be4f5",
+          "bytes": 4359,
+          "output_sha256": "6cb218a464b7e2528426749f145a25beec92f60c066031f620310d04b07be4f5",
+          "byte_identical": true
+        },
+        {
+          "tag": "GPOS",
+          "sha256": "3ad3c5d4717e2cf90bb7ef851d4dccc3a7a4155c4bd42afe7647f261298b23e7",
+          "bytes": 29782,
+          "output_sha256": "3ad3c5d4717e2cf90bb7ef851d4dccc3a7a4155c4bd42afe7647f261298b23e7",
+          "byte_identical": true
+        },
+        {
+          "tag": "GSUB",
+          "sha256": "83c46ca376a9edb7c10259124c7616d61eb0c8505a4964beaa750bb4213c4ecc",
+          "bytes": 2924,
+          "output_sha256": "83c46ca376a9edb7c10259124c7616d61eb0c8505a4964beaa750bb4213c4ecc",
+          "byte_identical": true
+        },
+        {
+          "tag": "HVAR",
+          "sha256": "3b8aeedbb0be2e260eb02c2b83c77b81638362db1eb048a9168a9d24ea54706c",
+          "bytes": 3728,
+          "output_sha256": "3b8aeedbb0be2e260eb02c2b83c77b81638362db1eb048a9168a9d24ea54706c",
+          "byte_identical": true
+        },
+        {
+          "tag": "MVAR",
+          "sha256": "78f3beab0fac650c25519ba0254d4bb1051454b6da5f37bb0304e22ca519b450",
+          "bytes": 190,
+          "output_sha256": "78f3beab0fac650c25519ba0254d4bb1051454b6da5f37bb0304e22ca519b450",
+          "byte_identical": true
+        },
+        {
+          "tag": "OS/2",
+          "sha256": "dafbe76320adfabdf1b36ad1c4b7f29f3bf3dfd65f6914b35334ca2704b499bd",
+          "bytes": 96,
+          "output_sha256": "dafbe76320adfabdf1b36ad1c4b7f29f3bf3dfd65f6914b35334ca2704b499bd",
+          "byte_identical": true
+        },
+        {
+          "tag": "STAT",
+          "sha256": "2c9206fa5ab23824b17c7b35859da507beea5b6385b630e1d034823800c454d7",
+          "bytes": 290,
+          "output_sha256": "2c9206fa5ab23824b17c7b35859da507beea5b6385b630e1d034823800c454d7",
+          "byte_identical": true
+        },
+        {
+          "tag": "avar",
+          "sha256": "56612603f4570dadb61c5bbb1225baf45f3b92511db6ed02b4b5dee595a9c2e0",
+          "bytes": 72,
+          "output_sha256": "56612603f4570dadb61c5bbb1225baf45f3b92511db6ed02b4b5dee595a9c2e0",
+          "byte_identical": true
+        },
+        {
+          "tag": "cmap",
+          "sha256": "15564417b4f01727393897eef5fa2d37092b30a8097abcd4a6f377a41539a1d2",
+          "bytes": 1262,
+          "output_sha256": "15564417b4f01727393897eef5fa2d37092b30a8097abcd4a6f377a41539a1d2",
+          "byte_identical": true
+        },
+        {
+          "tag": "fvar",
+          "sha256": "bd1b4e0f226b658e2c1da1b58d5a245460ec630959751a71d26d2228112f8c7f",
+          "bytes": 164,
+          "output_sha256": "bd1b4e0f226b658e2c1da1b58d5a245460ec630959751a71d26d2228112f8c7f",
+          "byte_identical": true
+        },
+        {
+          "tag": "gasp",
+          "sha256": "4ca731f86ad506ac0e320283dc9461926346de3c4d91d539ea7f6620d3826940",
+          "bytes": 8,
+          "output_sha256": "4ca731f86ad506ac0e320283dc9461926346de3c4d91d539ea7f6620d3826940",
+          "byte_identical": true
+        },
+        {
+          "tag": "glyf",
+          "sha256": "a239c7071e51a22928529ada77d5cd9e9be95f3f2bdb7761f8113d25f2e55c62",
+          "bytes": 24874,
+          "output_sha256": "a239c7071e51a22928529ada77d5cd9e9be95f3f2bdb7761f8113d25f2e55c62",
+          "byte_identical": true
+        },
+        {
+          "tag": "gvar",
+          "sha256": "8fd4c4b8403305484879f09be1091d848b51211491436711fee9001be6db02ef",
+          "bytes": 163316,
+          "output_sha256": "8fd4c4b8403305484879f09be1091d848b51211491436711fee9001be6db02ef",
+          "byte_identical": true
+        },
+        {
+          "tag": "head",
+          "sha256": "2fc9b38838d64aa0d6bf9fe8fcf29af70ac9862cb8d35f842a3ddab684d64e7b",
+          "bytes": 54,
+          "output_sha256": "ad3395a59c1693646862084689e3835394d2dc6019fcf0413f119203f2f3fd77",
+          "byte_identical": false
+        },
+        {
+          "tag": "hhea",
+          "sha256": "44ed8fb18b5a24fb6a85a496433d0f570540e77e2c9251dabacea3dda00f6092",
+          "bytes": 36,
+          "output_sha256": "44ed8fb18b5a24fb6a85a496433d0f570540e77e2c9251dabacea3dda00f6092",
+          "byte_identical": true
+        },
+        {
+          "tag": "hmtx",
+          "sha256": "b1ede1283a92fb100e06367e2f932cadfee17d9b80613219ae7d154ed1678f04",
+          "bytes": 1944,
+          "output_sha256": "b1ede1283a92fb100e06367e2f932cadfee17d9b80613219ae7d154ed1678f04",
+          "byte_identical": true
+        },
+        {
+          "tag": "loca",
+          "sha256": "0c0dd88386bea261227bd1377390828bfd3d2e4c3b60377411e75fb2e69eb94f",
+          "bytes": 974,
+          "output_sha256": "0c0dd88386bea261227bd1377390828bfd3d2e4c3b60377411e75fb2e69eb94f",
+          "byte_identical": true
+        },
+        {
+          "tag": "maxp",
+          "sha256": "694ce9b351cd75e68e7b3894c00c85e6dc6042a96c6f0d82ce9190edec6825c1",
+          "bytes": 32,
+          "output_sha256": "694ce9b351cd75e68e7b3894c00c85e6dc6042a96c6f0d82ce9190edec6825c1",
+          "byte_identical": true
+        },
+        {
+          "tag": "name",
+          "sha256": "cbe7778692af92ef40a6667fe3d437b6fac2e33272c21131755d5b3349bef5e4",
+          "bytes": 2368,
+          "output_sha256": "cbe7778692af92ef40a6667fe3d437b6fac2e33272c21131755d5b3349bef5e4",
+          "byte_identical": true
+        },
+        {
+          "tag": "post",
+          "sha256": "9b65b8db057d14077796c832432233db7a45c8a413e144cef0e1ca5f0627149e",
+          "bytes": 3317,
+          "output_sha256": "9b65b8db057d14077796c832432233db7a45c8a413e144cef0e1ca5f0627149e",
+          "byte_identical": true
+        },
+        {
+          "tag": "prep",
+          "sha256": "907c4106ff9989c1805827d5581bdf107a253b098cb71eb374f5e47c35604452",
+          "bytes": 7,
+          "output_sha256": "907c4106ff9989c1805827d5581bdf107a253b098cb71eb374f5e47c35604452",
+          "byte_identical": true
+        }
+      ],
+      "cmap_codepoints": 403,
+      "glyphs": 486,
+      "axes": [
+        {
+          "tag": "opsz",
+          "min": 9.0,
+          "default": 9.0,
+          "max": 40.0
+        },
+        {
+          "tag": "wght",
+          "min": 100.0,
+          "default": 400.0,
+          "max": 1000.0
+        }
+      ],
+      "metrics": {
+        "unitsPerEm": 1000,
+        "ascent": 992,
+        "descent": -310,
+        "lineGap": 0
+      },
+      "names": [
+        {
+          "id": 1,
+          "platform": 3,
+          "encoding": 1,
+          "language": 1033,
+          "value": "DM Sans 9pt"
+        },
+        {
+          "id": 2,
+          "platform": 3,
+          "encoding": 1,
+          "language": 1033,
+          "value": "Regular"
+        },
+        {
+          "id": 4,
+          "platform": 3,
+          "encoding": 1,
+          "language": 1033,
+          "value": "DM Sans 9pt Regular"
+        },
+        {
+          "id": 5,
+          "platform": 3,
+          "encoding": 1,
+          "language": 1033,
+          "value": "Version 4.004;gftools[0.9.30]"
+        },
+        {
+          "id": 6,
+          "platform": 3,
+          "encoding": 1,
+          "language": 1033,
+          "value": "DMSans-9ptRegular"
+        }
+      ],
+      "names_table_sha256": "cbe7778692af92ef40a6667fe3d437b6fac2e33272c21131755d5b3349bef5e4"
+    },
+    {
+      "upstream": {
+        "family": "crimsontext",
+        "file": "CrimsonText-Regular.ttf",
+        "URL": "https://raw.githubusercontent.com/google/fonts/bd8f81ddb5c74d5c8897b36ad88b440266245103/ofl/crimsontext/CrimsonText-Regular.ttf",
+        "bytes": 107200,
+        "git_blob_sha1": "6b474728a9a499233959959fb7d370df97733450",
+        "sha256": "48e6c5d5ad1d01599d374ecb817e15890d1feb3b8a3a88e527d44c90389e1f06"
+      },
+      "output": "CrimsonText-Regular.woff2",
+      "output_sha256": "f2745a4685f01f8f2ab566fdd55782a0aa3827cca653fcec61243a3e738eb58a",
+      "output_bytes": 48756,
+      "all_font_data_identical_except_WOFF2_head_container_fields": true,
+      "head_container_exceptions": {
+        "checkSumAdjustment_before": 2555368828,
+        "checkSumAdjustment_after": 2286647432,
+        "flags_before": 15,
+        "flags_after": 2063
+      },
+      "tables": [
+        {
+          "tag": "GDEF",
+          "sha256": "d033a943212d30cc3f5a5aa0ab153b129d706d9bf8a9cbae5fecee1f9f958acd",
+          "bytes": 414,
+          "output_sha256": "d033a943212d30cc3f5a5aa0ab153b129d706d9bf8a9cbae5fecee1f9f958acd",
+          "byte_identical": true
+        },
+        {
+          "tag": "GPOS",
+          "sha256": "839f7110fb55695589af4caee1395da001a0805968e5a0ba599be9efc19d5b44",
+          "bytes": 10388,
+          "output_sha256": "839f7110fb55695589af4caee1395da001a0805968e5a0ba599be9efc19d5b44",
+          "byte_identical": true
+        },
+        {
+          "tag": "GSUB",
+          "sha256": "5122b47ddafc15f18b1d47a00bf5e343881be505afe622c25fbf1ee6246739ba",
+          "bytes": 1858,
+          "output_sha256": "5122b47ddafc15f18b1d47a00bf5e343881be505afe622c25fbf1ee6246739ba",
+          "byte_identical": true
+        },
+        {
+          "tag": "OS/2",
+          "sha256": "d3643976a7438908df1d843914bf1ddacdffb0d944ba6095fc7186e2988f5fa0",
+          "bytes": 96,
+          "output_sha256": "d3643976a7438908df1d843914bf1ddacdffb0d944ba6095fc7186e2988f5fa0",
+          "byte_identical": true
+        },
+        {
+          "tag": "cmap",
+          "sha256": "0016212b2675b401cd4d42ae3306aa71cce89bd2436dc3151a2dca00f7b6cd90",
+          "bytes": 1802,
+          "output_sha256": "0016212b2675b401cd4d42ae3306aa71cce89bd2436dc3151a2dca00f7b6cd90",
+          "byte_identical": true
+        },
+        {
+          "tag": "cvt ",
+          "sha256": "7bf24a36b635a6d162b341085a6af1c3655aaafb29596d100b349f5e6de290d4",
+          "bytes": 114,
+          "output_sha256": "7bf24a36b635a6d162b341085a6af1c3655aaafb29596d100b349f5e6de290d4",
+          "byte_identical": true
+        },
+        {
+          "tag": "fpgm",
+          "sha256": "9d239cfba5c3e2b39c51b893b28d086288b051393d0fd49aa5876db89a49fddd",
+          "bytes": 3596,
+          "output_sha256": "9d239cfba5c3e2b39c51b893b28d086288b051393d0fd49aa5876db89a49fddd",
+          "byte_identical": true
+        },
+        {
+          "tag": "gasp",
+          "sha256": "4ca731f86ad506ac0e320283dc9461926346de3c4d91d539ea7f6620d3826940",
+          "bytes": 8,
+          "output_sha256": "4ca731f86ad506ac0e320283dc9461926346de3c4d91d539ea7f6620d3826940",
+          "byte_identical": true
+        },
+        {
+          "tag": "glyf",
+          "sha256": "3369f64d6e6da23d5fb0e9415dc99c0866a04c46148e223552ce93dcee2c001f",
+          "bytes": 77172,
+          "output_sha256": "3369f64d6e6da23d5fb0e9415dc99c0866a04c46148e223552ce93dcee2c001f",
+          "byte_identical": true
+        },
+        {
+          "tag": "head",
+          "sha256": "a40de6afec9c9a07b29152960500c2691526fab482ded233b81d3c092646d876",
+          "bytes": 54,
+          "output_sha256": "dde4e02c170fbeeccf168136ff06d12565b5e427781a092880e882c3f82142cc",
+          "byte_identical": false
+        },
+        {
+          "tag": "hhea",
+          "sha256": "d356c9d4cea381df730495a5dba11b4c0a92d6c416a3050d9787085237042912",
+          "bytes": 36,
+          "output_sha256": "d356c9d4cea381df730495a5dba11b4c0a92d6c416a3050d9787085237042912",
+          "byte_identical": true
+        },
+        {
+          "tag": "hmtx",
+          "sha256": "81575415f0d9a6fa5e4f3caa31ce7483661a9ecda3a53603b53fd5fb61e8c95b",
+          "bytes": 2872,
+          "output_sha256": "81575415f0d9a6fa5e4f3caa31ce7483661a9ecda3a53603b53fd5fb61e8c95b",
+          "byte_identical": true
+        },
+        {
+          "tag": "loca",
+          "sha256": "2da5b8503c784716bd8a66eb743a8e18214761f34c0d35ad1fdd9028fcd8b961",
+          "bytes": 1438,
+          "output_sha256": "2da5b8503c784716bd8a66eb743a8e18214761f34c0d35ad1fdd9028fcd8b961",
+          "byte_identical": true
+        },
+        {
+          "tag": "maxp",
+          "sha256": "4121dae0ec1e48d829ff2cba60d31610c3f5c1864b78ce5a8fecc5f98f994662",
+          "bytes": 32,
+          "output_sha256": "4121dae0ec1e48d829ff2cba60d31610c3f5c1864b78ce5a8fecc5f98f994662",
+          "byte_identical": true
+        },
+        {
+          "tag": "name",
+          "sha256": "741ee207f388ca635800b65eb962f8924370b72905851bbaabb7ac9b0c8d9510",
+          "bytes": 1172,
+          "output_sha256": "741ee207f388ca635800b65eb962f8924370b72905851bbaabb7ac9b0c8d9510",
+          "byte_identical": true
+        },
+        {
+          "tag": "post",
+          "sha256": "7ac7009e4ce2aa1666ae0e580b0b6178f72933748eeaa4ffd4825215b216098d",
+          "bytes": 5648,
+          "output_sha256": "7ac7009e4ce2aa1666ae0e580b0b6178f72933748eeaa4ffd4825215b216098d",
+          "byte_identical": true
+        },
+        {
+          "tag": "prep",
+          "sha256": "8aec21ab7671a71cab998e63703b6ed46540141168d02a27aca46c213479d00f",
+          "bytes": 203,
+          "output_sha256": "8aec21ab7671a71cab998e63703b6ed46540141168d02a27aca46c213479d00f",
+          "byte_identical": true
+        }
+      ],
+      "cmap_codepoints": 675,
+      "glyphs": 718,
+      "axes": [],
+      "metrics": {
+        "unitsPerEm": 1024,
+        "ascent": 972,
+        "descent": -359,
+        "lineGap": 0
+      },
+      "names": [
+        {
+          "id": 1,
+          "platform": 3,
+          "encoding": 1,
+          "language": 1033,
+          "value": "Crimson Text"
+        },
+        {
+          "id": 2,
+          "platform": 3,
+          "encoding": 1,
+          "language": 1033,
+          "value": "Regular"
+        },
+        {
+          "id": 4,
+          "platform": 3,
+          "encoding": 1,
+          "language": 1033,
+          "value": "Crimson Text Regular"
+        },
+        {
+          "id": 5,
+          "platform": 3,
+          "encoding": 1,
+          "language": 1033,
+          "value": "Version 1.100; ttfautohint (v1.8.4)"
+        },
+        {
+          "id": 6,
+          "platform": 3,
+          "encoding": 1,
+          "language": 1033,
+          "value": "CrimsonText-Regular"
+        }
+      ],
+      "names_table_sha256": "741ee207f388ca635800b65eb962f8924370b72905851bbaabb7ac9b0c8d9510"
+    },
+    {
+      "upstream": {
+        "family": "crimsontext",
+        "file": "CrimsonText-Italic.ttf",
+        "URL": "https://raw.githubusercontent.com/google/fonts/bd8f81ddb5c74d5c8897b36ad88b440266245103/ofl/crimsontext/CrimsonText-Italic.ttf",
+        "bytes": 110216,
+        "git_blob_sha1": "1b6e617e0bcdf7d27c196870d448ba338d91016e",
+        "sha256": "4ed1699ac7c64e8b3d33f6bb8323c3d7206b0d7bacb9ee2d65c697e6014d29de"
+      },
+      "output": "CrimsonText-Italic.woff2",
+      "output_sha256": "4925dbea4793c9a263bafd2793a8730ef4ef22de58cabda4e276252caf491010",
+      "output_bytes": 49892,
+      "all_font_data_identical_except_WOFF2_head_container_fields": true,
+      "head_container_exceptions": {
+        "checkSumAdjustment_before": 906749043,
+        "checkSumAdjustment_after": 638010931,
+        "flags_before": 15,
+        "flags_after": 2063
+      },
+      "tables": [
+        {
+          "tag": "GDEF",
+          "sha256": "52de5471689ab3f31ddabaffbc1a284b3d8280f0c264436afdda45e31a96d8a2",
+          "bytes": 332,
+          "output_sha256": "52de5471689ab3f31ddabaffbc1a284b3d8280f0c264436afdda45e31a96d8a2",
+          "byte_identical": true
+        },
+        {
+          "tag": "GPOS",
+          "sha256": "4f32acb9ba92d4f01d446df28546626addece3c004114460da6f0f1e9e536ae1",
+          "bytes": 10896,
+          "output_sha256": "4f32acb9ba92d4f01d446df28546626addece3c004114460da6f0f1e9e536ae1",
+          "byte_identical": true
+        },
+        {
+          "tag": "GSUB",
+          "sha256": "fb080d58826518101645718b011425570ef9350f21fae71e9ed13aa8851fd59e",
+          "bytes": 2344,
+          "output_sha256": "fb080d58826518101645718b011425570ef9350f21fae71e9ed13aa8851fd59e",
+          "byte_identical": true
+        },
+        {
+          "tag": "OS/2",
+          "sha256": "2009875c47d06758a0e63dbaf6c10529cec6054e9421a65de98770d439c2eac6",
+          "bytes": 96,
+          "output_sha256": "2009875c47d06758a0e63dbaf6c10529cec6054e9421a65de98770d439c2eac6",
+          "byte_identical": true
+        },
+        {
+          "tag": "cmap",
+          "sha256": "7f945317f0ddf315c8e89e9641756e6ced99ff5c89c0c7ac54a139e71f763fbf",
+          "bytes": 1802,
+          "output_sha256": "7f945317f0ddf315c8e89e9641756e6ced99ff5c89c0c7ac54a139e71f763fbf",
+          "byte_identical": true
+        },
+        {
+          "tag": "cvt ",
+          "sha256": "c48a192afcf9943ce312df3c0627d5f2c456d7f1968155b30f51b3a1ec9608a5",
+          "bytes": 114,
+          "output_sha256": "c48a192afcf9943ce312df3c0627d5f2c456d7f1968155b30f51b3a1ec9608a5",
+          "byte_identical": true
+        },
+        {
+          "tag": "fpgm",
+          "sha256": "9d239cfba5c3e2b39c51b893b28d086288b051393d0fd49aa5876db89a49fddd",
+          "bytes": 3596,
+          "output_sha256": "9d239cfba5c3e2b39c51b893b28d086288b051393d0fd49aa5876db89a49fddd",
+          "byte_identical": true
+        },
+        {
+          "tag": "gasp",
+          "sha256": "4ca731f86ad506ac0e320283dc9461926346de3c4d91d539ea7f6620d3826940",
+          "bytes": 8,
+          "output_sha256": "4ca731f86ad506ac0e320283dc9461926346de3c4d91d539ea7f6620d3826940",
+          "byte_identical": true
+        },
+        {
+          "tag": "glyf",
+          "sha256": "aee068184d38551e69fe5ce801d67ebde134f410a0953fa7723a9194cc740a03",
+          "bytes": 79242,
+          "output_sha256": "aee068184d38551e69fe5ce801d67ebde134f410a0953fa7723a9194cc740a03",
+          "byte_identical": true
+        },
+        {
+          "tag": "head",
+          "sha256": "37544d269bb1dadcaf4f250b626ab1d13812d61232c5a2858e5e7be7510678d8",
+          "bytes": 54,
+          "output_sha256": "aea46107af5f09d9b60d4ce9919c859542adc85dc4e6467afd0aae1b182f2d60",
+          "byte_identical": false
+        },
+        {
+          "tag": "hhea",
+          "sha256": "2caec109d3e4401020a9a87947c4bd50256e1f0c05059593a1092250160bf591",
+          "bytes": 36,
+          "output_sha256": "2caec109d3e4401020a9a87947c4bd50256e1f0c05059593a1092250160bf591",
+          "byte_identical": true
+        },
+        {
+          "tag": "hmtx",
+          "sha256": "528699dafd313209790c2cb95207bb74b52103e2992be25afec9fa1c97f49de3",
+          "bytes": 2880,
+          "output_sha256": "528699dafd313209790c2cb95207bb74b52103e2992be25afec9fa1c97f49de3",
+          "byte_identical": true
+        },
+        {
+          "tag": "loca",
+          "sha256": "6aafacef9bc00484f16b068474ac6ddb997ec0c96071bc6cf831b602ba9cf742",
+          "bytes": 1442,
+          "output_sha256": "6aafacef9bc00484f16b068474ac6ddb997ec0c96071bc6cf831b602ba9cf742",
+          "byte_identical": true
+        },
+        {
+          "tag": "maxp",
+          "sha256": "acac156d5232dd26c3f2e593ca1274f1c7c605483ad726929e0ce4928b30f30d",
+          "bytes": 32,
+          "output_sha256": "acac156d5232dd26c3f2e593ca1274f1c7c605483ad726929e0ce4928b30f30d",
+          "byte_identical": true
+        },
+        {
+          "tag": "name",
+          "sha256": "9709a94ead737262f88d953858d7d45b88df0e828ab7226b9c7900bf91e37730",
+          "bytes": 1164,
+          "output_sha256": "9709a94ead737262f88d953858d7d45b88df0e828ab7226b9c7900bf91e37730",
+          "byte_identical": true
+        },
+        {
+          "tag": "post",
+          "sha256": "2cdc843ddf30df2fcd365e5d436b7cd2b7a8f60bcfc729cd568ddf87ab4ef895",
+          "bytes": 5679,
+          "output_sha256": "2cdc843ddf30df2fcd365e5d436b7cd2b7a8f60bcfc729cd568ddf87ab4ef895",
+          "byte_identical": true
+        },
+        {
+          "tag": "prep",
+          "sha256": "8aec21ab7671a71cab998e63703b6ed46540141168d02a27aca46c213479d00f",
+          "bytes": 203,
+          "output_sha256": "8aec21ab7671a71cab998e63703b6ed46540141168d02a27aca46c213479d00f",
+          "byte_identical": true
+        }
+      ],
+      "cmap_codepoints": 675,
+      "glyphs": 720,
+      "axes": [],
+      "metrics": {
+        "unitsPerEm": 1024,
+        "ascent": 972,
+        "descent": -359,
+        "lineGap": 0
+      },
+      "names": [
+        {
+          "id": 1,
+          "platform": 3,
+          "encoding": 1,
+          "language": 1033,
+          "value": "Crimson Text"
+        },
+        {
+          "id": 2,
+          "platform": 3,
+          "encoding": 1,
+          "language": 1033,
+          "value": "Italic"
+        },
+        {
+          "id": 4,
+          "platform": 3,
+          "encoding": 1,
+          "language": 1033,
+          "value": "Crimson Text Italic"
+        },
+        {
+          "id": 5,
+          "platform": 3,
+          "encoding": 1,
+          "language": 1033,
+          "value": "Version 1.100; ttfautohint (v1.8.4)"
+        },
+        {
+          "id": 6,
+          "platform": 3,
+          "encoding": 1,
+          "language": 1033,
+          "value": "CrimsonText-Italic"
+        }
+      ],
+      "names_table_sha256": "9709a94ead737262f88d953858d7d45b88df0e828ab7226b9c7900bf91e37730"
+    },
+    {
+      "upstream": {
+        "family": "crimsontext",
+        "file": "CrimsonText-SemiBold.ttf",
+        "URL": "https://raw.githubusercontent.com/google/fonts/bd8f81ddb5c74d5c8897b36ad88b440266245103/ofl/crimsontext/CrimsonText-SemiBold.ttf",
+        "bytes": 111176,
+        "git_blob_sha1": "f2d7ec20f85c9fdc59f85716e88aa457d31a9240",
+        "sha256": "802e84000740fec2a9fbe0ae09b6b6811bd86a78a0173b15d44450a1530e9410"
+      },
+      "output": "CrimsonText-SemiBold.woff2",
+      "output_sha256": "dab062006e4d3f2a6dfc9b64dc98c3fc840ac176a3faf9ceec497a1f74b6da78",
+      "output_bytes": 50016,
+      "all_font_data_identical_except_WOFF2_head_container_fields": true,
+      "head_container_exceptions": {
+        "checkSumAdjustment_before": 2476641910,
+        "checkSumAdjustment_after": 2207918330,
+        "flags_before": 15,
+        "flags_after": 2063
+      },
+      "tables": [
+        {
+          "tag": "GDEF",
+          "sha256": "bc2e1b503d63f73a94332cba0211dd2a1c3cf6ad5512c882bfbf81d7827db18b",
+          "bytes": 404,
+          "output_sha256": "bc2e1b503d63f73a94332cba0211dd2a1c3cf6ad5512c882bfbf81d7827db18b",
+          "byte_identical": true
+        },
+        {
+          "tag": "GPOS",
+          "sha256": "3341f104a19ac576472cf55d280cf5c68a23148dcec2a09c8e1f4dbb0ca2dbb1",
+          "bytes": 9954,
+          "output_sha256": "3341f104a19ac576472cf55d280cf5c68a23148dcec2a09c8e1f4dbb0ca2dbb1",
+          "byte_identical": true
+        },
+        {
+          "tag": "GSUB",
+          "sha256": "5122b47ddafc15f18b1d47a00bf5e343881be505afe622c25fbf1ee6246739ba",
+          "bytes": 1858,
+          "output_sha256": "5122b47ddafc15f18b1d47a00bf5e343881be505afe622c25fbf1ee6246739ba",
+          "byte_identical": true
+        },
+        {
+          "tag": "OS/2",
+          "sha256": "c332ffe50fdd51eb3f6dde59eb9a7c7bd3e309c7b85ca9d1ba3a7b90d892d313",
+          "bytes": 96,
+          "output_sha256": "c332ffe50fdd51eb3f6dde59eb9a7c7bd3e309c7b85ca9d1ba3a7b90d892d313",
+          "byte_identical": true
+        },
+        {
+          "tag": "cmap",
+          "sha256": "0016212b2675b401cd4d42ae3306aa71cce89bd2436dc3151a2dca00f7b6cd90",
+          "bytes": 1802,
+          "output_sha256": "0016212b2675b401cd4d42ae3306aa71cce89bd2436dc3151a2dca00f7b6cd90",
+          "byte_identical": true
+        },
+        {
+          "tag": "cvt ",
+          "sha256": "4fddbf763c02fa52ddae17de6fa91749c63e402c4be08083e0cef8246091e818",
+          "bytes": 114,
+          "output_sha256": "4fddbf763c02fa52ddae17de6fa91749c63e402c4be08083e0cef8246091e818",
+          "byte_identical": true
+        },
+        {
+          "tag": "fpgm",
+          "sha256": "9d239cfba5c3e2b39c51b893b28d086288b051393d0fd49aa5876db89a49fddd",
+          "bytes": 3596,
+          "output_sha256": "9d239cfba5c3e2b39c51b893b28d086288b051393d0fd49aa5876db89a49fddd",
+          "byte_identical": true
+        },
+        {
+          "tag": "gasp",
+          "sha256": "4ca731f86ad506ac0e320283dc9461926346de3c4d91d539ea7f6620d3826940",
+          "bytes": 8,
+          "output_sha256": "4ca731f86ad506ac0e320283dc9461926346de3c4d91d539ea7f6620d3826940",
+          "byte_identical": true
+        },
+        {
+          "tag": "glyf",
+          "sha256": "3ca6376388016a8db9ed94527407c6806098f66c61cc097142b8035927812ddb",
+          "bytes": 81502,
+          "output_sha256": "3ca6376388016a8db9ed94527407c6806098f66c61cc097142b8035927812ddb",
+          "byte_identical": true
+        },
+        {
+          "tag": "head",
+          "sha256": "280b89974f4b97fa6dfcaf014ddf742d4575fd35a6a8ef51f2b971c0a68d043d",
+          "bytes": 54,
+          "output_sha256": "6c204610f1e393dfe11b71694a6b387f0ac8c47bef7444bf9e0c73da0f72a9f1",
+          "byte_identical": false
+        },
+        {
+          "tag": "hhea",
+          "sha256": "57ca8a43a19a495eba181d1d041837bfff43b27c2fd50c573dc0e812b2a4d43a",
+          "bytes": 36,
+          "output_sha256": "57ca8a43a19a495eba181d1d041837bfff43b27c2fd50c573dc0e812b2a4d43a",
+          "byte_identical": true
+        },
+        {
+          "tag": "hmtx",
+          "sha256": "720eda72e9ab10ea83e7857f64c282c02b1ce23ea38f86f406f6820ed7797a0b",
+          "bytes": 2872,
+          "output_sha256": "720eda72e9ab10ea83e7857f64c282c02b1ce23ea38f86f406f6820ed7797a0b",
+          "byte_identical": true
+        },
+        {
+          "tag": "loca",
+          "sha256": "a40a8250b82615c8689bab2475e37557a13b40a66efc3dc0afbe64ca183c6d1e",
+          "bytes": 1438,
+          "output_sha256": "a40a8250b82615c8689bab2475e37557a13b40a66efc3dc0afbe64ca183c6d1e",
+          "byte_identical": true
+        },
+        {
+          "tag": "maxp",
+          "sha256": "11c2d9055a899c8b3403ddf32bf6b656ab7b3b17d12096d5a93a61456093eab3",
+          "bytes": 32,
+          "output_sha256": "11c2d9055a899c8b3403ddf32bf6b656ab7b3b17d12096d5a93a61456093eab3",
+          "byte_identical": true
+        },
+        {
+          "tag": "name",
+          "sha256": "162a3d1700ea74f919734f73adf66a3b76e7e41b500060b259e582e893eb11be",
+          "bytes": 1260,
+          "output_sha256": "162a3d1700ea74f919734f73adf66a3b76e7e41b500060b259e582e893eb11be",
+          "byte_identical": true
+        },
+        {
+          "tag": "post",
+          "sha256": "7ac7009e4ce2aa1666ae0e580b0b6178f72933748eeaa4ffd4825215b216098d",
+          "bytes": 5648,
+          "output_sha256": "7ac7009e4ce2aa1666ae0e580b0b6178f72933748eeaa4ffd4825215b216098d",
+          "byte_identical": true
+        },
+        {
+          "tag": "prep",
+          "sha256": "8aec21ab7671a71cab998e63703b6ed46540141168d02a27aca46c213479d00f",
+          "bytes": 203,
+          "output_sha256": "8aec21ab7671a71cab998e63703b6ed46540141168d02a27aca46c213479d00f",
+          "byte_identical": true
+        }
+      ],
+      "cmap_codepoints": 675,
+      "glyphs": 718,
+      "axes": [],
+      "metrics": {
+        "unitsPerEm": 1024,
+        "ascent": 972,
+        "descent": -359,
+        "lineGap": 0
+      },
+      "names": [
+        {
+          "id": 1,
+          "platform": 3,
+          "encoding": 1,
+          "language": 1033,
+          "value": "Crimson Text SemiBold"
+        },
+        {
+          "id": 2,
+          "platform": 3,
+          "encoding": 1,
+          "language": 1033,
+          "value": "Regular"
+        },
+        {
+          "id": 4,
+          "platform": 3,
+          "encoding": 1,
+          "language": 1033,
+          "value": "Crimson Text SemiBold"
+        },
+        {
+          "id": 5,
+          "platform": 3,
+          "encoding": 1,
+          "language": 1033,
+          "value": "Version 1.100; ttfautohint (v1.8.4)"
+        },
+        {
+          "id": 6,
+          "platform": 3,
+          "encoding": 1,
+          "language": 1033,
+          "value": "CrimsonText-SemiBold"
+        }
+      ],
+      "names_table_sha256": "162a3d1700ea74f919734f73adf66a3b76e7e41b500060b259e582e893eb11be"
+    },
+    {
+      "upstream": {
+        "family": "crimsontext",
+        "file": "CrimsonText-SemiBoldItalic.ttf",
+        "URL": "https://raw.githubusercontent.com/google/fonts/bd8f81ddb5c74d5c8897b36ad88b440266245103/ofl/crimsontext/CrimsonText-SemiBoldItalic.ttf",
+        "bytes": 112120,
+        "git_blob_sha1": "124893e4d0c4d3fbdefd30fbd696cfbb3a1ca3ad",
+        "sha256": "8f4a0db2d181ba4493a4ad53042edc3b57ab50fedd8fa32c7b2ad57173208543"
+      },
+      "output": "CrimsonText-SemiBoldItalic.woff2",
+      "output_sha256": "85688977784dc8f7e54ffb2557747c4b0a847116b75f72f2806f287de893c7c7",
+      "output_bytes": 50892,
+      "all_font_data_identical_except_WOFF2_head_container_fields": true,
+      "head_container_exceptions": {
+        "checkSumAdjustment_before": 1348683747,
+        "checkSumAdjustment_after": 1079959511,
+        "flags_before": 15,
+        "flags_after": 2063
+      },
+      "tables": [
+        {
+          "tag": "GDEF",
+          "sha256": "52de5471689ab3f31ddabaffbc1a284b3d8280f0c264436afdda45e31a96d8a2",
+          "bytes": 332,
+          "output_sha256": "52de5471689ab3f31ddabaffbc1a284b3d8280f0c264436afdda45e31a96d8a2",
+          "byte_identical": true
+        },
+        {
+          "tag": "GPOS",
+          "sha256": "008884a7145b457bfc3f1fa6a62af33c1387d0178a3b665614054c0f66c3ca21",
+          "bytes": 9482,
+          "output_sha256": "008884a7145b457bfc3f1fa6a62af33c1387d0178a3b665614054c0f66c3ca21",
+          "byte_identical": true
+        },
+        {
+          "tag": "GSUB",
+          "sha256": "fb080d58826518101645718b011425570ef9350f21fae71e9ed13aa8851fd59e",
+          "bytes": 2344,
+          "output_sha256": "fb080d58826518101645718b011425570ef9350f21fae71e9ed13aa8851fd59e",
+          "byte_identical": true
+        },
+        {
+          "tag": "OS/2",
+          "sha256": "49c8ab990e8dbec06007d604b8863294ed9a669c32b2e5f35aa06c87ed5707be",
+          "bytes": 96,
+          "output_sha256": "49c8ab990e8dbec06007d604b8863294ed9a669c32b2e5f35aa06c87ed5707be",
+          "byte_identical": true
+        },
+        {
+          "tag": "cmap",
+          "sha256": "7f945317f0ddf315c8e89e9641756e6ced99ff5c89c0c7ac54a139e71f763fbf",
+          "bytes": 1802,
+          "output_sha256": "7f945317f0ddf315c8e89e9641756e6ced99ff5c89c0c7ac54a139e71f763fbf",
+          "byte_identical": true
+        },
+        {
+          "tag": "cvt ",
+          "sha256": "c810f9295c7ea23812e6bef13e99a14aebd69fddc413c0451c83ec2bc1fba527",
+          "bytes": 114,
+          "output_sha256": "c810f9295c7ea23812e6bef13e99a14aebd69fddc413c0451c83ec2bc1fba527",
+          "byte_identical": true
+        },
+        {
+          "tag": "fpgm",
+          "sha256": "9d239cfba5c3e2b39c51b893b28d086288b051393d0fd49aa5876db89a49fddd",
+          "bytes": 3596,
+          "output_sha256": "9d239cfba5c3e2b39c51b893b28d086288b051393d0fd49aa5876db89a49fddd",
+          "byte_identical": true
+        },
+        {
+          "tag": "gasp",
+          "sha256": "4ca731f86ad506ac0e320283dc9461926346de3c4d91d539ea7f6620d3826940",
+          "bytes": 8,
+          "output_sha256": "4ca731f86ad506ac0e320283dc9461926346de3c4d91d539ea7f6620d3826940",
+          "byte_identical": true
+        },
+        {
+          "tag": "glyf",
+          "sha256": "7c270e53e956cc5ee80ccca94d9b931481a611b91c5304f665fc8c5765659ec4",
+          "bytes": 82412,
+          "output_sha256": "7c270e53e956cc5ee80ccca94d9b931481a611b91c5304f665fc8c5765659ec4",
+          "byte_identical": true
+        },
+        {
+          "tag": "head",
+          "sha256": "f913cff9ae50595b56a681efc96489a2041510a6c667cb0c44262fa10a4b1458",
+          "bytes": 54,
+          "output_sha256": "e76827fdc66ba76c1639137479ffa9a4eca30705bde05feafb4eb85d7d24cf64",
+          "byte_identical": false
+        },
+        {
+          "tag": "hhea",
+          "sha256": "87028f5e0dc63ab30752adfdfabbf88b27d471a62b6b7e754eb81765861349e0",
+          "bytes": 36,
+          "output_sha256": "87028f5e0dc63ab30752adfdfabbf88b27d471a62b6b7e754eb81765861349e0",
+          "byte_identical": true
+        },
+        {
+          "tag": "hmtx",
+          "sha256": "91068b5ea89d51238e58679e101a8242750a61ebbd72fdccbbfe5bea29785e34",
+          "bytes": 2880,
+          "output_sha256": "91068b5ea89d51238e58679e101a8242750a61ebbd72fdccbbfe5bea29785e34",
+          "byte_identical": true
+        },
+        {
+          "tag": "loca",
+          "sha256": "91ef5cb1d6cd8707ffb41c9b285136865cf3873c6c2008ff89f515481872c75c",
+          "bytes": 1442,
+          "output_sha256": "91ef5cb1d6cd8707ffb41c9b285136865cf3873c6c2008ff89f515481872c75c",
+          "byte_identical": true
+        },
+        {
+          "tag": "maxp",
+          "sha256": "be148fbd15bd8497dc04ad39d97bdc23ff1122d907f0edb2a17ed7567e657cee",
+          "bytes": 32,
+          "output_sha256": "be148fbd15bd8497dc04ad39d97bdc23ff1122d907f0edb2a17ed7567e657cee",
+          "byte_identical": true
+        },
+        {
+          "tag": "name",
+          "sha256": "a971454ef63f38e2c7f51edcb46a9ff96c35793ee10b4d22db4f3dd7853045dd",
+          "bytes": 1310,
+          "output_sha256": "a971454ef63f38e2c7f51edcb46a9ff96c35793ee10b4d22db4f3dd7853045dd",
+          "byte_identical": true
+        },
+        {
+          "tag": "post",
+          "sha256": "2cdc843ddf30df2fcd365e5d436b7cd2b7a8f60bcfc729cd568ddf87ab4ef895",
+          "bytes": 5679,
+          "output_sha256": "2cdc843ddf30df2fcd365e5d436b7cd2b7a8f60bcfc729cd568ddf87ab4ef895",
+          "byte_identical": true
+        },
+        {
+          "tag": "prep",
+          "sha256": "8aec21ab7671a71cab998e63703b6ed46540141168d02a27aca46c213479d00f",
+          "bytes": 203,
+          "output_sha256": "8aec21ab7671a71cab998e63703b6ed46540141168d02a27aca46c213479d00f",
+          "byte_identical": true
+        }
+      ],
+      "cmap_codepoints": 675,
+      "glyphs": 720,
+      "axes": [],
+      "metrics": {
+        "unitsPerEm": 1024,
+        "ascent": 972,
+        "descent": -359,
+        "lineGap": 0
+      },
+      "names": [
+        {
+          "id": 1,
+          "platform": 3,
+          "encoding": 1,
+          "language": 1033,
+          "value": "Crimson Text SemiBold"
+        },
+        {
+          "id": 2,
+          "platform": 3,
+          "encoding": 1,
+          "language": 1033,
+          "value": "Italic"
+        },
+        {
+          "id": 4,
+          "platform": 3,
+          "encoding": 1,
+          "language": 1033,
+          "value": "Crimson Text SemiBold Italic"
+        },
+        {
+          "id": 5,
+          "platform": 3,
+          "encoding": 1,
+          "language": 1033,
+          "value": "Version 1.100; ttfautohint (v1.8.4)"
+        },
+        {
+          "id": 6,
+          "platform": 3,
+          "encoding": 1,
+          "language": 1033,
+          "value": "CrimsonText-SemiBoldItalic"
+        }
+      ],
+      "names_table_sha256": "a971454ef63f38e2c7f51edcb46a9ff96c35793ee10b4d22db4f3dd7853045dd"
+    },
+    {
+      "upstream": {
+        "family": "robotomono",
+        "file": "RobotoMono[wght].ttf",
+        "URL": "https://raw.githubusercontent.com/google/fonts/bd8f81ddb5c74d5c8897b36ad88b440266245103/ofl/robotomono/RobotoMono%5Bwght%5D.ttf",
+        "bytes": 183700,
+        "git_blob_sha1": "f21d1d716bce3cc756bc618d32be71ce6f733f81",
+        "sha256": "66a80e79d17e4c7cabd162e2916578a4cc08fd19eef6e2a643305eae9c567b2b"
+      },
+      "output": "RobotoMono-Variable.woff2",
+      "output_sha256": "b0b18f45412e1e54e759481478572f24fbd70f5393ecdc0b6b159684daa25320",
+      "output_bytes": 111036,
+      "all_font_data_identical_except_WOFF2_head_container_fields": true,
+      "head_container_exceptions": {
+        "checkSumAdjustment_before": 773546267,
+        "checkSumAdjustment_after": 504431767,
+        "flags_before": 11,
+        "flags_after": 2059
+      },
+      "tables": [
+        {
+          "tag": "GSUB",
+          "sha256": "54c0678b3846ebd576156a2e27349e032d48a0348d85e725a073b077c065faac",
+          "bytes": 680,
+          "output_sha256": "54c0678b3846ebd576156a2e27349e032d48a0348d85e725a073b077c065faac",
+          "byte_identical": true
+        },
+        {
+          "tag": "HVAR",
+          "sha256": "a0b1420d841e469c1e1cb87cab462805f3a74b9b6751266132dbd4cc0ef7d5ef",
+          "bytes": 47,
+          "output_sha256": "a0b1420d841e469c1e1cb87cab462805f3a74b9b6751266132dbd4cc0ef7d5ef",
+          "byte_identical": true
+        },
+        {
+          "tag": "OS/2",
+          "sha256": "7e9dbffa9bd2e05f74e0b785e96f6e165bce4d8fec920d200ab88a97a4a7e424",
+          "bytes": 96,
+          "output_sha256": "7e9dbffa9bd2e05f74e0b785e96f6e165bce4d8fec920d200ab88a97a4a7e424",
+          "byte_identical": true
+        },
+        {
+          "tag": "STAT",
+          "sha256": "b77c0e4eb96ddfc2891cf2e510341ad895eff6cb211d36fe975dbcb94545e8d2",
+          "bytes": 156,
+          "output_sha256": "b77c0e4eb96ddfc2891cf2e510341ad895eff6cb211d36fe975dbcb94545e8d2",
+          "byte_identical": true
+        },
+        {
+          "tag": "avar",
+          "sha256": "a19340afeee79607d8a7b52b844a10bd128ba1b0520b431781f2470c0a735fe6",
+          "bytes": 30,
+          "output_sha256": "a19340afeee79607d8a7b52b844a10bd128ba1b0520b431781f2470c0a735fe6",
+          "byte_identical": true
+        },
+        {
+          "tag": "cmap",
+          "sha256": "4d8b42ead26d43bf0d39df6fee7939347797397066590b8f64a5f195e6ee80a0",
+          "bytes": 1888,
+          "output_sha256": "4d8b42ead26d43bf0d39df6fee7939347797397066590b8f64a5f195e6ee80a0",
+          "byte_identical": true
+        },
+        {
+          "tag": "fvar",
+          "sha256": "60253801e4c736ec51e658304651b417b59f51de89fe966927f47db27ed65df8",
+          "bytes": 106,
+          "output_sha256": "60253801e4c736ec51e658304651b417b59f51de89fe966927f47db27ed65df8",
+          "byte_identical": true
+        },
+        {
+          "tag": "gasp",
+          "sha256": "4ca731f86ad506ac0e320283dc9461926346de3c4d91d539ea7f6620d3826940",
+          "bytes": 8,
+          "output_sha256": "4ca731f86ad506ac0e320283dc9461926346de3c4d91d539ea7f6620d3826940",
+          "byte_identical": true
+        },
+        {
+          "tag": "glyf",
+          "sha256": "800d1702d0868eceeb14fe0675038e5d80cb06437305aadf9690c53f8d89630c",
+          "bytes": 71128,
+          "output_sha256": "800d1702d0868eceeb14fe0675038e5d80cb06437305aadf9690c53f8d89630c",
+          "byte_identical": true
+        },
+        {
+          "tag": "gvar",
+          "sha256": "b407a511d84e829bc2c804e41f806ff35f636cb61c298bfb68324e10a65996ca",
+          "bytes": 94800,
+          "output_sha256": "b407a511d84e829bc2c804e41f806ff35f636cb61c298bfb68324e10a65996ca",
+          "byte_identical": true
+        },
+        {
+          "tag": "head",
+          "sha256": "beed36b0f386555cbccf0a31aac2ec321c77ccd0a803e8c7dd3fff1a43272e9a",
+          "bytes": 54,
+          "output_sha256": "3687d534c6251ce2d1b7053a4669f965fc18f6fdd0aa601203bdd1a69eb2b49f",
+          "byte_identical": false
+        },
+        {
+          "tag": "hhea",
+          "sha256": "f73644df4b6620eee9c5fa74d31cc371c6c813294fa851a691caf4dd26b1a02d",
+          "bytes": 36,
+          "output_sha256": "f73644df4b6620eee9c5fa74d31cc371c6c813294fa851a691caf4dd26b1a02d",
+          "byte_identical": true
+        },
+        {
+          "tag": "hmtx",
+          "sha256": "7afbb09f26afbf82e0ce8946842c81b81b9e8b04d7497bbe360db702bad6bf0d",
+          "bytes": 2014,
+          "output_sha256": "7afbb09f26afbf82e0ce8946842c81b81b9e8b04d7497bbe360db702bad6bf0d",
+          "byte_identical": true
+        },
+        {
+          "tag": "loca",
+          "sha256": "c29351a8d0a0c07a30fba95383c2a8292208a07e35ef39d144a03ebe80025ac0",
+          "bytes": 2014,
+          "output_sha256": "c29351a8d0a0c07a30fba95383c2a8292208a07e35ef39d144a03ebe80025ac0",
+          "byte_identical": true
+        },
+        {
+          "tag": "maxp",
+          "sha256": "365082557e36ae1cf58727c8cff5cfeef7f57edd183ae851fd41d66dad20a640",
+          "bytes": 32,
+          "output_sha256": "365082557e36ae1cf58727c8cff5cfeef7f57edd183ae851fd41d66dad20a640",
+          "byte_identical": true
+        },
+        {
+          "tag": "name",
+          "sha256": "c2db9e1f9dfc7d01c1c9ab7a057e3b9dcdb36dde7711345ecf87de4a3d63a2e1",
+          "bytes": 1574,
+          "output_sha256": "c2db9e1f9dfc7d01c1c9ab7a057e3b9dcdb36dde7711345ecf87de4a3d63a2e1",
+          "byte_identical": true
+        },
+        {
+          "tag": "post",
+          "sha256": "af6986e55369a9c65ebc4a8230d144322dbbfd6047e16334bd7cc3f9b9115b4d",
+          "bytes": 8714,
+          "output_sha256": "af6986e55369a9c65ebc4a8230d144322dbbfd6047e16334bd7cc3f9b9115b4d",
+          "byte_identical": true
+        },
+        {
+          "tag": "prep",
+          "sha256": "907c4106ff9989c1805827d5581bdf107a253b098cb71eb374f5e47c35604452",
+          "bytes": 7,
+          "output_sha256": "907c4106ff9989c1805827d5581bdf107a253b098cb71eb374f5e47c35604452",
+          "byte_identical": true
+        }
+      ],
+      "cmap_codepoints": 876,
+      "glyphs": 1006,
+      "axes": [
+        {
+          "tag": "wght",
+          "min": 100.0,
+          "default": 400.0,
+          "max": 700.0
+        }
+      ],
+      "metrics": {
+        "unitsPerEm": 2048,
+        "ascent": 2146,
+        "descent": -555,
+        "lineGap": 0
+      },
+      "names": [
+        {
+          "id": 1,
+          "platform": 3,
+          "encoding": 1,
+          "language": 1033,
+          "value": "Roboto Mono"
+        },
+        {
+          "id": 2,
+          "platform": 3,
+          "encoding": 1,
+          "language": 1033,
+          "value": "Regular"
+        },
+        {
+          "id": 4,
+          "platform": 3,
+          "encoding": 1,
+          "language": 1033,
+          "value": "Roboto Mono Regular"
+        },
+        {
+          "id": 5,
+          "platform": 3,
+          "encoding": 1,
+          "language": 1033,
+          "value": "Version 3.001"
+        },
+        {
+          "id": 6,
+          "platform": 3,
+          "encoding": 1,
+          "language": 1033,
+          "value": "RobotoMono-Regular"
+        }
+      ],
+      "names_table_sha256": "c2db9e1f9dfc7d01c1c9ab7a057e3b9dcdb36dde7711345ecf87de4a3d63a2e1"
+    }
+  ],
+  "head_container_exception_standard": "https://www.w3.org/TR/WOFF2/ section 5: compliant encoders set head.flags bit 11; checksum adjustment recalculated for the WOFF2 container. All other decompressed table bytes match."
+}

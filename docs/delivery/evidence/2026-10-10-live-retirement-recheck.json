@@ -1,0 +1,268 @@
+{
+  "status": "RETIREMENT_STILL_OBSERVED_WITH_EXPLICIT_RUNTIME_LIMITS",
+  "generated_at_utc": "2026-10-09T22:12:13.977563+00:00",
+  "project": "ai-resume-parser-482412",
+  "region": "us-central1",
+  "scope": "Fresh native Cloud Run service/revision GETs and anonymous public GETs only. No source/shared/cloud mutation, build submit, deployment, SQL, secret API, private worker request, authentication, queues/jobs, model, payment-provider or employer action.",
+  "native_read_count": 7,
+  "public_get_count": 6,
+  "runtime_revisions": [
+    {
+      "service": "ai-resume-parser",
+      "revision": "ai-resume-parser-e7-checkout-off-20261010",
+      "traffic_percent": 100,
+      "latest_ready": true,
+      "configured_image": "us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz@sha256:cf2cb125a72c79a7b41f9c263c1a999521363d6c944affb3c017e0dc5e112f4d",
+      "resolved_image_digest": "us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz@sha256:cf2cb125a72c79a7b41f9c263c1a999521363d6c944affb3c017e0dc5e112f4d",
+      "ready": "True",
+      "allowlisted_configuration": {
+        "APP_RELEASE": "e7d8f2ba0435fd3d4a504ccdce83fac365ec6835",
+        "APP_ENV": "production",
+        "SERVICE_ROLE": "api",
+        "AUTO_DB_MIGRATE": "false",
+        "RAZORPAY_CHECKOUT_ENABLED": "false",
+        "OPTIONAL_AI_GENERATION_ENABLED": null,
+        "EMPLOYER_AUTO_SUBMIT_ENABLED": "false",
+        "CANDIDATE_ACCOUNT_LIFECYCLE_ENABLED": null,
+        "EMPLOYER_SEARCH_CREDITS_PER_JOB": "1",
+        "EMPLOYER_APPLY_CREDITS_PER_JOB": "5"
+      },
+      "absent_allowlisted_names": [
+        "OPTIONAL_AI_GENERATION_ENABLED",
+        "CANDIDATE_ACCOUNT_LIFECYCLE_ENABLED"
+      ]
+    },
+    {
+      "service": "hirewiz-analysis-worker",
+      "revision": "hirewiz-analysis-worker-00021-5zd",
+      "traffic_percent": 100,
+      "latest_ready": false,
+      "configured_image": "us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz@sha256:cf2cb125a72c79a7b41f9c263c1a999521363d6c944affb3c017e0dc5e112f4d",
+      "resolved_image_digest": "us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz@sha256:cf2cb125a72c79a7b41f9c263c1a999521363d6c944affb3c017e0dc5e112f4d",
+      "ready": "True",
+      "allowlisted_configuration": {
+        "APP_RELEASE": "e7d8f2ba0435fd3d4a504ccdce83fac365ec6835",
+        "APP_ENV": "production",
+        "SERVICE_ROLE": "worker",
+        "AUTO_DB_MIGRATE": null,
+        "RAZORPAY_CHECKOUT_ENABLED": null,
+        "OPTIONAL_AI_GENERATION_ENABLED": null,
+        "EMPLOYER_AUTO_SUBMIT_ENABLED": "false",
+        "CANDIDATE_ACCOUNT_LIFECYCLE_ENABLED": null,
+        "EMPLOYER_SEARCH_CREDITS_PER_JOB": null,
+        "EMPLOYER_APPLY_CREDITS_PER_JOB": null
+      },
+      "absent_allowlisted_names": [
+        "AUTO_DB_MIGRATE",
+        "RAZORPAY_CHECKOUT_ENABLED",
+        "OPTIONAL_AI_GENERATION_ENABLED",
+        "CANDIDATE_ACCOUNT_LIFECYCLE_ENABLED",
+        "EMPLOYER_SEARCH_CREDITS_PER_JOB",
+        "EMPLOYER_APPLY_CREDITS_PER_JOB"
+      ]
+    },
+    {
+      "service": "hirewiz-analysis-worker",
+      "revision": "hirewiz-analysis-worker-00022-qut",
+      "traffic_percent": 0,
+      "latest_ready": true,
+      "configured_image": "us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz@sha256:de8dcc2d778d04f5afc87f4d1513ce6495fca4713676031635d55a0486a20fce",
+      "resolved_image_digest": "us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz@sha256:de8dcc2d778d04f5afc87f4d1513ce6495fca4713676031635d55a0486a20fce",
+      "ready": "True",
+      "allowlisted_configuration": {
+        "APP_RELEASE": "b306f135fcd5d8f10336c8cfb4174c71ac028649",
+        "APP_ENV": "production",
+        "SERVICE_ROLE": "worker",
+        "AUTO_DB_MIGRATE": "false",
+        "RAZORPAY_CHECKOUT_ENABLED": null,
+        "OPTIONAL_AI_GENERATION_ENABLED": "false",
+        "EMPLOYER_AUTO_SUBMIT_ENABLED": "false",
+        "CANDIDATE_ACCOUNT_LIFECYCLE_ENABLED": null,
+        "EMPLOYER_SEARCH_CREDITS_PER_JOB": null,
+        "EMPLOYER_APPLY_CREDITS_PER_JOB": null
+      },
+      "absent_allowlisted_names": [
+        "RAZORPAY_CHECKOUT_ENABLED",
+        "CANDIDATE_ACCOUNT_LIFECYCLE_ENABLED",
+        "EMPLOYER_SEARCH_CREDITS_PER_JOB",
+        "EMPLOYER_APPLY_CREDITS_PER_JOB"
+      ]
+    },
+    {
+      "service": "hirewiz-employer-worker",
+      "revision": "hirewiz-employer-worker-00012-lmz",
+      "traffic_percent": 100,
+      "latest_ready": true,
+      "configured_image": "us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz@sha256:cf2cb125a72c79a7b41f9c263c1a999521363d6c944affb3c017e0dc5e112f4d",
+      "resolved_image_digest": "us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz@sha256:cf2cb125a72c79a7b41f9c263c1a999521363d6c944affb3c017e0dc5e112f4d",
+      "ready": "True",
+      "allowlisted_configuration": {
+        "APP_RELEASE": "e7d8f2ba0435fd3d4a504ccdce83fac365ec6835",
+        "APP_ENV": "production",
+        "SERVICE_ROLE": "worker",
+        "AUTO_DB_MIGRATE": null,
+        "RAZORPAY_CHECKOUT_ENABLED": null,
+        "OPTIONAL_AI_GENERATION_ENABLED": null,
+        "EMPLOYER_AUTO_SUBMIT_ENABLED": "false",
+        "CANDIDATE_ACCOUNT_LIFECYCLE_ENABLED": null,
+        "EMPLOYER_SEARCH_CREDITS_PER_JOB": null,
+        "EMPLOYER_APPLY_CREDITS_PER_JOB": null
+      },
+      "absent_allowlisted_names": [
+        "AUTO_DB_MIGRATE",
+        "RAZORPAY_CHECKOUT_ENABLED",
+        "OPTIONAL_AI_GENERATION_ENABLED",
+        "CANDIDATE_ACCOUNT_LIFECYCLE_ENABLED",
+        "EMPLOYER_SEARCH_CREDITS_PER_JOB",
+        "EMPLOYER_APPLY_CREDITS_PER_JOB"
+      ]
+    }
+  ],
+  "public_pages": [
+    {
+      "requested_url": "https://www.hirewizhq.com/",
+      "final_url": "https://www.hirewizhq.com/",
+      "http_status": 200,
+      "observation_kind": "bounded anonymous GET; script/style text excluded; no hydration or browser execution",
+      "pricing_unavailable_message": null,
+      "retired_purchase_copy_matches": [],
+      "finite_bundle_qualification": true,
+      "error": null
+    },
+    {
+      "requested_url": "https://www.hirewizhq.com/pricing",
+      "final_url": "https://www.hirewizhq.com/pricing",
+      "http_status": 200,
+      "observation_kind": "bounded anonymous GET; script/style text excluded; no hydration or browser execution",
+      "pricing_unavailable_message": true,
+      "retired_purchase_copy_matches": [],
+      "finite_bundle_qualification": true,
+      "error": null
+    },
+    {
+      "requested_url": "https://hirewizhq.com/",
+      "final_url": "https://www.hirewizhq.com/",
+      "http_status": 200,
+      "observation_kind": "bounded anonymous GET; script/style text excluded; no hydration or browser execution",
+      "pricing_unavailable_message": null,
+      "retired_purchase_copy_matches": [],
+      "finite_bundle_qualification": true,
+      "error": null
+    },
+    {
+      "requested_url": "https://hirewizhq.com/pricing",
+      "final_url": "https://www.hirewizhq.com/pricing",
+      "http_status": 200,
+      "observation_kind": "bounded anonymous GET; script/style text excluded; no hydration or browser execution",
+      "pricing_unavailable_message": true,
+      "retired_purchase_copy_matches": [],
+      "finite_bundle_qualification": true,
+      "error": null
+    }
+  ],
+  "public_api": [
+    {
+      "name": "api-health",
+      "url": "https://ai-resume-parser-mqff62d75a-uc.a.run.app/api/health",
+      "observed_at_utc": "2026-10-09T22:11:35.330774+00:00",
+      "http_status": 200,
+      "bytes": 119,
+      "cache_control": null,
+      "allowlisted_response": {
+        "ok": true,
+        "release": "e7d8f2ba0435fd3d4a504ccdce83fac365ec6835",
+        "revision": "ai-resume-parser-e7-checkout-off-20261010",
+        "schema_version": null,
+        "schema_ready": null
+      }
+    },
+    {
+      "name": "api-public-catalog",
+      "url": "https://ai-resume-parser-mqff62d75a-uc.a.run.app/api/public/billing/catalog",
+      "observed_at_utc": "2026-10-09T22:11:35.688184+00:00",
+      "http_status": 200,
+      "bytes": 886,
+      "cache_control": "no-store, max-age=0",
+      "top_level_names": [
+        "catalog_version",
+        "checkout_enabled",
+        "market",
+        "products",
+        "provider"
+      ],
+      "allowlisted_response": {
+        "catalog_version": "inr-2026-10-08-v2",
+        "checkout_enabled": false,
+        "products": [
+          {
+            "sku": "premium_30d",
+            "name": "HireWiz Premium \u2014 30 days",
+            "description": "One-time purchase of 30 days of HireWiz Premium access.",
+            "amount_minor": 99900,
+            "amount_display": "\u20b9999",
+            "currency": "INR",
+            "billing_type": "one_time",
+            "duration_days": 30,
+            "auto_renews": false,
+            "catalog_visible": true,
+            "enabled_for_purchase": false,
+            "entitlement_kind": "premium_access",
+            "entitlement_quantity": 30
+          },
+          {
+            "sku": "job_service_500",
+            "name": "HireWiz Job Service \u2014 500 credits",
+            "description": "500 prepaid credits for employer job search and supported auto-apply.",
+            "amount_minor": 49900,
+            "amount_display": "\u20b9499",
+            "currency": "INR",
+            "billing_type": "one_time",
+            "duration_days": 0,
+            "auto_renews": false,
+            "catalog_visible": true,
+            "enabled_for_purchase": false,
+            "entitlement_kind": "job_service_credits",
+            "entitlement_quantity": 500
+          }
+        ]
+      }
+    }
+  ],
+  "catalog_retirement": {
+    "checkout_enabled": false,
+    "legacy_rows_are_still_exposed_for_readonly_catalog": [
+      {
+        "sku": "premium_30d",
+        "catalog_visible": true,
+        "enabled_for_purchase": false
+      },
+      {
+        "sku": "job_service_500",
+        "catalog_visible": true,
+        "enabled_for_purchase": false
+      }
+    ],
+    "new_finite_bundles_present": false,
+    "all_exposed_products_purchase_disabled": true
+  },
+  "fresh_schema_observation": {
+    "available": false,
+    "reason": "Public health has no schema version/readiness fields. Native configuration is not a database schema measurement. No SQL was performed; schema 0013 or prior 0009 cannot be confirmed by this observation."
+  },
+  "runtime_limits": [
+    "Analysis worker latest 00022-qut has OPTIONAL_AI_GENERATION_ENABLED=false but receives 0% traffic. Serving 00021-5zd has that setting absent; no assertion that optional generation is disabled on the serving worker.",
+    "OPTIONAL_AI_GENERATION_ENABLED is absent on API and employer worker. CANDIDATE_ACCOUNT_LIFECYCLE_ENABLED is absent on all observed revisions; absent is unknown, not false.",
+    "Current live search/apply unit prices remain 1/5. New proposed 20-unit application policy and finite packs are not observed active.",
+    "Anonymous HTML GETs do not independently prove hydration, responsive layout, accessibility or candidate/private authorization.",
+    "No claim of complete deployment, global coverage, profitability, completed job submission or live financial correctness."
+  ],
+  "baseline_comparison": {
+    "api_revision_matches_expected": true,
+    "api_image_matches_expected": true,
+    "api_checkout_disabled": true,
+    "fresh_catalog_checkout_disabled": true
+  },
+  "schema_version": 1,
+  "independent_report_sha256": "032f1a912cfe457b6c40f27f6f0f4fa30856cf105e83bb787f863b2ddca07ab4",
+  "original_artifact_manifest_sha256": "a4614a06a6be616be9f95eadf5937074aa9569ee1b09c4cbeffc668cd3745dc2"
+}

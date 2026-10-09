@@ -56,7 +56,7 @@ observation, supported-method response summary and unknown facts.
 - [x] Owner-authorized conservative estimates and exactly three finite packs.
 - [x] Independent offline arithmetic and authority-boundary review.
 - [x] All five exact `29919c2` CI lanes; 2,341 backend tests pass without skips.
-- [ ] Independent clearance and integration of known fee/tax retention repair.
+- [x] Known fee/tax retention repair independently reviewed and integrated: 88 regressions and 22 actual PostgreSQL cases pass, zero skips; all five exact `44e0d92` CI lanes pass. [Review evidence](evidence/2026-10-10-payment-expense-observation-review.json). Production rollout remains pending.
 - [ ] Separate runtime/migration credentials, old-writer fencing and fresh backup.
 - [ ] Schema `0010`–`0013`, immutable joined rollout and production verification.
 - [ ] Actual invoice reconciliation and ongoing expense review.

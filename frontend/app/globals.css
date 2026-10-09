@@ -61,6 +61,9 @@
     background-color: #ffffff;
     color: var(--ink);
     font-family: var(--font-dm-sans), ui-sans-serif, system-ui, -apple-system, sans-serif;
+    /* Keep DM Sans at the Google loader's fixed default optical size. */
+    font-optical-sizing: none;
+    font-variation-settings: "opsz" 14;
     -webkit-font-smoothing: antialiased;
     min-height: 100vh;
   }

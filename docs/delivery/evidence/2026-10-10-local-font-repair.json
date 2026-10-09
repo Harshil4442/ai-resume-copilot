@@ -1,0 +1,112 @@
+{
+  "packet_version": 1,
+  "created_at": "2026-10-09T22:14:40.341252+00:00",
+  "source_base": "7d07b5575e9a6a1189dc55b71bea648e497d313c",
+  "scope": "Frontend-only local font loader repair, two original paths and eleven licensed vendor/provenance/documentation files. No lockfile, workflow, backend, API, auth/session, payment, employer, or cloud changes.",
+  "changed_paths": [
+    "frontend/app/fonts/CrimsonText-Italic.woff2",
+    "frontend/app/fonts/CrimsonText-Regular.woff2",
+    "frontend/app/fonts/CrimsonText-SemiBold.woff2",
+    "frontend/app/fonts/CrimsonText-SemiBoldItalic.woff2",
+    "frontend/app/fonts/DMSans-Variable.woff2",
+    "frontend/app/fonts/README.md",
+    "frontend/app/fonts/RobotoMono-Variable.woff2",
+    "frontend/app/fonts/crimsontext-OFL.txt",
+    "frontend/app/fonts/dmsans-OFL.txt",
+    "frontend/app/fonts/provenance.json",
+    "frontend/app/fonts/robotomono-OFL.txt",
+    "frontend/app/globals.css",
+    "frontend/app/layout.tsx"
+  ],
+  "source_count": 806,
+  "artifact_count": 118,
+  "hashes": {
+    "reviewed.patch": "dabbebf926ed675bb0ba2e83ee9906e98c08f8cde1e256a9bddf60aebf5946e5",
+    "preimages.json": "11f2df2cf09998f18a39101a4fdb921cc39aa32fc1b29111b9701088ce4d320e",
+    "source-manifest.json": "8872a4d3e938d741d7272106b9050954271477b9c7c2fe9c89d0f6522b268983",
+    "artifact-manifest.json": "65e3479a701d2feabe0d9047ab2190621f585a0a419bbca57a7e8d5ef1aeadb7"
+  },
+  "validation": {
+    "normal_Turbopack_production_build": "npm run build passes on final optical-none/opsz14 source",
+    "unit_tests": "240 passed",
+    "lint": "passed",
+    "typecheck": "passed",
+    "full_unchanged_Playwright": {
+      "passed": 215,
+      "skipped": 0,
+      "flaky": 0,
+      "unexpected": 0,
+      "elapsed_seconds": 155.25,
+      "target": "owned normal production server with existing synthetic fixture secret"
+    },
+    "font_browser_story": {
+      "widths": [
+        320,
+        390,
+        768,
+        1024,
+        1440
+      ],
+      "HTTP200_pages": [
+        "/",
+        "/pricing",
+        "/resources",
+        "/login"
+      ],
+      "page_errors": 0,
+      "console_messages": 0,
+      "overflow": false,
+      "six_faces_loaded": true,
+      "five_preloads": true,
+      "mono_preloaded": false,
+      "google_font_requests": false,
+      "source_build_served_font_bytes_identical": true
+    },
+    "reference_comparison": {
+      "fresh_current_Google_reference_not_historical_CI_identity": true,
+      "sample_count": 30,
+      "Crimson_Mono_identical_screenshots": 18,
+      "DM_unequal_screenshots": 12,
+      "max_width_difference_pixels": 0.140625
+    },
+    "retention": "Metadata/SEO/analytics/JSONLD/layout JSX, dependency/Next/Playwright/workflow contracts preserved byte-for-byte."
+  },
+  "font_integrity": "All original glyph/cmap/name/axes/metrics/shaping/timestamp table data byte-equivalent except WOFF2 head checksum and required compression flag 11. No subset, axis instantiation, outline/hint/metadata edits. Three original OFL files exact.",
+  "transfer_tradeoff": {
+    "all_font_bytes": 402300,
+    "preloaded_bytes": 291264,
+    "fresh_Google_Latin_unique_bytes": 173040,
+    "fresh_Google_Latin_preloaded_bytes": 140244,
+    "additional_preloaded_bytes": 151020,
+    "no_runtime_speed_or_CLS_improvement_claim": true
+  },
+  "preserved_counterexamples": [
+    "Original hosted 7d07 12-error Next font query/parser failure; not attributed to TLS/network.",
+    "Rejected opsz9 default comparison max width difference17.203125px.",
+    "Initial owned full E2E fixture auth-secret mismatch failures and traces; run interrupted, no source/auth change; corrected full suite passes.",
+    "Initial head-byte equality check refused expected WOFF2 container fields; only standards-defined exceptions accepted.",
+    "Initial bounded full PyPI metadata exceeded2MiB; version-specific metadata accepted later.",
+    "Initial font-only fixture CORS failure recorded; corrected loopback public-fixture comparison used.",
+    "Earlier default9 probe included /guides404; final distinct20-page probe uses verified HTTP200 resources route."
+  ],
+  "remaining_gates": [
+    "Independent frozen source review.",
+    "Root exact final source hosted CI and new native source-attested image/build checks.",
+    "Root deployment/promotion and actual hosted verification.",
+    "All pre-existing monetary/provider/global fence holds remain independent and unchanged."
+  ],
+  "claims": {
+    "cloud_mutations": false,
+    "CI_reruns": false,
+    "shared_source_edits": false,
+    "live_secrets_read": false,
+    "model_calls": false,
+    "actual_employer_payment_candidate_actions": false,
+    "global_deployment_complete": false
+  },
+  "schema_version": 1,
+  "author_report_sha256": "0a9242746eb41b54401d2313afecc17486cf9878f9ad95f2ba4f84a018954ec9",
+  "independent_review_sha256": "7af27b5243d06f784c80efcd81f0a8bed68d6610a115c42d3e9c793282caf907",
+  "production_deployed": false,
+  "full_published_source_ci_required": true
+}
