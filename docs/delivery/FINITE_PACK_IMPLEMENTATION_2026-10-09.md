@@ -1,6 +1,6 @@
 # BI08 finite packs and expense authority — implementation handoff
 
-Status: exact V2 source independently reviewed and integrated locally; not production configuration, payment activity, or deployment evidence. The operator must review and approve a fresh finite expense policy before new cost-bearing quotes or checkout can become available. Existing accepted orders and quotes retain their stored prices and terms.
+Status: exact V2 source independently reviewed and integrated; full composed source `44e0d92` passes all five CI jobs. Legacy checkout and frontend offer retirement are deployed separately. Finite-pack accounting, prices and funding authority are not yet activated in production. The operator must review and approve a fresh finite expense policy before new cost-bearing quotes or checkout can become available. Existing accepted orders and quotes retain their stored prices and terms.
 
 ## Customer offer
 
@@ -74,6 +74,8 @@ Use a guarded writer-drain maintenance window for the ordinary index build, with
 - [x] Root final connected cold browser → BFF → backend → SQL replay passed, with 240 frontend unit checks, production build, and affected search/application UI at all five widths. First packaging and stale-selector failures remain preserved. All five exact `29919c2` CI lanes now pass; the backend suite passes 2,341 tests without skips.
 - [x] Root preimage-checked 46-path composition with reviewed account, preferences and native resume changes; regenerated contracts. Published commit `92d1cc5` passed four CI lanes; its backend lane passed 2,337 tests and failed four stale integration-fixture expectations. The reviewed three-file test-only repair passes 87 focused checks; exact `29919c2` complete CI subsequently passes all five lanes, including 2,341 backend tests without skips. This is source verification; production activation remains pending.
 - [x] Owner-authorized stronger estimated expense policy independently reviewed offline; [bounded review evidence](evidence/2026-10-09-estimated-expense-policy-review.json) retains actual unknowns.
+- [x] Full composed `44e0d92` source CI: 2,447 backend tests, 240 frontend units, 215 browser cases and all five exact checkout proofs; [evidence](evidence/2026-10-10-exact-source-ci.json).
+- [x] Live frontend unlimited/legacy-offer retirement promoted separately as `67a51f2` on both HireWiz domains; [bounded release report](FRONTEND_OFFER_RETIREMENT_2026-10-10.md).
 - [ ] Current runtime authority, known variance, funded legacy exposure, alerts, monthly reconciliation and live catalog verified after deployment.
 - [ ] Guarded migration, approved deployment and production verification by the root task.
 

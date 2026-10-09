@@ -11,7 +11,7 @@ GET checks through Cloud Run, the custom API domain and both remaining public ta
 - [x] Exact source flag review: accepted capture/refund and signature processing unaffected.
 - [x] Checkout-only zero-traffic stage and exact configuration/image verification.
 - [x] 100% promotion and checks through every remaining public API route.
-- [ ] Separately reviewed frontend retirement of old purchase advertisements.
+- [x] Separately reviewed frontend retirement of old purchase advertisements promoted as `67a51f2`; [both live domains verified](FRONTEND_OFFER_RETIREMENT_2026-10-10.md).
 - [ ] Controlled schema13/backend rollout, funded policy and finite-pack purchase activation.
 
 The [sanitized deployment evidence](evidence/2026-10-10-live-legacy-checkout-retirement.json) records scope and verified identities. Private configuration files contain credentials and must not be published. Public tags are independent of traffic percentage; combined tag and exact traffic changes follow [the Cloud Run traffic reference](https://docs.cloud.google.com/sdk/gcloud/reference/run/services/update-traffic).
