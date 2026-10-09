@@ -204,7 +204,7 @@ def journey(tmp_path, monkeypatch):
         if request.url.host == "api.razorpay.com" and request.url.path == "/v1/orders":
             assert request.method == "POST"
             payload = json.loads(request.content)
-            assert payload["amount"] == 49_900 and payload["currency"] == "INR"
+            assert payload["amount"] == 64_900 and payload["currency"] == "INR"
             assert payload["partial_payment"] is False
             supplier_orders.append(payload)
             return httpx.Response(
@@ -415,7 +415,7 @@ def test_fresh_authenticated_no_ai_discovery_review_and_manual_handoff(journey):
         client.post(
             "/api/billing/orders",
             headers=owner,
-            json={"sku": "job_service_500", "billing_country": "IN"},
+            json={"sku": "starter_bundle", "billing_country": "IN"},
         )
     )
     assert len(supplier_orders) == 1
@@ -434,11 +434,11 @@ def test_fresh_authenticated_no_ai_discovery_review_and_manual_handoff(journey):
                     "order_id": checkout["provider_order_id"],
                     "method": "upi",
                     "international": False,
-                    "fee": 2500,
-                    "tax": 381,
+                    "fee": 1500,
+                    "tax": 229,
                     "notes": {
                         "hirewiz_order_id": checkout["order_id"],
-                        "sku": "job_service_500",
+                        "sku": "starter_bundle",
                         "billing_country": "IN",
                     },
                 }
@@ -448,7 +448,9 @@ def test_fresh_authenticated_no_ai_discovery_review_and_manual_handoff(journey):
     raw, signature = _sign(payload)
     _body(client.post("/api/billing/webhooks/razorpay", content=raw, headers=signature))
     _body(client.post("/api/billing/webhooks/razorpay", content=raw, headers=signature))
-    assert _body(client.get("/api/v1/employer-jobs/credits", headers=owner))["balance"] == 500
+    assert _body(client.get("/api/v1/employer-jobs/credits", headers=owner))["balance"] == 100
+    with factory() as db:
+        assert db.get(core.User, user["id"]).ai_credits == 52
 
     search_input = {
         "resume_id": parsed["resume_id"],
@@ -487,7 +489,7 @@ def test_fresh_authenticated_no_ai_discovery_review_and_manual_handoff(journey):
         201,
     )
     assert second["charged_credits"] == 0
-    assert _body(client.get("/api/v1/employer-jobs/credits", headers=owner))["balance"] == 496
+    assert _body(client.get("/api/v1/employer-jobs/credits", headers=owner))["balance"] == 96
 
     posting = search["items"][0]["posting"]
     opportunity = _body(
@@ -653,7 +655,7 @@ def test_fresh_authenticated_no_ai_discovery_review_and_manual_handoff(journey):
     assert handoff["handoff_url"] == posting["apply_url"]
     assert handoff["reserved_credits"] == handoff["charged_credits"] == 0
     assert handoff["receipt"] is None
-    assert _body(client.get("/api/v1/employer-jobs/credits", headers=owner))["balance"] == 496
+    assert _body(client.get("/api/v1/employer-jobs/credits", headers=owner))["balance"] == 96
     with factory() as db:
         assert db.query(core.ModelCallEvent).count() == 0
         runs = db.query(core.AnalysisRun).filter_by(user_id=user["id"]).all()
@@ -667,11 +669,18 @@ def test_fresh_authenticated_no_ai_discovery_review_and_manual_handoff(journey):
             run.generation_attempt_count == 0 and run.model_cost_quote is None for run in runs
         )
         assert all(run.usage_state == "committed" and run.committed_units == 1 for run in runs)
-        assert db.get(core.User, user["id"]).ai_credits == 47
+        assert db.get(core.User, user["id"]).ai_credits == 49
         assert (
-            sum(item.amount for item in db.query(core.UsageEvent).filter_by(user_id=user["id"]))
+            sum(item.amount for item in db.query(core.UsageEvent).filter_by(
+                user_id=user["id"], source_type="analysis_run"
+            ))
             == -3
         )
+        grants = db.query(core.UsageEvent).filter_by(
+            user_id=user["id"], source_type="payment_order", event_type="grant"
+        ).all()
+        assert len(grants) == 1 and grants[0].amount == 2
+        assert grants[0].source_id == checkout["order_id"]
         assert db.query(core.SkillCoverage).count() == 0
         assert (
             db.query(models.ServiceCreditEvent)
@@ -698,7 +707,7 @@ def test_fresh_authenticated_no_ai_discovery_review_and_manual_handoff(journey):
         )
         assert approvals[1].review_snapshot["resume_choice"] == "custom"
         assert approvals[1].review_snapshot["artifact_sha256"] == hashlib.sha256(custom).hexdigest()
-        assert db.get(core.User, user["id"]).job_service_credits == 496
+        assert db.get(core.User, user["id"]).job_service_credits == 96
         assert db.get(core.Resume, parsed["resume_id"]).source_document == original
     assert reached == []
     assert all(method == "GET" for method, host, _ in calls if host == "boards-api.greenhouse.io")

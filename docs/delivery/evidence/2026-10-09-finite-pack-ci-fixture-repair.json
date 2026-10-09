@@ -1,0 +1,72 @@
+{
+  "scope": "Three integration-test compatibility repairs only; no production behavior or configuration change.",
+  "published_parent": "92d1cc5a8baad7028d8e3c52e34e0c522df40caa",
+  "original_ci": {
+    "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37971964270",
+    "backend_passed": 2337,
+    "backend_failed": 4,
+    "successful_lanes": [
+      "frontend",
+      "cold-browser-journey",
+      "browser-companion",
+      "security-and-container"
+    ],
+    "private_log_sha256": "6066678c671062df66ca1b9b7c83fac5d20ec4384e2a8598dce5ab678003c66b"
+  },
+  "changed_tests": [
+    {
+      "path": "backend/tests/test_candidate_lifetime_migration_postgres.py",
+      "preimage_sha256": "1e3200ab64f3bd8f9941e9f34d1f62e35e1143e912fbfafe6eafda26a46ff6e5",
+      "postimage_sha256": "a478d10a0385bcd32b07ab830d26dd4eacf749ebf498e3c308ae996c5732e266"
+    },
+    {
+      "path": "backend/tests/test_employer_catalog_queries.py",
+      "preimage_sha256": "e0cf948dd06907d0549af7bf0160a1dfd0fc07dfefdb20bba4f5fd0055a038e8",
+      "postimage_sha256": "41677e67dfdc526470339d6d994b5b47649cfd9470798c6f146bb0944e4d98d8"
+    },
+    {
+      "path": "backend/tests/test_fresh_user_no_ai_journey.py",
+      "preimage_sha256": "0077d3207de8860c1aa7af9405689ceeb67d069d72cb0429e78abee0a299a0bf",
+      "postimage_sha256": "5455f26ce9829ffbe58ae7b01f1c8f1c00b52c4ada0f9d575c45a79212814c19"
+    }
+  ],
+  "independent_review": {
+    "status": "CLEAR",
+    "only_three_of_758_tracked_paths_differed": true,
+    "production_and_configuration_changed": false,
+    "original_ownership_file_approval_no_generation_and_zero_submission_assertions_retained": true
+  },
+  "root_validation": {
+    "passed": 87,
+    "failed": 0,
+    "skipped": 0,
+    "scope": [
+      "candidate lifetime actual PostgreSQL migrations",
+      "employer catalog queries",
+      "connected no-AI backend journey",
+      "expense budget guards",
+      "Razorpay historical and current billing"
+    ],
+    "private_log_sha256": "518e0aff2efafea967eebf7310ce795c28cfeed67947c1b7a09e28c8cc49cb9f",
+    "ruff": "pass"
+  },
+  "accounting": {
+    "sku": "starter_bundle",
+    "gross_minor": 64900,
+    "service_grant": 100,
+    "analysis_grant": 2,
+    "post_capture_analysis_balance": 52,
+    "operation_analysis_debits": -3,
+    "final_analysis_balance": 49,
+    "final_service_balance": 96,
+    "payment_grant_replay_count": 1,
+    "model_calls": 0,
+    "employer_submissions": 0
+  },
+  "release_status": {
+    "fresh_full_ci_pending": true,
+    "production_migration_performed": false,
+    "production_deployed": false,
+    "new_prices_live": false
+  }
+}

@@ -72,8 +72,10 @@ Use a guarded writer-drain maintenance window for the ordinary index build, with
 - [x] Frozen candidate source and preimage/hash manifests for independent review.
 - [x] Independent financial review of exact V2 source: 108 baseline checks, 22 actual PostgreSQL baseline passes and five distinct actual PostgreSQL boundary checks. The root now integrates the two-file historical-fixture/head repair; 40 actual PostgreSQL checks and four composed boundary checks pass without weakening the financial-history guard.
 - [x] Root final connected cold browser → BFF → backend → SQL replay passed, with 240 frontend unit checks, production build, and affected search/application UI at all five widths. First packaging and stale-selector failures remain preserved; complete remote CI remains pending.
-- [x] Root preimage-checked 46-path composition with reviewed account, preferences and native resume changes; regenerated contracts. Combined verification remains pending.
+- [x] Root preimage-checked 46-path composition with reviewed account, preferences and native resume changes; regenerated contracts. Published commit `92d1cc5` passed four CI lanes; its backend lane passed 2,337 tests and failed four stale integration-fixture expectations. The reviewed three-file test-only repair passes 87 focused checks; fresh complete CI remains pending.
 - [ ] Operator review of actual/estimated current authority, finite dates, known variance, funded legacy exposure, alerts and monthly reconciliation.
 - [ ] Guarded migration, approved deployment and production verification by the root task.
 
 No live payment, model, employer form submission, provider credential update or cloud mutation is performed by this authoring work. Independent scope clearance and complete deployment remain separate release requirements.
+
+The [CI fixture repair evidence](evidence/2026-10-09-finite-pack-ci-fixture-repair.json) preserves the failed run and exact changed test inputs. It explicitly targets schema0011 in the scoped additive test, retains schema0013 after the transaction-wide refused downgrade, and exercises the new Starter purchase rather than reopening retired checkout. The connected journey still proves zero model calls, exact source bytes, ownership, approval invalidation and no employer submission.

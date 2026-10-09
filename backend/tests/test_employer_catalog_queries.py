@@ -87,7 +87,7 @@ def test_catalog_reuses_authenticated_owner_and_preserves_catalog_contract(catal
     assert result["search_credits_per_job"] == 2
     assert result["apply_credits_per_job"] == 7
     assert result["max_search_jobs"] == 12
-    assert result["pricing_version"] == "employer-services-intro-v1"
+    assert result["pricing_version"] == "synthetic-expense-v1"
     assert result["admission_limits"]["day_boundary"] == "UTC"
     assert [source["id"] for source in result["sources"]] == ["source_a", "source_z"]
     assert all(source["application_mode"] == "manual" for source in result["sources"])

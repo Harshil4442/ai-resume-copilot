@@ -18,7 +18,7 @@ def test_candidate_schema_0011_is_additive_and_never_backfills_legacy_users(pg_e
     _migrate(pg_engine, "20261009_0010")
     with pg_engine.begin() as db:
         db.execute(text("INSERT INTO users(id,email,password_hash,ai_credits,job_service_credits) VALUES(91,'legacy@example.com','synthetic',50,0)"))
-    _migrate(pg_engine, "head")
+    _migrate(pg_engine, "20261009_0011")
     with pg_engine.connect() as db:
         assert db.scalar(text("SELECT version_num FROM alembic_version")) == "20261009_0011"
         assert db.scalar(text("SELECT COUNT(*) FROM candidate_password_accounts")) == 0
@@ -64,7 +64,7 @@ def test_deleted_sql_account_keeps_schema_use_history_and_refuses_downgrade(pg_e
     with pytest.raises(RuntimeError, match="Cannot discard candidate lifetime projections"):
         _migrate(pg_engine, "20261009_0010", direction="downgrade")
     with pg_engine.connect() as db:
-        assert db.scalar(text("SELECT version_num FROM alembic_version")) == "20261009_0011"
+        assert db.scalar(text("SELECT version_num FROM alembic_version")) == "20261009_0013"
 
 
 def test_monetary_preflight_honestly_refuses_unreviewed_schema_0011(context):
