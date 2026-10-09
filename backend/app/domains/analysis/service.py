@@ -18,7 +18,7 @@ OPERATION_UNITS = {
     "job_match": 1,
     "interview_questions": 1,
     "market_analysis": 5,
-    "resume_tailor": 10,
+    "resume_tailor": 2,
     "skill_roi": 0,
 }
 
@@ -183,6 +183,8 @@ def create_run(
             detail="Provide an Idempotency-Key header between 8 and 160 characters",
         )
     input_payload = dict(payload.input)
+    if any(key in input_payload for key in ("expense_paid_units", "_expense_paid_units", "expense_funding", "cost_policy_snapshot", "paid_current_reserved_credits")):
+        raise HTTPException(422, detail="Funding allocation is server-owned and cannot be supplied by the client")
     validate_analysis_input(
         db,
         user_id=user_id,

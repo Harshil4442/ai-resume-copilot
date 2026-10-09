@@ -210,7 +210,7 @@ function OpportunityContent() {
     : resumes.isError ? "request_error"
     : !sourceResume ? "missing_row"
     : sourceResume.source_available === false ? "confirmed_absent"
-    : sourceResume.source_available === true && (sourceResume.source_format === "pdf" || sourceResume.source_format === "docx") ? "ready"
+    : sourceResume.source_available === true && ["pdf", "docx", "tex", "texzip"].includes(sourceResume.source_format || "") ? "ready"
     : "unknown_metadata";
   const sourceReady = sourceState === "ready";
   const match = useQuery({
@@ -523,7 +523,7 @@ function OpportunityContent() {
               <select ref={resumeSelectRef} className="field-control min-w-0 truncate pr-8" title={sourceResume?.filename} value={item.resume_id || ""} onChange={(event) => connectResume.mutate(event.target.value)} disabled={connectResume.isPending}>
                 <option value="">Not connected</option>
                 {item.resume_id && !sourceResume ? <option value={item.resume_id}>Connected resume #{item.resume_id} · details unavailable</option> : null}
-                {(resumes.data?.resumes || []).map((resume) => <option key={resume.id} value={resume.id}>{resume.filename} · #{resume.id} · {resume.source_available === false ? "needs upload" : resume.source_available === true && (resume.source_format === "pdf" || resume.source_format === "docx") ? `${resume.source_format.toUpperCase()} original saved` : "source status unknown"}</option>)}
+                {(resumes.data?.resumes || []).map((resume) => <option key={resume.id} value={resume.id}>{resume.filename} · #{resume.id} · {resume.source_available === false ? "needs upload" : resume.source_available === true && ["pdf", "docx", "tex", "texzip"].includes(resume.source_format || "") ? `${(resume.source_format || "").toUpperCase()} original saved` : "source status unknown"}</option>)}
               </select>
             </label>
             <label className="grid min-w-0 gap-2 text-xs font-bold text-muted-foreground">
@@ -715,6 +715,7 @@ function OpportunityContent() {
                     const content = getSourcePreservingContent(version.structured_content);
                     const versionResume = resumes.data?.resumes.find((resume) => resume.id === version.resume_id);
                     const nativeFormat = content && versionResume?.source_available && versionResume.source_format === content.source_format ? content.source_format : null;
+                    const hasPdf = nativeFormat === "pdf" || nativeFormat === "tex" || nativeFormat === "texzip";
                     const isUpdating = updateVersion.isPending && updateVersion.variables?.id === version.id;
                     const isDownloading = downloadVersion.isPending && downloadVersion.variables?.id === version.id;
                     return (
@@ -726,7 +727,8 @@ function OpportunityContent() {
                           </div>
                           <div className="flex shrink-0 flex-wrap items-center gap-3">
                             <StatusBadge tone={version.approval_state === "approved" ? "teal" : version.approval_state === "rejected" ? "coral" : "neutral"}>{version.approval_state}</StatusBadge>
-                            {nativeFormat === "pdf" ? <Button asChild size="sm" variant="ghost"><Link href={`/resume/preview?resume=${version.resume_id}&version=${encodeURIComponent(version.id)}`}><FileText size={14} /> Preview version</Link></Button> : null}
+                            {hasPdf ? <Button asChild size="sm" variant="ghost"><Link href={`/resume/preview?resume=${version.resume_id}&version=${encodeURIComponent(version.id)}`}><FileText size={14} /> Preview version</Link></Button> : null}
+                            {nativeFormat === "tex" || nativeFormat === "texzip" ? <Button size="sm" variant="secondary" onClick={() => downloadVersion.mutate({ id: version.id, versionNumber: version.version_number, format: "pdf" })} disabled={isDownloading}><Download size={14} /> Download review PDF</Button> : null}
                             {nativeFormat ? <Button size="sm" variant="secondary" onClick={() => downloadVersion.mutate({ id: version.id, versionNumber: version.version_number, format: nativeFormat })} disabled={isDownloading}>{isDownloading ? <LoaderCircle size={14} className="animate-spin" /> : <Download size={14} />} {nativeFormat === "docx" && version.approval_state !== "approved" ? "Download draft DOCX" : `Download ${nativeFormat.toUpperCase()}`}</Button> : null}
                           </div>
                         </div>
@@ -734,7 +736,8 @@ function OpportunityContent() {
                           <details className="mt-5 border-t border-border pt-4" open={version.id === tailored?.resume_version_id}>
                             <summary className="cursor-pointer text-sm font-semibold text-primary">{content.source_edits.length ? `Review ${content.source_edits.length} proposed ${content.source_edits.length === 1 ? "change" : "changes"}` : "Review source snapshot"}</summary>
                             <div className="mt-5 space-y-5">
-                              {nativeFormat === "docx" ? <p className="text-sm leading-6 text-muted-foreground">Download the draft DOCX and review its text and layout in your document editor before approving this version.</p> : nativeFormat === "pdf" ? <p className="text-sm leading-6 text-muted-foreground">Use Preview version to check the exact PDF layout before approving.</p> : null}
+                              {content.partial_tailoring ? <p role="status" className="text-sm leading-6 text-muted-foreground">Partial tailoring: {content.omitted_edits || "some"} proposed edits were omitted because they could not satisfy the evidence or original layout checks. Review the retained changes before approval; your original and custom resume options remain available.</p> : null}
+                              {nativeFormat === "docx" ? <p className="text-sm leading-6 text-muted-foreground">Download the draft DOCX and review its text and layout in your document editor before approving this version.</p> : hasPdf ? <p className="text-sm leading-6 text-muted-foreground">Use Preview version to check the exact PDF layout before approving.</p> : null}
                               {content.source_edits.map((edit, index) => (
                                 <div key={edit.unit_id} className="min-w-0 rounded-lg bg-surface p-4 sm:p-5">
                                   <div className="flex flex-wrap items-center gap-x-4 gap-y-2">

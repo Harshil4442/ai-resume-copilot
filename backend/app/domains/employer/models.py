@@ -81,6 +81,7 @@ class EmployerPosting(Base):
     canonical_url = Column(Text, nullable=False)
     apply_url = Column(Text, nullable=False)
     language = Column(String(20), nullable=False, default="en")
+    preference_metadata = Column(JSON, nullable=True)
     publication_at = Column(DateTime(timezone=True), nullable=True)
     source_updated_at = Column(DateTime(timezone=True), nullable=True)
     first_seen_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
@@ -110,7 +111,8 @@ class ServiceCreditEvent(Base):
 
 class ServiceCreditReservation(Base):
     __tablename__ = "service_credit_reservations"
-    __table_args__ = (UniqueConstraint("operation", "source_id", name="uq_service_reservation_source"),)
+    __table_args__ = (UniqueConstraint("operation", "source_id", name="uq_service_reservation_source"),
+                      Index("ix_service_reservations_state_created", "state", "created_at"))
     id = Column(String(64), primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     operation = Column(String(40), nullable=False)
@@ -122,6 +124,7 @@ class ServiceCreditReservation(Base):
     released_amount = Column(Integer, nullable=False, default=0)
     state = Column(String(24), nullable=False, default="reserved")
     pricing_version = Column(String(64), nullable=False)
+    cost_policy_snapshot = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
     settled_at = Column(DateTime(timezone=True), nullable=True)
 

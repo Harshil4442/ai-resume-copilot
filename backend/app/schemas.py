@@ -88,7 +88,7 @@ class ResumeParseResponse(BaseModel):
     sections: Dict[str, str]
     contact_info: ContactInfo
     source_available: bool = False
-    source_format: Literal["pdf", "docx"] | None = None
+    source_format: Literal["pdf", "docx", "tex", "texzip"] | None = None
     extraction_mode: Literal["deterministic", "enriched"] = "deterministic"
     enrichment_state: str = "not_requested"
     enrichment_units: int = 0
@@ -104,7 +104,7 @@ class ResumeListItem(BaseModel):
     filename: str
     created_at: datetime
     source_available: bool = False
-    source_format: Literal["pdf", "docx"] | None = None
+    source_format: Literal["pdf", "docx", "tex", "texzip"] | None = None
 
 class ResumeListResponse(BaseModel):
     resumes: List[ResumeListItem]

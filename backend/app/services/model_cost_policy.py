@@ -80,6 +80,9 @@ class ModelCostPolicy(BaseModel):
 
     version: Identifier
     currency: Literal["USD"]
+    expense_funding: Literal["prepaid", "promotion", "legacy_premium"] | None = None
+    expense_policy_version: Identifier | None = None
+    expense_paid_units: Annotated[int, Field(strict=True, ge=0, le=10**12)] | None = None
     operation_limits_micros: dict[str, Positive]
     pricing_quotes: list[ModelPriceQuote] = Field(min_length=1, max_length=100)
 
@@ -103,7 +106,10 @@ def current_policy() -> ModelCostPolicy:
     if not raw:
         raise ModelCostUnavailable("Optional AI generation is unavailable: configure a reviewed model-cost policy.")
     try:
-        return ModelCostPolicy.model_validate_json(raw)
+        policy = ModelCostPolicy.model_validate_json(raw)
+        if policy.expense_funding is not None or policy.expense_policy_version is not None or policy.expense_paid_units is not None:
+            raise ValueError("Runtime funding cannot be supplied by pricing configuration")
+        return policy
     except (ValueError, TypeError):
         # Never expose invalid configuration, prices, or provider strings.
         raise ModelCostUnavailable("Optional AI generation is unavailable: the model-cost policy is invalid.") from None
@@ -116,13 +122,22 @@ def freeze_run_quote(run) -> None:
     if run.generation_attempt_count or 0:
         raise ModelCostUnavailable("This legacy operation has unquoted model attempts. Start a new reviewed operation.")
     policy = current_policy()
+    from ..billing.cost_policy import CostPolicyUnavailable
+    from ..billing.cost_policy import current_policy as expense_policy
+    try:
+        expense = expense_policy()
+    except CostPolicyUnavailable as exc:
+        raise ModelCostUnavailable(str(exc)) from None
     ceiling = policy.operation_limits_micros.get(run.operation)
     if ceiling is None:
         raise ModelCostUnavailable("Optional AI generation is unavailable: this operation has no cost ceiling.")
+    if (ceiling > expense.operation_model_ceilings_micros.get(run.operation, 0)
+            or ceiling > max(1, int(run.estimated_units or 0)) * expense.analysis_unit_model_ceiling_micros):
+        raise ModelCostUnavailable("Optional AI generation is unavailable: this operation exceeds its funded expense allowance.")
     now = datetime.now(UTC)
     if not any(q.valid_from <= now < q.expires_at for q in policy.pricing_quotes):
         raise ModelCostUnavailable("Optional AI generation is unavailable: the reviewed price quotes are expired or not yet valid.")
-    run.model_cost_quote = policy.model_dump(mode="json")
+    run.model_cost_quote = policy.model_dump(mode="json") | {"expense_policy_version": expense.version, "expense_funding": None}
     run.model_cost_ceiling_micros = ceiling
     run.model_cost_reserved_micros = 0
     run.model_cost_settled_micros = 0

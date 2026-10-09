@@ -6,6 +6,7 @@ Each test gets its own schema; no other database/schema is dropped or modified.
 from __future__ import annotations
 
 import copy
+import hashlib
 import os
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from pathlib import Path
@@ -787,20 +788,92 @@ def _migrate(engine, revision, direction="upgrade"):
         getattr(command, direction)(cfg, revision)
 
 
-def test_postgres_clean_upgrade_and_populated_round_trip_preserve_unknown_holds(pg_context, pg_engine, monkeypatch):
-    factory, client, _ = pg_context
-    delivered = client.post("/api/v1/employer-jobs/searches", json={
-        "resume_id": 10, "role": "Python", "desired_count": 2, "idempotency_key": "legacy-deliveries",
-    })
-    assert delivered.status_code == 201 and delivered.json()["charged_credits"] == 2
-    app = original._prepare(pg_context)
-    checks._queue(client, app)
-    monkeypatch.setattr(connectors, "submit_greenhouse", lambda *_a, **_k: (200, None))
-    assert tasks.execute_application(app["id"]) == "unknown"
+def test_postgres_clean_upgrade_and_populated_round_trip_preserve_unknown_holds(pg_engine, monkeypatch):
+    # Seed the historical schema itself. Current service calls correctly write
+    # expense snapshots whose 0013 downgrade guard must not be bypassed.
+    _migrate(pg_engine, "20261008_0008")
+    source_factory, source_client, content = original.context.__wrapped__(monkeypatch)
+    metadata = MetaData()
+    metadata.reflect(bind=pg_engine)
+    assert "cost_policy_snapshot" not in metadata.tables["service_credit_reservations"].c
+    assert "opening_key" not in metadata.tables["employer_applications"].c
+    now = original.utcnow()
+    app = {"id": "legacy_application"}
+    digest = hashlib.sha256(content).hexdigest()
+    try:
+        with source_factory() as source, pg_engine.begin() as connection:
+            for model in (core.User, core.Resume, models.EmployerSource, models.EmployerPosting):
+                table = metadata.tables[model.__tablename__]
+                for row in source.query(model).all():
+                    values = {column.name: copy.deepcopy(getattr(row, column.name)) for column in table.c}
+                    if model is core.User and row.id == 1:
+                        values["job_service_credits"] = 43  # 50 - two deliveries - five held application credits.
+                    if model is models.EmployerPosting:
+                        values["requisition_id"] = "legacy-requisition-alias"
+                    connection.execute(table.insert().values(**values))
+            reservations = metadata.tables["service_credit_reservations"]
+            for identifier, operation, source_id, price, count, state, committed in (
+                ("legacy_search_reservation", "job_search", "legacy_search", 1, 2, "settled", 2),
+                ("legacy_application_reservation", "job_application", app["id"], 5, 1, "reserved", 0),
+            ):
+                connection.execute(reservations.insert().values(
+                    id=identifier, user_id=1, operation=operation, source_id=source_id,
+                    unit_price=price, requested_count=count, reserved_amount=price * count,
+                    committed_amount=committed, released_amount=0, state=state,
+                    pricing_version="legacy-0008", created_at=now, settled_at=now if state == "settled" else None,
+                ))
+            connection.execute(metadata.tables["employer_searches"].insert().values(
+                id="legacy_search", user_id=1, resume_id=10, idempotency_key="legacy-deliveries",
+                input_fingerprint="a" * 64, query={"role": "Python"}, status="completed",
+                desired_count=2, delivered_count=2, reserved_credits=2, charged_credits=2,
+                refunded_credits=0, items=[{"id": "job_1"}, {"id": "job_2"}], scope={}, created_at=now,
+            ))
+            for index in (1, 2):
+                connection.execute(metadata.tables["employer_job_deliveries"].insert().values(
+                    id=f"legacy_delivery_{index}", user_id=1, posting_id=f"job_{index}",
+                    search_id="legacy_search", charged_credits=1, created_at=now,
+                ))
+            connection.execute(metadata.tables["sealed_application_artifacts"].insert().values(
+                id="legacy_artifact", user_id=1, resume_id=10, sha256=digest,
+                filename="Ada.pdf", media_type="application/pdf", size_bytes=len(content), content=content, created_at=now,
+            ))
+            connection.execute(metadata.tables["employer_applications"].insert().values(
+                id=app["id"], user_id=1, posting_id="job_1", idempotency_key="legacy-application",
+                input_fingerprint="b" * 64, active_key="legacy-active", resume_id=10,
+                resume_choice="original", artifact_id="legacy_artifact", form=original.FORM,
+                answers=original.ANSWERS, consents={}, package_digest=digest,
+                job_content_sha256=original.payload_fingerprint({"job": 1}), application_mode="api",
+                status="unknown", allowed_actions=["upload", "submit"], approved_digest=digest,
+                approved_at=now, cancel_requested=False, credit_cost=5, charged_credits=0,
+                reservation_id="legacy_application_reservation", error_code="submission_unknown",
+                created_at=now, updated_at=now,
+            ))
+            connection.execute(metadata.tables["employer_application_attempts"].insert().values(
+                id="legacy_attempt", application_id=app["id"], launch_token="legacy_launch",
+                package_digest=digest, state="unknown", response_status=200, started_at=now, completed_at=now,
+            ))
+            for identifier, kind, amount, balance, operation, source_id in (
+                ("legacy_search_reserve", "reserve", -2, 48, "job_search", "legacy_search"),
+                ("legacy_search_commit", "commit", 0, 48, "job_search", "legacy_search"),
+                ("legacy_application_reserve", "reserve", -5, 43, "job_application", app["id"]),
+            ):
+                connection.execute(metadata.tables["service_credit_events"].insert().values(
+                    id=identifier, user_id=1, event_type=kind, amount=amount, balance_after=balance,
+                    idempotency_key=identifier, source_type=operation, source_id=source_id,
+                    reason="Synthetic pre-cutover historical ledger", created_at=now,
+                ))
+    finally:
+        source_client.close()
+        source_factory.kw["bind"].dispose()
+    _migrate(pg_engine, "head")
+    factory = sessionmaker(bind=pg_engine, autoflush=False)
+    monkeypatch.setattr(tasks, "SessionLocal", factory)
+    monkeypatch.setattr(connectors, "submit_greenhouse", lambda *_a, **_k: pytest.fail("Unknown historical send must not be retried"))
     with factory() as db:
-        for posting in db.query(models.EmployerPosting):
-            posting.requisition_id = "legacy-requisition-alias"
-        db.commit()
+        delivered = db.get(models.EmployerSearch, "legacy_search")
+        assert delivered.status == "completed" and delivered.charged_credits == 2
+        assert all(row.cost_policy_snapshot is None for row in db.query(models.ServiceCreditReservation))
+    assert tasks.execute_application(app["id"]) == "unknown"
     # Verify the real migrated constraints, not a metadata-created schema.
     _migrate(pg_engine, "20261008_0008", direction="downgrade")
     assert "opening_key" not in {row["name"] for row in inspect(pg_engine).get_columns("employer_applications")}
@@ -830,7 +903,7 @@ def test_postgres_clean_migrations_build_admission_constraints(pg_engine):
     metadata = MetaData()
     version = Table("alembic_version", metadata, autoload_with=pg_engine)
     with pg_engine.connect() as connection:
-        assert connection.execute(select(version.c.version_num)).scalar_one() == "20261009_0011"
+        assert connection.execute(select(version.c.version_num)).scalar_one() == "20261009_0013"
 
 
 def test_sqlite_admission_migration_can_upgrade_downgrade_and_upgrade(tmp_path):

@@ -98,7 +98,7 @@ def billable_operation(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
             detail=(
                 f"Operation requires {exc.required} analysis unit(s). "
-                f"Your balance is {exc.balance}. Premium access has no unit deductions."
+                f"Your balance is {exc.balance}. Review prepaid packs in Billing."
             ),
         ) from exc
 

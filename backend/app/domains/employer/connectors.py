@@ -506,6 +506,7 @@ def _personio_rows(source: SourceContract, body: bytes) -> list[dict]:
             "id": identity, "title": node.findtext("name", ""),
             "location": node.findtext("office", ""),
             "description": "\n\n".join(descriptions).strip(),
+            "employmentType": node.findtext("employmentType", ""), "schedule": node.findtext("schedule", ""),
             "url": f"https://{host}/job/{identity}?display={language}", "language": language,
         })
     return rows
@@ -749,6 +750,10 @@ def _normalize(source: SourceContract, row: dict) -> dict | None:
         result["language"] = "und"
     if source.platform == "smartrecruiters":
         result["country"] = country or None
+    from .preference_metadata import normalize_metadata
+    result["preference_metadata"] = normalize_metadata(
+        source, row, feed_language=_feed_language(source) if source.platform in {"personio", "pinpoint"} else None,
+    )
     result["content_sha256"] = payload_fingerprint({key: value for key, value in result.items() if key not in {"source_updated_at", "publication_at"}})
     return result
 

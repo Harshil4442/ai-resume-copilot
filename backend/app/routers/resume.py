@@ -84,6 +84,8 @@ def get_resume(
             "description": "Original uploaded resume",
             "content": {
                 "application/pdf": {"schema": {"type": "string", "format": "binary"}},
+                "application/x-tex": {"schema": {"type": "string", "format": "binary"}},
+                "application/zip": {"schema": {"type": "string", "format": "binary"}},
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document": {
                     "schema": {"type": "string", "format": "binary"}
                 },
@@ -115,7 +117,8 @@ def download_resume_source(
         character if 32 <= ord(character) < 127 and character not in {'"', "\\"} else "_"
         for character in safe_filename
     )
-    media_type = (
+    native_media = {"tex": "application/x-tex", "texzip": "application/zip"}
+    media_type = native_media.get(resume.source_format) or (
         "application/pdf"
         if resume.source_format == "pdf"
         else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -135,6 +138,7 @@ def download_resume_source(
 
 ALLOWED_TYPES = {
     "application/pdf",
+    "application/x-tex", "text/x-tex", "text/plain", "application/zip", "application/x-zip-compressed",
     "application/octet-stream",                                          # generic binary (some browsers)
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",  # .docx
 }
@@ -149,8 +153,18 @@ MAX_DOCX_ENTRIES = 500
 def _validated_resume_upload(filename: str, content_type: str, data: bytes) -> tuple[str, str]:
     safe_name = Path(filename.replace("\\", "/")).name.strip()[:255]
     suffix = Path(safe_name).suffix.lower()
-    if suffix not in {".pdf", ".docx"} or content_type not in ALLOWED_TYPES:
-        raise HTTPException(status_code=400, detail="Only PDF and DOCX files are supported.")
+    if suffix not in {".pdf", ".docx", ".tex", ".zip"} or content_type not in ALLOWED_TYPES:
+        raise HTTPException(status_code=400, detail="Upload PDF, DOCX, a UTF-8 TeX file or a supported multi-file TeX ZIP project.")
+
+    if suffix in {".tex", ".zip"}:
+        from ..services.native_tex import read_project
+        from ..services.resume_layout import ResumeLayoutError
+        kind = "tex" if suffix == ".tex" else "texzip"
+        try:
+            read_project(data, kind)
+        except ResumeLayoutError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        return safe_name, kind
 
     if suffix == ".pdf":
         if not data.startswith(b"%PDF-"):
@@ -203,9 +217,13 @@ async def parse_resume(
             detail=f"File is larger than {MAX_UPLOAD_BYTES // (1024 * 1024)}MB limit.",
         )
     filename, source_format = _validated_resume_upload(filename, content_type, file_bytes)
-    raw_text, sections, skills, exp_years, contact_info = await run_in_threadpool(
-        parse_resume_file, file_bytes, filename=filename, use_llm=False
-    )
+    from ..services.resume_layout import ResumeLayoutError
+    try:
+        raw_text, sections, skills, exp_years, contact_info = await run_in_threadpool(
+            parse_resume_file, file_bytes, filename=filename, use_llm=False
+        )
+    except ResumeLayoutError as exc:
+        raise HTTPException(422, str(exc)) from exc
 
     resume = models.Resume(
         user_id=owner_id,
@@ -228,6 +246,8 @@ async def parse_resume(
     enrichment_state = "not_requested"
     enrichment_units = 0
     warnings: list[str] = []
+    if not raw_text.strip():
+        warnings.append("No readable text was found. A scanned or complex file may not support source-preserving tailoring. Keep the unchanged original/custom file, or upload an editable DOCX or TeX source; no ATS parsing guarantee is made.")
     from ..services.generation_gate import generation_enabled
 
     if enrich_skills and not generation_enabled():

@@ -76,11 +76,9 @@ export default function TermsOfService() {
           <h2 className="font-display text-2xl font-normal text-foreground mb-4">4. Public price and paid access</h2>
           <p>
             Current paid products are shown on the public <Link href="/pricing" className="text-primary hover:underline">Pricing page</Link>.
-            For the India launch, HireWiz offers a one-time Premium pass that provides 30 days of access. It is not a
-            recurring subscription, does not create an automatic-renewal mandate, and does not automatically charge
-            you again when it expires. HireWiz does not currently sell standalone analysis-unit packs.
-            A separate one-time service-credit pack pays for employer job discovery and supported automatic
-            applications. Premium does not waive these charges. Search and application prices are shown separately
+            HireWiz offers three finite prepaid packs containing the displayed job service credits and separate
+            AI analysis units. No pack grants unlimited usage or creates a subscription or automatic renewal.
+            Accepted older orders retain their purchased terms. Search and application prices are shown separately
             before you start; unused search reservations are returned, and application credits are committed only
             after a verified complete submission. Unknown outcomes retain the displayed reservation until reconciled.
           </p>
@@ -112,7 +110,7 @@ export default function TermsOfService() {
             unit cost is displayed before a metered operation starts. Units are a feature-use allowance only: they are
             not money, stored value, virtual currency, or a payment instrument; they have no cash value and cannot be
             transferred, withdrawn, resold, or redeemed. They do not refresh or expire while the account remains open,
-            and unused units are removed with account deletion. Premium users do not incur unit deductions while their pass is active.
+            and unused units are removed with account deletion. Optional AI depends on a current, funded cost policy. Complimentary units and accepted legacy-access work can pause when their limited funding pool is exhausted.
           </p>
           <p className="mt-4">
             If a technical failure consumes units without delivering a result, contact support with enough information

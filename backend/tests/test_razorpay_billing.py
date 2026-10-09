@@ -4,16 +4,8 @@ import json
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from fastapi import Depends, FastAPI
-from fastapi.testclient import TestClient
-from slowapi import _rate_limit_exceeded_handler
-from slowapi.errors import RateLimitExceeded
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
-
-from backend.app.billing.razorpay import RazorpayAdapter
 from backend.app.billing.catalog import CATALOG_VERSION
+from backend.app.billing.razorpay import RazorpayAdapter
 from backend.app.database import Base, get_db
 from backend.app.models import (
     EntitlementLedger,
@@ -28,7 +20,13 @@ from backend.app.rate_limiter import limiter
 from backend.app.routers import billing
 from backend.app.routers.auth import delete_account
 from backend.app.security import get_current_user
-
+from fastapi import Depends, FastAPI, Request
+from fastapi.testclient import TestClient
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 TEST_KEY_ID = "rzp_test_hirewiz123456"
 TEST_KEY_SECRET = "test_key_secret_for_checkout_hmac"
@@ -99,7 +97,7 @@ def enabled_checkout(monkeypatch):
     calls = []
 
     def fake_create(self, *, product, local_order_id, receipt):
-        assert product.amount_minor == {"premium_30d": 99_900, "job_service_500": 49_900}[product.sku]
+        assert product.amount_minor == {"starter_bundle": 64_900, "growth_bundle": 109_900, "scale_bundle": 219_900}[product.sku]
         assert product.currency == "INR"
         assert len(receipt) <= 40
         calls.append(local_order_id)
@@ -113,19 +111,39 @@ def enabled_checkout(monkeypatch):
 
 
 def _create_order(client):
-    response = client.post(
-        "/api/billing/orders",
-        json={"sku": "premium_30d", "billing_country": "IN"},
-    )
+    response = client.post("/api/billing/orders", json={"sku": "starter_bundle", "billing_country": "IN"})
     assert response.status_code == 200, response.text
     return response.json()
+
+
+def _accepted_legacy_order(client, sku="premium_30d"):
+    """An immutable accepted order from before the finite catalog cutover.
+
+    This intentionally does not call the current checkout route: old products
+    cannot be sold now, while actual webhook/refund contracts must still work.
+    """
+    import uuid
+    from backend.app.billing.catalog import PRODUCTS
+    product = PRODUCTS[sku]
+    session = client.app.dependency_overrides[get_db]()
+    db = next(session)
+    try:
+        user = db.query(User).one()
+        order = PaymentOrder(public_id="ord_"+uuid.uuid4().hex, user_id=user.id,
+            provider="razorpay",provider_mode="test",provider_key_id=TEST_KEY_ID,
+            provider_order_id="order_"+uuid.uuid4().hex, sku=sku,
+            catalog_version="inr-2026-10-08-v2", billing_type="one_time",
+            entitlement_kind=product.entitlement_kind, entitlement_quantity=product.entitlement_quantity,
+            billing_country="IN",billing_country_confirmed_at=datetime.now(timezone.utc),
+            gross_amount_minor=product.amount_minor,refunded_amount_minor=0,currency="INR",status="created")
+        db.add(order);db.commit();db.refresh(order)
+        return {"order_id":order.public_id,"provider_order_id":order.provider_order_id,"amount_minor":order.gross_amount_minor}
+    finally:
+        session.close()
 
 
 def _service_order(client):
-    response = client.post("/api/billing/orders", json={"sku": "job_service_500", "billing_country": "IN"})
-    assert response.status_code == 200, response.text
-    assert response.json()["amount_minor"] == 49_900
-    return response.json()
+    return _accepted_legacy_order(client,"job_service_500")
 
 
 def test_paid_job_credits_can_be_purchased_by_premium_and_granted_only_once(client, enabled_checkout, session_factory):
@@ -289,18 +307,18 @@ def test_catalog_and_checkout_fail_closed(client, monkeypatch, session_factory):
     assert catalog["checkout_enabled"] is False
     assert catalog["provider"] is None
     products = {product["sku"]: product for product in catalog["products"]}
-    assert set(products) == {"premium_30d", "job_service_500"}
+    assert set(products) == {"starter_bundle", "growth_bundle", "scale_bundle"}
     assert all(not product["enabled_for_purchase"] for product in products.values())
-    assert products["premium_30d"]["amount_minor"] == 99_900
-    assert products["job_service_500"]["amount_minor"] == 49_900
-    assert products["job_service_500"]["entitlement_quantity"] == 500
-    assert products["job_service_500"]["entitlement_kind"] == "job_service_credits"
+    assert products["starter_bundle"]["amount_minor"] == 64_900
+    assert products["growth_bundle"]["amount_minor"] == 109_900
+    assert products["growth_bundle"]["entitlement_quantity"] == 300
+    assert products["growth_bundle"]["entitlement_kind"] == "credit_bundle"
 
     config_response = client.get("/api/billing/config")
     assert config_response.headers["cache-control"] == "no-store, private"
     create_response = client.post(
         "/api/billing/orders",
-        json={"sku": "premium_30d", "billing_country": "IN"},
+        json={"sku": "starter_bundle", "billing_country": "IN"},
     )
     assert create_response.status_code == 503
     with session_factory() as db:
@@ -330,7 +348,7 @@ def test_production_never_enables_test_mode(client, monkeypatch):
 def test_order_contract_rejects_non_india_country(client, enabled_checkout, session_factory):
     response = client.post(
         "/api/billing/orders",
-        json={"sku": "premium_30d", "billing_country": "US"},
+        json={"sku": "starter_bundle", "billing_country": "US"},
     )
     assert response.status_code == 422
     assert enabled_checkout == []
@@ -350,25 +368,25 @@ def test_fresh_initializing_attempt_blocks_a_second_provider_order(
                 provider="razorpay",
                 provider_mode="test",
                 provider_key_id=TEST_KEY_ID,
-                sku="premium_30d",
+                sku="starter_bundle",
                 catalog_version=CATALOG_VERSION,
                 billing_type="one_time",
-                entitlement_kind="premium_access",
-                entitlement_quantity=30,
+                entitlement_kind="credit_bundle",
+                entitlement_quantity=100,
                 billing_country="IN",
                 billing_country_confirmed_at=datetime.now(timezone.utc),
-                gross_amount_minor=99_900,
+                gross_amount_minor=64_900,
                 refunded_amount_minor=0,
                 currency="INR",
                 status="initializing",
-                active_attempt_key=f"{user.id}:premium_30d:test",
+                active_attempt_key=f"{user.id}:starter_bundle:test",
             )
         )
         db.commit()
 
     response = client.post(
         "/api/billing/orders",
-        json={"sku": "premium_30d", "billing_country": "IN"},
+        json={"sku": "starter_bundle", "billing_country": "IN"},
     )
     assert response.status_code == 409
     assert enabled_checkout == []
@@ -382,18 +400,18 @@ def test_server_owned_order_reuse_and_mode_isolation(
 ):
     manipulated = client.post(
         "/api/billing/orders",
-        json={"sku": "premium_30d", "billing_country": "IN", "amount_minor": 1},
+        json={"sku": "starter_bundle", "billing_country": "IN", "amount_minor": 1},
     )
     assert manipulated.status_code == 422
 
     first = _create_order(client)
-    assert first["amount_minor"] == 99_900
+    assert first["amount_minor"] == 64_900
     assert first["currency"] == "INR"
     assert "notes" not in first
     assert first["provider_order_id"] == "order_fake_1"
     assert client.post(
         "/api/billing/orders",
-        json={"sku": "premium_30d", "billing_country": "IN"},
+        json={"sku": "starter_bundle", "billing_country": "IN"},
     ).json()[
         "order_id"
     ] == first["order_id"]
@@ -416,12 +434,15 @@ def test_server_owned_order_reuse_and_mode_isolation(
     monkeypatch.setenv("RAZORPAY_KEY_ID", "rzp_test_rotatedhirewiz123")
     rotated = client.post(
         "/api/billing/orders",
-        json={"sku": "premium_30d", "billing_country": "IN"},
+        json={"sku": "starter_bundle", "billing_country": "IN"},
     )
     assert rotated.status_code == 409
     assert len(enabled_checkout) == 1
 
     # A test-mode order is never returned alongside a live key.
+    from backend.tests.expense_policy_fixtures import estimated_expense_policy
+    approved = estimated_expense_policy() | {"review_status":"approved","reviewed_by":"synthetic-operator"}
+    monkeypatch.setenv("HIREWIZ_EXPENSE_POLICY_JSON", json.dumps(approved))
     monkeypatch.setenv("APP_ENV", "production")
     monkeypatch.setenv("RAZORPAY_MODE", "live")
     monkeypatch.setenv("RAZORPAY_KEY_ID", "rzp_live_hirewiz123456")
@@ -459,7 +480,7 @@ def test_checkout_signature_records_evidence_but_never_provisions(
 def test_capture_is_webhook_only_atomic_and_idempotent(
     client, enabled_checkout, session_factory
 ):
-    created = _create_order(client)
+    created = _accepted_legacy_order(client)
     with session_factory() as db:
         order = db.query(PaymentOrder).filter(PaymentOrder.public_id == created["order_id"]).one()
         first_payload = _capture_payload(order)
@@ -496,7 +517,7 @@ def test_capture_is_webhook_only_atomic_and_idempotent(
 def test_previous_webhook_secret_is_accepted_during_rotation(
     client, enabled_checkout, session_factory, monkeypatch
 ):
-    created = _create_order(client)
+    created = _accepted_legacy_order(client)
     with session_factory() as db:
         order = db.query(PaymentOrder).filter(PaymentOrder.public_id == created["order_id"]).one()
         payload = _capture_payload(order)
@@ -511,7 +532,7 @@ def test_previous_webhook_secret_is_accepted_during_rotation(
 def test_amount_mismatch_is_rejected_and_replay_cannot_provision(
     client, enabled_checkout, session_factory
 ):
-    created = _create_order(client)
+    created = _accepted_legacy_order(client)
     with session_factory() as db:
         order = db.query(PaymentOrder).filter(PaymentOrder.public_id == created["order_id"]).one()
         payload = _capture_payload(order, amount=1)
@@ -529,7 +550,7 @@ def test_amount_mismatch_is_rejected_and_replay_cannot_provision(
 
 
 def test_failed_payment_never_provisions(client, enabled_checkout, session_factory):
-    created = _create_order(client)
+    created = _accepted_legacy_order(client)
     with session_factory() as db:
         order = db.query(PaymentOrder).filter(PaymentOrder.public_id == created["order_id"]).one()
         payload = {
@@ -543,15 +564,16 @@ def test_failed_payment_never_provisions(client, enabled_checkout, session_facto
     with session_factory() as db:
         assert db.query(EntitlementLedger).count() == 0
         assert db.query(PaymentTransaction).one().status == "failed"
-    retry_order = _create_order(client)
-    assert retry_order["order_id"] == created["order_id"]
-    assert len(enabled_checkout) == 1
+    # Old failed orders remain readable; they are never re-offered as new sales.
+    assert client.get(f"/api/billing/orders/{created['order_id']}").status_code == 200
+    assert client.post("/api/billing/orders", json={"sku":"premium_30d","billing_country":"IN"}).status_code == 503
+    assert enabled_checkout == []
 
 
 def test_partial_and_full_refund_revoke_only_on_full_refund(
     client, enabled_checkout, session_factory
 ):
-    created = _create_order(client)
+    created = _accepted_legacy_order(client)
     with session_factory() as db:
         order = db.query(PaymentOrder).filter(PaymentOrder.public_id == created["order_id"]).one()
         capture = _capture_payload(order)
@@ -584,7 +606,7 @@ def test_partial_and_full_refund_revoke_only_on_full_refund(
 def test_refund_before_capture_is_terminal_and_late_capture_does_not_grant(
     client, enabled_checkout, session_factory
 ):
-    created = _create_order(client)
+    created = _accepted_legacy_order(client)
     with session_factory() as db:
         order = db.query(PaymentOrder).filter(PaymentOrder.public_id == created["order_id"]).one()
         refund = _refund_payload(order, "rfnd_early_full", 99_900)
@@ -605,7 +627,7 @@ def test_refund_before_capture_is_terminal_and_late_capture_does_not_grant(
 def test_partial_refund_before_capture_still_fulfils_once(
     client, enabled_checkout, session_factory
 ):
-    created = _create_order(client)
+    created = _accepted_legacy_order(client)
     with session_factory() as db:
         order = db.query(PaymentOrder).filter(PaymentOrder.public_id == created["order_id"]).one()
         partial = _refund_payload(order, "rfnd_early_partial", 10_000)
@@ -628,7 +650,7 @@ def test_partial_refund_before_capture_still_fulfils_once(
 def test_delayed_webhook_uses_order_entitlement_snapshot(
     client, enabled_checkout, session_factory, monkeypatch
 ):
-    created = _create_order(client)
+    created = _accepted_legacy_order(client)
     with session_factory() as db:
         order = db.query(PaymentOrder).filter(PaymentOrder.public_id == created["order_id"]).one()
         payload = _capture_payload(order)
@@ -647,7 +669,7 @@ def test_delayed_webhook_uses_order_entitlement_snapshot(
 def test_unknown_order_event_is_retryable_and_reconciles_same_event_id(
     client, enabled_checkout, session_factory
 ):
-    created = _create_order(client)
+    created = _accepted_legacy_order(client)
     with session_factory() as db:
         order = db.query(PaymentOrder).filter(PaymentOrder.public_id == created["order_id"]).one()
         payload = _capture_payload(order)
@@ -675,7 +697,7 @@ def test_unknown_order_event_is_retryable_and_reconciles_same_event_id(
 def test_same_event_id_with_different_payload_and_second_capture_are_rejected(
     client, enabled_checkout, session_factory
 ):
-    created = _create_order(client)
+    created = _accepted_legacy_order(client)
     with session_factory() as db:
         order = db.query(PaymentOrder).filter(PaymentOrder.public_id == created["order_id"]).one()
         first_payload = _capture_payload(order)
@@ -696,7 +718,7 @@ def test_same_event_id_with_different_payload_and_second_capture_are_rejected(
 def test_account_deletion_unlinks_but_retains_payment_audit(
     client, enabled_checkout, session_factory
 ):
-    created = _create_order(client)
+    created = _accepted_legacy_order(client)
     with session_factory() as db:
         order = db.query(PaymentOrder).filter(PaymentOrder.public_id == created["order_id"]).one()
         capture = _capture_payload(order)
@@ -704,7 +726,9 @@ def test_account_deletion_unlinks_but_retains_payment_audit(
 
     with session_factory() as db:
         user = db.query(User).filter(User.email == "buyer@example.com").one()
-        assert delete_account(db=db, current_user=user) == {"status": "deleted"}
+        # This historical financial owner has no native password enrollment.
+        request = Request({"type": "http", "method": "POST", "scheme": "https", "path": "/api/auth/delete-account", "raw_path": b"/api/auth/delete-account", "query_string": b"", "headers": [], "server": ("owned-test.invalid", 443), "client": ("127.0.0.1", 12345)})
+        assert delete_account(request=request, db=db, current_user=user) == {"status": "deleted"}
 
     with session_factory() as db:
         assert db.query(User).count() == 0
@@ -717,3 +741,58 @@ def test_account_deletion_unlinks_but_retains_payment_audit(
         assert entitlement.status == "ended_account_deleted"
         assert db.query(PaymentTransaction).count() == 1
         assert db.query(PaymentEvent).count() == 1
+
+
+def test_new_bundle_delivers_both_balances_once_from_frozen_terms(client, enabled_checkout, session_factory, monkeypatch):
+    from backend.app.models import UsageEvent
+    from backend.app.domains.employer.models import ServiceCreditEvent
+    created = _create_order(client)
+    with session_factory() as db:
+        order = db.query(PaymentOrder).filter_by(public_id=created["order_id"]).one()
+        assert order.cost_policy_snapshot["entitlements"] == {"job_service_credits":100,"analysis_units":2}
+        capture = _capture_payload(order)
+    # Current cost policy/catalog removal cannot rewrite an accepted order.
+    monkeypatch.delenv("HIREWIZ_EXPENSE_POLICY_JSON")
+    assert _post_event(client,"evt_bundle",capture).status_code == 200
+    assert _post_event(client,"evt_bundle_replay",capture).status_code == 200
+    with session_factory() as db:
+        user = db.query(User).one()
+        assert (user.ai_credits,user.job_service_credits,user.tier) == (22,100,"free")
+        assert db.query(UsageEvent).filter_by(event_type="grant").count() == 1
+        assert db.query(ServiceCreditEvent).filter_by(event_type="grant").count() == 1
+        assert db.query(EntitlementLedger).count() == 1
+
+
+def test_bundle_refund_revokes_both_proportionally_and_keeps_spent_debt(client, enabled_checkout, session_factory):
+    created = _create_order(client)
+    with session_factory() as db:
+        order = db.query(PaymentOrder).filter_by(public_id=created["order_id"]).one()
+        capture = _capture_payload(order)
+    assert _post_event(client,"evt_bundle_capture",capture).status_code == 200
+    with session_factory() as db:
+        user=db.query(User).one();user.job_service_credits=0;user.ai_credits=0
+        order=db.query(PaymentOrder).filter_by(public_id=created["order_id"]).one()
+        partial=_refund_payload(order,"rfnd_bundle_half",32450)
+        rest=_refund_payload(order,"rfnd_bundle_rest",32450)
+        db.commit()
+    assert _post_event(client,"evt_bundle_half",partial).status_code == 200
+    assert _post_event(client,"evt_bundle_half",partial).status_code == 200
+    with session_factory() as db:
+        user=db.query(User).one();assert (user.job_service_credits,user.ai_credits)==(-50,-1)
+    assert _post_event(client,"evt_bundle_rest",rest).status_code == 200
+    with session_factory() as db:
+        user=db.query(User).one();assert (user.job_service_credits,user.ai_credits)==(-100,-2)
+
+
+@pytest.mark.parametrize("sku",["premium_30d","job_service_500"])
+def test_retired_unlimited_and_old_pack_not_offered_for_new_purchase(client,enabled_checkout,session_factory,sku):
+    assert client.post("/api/billing/orders",json={"sku":sku,"billing_country":"IN"}).status_code==503
+    assert enabled_checkout==[]
+    assert len(client.get("/api/public/billing/catalog").json()["products"])==3
+
+
+def test_missing_expense_policy_blocks_checkout_before_provider_or_order(client,enabled_checkout,session_factory,monkeypatch):
+    monkeypatch.delenv("HIREWIZ_EXPENSE_POLICY_JSON")
+    assert client.post("/api/billing/orders",json={"sku":"starter_bundle","billing_country":"IN"}).status_code==503
+    assert enabled_checkout==[]
+    with session_factory() as db: assert db.query(PaymentOrder).count()==0

@@ -42,7 +42,11 @@ function fixture() {
   const runs: Record<string, unknown>[] = [];
   const opportunity = { id: "opp_existing_fixture", title: "Backend Engineer", company: "Example Studio", location: "Remote", priority: "medium", stage: "saved", source: "manual", source_url: null, compensation: null, deadline_at: null, archived_at: null, created_at: now, updated_at: now, resume_id: 1, latest_match_id: null, latest_analysis_run_id: null, next_action: null, notes: "", outcome: null, outcome_notes: null, outcome_at: null, job_description: posting.description, job_snapshot: {}, activity: [], contacts: [], reminders: [], resume_versions: [] };
   const resumes = [{ id: 1, filename: "Taylor-resume.docx", source_available: true, source_format: "docx", created_at: now }, { id: 2, filename: "Custom-resume.docx", source_available: true, source_format: "docx", created_at: now }];
-  const products = [{ sku: "premium_30d", name: "Premium pass", description: "30-day access", amount_minor: 9900, amount_display: "₹99", currency: "INR", billing_type: "one_time", duration_days: 30, entitlement_kind: "premium_access", entitlement_quantity: 30, auto_renews: false, catalog_visible: true, enabled_for_purchase: true }, { sku: "job_service_500", name: "500 service credits", description: "Employer search and apply", amount_minor: 49900, amount_display: "₹499", currency: "INR", billing_type: "one_time", duration_days: 0, entitlement_kind: "job_service_credits", entitlement_quantity: 500, auto_renews: false, catalog_visible: true, enabled_for_purchase: true }];
+  const products = [
+    { sku: "starter_bundle", name: "Starter", description: "Finite prepaid pack", amount_minor: 64900, amount_display: "₹649", entitlement_quantity: 100, analysis_units: 2 },
+    { sku: "growth_bundle", name: "Growth", description: "Finite prepaid pack", amount_minor: 109900, amount_display: "₹1,099", entitlement_quantity: 300, analysis_units: 6 },
+    { sku: "scale_bundle", name: "Scale", description: "Finite prepaid pack", amount_minor: 219900, amount_display: "₹2,199", entitlement_quantity: 700, analysis_units: 15 },
+  ].map(p => ({ ...p, currency: "INR", billing_type: "one_time", duration_days: 0, entitlement_kind: "credit_bundle", auto_renews: false, catalog_visible: true, enabled_for_purchase: true }));
 
   async function install(context: BrowserContext, baseURL: string) {
     const token = await encode({ secret: process.env.PLAYWRIGHT_AUTH_SECRET || "playwright-secret-at-least-thirty-two-characters", token: { sub: "424242", email: "fixture@example.com", name: "Taylor Example", hirewizUserId: 424242, accessToken: "local-fixture-token" }, maxAge: 3600 });
@@ -83,7 +87,7 @@ function fixture() {
       else if (path === "/v1/opportunities" && method === "POST") value = { id: "opp_job_fixture", ...body };
       else if (path === "/public/billing/catalog") value = { catalog_version: "fixture-v1", market: "IN", checkout_enabled: true, provider: "razorpay", products };
       else if (path === "/v1/usage-events") value = { balance: 40, items: [] };
-      else if (path === "/billing/recent-order") value = state.recentPaidPack ? { order_id: "order_fixture", sku: "job_service_500", status: "paid", fulfilled: true, amount_minor: 49900, currency: "INR", created_at: now, paid_at: now, refunded_at: null } : null;
+      else if (path === "/billing/recent-order") value = state.recentPaidPack ? { order_id: "order_fixture", sku: "growth_bundle", status: "paid", fulfilled: true, amount_minor: 109900, currency: "INR", created_at: now, paid_at: now, refunded_at: null } : null;
       else if (path === "/billing/orders" && method === "POST") { status = 503; value = { detail: "Fixture checkout disabled. No provider loaded." }; }
       else { unexpected.push(`${method} ${path}`); status = 503; value = { detail: "Unexpected fixture request" }; }
       await route.fulfill({ status, contentType: "application/json", body: JSON.stringify(value) });
@@ -196,7 +200,7 @@ test("tailored or custom file choices are saved explicitly before use", async ({
   const f = fixture(); await f.install(context, baseURL!); await searchOne(page); await page.getByRole("button", { name: "Prepare application", exact: true }).click(); const dialog = page.getByRole("dialog");
   await dialog.getByRole("combobox", { name: "Resume choice", exact: true }).selectOption("tailored"); await dialog.getByRole("combobox", { name: "Approved version", exact: true }).selectOption("version_approved"); await expect(dialog.locator("option[value=version_pending]")).toHaveCount(0); await expect(dialog.locator("option[value=version_snapshot]")).toHaveCount(0); await dialog.getByRole("button", { name: "Save and refresh review" }).click(); await expect(dialog.getByText("Exact sealed application file")).toBeVisible();
   expect(f.requests.filter((r) => r.method === "PUT").at(-1)?.body).toMatchObject({ resume_choice: "tailored", resume_version_id: "version_approved" });
-  await dialog.getByRole("combobox", { name: "Resume choice", exact: true }).selectOption("custom"); await dialog.getByLabel("Upload a custom PDF or DOCX").setInputFiles({ name: "custom.docx", mimeType: docxType, buffer: Buffer.from("Local custom file fixture") }); await expect(dialog.getByText("Your saved preview is out of date.", { exact: false })).toBeVisible(); await dialog.getByRole("button", { name: "Save and refresh review" }).click();
+  await dialog.getByRole("combobox", { name: "Resume choice", exact: true }).selectOption("custom"); await dialog.getByLabel("Upload a custom PDF, DOCX or TeX source").setInputFiles({ name: "custom.docx", mimeType: docxType, buffer: Buffer.from("Local custom file fixture") }); await expect(dialog.getByText("Your saved preview is out of date.", { exact: false })).toBeVisible(); await dialog.getByRole("button", { name: "Save and refresh review" }).click();
   expect(f.requests.filter((r) => r.method === "PUT").at(-1)?.body).toMatchObject({ resume_choice: "custom", resume_id: 2, resume_version_id: null }); expect(f.requests.some((r) => r.path.endsWith("/approve"))).toBe(false); expect(f.unexpected).toEqual([]);
 });
 
@@ -210,9 +214,9 @@ test("unavailable service or insufficient balance cannot start a paid search", a
   const f = fixture(); f.catalog.balance = 0; await f.install(context, baseURL!); await page.goto("/employer-jobs"); await page.getByRole("combobox", { name: "Resume", exact: true }).selectOption("1"); await page.getByLabel("Target role").fill("Backend Engineer"); await expect(page.getByRole("button", { name: "Find jobs", exact: true })).toBeDisabled(); await expect(page.getByText("You need 20 service credits for this search.", { exact: false })).toBeVisible(); f.catalog.balance = 100; f.catalog.enabled = false; await page.reload(); await expect(page.getByText(/Employer search is not enabled yet/)).toBeVisible(); await expect(page.getByRole("button", { name: "Find jobs", exact: true })).toBeDisabled(); expect(f.requests.some((r) => r.method === "POST")).toBe(false); expect(f.unexpected).toEqual([]);
 });
 
-test("Premium can purchase service credits and only server fulfillment confirms payment", async ({ page, context, baseURL }) => {
-  const f = fixture(); f.state.premium = true; await f.install(context, baseURL!); await page.goto("/billing"); const pack = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "500 service credits" }) }); await pack.getByRole("button", { name: "Review purchase" }).click(); await page.getByRole("checkbox", { name: /I confirm my billing country/ }).check(); await page.getByRole("button", { name: /Pay with Razorpay/ }).click(); await expect(page.getByRole("alert").filter({ hasText: "Fixture checkout disabled" })).toContainText("Fixture checkout disabled"); expect(f.requests.find((r) => r.path === "/billing/orders")?.body).toEqual({ sku: "job_service_500", billing_country: "IN" }); await expect(page.getByRole("heading", { name: "Payment confirmed" })).toHaveCount(0);
-  f.state.recentPaidPack = true; await page.reload(); await expect(page.getByRole("heading", { name: "Payment confirmed" })).toBeVisible(); await expect(page.getByText(/delivered your purchased job service credits/)).toBeVisible(); await page.getByRole("button", { name: "Review another purchase" }).click(); await expect(pack.getByRole("button", { name: "Review purchase" })).toBeEnabled(); await checkLayout(page); expect(f.unexpected).toEqual([]);
+test("Legacy access can purchase finite bundles and only server fulfillment confirms payment", async ({ page, context, baseURL }) => {
+  const f = fixture(); f.state.premium = true; await f.install(context, baseURL!); await page.goto("/billing"); const pack = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Growth" }) }); await pack.getByRole("button", { name: "Review purchase" }).click(); await page.getByRole("checkbox", { name: /I confirm my billing country/ }).check(); await page.getByRole("button", { name: /Pay with Razorpay/ }).click(); await expect(page.getByRole("alert").filter({ hasText: "Fixture checkout disabled" })).toContainText("Fixture checkout disabled"); expect(f.requests.find((r) => r.path === "/billing/orders")?.body).toEqual({ sku: "growth_bundle", billing_country: "IN" }); await expect(page.getByRole("heading", { name: "Payment confirmed" })).toHaveCount(0);
+  f.state.recentPaidPack = true; await page.reload(); await expect(page.getByRole("heading", { name: "Payment confirmed" })).toBeVisible(); await expect(page.getByText(/delivered your purchased entitlements/)).toBeVisible(); await page.getByRole("button", { name: "Review another purchase" }).click(); await expect(pack.getByRole("button", { name: "Review purchase" })).toBeEnabled(); await checkLayout(page); expect(f.unexpected).toEqual([]);
 });
 
 test("service credit checkout links select the requested pack without starting a purchase", async ({ page, context, baseURL }) => {
@@ -220,18 +224,18 @@ test("service credit checkout links select the requested pack without starting a
   await f.install(context, baseURL!);
   await page.goto("/employer-jobs");
   const buy = page.getByRole("link", { name: "Buy credits", exact: true });
-  await expect(buy).toHaveAttribute("href", "/billing?sku=job_service_500");
+  await expect(buy).toHaveAttribute("href", "/billing");
   await buy.click();
-  await expect(page).toHaveURL(/\/billing\?sku=job_service_500$/);
-  const pack = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "500 service credits" }) });
-  const premium = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Premium pass" }) });
+  await expect(page).toHaveURL(/\/billing$/);
+  const pack = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Starter" }) });
+  const premium = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Growth" }) });
   await expect(pack.getByRole("button", { name: "Selected", exact: true })).toBeEnabled();
   await expect(premium.getByRole("button", { name: "Review purchase", exact: true })).toBeEnabled();
   expect(f.requests.some((r) => r.path === "/billing/orders")).toBe(false);
   await page.getByRole("checkbox", { name: /I confirm my billing country/ }).check();
   await page.getByRole("button", { name: /Pay with Razorpay/ }).click();
   await expect(page.getByRole("alert").filter({ hasText: "Fixture checkout disabled" })).toBeVisible();
-  expect(f.requests.find((r) => r.path === "/billing/orders")?.body).toEqual({ sku: "job_service_500", billing_country: "IN" });
+  expect(f.requests.find((r) => r.path === "/billing/orders")?.body).toEqual({ sku: "starter_bundle", billing_country: "IN" });
   await checkLayout(page);
   expect(f.unexpected).toEqual([]);
 });
@@ -239,21 +243,39 @@ test("service credit checkout links select the requested pack without starting a
 test("billing links keep manual choice and ignore an unsupported product", async ({ page, context, baseURL }) => {
   const f = fixture();
   await f.install(context, baseURL!);
-  await page.goto("/billing?sku=job_service_500");
-  const pack = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "500 service credits" }) });
-  const premium = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Premium pass" }) });
+  await page.goto("/billing");
+  const pack = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Starter" }) });
+  const premium = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Growth" }) });
   await expect(pack.getByRole("button", { name: "Selected", exact: true })).toBeEnabled();
   await premium.getByRole("button", { name: "Review purchase", exact: true }).click();
   await expect(premium.getByRole("button", { name: "Selected", exact: true })).toBeEnabled();
   await expect(pack.getByRole("button", { name: "Review purchase", exact: true })).toBeEnabled();
   await page.goto("/billing?sku=unsupported_product");
-  await expect(premium.getByRole("button", { name: "Selected", exact: true })).toBeEnabled();
+  await expect(pack.getByRole("button", { name: "Selected", exact: true })).toBeEnabled();
   await expect(page.getByRole("button", { name: /Pay with Razorpay/ })).toBeDisabled();
   expect(f.requests.some((r) => r.path === "/billing/orders")).toBe(false);
   await checkLayout(page);
   expect(f.unexpected).toEqual([]);
 });
 
+
+test("exactly three finite packs disclose both balances and permit Scale review without payment", async ({ page, context, baseURL }) => {
+  const f = fixture(); await f.install(context, baseURL!); await page.goto("/billing");
+  await expect(page.getByRole("article")).toHaveCount(3);
+  for (const [name, credits, units, total] of [["Starter",100,2,"₹649"],["Growth",300,6,"₹1,099"],["Scale",700,15,"₹2,199"]] as const) {
+    const pack = page.getByRole("article").filter({ has: page.getByRole("heading", { name, exact: true }) });
+    await expect(pack.getByText(`${credits} job service credits`, { exact: true })).toBeVisible();
+    await expect(pack.getByText(`${units} AI analysis units · full tailoring uses 2 units`, { exact: true })).toBeVisible();
+    await expect(pack.getByText(total, { exact: true })).toBeVisible();
+  }
+  const scale = page.getByRole("article").filter({ has: page.getByRole("heading", { name:"Scale", exact:true }) });
+  await scale.getByRole("button", { name:"Review purchase", exact:true }).click();
+  await expect(scale.getByRole("button", { name:"Selected", exact:true })).toBeEnabled();
+  await expect(page.getByText("700 service credits + 15 analysis units after verified payment", { exact:true })).toBeVisible();
+  await expect(page.getByRole("button", { name:/Pay with Razorpay/ })).toBeDisabled();
+  expect(f.requests.some(r => r.path === "/billing/orders")).toBe(false);
+  await checkLayout(page); expect(f.unexpected).toEqual([]);
+});
 
 test("exact PDF MIME failures block approval and allow a safe preview retry", async ({ page, context, baseURL }) => {
   const f = fixture(); f.state.applicationsVisible = true; f.state.badPdf = true; f.application.status = "ready"; f.application.missing_fields = []; f.application.artifact!.media_type = "application/pdf"; f.application.artifact!.filename = "Taylor.pdf"; await f.install(context, baseURL!);
@@ -276,7 +298,7 @@ test("existing dashboard, workspace, resume and billing remain usable at every w
     new PerformanceObserver((entries) => { for (const entry of entries.getEntries()) { const shift = entry as PerformanceEntry & { value: number; hadRecentInput: boolean; sources: { node?: Element; previousRect: DOMRectReadOnly; currentRect: DOMRectReadOnly }[] }; if (!shift.hadRecentInput) { metrics.cls += shift.value; metrics.shifts.push({ value: shift.value, nodes: shift.sources?.map((source) => ({ tag: source.node?.nodeName, className: source.node instanceof Element ? source.node.getAttribute("class") : null, from: source.previousRect.toJSON(), to: source.currentRect.toJSON() })) }); } } }).observe({ type: "layout-shift", buffered: true });
   });
   const lab: Record<string, unknown>[] = [];
-  for (const [path, heading] of [["/employer-jobs", "Find your next role. Apply with control."], ["/dashboard", "Good to see you, Taylor."], ["/workspace", "Your opportunities"], ["/workspace/opp_existing_fixture", "Backend Engineer"], ["/resume", "Add your source resume"], ["/billing", "Access and service credits"]]) {
+  for (const [path, heading] of [["/employer-jobs", "Find your next role. Apply with control."], ["/dashboard", "Good to see you, Taylor."], ["/workspace", "Your opportunities"], ["/workspace/opp_existing_fixture", "Backend Engineer"], ["/resume", "Add your source resume"], ["/billing", "Your prepaid balances"]]) {
     await page.goto(path); await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible(); await expect(page.locator(".animate-pulse")).toHaveCount(0); await page.evaluate(() => document.fonts.ready); await checkLayout(page);
     if (process.env.PLAYWRIGHT_LAB_DIR) lab.push({ path, ...await page.evaluate(async () => {
       await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));

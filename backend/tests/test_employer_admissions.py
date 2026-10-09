@@ -61,10 +61,14 @@ def test_daily_pending_limit_is_atomic_and_queue_replay_does_not_reserve_twice(c
 
 def test_execution_keeps_the_exact_approved_pricing_version_after_release_changes(context, monkeypatch):
     factory, client, _ = context
-    monkeypatch.setattr(config, "PRICING_VERSION", "synthetic-reviewed-price-v1")
+    import json
+
+    from backend.tests.expense_policy_fixtures import synthetic_expense_policy
+    policy = synthetic_expense_policy() | {"version": "synthetic-reviewed-price-v1"}
+    monkeypatch.setenv("HIREWIZ_EXPENSE_POLICY_JSON", json.dumps(policy))
     application = original._prepare(context)
     assert application["pricing_snapshot"]["pricing_version"] == "synthetic-reviewed-price-v1"
-    monkeypatch.setattr(config, "PRICING_VERSION", "synthetic-current-price-v2")
+    monkeypatch.setenv("HIREWIZ_EXPENSE_POLICY_JSON", json.dumps(policy | {"version": "synthetic-current-price-v2"}))
     assert _queue(client, application).status_code == 200
     with factory() as db:
         reservation = db.query(models.ServiceCreditReservation).one()

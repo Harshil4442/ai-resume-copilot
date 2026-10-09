@@ -15,7 +15,7 @@ import type { ResumeParseResponse } from "../../lib/types";
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 const ACCEPTED_TYPES = new Set([
-  "application/pdf",
+  "application/pdf", "application/x-tex", "text/x-tex", "text/plain", "application/zip", "application/x-zip-compressed", "application/octet-stream", "",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 ]);
 
@@ -43,9 +43,9 @@ function ResumeUploadContent() {
       setFile(null);
       return;
     }
-    if (!ACCEPTED_TYPES.has(candidate.type) || candidate.size > MAX_FILE_BYTES) {
+    if (!/\.(pdf|docx|tex|zip)$/i.test(candidate.name) || !ACCEPTED_TYPES.has(candidate.type) || candidate.size > MAX_FILE_BYTES) {
       setFile(null);
-      setError("Choose a PDF or DOCX file no larger than 5 MB.");
+      setError("Choose PDF, DOCX, TeX or a source ZIP project no larger than 5 MB.");
       return;
     }
     setFile(candidate);
@@ -126,7 +126,7 @@ function ResumeUploadContent() {
             {opportunityId ? <div className="mt-4 text-sm leading-6 text-muted-foreground"><p>Upload your original resume, then use it for the opportunity you came from. Import and approve the new upload&apos;s facts to enable tailoring.</p><Link href={`/workspace/${encodeURIComponent(opportunityId)}?tab=resume`} className="mt-2 inline-flex font-semibold text-primary hover:underline">Back to your opportunity</Link></div> : null}
           </div>
           <div className="flex gap-5 text-xs text-muted-foreground">
-            <span className="flex items-center gap-2"><ShieldCheck size={16} className="text-primary" /> PDF or DOCX</span>
+            <span className="flex items-center gap-2"><ShieldCheck size={16} className="text-primary" /> PDF, DOCX or native TeX</span>
             <span>5 MB maximum</span>
           </div>
         </header>
@@ -140,12 +140,12 @@ function ResumeUploadContent() {
               onDragOver={handleDrag}
               onDrop={handleDrop}
             >
-              <input className="sr-only" type="file" accept="application/pdf,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" disabled={loading || connecting} onChange={(event) => chooseFile(event.target.files?.[0] || null)} />
+              <input className="sr-only" type="file" accept=".pdf,.docx,.tex,.zip,application/pdf,application/x-tex,application/zip" disabled={loading || connecting} onChange={(event) => chooseFile(event.target.files?.[0] || null)} />
               <span className="icon-tile h-12 w-12">{file ? <FileText size={22} /> : <FileUp size={22} />}</span>
               <h2 className="font-display mt-5 max-w-full break-words text-lg font-normal text-foreground">{file ? file.name : "Choose a resume"}</h2>
               <p className="mt-2 text-sm text-muted-foreground">{file ? `${(file.size / 1024 / 1024).toFixed(2)} MB, ready to parse` : "Drop the file here or open your file browser"}</p>
             </label>
-            <label className="mt-4 flex items-start gap-3 text-sm leading-6"><input type="checkbox" className="mt-1 h-4 w-4 shrink-0 accent-primary" checked={enrichSkills} disabled={loading || connecting} onChange={(event) => setEnrichSkills(event.target.checked)} /><span>Optional AI skill enrichment · 1 analysis unit<span className="mt-1 block text-xs leading-5 text-muted-foreground">Default parsing extracts text and catalog skills without generative AI. Enable this to send resume text for additional source-supported AI skill suggestions. One unit is charged only if useful additional skills are found; current Premium analysis policy applies. Review the results before using them.</span></span></label>
+            <label className="mt-4 flex items-start gap-3 text-sm leading-6"><input type="checkbox" className="mt-1 h-4 w-4 shrink-0 accent-primary" checked={enrichSkills} disabled={loading || connecting} onChange={(event) => setEnrichSkills(event.target.checked)} /><span>Optional AI skill enrichment · 1 analysis unit<span className="mt-1 block text-xs leading-5 text-muted-foreground">Default parsing extracts text and catalog skills without generative AI. Enable this to send resume text for additional source-supported AI skill suggestions. One unit is charged only if useful additional skills are found; New AI requests also require available funding; existing paid access terms remain. Review the results before using them.</span></span></label>
             <Button type="submit" className="mt-4 w-full" disabled={!file || loading || connecting}>
               {loading ? "Extracting evidence..." : "Parse resume"} <ArrowRight size={16} />
             </Button>

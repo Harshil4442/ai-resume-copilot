@@ -30,6 +30,7 @@ LIABILITY_QUOTE_FIELDS = (
     "version", "input_rate_micros_per_million", "output_rate_micros_per_million",
     "max_input_tokens", "max_output_tokens", "output_limit_parameter", "token_estimator",
     "operation_policy_version", "admission_policy_version", "authorized_ceiling_micros",
+    "expense_policy_version", "expense_funding", "expense_pool",
 )
 
 
@@ -158,6 +159,18 @@ def persistent_run_budget(factory, run_id: str):
             spent = run.model_cost_reserved_micros + run.model_cost_settled_micros
             if spent + reservation > current_ceiling:
                 raise GenerationBudgetExhausted("The operation's quoted maximum authorized estimated spend was reached.")
+            from ..billing.cost_policy import CostPolicyUnavailable, assert_model_funding
+            from ..domains.usage.service import funding_for_run
+            if (run.model_cost_quote or {}).get("expense_funding") is None:
+                run.model_cost_quote = dict(run.model_cost_quote) | {"expense_funding": funding_for_run(
+                    db, user_id=user_id, run=run, units=int(run.estimated_units or 0))}
+            try:
+                funding = assert_model_funding(db, operation=run.operation, operation_ceiling=current_ceiling,
+                                               reservation=reservation,
+                                               funding=(run.model_cost_quote or {}).get("expense_funding") or "promotion")
+            except CostPolicyUnavailable as exc:
+                raise GenerationBudgetExhausted(str(exc)) from None
+            quote.update(funding)
             run.generation_attempt_count += 1
             run.model_cost_reserved_micros += reservation
             run.provider, run.model, run.prompt_version = provider, model, prompt_version

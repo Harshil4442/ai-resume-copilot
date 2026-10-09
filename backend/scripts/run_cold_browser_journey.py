@@ -319,7 +319,11 @@ def _sql_proof(engine):
         approvals = db.execute(text("SELECT allowed_actions FROM employer_application_approvals")).scalars().all()
         assert all(sorted(row) == ["fill", "upload"] for row in approvals)
         balance, units = db.execute(text("SELECT job_service_credits, ai_credits FROM users WHERE email='candidate.browser@example.com'")).one()
-        assert balance == 496 and units == 50
+        assert balance == 96 and units == 52
+        assert scalar("SELECT count(*) FROM usage_events WHERE source_type='payment_order' AND event_type='grant' AND amount=2") == 1
+        assert scalar("SELECT count(*) FROM usage_events WHERE source_type='analysis_run'") == 0
+        assert scalar("SELECT count(*) FROM service_credit_events WHERE event_type='grant' AND amount=100") == 1
+        assert scalar("SELECT count(*) FROM payment_orders WHERE sku='starter_bundle' AND gross_amount_minor=64900 AND cost_policy_snapshot IS NOT NULL") == 1
         reservation = db.execute(text("SELECT reserved_amount, committed_amount, released_amount FROM service_credit_reservations WHERE operation='job_search'")).one()
         assert tuple(reservation) == (6, 4, 2)
         current = db.execute(text("SELECT review_snapshot FROM employer_application_approvals WHERE revoked_at IS NULL")).scalar_one()
@@ -329,8 +333,8 @@ def _sql_proof(engine):
         assert receipt is None
         assert scalar("SELECT count(*) FROM user_profiles WHERE target_role='Python Engineer' AND preferred_location='Bengaluru'") == 1
         version = scalar("SELECT version_num FROM alembic_version")
-        return {"model_calls": 0, "analysis_runs": 0, "analysis_units_unchanged": 50, "posting_index": 4,
-                "owned_docx_sources": 2, "service_credit_grants": 1, "service_balance": 496,
+        return {"model_calls": 0, "analysis_runs": 0, "analysis_units_after_purchase": 52, "bundle_analysis_units_granted": 2, "analysis_unit_operation_debits": 0, "posting_index": 4,
+                "owned_docx_sources": 2, "service_credit_grants": 1, "service_balance": 96,
                 "search_reserved": 6, "search_charged": 4, "search_released": 2,
                 "application_fee": 0, "application_attempts": 0, "employer_apply_outbox": 0,
                 "approval_records": 2, "revoked_approvals": 1, "final_submit_grants": 0,
@@ -377,7 +381,7 @@ def run_journey(evidence: Path):
         "FRONTEND_ORIGINS": frontend_url, "ADMIN_EMAILS": "operator.browser@example.com",
         "ANALYSIS_TASKS_MODE": "inline", "OPTIONAL_AI_GENERATION_ENABLED": "false",
         "EMPLOYER_DISCOVERY_ENABLED": "true", "EMPLOYER_AUTO_SUBMIT_ENABLED": "false",
-        "EMPLOYER_SEARCH_CREDITS_PER_JOB": "2", "EMPLOYER_APPLY_CREDITS_PER_JOB": "5",
+        "EMPLOYER_SEARCH_CREDITS_PER_JOB": "2", "EMPLOYER_APPLY_CREDITS_PER_JOB": "20",
         "LIFECYCLE_EMAILS_ENABLED": "false", "RAZORPAY_CHECKOUT_ENABLED": "true",
         "RAZORPAY_ACCOUNT_APPROVED": "true", "PAYMENTS_GO_LIVE_REVIEW_COMPLETE": "true", "RAZORPAY_MODE": "test",
         "RAZORPAY_KEY_ID": "rzp_test_synthetic_browser", "RAZORPAY_KEY_SECRET": "synthetic-browser-order-secret",
@@ -392,6 +396,10 @@ def run_journey(evidence: Path):
         "COLD_BROWSER_EVIDENCE": str(evidence), "COLD_BROWSER_ORIGINAL": str(evidence / "original.docx"),
         "COLD_BROWSER_CUSTOM": str(evidence / "custom.docx"),
     })
+    sys.path.insert(0, str(ROOT))
+    from backend.tests.expense_policy_fixtures import estimated_expense_policy
+    expense = estimated_expense_policy() | {"review_status": "approved", "reviewed_by": "synthetic-local-browser-review"}
+    env["HIREWIZ_EXPENSE_POLICY_JSON"] = json.dumps(expense)
     _docx(evidence / "original.docx", "Original source resume")
     _docx(evidence / "custom.docx", "Candidate-written custom resume")
     admin, processes, logs = create_engine(pg), [], []

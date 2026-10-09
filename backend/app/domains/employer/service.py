@@ -8,14 +8,15 @@ from types import SimpleNamespace
 from urllib.parse import urlsplit
 
 from fastapi import HTTPException
-from sqlalchemy import func, literal_column, or_, text, true
+from sqlalchemy import and_, func, literal_column, or_, text, true
 from sqlalchemy.orm import Session, aliased
 
 from ... import models as core
 from ...catalog_timing import catalog_span, current_catalog_timing
 from ...services.basic_matching import basic_match
 from ..common import payload_fingerprint, public_id, utcnow
-from . import admissions, artifacts, config, connectors, credits, models, schemas
+from . import admissions, artifacts, config, connectors, credits, models, role_aliases, schemas
+from .search_preferences import POLICY_VERSION, evaluate
 
 LOCKED_APPLICATION_STATES = {"queued", "submitting", "confirmed", "unknown", "failed"}
 
@@ -110,9 +111,21 @@ def catalog_for_verified_subject(db: Session, user_id: int):
 
 
 def _catalog_response(balance, sources):
-    return config.prices() | {
-        "balance": int(balance or 0), "enabled": config.discovery_enabled(),
-        "auto_submit_enabled": config.submit_enabled(), "sources": [source_response(source) for source in sources],
+    from ...billing.cost_policy import CostPolicyUnavailable
+    try:
+        prices = config.prices()
+        ready = True
+        message = None
+    except CostPolicyUnavailable as exc:
+        prices = {"search_credits_per_job": 0, "apply_credits_per_job": 0, "max_search_jobs": 100,
+                  "pricing_version": "unavailable"}
+        ready = False
+        message = str(exc)
+    prices.pop("cost_policy_snapshot", None)
+    return prices | {
+        "balance": int(balance or 0), "enabled": ready and config.discovery_enabled(),
+        "availability_message": message,
+        "auto_submit_enabled": ready and config.submit_enabled(), "sources": [source_response(source) for source in sources],
         "admission_limits": config.admission_limits(),
         "credit_policy": "New unique verified jobs are charged once. Automatic applications are charged only after a verified complete receipt. Promotional analysis units and Premium are separate.",
         "coverage": {"scope": "Verified enabled employer sources", "worldwide_recall_verified": False},
@@ -121,7 +134,7 @@ def _catalog_response(balance, sources):
 
 def posting_response(posting, source):
     return {key: getattr(posting, key) for key in (
-        "id", "source_id", "external_id", "title", "employer", "location", "description", "canonical_url", "apply_url", "publication_at", "first_seen_at", "last_checked_at", "remote", "is_open", "content_sha256",
+        "id", "source_id", "external_id", "title", "employer", "location", "description", "canonical_url", "apply_url", "publication_at", "first_seen_at", "last_checked_at", "remote", "is_open", "content_sha256", "preference_metadata",
     )} | {"platform": source.platform, "application_mode": _source_mode(source),
           "opening_key": admissions.opening_identity(posting, source),
           "publication_kind": "release_or_republication" if source.platform == "smartrecruiters" else "publication" if posting.publication_at else "unknown"}
@@ -132,37 +145,70 @@ def _json_posting(posting, source):
     return {key: value.isoformat() if isinstance(value, datetime) else value for key, value in result.items()}
 
 
+def _search_input(payload: schemas.SearchCreate) -> dict:
+    # Keep the exact historical fingerprint for clients which omit preferences.
+    excluded = {"idempotency_key"} | ({"preferences"} if payload.preferences is None else set())
+    return payload.model_dump(mode="json", exclude=excluded)
+
+
 def create_search(db: Session, user_id: int, payload: schemas.SearchCreate):
+    from ..entitlements import lock_entitlement_owner
     _require_enabled()
-    prices = config.prices()
-    if payload.desired_count > int(prices["max_search_jobs"]):
-        raise HTTPException(422, "Requested job count exceeds the current service limit")
     # Serialize balance and per-user delivery/idempotency checks in one short transaction.
-    db.query(core.User).filter(core.User.id == user_id).with_for_update().one()
-    fingerprint = payload_fingerprint(payload.model_dump(exclude={"idempotency_key"}))
+    lock_entitlement_owner(db, user_id)
+    search_input = _search_input(payload)
+    fingerprint = payload_fingerprint(search_input)
     existing = db.query(models.EmployerSearch).filter_by(user_id=user_id, idempotency_key=payload.idempotency_key).first()
     if existing:
         if existing.input_fingerprint != fingerprint:
             raise HTTPException(409, "This request key was already used with different search settings")
         return existing
+    from ...billing.cost_policy import CostPolicyUnavailable
+    try:
+        prices = config.prices()
+    except CostPolicyUnavailable as exc:
+        raise HTTPException(503, detail=str(exc)) from None
+    if payload.desired_count > int(prices["max_search_jobs"]):
+        raise HTTPException(422, "Requested job count exceeds the current service limit")
+    resume = _owned(db, core.Resume, payload.resume_id, user_id)
+    # Persist finite zero-credit preparation authority before the bounded
+    # index scan/scoring. Empty results and interrupted work must retain it.
+    search_id = "search_" + payload_fingerprint({"owner": user_id, "key": payload.idempotency_key})[:48]
+    if db.query(models.ServiceCreditReservation.id).filter_by(user_id=user_id, source_id=search_id,
+            operation="job_search").first():
+        raise HTTPException(409, "This search preparation is already in progress or needs review; use its saved result when available")
+    preparation = credits.reserve(db, user_id=user_id, operation="job_search", source_id=search_id,
+                                  unit_price=int(prices["search_credits_per_job"]), count=0,
+                                  pricing_version=str(prices["pricing_version"]), record_event=False)
+    preparation.cost_policy_snapshot = dict(preparation.cost_policy_snapshot) | {"search_preparation": True}
+    db.commit()
+    # Keep the original owner-serialized delivery/idempotency semantics.
+    lock_entitlement_owner(db, user_id)
     resume = _owned(db, core.Resume, payload.resume_id, user_id)
     stale_before = utcnow() - timedelta(hours=config.positive_int("EMPLOYER_MAX_SOURCE_AGE_HOURS", 24, 168))
     query = db.query(models.EmployerPosting, models.EmployerSource).join(models.EmployerSource, models.EmployerSource.id == models.EmployerPosting.source_id).filter(
         models.EmployerPosting.is_open.is_(True), models.EmployerSource.enabled.is_(True),
         models.EmployerPosting.last_checked_at >= stale_before,
     )
+    role_variants = role_aliases.variants(payload.role)
     if db.get_bind().dialect.name == "postgresql":
         document = func.to_tsvector(text("'simple'::regconfig"),
             func.coalesce(models.EmployerPosting.title, literal_column("''")) + literal_column("' '") +
             func.coalesce(models.EmployerPosting.description, literal_column("''")))
-        query = query.filter(document.op("@@")(func.plainto_tsquery(text("'simple'::regconfig"), payload.role)))
-    # Every significant role token must occur in title or description. Bound
-    # candidates before local scoring; scope explicitly reports this limit.
-    tokens = list(dict.fromkeys(re.findall(r"[\w+#.-]+", payload.role.lower())))[:12]
-    for token in tokens:
-        escaped = token.replace("%", "\\%").replace("_", "\\_")
-        query = query.filter(or_(models.EmployerPosting.title.ilike(f"%{escaped}%", escape="\\"),
-                                 models.EmployerPosting.description.ilike(f"%{escaped}%", escape="\\")))
+        query = query.filter(or_(*(document.op("@@")(func.plainto_tsquery(text("'simple'::regconfig"), variant)) for variant in role_variants)))
+    # Every significant token must match within one explicit alias branch.
+    # Qualifiers (seniority, tools, specialty) are retained in every branch.
+    branches = []
+    for variant in role_variants:
+        clauses = []
+        for token in list(dict.fromkeys(re.findall(r"[\w+#.-]+", variant)))[:12]:
+            escaped = token.replace("%", "\\%").replace("_", "\\_")
+            clauses.append(or_(models.EmployerPosting.title.ilike(f"%{escaped}%", escape="\\"),
+                               models.EmployerPosting.description.ilike(f"%{escaped}%", escape="\\")))
+        if clauses:
+            branches.append(and_(*clauses))
+    if branches:
+        query = query.filter(or_(*branches))
     if payload.location:
         escaped = payload.location.replace("%", "\\%").replace("_", "\\_")
         query = query.filter(models.EmployerPosting.location.ilike(f"%{escaped}%", escape="\\"))
@@ -174,7 +220,8 @@ def create_search(db: Session, user_id: int, payload: schemas.SearchCreate):
         query = query.filter(func.lower(models.EmployerPosting.employer).notin_([name.lower() for name in payload.excluded_employers]))
     candidates = query.order_by(models.EmployerPosting.last_checked_at.desc(), models.EmployerPosting.id).limit(1001).all()
     truncated = len(candidates) > 1000
-    ranked = [(posting, source, basic_match(resume.skills or [], posting.description, posting.title)) for posting, source in candidates[:1000]]
+    evaluations = {posting.id: evaluate(payload.preferences, posting.preference_metadata, provider=source.platform) for posting, source in candidates[:1000]}
+    ranked = [(posting, source, basic_match(resume.skills or [], posting.description, posting.title)) for posting, source in candidates[:1000] if evaluations[posting.id]["eligible"]]
     ranked.sort(key=lambda item: (-item[2]["score"], -int(payload.role.lower() in item[0].title.lower()), item[0].id))
     unique: dict[str, tuple[models.EmployerPosting, models.EmployerSource, dict]] = {}
     for item in ranked:
@@ -185,25 +232,35 @@ def create_search(db: Session, user_id: int, payload: schemas.SearchCreate):
     # Compatibility for an old delivery whose opening key could not be backfilled.
     legacy = {row.posting_id for row in db.query(models.EmployerJobDelivery).filter_by(user_id=user_id, opening_key=None).all()}
     new_count = sum(posting.opening_key not in previous and posting.id not in legacy for posting, _, _ in selected)
-    search_id = public_id("search")
     reservation = credits.reserve(db, user_id=user_id, operation="job_search", source_id=search_id,
-                                  unit_price=int(prices["search_credits_per_job"]), count=payload.desired_count if new_count else 0)
+                                  unit_price=int(prices["search_credits_per_job"]), count=payload.desired_count if new_count else 0,
+                                  pricing_version=str(prices["pricing_version"]), preparation=preparation)
     items, deliveries = [], []
     for posting, source, fit in selected:
         amount = 0 if posting.opening_key in previous or posting.id in legacy else reservation.unit_price
-        items.append({"posting": _json_posting(posting, source), "fit": fit, "charged_credits": amount})
+        items.append({"posting": _json_posting(posting, source), "fit": fit, "charged_credits": amount,
+                      "preference_evaluation": evaluations[posting.id]})
         if amount:
             deliveries.append(models.EmployerJobDelivery(id=public_id("delivery"), user_id=user_id, posting_id=posting.id,
                 opening_key=posting.opening_key, search_id=search_id, charged_credits=amount))
     search = models.EmployerSearch(
         id=search_id, user_id=user_id, resume_id=resume.id, idempotency_key=payload.idempotency_key,
-        input_fingerprint=fingerprint, query=payload.model_dump(exclude={"idempotency_key"}),
+        input_fingerprint=fingerprint, query=search_input,
         desired_count=payload.desired_count, delivered_count=len(items), items=items,
         reserved_credits=reservation.reserved_amount, charged_credits=new_count * reservation.unit_price,
         refunded_credits=reservation.reserved_amount - new_count * reservation.unit_price,
         scope={"kind": "verified_employer_index", "candidate_limit": 1000, "candidate_limit_reached": truncated,
                "max_source_age_hours": config.positive_int("EMPLOYER_MAX_SOURCE_AGE_HOURS", 24, 168),
-               "worldwide_recall_verified": False, "unknown_publication_dates_excluded": bool(payload.published_within_days)},
+               "worldwide_recall_verified": False, "unknown_publication_dates_excluded": bool(payload.published_within_days),
+               "role_alias_policy": role_aliases.VERSION, "role_variants": role_variants,
+               "preference_policy": POLICY_VERSION, "unknown_preference_metadata": "include",
+               "candidates_before_preferences": len(evaluations),
+               "known_preference_conflicts": sum(not value["eligible"] for value in evaluations.values()),
+               "candidates_with_unknown_preferences": sum("unknown" in value["states"].values() for value in evaluations.values()),
+               "search_input_fingerprint": fingerprint,
+               "price_quote": {"unit_price": reservation.unit_price, "pricing_version": reservation.pricing_version,
+                               "requested_count": payload.desired_count, "maximum_credits": payload.desired_count * reservation.unit_price,
+                               "search_input_fingerprint": fingerprint}},
     )
     db.add(search)
     db.flush([search])
@@ -275,13 +332,29 @@ def _package_digest(application, posting, source, artifact):
     return payload_fingerprint(content)
 
 
+def _reviewed_prices():
+    from ...billing.cost_policy import CostPolicyUnavailable
+    try:
+        return config.prices()
+    except CostPolicyUnavailable as exc:
+        raise HTTPException(503, detail=str(exc)) from None
+
+
 def _quote_application(application, posting, source):
     application.employer_key = admissions.employer_identity(source)
     application.opening_key = admissions.opening_identity(posting, source)
     posting.opening_key = application.opening_key
     application.admission_snapshot = admissions.quote(source, posting)
+    from ...billing.cost_policy import CostPolicyUnavailable
+    try:
+        prices = config.prices()
+    except CostPolicyUnavailable as exc:
+        if application.application_mode != "manual":
+            raise HTTPException(503, detail=str(exc)) from None
+        prices = {"pricing_version": "manual-zero", "cost_policy_snapshot": None}
     application.pricing_snapshot = {"unit_price": application.credit_cost,
-                                    "pricing_version": config.PRICING_VERSION}
+                                    "pricing_version": prices["pricing_version"],
+                                    "cost_policy_snapshot": prices["cost_policy_snapshot"]}
 
 
 def missing_fields(application):
@@ -341,7 +414,7 @@ def create_application(db: Session, user_id: int, payload: schemas.ApplicationCr
     db.rollback()  # No rendering/storage/provider call while holding a transaction.
     try:
         form = connectors.load_form(source_snapshot, posting_external_id)
-        prepared = artifacts.materialize(resume_snapshot, version_snapshot)
+        prepared = artifacts.materialize_for_application(resume_snapshot, version_snapshot)
     except connectors.ConnectorError as exc:
         raise HTTPException(503 if exc.safe_to_retry else 409, "Employer form could not be verified: " + exc.code) from exc
     with artifacts.guarded_storage(db, prepared, user_id=user_id) as (sealed, upload_id):
@@ -381,7 +454,7 @@ def create_application(db: Session, user_id: int, payload: schemas.ApplicationCr
             resume_id=payload.resume_id, resume_choice=payload.resume_choice, resume_version_id=payload.resume_version_id,
             artifact_id=artifact.id, form=form, answers={}, consents={}, package_digest="",
             job_content_sha256=posting.content_sha256, application_mode=mode,
-            status="needs_action" if form["fields"] else "ready", credit_cost=int(config.prices()["apply_credits_per_job"]),
+            status="needs_action" if form["fields"] else "ready", credit_cost=0 if mode == "manual" else int(_reviewed_prices()["apply_credits_per_job"]),
         )
         _quote_application(application, posting, source)
         application.package_digest = _package_digest(application, posting, source, artifact)
@@ -398,7 +471,7 @@ def update_package(db, user_id, identity, payload: schemas.PackageUpdate):
     _validate_answers(application.form, payload.answers, payload.consents)
     resume_snapshot, version_snapshot = _selection_snapshot(db, user_id, payload)
     db.rollback()
-    prepared = artifacts.materialize(resume_snapshot, version_snapshot)
+    prepared = artifacts.materialize_for_application(resume_snapshot, version_snapshot)
     with artifacts.guarded_storage(db, prepared, user_id=user_id) as (sealed, upload_id):
         application = _owned(db, models.EmployerApplication, identity, user_id, lock=True)
         if application.status in LOCKED_APPLICATION_STATES or application.status == "cancelled":

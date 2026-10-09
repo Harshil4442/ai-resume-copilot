@@ -4051,7 +4051,9 @@
               {
                 "enum": [
                   "pdf",
-                  "docx"
+                  "docx",
+                  "tex",
+                  "texzip"
                 ],
                 "type": "string"
               },
@@ -4142,7 +4144,9 @@
               {
                 "enum": [
                   "pdf",
-                  "docx"
+                  "docx",
+                  "tex",
+                  "texzip"
                 ],
                 "type": "string"
               },
@@ -4436,6 +4440,65 @@
         "title": "RewriteBulletsResponse",
         "type": "object"
       },
+      "SalaryPreference": {
+        "additionalProperties": false,
+        "properties": {
+          "currency": {
+            "pattern": "^[A-Z]{3}$",
+            "title": "Currency",
+            "type": "string"
+          },
+          "maximum": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,15}0*$)\\d{0,12}\\.\\d{0,2}0*$)",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Maximum"
+          },
+          "minimum": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,15}0*$)\\d{0,12}\\.\\d{0,2}0*$)",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minimum"
+          },
+          "period": {
+            "enum": [
+              "year",
+              "month",
+              "week",
+              "day",
+              "hour"
+            ],
+            "title": "Period",
+            "type": "string"
+          }
+        },
+        "required": [
+          "currency",
+          "period"
+        ],
+        "title": "SalaryPreference",
+        "type": "object"
+      },
       "SearchCreate": {
         "additionalProperties": false,
         "properties": {
@@ -4466,6 +4529,16 @@
             "maxLength": 200,
             "title": "Location",
             "type": "string"
+          },
+          "preferences": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SearchPreferencesV1"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "published_within_days": {
             "anyOf": [
@@ -4503,6 +4576,133 @@
           "idempotency_key"
         ],
         "title": "SearchCreate",
+        "type": "object"
+      },
+      "SearchPreferencesV1": {
+        "additionalProperties": false,
+        "properties": {
+          "authorized_country_codes": {
+            "anyOf": [
+              {
+                "items": {
+                  "pattern": "^[A-Z]{2}$",
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authorized Country Codes"
+          },
+          "country_codes": {
+            "anyOf": [
+              {
+                "items": {
+                  "pattern": "^[A-Z]{2}$",
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country Codes"
+          },
+          "employment_types": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "full_time",
+                    "part_time",
+                    "contract",
+                    "internship",
+                    "temporary",
+                    "freelance",
+                    "permanent",
+                    "traineeship"
+                  ],
+                  "type": "string"
+                },
+                "maxItems": 8,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Employment Types"
+          },
+          "posting_languages": {
+            "anyOf": [
+              {
+                "items": {
+                  "pattern": "^[a-z]{2,3}(?:-[A-Z]{2})?$",
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Posting Languages"
+          },
+          "salary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SalaryPreference"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sponsorship_required": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sponsorship Required"
+          },
+          "unknown_metadata": {
+            "const": "include",
+            "default": "include",
+            "title": "Unknown Metadata",
+            "type": "string"
+          },
+          "version": {
+            "const": 1,
+            "default": 1,
+            "title": "Version",
+            "type": "integer"
+          },
+          "willing_to_relocate": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Willing To Relocate"
+          }
+        },
+        "title": "SearchPreferencesV1",
         "type": "object"
       },
       "SkillRoiItem": {
@@ -8165,6 +8365,18 @@
                   "format": "binary",
                   "type": "string"
                 }
+              },
+              "application/x-tex": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "application/zip": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
               }
             },
             "description": "Original uploaded resume"
@@ -11517,7 +11729,9 @@
               "default": "pdf",
               "enum": [
                 "pdf",
-                "docx"
+                "docx",
+                "tex",
+                "texzip"
               ],
               "title": "Format",
               "type": "string"
@@ -11534,6 +11748,18 @@
                 }
               },
               "application/vnd.openxmlformats-officedocument.wordprocessingml.document": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "application/x-tex": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "application/zip": {
                 "schema": {
                   "format": "binary",
                   "type": "string"

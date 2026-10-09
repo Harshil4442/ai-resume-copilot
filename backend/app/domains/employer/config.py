@@ -22,13 +22,18 @@ def positive_int(name: str, default: int, maximum: int = 10_000) -> int:
     return value
 
 
-def prices() -> dict[str, int | str]:
-    return {
-        "search_credits_per_job": positive_int("EMPLOYER_SEARCH_CREDITS_PER_JOB", 1, 1000),
-        "apply_credits_per_job": positive_int("EMPLOYER_APPLY_CREDITS_PER_JOB", 5, 1000),
-        "max_search_jobs": positive_int("EMPLOYER_MAX_SEARCH_JOBS", 100, 100),
-        "pricing_version": PRICING_VERSION,
-    }
+def prices() -> dict:
+    from ...billing.cost_policy import service_prices
+    reviewed = service_prices()
+    # A deployment may tighten prices, never silently undercut the audit.
+    for key, env in (("search_credits_per_job", "EMPLOYER_SEARCH_CREDITS_PER_JOB"),
+                     ("apply_credits_per_job", "EMPLOYER_APPLY_CREDITS_PER_JOB")):
+        value = positive_int(env, reviewed[key], 1000)
+        if value < reviewed[key]:
+            from ...billing.cost_policy import CostPolicyUnavailable
+            raise CostPolicyUnavailable("Service prices require a renewed expense review.")
+        reviewed[key] = value
+    return reviewed | {"max_search_jobs": positive_int("EMPLOYER_MAX_SEARCH_JOBS", 100, 100)}
 
 
 def discovery_enabled() -> bool:

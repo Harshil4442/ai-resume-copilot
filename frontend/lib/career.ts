@@ -15,10 +15,12 @@ export type SourcePreservingResumeContent = {
   source_format: ResumeSourceFormat;
   source_edits: ResumeSourceEdit[];
   evidence_needed?: string[];
+  partial_tailoring?: boolean;
+  omitted_edits?: number;
 };
 
 export function getSourcePreservingContent(content: Record<string, unknown>): SourcePreservingResumeContent | null {
-  if (content.format_preservation !== "source" || (content.source_format !== "pdf" && content.source_format !== "docx") || !Array.isArray(content.source_edits)) return null;
+  if (content.format_preservation !== "source" || (content.source_format !== "pdf" && content.source_format !== "docx" && content.source_format !== "tex" && content.source_format !== "texzip") || !Array.isArray(content.source_edits)) return null;
   const valid = content.source_edits.every((edit: unknown) => {
     if (!edit || typeof edit !== "object") return false;
     const item = edit as Record<string, unknown>;

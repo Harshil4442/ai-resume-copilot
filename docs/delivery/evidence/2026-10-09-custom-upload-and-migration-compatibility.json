@@ -1,0 +1,18 @@
+{
+  "status": "INTEGRATED; combined root browser and exactCI pending",
+  "custom_upload": {
+    "author_report": "/var/folders/ck/cyzkgt2d1yx6hzpsdflcg83c0000gn/T/hirewiz-custom-resume-admission-author-20261009-i5rw_bea/review-freeze/report.json",
+    "author_report_sha256": "c6a4c4a41713c683cad77db6c37768288cb0de0f97205168989aa8778dc97612",
+    "independent_report": "/var/folders/ck/cyzkgt2d1yx6hzpsdflcg83c0000gn/T/hirewiz-custom-upload-independent-20261009-s9_7yxy1/report.json",
+    "independent_report_sha256": "fde95e1e195e20ed83212c1c64ce201bc2fca0f99cb0c7541bd8939de85ef234",
+    "author_source_files_verified": 169,
+    "tests": "19unchanged+5distinct PASS0skip; prior8PASS11FAIL retained"
+  },
+  "migration_fixtures": {
+    "report": "/var/folders/ck/cyzkgt2d1yx6hzpsdflcg83c0000gn/T/hirewiz-migration-fixture-compat-20261009-xhuwkm_a/final-compatibility-report.json",
+    "sha256": "9edf216c507883b63b84163dc95d4c6fe818ffb5f788828ffde30e42b5c23ada",
+    "actual_postgres": "40PASS0skip including current snapshot downgrade refusal",
+    "product_source_changed": false
+  },
+  "deployment": "HOLD"
+}

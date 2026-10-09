@@ -43,6 +43,12 @@ jobs:
         run: |
           python -m pip install --disable-pip-version-check uv==0.11.32
           uv sync --project backend --frozen --all-groups
+      - name: Build and attest immutable native TeX test compiler
+        timeout-minutes: 12
+        run: >-
+          backend/.venv/bin/python backend/scripts/native_tex_test_image.py
+          --platform linux/amd64 --github-env "$GITHUB_ENV"
+          --output "$RUNNER_TEMP/native-tex-test-image.json"
       - name: Provision disposable admission test database
         working-directory: backend
         run: |
@@ -56,6 +62,8 @@ jobs:
         run: >-
           .venv/bin/ruff check app/domains app/services/guardrails.py app/services/resume_artifacts.py app/services/resume_layout.py app/services/pdf_streams.py app/routers/v1
           app/routers/worker.py app/worker_main.py app/observability.py app/catalog_timing.py app/feature_flags.py app/migrate.py scripts
+          tests/native_tex_ci_fixtures.py tests/test_native_tex_ci.py tests/test_native_tex.py
+          tests/test_native_tex_r2.py tests/test_native_tex_application.py
           tests/test_analysis_runs.py tests/test_career_workspace.py tests/test_alembic_schema.py
           tests/test_usage_guardrails.py tests/test_feature_flags.py tests/test_operations_platform.py
           tests/test_prompt_evaluations.py tests/test_resume_source.py tests/test_resume_source_migrations.py
@@ -64,6 +72,8 @@ jobs:
           tests/test_employer_connectors.py tests/test_employer_artifact_lifecycle.py tests/test_learning_rag_privacy.py
           tests/test_employer_feed_adapters.py tests/test_employer_admissions.py tests/test_employer_admissions_postgres.py
           tests/test_employer_host_pacing.py tests/test_employer_catalog_queries.py
+          tests/test_employer_preference_metadata.py tests/test_employer_preference_metadata_r2.py
+          tests/test_employer_preferences_postgres.py tests/test_employer_search_preferences.py
           tests/fixtures/recovery_authority.py tests/test_recovery_authority.py tests/test_recovery_authority_processes.py
           tests/fixtures/recovery_sequence_projection.py tests/test_recovery_sequences.py tests/test_recovery_sequences_processes.py
           tests/test_catalog_timing.py
@@ -92,6 +102,9 @@ jobs:
           tests/test_gcp_publication_scan_emulator.py tests/test_gcp_scoped_authority_emulator.py
           tests/test_gcp_password_reset_emulator.py
           tests/test_monetary_cutover_schema11_postgres.py
+          tests/test_monetary_cutover_schema13_postgres.py
+          app/billing/cost_policy.py tests/expense_policy_fixtures.py tests/test_expense_policy.py
+          tests/test_expense_budget.py tests/test_expense_budget_postgres.py
           tests/test_migration_logging_postgres.py
           tests/test_fresh_user_no_ai_journey.py
           tests/fixtures/cold_browser_app.py tests/test_cold_browser_runner.py
@@ -106,7 +119,8 @@ jobs:
           app/routers/worker.py app/worker_main.py app/observability.py app/catalog_timing.py app/main.py app/security.py app/feature_flags.py app/migrate.py
           app/services/model_cost_policy.py app/services/generation_budget.py app/services/llm_client.py app/services/result_commit.py
           app/services/generation_gate.py
-          scripts/monetary_cutover_preflight.py
+          scripts/monetary_cutover_preflight.py scripts/native_tex_test_image.py
+          app/billing/cost_policy.py
           app/routers/candidate_accounts.py app/routers/sensitive_auth.py app/routers/candidate_ingress.py
           ../infra/gcp/release_preflight.py
       - name: Compile backend

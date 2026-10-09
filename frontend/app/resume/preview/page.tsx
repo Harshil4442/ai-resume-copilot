@@ -102,6 +102,8 @@ function ResumePreviewContent() {
 
             {!selectedResume.source_available || !selectedResume.source_format ? (
               <EmptyState icon={FileUp} title="Upload your source again" description="This older resume has extracted text, but its original file was not retained. Upload the PDF or DOCX again, then select the new resume in your opportunity workspace before tailoring." action={<Button asChild><Link href="/resume">Upload source again</Link></Button>} />
+            ) : selectedResume.source_format === "tex" || selectedResume.source_format === "texzip" ? (
+              <div className="surface-soft mt-7 p-6 sm:p-8"><h2 className="font-display text-2xl">Original TeX source is retained</h2><p className="mt-3 text-sm leading-6 text-muted-foreground">Download the unchanged source project to inspect its template. Prepare a source snapshot or tailored version in Workspace to review its sealed PDF before using it for an application. You can always choose your original or upload a custom PDF/DOCX.</p></div>
             ) : selectedResume.source_format === "docx" ? (
               <div className="surface-soft mt-7 p-6 sm:p-8">
                 <FileText size={28} className="text-primary" aria-hidden="true" />

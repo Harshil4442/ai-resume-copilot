@@ -8,6 +8,7 @@ from threading import Lock, get_ident
 from uuid import uuid4
 
 import pytest
+from backend.tests.fixtures.candidate_ingress import create, signed_headers
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import event, text
@@ -20,6 +21,7 @@ from test_gcp_scoped_authority_emulator import scoped as scoped
 from app.database import get_db
 from app.domains.candidate_accounts import service as account_module
 from app.domains.candidate_accounts.service import credential_digest
+from app.domains.candidate_ingress import replay
 from app.domains.recovery.gcp_candidate_lifetimes import GcpProtectedCandidateLifetimes
 from app.domains.recovery.gcp_contracts import AmbiguousCommit
 from app.domains.recovery.gcp_partitioned_contracts import ScopedCredentialRevision
@@ -370,19 +372,28 @@ def test_actual_authenticated_fastapi_password_change_uses_real_native_and_sql(r
     app.dependency_overrides[get_db] = database  # Actual owned SQL, never fake identity.
     monkeypatch.setattr(candidate_accounts, "production_candidate_accounts", lambda: c.account_service)
     monkeypatch.setattr(account_module, "production_candidate_accounts", lambda: c.account_service)
-    with TestClient(app, client=("owned-reset-" + uuid4().hex, 12345)) as client:
-        logged = client.post("/api/auth/candidate/v1/login", json={"email": email, "password": OLD})
-        assert logged.status_code == 200
-        old_token = logged.json()["access_token"]
-        changed = client.post("/api/auth/candidate/v1/password", json={"current_password": OLD, "new_password": NEW},
-            headers={"authorization": "Bearer " + old_token})
-        assert changed.status_code == 200 and changed.json() == {"status": "CHANGED_REAUTHENTICATION_REQUIRED"}
-        assert OLD not in changed.text and NEW not in changed.text
-        repeated = client.post("/api/auth/candidate/v1/password", json={"current_password": OLD, "new_password": NEW},
-            headers={"authorization": "Bearer " + old_token})
-        assert repeated.status_code == 401
-        assert client.post("/api/auth/candidate/v1/login", json={"email": email, "password": OLD}).status_code == 401
-        assert client.post("/api/auth/candidate/v1/login", json={"email": email, "password": NEW}).status_code == 200
+    ingress = create(action_pins=(c.pin, c.v3.resource.pin.authority.registry))
+    monkeypatch.setattr(replay, "production_candidate_ingress", lambda: ingress.ingress)
+    try:
+        with TestClient(app, base_url="https://testserver", client=("owned-reset-" + uuid4().hex, 12345)) as client:
+            def private_post(path, payload, authorization=""):
+                raw = json.dumps(payload).encode()
+                return client.post(path, content=raw,
+                    headers=signed_headers(ingress, path, raw, authorization=authorization))
+            logged = private_post("/api/auth/candidate/v1/login", {"email": email, "password": OLD})
+            assert logged.status_code == 200
+            old_token = logged.json()["access_token"]
+            changed = private_post("/api/auth/candidate/v1/password", {"current_password": OLD, "new_password": NEW},
+                authorization="Bearer " + old_token)
+            assert changed.status_code == 200 and changed.json() == {"status": "CHANGED_REAUTHENTICATION_REQUIRED"}
+            assert OLD not in changed.text and NEW not in changed.text
+            repeated = private_post("/api/auth/candidate/v1/password", {"current_password": OLD, "new_password": NEW},
+                authorization="Bearer " + old_token)
+            assert repeated.status_code == 401
+            assert private_post("/api/auth/candidate/v1/login", {"email": email, "password": OLD}).status_code == 401
+            assert private_post("/api/auth/candidate/v1/login", {"email": email, "password": NEW}).status_code == 200
+    finally:
+        ingress.channel.close()
     assert not c.active.any()
 
 

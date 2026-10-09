@@ -1,7 +1,7 @@
 import "server-only";
 
 export type PublicCatalogProduct = {
-  sku: "premium_30d" | "job_service_500";
+  sku: "starter_bundle" | "growth_bundle" | "scale_bundle";
   name: string;
   description: string;
   amount_minor: number;
@@ -9,7 +9,9 @@ export type PublicCatalogProduct = {
   currency: "INR";
   billing_type: "one_time";
   duration_days: number;
-  entitlement_kind: "premium_access" | "job_service_credits";
+  entitlement_kind: "credit_bundle";
+  analysis_units: number;
+  job_service_credits: number;
   entitlement_quantity: number;
   auto_renews: false;
   catalog_visible: boolean;
@@ -22,6 +24,8 @@ export type PublicBillingCatalog = {
   checkout_enabled: boolean;
   provider: "razorpay" | null;
   products: PublicCatalogProduct[];
+  availability_message?: string | null;
+  service_prices?: { search_credits_per_job: number; apply_credits_per_job: number; pricing_version: string } | null;
 };
 
 function backendApiBase(): string | null {

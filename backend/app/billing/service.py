@@ -276,11 +276,16 @@ def _grant_entitlement(db: Session, order: PaymentOrder, now: datetime) -> bool:
     entitlement_kind = order.entitlement_kind
     entitlement_quantity = order.entitlement_quantity
     if (
-        entitlement_kind not in {"premium_access", "analysis_units", "job_service_credits"}
+        entitlement_kind not in {"premium_access", "analysis_units", "job_service_credits", "credit_bundle"}
         or type(entitlement_quantity) is not int
         or entitlement_quantity <= 0
     ):
         raise WebhookValidationError("invalid_entitlement_snapshot")
+    if entitlement_kind == "credit_bundle":
+        bundle = (order.cost_policy_snapshot or {}).get("entitlements", {})
+        if (bundle.get("job_service_credits") != entitlement_quantity
+                or type(bundle.get("analysis_units")) is not int or bundle["analysis_units"] <= 0):
+            raise WebhookValidationError("invalid_bundle_snapshot")
     user = db.query(User).filter(User.id == order.user_id).with_for_update().first()
     if user is None:
         order.status = "paid_unfulfilled"
@@ -297,7 +302,7 @@ def _grant_entitlement(db: Session, order: PaymentOrder, now: datetime) -> bool:
     elif entitlement_kind == "analysis_units":
         starts_at = now
         user.ai_credits = int(user.ai_credits or 0) + entitlement_quantity
-    elif entitlement_kind == "job_service_credits":
+    elif entitlement_kind in {"job_service_credits", "credit_bundle"}:
         from ..domains.common import public_id
         from ..domains.employer.models import ServiceCreditEvent
 
@@ -311,6 +316,16 @@ def _grant_entitlement(db: Session, order: PaymentOrder, now: datetime) -> bool:
             reason="Captured prepaid job service purchase", created_at=now,
         ))
 
+    if entitlement_kind == "credit_bundle":
+        from ..domains.common import public_id
+        from ..models import UsageEvent
+
+        units = order.cost_policy_snapshot["entitlements"]["analysis_units"]
+        user.ai_credits = int(user.ai_credits or 0) + units
+        db.add(UsageEvent(id=public_id("use"), user_id=user.id, event_type="grant", amount=units,
+                          balance_after=user.ai_credits, idempotency_key=f"bundle-analysis-grant:{order.public_id}",
+                          source_type="payment_order", source_id=order.public_id, actor="system",
+                          reason="Captured finite prepaid analysis bundle", created_at=now))
     db.add(
         EntitlementLedger(
             user_id=user.id,
@@ -366,7 +381,7 @@ def _revoke_entitlement(db: Session, order: PaymentOrder, now: datetime) -> None
     if entitlement.entitlement_kind == "analysis_units":
         user.ai_credits = max(0, int(user.ai_credits or 0) - entitlement.quantity)
         return
-    if entitlement.entitlement_kind == "job_service_credits":
+    if entitlement.entitlement_kind in {"job_service_credits", "credit_bundle"}:
         _adjust_service_credit_refund(db, order, now)
         return
 
@@ -391,9 +406,10 @@ def _revoke_entitlement(db: Session, order: PaymentOrder, now: datetime) -> None
 
 def _adjust_service_credit_refund(db: Session, order: PaymentOrder, now: datetime) -> None:
     """Revoke the proportional grant; spent credits become debt, never free use."""
-    if order.entitlement_kind != "job_service_credits" or order.user_id is None:
+    if order.entitlement_kind not in {"job_service_credits", "credit_bundle"} or order.user_id is None:
         return
     from sqlalchemy import func
+
     from ..domains.common import public_id
     from ..domains.employer.models import ServiceCreditEvent
 
@@ -410,19 +426,33 @@ def _adjust_service_credit_refund(db: Session, order: PaymentOrder, now: datetim
         ServiceCreditEvent.event_type == "refund",
     ).scalar() or 0)
     delta = target + previous
-    if delta <= 0:
-        return
     user = db.query(User).filter_by(id=order.user_id).with_for_update().first()
     if not user:
         return
-    user.job_service_credits = int(user.job_service_credits or 0) - delta
-    db.add(ServiceCreditEvent(
+    if delta > 0:
+        user.job_service_credits = int(user.job_service_credits or 0) - delta
+        db.add(ServiceCreditEvent(
         id=public_id("credit"), user_id=user.id, event_type="refund", amount=-delta,
         balance_after=user.job_service_credits,
         idempotency_key=f"job-service-refund:{order.public_id}:{target}",
         source_type="payment_order", source_id=order.public_id,
         reason="Processed refund of prepaid service credits", created_at=now,
     ))
+    if order.entitlement_kind == "credit_bundle":
+        from ..models import UsageEvent
+        units = order.cost_policy_snapshot["entitlements"]["analysis_units"]
+        target_units = min(units, (int(order.refunded_amount_minor or 0) * units + order.gross_amount_minor - 1) // order.gross_amount_minor)
+        previous_units = int(db.query(func.coalesce(func.sum(UsageEvent.amount), 0)).filter_by(
+            source_type="payment_order", source_id=order.public_id, event_type="refund").scalar() or 0)
+        unit_delta = target_units + previous_units
+        if unit_delta > 0:
+            # Spent refunded units become debt, just like service credits.
+            user.ai_credits = int(user.ai_credits or 0) - unit_delta
+            db.add(UsageEvent(id=public_id("use"), user_id=user.id, event_type="refund", amount=-unit_delta,
+                              balance_after=user.ai_credits, idempotency_key=f"bundle-analysis-refund:{order.public_id}:{target_units}",
+                              source_type="payment_order", source_id=order.public_id, actor="system",
+                              reason="Processed proportional refund of finite analysis bundle", created_at=now))
+
 
 
 def _process_capture(

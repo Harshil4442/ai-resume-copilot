@@ -1,7 +1,8 @@
 # Expense-based pricing and margin protection
 
-Status: required by the owner on 9 October 2026; implementation and actual-account
-expense reconciliation remain open. This document does not activate new prices or
+Status: three finite packs and expense safeguards are integrated locally after independent
+financial source review. Composed verification, deployment and actual-account expense
+reconciliation remain open. This document does not activate new prices or
 claim that current plans are profitable. GCP and Vercel remain the deployment platforms.
 
 The owner subsequently authorized conservative estimated amounts and requested removal
@@ -96,12 +97,12 @@ sale tax reduce that amount. This is an arithmetic example, not a final service 
 
 - [x] Add BI08 to the requirements and retain separate search/application/tailoring quotes.
 - [ ] Inventory actual GCP/Vercel/model/payment contracts and recent expenses, with secrets excluded.
-- [ ] Implement a strict versioned expense policy and deterministic price-floor calculator.
-- [ ] Validate every pack, bonus/promotion, model ceiling and operation rate before activation.
-- [ ] Persist the applicable cost-policy version with new immutable quotes and payment orders.
+- [x] Implement a strict versioned expense policy and deterministic price-floor calculator.
+- [x] Independently validate the candidate packs, bonus/promotion bounds, model ceilings and operation rates; production authority activation remains pending.
+- [x] Persist the applicable cost-policy version with new immutable quotes and payment orders.
 - [ ] Test rounding, expensive payment methods, adverse FX, full credit consumption, retries,
   unknown costs, free/error work, low volume, changed policy and stale/invalid configuration.
-- [ ] Expose clear prospective rates and optional tailoring costs; preserve accepted old terms.
+- [x] Implement clear prospective rates and optional tailoring costs; preserve accepted old terms.
 - [ ] Configure bounded provider/document/fleet spending and restrict new work when budgets fail.
 - [ ] Reconcile actual invoices and net receipts; deploy only the validated catalog/policy version.
 - [ ] Monitor net contribution, fixed-cost coverage, liability and budget variance monthly.
@@ -135,26 +136,27 @@ Use these owner-authorized planning assumptions for the candidate policy:
 - ₹0.25 per job-service credit: search one credit; confirmed supported application
   twenty credits for a ₹5 pooled expense bound. Manual handoff still has no application
   charge; bounded preparation and unsuccessful work are pooled expenses.
-- ₹25.50 expense per AI-analysis unit, including worker/document allowance. Proposed
+- ₹26.50 expense per AI-analysis unit, including ₹1.50 for up to three worker/document attempts. Proposed
   prospective tailoring uses two units for the existing USD 0.50 total provider cap;
   other writing caps and unit prices must each pass the same bound. Existing accepted
   unit quotes remain intact. No model quality change follows from repricing units.
 
 | Candidate finite pack | INR gross | Job-service credits | AI-analysis units | Estimated margin after allocation/contingency |
 | --- | ---: | ---: | ---: | ---: |
-| Starter | 649 | 100 | 2 | 45.17% |
-| Growth | 1,099 | 300 | 6 | 45.84% |
-| Pro | 2,199 | 700 | 15 | 49.34% |
+| Starter | 649 | 100 | 2 | 44.68% |
+| Growth | 1,099 | 300 | 6 | 44.98% |
+| Scale | 2,199 | 700 | 15 | 48.26% |
 
 All promised credits and units are assumed fully consumed. These candidate prices
-pass only the documented Decimal arithmetic, not yet atomic order/quote/provider
-runtime verification. No bonus or promotion can reduce net receipt below the floor.
+pass the documented integer/rational arithmetic and bounded independent local
+order, quote and cash-admission checks. Exact composed production verification remains
+pending. No bonus or promotion can reduce net receipt below the floor.
 See the [arithmetic evidence](evidence/2026-10-09-estimated-credit-pack-proposal.json).
 
 With only Starter purchases and those assumptions, monthly cash break-even requires
-45 packs. At ten packs the model still loses approximately ₹13,966; at fifty it has
-approximately ₹2,169 left after the buffered costs; at one hundred approximately
-₹22,338. Thus profitable operation pricing does not promise a profitable business at
+45 packs. At ten packs the model still loses approximately ₹13,990; at fifty it has
+approximately ₹2,049 left after the buffered costs; at one hundred approximately
+₹22,097. Thus profitable operation pricing does not promise a profitable business at
 arbitrary volume. Scaling, paid/employer licensing, provider tax, legacy exposure and
 support growth can exceed these estimates: update allocations and prospective prices,
 and restrict new cost-bearing work before the available spending allowance is exceeded.
@@ -163,3 +165,7 @@ Manual handoff, draft saving and unverified responses still earn no automatic-ap
 fee. Margin protection must not invent a successful receipt or charge for failed discovery.
 Rate limits and the pooled expense allowance cover those costs. A pricing change never
 permits resubmitting an uncertain application or silently increasing an accepted quote.
+
+The overhead refinement retains the [first arithmetic snapshot](evidence/2026-10-09-estimated-credit-pack-proposal-initial.json). It now reserves ₹0.50 for every permitted provider attempt, including failed or unknown calls whose analysis units may be restored. The ₹2,000 shared allowance is split into ₹1,000 promotional/failed AI, ₹500 remaining legacy Premium AI and ₹500 legacy-service and unsuccessful-service exposure. Each fresh search first reserves up to ₹0.60 of that pool before reading/scoring postings; empty or failed work retains its cash exposure, while a completed idempotent replay adds none. These are finite planning allocations, not measured bills or retroactive prices. Refunds and old quotes do not erase their expense exposure. Under the refined assumptions, an all-Growth mix requires 33 packs per month to cover buffered fixed expenses; an all-Scale mix requires 19.
+
+The [finite-pack integration evidence](evidence/2026-10-09-finite-pack-root-integration.json) records the exact independent review and preimage-checked source composition. Source clearance is separate from deployment and actual profitability.

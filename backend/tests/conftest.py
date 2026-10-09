@@ -5,12 +5,19 @@ import pytest
 from backend.app.models import AnalysisRun
 from backend.app.services.generation_budget import persistent_run_budget
 from backend.app.services.model_cost_policy import freeze_run_quote
+from backend.tests.expense_policy_fixtures import synthetic_expense_policy
 from backend.tests.model_cost_fixtures import synthetic_policy
 
 
 @pytest.fixture(autouse=True)
 def model_cost_test_policy(monkeypatch):
     monkeypatch.setenv("LLM_MODEL_COST_POLICY_JSON", json.dumps(synthetic_policy()))
+
+
+@pytest.fixture(autouse=True)
+def expense_cost_test_policy(monkeypatch):
+    monkeypatch.setenv("APP_ENV", "test")
+    monkeypatch.setenv("HIREWIZ_EXPENSE_POLICY_JSON", json.dumps(synthetic_expense_policy()))
 
 
 @pytest.fixture

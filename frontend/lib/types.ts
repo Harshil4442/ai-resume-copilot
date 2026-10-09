@@ -37,7 +37,7 @@ export type AuthTokenResponse = {
   user_id: number;
 };
 
-export type ResumeSourceFormat = "pdf" | "docx";
+export type ResumeSourceFormat = "pdf" | "docx" | "tex" | "texzip";
 
 export type ResumeSourceMetadata = {
   source_available: boolean;

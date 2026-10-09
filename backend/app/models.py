@@ -83,6 +83,7 @@ class PaymentOrder(Base):
     redirect.
     """
     __tablename__ = "payment_orders"
+    __table_args__ = (Index("ix_payment_orders_paid_at", "paid_at"),)
 
     id = Column(Integer, primary_key=True, index=True)
     public_id = Column(String(64), unique=True, index=True, nullable=False)
@@ -97,6 +98,7 @@ class PaymentOrder(Base):
     provider_subscription_id = Column(String(120), nullable=True)
     sku = Column(String(64), nullable=False)
     catalog_version = Column(String(64), nullable=False)
+    cost_policy_snapshot = Column(JSON, nullable=True)
     billing_type = Column(String(32), nullable=False, default="one_time")
     # Immutable fulfilment snapshot. Delayed webhooks must grant what was
     # purchased, even after the current catalog changes or removes the SKU.
@@ -162,6 +164,7 @@ class PaymentRefund(Base):
     __tablename__ = "payment_refunds"
     __table_args__ = (
         UniqueConstraint("provider", "provider_refund_id", name="uq_payment_provider_refund"),
+        Index("ix_payment_refunds_processed_at", "processed_at"),
     )
 
     id = Column(Integer, primary_key=True, index=True)
@@ -253,7 +256,7 @@ class Resume(Base):
     source_document = deferred(Column(LargeBinary, nullable=True))
     source_format = Column(String(8), nullable=True)
     source_available = column_property(
-        source_document.expression.is_not(None) & source_format.in_(("pdf", "docx"))
+        source_document.expression.is_not(None) & source_format.in_(("pdf", "docx", "tex", "texzip"))
     )
 
     skills = Column(JSON, default=list)
@@ -523,7 +526,9 @@ class ModelCostLiability(Base):
     """Detached provider-cost evidence, independent of live customer row lifetime."""
 
     __tablename__ = "model_cost_liabilities"
-    __table_args__ = (UniqueConstraint("financial_group_id", "attempt_number", name="uq_model_liability_attempt"),)
+    __table_args__ = (UniqueConstraint("financial_group_id", "attempt_number", name="uq_model_liability_attempt"),
+                      Index("ix_model_liability_state_created", "cost_state", "created_at"),
+                      Index("ix_model_liability_created", "created_at"))
 
     id = Column(String(64), primary_key=True)
     financial_group_id = Column(String(64), nullable=False, index=True)

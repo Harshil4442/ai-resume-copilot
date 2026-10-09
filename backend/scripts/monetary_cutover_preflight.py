@@ -13,15 +13,24 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.pool import NullPool
 
 MAX_INPUT_BYTES = 131072
 MAX_ROWS = 256
-SCHEMAS = {"20261008_0009", "20261009_0010", "20261009_0011"}
-FINANCIAL_SCHEMAS = {"20261009_0010", "20261009_0011"}
+SCHEMA_ORDER = ("20261008_0009", "20261009_0010", "20261009_0011", "20261009_0012", "20261009_0013")
+SCHEMAS = set(SCHEMA_ORDER)
+FINANCIAL_SCHEMAS = SCHEMAS - {"20261008_0009"}
+CANDIDATE_SCHEMAS = SCHEMAS - {"20261008_0009", "20261009_0010"}
+EXTENSION_COLUMNS = {
+    "20261009_0012": {("employer_postings", "preference_metadata"): ("json", False)},
+    "20261009_0013": {
+        ("payment_orders", "cost_policy_snapshot"): ("json", False),
+        ("service_credit_reservations", "cost_policy_snapshot"): ("json", False),
+    },
+}
 CANDIDATE_TABLES = {"candidate_password_accounts", "candidate_lifetime_history"}
 CANDIDATE_COLUMNS = {
     "candidate_lifetime_history": {"registration_id": "character varying(36)"},
@@ -103,8 +112,8 @@ class Inventory(Strict):
     serving_commit: str = Field(pattern=r"^[a-f0-9]{40}$")
     candidate_commit: str = Field(pattern=r"^[a-f0-9]{40}$")
     candidate_image: str = Field(pattern=r"^sha256:[a-f0-9]{64}$")
-    expected_database_schema: Literal["20261008_0009", "20261009_0010", "20261009_0011"]
-    candidate_schema: Literal["20261009_0010", "20261009_0011"]
+    expected_database_schema: Literal["20261008_0009", "20261009_0010", "20261009_0011", "20261009_0012", "20261009_0013"]
+    candidate_schema: Literal["20261009_0010", "20261009_0011", "20261009_0012", "20261009_0013"]
     expected_system_identifier_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     expected_database_oid: int = Field(gt=0)
     database_namespace: str = Field(pattern=r"^[a-z][a-z0-9_]{0,62}$")
@@ -140,6 +149,20 @@ class LiabilityQuote(Strict):
         min_length=1, max_length=120, pattern=r"^[A-Za-z0-9_.:/-]+$"
     )
     authorized_ceiling_micros: int = Field(gt=0, le=10**12)
+    expense_policy_version: str | None = Field(default=None, min_length=1, max_length=120, pattern=r"^[A-Za-z0-9_.:/-]+$")
+    expense_funding: Literal["prepaid", "promotion", "legacy_premium"] | None = None
+    expense_pool: Literal["prepaid", "promotion", "legacy_premium", "failed_work"] | None = None
+
+    @model_validator(mode="after")
+    def complete_expense_fields(self) -> LiabilityQuote:
+        fields = (self.expense_policy_version, self.expense_funding, self.expense_pool)
+        names = {"expense_policy_version", "expense_funding", "expense_pool"}
+        present = names.intersection(self.model_fields_set)
+        if present and (present != names or any(value is None for value in fields)):
+            raise ValueError("Expense provenance must be complete or absent for a historical quote")
+        if self.expense_pool is not None and self.expense_pool not in {self.expense_funding, "failed_work"}:
+            raise ValueError("Expense pool must retain its funding class or failed-work classification")
+        return self
 
 
 def _quoted_cost(quote: LiabilityQuote, input_tokens: int, output_tokens: int) -> int:
@@ -447,6 +470,39 @@ def _candidate_projection_shape(connection: Any, namespace_oid: int) -> None:
         raise Denied("database_candidate_projection_shape_mismatch")
 
 
+def _extension_shape(connection: Any, namespace_oid: int, version: str) -> None:
+    """Inspect only column metadata; never load employer, payment or candidate values."""
+    expected: dict[tuple[str, str], tuple[str, bool]] = {}
+    for introduced, columns in EXTENSION_COLUMNS.items():
+        if SCHEMA_ORDER.index(version) >= SCHEMA_ORDER.index(introduced):
+            expected.update(columns)
+    all_keys = {key for columns in EXTENSION_COLUMNS.values() for key in columns}
+    rows = connection.execute(
+        text(
+            "SELECT c.relname, c.relkind, a.attname, "
+            "pg_catalog.format_type(a.atttypid,a.atttypmod) AS column_type, a.attnotnull "
+            "FROM pg_catalog.pg_class c JOIN pg_catalog.pg_attribute a ON a.attrelid=c.oid "
+            "WHERE c.relnamespace=:namespace AND c.relname = ANY(CAST(:tables AS text[])) "
+            "AND a.attname = ANY(CAST(:columns AS text[])) "
+            "AND a.attnum > 0 AND NOT a.attisdropped ORDER BY c.oid,a.attnum LIMIT 257"
+        ),
+        {
+            "namespace": namespace_oid,
+            "tables": sorted({table for table, _ in all_keys}),
+            "columns": sorted({column for _, column in all_keys}),
+        },
+    ).mappings().all()
+    if len(rows) > MAX_ROWS:
+        raise Denied("database_extension_inventory_bound")
+    found: dict[tuple[str, str], tuple[str, bool]] = {}
+    for row in rows:
+        if row["relkind"] != "r" or type(row["attnotnull"]) is not bool:
+            raise Denied("database_extension_shape_mismatch")
+        found[(str(row["relname"]), str(row["attname"]))] = (str(row["column_type"]), row["attnotnull"])
+    if found != expected:
+        raise Denied("database_extension_shape_mismatch")
+
+
 def observe(
     engine: Engine,
     inventory: Inventory,
@@ -506,19 +562,20 @@ def observe(
             if len(versions) != 1 or versions[0] not in SCHEMAS:
                 raise Denied("database_schema_unsupported")
             version = str(versions[0])
-            # A schema0010 release cannot silently adopt a schema0011 database.
-            if version == "20261009_0011" and inventory.candidate_schema != "20261009_0011":
+            # A candidate cannot silently adopt a newer database revision.
+            if SCHEMA_ORDER.index(version) > SCHEMA_ORDER.index(inventory.candidate_schema):
                 raise Denied("database_schema_unsupported")
             if version in FINANCIAL_SCHEMAS and "model_cost_liabilities" not in table_oids:
                 raise Denied("database_liability_table_missing")
             if version == "20261008_0009" and "model_cost_liabilities" in table_oids:
                 raise Denied("database_schema_shape_mismatch")
-            if version == "20261009_0011":
+            if version in CANDIDATE_SCHEMAS:
                 if not CANDIDATE_TABLES.issubset(table_oids):
                     raise Denied("database_candidate_projection_tables_missing")
                 _candidate_projection_shape(connection, int(schema_oid))
             elif CANDIDATE_TABLES.intersection(table_oids):
                 raise Denied("database_schema_shape_mismatch")
+            _extension_shape(connection, int(schema_oid), version)
             # Visibility is required: otherwise another role's sessions may have NULL
             # activity fields. Counts alone cannot prove old executors absent.
             visibility = bool(

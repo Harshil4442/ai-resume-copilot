@@ -94,7 +94,6 @@ export default function Nav() {
     ? appLinks.filter((link) => !link.feature || features.data?.features[link.feature]?.enabled !== false)
     : publicLinks;
   const units = profile.data?.ai_credits;
-  const premium = profile.data?.tier === "premium";
   const serviceCredits = profile.data?.job_service_credits;
 
   return (
@@ -130,10 +129,10 @@ export default function Nav() {
             <Link
               href="/billing"
               className="hidden min-h-9 items-center gap-2 rounded-full border border-border bg-surface px-3 text-xs font-medium text-foreground transition-colors hover:border-accent hover:bg-accent/10 sm:flex"
-              title={premium ? "Premium is active" : `${units} analysis units remaining`}
+              title={`${units} analysis units remaining`}
             >
               <CircleGauge size={14} className="text-primary" aria-hidden="true" />
-              <span>{premium ? "Premium" : units}</span>
+              <span>{units}</span>
             </Link>
           ) : null}
 

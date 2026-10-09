@@ -561,7 +561,7 @@ def execute_resume_tailor(
         extract_source_units,
     )
 
-    if not resume.source_document or resume.source_format not in {"pdf", "docx"}:
+    if not resume.source_document or resume.source_format not in {"pdf", "docx", "tex", "texzip"}:
         raise TailoringOutputError("Upload the original resume before tailoring")
     units = extract_source_units(resume.source_document, resume.source_format)
     # Limit model context by whole units, never by truncating JSON or a source passage.
@@ -573,7 +573,7 @@ def execute_resume_tailor(
         source_units.append(unit)
         context_length += len(unit["text"])
     if not source_units:
-        raise ResumeLayoutError("No source text can be edited while preserving this layout")
+        raise ResumeLayoutError("No source text can be edited while preserving this layout. Keep the original/custom resume or upload editable DOCX/TeX source; protected fonts, macros or image-only text need manual editing.")
 
     prompt_version = "resume-source-v5"
     _ensure_prompt_version(
@@ -607,6 +607,8 @@ def execute_resume_tailor(
                 candidate["source_format"] = resume.source_format
                 rejected = candidate.get("rejected_source_edits")
                 if isinstance(rejected, list) and rejected:
+                    candidate["partial_tailoring"] = True
+                    candidate["omitted_edits"] = len(rejected)
                     log.warning(
                         "Tailoring proposals excluded run_id=%s attempt=%d stage=model_validation rejected=%d retained=%d",
                         run.id,
@@ -622,11 +624,11 @@ def execute_resume_tailor(
                     raise TailoringOutputError(evaluation.errors[0])
                 while True:
                     try:
-                        apply_source_edits(
-                            source_bytes,
-                            source_format,
-                            candidate["source_edits"],
-                        )
+                        if source_format in {"tex", "texzip"}:
+                            from ...services.native_tex import prepare_artifact
+                            candidate["sealed_native_artifact"] = prepare_artifact(source_bytes, source_format, candidate["source_edits"], evidence_payload)
+                        else:
+                            apply_source_edits(source_bytes, source_format, candidate["source_edits"])
                         break
                     except ResumeLayoutError as exc:
                         unit_id = getattr(exc, "unit_id", None)
@@ -643,6 +645,8 @@ def execute_resume_tailor(
                         candidate["source_edits"] = [
                             item for item in edits if item.get("unit_id") != unit_id
                         ]
+                        candidate["partial_tailoring"] = True
+                        candidate["omitted_edits"] = int(candidate.get("omitted_edits", 0)) + 1
                         reason = _TAILORING_VALIDATION_REASONS.get(
                             str(exc), "other_validation_failure"
                         )

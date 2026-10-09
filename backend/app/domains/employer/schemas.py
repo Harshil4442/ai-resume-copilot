@@ -4,6 +4,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from .search_preferences import SearchPreferencesV1
+
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
@@ -17,6 +19,7 @@ class SearchCreate(StrictModel):
     remote_only: bool = False
     published_within_days: int | None = Field(default=None, ge=1, le=365)
     excluded_employers: list[str] = Field(default_factory=list, max_length=100)
+    preferences: SearchPreferencesV1 | None = None
     idempotency_key: str = Field(min_length=8, max_length=160, pattern=r"^[A-Za-z0-9_.:-]+$")
 
 

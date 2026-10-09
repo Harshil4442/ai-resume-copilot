@@ -3020,7 +3020,7 @@ export interface components {
              */
             source_available: boolean;
             /** Source Format */
-            source_format?: ("pdf" | "docx") | null;
+            source_format?: ("pdf" | "docx" | "tex" | "texzip") | null;
         };
         /** ResumeListResponse */
         ResumeListResponse: {
@@ -3062,7 +3062,7 @@ export interface components {
              */
             source_available: boolean;
             /** Source Format */
-            source_format?: ("pdf" | "docx") | null;
+            source_format?: ("pdf" | "docx" | "tex" | "texzip") | null;
             /** Warnings */
             warnings?: string[];
         };
@@ -3161,6 +3161,20 @@ export interface components {
             /** Summary */
             summary: string;
         };
+        /** SalaryPreference */
+        SalaryPreference: {
+            /** Currency */
+            currency: string;
+            /** Maximum */
+            maximum?: number | string | null;
+            /** Minimum */
+            minimum?: number | string | null;
+            /**
+             * Period
+             * @enum {string}
+             */
+            period: "year" | "month" | "week" | "day" | "hour";
+        };
         /** SearchCreate */
         SearchCreate: {
             /**
@@ -3177,6 +3191,7 @@ export interface components {
              * @default
              */
             location: string;
+            preferences?: components["schemas"]["SearchPreferencesV1"] | null;
             /** Published Within Days */
             published_within_days?: number | null;
             /**
@@ -3188,6 +3203,34 @@ export interface components {
             resume_id: number;
             /** Role */
             role: string;
+        };
+        /** SearchPreferencesV1 */
+        SearchPreferencesV1: {
+            /** Authorized Country Codes */
+            authorized_country_codes?: string[] | null;
+            /** Country Codes */
+            country_codes?: string[] | null;
+            /** Employment Types */
+            employment_types?: ("full_time" | "part_time" | "contract" | "internship" | "temporary" | "freelance" | "permanent" | "traineeship")[] | null;
+            /** Posting Languages */
+            posting_languages?: string[] | null;
+            salary?: components["schemas"]["SalaryPreference"] | null;
+            /** Sponsorship Required */
+            sponsorship_required?: boolean | null;
+            /**
+             * Unknown Metadata
+             * @default include
+             * @constant
+             */
+            unknown_metadata: "include";
+            /**
+             * Version
+             * @default 1
+             * @constant
+             */
+            version: 1;
+            /** Willing To Relocate */
+            willing_to_relocate?: boolean | null;
         };
         /** SkillRoiItem */
         SkillRoiItem: {
@@ -5345,6 +5388,8 @@ export interface operations {
                 content: {
                     "application/pdf": string;
                     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": string;
+                    "application/x-tex": string;
+                    "application/zip": string;
                 };
             };
             /** @description Validation Error */
@@ -7449,7 +7494,7 @@ export interface operations {
     download_resume_version_api_v1_resume_versions__version_id__download_get: {
         parameters: {
             query?: {
-                format?: "pdf" | "docx";
+                format?: "pdf" | "docx" | "tex" | "texzip";
             };
             header?: never;
             path: {
@@ -7467,6 +7512,8 @@ export interface operations {
                 content: {
                     "application/pdf": string;
                     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": string;
+                    "application/x-tex": string;
+                    "application/zip": string;
                 };
             };
             /** @description Validation Error */

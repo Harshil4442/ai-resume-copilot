@@ -439,10 +439,10 @@ def test_evidence_tailoring_creates_a_traceable_version_and_commits_once(monkeyp
             resume = db.get(Resume, 10)
             assert run.status == "succeeded"
             assert run.usage_state == "committed"
-            assert run.committed_units == 10
+            assert run.committed_units == 2
             assert run.attempt_count == 1
             assert run.prompt_version == "resume-source-v5"
-            assert db.get(User, 1).ai_credits == 40
+            assert db.get(User, 1).ai_credits == 48
             assert version.generation_run_id == run_id
             assert version.evidence_ids == ["evd_approved"]
             assert version.structured_content["evidence_policy"] == "approved_only"
@@ -454,7 +454,7 @@ def test_evidence_tailoring_creates_a_traceable_version_and_commits_once(monkeyp
             assert DocxDocument(BytesIO(resume.source_document)).paragraphs[-1].text == SOURCE_EXPERIENCE
             events = db.query(UsageEvent).order_by(UsageEvent.created_at).all()
             assert [event.event_type for event in events] == ["reserve", "commit"]
-            assert [event.amount for event in events] == [-10, 0]
+            assert [event.amount for event in events] == [-2, 0]
     finally:
         engine.dispose()
 
@@ -513,7 +513,7 @@ def _create_tailoring_run(factory):
             header_idempotency_key="native-tailor-request-001",
         )
         assert run.usage_state == "reserved"
-        assert db.get(User, 1).ai_credits == 40
+        assert db.get(User, 1).ai_credits == 48
         return run.id
 
 
@@ -581,9 +581,9 @@ def test_mixed_pdf_tailoring_saves_only_the_proven_safe_edits_and_charges_once(m
             resume = db.get(Resume, 10)
             version = db.query(ResumeVersion).one()
             assert run.status == "succeeded" and run.attempt_count == 1
-            assert run.usage_state == "committed" and run.committed_units == 10
+            assert run.usage_state == "committed" and run.committed_units == 2
             assert run.prompt_version == "resume-source-v5"
-            assert db.get(User, 1).ai_credits == 40
+            assert db.get(User, 1).ai_credits == 48
             assert version.generation_run_id == run_id
             assert version.structured_content["source_edits"] == [safe]
             assert run.result_payload["content"]["source_edits"] == [safe]
@@ -597,7 +597,7 @@ def test_mixed_pdf_tailoring_saves_only_the_proven_safe_edits_and_charges_once(m
             assert PDF_OVERFLOW_REPLACEMENT not in exported_text
             events = db.query(UsageEvent).order_by(UsageEvent.created_at).all()
             assert [event.event_type for event in events] == ["reserve", "commit"]
-            assert [event.amount for event in events] == [-10, 0]
+            assert [event.amount for event in events] == [-2, 0]
             assert db.query(ModelCallEvent).one().status == "succeeded"
     finally:
         engine.dispose()
@@ -634,7 +634,7 @@ def test_all_pdf_tailoring_edits_overflow_twice_without_saving_and_refund_once(m
             assert db.get(User, 1).ai_credits == 50
             events = db.query(UsageEvent).order_by(UsageEvent.created_at).all()
             assert [event.event_type for event in events] == ["reserve", "release"]
-            assert [event.amount for event in events] == [-10, 10]
+            assert [event.amount for event in events] == [-2, 2]
     finally:
         engine.dispose()
 
@@ -694,7 +694,7 @@ def test_mixed_pdf_joining_edit_preserves_the_sentence_and_charges_only_once(mon
             resume = db.get(Resume, 10)
             version = db.query(ResumeVersion).one()
             assert run.status == "succeeded" and run.attempt_count == 1
-            assert run.usage_state == "committed" and run.committed_units == 10
+            assert run.usage_state == "committed" and run.committed_units == 2
             assert run.result_payload["content"]["source_edits"] == [safe]
             assert version.structured_content["source_edits"] == [safe]
             assert version.evidence_ids == ["evd_approved"]
@@ -706,10 +706,10 @@ def test_mixed_pdf_joining_edit_preserves_the_sentence_and_charges_only_once(mon
             assert joining_original.strip() in exported_text
             assert joining_replacement.strip() not in exported_text
             assert "50+ engineers" in exported_text
-            assert db.get(User, 1).ai_credits == 40
+            assert db.get(User, 1).ai_credits == 48
             events = db.query(UsageEvent).order_by(UsageEvent.created_at).all()
             assert [event.event_type for event in events] == ["reserve", "commit"]
-            assert [event.amount for event in events] == [-10, 0]
+            assert [event.amount for event in events] == [-2, 0]
     finally:
         engine.dispose()
 
@@ -751,13 +751,13 @@ def test_all_invalid_llm_edit_repair_hint_reaches_second_request_and_charges_onc
         assert "previous proposed changes could not be applied" not in calls[0][1]["content"]
         with factory() as db:
             run = db.get(AnalysisRun, run_id)
-            assert run.usage_state == "committed" and run.committed_units == 10
+            assert run.usage_state == "committed" and run.committed_units == 2
             assert run.attempt_count == 1
             assert db.query(ResumeVersion).one().structured_content["source_edits"] == valid["source_edits"]
-            assert db.get(User, 1).ai_credits == 40
+            assert db.get(User, 1).ai_credits == 48
             events = db.query(UsageEvent).order_by(UsageEvent.created_at).all()
             assert [event.event_type for event in events] == ["reserve", "commit"]
-            assert [event.amount for event in events] == [-10, 0]
+            assert [event.amount for event in events] == [-2, 0]
     finally:
         engine.dispose()
 
@@ -814,17 +814,17 @@ def test_empty_tailoring_output_leaves_one_content_repair_and_charges_once(monke
             resume = db.get(Resume, 10)
             version = db.query(ResumeVersion).one()
             assert run.status == "succeeded" and run.attempt_count == 1
-            assert run.usage_state == "committed" and run.committed_units == 10
+            assert run.usage_state == "committed" and run.committed_units == 2
             assert run.error_code is None
             assert run.result_payload["resume_version_id"] == version.id
             assert version.structured_content["source_edits"] == valid["source_edits"]
             assert resume.source_document == source
             artifact = render_resume_version(version, resume, "docx")
             assert DocxDocument(BytesIO(artifact.content)).paragraphs[-1].text == TAILORED_EXPERIENCE
-            assert db.get(User, 1).ai_credits == 40
+            assert db.get(User, 1).ai_credits == 48
             events = db.query(UsageEvent).order_by(UsageEvent.created_at).all()
             assert [event.event_type for event in events] == ["reserve", "commit"]
-            assert [event.amount for event in events] == [-10, 0]
+            assert [event.amount for event in events] == [-2, 0]
             assert db.query(ModelCallEvent).one().status == "succeeded"
     finally:
         engine.dispose()
@@ -871,7 +871,7 @@ def test_changed_tailoring_constraint_leaves_one_native_width_repair_and_charges
             resume = db.get(Resume, 10)
             version = db.query(ResumeVersion).one()
             assert run.status == "succeeded" and run.attempt_count == 1
-            assert run.usage_state == "committed" and run.committed_units == 10
+            assert run.usage_state == "committed" and run.committed_units == 2
             assert run.result_payload["content"]["source_edits"] == [safe]
             assert version.structured_content["source_edits"] == [safe]
             assert resume.source_document == source
@@ -880,10 +880,10 @@ def test_changed_tailoring_constraint_leaves_one_native_width_repair_and_charges
             assert TAILORED_EXPERIENCE in exported_text
             assert PDF_OVERFLOW_ORIGINAL in exported_text
             assert PDF_OVERFLOW_REPLACEMENT not in exported_text
-            assert db.get(User, 1).ai_credits == 40
+            assert db.get(User, 1).ai_credits == 48
             events = db.query(UsageEvent).order_by(UsageEvent.created_at).all()
             assert [event.event_type for event in events] == ["reserve", "commit"]
-            assert [event.amount for event in events] == [-10, 0]
+            assert [event.amount for event in events] == [-2, 0]
     finally:
         engine.dispose()
 
@@ -922,7 +922,7 @@ def test_invalid_native_tailoring_fails_without_version_and_refunds_once(monkeyp
             assert db.get(User, 1).ai_credits == 50
             events = db.query(UsageEvent).order_by(UsageEvent.created_at).all()
             assert [event.event_type for event in events] == ["reserve", "release"]
-            assert [event.amount for event in events] == [-10, 10]
+            assert [event.amount for event in events] == [-2, 2]
     finally:
         engine.dispose()
 
@@ -948,14 +948,14 @@ def test_native_tailoring_repairs_an_unsafe_edit_and_commits_one_charge(monkeypa
         with factory() as db:
             run = db.get(AnalysisRun, run_id)
             assert run.usage_state == "committed"
-            assert run.committed_units == 10
+            assert run.committed_units == 2
             assert run.attempt_count == 1
-            assert db.get(User, 1).ai_credits == 40
+            assert db.get(User, 1).ai_credits == 48
             version = db.query(ResumeVersion).one()
             assert version.structured_content["source_edits"][0]["replacement_text"] == TAILORED_EXPERIENCE
             events = db.query(UsageEvent).order_by(UsageEvent.created_at).all()
             assert [event.event_type for event in events] == ["reserve", "commit"]
-            assert [event.amount for event in events] == [-10, 0]
+            assert [event.amount for event in events] == [-2, 0]
     finally:
         engine.dispose()
 
@@ -1019,7 +1019,7 @@ def test_failed_tailoring_keeps_layout_diagnostics_and_cause_after_rollback(monk
             assert db.get(User, 1).ai_credits == 50
             events = db.query(UsageEvent).order_by(UsageEvent.created_at).all()
             assert [event.event_type for event in events] == ["reserve", "release"]
-            assert [event.amount for event in events] == [-10, 10]
+            assert [event.amount for event in events] == [-2, 2]
     finally:
         engine.dispose()
 

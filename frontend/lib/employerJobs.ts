@@ -1,3 +1,5 @@
+import type { SearchPreferencesV1 } from "./searchPreferences";
+
 export const employerJobsBase = "/v1/employer-jobs";
 
 export type AdmissionLimits = {
@@ -43,9 +45,11 @@ export type EmployerPosting = {
   last_checked_at: string;
   application_mode: string;
   opening_key?: string;
+  preference_metadata?: Record<string, unknown> | null;
 };
 export type SearchResult = {
   posting: EmployerPosting;
+  preference_evaluation?: { version: string; eligible: boolean; states: Record<string, "match" | "unknown" | "conflict">; messages: string[]; eligibility_verified?: false };
   fit: { score: number; matched_skills: string[]; missing_evidence: string[]; reasons: string[]; scoring_version: string };
   charged_credits: number;
 };
@@ -58,7 +62,8 @@ export type EmployerSearch = {
   charged_credits: number;
   refunded_credits: number;
   created_at: string;
-  query: { resume_id: number; role: string; location: string; remote_only: boolean; published_within_days: number | null };
+  query: { resume_id: number; role: string; location: string; remote_only: boolean; published_within_days: number | null; desired_count?: number; excluded_employers?: string[]; preferences?: SearchPreferencesV1 | null };
+  scope?: { candidate_limit_reached?: boolean; known_preference_conflicts?: number; candidates_with_unknown_preferences?: number; candidates_before_preferences?: number };
   items: SearchResult[];
 };
 export type ApplicationField = {

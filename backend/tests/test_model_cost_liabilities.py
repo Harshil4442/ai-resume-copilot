@@ -17,6 +17,7 @@ from backend.app.services.generation_budget import persistent_run_budget
 from backend.app.services.guardrails import billable_operation
 from backend.app.services.model_cost_policy import ModelCostUnavailable, freeze_run_quote
 from backend.tests.test_model_cost_budgets import GOOGLE, admit, usage
+from fastapi import Request
 from google import genai
 from sqlalchemy import create_engine, event, inspect
 from sqlalchemy.orm import sessionmaker
@@ -66,7 +67,9 @@ def factory():
 
 def erase(factory):
     with factory() as db:
-        assert delete_account(db=db, current_user=db.get(models.User, 1)) == {"status": "deleted"}
+        # Legacy financial fixtures have no protected CandidatePasswordAccount.
+        request = Request({"type": "http", "method": "POST", "scheme": "https", "path": "/api/auth/delete-account", "raw_path": b"/api/auth/delete-account", "query_string": b"", "headers": [], "server": ("owned-test.invalid", 443), "client": ("127.0.0.1", 12345)})
+        assert delete_account(request=request, db=db, current_user=db.get(models.User, 1)) == {"status": "deleted"}
 
 
 @pytest.mark.parametrize("state", ["reserved", "outcome_unknown", "usage_unavailable"])

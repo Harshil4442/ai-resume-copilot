@@ -13,7 +13,13 @@
     "target_contribution_margin": "40%",
     "search_cost_bound_inr": ".25 per delivered job",
     "confirmed_application_cost_bound_inr": "5 per application, requiring20jobcredits",
-    "ai_unit_cost_bound_inr": "25.50; tailoring2units, operation-total providercapUSD.50, adverseFX100INR/USD"
+    "ai_unit_cost_bound_inr": "26.50; providerUSD.25 at adverse100INR/USD plus1.50worker/document allowance for three attempts; tailoring2units with operation-total providercapUSD.50",
+    "marketing_subpools_inr_monthly": {
+      "promotion_and_failed_ai": 1000,
+      "legacy_premium_ai": 500,
+      "legacy_service_quotes": 500
+    },
+    "net_receipt_rounding": "Round each modeled tax/fee/refund reserve up to whole paise; no fractional proceeds credited."
   },
   "candidate_bundles": [
     {
@@ -22,20 +28,20 @@
       "service_credits": 100,
       "analysis_units": 2,
       "net_receipts_minor": 49457,
-      "bounded_cost_minor": 27120,
-      "estimated_margin_percent": "45.17",
+      "bounded_cost_minor": 27360,
+      "estimated_margin_percent": "44.68",
       "volume_scenarios": [
         {
           "packs_per_month": 10,
-          "net_contribution_after_fixed_minor": -1396624
+          "net_contribution_after_fixed_minor": -1399030
         },
         {
           "packs_per_month": 50,
-          "net_contribution_after_fixed_minor": 216877
+          "net_contribution_after_fixed_minor": 204850
         },
         {
           "packs_per_month": 100,
-          "net_contribution_after_fixed_minor": 2233754
+          "net_contribution_after_fixed_minor": 2209700
         }
       ],
       "break_even_packs_if_only_this_pack": 45
@@ -45,48 +51,48 @@
       "gross_inr": 1099,
       "service_credits": 300,
       "analysis_units": 6,
-      "net_receipts_minor": 83750,
-      "bounded_cost_minor": 45360,
-      "estimated_margin_percent": "45.84",
+      "net_receipts_minor": 83749,
+      "bounded_cost_minor": 46080,
+      "estimated_margin_percent": "44.98",
       "volume_scenarios": [
         {
           "packs_per_month": 10,
-          "net_contribution_after_fixed_minor": -1236098
+          "net_contribution_after_fixed_minor": -1243310
         },
         {
           "packs_per_month": 50,
-          "net_contribution_after_fixed_minor": 1019506
+          "net_contribution_after_fixed_minor": 983450
         },
         {
           "packs_per_month": 100,
-          "net_contribution_after_fixed_minor": 3839013
+          "net_contribution_after_fixed_minor": 3766900
         }
       ],
-      "break_even_packs_if_only_this_pack": 32
+      "break_even_packs_if_only_this_pack": 33
     },
     {
-      "name": "Pro",
+      "name": "Scale",
       "gross_inr": 2199,
       "service_credits": 700,
       "analysis_units": 15,
-      "net_receipts_minor": 167576,
-      "bounded_cost_minor": 84900,
-      "estimated_margin_percent": "49.34",
+      "net_receipts_minor": 167575,
+      "bounded_cost_minor": 86700,
+      "estimated_margin_percent": "48.26",
       "volume_scenarios": [
         {
           "packs_per_month": 10,
-          "net_contribution_after_fixed_minor": -793235
+          "net_contribution_after_fixed_minor": -811250
         },
         {
           "packs_per_month": 50,
-          "net_contribution_after_fixed_minor": 3233823
+          "net_contribution_after_fixed_minor": 3143750
         },
         {
           "packs_per_month": 100,
-          "net_contribution_after_fixed_minor": 8267647
+          "net_contribution_after_fixed_minor": 8087500
         }
       ],
-      "break_even_packs_if_only_this_pack": 18
+      "break_even_packs_if_only_this_pack": 19
     }
   ],
   "limits": [
@@ -95,5 +101,8 @@
     "Tax/gateway/hosting assumptions must be reconciled with actual contracts/bills.",
     "Positive forecast margin does not imply profit below break-even volume.",
     "Accepted old orders/quotes retained."
-  ]
+  ],
+  "arithmetic_version": "expense-planning-v2-three-attempt-overhead",
+  "updated_at_utc": "2026-10-09T15:48:57.370696+00:00",
+  "previous_arithmetic_evidence": "2026-10-09-estimated-credit-pack-proposal-initial.json"
 }

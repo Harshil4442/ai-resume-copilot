@@ -77,7 +77,7 @@ def transport(request: httpx.Request) -> httpx.Response:
     if request.url.host == "api.razorpay.com" and request.url.path == "/v1/orders":
         assert request.method == "POST"
         payload = json.loads(request.content)
-        assert payload["amount"] == 49_900 and payload["currency"] == "INR"
+        assert payload["amount"] == 64_900 and payload["currency"] == "INR"
         assert payload["partial_payment"] is False
         count("synthetic_checkout_orders")
         assert COUNTS["synthetic_checkout_orders"] == 1

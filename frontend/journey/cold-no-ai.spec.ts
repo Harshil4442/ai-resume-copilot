@@ -85,9 +85,9 @@ test("fresh candidate: real Chromium → BFF → API → SQL, no AI and reviewed
   expect((await initialCatalog.json()).balance).toBe(0);
   await page.goto("/billing");
   // Explicitly select the credit pack, independently of billing deep links.
-  const pack = page.locator("article").filter({ hasText: "500 credits" });
+  const pack = page.locator("article").filter({ hasText: "100 job service credits" });
   await expect(pack).toBeVisible();
-  const select = pack.getByRole("button", { name: "Review purchase", exact: true });
+  const select = pack.getByRole("button", { name: /^(Selected|Review purchase)$/ });
   // The pack renders before account status resolves. Wait for its enabled
   // action; an instantaneous count can skip selection while it says "Checking status".
   await expect(select).toBeEnabled();
@@ -107,8 +107,8 @@ test("fresh candidate: real Chromium → BFF → API → SQL, no AI and reviewed
   const payload = { event: "payment.captured", payload: { payment: { entity: {
     id: "pay_synthetic_browser", entity: "payment", amount: checkout.amount_minor,
     currency: "INR", status: "captured", captured: true, order_id: checkout.provider_order_id,
-    method: "upi", international: false, fee: 2500, tax: 381,
-    notes: { hirewiz_order_id: checkout.order_id, sku: "job_service_500", billing_country: "IN" },
+    method: "upi", international: false, fee: 2298, tax: 351,
+    notes: { hirewiz_order_id: checkout.order_id, sku: "starter_bundle", billing_country: "IN" },
   } } } };
   const raw = JSON.stringify(payload);
   const signature = createHmac("sha256", "synthetic-browser-webhook-secret").update(raw).digest("hex");
@@ -118,6 +118,8 @@ test("fresh candidate: real Chromium → BFF → API → SQL, no AI and reviewed
     expect(webhook.ok()).toBeTruthy();
   } } finally { await provider.dispose(); }
   await expect(page.getByRole("heading", { name: "Payment confirmed", exact: true })).toBeVisible();
+  const paidProfile = await request.get(`${baseURL}/api/account/profile`);
+  expect((await paidProfile.json()).ai_credits).toBe(52);
   await page.getByRole("link", { name: "Continue to employer jobs", exact: true }).click();
   await page.getByRole("combobox", { name: "Resume", exact: true }).selectOption(String(parsed.resume_id));
   await page.getByLabel("Target role", { exact: true }).fill("Python Engineer");
@@ -159,7 +161,7 @@ test("fresh candidate: real Chromium → BFF → API → SQL, no AI and reviewed
   expect(firstHandoff.status).toBe("manual_handoff"); expect(firstHandoff.charged_credits).toBe(0); expect(firstHandoff.receipt).toBeNull();
   await expect(dialog.getByRole("status").filter({ hasText: "Reviewed handoff prepared" })).toBeVisible();
   await dialog.getByRole("combobox", { name: "Resume choice", exact: true }).selectOption("custom");
-  await dialog.getByLabel("Upload a custom PDF or DOCX", { exact: true }).setInputFiles(process.env.COLD_BROWSER_CUSTOM!);
+  await dialog.getByLabel("Upload a custom PDF, DOCX or TeX source", { exact: true }).setInputFiles(process.env.COLD_BROWSER_CUSTOM!);
   await expect(dialog.getByText(/Save your changes to refresh/)).toBeVisible();
   await expect(approve).toBeDisabled();
   const savedCustom = page.waitForResponse((r) => r.url().endsWith("/package") && r.request().method() === "PUT");
@@ -189,6 +191,8 @@ test("fresh candidate: real Chromium → BFF → API → SQL, no AI and reviewed
       await dialog.screenshot({ path: `${process.env.COLD_BROWSER_EVIDENCE}/manual-handoff-${width}.png` });
     }
   }
+  const noAiProfile = await request.get(`${baseURL}/api/account/profile`);
+  expect((await noAiProfile.json()).ai_credits).toBe(52);
   // Independent second real browser identity must not retrieve the first owner's file/package.
   const outsider = await context.browser()!.newContext({ ignoreHTTPSErrors: true });
   await outsider.route((url) => url.origin !== baseURL, guardExternal);
@@ -211,6 +215,7 @@ test("fresh candidate: real Chromium → BFF → API → SQL, no AI and reviewed
     source_bytes_exact: true, custom_bytes_exact: true, original_sha256: createHash("sha256").update(original).digest("hex"),
     custom_sha256: createHash("sha256").update(custom).digest("hex"), cold_user_created_via_ui: true,
     real_nextauth: true, no_bff_interception: true, no_credits_before_webhook: true,
+    finite_bundle_sku: "starter_bundle", purchased_analysis_units: 2, analysis_units_after_no_ai_work: 52,
     https_loopback_transport: true, secure_http_only_session_cookie: true,
     public_registration_projection: true, generic_auth_proxy_denied: true,
     stale_approval_rejected: true, cross_owner_denied: true, final_status: final.status,

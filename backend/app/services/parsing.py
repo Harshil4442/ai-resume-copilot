@@ -382,7 +382,11 @@ def parse_resume_file(
         raw_text, sections, skills, experience_years, contact_info
     """
     # Step 1: Text + sections
-    if filename.lower().endswith(".docx"):
+    if filename.lower().endswith((".tex", ".zip")):
+        from .native_tex import compile_project
+        pdf, _image = compile_project(file_bytes, "tex" if filename.lower().endswith(".tex") else "texzip")
+        raw_text, sections = extract_text_and_sections_from_pdf(pdf)
+    elif filename.lower().endswith(".docx"):
         raw_text = extract_text_from_docx(file_bytes)
         sections = _heuristic_sections_fuzzy(raw_text)
     else:

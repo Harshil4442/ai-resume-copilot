@@ -10,7 +10,8 @@ from datetime import timedelta
 
 from fastapi import HTTPException
 
-from ...services.resume_artifacts import render_resume_version
+from ...services.resume_artifacts import ResumeArtifactError, render_resume_version
+from ...services.resume_layout import ResumeLayoutError
 from ..common import public_id, utcnow
 
 UPLOAD_LEASE_SECONDS = 600
@@ -27,18 +28,35 @@ class SealedBytes:
 
 
 def materialize(resume, version=None) -> SealedBytes:
-    if not resume.source_document or resume.source_format not in {"pdf", "docx"}:
-        raise HTTPException(422, "Upload the original PDF or DOCX to preserve its format")
+    if not resume.source_document or resume.source_format not in {"pdf", "docx", "tex", "texzip"}:
+        raise HTTPException(422, "Upload the original PDF, DOCX or supported native TeX project to preserve its format")
     if version:
-        artifact = render_resume_version(version, resume, resume.source_format)
+        artifact = render_resume_version(version, resume, "pdf" if resume.source_format in {"tex", "texzip"} else resume.source_format)
         content, filename, media_type = artifact.content, artifact.filename, artifact.media_type
     else:
         content = bytes(resume.source_document)
         filename = re.sub(r"[^A-Za-z0-9._-]", "-", resume.original_filename or f"resume.{resume.source_format}")[:200]
         media_type = "application/pdf" if resume.source_format == "pdf" else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    if version is None and resume.source_format in {"tex", "texzip"}:
+        from ...services.native_tex import prepare_artifact, sealed_bytes
+        try:
+            seal = prepare_artifact(content, resume.source_format, [])
+            content = sealed_bytes(seal, content, resume.source_format, [], "pdf")
+        except ResumeLayoutError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        filename = re.sub(r"\.(?:tex|zip)$", ".pdf", filename, flags=re.I)
+        media_type = "application/pdf"
     if not 0 < len(content) <= 10 * 1024 * 1024:
         raise HTTPException(422, "Application resume must be nonempty and at most 10 MB")
     return SealedBytes(content, hashlib.sha256(content).hexdigest(), filename, media_type)
+
+
+def materialize_for_application(resume, version=None) -> SealedBytes:
+    """Translate document refusal at the application boundary without changing it."""
+    try:
+        return materialize(resume, version)
+    except (ResumeArtifactError, ResumeLayoutError) as exc:
+        raise HTTPException(409, str(exc) + " Choose your original/custom uploaded resume, or generate a new version and review it again.") from exc
 
 
 def store(sealed: SealedBytes, *, user_id: int, object_name: str | None = None) -> SealedBytes:

@@ -9,6 +9,7 @@ from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from ..billing.cost_policy import CostPolicyUnavailable, assert_actual_variance, current_policy, service_prices
 from ..billing.catalog import CATALOG_VERSION, CatalogProduct, get_product, product_purchase_enabled, public_catalog
 from ..billing.razorpay import RazorpayAdapter, RazorpayProviderError, RazorpaySettings
 from ..billing.service import WebhookValidationError, as_aware, process_razorpay_webhook
@@ -181,6 +182,13 @@ def create_order(
     if open_orders:
         db.commit()
 
+    try:
+        authority = service_prices()["cost_policy_snapshot"]
+        assert_actual_variance(db, current_policy())
+    except CostPolicyUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from None
+    authority = authority | {"entitlements": {"job_service_credits": product.entitlement_quantity,
+                                                "analysis_units": product.analysis_units}}
     public_id = f"ord_{uuid.uuid4().hex}"
     receipt = f"hw_{public_id}"
     if len(receipt) > 40:
@@ -193,6 +201,7 @@ def create_order(
         provider_key_id=settings.key_id,
         sku=product.sku,
         catalog_version=CATALOG_VERSION,
+        cost_policy_snapshot=authority,
         billing_type=product.billing_type,
         entitlement_kind=product.entitlement_kind,
         entitlement_quantity=product.entitlement_quantity,
