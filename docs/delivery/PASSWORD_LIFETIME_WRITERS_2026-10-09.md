@@ -93,15 +93,20 @@ external witness/closed cut includes every pending protected lifetime denial and
 restore proves old readers cannot act through an earlier lifetime.** Returning `UNKNOWN`
 from a writer is not, by itself, a global denial fence.
 
-The current `GcsWitnessFence` verifies an injected pinned OPEN body; it does not enumerate
-new pending lifetime effects. If a deletion effect persists in protected Storage but its
-native Commit persists nothing, an existing native reader can still see the old active
-lifetime. The test suite explicitly reproduces this limitation. No test substitutes a
-fixture fence for the missing production protocol or claims this situation is safe.
+The V1/V2 writer checkpoint verified an injected pinned OPEN body without including new
+pending lifetime effects. Its preserved historical proof reproduced an old active reader
+after a protected denial and unpersisted native Commit. The subsequent disabled
+[protected denial barrier](PASSWORD_DENIAL_BARRIER_2026-10-09.md) now makes the actual
+`GcsWitnessFence` consult a permanent exact-pin closure before and after each current
+witness read. Ordinary lifetime denials require its acknowledged closed context before
+their full fixed-cut intent is created. The connected regression now rejects the old
+reader even after native OPEN rows are restored. This closes that specific source gap;
+it does not complete independent restore or establish production IAM/retention/availability.
 
-Required follow-on work includes an independently controlled close/admission barrier,
-complete protected partition inventory/closed-cut manifest, effect inclusion rules and
-fresh witness publication. All old readers/writers must lose execution authority during
+The initial barrier retains a bounded exhaustive all-partition inventory while CLOSED,
+with no opening operation or projection-complete restore claim. Required follow-on work
+includes complete effect inclusion/replay, independently verified restore, safe partition
+availability and fresh witness publication. All old readers/writers must lose execution authority during
 unknown denial and recovery. SQL logout/reset/deletion acknowledgements and credential
 mirror changes must remain pending until protected denial and the required native outcome
 are established. Actual resource identity, retention/WORM, IAM separation, runtime pins,
@@ -175,12 +180,23 @@ Thirteen additional regressions exercise the exact independently reproduced reta
 public mutation before entry and around fresh fences, detached create/verify mutation,
 native-read mutation, mutation before/after Commit acknowledgement, definite-abort retry,
 status-input/verification mutation and deep separation between every exported copy. The
-complete pending-denial activation/restore limitation described above remains unchanged.
-No close witness, runtime factory, SQL transport or cloud policy is manufactured by this
-repair. V2's final checkpoint is recorded separately in the freeze manifest/proof summary.
+pending-denial limitation remained unchanged at that V2 checkpoint and is addressed by
+the separate disabled closure stage described above. No runtime factory, SQL transport
+or cloud policy is manufactured by either repair. V2's historical final checkpoint is
+recorded separately in the freeze manifest/proof summary.
 
 V2 final author checkpoint: 626 cases passed across the same 12-file connected
 selection, including 65 lifetime cases and all three actual PostgreSQL credential
 cases, with zero failures/skips/deselections and 235 existing deprecation warnings
 in 64.08 seconds. The exact C253 CI Mypy selection passed for 86 source files; its
 Ruff selection plus the owned lifetime test passed. V1 remains held and preserved.
+
+
+The subsequent isolated denial-closure author checkpoint passed 665 connected cases
+(65 lifetime and 39 closure cases, including all three actual PostgreSQL credential cases),
+with zero failures/skips/deselections and 235 existing warnings in 53.60 seconds. Its exact
+C253 CI Mypy selection passed for 88 files. It uses the agent-owned pinned emulator58880
+and a recorded private subprocess endpoint difference; V2's original58877 checkpoint above
+remains unchanged. The closure is a disabled whole-incarnation intermediate guard: normal
+logout availability, independent full restore and production resource/transport proof remain
+mandatory. See `PASSWORD_DENIAL_BARRIER_2026-10-09.md` and its separate frozen artifacts.

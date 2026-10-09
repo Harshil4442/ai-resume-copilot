@@ -20,6 +20,7 @@ import grpc
 import pytest
 import requests
 from backend.tests.fixtures.firestore_emulator import local_firestore_endpoint
+from backend.tests.fixtures.gcp_publication import publication_for
 from google.api_core.exceptions import Aborted
 from google.auth.credentials import AnonymousCredentials
 from google.cloud.firestore_v1.services.firestore import FirestoreClient
@@ -434,7 +435,7 @@ def test_storage_response_loss_reconciles_before_atomic_emulator_commit_and_exac
             self.checks += 1
     fence = SyntheticFence()
     coordinator = SafetyCoordinator(emulator.registry,
-        GcsJournal(storage.bucket("synthetic-authority-journal")), pin, fence=fence,
+        GcsJournal(storage.bucket("synthetic-authority-journal"), publication=publication_for(pin, "synthetic-authority-journal")), pin, fence=fence,
         now_ms=lambda: intent.created_at_ms + 1)
     result = coordinator.execute(intent)
     assert result.status == "COMMITTED" and result.journal.generation == "41"

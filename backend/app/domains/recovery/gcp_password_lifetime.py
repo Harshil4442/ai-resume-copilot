@@ -19,6 +19,7 @@ from .gcp_buffer import BufferedRegistry, BufferedTransaction
 from .gcp_contracts import AmbiguousCommit, JournalReceipt, OperationStatus, RegistryPin
 from .gcp_journal import Fence, UnavailableFence
 from .gcp_pairing import _checked_event, pairing_control_record
+from .gcp_password_closure import ClosedPasswordDenialFence
 from .gcp_password_lifetime_contracts import (
     AdvancePasswordAuthGeneration,
     BindPasswordAccount,
@@ -122,12 +123,18 @@ class GcpPasswordLifetimeCoordinator:
 
     def __init__(self, registry: BufferedRegistry, pin: RegistryPin, *, epoch_generation: int,
                  journal: PasswordLifetimeJournal | None = None, fence: Fence | None = None,
+                 closed_denial: ClosedPasswordDenialFence | None = None,
                  now_ms: Callable[[], int] = lambda: time.time_ns() // 1_000_000):
         if registry.rpc.database_resource != pin.database:
             raise GuardDenied("Lifetime writer database pin disagrees")
         pairing_control_record(pin, epoch_generation)
         self.registry, self.pin, self.epoch_generation = registry, pin, epoch_generation
-        self.journal, self.fence = journal or UnavailablePasswordLifetimeJournal(), fence or UnavailableFence()
+        if closed_denial is not None and (type(closed_denial) is not ClosedPasswordDenialFence or fence is not None
+                or closed_denial.control.pin != pin):
+            raise GuardDenied("Closed lifetime execution requires its exact dedicated denial fence")
+        self.closed_denial = closed_denial
+        self.journal = journal or UnavailablePasswordLifetimeJournal()
+        self.fence = closed_denial or fence or UnavailableFence()
         self.now_ms = now_ms
         self._issuer = object()
         self._issued: dict[UUID, _OwnedLifetimePlan] = {}
@@ -148,9 +155,12 @@ class GcpPasswordLifetimeCoordinator:
             raise GuardDenied("Lifetime status input changed during verification")
 
     def _fenced(self, raw: bytes, *, owned: _OwnedLifetimePlan | None = None,
-                source: PasswordLifetimeIntent | None = None) -> None:
+                source: PasswordLifetimeIntent | None = None, status_only: bool = False) -> None:
         self._checked(raw, owned=owned, source=source)
-        self.fence.check(self.pin.model_copy(deep=True))
+        if status_only and self.closed_denial is not None:
+            self.closed_denial.check_status(self.pin.model_copy(deep=True))
+        else:
+            self.fence.check(self.pin.model_copy(deep=True))
         self._checked(raw, owned=owned, source=source)
 
     def _verify(self, raw: bytes, receipt: JournalReceipt, *, owned: _OwnedLifetimePlan | None = None,
@@ -176,9 +186,13 @@ class GcpPasswordLifetimeCoordinator:
         self._checked(raw, owned=owned)
 
     def _control(self, snap: _Snapshot) -> None:
-        if (not _same(snap.get("control", "meta"), control_record(self.pin))
+        if (not _same(snap.get("control", "meta"), self._expected_control())
                 or not _same(snap.get("pairing_control", "current"), pairing_control_record(self.pin, self.epoch_generation))):
             raise GuardUnavailable("Lifetime writer control is absent or closed")
+
+    def _expected_control(self) -> dict:
+        return (self.closed_denial.control.model_dump(mode="json") if self.closed_denial is not None
+                else control_record(self.pin))
 
     @staticmethod
     def _owner(binding: PasswordAccountBinding) -> dict:
@@ -219,7 +233,13 @@ class GcpPasswordLifetimeCoordinator:
         return binding, subject
 
     def _prepare(self, tx: BufferedTransaction, command: PasswordLifetimeCommand, *,
-                 operation_id: UUID, event_id: UUID, now: int) -> tuple[UUID, PasswordLifetimeEffects]:
+                 operation_id: UUID, event_id: UUID, now: int,
+                 _preclose_validation: bool = False) -> tuple[UUID, PasswordLifetimeEffects]:
+        if (not isinstance(command, (BindPasswordAccount, CreatePasswordWebSession))
+                and self.closed_denial is None and not _preclose_validation):
+            raise GuardUnavailable("A protected acknowledged closure is required before retaining a denial")
+        if self.closed_denial is not None and not self.closed_denial.command_matches(command):
+            raise GuardDenied("Closed lifetime writer cannot grant or retarget its owning denial")
         snap = _Snapshot(tx)
         self._control(snap)
         clock = snap.get("pairing_clock", "observed")
@@ -325,6 +345,26 @@ class GcpPasswordLifetimeCoordinator:
         before = tuple(LifetimeRecord(namespace=namespace, key=key, value=value)
                        for (namespace, key), value in sorted(snap.records.items()))
         return subject_id, PasswordLifetimeEffects(before=before, after=tuple(changes), event=event)
+
+    def validate_denial_before_close(self, command: PasswordLifetimeCommand) -> None:
+        """Read-only scope validation; creates no plan, journal or authority.
+
+        Called by the typed closer before permanently closing a cohort. A command
+        whose independent account/session/subject provenance is invalid cannot
+        close unrelated subjects. A later close race still sacrifices availability.
+        """
+        if self.closed_denial is not None or type(command) not in _COMMAND_TYPES[2:]:
+            raise GuardDenied("Only an OPEN typed denial can be validated before closure")
+        command = _COMMAND.validate_python(command.model_dump(mode="json"))
+        now = self.now_ms()
+        if type(now) is not int or not 0 < now <= JS_SAFE_MAX:
+            raise GuardDenied("Denial validation clock is invalid")
+        operation_id, event_id = uuid4(), uuid4()
+        def read(tx: BufferedTransaction) -> None:
+            self._prepare(tx, command, operation_id=operation_id, event_id=event_id,
+                now=now, _preclose_validation=True)
+        self.registry.run(read, before_attempt=lambda: self.fence.check(self.pin))
+        self.fence.check(self.pin)
 
     def allocate(self, command: PasswordLifetimeCommand, *, lifetime_ms: int = 60_000) -> PasswordLifetimePlan:
         if type(command) not in _COMMAND_TYPES:
@@ -436,13 +476,13 @@ class GcpPasswordLifetimeCoordinator:
         if intent.pin != self.pin or intent.epoch_generation != self.epoch_generation:
             raise GuardDenied("Lifetime status belongs to another authority")
         try:
-            self._fenced(raw, owned=owned, source=source)
+            self._fenced(raw, owned=owned, source=source, status_only=True)
             key = str(intent.operation_id)
             records = self.registry.read_many((("control", "meta"), ("pairing_control", "current"),
                 ("password_lifetime_operations", key), ("password_lifetime_effects", key),
                 ("events", str(intent.event_id)), ("head", "global")))
             self._checked(raw, owned=owned, source=source)
-            if (not _same(records["control", "meta"], control_record(self.pin))
+            if (not _same(records["control", "meta"], self._expected_control())
                     or not _same(records["pairing_control", "current"], pairing_control_record(self.pin, self.epoch_generation))):
                 raise GuardUnavailable("Lifetime status control is closed")
             row = records["password_lifetime_operations", key]
@@ -461,7 +501,7 @@ class GcpPasswordLifetimeCoordinator:
                 raise GuardUnavailable("Lifetime event is ahead of the retained cut")
             receipt = JournalReceipt.model_validate(row["journal"])
             self._verify(raw, receipt, owned=owned, source=source)
-            self._fenced(raw, owned=owned, source=source)
+            self._fenced(raw, owned=owned, source=source, status_only=True)
             self._checked(raw, owned=owned, source=source)
             return OperationStatus(status="COMMITTED", operation_id=intent.operation_id,
                                    intent_sha256=hashlib.sha256(raw).hexdigest(), journal=receipt)

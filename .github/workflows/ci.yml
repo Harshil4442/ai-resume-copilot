@@ -68,11 +68,14 @@ jobs:
           tests/test_job_coverage_audit.py
           tests/test_gcp_rpc.py tests/test_gcp_journal_sdk.py tests/test_gcp_safety_coordinator.py tests/test_gcp_rpc_emulator.py tests/test_gcp_pairing_emulator.py tests/test_gcp_pairing_admission_emulator.py tests/test_gcp_password_reauth_emulator.py
           tests/test_gcp_password_lifetime_emulator.py
+          tests/fixtures/gcp_closure.py tests/fixtures/gcp_publication.py
+          tests/test_gcp_password_closure_emulator.py tests/test_gcp_publication_emulator.py
           app/domains/recovery/gcp_media.py
           tests/conftest.py tests/model_cost_fixtures.py tests/test_model_cost_budgets.py tests/test_model_cost_budgets_postgres.py
           tests/test_model_cost_liabilities.py tests/test_model_cost_liabilities_postgres.py tests/test_model_cost_result_lifetime_postgres.py
           app/services/model_cost_policy.py app/services/generation_budget.py app/services/llm_client.py app/services/result_commit.py
           app/services/generation_gate.py tests/test_generation_gate.py
+          tests/test_monetary_cutover_preflight_postgres.py
           tests/test_fresh_user_no_ai_journey.py
           tests/fixtures/cold_browser_app.py tests/test_cold_browser_runner.py
           ../infra/gcp/release_preflight.py ../tests/test_release_preflight.py
@@ -83,6 +86,7 @@ jobs:
           app/routers/worker.py app/worker_main.py app/observability.py app/catalog_timing.py app/main.py app/security.py app/feature_flags.py app/migrate.py
           app/services/model_cost_policy.py app/services/generation_budget.py app/services/llm_client.py app/services/result_commit.py
           app/services/generation_gate.py
+          scripts/monetary_cutover_preflight.py
           ../infra/gcp/release_preflight.py
       - name: Compile backend
         run: backend/.venv/bin/python -m compileall -q backend/app

@@ -13,7 +13,7 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
-from threading import Barrier
+from threading import Barrier, get_ident
 from uuid import uuid4
 
 import pytest
@@ -102,12 +102,17 @@ def test_concurrent_replicas_share_one_protected_attempt_and_one_core_mutation(c
     plan, parameters = prepared_plan(case)
     replica, duplicate = issued_replica(case, plan, parameters, monkeypatch)
     barrier = Barrier(2)
-    original = case.http.request
-    def concurrent_upload(method, url, **kwargs):
-        if method == "POST" and not marker_post(method, kwargs):
+    original = case.publication.registry.rpc.commit
+    arrived = set()
+    def concurrent_publication(transaction, writes):
+        # The new shared full-intent gate excludes the loser before SDK POST.
+        # Race actual independent native Commit calls at their shared boundary.
+        thread = get_ident()
+        if thread not in arrived:
+            arrived.add(thread)
             barrier.wait(timeout=4.0)
-        return original(method, url, **kwargs)
-    monkeypatch.setattr(case.attempts.bucket.client._http.request, "side_effect", concurrent_upload)
+        return original(transaction, writes)
+    monkeypatch.setattr(case.publication.registry.rpc, "commit", concurrent_publication)
     with ThreadPoolExecutor(max_workers=2) as pool:
         left = pool.submit(case.coordinator.execute, plan, parameters)
         right = pool.submit(replica.execute, duplicate, parameters)
@@ -195,12 +200,10 @@ def test_first_original_upload_ambiguity_has_no_possible_core_and_precise_persis
     assert len(case.http.calls) == before  # The ambiguous local plan is never retried.
     monkeypatch.setattr(case.attempts.bucket.client._http.request, "side_effect", original)
     later = replica.execute(duplicate, parameters)
-    if retained:
-        assert later.status == "UNKNOWN" and later.result is None and case.commits == []
-    else:
-        # No durable original intent existed and no marker/native send was ever
-        # possible; this proves a safe first dispatch, not permanent consumption.
-        assert later.status == "COMMITTED" and later.result is not None and len(case.commits) == 2
+    # Full publication exists even if the ordinary GCS POST retained nothing.
+    # Another replica cannot adopt that original publisher's acknowledgement.
+    assert case.publication.registry.read("publication_intents", str(plan.intent.operation_id)) is not None
+    assert later.status == "UNKNOWN" and later.result is None and case.commits == []
 
 
 @pytest.mark.parametrize("point", ["after_marker", "after_admission"])

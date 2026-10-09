@@ -4,18 +4,22 @@ from __future__ import annotations
 import hashlib
 import math
 import os
-from typing import Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
-from google.api_core.exceptions import GoogleAPICallError, RetryError
+from google.api_core.exceptions import GoogleAPICallError, NotFound, RetryError
 from google.cloud.storage import __version__ as storage_version
 from google.cloud.storage.bucket import Bucket
 from google.cloud.storage.client import Client
 
 from .contracts import canonical
+from .gcp_closure_contracts import closure_path
 from .gcp_contracts import JournalIntent, JournalReceipt, RegistryPin, WitnessBody, WitnessPin
 from .gcp_media import BoundedSink, DownloadClient
 from .gcp_pairing_contracts import PairingJournalIntent
 from .store import GuardDenied, GuardUnavailable
+
+if TYPE_CHECKING:
+    from .gcp_publication import GcpPublicationCoordinator
 
 
 class IdentityRpc(Protocol):
@@ -89,11 +93,13 @@ def _exact_bytes(bucket: Bucket, path: str, expected: bytes, *, generation: str 
 
 
 class GcsJournal:
-    def __init__(self, bucket: Bucket, *, rpc_timeout: float = 2.0) -> None:
+    def __init__(self, bucket: Bucket, *, rpc_timeout: float = 2.0,
+                 publication: GcpPublicationCoordinator | None = None) -> None:
         if (type(rpc_timeout) not in {int, float} or not 0 < rpc_timeout <= 10
                 or not math.isfinite(rpc_timeout)):
             raise ValueError("Journal RPC timeout is invalid")
         self.bucket, self.rpc_timeout = bucket, rpc_timeout
+        self.publication = publication
 
     @staticmethod
     def _intent_bytes(intent: JournalIntent | PairingJournalIntent) -> tuple[str, bytes]:
@@ -118,6 +124,8 @@ class GcsJournal:
     def write(self, intent: JournalIntent | PairingJournalIntent) -> JournalReceipt:
         path, raw = self._intent_bytes(intent)
         _sdk_configuration(self.bucket)
+        from .gcp_publication import retain_before_upload
+        retain_before_upload(self.publication, raw, self.bucket.name)
         try:
             self.bucket.blob(path).upload_from_string(
                 raw, content_type="application/json", if_generation_match=0,
@@ -161,6 +169,31 @@ class GcsWitnessFence:
         self.raw, self.rpc_timeout = raw, rpc_timeout
 
     def check(self, pin: RegistryPin) -> None:
+        # A retained pending denial must block old OPEN rows/witnesses even when
+        # the corresponding native Commit never persisted. No cached absence.
+        self._not_closed(pin)
+        self._verify_current(pin)
+        self._not_closed(pin)
+
+    def _not_closed(self, pin: RegistryPin) -> None:
+        if pin != self.pin.registry:
+            raise GuardUnavailable("Registry deployment pin changed")
+        _sdk_configuration(self.bucket)
+        try:
+            self.bucket.blob(closure_path(pin)).reload(retry=None, timeout=self.rpc_timeout)
+        except NotFound:
+            return
+        except (GoogleAPICallError, RetryError, OSError, TimeoutError):
+            raise GuardUnavailable("Protected close absence cannot be established") from None
+        # Any object is a denial: its corrupt bytes or foreign operation cannot
+        # become permission by failing to parse as this process's own closure.
+        raise GuardUnavailable("The pinned authority has a protected closure")
+
+    def _verify_current(self, pin: RegistryPin) -> None:
+        """Exact identity/witness only; closed writers must also verify closure.
+
+        This does not authorize ordinary reads/admissions. Those call check().
+        """
         if pin != self.pin.registry:
             raise GuardUnavailable("Registry deployment pin changed")
         _sdk_configuration(self.bucket)

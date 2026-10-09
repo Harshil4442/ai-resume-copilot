@@ -22,6 +22,7 @@ import grpc
 import pytest
 import requests
 from backend.tests.fixtures.firestore_emulator import local_firestore_endpoint
+from backend.tests.fixtures.gcp_publication import publication_for
 from backend.tests.fixtures.pairing_authority import EXTENSION, NOW, RELEASE, jwk, sign
 from cryptography.hazmat.primitives.asymmetric import ec
 from google.api_core.exceptions import Aborted
@@ -221,12 +222,13 @@ def case(monkeypatch):
     http_session.is_mtls = False
     http_session.request.side_effect = http.request
     storage = Client(project=PROJECT, credentials=AnonymousCredentials(), _http=http_session)
-    journal = GcsJournal(storage.bucket("synthetic-pairing-journal"))
-    attempts = GcsPairingAttempts(storage.bucket("synthetic-pairing-journal"))
+    publication = publication_for(pin, "synthetic-pairing-journal", active=active)
+    journal = GcsJournal(storage.bucket("synthetic-pairing-journal"), publication=publication)
+    attempts = GcsPairingAttempts(storage.bucket("synthetic-pairing-journal"), publication=publication)
     fence = SyntheticFence(active, pin)
     auth_key, device_key, claim_key = [ec.generate_private_key(ec.SECP256R1()) for _ in range(3)]
     claims = FixtureClaims(claim_key)
-    value = SimpleNamespace(rpc=rpc, registry=registry, pin=pin, journal=journal, attempts=attempts, fence=fence, http=http,
+    value = SimpleNamespace(rpc=rpc, registry=registry, pin=pin, publication=publication, journal=journal, attempts=attempts, fence=fence, http=http,
         active=active, commits=commits, subject=subject, session=session, principal=principal,
         auth_key=auth_key, device_key=device_key, claim_key=claim_key, claims=claims, now=NOW)
     value.coordinator = GcpPairingCoordinator(registry, journal, pin, epoch_generation=1, fence=fence, attempts=attempts,

@@ -12,6 +12,7 @@ from uuid import UUID
 import google.auth
 import pytest
 import requests
+from backend.tests.fixtures.gcp_publication import publication_for
 from google.auth.credentials import AnonymousCredentials
 from google.cloud.storage import Client
 from urllib3.response import HTTPResponse
@@ -85,7 +86,7 @@ def test_actual_storage_sdk_generation_zero_and_fenced_byte_get_without_adc_or_r
              response(b'{"error":{"code":412,"message":"synthetic exists"}}', status=412)
              if upload_result == "412" else requests.exceptions.Timeout("synthetic response loss"))
     session.request.side_effect = [first, response(metadata), response(metadata), response(raw)]
-    receipt = GcsJournal(client.bucket("synthetic-authority-journal")).write(intent)
+    receipt = GcsJournal(client.bucket("synthetic-authority-journal"), publication=publication_for(operation().pin, "synthetic-authority-journal")).write(intent)
     assert receipt.generation == "41" and receipt.sha256 == intent.digest
     assert session.request.call_count == 4  # No hidden SDK retry or DELETE.
     calls = session.request.call_args_list
@@ -116,7 +117,7 @@ def test_actual_storage_sdk_is_denied_before_io_when_background_metadata_is_enab
     client = Client(project="hirewiz-local-authority", credentials=AnonymousCredentials(),
                     _http=session)
     with pytest.raises(GuardUnavailable, match="metadata suppression"):
-        GcsJournal(client.bucket("synthetic-authority-journal")).write(operation())
+        GcsJournal(client.bucket("synthetic-authority-journal"), publication=publication_for(operation().pin, "synthetic-authority-journal")).write(operation())
     session.request.assert_not_called()
 
 
@@ -130,7 +131,7 @@ def test_shared_populated_sdk_metadata_cache_is_denied_before_hidden_404_checks(
                     _http=session)
     client._bucket_metadata_cache.update_cache("synthetic-authority-journal", "synthetic", "global")
     with pytest.raises(GuardUnavailable, match="fresh dedicated"):
-        GcsJournal(client.bucket("synthetic-authority-journal")).write(operation())
+        GcsJournal(client.bucket("synthetic-authority-journal"), publication=publication_for(operation().pin, "synthetic-authority-journal")).write(operation())
     session.request.assert_not_called()
 
 
@@ -157,7 +158,7 @@ def read_case(monkeypatch, flow, *, live_changes=None, exact_changes=None, media
             return result
     monkeypatch.setattr(gcp_journal, "BoundedSink", ObservedSink)
     intent = operation()
-    journal = GcsJournal(client.bucket("synthetic-authority-journal"))
+    journal = GcsJournal(client.bucket("synthetic-authority-journal"), publication=publication_for(operation().pin, "synthetic-authority-journal"))
     if flow == "witness":
         body = WitnessBody(registry=intent.pin, state="OPEN", manifest_generation="123",
                            manifest_sha256="d" * 64, partitions_sha256="e" * 64)
@@ -206,11 +207,14 @@ def read_case(monkeypatch, flow, *, live_changes=None, exact_changes=None, media
         prefix = [response(encoded(None)) if flow == "success" else
                   response(b'{"error":{"code":412}}', status=412) if flow == "412" else
                   requests.exceptions.Timeout("synthetic stored upload response loss")]
-    replies = prefix + [response(encoded(live_changes)), response(encoded(exact_changes)), media]
+    closure_before = int(flow == "witness")
+    absent_before = [response(b'{"error":{"code":404}}', status=404)] if closure_before else []
+    absent_after = [response(b'{"error":{"code":404}}', status=404)] if closure_before else []
+    replies = absent_before + prefix + [response(encoded(live_changes)), response(encoded(exact_changes)), media] + absent_after
     session.request.side_effect = replies
     return SimpleNamespace(run=run, session=session, client=client, media=media,
                            raw=raw_reader, length=len(raw), upload=len(prefix), sinks=sinks,
-                           replies=replies)
+                           replies=replies, closure_before=closure_before)
 
 
 def assert_read_boundary(case, *, media_sent: bool) -> None:
@@ -223,10 +227,12 @@ def assert_read_boundary(case, *, media_sent: bool) -> None:
     case.session.close.assert_not_called()
     assert all(sink.peak <= case.length + 1 and sink.closed for sink in case.sinks)
     if media_sent:
-        assert len(calls) == case.upload + 3
-        assert calls[-1].kwargs["headers"]["range"] == f"bytes=0-{case.length}"
-        assert calls[-1].kwargs["allow_redirects"] is False and calls[-1].kwargs["stream"] is True
-        query = parse_qs(urlsplit(urls[-1]).query)
+        assert len(calls) in {case.upload + case.closure_before + 3,
+                             case.upload + 2 * case.closure_before + 3}
+        media_call = calls[case.upload + case.closure_before + 2]
+        assert media_call.kwargs["headers"]["range"] == f"bytes=0-{case.length}"
+        assert media_call.kwargs["allow_redirects"] is False and media_call.kwargs["stream"] is True
+        query = parse_qs(urlsplit(urls[case.upload + case.closure_before + 2]).query)
         assert query["generation"] == query["ifGenerationMatch"] == ["41"]
         assert case.raw.read_bytes <= case.length + 1 and case.raw.closed
     else:
@@ -248,7 +254,7 @@ def test_one_megabyte_metadata_denies_before_media_on_all_journal_and_witness_pa
     case = read_case(monkeypatch, flow, **changes)
     with pytest.raises(GuardUnavailable, match="size"):
         case.run()
-    assert case.session.request.call_count == case.upload + (1 if phase == "live" else 2)
+    assert case.session.request.call_count == case.upload + case.closure_before + (1 if phase == "live" else 2)
     assert_read_boundary(case, media_sent=False)
 
 
@@ -258,7 +264,7 @@ def test_exact_generation_size_requires_present_canonical_matching_wire_value(mo
     case = read_case(monkeypatch, flow, exact_changes={"size": size})
     with pytest.raises(GuardUnavailable, match="size"):
         case.run()
-    assert case.session.request.call_count == case.upload + 2
+    assert case.session.request.call_count == case.upload + case.closure_before + 2
     assert_read_boundary(case, media_sent=False)
 
 

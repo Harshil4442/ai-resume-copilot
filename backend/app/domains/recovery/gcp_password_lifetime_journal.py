@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import hashlib
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from google.cloud.storage import Bucket
 
@@ -12,6 +12,9 @@ from .gcp_journal import _exact_bytes
 from .gcp_pairing_attempts import GcsPairingAttempts
 from .gcp_password_lifetime_contracts import PasswordLifetimeIntent
 from .store import GuardDenied, GuardUnavailable
+
+if TYPE_CHECKING:
+    from .gcp_publication import GcpPublicationCoordinator
 
 
 class PasswordLifetimeJournal(Protocol):
@@ -28,8 +31,10 @@ class UnavailablePasswordLifetimeJournal:
 
 
 class GcsPasswordLifetimeJournal:
-    def __init__(self, bucket: Bucket, *, rpc_timeout: float = 2.0):
+    def __init__(self, bucket: Bucket, *, rpc_timeout: float = 2.0,
+                 publication: GcpPublicationCoordinator | None = None):
         self.bucket, self.rpc_timeout = bucket, rpc_timeout
+        self.publication = publication
         self._creator = GcsPairingAttempts(bucket, rpc_timeout=rpc_timeout)
 
     @staticmethod
@@ -42,6 +47,11 @@ class GcsPasswordLifetimeJournal:
 
     def create(self, intent: PasswordLifetimeIntent) -> JournalReceipt | None:
         path, raw = self._bytes(intent)
+        from .gcp_publication import retain_before_upload
+        try:
+            retain_before_upload(self.publication, raw, self.bucket.name)
+        except GuardUnavailable:
+            return None
         generation = self._creator._fresh_create(path, raw)
         if generation is None:
             return None

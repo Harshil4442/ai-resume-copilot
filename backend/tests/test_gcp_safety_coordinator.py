@@ -9,12 +9,14 @@ from typing import cast
 from uuid import UUID, uuid4
 
 import pytest
+from backend.tests.fixtures.gcp_publication import publication_for
 from google.api_core.exceptions import Aborted, NotFound, PreconditionFailed
 from google.cloud.storage.bucket import Bucket
 from pydantic import ValidationError
 
 from app.domains.recovery.contracts import canonical
 from app.domains.recovery.gcp_buffer import BufferedRegistry, BufferedTransaction
+from app.domains.recovery.gcp_closure_contracts import closure_path
 from app.domains.recovery.gcp_contracts import (
     AmbiguousCommit,
     DenyScope,
@@ -35,6 +37,14 @@ from app.domains.recovery.store import GuardDenied, GuardUnavailable, production
 SUBJECT = UUID("a4451f4a-6431-4541-9a89-3a77019e4218")
 OTHER = UUID("f291b46b-2b3b-4c30-bab2-6b596b24bb1e")
 NOW = 1_800_000_000_000
+
+
+@pytest.fixture(autouse=True)
+def dedicated_publication_storage_metadata_suppression(monkeypatch):
+    # These cases now use an actual dedicated SDK publication witness client.
+    # Set its mandatory background-IO suppression, without bypassing any reader,
+    # native transaction, publication admission, or authority identity check.
+    monkeypatch.setenv("DISABLE_GCS_PYTHON_CLIENT_OTEL_BUCKET_METADATA", "true")
 
 
 class ScriptedRpc:
@@ -187,7 +197,7 @@ def setup() -> tuple[SafetyCoordinator, ScriptedRpc, ScriptedBucket, FixtureFenc
     rpc.seed("control", "meta", control_record(pin()))
     rpc.seed("head", "global", {"sequence": 0, "digest": "0" * 64})
     bucket.active_rpc = rpc
-    service = SafetyCoordinator(BufferedRegistry(rpc), GcsJournal(cast(Bucket, bucket)), pin(),
+    service = SafetyCoordinator(BufferedRegistry(rpc), GcsJournal(cast(Bucket, bucket), publication=publication_for(pin(), bucket.name)), pin(),
                                 fence=fence, now_ms=lambda: NOW + 1)
     return service, rpc, bucket, fence
 
@@ -374,7 +384,7 @@ def test_opening_hold_cannot_be_replaced_by_fresh_binding_operation_or_epoch() -
     service.execute(first)
     new_pin = pin().model_copy(update={"incarnation": 2, "epoch_id": uuid4()})
     rpc.seed("control", "meta", control_record(new_pin))
-    current = SafetyCoordinator(service.registry, GcsJournal(cast(Bucket, bucket)), new_pin,
+    current = SafetyCoordinator(service.registry, GcsJournal(cast(Bucket, bucket), publication=publication_for(new_pin, bucket.name)), new_pin,
                                 fence=fence, now_ms=lambda: NOW + 1)
     changed = intent(pin=new_pin, effect=first.effect.model_copy(update={"binding_sha256": "f" * 64}))
     assert changed.effect.record_key == first.effect.record_key
@@ -433,7 +443,7 @@ def test_stored_control_types_cannot_alias_the_pinned_integer_incarnation(incarn
 def test_journal_upload_and_412_response_reconciliation_verify_generation_bytes(fault: str | None) -> None:
     bucket = ScriptedBucket()
     bucket.fault = fault
-    journal = GcsJournal(cast(Bucket, bucket))
+    journal = GcsJournal(cast(Bucket, bucket), publication=publication_for(pin(), bucket.name))
     operation = intent()
     first, second = journal.write(operation), journal.write(operation)
     assert first == second and first.generation == "41" and first.sha256 == operation.digest
@@ -477,7 +487,7 @@ def test_restored_database_uid_is_rejected_before_witness_download() -> None:
     rpc.uid = str(uuid4())
     with pytest.raises(GuardUnavailable, match="incarnation"):
         fence.check(pin())
-    assert bucket.calls == []
+    assert [call[:2] for call in bucket.calls] == [("reload", closure_path(pin()))]
 
 
 def test_status_revalidates_exact_generation_and_never_repairs_missing_object() -> None:
@@ -538,7 +548,7 @@ def test_journal_rpc_budget_rejects_boolean_nonfinite_and_out_of_range(timeout: 
 
 def test_default_fence_and_production_factory_are_unavailable_without_any_io() -> None:
     _, rpc, bucket, _ = setup()
-    service = SafetyCoordinator(BufferedRegistry(rpc), GcsJournal(cast(Bucket, bucket)), pin(),
+    service = SafetyCoordinator(BufferedRegistry(rpc), GcsJournal(cast(Bucket, bucket), publication=publication_for(pin(), bucket.name)), pin(),
                                 now_ms=lambda: NOW + 1)
     with pytest.raises(GuardUnavailable, match="configuration"):
         service.execute(intent())

@@ -107,12 +107,22 @@ exclusions produced empty local scanning and passing remote security CI; neither
 exclusions nor green checks prove historical credential revocation. Production remains
 the verified `e7d8f2b` release and schema `0009` described above.
 
+The subsequent [recovery/monetary integration](RECOVERY_MONETARY_INTEGRATION_2026-10-09.md)
+brings the independently reviewed all-port publication foundation and V4 SQL helper into
+root. Combined local verification passes 1,760 backend cases without skips and exact CI
+typing on 92 files. The native publication review clears only the disabled 63-record
+foundation; its privileged same-UID gate-rollback probe remains a documented activation
+blocker. The SQL review clears only a bounded read-only helper and never global cutover.
+Normal per-subject availability, partitioned complete cuts, production identity/session
+provisioning, browser transport, full recovery, permission proofs and exact new remote CI
+remain required. Production backend/schema and the live frontend are unchanged.
+
 **Missing** means the required capability was not found in the frozen code. **Unproved** means code or local tests support some of the requirement but the full acceptance evidence is outstanding. P0 is required before any real automatic send; P1 is the next development/evaluation priority; P2 is a scale or maintenance gate. A discovery-only pilot can proceed with these limits disclosed.
 
 | Priority | Status | Requirement and gates | Current evidence and remaining work |
 | --- | --- | --- | --- |
-| P0 | Missing | EX02, EX06, DP05; G04A, G05B, G06D | Persisted application status fences ordinary duplicate tasks, but there is no independent recovery epoch outside the restored database. Implement durable launch permits for API and browser executors, epoch checks immediately before disclosure/send, restore-window quarantine and fresh approval after recovery. Test old queues and workers against restored data. |
-| P0 | Missing / unproved | SE05, DP05; G05C, G06D | Durable artifact cleanup and account deletion are present. Independently retained revocation/deletion tombstones and a tested restore procedure that prevents account, file and approval resurrection are absent. Publish retention periods separately for resumes, artifacts, commands, logs and employer copies. |
+| P0 | Local disabled foundation; production unproved | EX02, EX06, DP05; G04A, G05B, G06D | Persisted application status fences ordinary duplicate tasks. Independently pinned epoch, journal and closure foundations exist locally; production consuming admissions and recovery authority remain unavailable. Complete durable launch permits for API/browser executors, checks immediately before disclosure/send, restore-window quarantine and fresh approval after recovery. Test old queues and workers against restored data. |
+| P0 | Local disabled foundation; full restore unproved | SE05, DP05; G05C, G06D | Durable artifact cleanup and SQL account deletion are present. Local independently retained lifetime/tombstone and bounded closure tests do not establish production permissions or a restore procedure preventing account, file and approval resurrection. Complete per-subject availability and full recovery; publish separate retention periods for resumes, artifacts, commands, logs and employer copies. |
 | P0 | Promoted foundation; full gate unproved | BI06, NF01–02, FR07; G05D–E | Promoted `7cc49c2` adds durable candidate/day/rolling/pending allowances, immutable price/policy quotes, exact atomic batches, and verified requisition or conservative provider identity. Exact-commit CI includes 26 actual PostgreSQL cases covering admission races, locked balances and creation/deletion ordering. Production schema/health and controlled rollout are recorded. Fleet fairness, off-platform attempts, policy waiting periods, canonical remapping and independent recovery remain open. See [the foundation evidence](EMPLOYER_ADMISSION_FOUNDATION.md). |
 | P0 | Unproved; external prerequisite | CN02–04, EX01, FR06; G05A | Public read access does not authorize writing. Before enabling a tenant, record the exact employer/provider permit, credential scope, origin, expiry and supported actions; validate every conditional question, consent, file constraint and complete-application receipt in an authorized sandbox. HTTP success or candidate creation is insufficient. No production test applications are permitted. |
 | P0 | Missing / unproved | SD03, SE02–04; G03B, G06D | Private generation-bound GCS artifacts, hashes and cleanup leases are present. A quarantine-and-release pipeline with antivirus or an equivalent documented file safety scanner is not present. Production document-worker isolation, egress restrictions, secret exclusion and malicious-file drills remain unproved. |

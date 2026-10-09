@@ -1,0 +1,229 @@
+{
+  "actual_payment": false,
+  "combined_root_verification": {
+    "counts": {
+      "errors": 0,
+      "failures": 0,
+      "skipped": 0,
+      "tests": 1760
+    },
+    "exact_ci_mypy": "pass",
+    "exact_ci_ruff": "pass",
+    "path": "/tmp/hirewiz-recovery-monetary-root-full-20261009-report.json",
+    "private_environment_files_copied": false,
+    "sha256": "a6278705b0269601a88d4cc3a6c36be1260e057761cf694971cb0545399f5287",
+    "source_manifest": {
+      "path": "/tmp/hirewiz-recovery-monetary-root-source-20261009.json",
+      "sha256": "45b7cc8d75fb6afe1b478b279d24ca0c8f6a8d31746601a5f5fd0aac9ad43a07"
+    },
+    "source_stable": true,
+    "typechecked_source_files": 92,
+    "xml": {
+      "path": "/tmp/hirewiz-recovery-monetary-root-full-20261009.xml",
+      "sha256": "f9fb98eb949bb5b71dc04c38142aa5d468bae0614782cd18dce0866d3a8342c2"
+    }
+  },
+  "format_version": 1,
+  "full_goal_complete": false,
+  "integrated_source_hashes": [
+    {
+      "path": ".github/workflows/ci.yml",
+      "sha256": "19c9d30900e8bd2b0a5381fa0788b807d4ec54739f8c7e54135284f5619e5588"
+    },
+    {
+      "path": "backend/app/domains/recovery/gcp_closure_contracts.py",
+      "sha256": "929fc11a7bd0a09e45ef4155144037ac9f08849eb85dce8b7ee51d0b62c3e406"
+    },
+    {
+      "path": "backend/app/domains/recovery/gcp_journal.py",
+      "sha256": "1382de0588c239438c1350bcaf779a52f8486928ae461e2c186d8abcc481c3e8"
+    },
+    {
+      "path": "backend/app/domains/recovery/gcp_pairing_attempts.py",
+      "sha256": "4a5e9304eeae1c9b4d7d3798822514ad2cd7d3fc2c941b1cae7b51899a3f8d0f"
+    },
+    {
+      "path": "backend/app/domains/recovery/gcp_password_closure.py",
+      "sha256": "d83772dd19f31c57bf4e3ddcbeff55426563779cd29d484bff0f4db55a675a50"
+    },
+    {
+      "path": "backend/app/domains/recovery/gcp_password_lifetime.py",
+      "sha256": "bf7e144bddfdbaa60f78bfb4fdb60b4b706d8481677313579598f822dbaa92a9"
+    },
+    {
+      "path": "backend/app/domains/recovery/gcp_password_lifetime_journal.py",
+      "sha256": "5954f5cb13d55d5cd21223f8b35cf72e07413d692454e9a0e8fb5a0297ad0d1f"
+    },
+    {
+      "path": "backend/app/domains/recovery/gcp_publication.py",
+      "sha256": "d9595991d168dc81fd4340922004259265aa46a610607864d7db5e7c4e284591"
+    },
+    {
+      "path": "backend/app/domains/recovery/gcp_publication_contracts.py",
+      "sha256": "986443b17e02088bd19d24740d4c1e38a0fe463fccbaf14f592f819acab20603"
+    },
+    {
+      "path": "backend/scripts/monetary_cutover_preflight.py",
+      "sha256": "1621d5e15a0f4b962a7926885f566270c58947e991bb550cfb9c1d1d41438016"
+    },
+    {
+      "path": "backend/tests/fixtures/gcp_closure.py",
+      "sha256": "44d898bfc69bb40955cea4d40a6123de70eb74f1a6ce22ac1edf5d08a0b946b0"
+    },
+    {
+      "path": "backend/tests/fixtures/gcp_publication.py",
+      "sha256": "ed329a21ee2fffad9215854016d86d671eb7670b073691fdd38376f833fe6147"
+    },
+    {
+      "path": "backend/tests/test_gcp_journal_sdk.py",
+      "sha256": "04292d60524aff24749de31cf6c69e673afb38f78edab3b4ff21b3ffa51e3005"
+    },
+    {
+      "path": "backend/tests/test_gcp_pairing_admission_emulator.py",
+      "sha256": "0a39707f97d1c4cc80ab8eaf6feb5a2d777f0de76fc42326b9848cb3f6d84cd5"
+    },
+    {
+      "path": "backend/tests/test_gcp_pairing_emulator.py",
+      "sha256": "c9e7a89f01266c4b071e8b8c9b5b5e3e5aa69bf2505b41bcb3741edd680881bf"
+    },
+    {
+      "path": "backend/tests/test_gcp_password_closure_emulator.py",
+      "sha256": "ecc80e07a96f22d317519ad89f7babe6c0ccd76f2ded5179264d342f3ddbe876"
+    },
+    {
+      "path": "backend/tests/test_gcp_password_lifetime_emulator.py",
+      "sha256": "8acdd15e3f34290abc15263a27aa8bd0dd6332ab7248541921d30906a1fa87c7"
+    },
+    {
+      "path": "backend/tests/test_gcp_publication_emulator.py",
+      "sha256": "a3541a0f74c122b30b545e660eced9d2b54feb55fa80a54d8345e522ec27e632"
+    },
+    {
+      "path": "backend/tests/test_gcp_rpc_emulator.py",
+      "sha256": "8adbb8f9adbff36f1f0a69d199b0c56a56c57d8de4ddf2323cfe28f2518f0cf4"
+    },
+    {
+      "path": "backend/tests/test_gcp_safety_coordinator.py",
+      "sha256": "f78d75beb0b7f11a6bdb1834a409e588ec505fdb0669d98ffe7a74372878723a"
+    },
+    {
+      "path": "backend/tests/test_monetary_cutover_preflight_postgres.py",
+      "sha256": "0554792c3d7d099c81417b937017229f4ecbd85f1e886fe1acd4d72bbac3defb"
+    },
+    {
+      "path": "docs/delivery/MONETARY_PREFLIGHT_2026-10-09.md",
+      "sha256": "911b180121c51dd023251f23405bd44b8d17367252a098b3078e89550fc6ee95"
+    },
+    {
+      "path": "docs/delivery/PASSWORD_DENIAL_BARRIER_2026-10-09.md",
+      "sha256": "fa9c2f88ecaa912f238382d4ea054719d62249b64fb723b8f8fd9b5ae7bb3c4c"
+    },
+    {
+      "path": "docs/delivery/PASSWORD_LIFETIME_WRITERS_2026-10-09.md",
+      "sha256": "1ed46f2be094c972a4f75d914b44e5a60f62a58dad40743601012edb7bf729f5"
+    },
+    {
+      "path": "docs/delivery/PASSWORD_PUBLICATION_GATE_2026-10-09.md",
+      "sha256": "c1563e537d65b96a0b9e7b0e9178f9f91305e35335d50406768d1cd283d7f855"
+    }
+  ],
+  "kms_signing": false,
+  "migration_performed": false,
+  "model_generation": false,
+  "monetary_v4_author_report": {
+    "path": "/tmp/hirewiz-monetary-preflight-v4-20261009-report.json",
+    "sha256": "4b1e7da0a3758af238558791d93771c452c86201babc968f05f95b7f7134ac71"
+  },
+  "monetary_v4_independent_review": {
+    "actual_postgres": true,
+    "author_tests": 82,
+    "clear_scope": "bounded_read_only_database_helper",
+    "cutover_ready": false,
+    "independent_tests": 20,
+    "path": "/tmp/hirewiz-monetary-preflight-v4-independent-review-20261009.json",
+    "sha256": "9712f91655f738aa38d283e3a73ad3f69fca244c4a7116b125f5c7cd78b4c9c4"
+  },
+  "monetary_v4_patch": {
+    "path": "/tmp/hirewiz-monetary-preflight-v4-20261009.patch",
+    "sha256": "37b2a383638076e205eaab82eb2f3ebd4ae3e6cdebd9623669379cec5498aee7"
+  },
+  "preceding_documentation_ci": {
+    "all_five_jobs": "success",
+    "covers_current_new_source": false,
+    "head_commit": "3d2e693d3fbeb62aa821f07472bab211c6dd568b",
+    "run_id": 37901331985,
+    "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37901331985"
+  },
+  "production": {
+    "backend_release": "e7d8f2ba0435fd3d4a504ccdce83fac365ec6835",
+    "changed_by_this_integration": false,
+    "frontend_commit": "06cc112278e94aadb358fbe347f5430e373c4eb1",
+    "last_verified_schema": "20261008_0009"
+  },
+  "production_browser_enabled": false,
+  "proof_scope_notes": [
+    "Loopback native SDK transactions use synthetic operator UID and intercepted storage; they do not prove cloud IAM, retention or actual UID restrictions.",
+    "Whole-backend proof covers the frozen combined archive and 25 matching root overlays; remote CI for the upcoming commit remains required.",
+    "The helper does not verify caller cloud/provider/queue/backup assertions or authorize any migration."
+  ],
+  "publication_incremental": {
+    "path": "/tmp/hirewiz-password-publication-20261009.patch",
+    "sha256": "8c732990d4585abb945732009fe60e75f8c0a18aed0b79578b0a76756ae1b49b"
+  },
+  "publication_independent_review": {
+    "activation_held": true,
+    "actual_postgres_credential_tests": 3,
+    "affected_tests": 353,
+    "clear_scope": "exact_disabled_bounded_foundation",
+    "independent_tests": 12,
+    "negative_probe": "privileged_same_uid_gate_only_rollback_can_omit_surviving_record_pending_post",
+    "path": "/var/folders/ck/cyzkgt2d1yx6hzpsdflcg83c0000gn/T/hirewiz-publication-independent-20261009-oi1dx_d4/independent-review.json",
+    "sha256": "a69cb434ea658901bc564f50aa36038e635a323b216dcdb28cdf4a6624cbdc64"
+  },
+  "publication_manifest": {
+    "path": "/tmp/hirewiz-password-publication-20261009-manifest.json",
+    "sha256": "25d0750fcc47a70cd611e658b415b415fd4197cb5db680925ee41a0bc4069b9c"
+  },
+  "publication_prerequisite": {
+    "path": "/tmp/hirewiz-password-denial-20261009.patch",
+    "sha256": "d83ff958e4cdcd28b1a3381ea15ce18c3daab09a0f5cb42d8cd1753c8dde4616"
+  },
+  "raw_log_messages_included": false,
+  "real_candidate_application": false,
+  "recorded_at": "2026-10-09T08:16:57.828615+00:00",
+  "remaining": [
+    "exact_new_remote_ci",
+    "protected_resource_IAM_retention_nonrestore_and_old_writer_exclusion",
+    "normal_per_subject_availability",
+    "partitioned_complete_cuts",
+    "full_projection_restore_reopen",
+    "production_identity_session_provisioning",
+    "browser_action_transport_and_current_authority",
+    "permitted_portal_validation",
+    "credential_consumer_resolution_and_fencing",
+    "monetary_0010_rollout",
+    "full_documented_quality_coverage_performance_and_monitoring"
+  ],
+  "root_cleanup": {
+    "all_zero": true,
+    "observed_at": "2026-10-09T08:15:08.631755+00:00",
+    "owned_fixture_counts": {
+      "admission_fixture_schemas": 0,
+      "cutover_fixture_roles": 0,
+      "cutover_observer_sessions": 0,
+      "cutover_routine_schemas": 0,
+      "reauth_fixture_databases": 0
+    },
+    "path": "/tmp/hirewiz-recovery-monetary-root-cleanup-20261009.json",
+    "sha256": "7080b20b663e490ec174e9fecc17e6206c4c39fbaf258a83f8642c26934401f0"
+  },
+  "root_publication_affected": {
+    "errors": 0,
+    "failures": 0,
+    "path": "/tmp/hirewiz-publication-root-affected-20261009-report.json",
+    "sha256": "c4234f5422909e3a282c723fc55c302647d4eca184799854bc4872a4953e311a",
+    "skipped": 0,
+    "tests": 353
+  },
+  "source_base_commit": "3d2e693d3fbeb62aa821f07472bab211c6dd568b"
+}

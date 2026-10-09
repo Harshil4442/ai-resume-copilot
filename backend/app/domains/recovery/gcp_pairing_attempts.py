@@ -6,7 +6,7 @@ SDK timeouts bound individual inactivity/RPC behavior, not total wall-clock time
 from __future__ import annotations
 
 import hashlib
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from google.cloud.storage import Bucket
 
@@ -15,6 +15,9 @@ from .gcp_contracts import JournalReceipt
 from .gcp_journal import GcsJournal, _exact_bytes, _metadata, _sdk_configuration
 from .gcp_pairing_contracts import PairingAttemptMarker, PairingAttemptReceipt, PairingJournalIntent
 from .store import GuardDenied, GuardUnavailable
+
+if TYPE_CHECKING:
+    from .gcp_publication import GcpPublicationCoordinator
 
 
 class PairingAttemptStore(Protocol):
@@ -35,10 +38,12 @@ class UnavailablePairingAttempts:
 
 
 class GcsPairingAttempts:
-    def __init__(self, bucket: Bucket, *, rpc_timeout: float = 2.0):
+    def __init__(self, bucket: Bucket, *, rpc_timeout: float = 2.0,
+                 publication: GcpPublicationCoordinator | None = None):
         # Use the same pinned SDK bound/configuration as the intent journal.
         GcsJournal(bucket, rpc_timeout=rpc_timeout)
         self.bucket, self.rpc_timeout = bucket, rpc_timeout
+        self.publication = publication
 
     @staticmethod
     def _bytes(marker: PairingAttemptMarker) -> tuple[str, bytes]:
@@ -70,6 +75,11 @@ class GcsPairingAttempts:
         # Generic GcsJournal.write keeps its existing exact-byte reconciliation.
         # Pairing dispatch has the stronger fresh-owner acknowledgement gate.
         path, raw = GcsJournal._intent_bytes(intent)
+        from .gcp_publication import retain_before_upload
+        try:
+            retain_before_upload(self.publication, raw, self.bucket.name)
+        except GuardUnavailable:
+            return None
         generation = self._fresh_create(path, raw)
         if generation is None:
             return None

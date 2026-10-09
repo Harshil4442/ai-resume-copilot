@@ -8,6 +8,7 @@ from threading import Barrier
 from uuid import UUID, uuid4
 
 import pytest
+from backend.tests.fixtures.gcp_closure import closed_writer
 from google.api_core.exceptions import Aborted
 from pydantic import ValidationError
 from test_gcp_pairing_emulator import case as case
@@ -32,7 +33,7 @@ from app.domains.recovery.store import GuardDenied, GuardUnavailable
 
 @pytest.fixture
 def lifetime(case, monkeypatch):
-    journal = GcsPasswordLifetimeJournal(case.journal.bucket)
+    journal = GcsPasswordLifetimeJournal(case.journal.bucket, publication=case.publication)
     original = journal.create
     def allow(intent):
         path, raw = journal._bytes(intent)
@@ -98,14 +99,16 @@ def test_real_protected_binding_session_reader_and_revoke(lifetime):
     duplicate = c.lifetime.execute(plan)
     assert duplicate.status.status == "COMMITTED" and duplicate.context is None
     assert sum(method == "POST" for method, _ in c.http.calls) == before_posts
-    revoke = c.lifetime.allocate(RevokePasswordWebSession(account_binding_id=c.binding_id, session_id=context.session_id))
+    revoke = closed_writer(c, RevokePasswordWebSession(account_binding_id=c.binding_id, session_id=context.session_id))
     assert c.lifetime.execute(revoke).status.status == "COMMITTED"
     assert c.registry.read("pairing_web_sessions", str(context.session_id))["active"] is True
     assert c.registry.read("pairing_sessions", str(context.session_id))["active"] is False
-    with pytest.raises(GuardDenied):
+    with pytest.raises((GuardDenied, GuardUnavailable)):
         resolve(c, context)
-    with pytest.raises(GuardDenied):
+    with pytest.raises((GuardDenied, GuardUnavailable)):
         c.lifetime.allocate(plan.intent.command)
+    # A verified historical receipt remains status only; closure grants no
+    # session context, signer invocation, action or new permission.
     assert c.lifetime.status(plan.intent).status == "COMMITTED"
 
 
@@ -113,14 +116,16 @@ def test_password_reset_invalidates_old_session_and_new_session_uses_new_generat
     c = lifetime
     bind(c)
     _, old = session(c)
-    plan = c.lifetime.allocate(AdvancePasswordAuthGeneration(account_binding_id=c.binding_id, expected_auth_generation=1))
+    plan = closed_writer(c, AdvancePasswordAuthGeneration(account_binding_id=c.binding_id, expected_auth_generation=1))
     assert c.lifetime.execute(plan).status.status == "COMMITTED"
-    with pytest.raises(GuardDenied):
+    with pytest.raises((GuardDenied, GuardUnavailable)):
         resolve(c, old)
-    with pytest.raises(GuardDenied):
+    with pytest.raises((GuardDenied, GuardUnavailable)):
         session(c, generation=1)
-    _, new = session(c, generation=2)
-    assert resolve(c, new)["auth_generation"] == 2
+    # This conservative first barrier pauses the whole pin; a new generation
+    # cannot issue a session until a separate verified restore/open protocol.
+    with pytest.raises((GuardDenied, GuardUnavailable)):
+        session(c, generation=2)
     assert c.registry.read("pairing_auth_high_water", c.subject)["auth_generation"] == 2
     with pytest.raises(GuardDenied):
         c.lifetime.allocate(plan.intent.command)
@@ -133,23 +138,23 @@ def test_account_and_subject_deletion_consistently_deny_lifetime_reuse(lifetime,
     _, context = session(c)
     command = (TombstonePasswordAccount(account_binding_id=c.binding_id) if kind == "account" else
         DeletePasswordSubject(account_binding_id=c.binding_id, subject_uuid=UUID(c.subject)))
-    plan = c.lifetime.allocate(command)
+    plan = closed_writer(c, command)
     assert c.lifetime.execute(plan).status.status == "COMMITTED"
     scope = Revocation(subject_uuid=UUID(c.subject), kind="subject", target=c.subject, revision=0)
     assert c.registry.read("revocations", scope.key) == scope.model_dump(mode="json")
     assert c.registry.read("pairing_account_tombstones", str(c.binding_id)) is not None
     assert c.registry.read("subjects", c.subject)["active"] is False
-    with pytest.raises(GuardDenied):
+    with pytest.raises((GuardDenied, GuardUnavailable)):
         resolve(c, context)
-    with pytest.raises(GuardDenied):
+    with pytest.raises((GuardDenied, GuardUnavailable)):
         c.lifetime.allocate(CreatePasswordWebSession(account_binding_id=c.binding_id, session_id=uuid4(),
             expected_auth_generation=1, expires_at_ms=c.now + 1_000))
-    with pytest.raises(GuardDenied):
+    with pytest.raises((GuardDenied, GuardUnavailable)):
         c.lifetime.allocate(BindPasswordAccount(candidate_id=2, account_binding_id=uuid4(),
             subject_uuid=UUID(c.subject), principal_sha256=c.principal))
     subject_before = next(item.value for item in plan.intent.effects.before if item.namespace == "subjects")
     c.operator_replace("subjects", c.subject, subject_before)
-    with pytest.raises(GuardDenied):
+    with pytest.raises((GuardDenied, GuardUnavailable)):
         c.lifetime.allocate(BindPasswordAccount(candidate_id=1, account_binding_id=uuid4(),
             subject_uuid=UUID(c.subject), principal_sha256=c.principal))
 
@@ -200,7 +205,7 @@ def test_typed_ownership_generation_and_bounded_lifetimes(lifetime, fault):
     else:
         command = command.model_copy(update={"expires_at_ms": c.now + 86_400_001})
     count = len(c.http.calls)
-    with pytest.raises(GuardDenied):
+    with pytest.raises((GuardDenied, GuardUnavailable)):
         c.lifetime.allocate(command)
     assert len(c.http.calls) == count
 
@@ -292,9 +297,9 @@ def test_stale_create_cannot_cross_revocation_reset_or_deletion(lifetime, operat
         command = AdvancePasswordAuthGeneration(account_binding_id=c.binding_id, expected_auth_generation=1)
     else:
         command = TombstonePasswordAccount(account_binding_id=c.binding_id)
-    deny = c.lifetime.allocate(command)
+    deny = closed_writer(c, command)
     assert c.lifetime.execute(deny).status.status == "COMMITTED"
-    with pytest.raises(GuardDenied):
+    with pytest.raises((GuardDenied, GuardUnavailable)):
         c.lifetime.execute(create)
     assert c.registry.read("pairing_sessions", str(create.intent.command.session_id)) is None
 
@@ -345,7 +350,7 @@ def test_complete_protected_effects_reconstruct_deny_without_reopening(lifetime)
     c = lifetime
     bind(c)
     _, context = session(c)
-    deletion = c.lifetime.allocate(TombstonePasswordAccount(account_binding_id=c.binding_id))
+    deletion = closed_writer(c, TombstonePasswordAccount(account_binding_id=c.binding_id))
     assert c.lifetime.execute(deletion).status.status == "COMMITTED"
     path, _ = c.lifetime_journal._bytes(deletion.intent)
     protected = PasswordLifetimeIntent.model_validate(json.loads(c.http.objects[path][0]))
@@ -361,7 +366,7 @@ def test_complete_protected_effects_reconstruct_deny_without_reopening(lifetime)
     assert projected["revocations", scope.key] == scope.model_dump(mode="json")
     assert projected["events", str(protected.event_id)] == protected.effects.event
     assert projected["head", "global"]["digest"] == protected.effects.event["digest"]
-    c.fence.closed = True
+    c.http.objects.pop(c.witness_transport.path)
     assert c.lifetime.status(deletion.intent).status == "UNKNOWN"
     with pytest.raises(GuardUnavailable):
         c.lifetime.allocate(CreatePasswordWebSession(account_binding_id=c.binding_id, session_id=uuid4(),
@@ -444,11 +449,11 @@ def test_protected_writer_to_actual_recent_password_native_consumption(lifetime,
         engine.dispose()
 
 
-def test_unknown_denial_explicitly_does_not_prove_old_reader_activation_safety(lifetime, monkeypatch):
+def test_unknown_protected_denial_cannot_leave_old_open_reader_authorized(lifetime, monkeypatch):
     c = lifetime
     bind(c)
     _, context = session(c)
-    plan = c.lifetime.allocate(TombstonePasswordAccount(account_binding_id=c.binding_id))
+    plan = closed_writer(c, TombstonePasswordAccount(account_binding_id=c.binding_id))
     def unknown_without_native_persistence(transaction, writes):
         c.rpc.rollback(transaction)
         raise AmbiguousCommit("Synthetic denied effect retained only in protected Storage")
@@ -457,9 +462,10 @@ def test_unknown_denial_explicitly_does_not_prove_old_reader_activation_safety(l
     assert result.status.status == "UNKNOWN" and result.context is None
     path, _ = c.lifetime_journal._bytes(plan.intent)
     assert path in c.http.objects
-    # An existing OPEN witness is insufficient to include pending protected denial.
-    # This is an explicit unmet activation gate, not a simulated restore proof.
-    assert resolve(c, context)["subject_uuid"] == c.subject
+    # The actual witness sees the independently retained closure before any
+    # authority can escape, even though the native denial never persisted.
+    with pytest.raises(GuardUnavailable):
+        resolve(c, context)
     assert c.registry.read("pairing_account_tombstones", str(c.binding_id)) is None
 
 
@@ -524,23 +530,21 @@ def test_protected_create_requires_own_fresh_exact_ack_before_any_native_write(l
 
 
 @pytest.mark.parametrize("operation", ["generation", "delete"])
-def test_create_first_requires_fresh_explicit_denial_plan_and_keeps_every_old_session_denied(lifetime, operation):
+def test_create_first_then_protected_closure_keeps_every_old_session_denied(lifetime, operation):
     c = lifetime
     bind(c)
     _, old = session(c)
     command = (AdvancePasswordAuthGeneration(account_binding_id=c.binding_id, expected_auth_generation=1)
         if operation == "generation" else TombstonePasswordAccount(account_binding_id=c.binding_id))
-    stale_denial = c.lifetime.allocate(command)
     _, recent = session(c)
-    with pytest.raises(GuardDenied):
-        c.lifetime.execute(stale_denial)
-    assert c.lifetime.status(stale_denial.intent).status == "UNKNOWN"
-    fresh_denial = c.lifetime.allocate(command)
+    fresh_denial = closed_writer(c, command)
     assert c.lifetime.execute(fresh_denial).status.status == "COMMITTED"
     for context in (old, recent):
-        with pytest.raises(GuardDenied):
+        with pytest.raises((GuardDenied, GuardUnavailable)):
             resolve(c, context)
-    assert stale_denial.intent.effects.event != fresh_denial.intent.effects.event
+    closed_before = next(item.value for item in fresh_denial.intent.effects.before
+        if item.namespace == "control")
+    assert closed_before["state"] == "CLOSED"
     assert c.lifetime.status(fresh_denial.intent).status == "COMMITTED"
 
 
