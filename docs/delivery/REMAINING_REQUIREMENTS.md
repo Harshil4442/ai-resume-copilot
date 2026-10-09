@@ -89,6 +89,15 @@ Two separate proposals are held outside root: journal-cut completeness has a lat
 race, and monetary SQL preflight has independently reproduced false-green privilege
 and liability checks. Neither proposal authorizes a migration or browser launch.
 
+The [service-credit frontend release](FRONTEND_CREDITS_RELEASE_2026-10-09.md) now promotes
+exact `06cc112` to both custom domains: all five CI jobs pass, with 1,607 backend and
+205 responsive cases. The accepted immutable build passes staged and live public/empty-session
+checks at five widths; its bounded frontend error scan is empty. GCP backend remains `e7d8f2b`
+and no monetary migration or native browser launch is performed. The SQL preflight V3
+passed scoped review, but a subsequent EXECUTE-only privileged-function probe found another
+identity-classification gap; V4 is under repair outside root. The frozen all-port protected
+publication prototype is outside root pending independent review and its explicit trust/scale gates.
+
 Compatibility correction `b306f13` passed all four exact remote CI jobs and an immutable
 GCP image build. Its API candidate is ready with generation disabled and **zero production
 traffic**; the prior serving API retains 100%. No queue pause, worker retirement or
