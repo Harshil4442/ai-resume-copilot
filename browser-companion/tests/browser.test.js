@@ -73,7 +73,9 @@ test("real MV3 Chrome: exact review before autosave, device signing without cook
 test("real Chrome: shipping extension remains disabled with zero host grants and no authority requests", async () => {
   const f = await browserFixture({ disabled: true }); try {
     await expect(f.popup.locator("#mode")).toContainText("Disabled: production authorization");
-    for (const label of ["Allow exact local fixture origins", "Connect this device", "Inspect and review package"]) await expect(f.popup.getByRole("button", { name: label })).toBeDisabled();
+    await expect(f.popup.locator("#fixture-connection")).toBeHidden();
+    await expect(f.popup.locator("#fixture-prepare")).toBeHidden();
+    await expect(f.popup.locator("#native-connection")).toBeHidden();
     await expect(f.popup.locator("#fill")).toBeDisabled(); await expect(f.popup.locator("#review")).toBeHidden();
     const permissions = await f.popup.evaluate(() => chrome.permissions.getAll());
     assert.deepEqual(permissions.origins, []);

@@ -11,20 +11,34 @@ function cancelBestEffort(stream) {
 }
 
 export class PairingTransport {
-  constructor({ configuration, identity, now = () => Date.now() }) {
-    if (configuration.mode !== "pairing_only" || configuration.websiteOrigin !== "https://www.hirewizhq.com"
+  constructor({ configuration, identity, now = () => Date.now(), beforePost = async () => undefined }) {
+    let local = false;
+    try {
+      const origin = new URL(configuration.websiteOrigin);
+      local = configuration.mode === "local_native_fixture" && configuration.testScope === "owned_local_native_connection"
+        && origin.protocol === "https:" && origin.origin === configuration.websiteOrigin
+        && ["127.0.0.1", "localhost", "[::1]"].includes(origin.hostname) && !origin.username && !origin.password;
+    } catch { /* invalid fixed configuration */ }
+    if (!(configuration.mode === "pairing_only" && configuration.websiteOrigin === "https://www.hirewizhq.com" || local)
         || !/^[a-p]{32}$/.test(configuration.extensionId) || !configuration.executorRevision || !configuration.authorityKey) {
       throw new Error("Reviewed production pairing configuration is unavailable");
     }
-    Object.assign(this, { configuration, identity, now });
+    Object.assign(this, { configuration, identity, now, beforePost });
+    this.signal = null;
     this.pairingId = null; this.deviceId = null; this.claim = null;
   }
   async sign(kind, payload) {
     return base64url(await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, this.identity.private_key, domain(kind, payload)));
   }
+  async keyDigest() {
+    return digest(domain("public-key", publicKey(this.identity.public_key)));
+  }
   async post(operation, body) {
+    await this.beforePost();
+    if (this.signal?.aborted) throw new Error("Connection request was paused");
     const response = await fetch(`${this.configuration.websiteOrigin}/api/browser-pairing/device/${operation}`, {
-      method: "POST", credentials: "omit", redirect: "error", cache: "no-store", signal: AbortSignal.timeout(12000),
+      method: "POST", credentials: "omit", redirect: "error", cache: "no-store",
+      signal: this.signal ? AbortSignal.any([AbortSignal.timeout(12000), this.signal]) : AbortSignal.timeout(12000),
       headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     if (!response.ok) { cancelBestEffort(response.body); throw new Error("Current pairing is unavailable; no action was authorized"); }
     const reader = response.body.getReader(), chunks = [];
@@ -50,7 +64,11 @@ export class PairingTransport {
     for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
     const data = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
     if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("Invalid pairing response");
-    if (data.status === "UNKNOWN") throw new Error("Pairing outcome is unknown; retrying the operation is disabled");
+    if (data.status === "UNKNOWN") {
+      const failure = new Error("Pairing outcome is unknown; retrying the operation is disabled");
+      failure.operationId = UUID.test(data.operation_id) ? data.operation_id : null;
+      throw failure;
+    }
     return data;
   }
   async prepare() {

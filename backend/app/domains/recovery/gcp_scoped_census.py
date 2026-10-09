@@ -11,6 +11,7 @@ from .gcp_partitioned_contracts import (
     ScopedBegin,
     ScopedDenial,
     ScopedJournalIntent,
+    ScopedPasswordReset,
     ScopedSession,
     ScopedSubject,
     ScopedTombstone,
@@ -24,7 +25,7 @@ from .store import GuardUnavailable
 
 SCOPED_NAMESPACES = {"v3_activations", "v3_subjects", "v3_account_owners", "v3_candidate_owners",
     "v3_generation_history", "v3_sessions", "v3_session_tombstones", "v3_account_tombstones",
-    "v3_subject_tombstones", "v3_pending_session_denials", "v3_pending_subject_denials", "v3_begins"}
+    "v3_subject_tombstones", "v3_pending_session_denials", "v3_pending_subject_denials", "v3_begins", "v3_reset_completions"}
 
 
 def validate_scoped_rows(values: dict[tuple[str, str], dict]) -> set[tuple[str, str]]:
@@ -100,7 +101,7 @@ def validate_scoped_rows(values: dict[tuple[str, str], dict]) -> set[tuple[str, 
             begin_key = f"action:{action.opening_claim_key}" if isinstance(action, Binding) else f"signing:{action.challenge_id}"
             expect("v3_begins", begin_key, {"operation_id": key, "command_sha256": fingerprint(command.model_dump(mode="json"))})
             continue
-        assert isinstance(command, ScopedDenial)
+        assert isinstance(command, (ScopedDenial, ScopedPasswordReset))
         pending_namespace = "v3_pending_session_denials" if command.scope == "session" else "v3_pending_subject_denials"
         pending_key = str(command.session.session_id) if command.scope == "session" else f"{command.subject.subject_uuid}:{command.subject.auth_generation}"
         expect(pending_namespace, pending_key, {"operation_id": key, "intent_sha256": record.reference.sha256})
@@ -112,6 +113,12 @@ def validate_scoped_rows(values: dict[tuple[str, str], dict]) -> set[tuple[str, 
                     previous_generation=command.subject.auth_generation, auth_generation=command.subject.auth_generation + 1,
                     operation_id=intent.operation_id, credential_sha256=command.next_credential_sha256)
                 expect("v3_generation_history", history_key, history.model_dump(mode="json"))
+                if isinstance(command, ScopedPasswordReset) and ("v3_reset_completions", key) in values:
+                    from .gcp_password_reset import ResetProjectionEvidence
+                    completion = ResetProjectionEvidence.model_validate(values["v3_reset_completions", key])
+                    if completion.intent != intent:
+                        raise GuardUnavailable("Reset completion census lost exact original full native request")
+                    expect("v3_reset_completions", key, completion.model_dump(mode="json"))
         else:
             tombstone = ScopedTombstone(subject_uuid=command.subject.subject_uuid,
                 account_binding_id=command.subject.account_binding_id,

@@ -7,6 +7,8 @@ import { Button } from "./ui/Button";
 type Challenge = { challenge_id: string; nonce: string; operation: "confirm_pairing";
   pairing_id: string; device_id: string; key_sha256: string; request_sha256: string; expires_at_ms: number };
 type Review = { csrf: string; challenge: Challenge };
+type Eligibility = "ELIGIBLE" | "PASSWORD_SIGN_IN_REQUIRED" | "LEGACY_ENROLLMENT_UNAVAILABLE" | "UNAVAILABLE";
+const ELIGIBILITY = new Set<Eligibility>(["ELIGIBLE", "PASSWORD_SIGN_IN_REQUIRED", "LEGACY_ENROLLMENT_UNAVAILABLE", "UNAVAILABLE"]);
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 
 export default function BrowserPairingReview({ pairingId }: { pairingId: string | null }) {
@@ -16,6 +18,7 @@ export default function BrowserPairingReview({ pairingId }: { pairingId: string 
   const [busy, setBusy] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [eligibility, setEligibility] = useState<Eligibility | null>(null);
   const active = useRef<AbortController | null>(null);
   useEffect(() => () => active.current?.abort(), []);
   const valid = Boolean(pairingId && UUID.test(pairingId));
@@ -35,6 +38,16 @@ export default function BrowserPairingReview({ pairingId }: { pairingId: string 
     const controller = new AbortController(); active.current = controller;
     setBusy(true); setError(null); setReview(null); setAccepted(false); setPassword("");
     try {
+      // This status comes from the retained server session. It conveys no
+      // identity or authority and never substitutes for password approval.
+      const response = await fetch("/api/candidate-account/eligibility", { redirect: "error", cache: "no-store",
+        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]) });
+      const status: unknown = response.ok ? await response.json() : null;
+      if (!status || typeof status !== "object" || Array.isArray(status) || Object.keys(status).join(",") !== "status"
+          || !("status" in status) || !ELIGIBILITY.has(status.status as Eligibility)) throw new Error("Secure browser pairing is currently unavailable.");
+      if (controller.signal.aborted) return;
+      setEligibility(status.status as Eligibility);
+      if (status.status !== "ELIGIBLE") return;
       const csrf = await post("csrf", {}, controller);
       const challenge = await post("challenge", { pairing_id: pairingId }, controller, csrf.csrf_token);
       if (challenge.pairing_id !== pairingId || challenge.operation !== "confirm_pairing") throw new Error("The reviewed connection changed. Start a fresh request from your companion.");
@@ -71,6 +84,9 @@ export default function BrowserPairingReview({ pairingId }: { pairingId: string 
       <p className="mt-4 max-w-2xl text-sm leading-7 text-muted-foreground">Review the connection opened by your HireWiz companion. Connecting identifies this device. You will review each job, resume and answer separately before any employer action.</p></div>
     {!valid ? <p role="alert" className="text-sm text-coral">Open this page from a fresh connection request in your browser companion.</p>
       : confirmed ? <div role="status" className="rounded-xl border border-border bg-surface p-5"><h2 className="text-lg font-semibold">Candidate confirmation saved</h2><p className="mt-2 text-sm leading-7 text-muted-foreground">Return to your companion to finish proving its device key. This connection has not approved filling, uploading or submitting a job application.</p></div>
+      : eligibility === "PASSWORD_SIGN_IN_REQUIRED" ? <div className="space-y-3"><p className="text-sm leading-7 text-muted-foreground">Sign in with your HireWiz password to review this browser connection.</p><Link className="inline-block text-sm font-semibold text-primary underline underline-offset-4" href={`/login?returnTo=${encodeURIComponent(`/browser-companion?pairing=${pairingId}`)}`}>Sign in and return to this connection</Link></div>
+      : eligibility === "LEGACY_ENROLLMENT_UNAVAILABLE" ? <p role="status" className="text-sm leading-7 text-muted-foreground">Secure browser connection is not available for this account yet. Your existing HireWiz account and job search remain available.</p>
+      : eligibility === "UNAVAILABLE" ? <p role="status" className="text-sm leading-7 text-muted-foreground">Secure browser connection is currently unavailable. No application action has been authorized.</p>
       : review ? <form onSubmit={confirm} className="space-y-5">
         <div className="rounded-xl border border-border p-4"><h2 className="font-semibold">Verify the same request</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">Compare these fingerprints with the connection displayed in your companion.</p><dl className="mt-4 space-y-3 text-xs"><div><dt className="font-semibold">Device key</dt><dd className="mt-1 break-all font-mono">{review.challenge.key_sha256}</dd></div><div><dt className="font-semibold">Connection request</dt><dd className="mt-1 break-all font-mono">{review.challenge.request_sha256}</dd></div></dl></div>
         <label className="flex items-start gap-3 text-sm leading-6"><input type="checkbox" checked={accepted} onChange={(event) => setAccepted(event.target.checked)} disabled={busy} className="mt-1" />I checked that these fingerprints match my companion and want to connect this device.</label>

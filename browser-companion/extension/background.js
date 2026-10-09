@@ -3,6 +3,31 @@ import { Companion } from "./protocol.js";
 import { deviceIdentity } from "./device.js";
 import { FixtureTransport } from "./transport.js";
 import { localAdapter } from "./local-adapter.js";
+import { PairingTransport } from "./pairing-transport.js";
+import { PairingRuntime } from "./pairing-runtime.js";
+
+const nativeMode = () => ["pairing_only", "local_native_fixture"].includes(CONFIG.mode);
+let pairingPromise;
+function boundedStorage(operation) {
+  let timer;
+  return Promise.race([operation, new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error("Connection storage is unavailable")), 3000);
+  })]).finally(() => clearTimeout(timer));
+}
+async function pairingEngine() {
+  return pairingPromise ??= (async () => {
+    if (!nativeMode() || CONFIG.extensionId !== chrome.runtime.id) throw new Error("Reviewed browser connection configuration is unavailable");
+    const checkPermission = async () => {
+      if (!await chrome.permissions.contains({ origins: [`${CONFIG.websiteOrigin}/*`] })) throw new Error("The exact HireWiz connection permission is missing or revoked");
+    };
+    const transport = new PairingTransport({ configuration: CONFIG, identity: await deviceIdentity(), beforePost: checkPermission });
+    const store = {
+      read: async () => (await boundedStorage(chrome.storage.local.get("pairing_checkpoint"))).pairing_checkpoint ?? null,
+      write: (value) => boundedStorage(chrome.storage.local.set({ pairing_checkpoint: value })),
+    };
+    return new PairingRuntime({ transport, store, checkPermission }).initialise();
+  })();
+}
 
 let enginePromise;
 async function engine() {
@@ -42,6 +67,20 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   // No page/content-script/external messages may trigger a privileged operation.
   if (sender.id !== chrome.runtime.id || sender.url !== chrome.runtime.getURL("popup.html")) return false;
   (async () => {
+    if (nativeMode()) {
+      if (!message || typeof message !== "object" || Array.isArray(message)
+          || Object.keys(message).join(",") !== "type" || typeof message.type !== "string") throw new Error("Unsupported connection operation");
+      const current = await pairingEngine();
+      if (message.type === "status" || message.type === "pairing_status") return { mode: CONFIG.mode, ...current.status() };
+      if (message.type === "pairing_start") return current.start();
+      if (message.type === "pairing_complete") return current.complete();
+      if (message.type === "pairing_refresh") return current.refresh();
+      if (message.type === "pairing_cancel") return current.cancel();
+      if (message.type === "pairing_resume") return current.resume();
+      if (message.type === "pairing_inspect") return current.inspectUnknown();
+      // Identity connection never enables the fixture application protocol.
+      throw new Error("Application actions require separately reviewed authority");
+    }
     if (message.type === "status") {
       if (CONFIG.mode === "disabled") return { mode: "disabled" };
       const current = await engine();

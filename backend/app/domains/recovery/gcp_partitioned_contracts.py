@@ -10,6 +10,7 @@ from pydantic import ConfigDict, Field, model_validator
 from .contracts import Binding, Contract, Digest, Identifier, Timestamp, canonical, fingerprint
 from .gcp_contracts import Generation, RegistryPin
 from .gcp_password_contracts import PasswordSigningMarker
+from .gcp_password_lifetime_contracts import PasswordLifetimeEffects
 from .gcp_publication_contracts import PublicationPin
 from .pairing_contracts import PositiveInteger
 
@@ -168,6 +169,66 @@ class ScopedDenial(PartitionedContract):
         return self
 
 
+class ScopedPasswordReset(PartitionedContract):
+    """Fresh server request plus full fixed ordinary Native projection plan."""
+    kind: Literal["scoped_password_reset"] = "scoped_password_reset"
+    scope: Literal["generation"] = "generation"
+    subject: ScopedSubject
+    session: ScopedSession
+    next_credential_sha256: Digest
+    request_id: UUID
+    event_id: UUID
+    native_effects: PasswordLifetimeEffects
+
+    @model_validator(mode="after")
+    def exact(self) -> ScopedPasswordReset:
+        ScopedDenial(scope="generation", subject=self.subject, session=self.session,
+                     next_credential_sha256=self.next_credential_sha256)
+        if self.subject.auth_generation >= 2**53 - 1:
+            raise ValueError("Reset authentication generation is exhausted")
+        before = {(v.namespace, v.key): v.value for v in self.native_effects.before}
+        after = {(v.namespace, v.key): v.value for v in self.native_effects.after}
+        subject_id = str(self.subject.subject_uuid)
+        old = {"subject_uuid": subject_id, "auth_generation": self.subject.auth_generation,
+               "credential_sha256": self.subject.credential_sha256}
+        new = {**old, "auth_generation": self.subject.auth_generation + 1,
+               "credential_sha256": self.next_credential_sha256}
+        original = before.get(("subjects", subject_id))
+        owner = before.get(("pairing_account_bindings", str(self.subject.account_binding_id)))
+        if (original is None or owner is None
+                or original.get("auth_generation") != self.subject.auth_generation
+                or original.get("principal_sha256") != self.subject.principal_sha256
+                or original.get("active") is not True
+                or any(owner.get(k) != v for k, v in self.subject.model_dump(mode="json",
+                    include={"subject_uuid", "account_binding_id", "candidate_id", "principal_sha256"}).items())
+                or before.get(("password_credential_revisions", subject_id)) != old
+                or after.get(("password_credential_revisions", subject_id)) != new
+                or after.get(("subjects", subject_id)) != {**original, "auth_generation": new["auth_generation"]}
+                or after.get(("pairing_auth_high_water", subject_id)) != {
+                    "subject_uuid": subject_id, "auth_generation": new["auth_generation"],
+                    "principal_sha256": self.subject.principal_sha256}):
+            raise ValueError("Reset projection must bind exact native owner and old/new credential commitments")
+        event = self.native_effects.event
+        if (event.get("event_id") != str(self.event_id)
+                or event.get("kind") != "PASSWORD_CREDENTIAL_REVISION_PROJECTED"
+                or event.get("payload") != {"request_id": str(self.request_id),
+                    "subject_uuid": subject_id, "account_binding_id": str(self.subject.account_binding_id),
+                    "candidate_id": self.subject.candidate_id, "principal_sha256": self.subject.principal_sha256,
+                    "old_auth_generation": self.subject.auth_generation,
+                    "old_credential_sha256": self.subject.credential_sha256,
+                    "auth_generation": new["auth_generation"], "credential_sha256": self.next_credential_sha256}
+                or before.get(("head", "global")) != {"sequence": event.get("sequence", 0) - 1,
+                    "digest": event.get("previous")}
+                or fingerprint({k: v for k, v in event.items() if k != "digest"}) != event.get("digest")
+                or after.get(("events", str(self.event_id))) != event
+                or after.get(("head", "global")) != {"sequence": event.get("sequence"), "digest": event.get("digest")}
+                or set(after) != {("subjects", subject_id), ("pairing_auth_high_water", subject_id),
+                    ("password_credential_revisions", subject_id), ("pairing_clock", "observed"),
+                    ("events", str(self.event_id)), ("head", "global")}):
+            raise ValueError("Reset projection must preserve its full fixed native event/after-images")
+        return self
+
+
 class ScopedBegin(PartitionedContract):
     kind: Literal["scoped_begin"] = "scoped_begin"
     subject: ScopedSubject
@@ -198,7 +259,7 @@ class ScopedJournalIntent(PartitionedContract):
     kind: Literal["scoped_admission"] = "scoped_admission"
     operation_id: UUID
     pin: RegistryPin
-    command: Annotated[ScopedDenial | ScopedBegin, Field(discriminator="kind")]
+    command: Annotated[ScopedDenial | ScopedPasswordReset | ScopedBegin, Field(discriminator="kind")]
     created_at_ms: Timestamp
     deadline_ms: Timestamp
 
@@ -206,6 +267,12 @@ class ScopedJournalIntent(PartitionedContract):
     def exact(self) -> ScopedJournalIntent:
         if not self.created_at_ms < self.deadline_ms <= self.created_at_ms + 60_000:
             raise ValueError("Scoped protected admission requires a bounded interval")
+        if isinstance(self.command, ScopedPasswordReset):
+            cmd = self.command
+            if (len({self.operation_id, cmd.request_id, cmd.event_id}) != 3
+                    or next(v.value for v in cmd.native_effects.after
+                        if v.namespace == "pairing_clock") != {"now_ms": self.created_at_ms}):
+                raise ValueError("Reset request, operation/event and exact native clock must be bound")
         return self
 
     @property

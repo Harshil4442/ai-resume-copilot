@@ -2,6 +2,7 @@ import { CONFIG } from "./config.js";
 import { decode64 } from "./protocol.js";
 const element = (id) => document.getElementById(id);
 let review = null; let artifactUrl = null;
+let connection = null;
 async function request(message) {
   const result = await chrome.runtime.sendMessage(message);
   if (!result?.ok) throw new Error(result?.error || "Companion worker unavailable. Inspect the portal before retrying.");
@@ -45,7 +46,76 @@ action("fill", async () => {
 });
 action("cancel", async () => { const result = await request({ type: "cancel" }); clearReview(); element("result").textContent = result.message; });
 window.addEventListener("unload", clearReview);
-const status = await request({ type: "status" });
-element("mode").textContent = status.mode === "disabled" ? "Disabled: production authorization, real tenant permits and device enrollment are not available." : "Local synthetic fixtures only. No real employer adapter is enabled.";
-if (status.mode === "local_fixture") { element("permission").disabled = false; if (status.connected) element("prepare").disabled = false; }
-if (status.checkpoint && ["action_in_progress", "unknown"].includes(status.checkpoint.status)) error("Previous fill may be incomplete. Inspect the portal; automatic recovery is disabled.");
+
+async function showConnection(value) {
+  connection = value;
+  element("native-connection").hidden = false;
+  const permission = await chrome.permissions.contains({ origins: [`${CONFIG.websiteOrigin}/*`] });
+  const idle = !value.busy;
+  element("native-permission").disabled = permission;
+  element("native-start").disabled = !permission || !idle || value.phase !== "idle";
+  element("native-review").disabled = !value.review_url || !idle;
+  element("native-confirmed").disabled = !permission || !idle || value.phase !== "awaiting_candidate";
+  element("native-complete").disabled = element("native-confirmed").disabled || !element("native-confirmed").checked;
+  element("native-refresh").disabled = !permission || !idle || value.phase !== "paired";
+  element("native-pause").disabled = ["idle", "paused"].includes(value.phase);
+  element("native-resume").disabled = !idle || value.phase !== "paused";
+  element("native-inspect").disabled = !permission || !idle || value.phase !== "unknown" || !value.pairing_id;
+  const list = element("native-fingerprints"); list.replaceChildren();
+  if (value.key_sha256) pair(list, "Browser key SHA-256", value.key_sha256);
+  if (value.request_sha256) pair(list, "Connection request SHA-256", value.request_sha256);
+  const labels = { idle: "Ready to start. Review will happen on HireWiz.", preparing: "Preparing this browser connection…",
+    awaiting_candidate: "Compare both fingerprints on HireWiz and approve the matching browser.", completing: "Proving this browser's key…",
+    paired: value.connected ? "Current browser identity verified. No application action is enabled." : "Connection remembered. Check it again before relying on current identity.",
+    refreshing: "Checking current browser identity…", unknown: "The previous outcome needs inspection. Automatic retry and a new connection are blocked.",
+    paused: "Paused locally. The saved connection remains; this does not revoke an already paired device." };
+  element("native-state").textContent = value.message || labels[value.phase] || "Connection needs inspection.";
+}
+function connectionAction(id, type) {
+  action(id, async () => {
+    element("native-confirmed").checked = false;
+    const pending = { pairing_start: "preparing", pairing_complete: "completing", pairing_refresh: "refreshing" }[type];
+    // This is presentation only; the worker persists intent before any request.
+    // Keep Pause usable while a socket response is pending.
+    if (pending && connection) await showConnection({ ...connection, phase: pending, busy: true, connected: false, message: "" });
+    try { await showConnection(await request({ type })); }
+    catch (failure) {
+      await showConnection(await request({ type: "pairing_status" }));
+      throw failure;
+    }
+  });
+}
+action("native-permission", async () => {
+  const granted = await chrome.permissions.request({ origins: [`${CONFIG.websiteOrigin}/*`] });
+  if (!granted) throw new Error("The exact HireWiz connection permission was not granted.");
+  await showConnection(await request({ type: "pairing_status" }));
+});
+action("native-review", async () => {
+  const url = new URL(connection.review_url);
+  if (url.origin !== CONFIG.websiteOrigin) throw new Error("The saved review destination is invalid.");
+  await chrome.tabs.create({ url: url.href });
+});
+connectionAction("native-start", "pairing_start");
+connectionAction("native-complete", "pairing_complete");
+connectionAction("native-refresh", "pairing_refresh");
+connectionAction("native-pause", "pairing_cancel");
+connectionAction("native-resume", "pairing_resume");
+connectionAction("native-inspect", "pairing_inspect");
+element("native-confirmed").addEventListener("change", () => {
+  element("native-complete").disabled = !element("native-confirmed").checked || element("native-confirmed").disabled;
+});
+try {
+  const status = await request({ type: "status" });
+  element("mode").textContent = status.mode === "disabled" ? "Disabled: production authorization, real tenant permits and device enrollment are not available."
+    : status.mode === "local_fixture" ? "Local synthetic fixtures only. No real employer adapter is enabled."
+    : status.mode === "local_native_fixture" ? "Controlled local native connection test. Production remains disabled."
+    : "Browser identity connection. Every application needs separate current approval.";
+  if (status.mode === "local_fixture") {
+    element("fixture-connection").hidden = false; element("fixture-prepare").hidden = false;
+    element("grant").value = "local-owner-grant";
+    element("permission").disabled = false; if (status.connected) element("prepare").disabled = false;
+  } else if (["pairing_only", "local_native_fixture"].includes(status.mode)) await showConnection(status);
+  if (status.checkpoint && ["action_in_progress", "unknown"].includes(status.checkpoint.status)) error("Previous fill may be incomplete. Inspect the portal; automatic recovery is disabled.");
+} catch {
+  element("mode").textContent = "Browser connection unavailable. No application action is enabled.";
+}

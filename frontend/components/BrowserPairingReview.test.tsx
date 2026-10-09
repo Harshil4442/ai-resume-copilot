@@ -20,7 +20,7 @@ describe("candidate connection review", () => {
     expect(request).not.toHaveBeenCalled();
   });
   it("requires fingerprint confirmation and password before the single candidate-confirm POST", async () => {
-    const request = vi.fn().mockResolvedValueOnce(Response.json({ csrf_token: "c".repeat(64) }))
+    const request = vi.fn().mockResolvedValueOnce(Response.json({ status: "ELIGIBLE" })).mockResolvedValueOnce(Response.json({ csrf_token: "c".repeat(64) }))
       .mockResolvedValueOnce(Response.json(challenge)).mockResolvedValueOnce(Response.json({ status: "CANDIDATE_CONFIRMED", pairing_id: pairing, device_id: challenge.device_id }));
     vi.stubGlobal("fetch", request);
     render(<BrowserPairingReview pairingId={pairing} />);
@@ -33,13 +33,13 @@ describe("candidate connection review", () => {
     expect(confirmation).toBeEnabled();
     await userEvent.click(confirmation);
     expect(await screen.findByRole("status")).toHaveTextContent("has not approved filling, uploading or submitting");
-    expect(request).toHaveBeenCalledTimes(3);
-    expect(request.mock.calls[2][0]).toBe("/api/browser-pairing/candidate/confirm");
-    expect(JSON.parse(request.mock.calls[2][1].body)).toMatchObject({ protocol_version: 2, operation: "confirm_pairing", confirmed: true, challenge_id: challenge.challenge_id });
+    expect(request).toHaveBeenCalledTimes(4);
+    expect(request.mock.calls[3][0]).toBe("/api/browser-pairing/candidate/confirm");
+    expect(JSON.parse(request.mock.calls[3][1].body)).toMatchObject({ protocol_version: 2, operation: "confirm_pairing", confirmed: true, challenge_id: challenge.challenge_id });
     expect(screen.queryByLabelText("HireWiz password")).toBeNull();
   });
   it("clears a possibly consumed review and never retries an unavailable confirmation automatically", async () => {
-    const request = vi.fn().mockResolvedValueOnce(Response.json({ csrf_token: "c".repeat(64) }))
+    const request = vi.fn().mockResolvedValueOnce(Response.json({ status: "ELIGIBLE" })).mockResolvedValueOnce(Response.json({ csrf_token: "c".repeat(64) }))
       .mockResolvedValueOnce(Response.json(challenge)).mockResolvedValueOnce(Response.json({ detail: "untrusted-secret" }, { status: 503 }));
     vi.stubGlobal("fetch", request); render(<BrowserPairingReview pairingId={pairing} />);
     await userEvent.click(screen.getByRole("button", { name: "Review connection" }));
@@ -48,7 +48,28 @@ describe("candidate connection review", () => {
     await userEvent.click(screen.getByRole("checkbox")); await userEvent.click(screen.getByRole("button", { name: "Confirm this device" }));
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("currently unavailable"));
     expect(screen.getByRole("alert")).not.toHaveTextContent("untrusted-secret");
-    expect(request).toHaveBeenCalledTimes(3);
+    expect(request).toHaveBeenCalledTimes(4);
     expect(screen.queryByLabelText("HireWiz password")).toBeNull();
+  });
+  it("returns password sign-in to only this exact pairing without requesting a native challenge", async () => {
+    const request = vi.fn().mockResolvedValueOnce(Response.json({ status: "PASSWORD_SIGN_IN_REQUIRED" }));
+    vi.stubGlobal("fetch", request); render(<BrowserPairingReview pairingId={pairing} />);
+    await userEvent.click(screen.getByRole("button", { name: "Review connection" }));
+    expect(await screen.findByRole("link", { name: "Sign in and return to this connection" })).toHaveAttribute("href", `/login?returnTo=${encodeURIComponent(`/browser-companion?pairing=${pairing}`)}`);
+    expect(request).toHaveBeenCalledTimes(1); expect(screen.queryByLabelText("HireWiz password")).toBeNull();
+  });
+  for (const status of ["LEGACY_ENROLLMENT_UNAVAILABLE", "UNAVAILABLE"]) it(`does not bootstrap context from ${status}`, async () => {
+    const request = vi.fn().mockResolvedValueOnce(Response.json({ status }));
+    vi.stubGlobal("fetch", request); render(<BrowserPairingReview pairingId={pairing} />);
+    await userEvent.click(screen.getByRole("button", { name: "Review connection" }));
+    expect(await screen.findByRole("status")).toHaveTextContent(status === "UNAVAILABLE" ? "currently unavailable" : "not available for this account");
+    expect(request).toHaveBeenCalledTimes(1); expect(screen.queryByLabelText("HireWiz password")).toBeNull();
+  });
+  it("rejects malformed eligibility instead of exposing backend fields or requesting a challenge", async () => {
+    const request = vi.fn().mockResolvedValueOnce(Response.json({ status: "ELIGIBLE", password: "untrusted-secret" }));
+    vi.stubGlobal("fetch", request); render(<BrowserPairingReview pairingId={pairing} />);
+    await userEvent.click(screen.getByRole("button", { name: "Review connection" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("currently unavailable");
+    expect(screen.getByRole("alert")).not.toHaveTextContent("untrusted-secret"); expect(request).toHaveBeenCalledTimes(1);
   });
 });

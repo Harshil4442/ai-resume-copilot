@@ -88,6 +88,7 @@ jobs:
           tests/fixtures/gcp_partitioned_publication.py tests/test_candidate_scoped_lifecycle_emulator.py
           tests/test_gcp_partitioned_export_emulator.py tests/test_gcp_partitioned_publication_emulator.py
           tests/test_gcp_publication_scan_emulator.py tests/test_gcp_scoped_authority_emulator.py
+          tests/test_gcp_password_reset_emulator.py
           tests/test_monetary_cutover_schema11_postgres.py
           tests/test_migration_logging_postgres.py
           tests/test_fresh_user_no_ai_journey.py
@@ -288,6 +289,9 @@ jobs:
       - name: Verify local synthetic MV3 flow
         working-directory: browser-companion
         run: npm run test:browser
+      - name: Verify native MV3 connection failure and restart boundaries
+        working-directory: browser-companion
+        run: npm run test:native-runtime
       - name: Verify synthetic Razorpay browser boundary
         working-directory: browser-companion
         run: node --test tests/razorpay-browser.test.js

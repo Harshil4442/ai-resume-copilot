@@ -22,6 +22,7 @@ from .gcp_partitioned_contracts import (
     ScopedCredentialRevision,
     ScopedDenial,
     ScopedJournalIntent,
+    ScopedPasswordReset,
     ScopedSession,
     ScopedSubject,
     ScopedTombstone,
@@ -71,12 +72,13 @@ def _pending(tx: BufferedTransaction, namespace: str, key: str, *, owner: UUID |
         raise GuardDenied("Protected scoped denial is pending or already acknowledged")
     full = PartitionedRecord.model_validate(tx.get("v3_records", str(owner)))
     command = ScopedJournalIntent.model_validate(full.intent).command
-    if (not isinstance(command, ScopedDenial)
+    if (not isinstance(command, (ScopedDenial, ScopedPasswordReset))
             or pending != {"operation_id": str(owner), "intent_sha256": full.reference.sha256}):
         raise GuardUnavailable("Pending denial lost its exact full retained intent")
 
 
-def current_subject(tx: BufferedTransaction, subject_id: UUID, *, pending_owner: UUID | None = None) -> ScopedSubject:
+def current_subject(tx: BufferedTransaction, subject_id: UUID, *, pending_owner: UUID | None = None,
+                    reset_owner: UUID | None = None) -> ScopedSubject:
     subject = ScopedSubject.model_validate(tx.get("v3_subjects", str(subject_id)))
     evidence = _origin(tx, subject.enrollment_operation)
     command = evidence.intent.command
@@ -100,11 +102,21 @@ def current_subject(tx: BufferedTransaction, subject_id: UUID, *, pending_owner:
     else:
         full = PartitionedRecord.model_validate(tx.get("v3_records", str(history.operation_id)))
         denial = ScopedJournalIntent.model_validate(full.intent).command
-        if (not isinstance(denial, ScopedDenial) or denial.scope != "generation"
+        if (not isinstance(denial, (ScopedDenial, ScopedPasswordReset)) or denial.scope != "generation"
                 or denial.subject.subject_uuid != subject_id
                 or denial.subject.auth_generation != history.previous_generation
                 or denial.next_credential_sha256 != subject.credential_sha256):
             raise GuardUnavailable("Protected generation lost its full retained denial provenance")
+        if isinstance(denial, ScopedPasswordReset):
+            completion = tx.get("v3_reset_completions", str(history.operation_id))
+            if completion is None:
+                if reset_owner != history.operation_id:
+                    raise GuardDenied("Protected reset credential revision is not completed")
+            else:
+                from .gcp_password_reset import ResetProjectionEvidence
+                evidence = ResetProjectionEvidence.model_validate(completion)
+                if evidence.intent.model_dump(mode="json") != full.intent:
+                    raise GuardUnavailable("Protected reset completion lost its exact full native request")
     if (tx.get("v3_subject_tombstones", str(subject_id)) is not None
             or tx.get("v3_account_tombstones", str(subject.account_binding_id)) is not None):
         raise GuardDenied("Protected account or subject has been permanently denied")
@@ -322,10 +334,31 @@ class ScopedCandidateAuthority:
             next_credential_sha256=next_credential_sha256)
         intent = ScopedJournalIntent(operation_id=uuid4(), pin=self.publication.resource.pin.authority.target,
             command=command, created_at_ms=now, deadline_ms=now + 60_000)
+        return self._deny_intent(context, intent)
+
+    def arm_password_reset(self, projector, plan) -> ScopedDenialAck | None:
+        # The actual original projector consumes its own identity-bound plan.
+        # A raw model/status or detached plan cannot arm credential projection.
+        from .gcp_password_reset import GcpPasswordCredentialProjection
+        if type(projector) is not GcpPasswordCredentialProjection or projector.scoped is not self:
+            raise GuardDenied("Exact original reset projection issuer required")
+        intent = projector.consume_denial_plan(plan)
+        cmd = intent.command
+        if not isinstance(cmd, ScopedPasswordReset):
+            raise GuardDenied("Exact original reset request required")
+        context = CandidateWebSession(candidate_id=cmd.subject.candidate_id,
+            account_binding_id=cmd.subject.account_binding_id, session_id=cmd.session.session_id)
+        return self._deny_intent(context, intent)
+
+    def _deny_intent(self, context: CandidateWebSession, intent: ScopedJournalIntent) -> ScopedDenialAck | None:
+        command = intent.command
+        if not isinstance(command, (ScopedDenial, ScopedPasswordReset)):
+            raise GuardDenied("Strict scoped denial/reset request required")
+        subject, session, scope = command.subject, command.session, command.scope
         namespace = "v3_pending_session_denials" if scope == "session" else "v3_pending_subject_denials"
         pending_key = str(session.session_id) if scope == "session" else f"{subject.subject_uuid}:{subject.auth_generation}"
         def arm(tx: BufferedTransaction, fixed: ScopedJournalIntent) -> None:
-            assert isinstance(fixed.command, ScopedDenial)
+            assert isinstance(fixed.command, (ScopedDenial, ScopedPasswordReset))
             current, active = current_session(tx, context, self._now())
             if current != fixed.command.subject or active != fixed.command.session:
                 raise GuardDenied("Scoped denial cannot retarget changed subject/session state")
@@ -339,7 +372,7 @@ class ScopedCandidateAuthority:
         def deny(tx: BufferedTransaction) -> None:
             self.publication._root(tx, opened=True)
             fixed = ScopedJournalIntent.model_validate_json(raw)
-            assert isinstance(fixed.command, ScopedDenial)
+            assert isinstance(fixed.command, (ScopedDenial, ScopedPasswordReset))
             current, active = current_session(tx, context, self._now(), pending_owner=fixed.operation_id)
             if current != fixed.command.subject or active != fixed.command.session:
                 raise GuardDenied("Scoped denial cannot retarget changed subject/session state")
@@ -368,6 +401,45 @@ class ScopedCandidateAuthority:
         with self._lock:
             self._denials[intent.operation_id] = ack
         return ack
+
+    def complete_password_reset(self, projector, ack) -> bool:
+        from .gcp_password_reset import GcpPasswordCredentialProjection
+        if type(projector) is not GcpPasswordCredentialProjection or projector.scoped is not self:
+            raise GuardDenied("Exact original native reset projection issuer required")
+        # Native status/GCS and original one-shot ACK consumption stay OUTSIDE
+        # the protected native transaction. This returns no reusable permission.
+        denial = projector.denial_for(ack)
+        evidence = projector.consume_owned_ack(ack, denial)
+        intent = evidence.intent
+        cmd = intent.command
+        assert isinstance(cmd, ScopedPasswordReset)
+        fixed = canonical(_json(evidence)).encode()
+        self.verify_denial(denial)
+        def complete(tx: BufferedTransaction) -> None:
+            self.publication._root(tx, opened=True)
+            if not intent.created_at_ms <= self._now() < intent.deadline_ms:
+                raise GuardDenied("Original reset completion interval expired")
+            current = current_subject(tx, cmd.subject.subject_uuid, reset_owner=intent.operation_id)
+            if (current.auth_generation != cmd.subject.auth_generation + 1
+                    or current.credential_sha256 != cmd.next_credential_sha256
+                    or current.model_dump(exclude={"auth_generation", "credential_sha256"})
+                        != cmd.subject.model_dump(exclude={"auth_generation", "credential_sha256"})
+                    or tx.get("v3_pending_subject_denials", f"{cmd.subject.subject_uuid}:{cmd.subject.auth_generation}")
+                        != {"operation_id": str(intent.operation_id), "intent_sha256": fingerprint(_json(intent))}
+                    or tx.get("v3_reset_completions", str(intent.operation_id)) is not None):
+                raise GuardDenied("Reset completion cannot adopt, retarget or skip its original protected denial")
+            tx.put("v3_reset_completions", str(intent.operation_id), _json(evidence), immutable=True)
+        try:
+            self._run(complete)
+        except AmbiguousCommit:
+            return False
+        actual = self.publication.registry.read("v3_reset_completions", str(intent.operation_id))
+        if actual is None or canonical(actual).encode() != fixed:
+            raise GuardUnavailable("Reset completion lost its own exact protected acknowledgement")
+        new = ScopedCredentialRevision.model_validate({**cmd.subject.model_dump(exclude={"enrollment_operation"}),
+            "auth_generation": cmd.subject.auth_generation + 1, "credential_sha256": cmd.next_credential_sha256})
+        self.check_account(new)
+        return True
 
     def begin(self, context: CandidateWebSession, action: Binding | PasswordSigningMarker) -> ScopedBeginAck | None:
         subject, session = self.resolve(context)
@@ -418,19 +490,20 @@ class ScopedCandidateAuthority:
             if self._denials.get(intent.operation_id) is not ack:
                 raise GuardDenied("Original scoped denial acknowledgement is absent")
         full = PartitionedRecord.model_validate(self.publication.registry.read("v3_records", str(intent.operation_id)))
-        if canonical(full.intent).encode() != ack._raw or not isinstance(intent.command, ScopedDenial):
+        if canonical(full.intent).encode() != ack._raw or not isinstance(intent.command, (ScopedDenial, ScopedPasswordReset)):
             raise GuardUnavailable("Scoped denial fence lost its exact retained full intent")
         self.publication._fresh_open()
         command = intent.command
         def verify(tx: BufferedTransaction) -> None:
             self.publication._root(tx, opened=True)
-            assert isinstance(command, ScopedDenial)
+            assert isinstance(command, (ScopedDenial, ScopedPasswordReset))
             subject = command.subject
             tombstone = ScopedTombstone(subject_uuid=subject.subject_uuid, account_binding_id=subject.account_binding_id,
                 session_id=command.session.session_id if command.scope == "session" else None,
                 operation_id=intent.operation_id)
             if command.scope == "generation":
-                current = current_subject(tx, subject.subject_uuid)
+                current = current_subject(tx, subject.subject_uuid,
+                    reset_owner=intent.operation_id if isinstance(command, ScopedPasswordReset) else None)
                 if (current.auth_generation != subject.auth_generation + 1
                         or current.credential_sha256 != command.next_credential_sha256):
                     raise GuardUnavailable("Scoped credential fence lost its exact current generation")

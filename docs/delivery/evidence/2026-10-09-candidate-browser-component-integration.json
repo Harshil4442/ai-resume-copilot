@@ -1,5 +1,5 @@
 {
-  "status": "LOCAL_COMPONENT_INTEGRATION_VERIFIED_REMOTE_CI_PENDING",
+  "status": "LOCAL_COMPONENT_INTEGRATION_AND_EXACT_REMOTE_CI_VERIFIED",
   "base_commit": "e6a94843ecbd4a9db43cb905b12ed6ad09bd96fe",
   "source_sha256": [
     {
@@ -495,5 +495,52 @@
     "all_digest_values_verified_against_historical_source": true,
     "new_format": "Separate path and sha256 fields avoid interpreting source filenames as credential names",
     "historical_exclusions": "Exact 16 commit/file/rule/line fingerprints in .gitleaksignore only"
+  },
+  "remote_ci": {
+    "head_sha": "46274a5ef6acc8c96eb9198fa306301a3274fe85",
+    "run_id": 37924962950,
+    "status": "completed",
+    "conclusion": "success",
+    "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37924962950",
+    "jobs": [
+      {
+        "name": "browser-companion",
+        "status": "completed",
+        "conclusion": "success",
+        "id": 113801579827
+      },
+      {
+        "name": "frontend",
+        "status": "completed",
+        "conclusion": "success",
+        "id": 113801580100
+      },
+      {
+        "name": "backend",
+        "status": "completed",
+        "conclusion": "success",
+        "id": 113801580301
+      },
+      {
+        "name": "cold-browser-journey",
+        "status": "completed",
+        "conclusion": "success",
+        "id": 113801580371
+      },
+      {
+        "name": "security-and-container",
+        "status": "completed",
+        "conclusion": "success",
+        "id": 113801580624
+      }
+    ],
+    "backend_pass_lines": [
+      "1953 passed, 345 warnings in 472.04s"
+    ],
+    "backend_log": {
+      "path": "/tmp/hirewiz-46274a5-backend-ci-success-20261009.log",
+      "sha256": "5a1e1721e22ace17d96b83105fa1c0a6afead508dd4f7e810b14e0a0306ab5da"
+    },
+    "production_deployment": false
   }
 }

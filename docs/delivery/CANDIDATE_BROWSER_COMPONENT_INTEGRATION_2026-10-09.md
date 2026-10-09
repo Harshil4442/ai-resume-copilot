@@ -3,7 +3,8 @@
 The reviewed component source is integrated into the managed branch. Local verification
 passes **1,953 backend tests without failures or skips**, 120 frontend unit tests,
 configured Mypy on 108 source files, enlarged CI Ruff, frontend lint/types and the optimized
-frontend build. Remote exact-commit CI and deployment are separate pending checkpoints.
+frontend build. All five exact [`46274a5` CI jobs](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37924962950)
+passed, including the full history scan and container build. Deployment remains pending.
 
 This source adds bounded pairing HTTP/BFF/review transport, genuine password-account and
 retained-session domain operations, nonreflecting credential-input validation, legacy bcrypt

@@ -1,0 +1,259 @@
+{
+  "status": "LOCAL_RESET_MV3_COMPONENT_INTEGRATION_VERIFIED_REMOTE_CI_PENDING",
+  "base_commit": "46274a5ef6acc8c96eb9198fa306301a3274fe85",
+  "reviews": [
+    {
+      "path": "/var/folders/ck/cyzkgt2d1yx6hzpsdflcg83c0000gn/T/hirewiz-password-reset-independent-20261009-ypyzbb6e/independent-review.json",
+      "sha256": "f68e0762c627420e91fa6477aa0bd246025ea417b95254cd83ddc4cfb96f8055",
+      "status": "CLEAR_FOR_EXACT_DISABLED_COMMAND_BOUND_RESET_COMPONENT_ONLY"
+    },
+    {
+      "path": "/var/folders/ck/cyzkgt2d1yx6hzpsdflcg83c0000gn/T/hirewiz-mv3-ui-independent-20261009-o0pyuydd/independent-review.json",
+      "sha256": "3f1aef76c4415d61f9040a8753b5f39fc543248d302ddddab04fb1e23e1c5c00",
+      "status": "CLEAR_FOR_EXACT_DISABLED_MV3_RUNTIME_AND_WEBSITE_CONTRACT_COMPONENT_ONLY"
+    }
+  ],
+  "source_sha256": [
+    {
+      "path": "backend/app/domains/recovery/gcp_candidate_lifetimes.py",
+      "sha256": "bc465e10b081def08be10c31020ebb61bb88c90bf936c325b318450b6061a125"
+    },
+    {
+      "path": "backend/app/domains/recovery/gcp_partitioned_contracts.py",
+      "sha256": "e13d0e4494f5f05fad47d322280c76da11a4e174dc6de850e37f3f0b80b8a28c"
+    },
+    {
+      "path": "backend/app/domains/recovery/gcp_password_reset.py",
+      "sha256": "496e7c27f04ccf22a379953c75769e5c9a0b8558b7694de7c7fa3d05adcd159a"
+    },
+    {
+      "path": "backend/app/domains/recovery/gcp_scoped_authority.py",
+      "sha256": "2387e8d227d9ecbfb2c9ea67f5b732dcea63525cd4d0a9cb65914da09d7bb34a"
+    },
+    {
+      "path": "backend/app/domains/recovery/gcp_scoped_census.py",
+      "sha256": "54eb9752c7aab7727c23964f3708c0ff460c00339f1cca1676544fee63e83b23"
+    },
+    {
+      "path": "backend/tests/test_gcp_password_reset_emulator.py",
+      "sha256": "486229857b0a46fcd3fd68c2ccf824f739cea35124775f8efdb65c807e0739aa"
+    },
+    {
+      "path": "docs/delivery/COMMAND_BOUND_PASSWORD_RESET_2026-10-09.md",
+      "sha256": "64a5fb59f3b010b17b13ff6ecdafc4a8905405fc4cc021efb0776ab6a5fa17aa"
+    },
+    {
+      "path": "browser-companion/README.md",
+      "sha256": "db20ba2ee277d6afe70de5384962d05800ddf4a7f9f14a25c934b95617ccf23e"
+    },
+    {
+      "path": "browser-companion/extension/background.js",
+      "sha256": "985ea7ab8cf4f701f1b498addf6dbfc1fea8988af5b2cbbd9d490a6f1d4fe691"
+    },
+    {
+      "path": "browser-companion/extension/device.js",
+      "sha256": "56eebed9021e12e59576488d69bc2273455bfa527ae1cf78fc206198a41dfb02"
+    },
+    {
+      "path": "browser-companion/extension/pairing-runtime.js",
+      "sha256": "cff999de6ce531cb13e25070f7cd768eab8e557bc70b29a3480fb3760ab8163f"
+    },
+    {
+      "path": "browser-companion/extension/pairing-transport.js",
+      "sha256": "0117ffe0d0796b5a2d552398d512ee709d87449a4b5401e1a1c3b937bc1ad385"
+    },
+    {
+      "path": "browser-companion/extension/popup.html",
+      "sha256": "e7a1ff41f5b8f2e9000c4b53a4cff70262ef363c5f53029b600315d2b11daaca"
+    },
+    {
+      "path": "browser-companion/extension/popup.js",
+      "sha256": "de774ab89c80d573ae07ddb65ccb74feb9dc0e13d26d5047f06ac884ac497a53"
+    },
+    {
+      "path": "browser-companion/package.json",
+      "sha256": "d00becc3ee8724d6d352277a4257f015f701ec2d5709c167b114a25e88298e2d"
+    },
+    {
+      "path": "browser-companion/scripts/native-fixture-build.js",
+      "sha256": "c52267b2ce5912062b448c658483f203ff6c07866ae548dd468a8b61ef395147"
+    },
+    {
+      "path": "browser-companion/tests/browser.test.js",
+      "sha256": "abd382d458ccd5df888dd3e309aab4dd7c194603902779dbbdba5994e94cd1d1"
+    },
+    {
+      "path": "browser-companion/tests/native-connection-journey.js",
+      "sha256": "66aea932f7531842d1b47afea5b4e6c097455631d92b1a4b994a79b9f46c1a72"
+    },
+    {
+      "path": "browser-companion/tests/native-runtime-browser.test.js",
+      "sha256": "5139d15a09bb87755bab5725a72407527ac16eefe5f1763d92fa7e7cf1f20533"
+    },
+    {
+      "path": "browser-companion/tests/pairing-runtime.test.js",
+      "sha256": "8d4545ead8869b19815a3db7e6bb636bc8ebd641c3d46c88c217924e4cc823ce"
+    },
+    {
+      "path": "frontend/components/BrowserPairingReview.test.tsx",
+      "sha256": "2008d2ecd9051f94d5cf6cc88ef0025ba6f325411c4a69a7e60fc19d50dfd5d6"
+    },
+    {
+      "path": "frontend/components/BrowserPairingReview.tsx",
+      "sha256": "fc3515414e62ebc75018755e830ff573b2f5e144edc7d23bfa63d21ffa002a2c"
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "sha256": "06abef45befd8d325d20e8b68c997e033191848b5c0054ba6ccc094602d78168"
+    }
+  ],
+  "local": {
+    "backend_final_instrumented": {
+      "path": "/tmp/hirewiz-reset-mv3-root-full-diagnostic-20261009.xml",
+      "sha256": "de0425f81245d05553bd6e3a7e3fc24a2d374256aea89e49df64508b96abd9b4",
+      "tests": 1987,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 337.72
+    },
+    "frontend_units": {
+      "total": 124,
+      "passed": 124,
+      "failed": 0,
+      "report_sha256": "02aaab5897d5a5ef70328a998c0c109058c0a2c5f0a82a987c27654c435cbe65"
+    },
+    "companion": {
+      "unit": 76,
+      "actual_chromium_native_runtime": 6,
+      "existing_chromium_safety": 14,
+      "failures": 0,
+      "skips": 0
+    },
+    "configured_static": {
+      "ruff": "PASS",
+      "mypy_source_files": 109,
+      "frontend_lint": "PASS",
+      "frontend_typecheck": "PASS"
+    },
+    "build": {
+      "status": "PASS",
+      "log_sha256": "daa7713f64c8f9f4b49b4ead0ef59525a03dcc146874a8cf1867810bedf328c0",
+      "initial_missing_synthetic_signing_environment_refusal_preserved_in_tool_output": true
+    },
+    "source_stability": {
+      "before_manifest_sha256": "50f97180ee3e1f0ee9781198d7c5d05cc2d132b107683afae80c5042305c39a2",
+      "source_files": 664,
+      "verified_unchanged_at_terminal_before_documentation_edits": true
+    }
+  },
+  "preserved_availability_concern": {
+    "initial_full_run": {
+      "path": "/tmp/hirewiz-password-reset-root-full-20261009.xml",
+      "sha256": "5329d402cf5edb50ea335a2c3caddf1754abffed9b9ef94425da1cab6cca1e0b",
+      "tests": 1986,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 366.451
+    },
+    "failed_test": "test_two_concurrent_original_reset_requests_have_one_native_winner",
+    "reason": "No successful winner; causal phase unproven",
+    "unchanged_isolation": {
+      "path": "/tmp/hirewiz-password-reset-root-concurrent-diagnostic-20261009.xml",
+      "sha256": "46ace23029a70179f6bfae2ee356222d5f6618878ad24a5a2f99b9fc84d37361",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 13.089
+    },
+    "controlled_four_cases": {
+      "path": "/tmp/hirewiz-password-reset-root-concurrent-stress-20261009.xml",
+      "sha256": "a563f7b96bc9ebed9dd5b74ed3527e74ee7dea36c68a38a14c71a9fff3b7f78f",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 12.477
+    },
+    "status": "UNRESOLVED_AVAILABILITY_GATE",
+    "new_deterministic_fault_test": "Explicit synthetic definite pre-commit ABORTED budget -> UNKNOWN/no original ACK, old scope denied, incomplete new generation denied, unrelated candidate usable; original test AST unchanged"
+  },
+  "prior_runtime_ci": {
+    "head_sha": "46274a5ef6acc8c96eb9198fa306301a3274fe85",
+    "run_id": 37924962950,
+    "status": "completed",
+    "conclusion": "success",
+    "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37924962950",
+    "jobs": [
+      {
+        "name": "browser-companion",
+        "status": "completed",
+        "conclusion": "success",
+        "id": 113801579827
+      },
+      {
+        "name": "frontend",
+        "status": "completed",
+        "conclusion": "success",
+        "id": 113801580100
+      },
+      {
+        "name": "backend",
+        "status": "completed",
+        "conclusion": "success",
+        "id": 113801580301
+      },
+      {
+        "name": "cold-browser-journey",
+        "status": "completed",
+        "conclusion": "success",
+        "id": 113801580371
+      },
+      {
+        "name": "security-and-container",
+        "status": "completed",
+        "conclusion": "success",
+        "id": 113801580624
+      }
+    ],
+    "backend_pass_lines": [
+      "1953 passed, 345 warnings in 472.04s"
+    ],
+    "backend_log": {
+      "path": "/tmp/hirewiz-46274a5-backend-ci-success-20261009.log",
+      "sha256": "5a1e1721e22ace17d96b83105fa1c0a6afead508dd4f7e810b14e0a0306ab5da"
+    },
+    "production_deployment": false
+  },
+  "website_lifecycle": {
+    "status": "HOLD_UNINTEGRATED",
+    "review_path": "/var/folders/ck/cyzkgt2d1yx6hzpsdflcg83c0000gn/T/hirewiz-candidate-web-independent-freeze-20261009-p6c34iuk/report.json",
+    "review_sha256": "29911459b2e6813e342e95c09c120188962c31e083724e33ad6ae56d3c5e49de",
+    "findings": [
+      "Generic auth login reveals bearer/private native context including normalized paths",
+      "Generic web logout accepts client-selected UUID and can strand private cookie cleanup"
+    ],
+    "repair": "Browser auth namespace closure plus separately reviewed private backend ingress"
+  },
+  "production": {
+    "mutations": false,
+    "public_health_status": 200,
+    "release": "e7d8f2ba0435fd3d4a504ccdce83fac365ec6835",
+    "api_revision_100_percent": "ai-resume-parser-00267-xot",
+    "zero_traffic_quiesce_revision": "ai-resume-parser-00270-veb",
+    "schema": "20261008_0009",
+    "schema_scope": "Previously verified; not reread this checkpoint",
+    "frontend": "06cc112278e94aadb358fbe347f5430e373c4eb1",
+    "frontend_scope": "Previously verified release; no new deployment"
+  },
+  "remaining_gates": [
+    "Ordinary uninstrumented exact Linux CI/container/contract scan",
+    "Website R2 and private backend transport review",
+    "Genuine protected challenge/signing/dispatch/activation/device join review and cold browser composition",
+    "Reset availability/recovery and original-owner projection repair",
+    "Production custody/credential retirement/monetary migration/schema/env/rollout",
+    "Full permitted employer application flow, global coverage, resume fidelity, load and recovery requirements"
+  ]
+}

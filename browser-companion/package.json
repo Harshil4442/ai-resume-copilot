@@ -5,8 +5,9 @@
   "type": "module",
   "engines": { "node": ">=24" },
   "scripts": {
-    "test": "node --test tests/protocol.test.js tests/pairing-transport.test.js",
+    "test": "node --test tests/protocol.test.js tests/pairing-transport.test.js tests/pairing-runtime.test.js",
     "test:browser": "node --test tests/browser.test.js",
+    "test:native-runtime": "node --test tests/native-runtime-browser.test.js",
     "check": "node scripts/check-package.js"
   },
   "devDependencies": { "@playwright/test": "1.62.1" }
