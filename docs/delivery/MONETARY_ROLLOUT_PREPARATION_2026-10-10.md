@@ -54,6 +54,16 @@ explains why a positive subset observation cannot close the global fence.
 
 ## Remaining deployment gates
 
+The exact `ea2f801b` native Git build completed successfully at 20:55 UTC. Root and
+independent native reads agree on its source, two Docker steps and immutable image;
+[build evidence](evidence/2026-10-10-native-git-backend-build.json) records the digest.
+Its [exact CI run](evidence/2026-10-10-exact-ci-registry-throttling.json) passed all
+three browser/frontend lanes, but Docker Hub throttled the required security and
+backend dependency pulls before their checks ran. Those checks are not waived.
+The [registry acquisition repair](CI_PUBLIC_REGISTRY_ACQUISITION_2026-10-10.md)
+preserves pinned image content and requires a fresh full-source CI result. The
+earlier native build cannot be joined to a different source revision's CI result.
+
 - [ ] Establish whether old credentials are shared with other applications.
 - [ ] Complete native provider/issuer and database writer retirement, with new
   restricted identities and exact secret versions.

@@ -45,6 +45,23 @@ jobs:
         run: |
           python -m pip install --disable-pip-version-check uv==0.11.32
           uv sync --project backend --frozen --all-groups
+      - name: Configure verified public cache without restarting PostgreSQL
+        timeout-minutes: 2
+        env:
+          CI_POSTGRES_CONTAINER_ID: ${{ job.services.postgres.id }}
+        run: |
+          [ "$(docker inspect --format '{{.State.Running}} {{.State.Health.Status}}' "$CI_POSTGRES_CONTAINER_ID")" = "true healthy" ]
+          postgres_before="$(docker inspect --format '{{.Id}} {{.State.Running}} {{.State.Pid}} {{.State.Health.Status}}' "$CI_POSTGRES_CONTAINER_ID")"
+          sudo --preserve-env=GITHUB_ACTIONS,RUNNER_OS python3 backend/scripts/ci_registry_cache.py
+          sudo dockerd --validate --config-file /etc/docker/daemon.json
+          daemon_pid="$(systemctl show --property=MainPID --value docker)"
+          [[ "$daemon_pid" =~ ^[1-9][0-9]*$ ]]
+          [ "$daemon_pid" -gt 1 ]
+          sudo kill -HUP "$daemon_pid"
+          timeout 15s python3 backend/scripts/ci_registry_cache.py --verify
+          postgres_after="$(docker inspect --format '{{.Id}} {{.State.Running}} {{.State.Pid}} {{.State.Health.Status}}' "$CI_POSTGRES_CONTAINER_ID")"
+          [ "$postgres_before" = "$postgres_after" ]
+          docker pull --platform linux/amd64 debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587
       - name: Build and attest immutable native TeX test compiler
         timeout-minutes: 12
         run: >-
@@ -113,6 +130,7 @@ jobs:
           ../infra/gcp/release_preflight.py ../infra/gcp/monetary_release.py ../tests/test_release_preflight.py
           tests/test_monetary_release_entrypoint.py tests/test_monetary_schema_step_postgres.py
           tests/test_model_key_revocation_observer.py
+          tests/test_ci_registry_cache.py
       - name: Check modified legacy authentication imports
         working-directory: backend
         run: .venv/bin/ruff check --select I,F app/routers/auth.py app/security.py app/schemas.py
@@ -128,6 +146,7 @@ jobs:
           app/routers/candidate_accounts.py app/routers/sensitive_auth.py app/routers/candidate_ingress.py
           ../infra/gcp/release_preflight.py ../infra/gcp/monetary_release.py scripts/monetary_schema_step.py
           scripts/model_key_revocation_observer.py
+          scripts/ci_registry_cache.py
       - name: Compile backend
         run: backend/.venv/bin/python -m compileall -q backend/app
       - name: Validate PostgreSQL migrations
@@ -279,9 +298,19 @@ jobs:
       - name: Audit production frontend dependencies
         working-directory: frontend
         run: npm audit --omit=dev --audit-level=critical
+      - name: Configure verified public cache before security Docker operations
+        timeout-minutes: 2
+        run: |
+          sudo --preserve-env=GITHUB_ACTIONS,RUNNER_OS python3 backend/scripts/ci_registry_cache.py
+          sudo dockerd --validate --config-file /etc/docker/daemon.json
+          daemon_pid="$(systemctl show --property=MainPID --value docker)"
+          [[ "$daemon_pid" =~ ^[1-9][0-9]*$ ]]
+          [ "$daemon_pid" -gt 1 ]
+          sudo kill -HUP "$daemon_pid"
+          timeout 15s python3 backend/scripts/ci_registry_cache.py --verify
       - name: Scan repository for committed secrets
         run: >-
-          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.24.2@sha256:b5918eb91b8d2473cec722f066abb4352e4ffdc4ec9f4283ec143aba9ec9ebc4
+          docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.24.2@sha256:b5918eb91b8d2473cec722f066abb4352e4ffdc4ec9f4283ec143aba9ec9ebc4
           detect --source /repo --no-banner --redact
       - name: Build production container
         run: docker build --tag hirewiz-ci:${{ github.sha }} .

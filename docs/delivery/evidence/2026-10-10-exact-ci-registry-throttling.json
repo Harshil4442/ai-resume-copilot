@@ -1,0 +1,23 @@
+{
+  "source_commit": "ea2f801b5472b43f70d9201e9d2f2fb9557538e0",
+  "source_tree": "5e393b1658f04925274239648c39066bb7361c7f",
+  "run_id": 37989653488,
+  "attempt": 1,
+  "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37989653488",
+  "status": "completed",
+  "conclusion": "failure",
+  "all_five_actual_job_checkouts_match_full_source": true,
+  "jobs": {
+    "frontend": {"conclusion": "success", "unit_passes": 240, "unit_files": 22, "responsive_passes": 215},
+    "browser-companion": {"conclusion": "success", "passes": 136, "skips": 0},
+    "cold-browser-journey": {"conclusion": "success", "python_harness_passes": 14, "complete_browser_journey_passed": true},
+    "security-and-container": {"conclusion": "failure", "reason": "Docker Hub unauthenticated image pull throttling", "gitleaks_execution": "not reached", "exit_code": 125},
+    "backend": {"conclusion": "failure", "reason": "Docker Hub HTTP429 resolving pinned Debian native TeX compiler base", "backend_tests": "not reached", "exit_code": 1}
+  },
+  "original_full_private_job_logs_preserved": 5,
+  "independent_report_sha256": "da9f1dadf953794a882a4fb19d521fe70e4e1043a35f8c5461ae7d6863a776ee",
+  "ci_rerun_performed_by_observer": false,
+  "release_ci_gate_satisfied": false,
+  "production_deployment": false,
+  "global_activation": "HOLD"
+}
