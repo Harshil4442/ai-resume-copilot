@@ -1,6 +1,6 @@
 """Local Firestore emulator data RPC proof, never UID, IAM or retention proof.
 
-This isolated test file targets only the root-owned 127.0.0.1:58877 emulator.
+This isolated test file targets only an explicitly owned loopback emulator.
 No SDK client is constructed from ADC, environment settings or a cloud endpoint.
 The operator seed below is synthetic fixture initialization, not runtime bootstrap.
 """
@@ -19,6 +19,7 @@ import google.auth
 import grpc
 import pytest
 import requests
+from backend.tests.fixtures.firestore_emulator import local_firestore_endpoint
 from google.api_core.exceptions import Aborted
 from google.auth.credentials import AnonymousCredentials
 from google.cloud.firestore_v1.services.firestore import FirestoreClient
@@ -40,7 +41,7 @@ from app.domains.recovery.gcp_rpc import FirestoreRpc
 from app.domains.recovery.gcp_service import SafetyCoordinator, control_record
 from app.domains.recovery.store import GuardDenied, GuardUnavailable
 
-ENDPOINT = "127.0.0.1:58877"
+ENDPOINT = local_firestore_endpoint()
 PROJECT = "hirewiz-local-authority"
 
 

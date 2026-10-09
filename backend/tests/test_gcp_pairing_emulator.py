@@ -21,6 +21,7 @@ import google.auth
 import grpc
 import pytest
 import requests
+from backend.tests.fixtures.firestore_emulator import local_firestore_endpoint
 from backend.tests.fixtures.pairing_authority import EXTENSION, NOW, RELEASE, jwk, sign
 from cryptography.hazmat.primitives.asymmetric import ec
 from google.api_core.exceptions import Aborted
@@ -54,7 +55,7 @@ from app.domains.recovery.store import (
     production_store,
 )
 
-ENDPOINT = "127.0.0.1:58877"
+ENDPOINT = local_firestore_endpoint()
 PROJECT = "hirewiz-local-authority"
 
 

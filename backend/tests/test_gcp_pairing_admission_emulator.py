@@ -312,7 +312,8 @@ finally:
     child = subprocess.run([sys.executable, "-B", "-c", code], input=json.dumps(payload), text=True,
         capture_output=True, timeout=15, cwd=backend, env={"PATH": os.defpath,
         "PYTHONPATH": os.pathsep.join((str(backend.parent), str(backend / "tests"))), "PYTHONDONTWRITEBYTECODE": "1",
-        "DISABLE_GCS_PYTHON_CLIENT_OTEL_BUCKET_METADATA": "true"})
+        "DISABLE_GCS_PYTHON_CLIENT_OTEL_BUCKET_METADATA": "true",
+        "HIREWIZ_AUTHORITY_EMULATOR_PORT": os.environ.get("HIREWIZ_AUTHORITY_EMULATOR_PORT", "58877")})
     assert child.returncode == 0, child.stderr
     assert json.loads(child.stdout) == {"status": "COMMITTED" if state == "core_committed" else "UNKNOWN",
                                         "has_result": False, "storage_posts": 0}

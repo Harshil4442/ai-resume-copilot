@@ -20,6 +20,7 @@ from ...services.matching import (
     compute_skill_scores,
     score_to_grade,
 )
+from ...services.result_commit import begin_result_commit
 from ..career.service import calculate_skill_roi, get_opportunity
 from ..common import public_id, utcnow
 from .evaluation import validate_evidence_output, validate_match_output
@@ -211,6 +212,7 @@ def execute_job_match(
         from ...services.basic_matching import basic_match
 
         basic = basic_match(resume.skills or [], jd_text, job_title)
+        begin_result_commit(db, user_id, run.id if run is not None else None)
         match = models.JobMatch(
             user_id=user_id, resume_id=resume.id, job_title=job_title,
             company=company, job_description=jd_text, match_score=basic["score"],
@@ -268,6 +270,7 @@ def execute_job_match(
         )
     except Exception as exc:
         if run:
+            begin_result_commit(db, user_id, run.id)
             _record_model_call(
                 db,
                 run=run,
@@ -281,6 +284,7 @@ def execute_job_match(
             db.flush()
         raise
 
+    begin_result_commit(db, user_id, run.id if run is not None else None)
     req_norm = [str(skill).lower() for skill in mega_result.get("extracted_jd_skills", [])]
     coverage_map: dict[tuple[str, str], float] = {}
     for item in mega_result.get("skill_analysis", []):
@@ -440,6 +444,7 @@ def execute_interview_questions(
             approved_evidence=evidence_payload,
         )
     except Exception as exc:
+        begin_result_commit(db, user_id, run.id)
         _record_model_call(
             db,
             run=run,
@@ -451,6 +456,7 @@ def execute_interview_questions(
             error_code=type(exc).__name__,
         )
         raise
+    begin_result_commit(db, user_id, run.id)
     _record_model_call(
         db,
         run=run,
@@ -693,6 +699,7 @@ def execute_resume_tailor(
                 "Could not apply useful changes while preserving the resume format"
             ) from last_validation_error
     except Exception as exc:
+        begin_result_commit(db, user_id, run.id)
         _record_model_call(
             db,
             run=run,
@@ -704,6 +711,7 @@ def execute_resume_tailor(
             error_code=type(exc).__name__,
         )
         raise
+    begin_result_commit(db, user_id, run.id)
     evaluation = validate_evidence_output(
         content,
         {str(item["id"]) for item in evidence_payload},

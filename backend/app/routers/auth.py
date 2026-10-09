@@ -295,6 +295,13 @@ def delete_account(
     uid = current_user.id
     now = datetime.now(timezone.utc)
 
+    from ..domains.employer.admissions import lock_application_set
+
+    # This same short lifetime guard fences new application/analysis creation
+    # and model admission. Lock runs before model events and the owner row.
+    lock_application_set(db, uid)
+    db.query(AnalysisRun).filter_by(user_id=uid).order_by(AnalysisRun.id).with_for_update().all()
+
     # End access before unlinking the ledger. This is an audit transition, not
     # a refund and not a subscription cancellation.
     active_entitlements = (

@@ -355,6 +355,7 @@ class AnalysisRun(Base):
     model_cost_reserved_micros = Column(BigInteger, nullable=False, default=0)
     model_cost_settled_micros = Column(BigInteger, nullable=False, default=0)
     model_cost_state = Column(String(32), nullable=False, default="unquoted")
+    model_cost_group_id = Column(String(64), nullable=True)
     cancel_requested = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime, nullable=False, default=_utcnow)
     updated_at = Column(DateTime, nullable=False, default=_utcnow, onupdate=_utcnow)
@@ -500,6 +501,31 @@ class CareerMemoryEntry(Base):
     updated_at = Column(DateTime, nullable=False, default=_utcnow, onupdate=_utcnow)
 
 
+class ModelCostLiability(Base):
+    """Detached provider-cost evidence, independent of live customer row lifetime."""
+
+    __tablename__ = "model_cost_liabilities"
+    __table_args__ = (UniqueConstraint("financial_group_id", "attempt_number", name="uq_model_liability_attempt"),)
+
+    id = Column(String(64), primary_key=True)
+    financial_group_id = Column(String(64), nullable=False, index=True)
+    attempt_number = Column(Integer, nullable=False)
+    provider = Column(String(80), nullable=False)
+    model = Column(String(120), nullable=False)
+    endpoint_key = Column(String(64), nullable=False)
+    currency = Column(String(3), nullable=False, default="USD")
+    pricing_quote = Column(JSON, nullable=False)
+    input_token_estimate = Column(Integer, nullable=False)
+    reserved_cost_micros = Column(BigInteger, nullable=False)
+    settled_cost_micros = Column(BigInteger, nullable=True)
+    input_tokens = Column(Integer, nullable=True)
+    output_tokens = Column(Integer, nullable=True)
+    usage_provenance = Column(String(64), nullable=True)
+    cost_state = Column(String(32), nullable=False, default="reserved")
+    created_at = Column(DateTime, nullable=False, default=_utcnow)
+    settled_at = Column(DateTime, nullable=True)
+
+
 class ModelCallEvent(Base):
     __tablename__ = "model_call_events"
     __table_args__ = (Index("ix_model_calls_run_created", "analysis_run_id", "created_at"),)
@@ -507,6 +533,7 @@ class ModelCallEvent(Base):
     id = Column(String(64), primary_key=True)
     analysis_run_id = Column(String(64), ForeignKey("analysis_runs.id"), nullable=False, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    liability_id = Column(String(64), ForeignKey("model_cost_liabilities.id"), nullable=True, index=True)
     provider = Column(String(80), nullable=False)
     model = Column(String(120), nullable=False)
     prompt_version = Column(String(64), nullable=False)

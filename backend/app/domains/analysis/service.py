@@ -173,6 +173,9 @@ def create_run(
     payload: schemas.AnalysisRunCreate,
     header_idempotency_key: str | None,
 ) -> tuple[models.AnalysisRun, bool]:
+    from ..employer.admissions import lock_application_set
+
+    lock_application_set(db, user_id)
     idempotency_key = (header_idempotency_key or payload.idempotency_key or "").strip()
     if len(idempotency_key) < 8 or len(idempotency_key) > 160:
         raise HTTPException(

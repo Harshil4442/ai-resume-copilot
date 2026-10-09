@@ -16,6 +16,7 @@ from ..domains.usage import (
     release_run_usage,
     reserve_run_usage,
 )
+from .result_commit import ResultOwnerGone, begin_result_commit
 
 
 class OptionalGenerationUnavailable(HTTPException):
@@ -47,6 +48,10 @@ def billable_operation(
 
     check_generation_admission(operation, input_payload)
 
+    from ..domains.employer.admissions import lock_application_set
+
+    lock_application_set(db, user_id)
+
     # Lock before inserting the run: its FK otherwise takes a key-share owner
     # lock, and two concurrent requests can deadlock upgrading to FOR UPDATE.
     lock_entitlement_owner(db, user_id)
@@ -68,6 +73,7 @@ def billable_operation(
         updated_at=now,
         started_at=now,
     )
+    run_id = run.id
     # Mixed legacy operations can finish deterministically with no AI policy.
     # Their first actual provider attempt freezes a quote before any network.
     # Explicit generation freezes it before execution and product reservation.
@@ -99,11 +105,16 @@ def billable_operation(
     try:
         from .generation_budget import persistent_run_budget
 
-        with persistent_run_budget(sessionmaker(bind=db.get_bind()), run.id):
+        with persistent_run_budget(sessionmaker(bind=db.get_bind()), run_id):
             yield run
     except Exception as exc:
         db.rollback()
-        current = db.get(models.AnalysisRun, run.id)
+        try:
+            begin_result_commit(db, user_id, run_id, allow_cancelled=True)
+        except ResultOwnerGone:
+            db.rollback()
+            raise exc from None
+        current = db.get(models.AnalysisRun, run_id, populate_existing=True)
         if current:
             release_run_usage(
                 db,
@@ -118,10 +129,20 @@ def billable_operation(
             db.commit()
         raise
     else:
-        current = db.get(models.AnalysisRun, run.id)
+        try:
+            begin_result_commit(db, user_id, run_id, allow_cancelled=True)
+        except ResultOwnerGone:
+            db.rollback()
+            return
+        current = db.get(models.AnalysisRun, run_id, populate_existing=True)
         if current:
-            commit_run_usage(db, current)
-            current.status = "succeeded"
+            if current.cancel_requested:
+                release_run_usage(db, current, reason="Cancelled during synchronous execution")
+                current.status = "cancelled"
+                current.cancelled_at = utcnow()
+            else:
+                commit_run_usage(db, current)
+                current.status = "succeeded"
             current.completed_at = utcnow()
             current.updated_at = current.completed_at
             db.commit()

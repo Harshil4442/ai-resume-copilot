@@ -190,6 +190,7 @@ async def parse_resume(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
+    owner_id = current_user.id
     filename = file.filename or ""
     content_type = file.content_type or ""
 
@@ -207,7 +208,7 @@ async def parse_resume(
     )
 
     resume = models.Resume(
-        user_id=current_user.id,
+        user_id=owner_id,
         original_filename=filename,
         raw_text=raw_text,
         source_document=file_bytes,
@@ -220,6 +221,9 @@ async def parse_resume(
     db.add(resume)
     db.commit()
     db.refresh(resume)
+    parsed_resume_id = resume.id
+    parsed_source_available = bool(resume.source_available)
+    parsed_source_format = resume.source_format
 
     enrichment_state = "not_requested"
     enrichment_units = 0
@@ -231,23 +235,32 @@ async def parse_resume(
         warnings.append("Optional AI enrichment is temporarily paused. Your original resume was parsed without AI and no enrichment units were charged.")
     elif enrich_skills:
         from ..services.guardrails import OptionalGenerationUnavailable, billable_operation
+        from ..services.result_commit import begin_result_commit
 
         class NoUsefulEnrichment(ValueError):
             pass
 
         try:
             with billable_operation(
-                user_id=current_user.id, db=db, operation="resume_enrichment", amount=1,
-                input_payload={"resume_id": resume.id, "source_sha256": hashlib.sha256(file_bytes).hexdigest(), "mode": "enhanced"},
+                user_id=owner_id, db=db, operation="resume_enrichment", amount=1,
+                input_payload={"resume_id": parsed_resume_id, "source_sha256": hashlib.sha256(file_bytes).hexdigest(), "mode": "enhanced"},
             ) as enrichment_run:
+                enrichment_run_id = enrichment_run.id
                 enriched = await run_in_threadpool(enrich_resume_skills, raw_text, skills)
+                begin_result_commit(db, owner_id, enrichment_run_id)
+                resume = db.query(models.Resume).filter_by(id=parsed_resume_id, user_id=owner_id).populate_existing().with_for_update().one_or_none()
+                if resume is None:
+                    raise HTTPException(status_code=404, detail="Resume not found")
                 if enriched == skills:
                     raise NoUsefulEnrichment("No additional supported skills were found")
                 resume.skills = enriched
                 db.flush()
+                # Snapshot the charge while the result/run locks are held;
+                # commit expires ORM objects and erasure may win immediately
+                # afterward. No post-commit customer reload is needed.
+                enrichment_units = 0 if enrichment_run.usage_state == "waived" else enrichment_run.estimated_units
             skills = enriched
             enrichment_state = "completed"
-            enrichment_units = enrichment_run.committed_units
         except NoUsefulEnrichment:
             enrichment_state = "unchanged"
             warnings.append("Enrichment found no additional source-supported skills. No analysis units were charged.")
@@ -264,13 +277,13 @@ async def parse_resume(
             warnings.append("Optional enrichment was unavailable. Your original resume was parsed without AI and no enrichment units were charged.")
 
     return schemas.ResumeParseResponse(
-        resume_id=resume.id,
+        resume_id=parsed_resume_id,
         skills=skills,
         experience_years=exp_years,
         sections=sections,
         contact_info=schemas.ContactInfo(**contact_info),
-        source_available=bool(resume.source_available),
-        source_format=resume.source_format,
+        source_available=parsed_source_available,
+        source_format=parsed_source_format,
         extraction_mode="enriched" if enrichment_state == "completed" else "deterministic",
         enrichment_state=enrichment_state,
         enrichment_units=enrichment_units,
