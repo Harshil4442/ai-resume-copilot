@@ -28,6 +28,15 @@ afterEach(() => {
 });
 
 describe("public billing catalog request deadline", () => {
+  it("filters a valid old enabled catalog without inventing replacement offers", async () => {
+    fetchCatalog.mockResolvedValueOnce(Response.json({ ...catalog, checkout_enabled: true, provider: "razorpay", products: [
+      { sku: "premium_30d", catalog_visible: true, enabled_for_purchase: true },
+      { sku: "job_service_500", catalog_visible: true, enabled_for_purchase: true },
+    ] }));
+    expect(await getPublicBillingCatalog()).toMatchObject({ checkout_enabled: true, products: [] });
+    expect(fetchCatalog).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps each successful price/checkout read fresh and clears the deadline", async () => {
     fetchCatalog.mockResolvedValueOnce(Response.json(catalog));
     fetchCatalog.mockResolvedValueOnce(Response.json({ ...catalog, catalog_version: "fixture-newer", checkout_enabled: true }));

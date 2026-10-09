@@ -21,30 +21,15 @@ import { apiGet, apiPostJson } from "../../lib/api";
 import { Button } from "../../components/ui/Button";
 import { LoadingBlock } from "../../components/ui/LoadingBlock";
 import { trackEvent } from "../../lib/analytics";
+import { finiteCreditBundles, isFiniteBundleSku, type CreditBundleProduct, type FiniteBundleSku } from "../../lib/billingProducts";
 
 const RAZORPAY_CHECKOUT_SRC = "https://checkout.razorpay.com/v1/checkout.js";
-const SUPPORTED_SKUS = ["premium_30d", "job_service_500"] as const;
 const CONFIRMATION_ATTEMPTS = 24;
 const CONFIRMATION_INTERVAL_MS = 2500;
 
-type SupportedSku = (typeof SUPPORTED_SKUS)[number];
 type CheckoutPhase = "idle" | "opening" | "confirming" | "pending" | "confirmed";
 
-interface BillingProduct {
-  sku: SupportedSku;
-  name: string;
-  description: string;
-  amount_minor: number;
-  amount_display: string;
-  currency: "INR";
-  billing_type: "one_time";
-  duration_days: number;
-  entitlement_kind: "premium_access" | "job_service_credits";
-  entitlement_quantity: number;
-  auto_renews: false;
-  catalog_visible: boolean;
-  enabled_for_purchase: boolean;
-}
+type BillingProduct = CreditBundleProduct;
 
 interface BillingCatalog {
   catalog_version: string;
@@ -71,7 +56,7 @@ interface CreateOrderResponse {
 interface BillingOrderStatus {
   order_id: string;
   payment_reference?: string | null;
-  sku: SupportedSku;
+  sku: string;
   status: "pending" | "paid" | "failed" | "refunded";
   fulfilled: boolean;
   amount_minor: number;
@@ -146,9 +131,6 @@ declare global {
 
 let checkoutScriptPromise: Promise<void> | null = null;
 
-function isSupportedSku(value: unknown): value is SupportedSku {
-  return typeof value === "string" && SUPPORTED_SKUS.includes(value as SupportedSku);
-}
 
 function loadHostedCheckout(): Promise<void> {
   if (typeof window === "undefined") {
@@ -193,17 +175,11 @@ function formatPrice(amountMinor: number, currency: string): string {
 }
 
 function productFacts(product: BillingProduct): string[] {
-  if (product.entitlement_kind === "job_service_credits") return [
-    `${product.entitlement_quantity} job service credits`,
-    "Paid employer search and confirmed automatic applications",
-    "Separate from analysis units and Premium access",
-    "One-time payment with no automatic renewal",
-  ];
   return [
-    `${product.duration_days} days of Premium access`,
-    "Unlimited AI-assisted operations during the access period",
+    `${product.analysis_units} AI analysis units`,
+    `${product.job_service_credits} job service credits`,
+    "Finite prepaid balances",
     "One-time payment with no automatic renewal",
-    "No free trial or stored payment mandate",
   ];
 }
 
@@ -226,7 +202,7 @@ function BillingContent({ requestedSku }: { requestedSku: string | null }) {
   const confirmedOrderRef = useRef(new Set<string>());
   const [catalog, setCatalog] = useState<BillingCatalog | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(true);
-  const [selection, setSelection] = useState<{ sku: SupportedSku; querySku: string | null } | null>(null);
+  const [selection, setSelection] = useState<{ sku: FiniteBundleSku; querySku: string | null } | null>(null);
   const [currentTier, setCurrentTier] = useState<string | null>(null);
   const [premiumUntil, setPremiumUntil] = useState<string | null>(null);
   const [analysisUnits, setAnalysisUnits] = useState(0);
@@ -267,18 +243,7 @@ function BillingContent({ requestedSku }: { requestedSku: string | null }) {
         if (response.market !== "IN" || typeof response.catalog_version !== "string") {
           throw new Error("The India billing catalog is temporarily unavailable.");
         }
-        const products = Array.isArray(response.products)
-          ? response.products.filter(
-              (product): product is BillingProduct =>
-                Boolean(product) &&
-                isSupportedSku(product.sku) &&
-                product.currency === "INR" &&
-                product.billing_type === "one_time" &&
-                product.auto_renews === false &&
-                Number.isInteger(product.amount_minor) &&
-                product.amount_minor > 0,
-            )
-          : [];
+        const products = finiteCreditBundles(response.products);
         setCatalog({ ...response, products });
       })
       .catch((catalogError: unknown) => {
@@ -315,7 +280,7 @@ function BillingContent({ requestedSku }: { requestedSku: string | null }) {
 
   const selectedSku = selection?.querySku === requestedSku
     ? selection.sku
-    : isSupportedSku(requestedSku) ? requestedSku : null;
+    : isFiniteBundleSku(requestedSku) ? requestedSku : null;
   const effectiveSelectedSku =
     selectedSku && visibleProducts.some((product) => product.sku === selectedSku)
       ? selectedSku
@@ -327,13 +292,12 @@ function BillingContent({ requestedSku }: { requestedSku: string | null }) {
   );
 
   const checkoutEnabled = Boolean(
-    catalog?.checkout_enabled && catalog.provider === "razorpay",
+    catalog?.checkout_enabled === true && catalog.provider === "razorpay",
   );
   const purchaseAllowed = Boolean(
     checkoutEnabled &&
       selectedProduct?.enabled_for_purchase &&
       currentTier !== null &&
-      !(currentTier === "premium" && selectedProduct?.entitlement_kind === "premium_access") &&
       indiaBillingConfirmed,
   );
   const checkoutBusy = phase === "opening" || phase === "confirming";
@@ -579,7 +543,7 @@ function BillingContent({ requestedSku }: { requestedSku: string | null }) {
             <p className="eyebrow mt-6">Verified fulfilment</p>
             <h1 id="payment-confirmed-heading" className="font-display mt-2 text-4xl font-normal text-foreground sm:text-5xl">Payment confirmed</h1>
             <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
-              The server received verified payment confirmation and delivered your purchased {currentOrder.sku === "job_service_500" ? "job service credits" : "Premium access"}.
+              The server received verified payment confirmation and delivered your purchased {currentOrder.sku === "premium_30d" ? "Premium access" : currentOrder.sku === "job_service_500" ? "job service credits" : "analysis units and job service credits"}.
             </p>
             <div className="mx-auto mt-6 max-w-xl border-y border-border py-4 text-xs leading-5 text-muted-foreground">
               <p className="break-all">Order reference: {currentOrder.order_id}</p>
@@ -603,7 +567,7 @@ function BillingContent({ requestedSku }: { requestedSku: string | null }) {
           <div>
             <p className="eyebrow">Account billing</p>
             <h1 className="font-display mt-2 text-4xl font-normal text-foreground sm:text-5xl">Access and service credits</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Review Premium access and prepaid job service credits. Both use one-time INR payments with no automatic renewal.</p>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Review finite credit bundles for AI analysis and employer job services. Purchases use one-time INR payments with no automatic renewal.</p>
           </div>
           <div className="flex items-center gap-3">
             <span className="icon-tile">{currentTier === "premium" ? <Crown size={19} className="text-primary" /> : <CircleGauge size={19} />}</span>
@@ -630,15 +594,15 @@ function BillingContent({ requestedSku }: { requestedSku: string | null }) {
                     <article key={product.sku} className={`surface-panel p-5 sm:p-7 ${selected ? "border-primary/70" : ""}`}>
                       <div className="grid gap-6 sm:grid-cols-[1fr_auto] sm:items-start">
                         <div className="min-w-0">
-                          <div className="flex items-start gap-3"><span className="icon-tile">{product.entitlement_kind === "job_service_credits" ? <CreditCard size={19} className="text-primary" /> : <Crown size={19} className="text-primary" />}</span><div><h3 className="text-xl font-semibold text-foreground">{product.name}</h3><p className="mt-1 text-xs font-bold uppercase text-muted-foreground">One-time purchase | no renewal</p></div></div>
+                          <div className="flex items-start gap-3"><span className="icon-tile"><CreditCard size={19} className="text-primary" /></span><div><h3 className="text-xl font-semibold text-foreground">{product.name}</h3><p className="mt-1 text-xs font-bold uppercase text-muted-foreground">One-time purchase | no renewal</p></div></div>
                           <p className="mt-5 text-sm leading-6 text-muted-foreground">{product.description}</p>
                           <ul className="mt-5 grid gap-2.5">{productFacts(product).map((fact) => <li key={fact} className="flex items-start gap-2 text-sm text-muted-foreground"><CheckCircle2 size={15} className="mt-0.5 shrink-0 text-primary" /><span>{fact}</span></li>)}</ul>
                         </div>
-                        <div className="sm:min-w-44 sm:text-right"><p className="text-3xl font-semibold text-primary">{formatPrice(product.amount_minor, product.currency)}</p><p className="mt-1 text-xs text-muted-foreground">INR total</p><Button type="button" variant={selected ? "secondary" : "primary"} className="mt-4 w-full" onClick={() => { setSelection({ sku: product.sku, querySku: requestedSku }); trackEvent("checkout_product_selected", { sku: product.sku, amount_minor: product.amount_minor, currency: product.currency }); }} disabled={currentTier === null || (currentTier === "premium" && product.entitlement_kind === "premium_access")}>{currentTier === "premium" && product.entitlement_kind === "premium_access" ? "Already active" : currentTier === null ? "Checking status" : selected ? "Selected" : "Review purchase"}</Button></div>
+                        <div className="sm:min-w-44 sm:text-right"><p className="text-3xl font-semibold text-primary">{formatPrice(product.amount_minor, product.currency)}</p><p className="mt-1 text-xs text-muted-foreground">INR total</p><Button type="button" variant={selected ? "secondary" : "primary"} className="mt-4 w-full" onClick={() => { setSelection({ sku: product.sku, querySku: requestedSku }); trackEvent("checkout_product_selected", { sku: product.sku, amount_minor: product.amount_minor, currency: product.currency }); }} disabled={currentTier === null}>{currentTier === null ? "Checking status" : selected ? "Selected" : "Review purchase"}</Button></div>
                       </div>
                     </article>
                   );
-                }) : <div className="border-y border-border py-8"><p className="font-bold text-foreground">No paid product is currently available.</p><p className="mt-2 text-sm text-muted-foreground">No checkout provider has been loaded.</p></div>}
+                }) : <div className="border-y border-border py-8"><p className="font-bold text-foreground" role="status">Purchasing is temporarily unavailable.</p><p className="mt-2 text-sm text-muted-foreground">New credit bundles are not available yet. Your existing access, balances and accepted purchases remain available.</p></div>}
               </div>
               <div className="mt-8 border-y border-border py-6 text-sm leading-6 text-muted-foreground"><h3 className="font-semibold text-foreground">About analysis units</h3><p className="mt-2">Analysis units are software usage allowances, not money or stored value. They cannot be withdrawn, resold, or transferred. Job service credits are a separate prepaid allowance for employer search and confirmed automatic applications; Premium does not waive those charges.</p><Link href="/pricing" className="mt-3 inline-flex items-center gap-1 font-bold text-primary hover:underline">Read full pricing and usage details <ExternalLink size={13} /></Link></div>
             </section>
@@ -649,13 +613,13 @@ function BillingContent({ requestedSku }: { requestedSku: string | null }) {
                 {selectedProduct ? <div>
                   <div className={`border-l-2 pl-4 ${checkoutEnabled ? "border-primary" : "border-primary/30"}`}><div className="flex items-start gap-3">{checkoutEnabled ? <Shield className="mt-0.5 shrink-0 text-primary" size={18} /> : <Clock3 className="mt-0.5 shrink-0 text-primary" size={18} />}<div><h3 className="font-semibold text-foreground">{checkoutEnabled ? "Secure checkout available" : "Checkout is not available yet"}</h3><p className="mt-1 text-sm leading-6 text-muted-foreground">{checkoutEnabled ? "Confirm India billing, then continue to Razorpay hosted checkout." : "The product remains visible while purchases are paused."}</p></div></div></div>
                   <div className="mt-6 grid grid-cols-[1fr_auto] gap-4 border-y border-border py-5"><div><p className="data-label">Product</p><p className="mt-2 font-semibold text-foreground">{selectedProduct.name}</p></div><div className="text-right"><p className="data-label">Due today</p><p className="mt-2 text-2xl font-semibold text-primary">{formatPrice(selectedProduct.amount_minor, selectedProduct.currency)}</p></div></div>
-                  <dl className="divide-y divide-border text-sm">{[["Purchase type", "One-time payment"], ["Automatic renewal", "No"], ["Trial", "None"], ["Billing country", "India"], ["Seller", "HireWiz, operated by SAVALIYA HARSHIL YOGESHBHAI"], ["Delivery", selectedProduct.entitlement_kind === "job_service_credits" ? `${selectedProduct.entitlement_quantity} service credits after verified payment` : "Digital account access after verified payment"]].map(([term, value]) => <div key={term} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)] gap-4 py-3"><dt className="text-muted-foreground">{term}</dt><dd className="text-right font-semibold text-foreground">{value}</dd></div>)}</dl>
+                  <dl className="divide-y divide-border text-sm">{[["Purchase type", "One-time payment"], ["Automatic renewal", "No"], ["Trial", "None"], ["Billing country", "India"], ["Seller", "HireWiz, operated by SAVALIYA HARSHIL YOGESHBHAI"], ["Delivery", `${selectedProduct.analysis_units} analysis units and ${selectedProduct.job_service_credits} service credits after verified payment`]].map(([term, value]) => <div key={term} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)] gap-4 py-3"><dt className="text-muted-foreground">{term}</dt><dd className="text-right font-semibold text-foreground">{value}</dd></div>)}</dl>
                   <p className="border-y border-border py-4 text-xs leading-5 text-muted-foreground">The server locks this total before checkout. Compare the same amount in the hosted payment window before authorizing payment.</p>
-                  <label className="mt-5 flex cursor-pointer items-start gap-3 text-sm leading-6 text-muted-foreground"><input type="checkbox" checked={indiaBillingConfirmed} onChange={(event) => setIndiaBillingConfirmed(event.target.checked)} disabled={currentTier === null || (currentTier === "premium" && selectedProduct.entitlement_kind === "premium_access") || !checkoutEnabled} className="mt-1 h-4 w-4 shrink-0 accent-primary" /><span>I confirm my billing country is India and this INR purchase is for domestic use.</span></label>
+                  <label className="mt-5 flex cursor-pointer items-start gap-3 text-sm leading-6 text-muted-foreground"><input type="checkbox" checked={indiaBillingConfirmed} onChange={(event) => setIndiaBillingConfirmed(event.target.checked)} disabled={currentTier === null || !checkoutEnabled} className="mt-1 h-4 w-4 shrink-0 accent-primary" /><span>I confirm my billing country is India and this INR purchase is for domestic use.</span></label>
                   <div className="mt-5">
-                    {currentTier === "premium" && selectedProduct.entitlement_kind === "premium_access" ? <div className="flex items-start gap-3 border-y border-border py-4 text-sm text-muted-foreground"><Lock size={17} className="mt-0.5 shrink-0" />Premium is already active. You can still purchase job service credits.</div> : currentTier === null ? <div className="flex items-start gap-3 border-y border-border py-4 text-sm text-muted-foreground"><Lock size={17} className="mt-0.5 shrink-0" />Checkout waits for account status.</div> : checkoutEnabled && selectedProduct.enabled_for_purchase ? <Button type="button" onClick={handleCheckout} disabled={!purchaseAllowed || checkoutBusy} className="w-full">{checkoutBusy ? <><RefreshCw size={17} className="animate-spin" />{phase === "confirming" ? "Waiting for verified confirmation" : "Opening hosted checkout"}</> : <><CreditCard size={17} />Pay with Razorpay | {formatPrice(selectedProduct.amount_minor, selectedProduct.currency)}</>}</Button> : <Button type="button" variant="secondary" disabled className="w-full">Checkout unavailable</Button>}
+                    {currentTier === null ? <div className="flex items-start gap-3 border-y border-border py-4 text-sm text-muted-foreground"><Lock size={17} className="mt-0.5 shrink-0" />Checkout waits for account status.</div> : checkoutEnabled && selectedProduct.enabled_for_purchase ? <Button type="button" onClick={handleCheckout} disabled={!purchaseAllowed || checkoutBusy} className="w-full">{checkoutBusy ? <><RefreshCw size={17} className="animate-spin" />{phase === "confirming" ? "Waiting for verified confirmation" : "Opening hosted checkout"}</> : <><CreditCard size={17} />Pay with Razorpay | {formatPrice(selectedProduct.amount_minor, selectedProduct.currency)}</>}</Button> : <Button type="button" variant="secondary" disabled className="w-full">Checkout unavailable</Button>}
                   </div>
-                </div> : <div className="py-8 text-center"><FileText className="mx-auto text-muted-foreground" size={28} /><p className="mt-3 font-bold text-foreground">Select a product to review it.</p></div>}
+                </div> : <div className="py-8 text-center"><FileText className="mx-auto text-muted-foreground" size={28} /><p className="mt-3 font-bold text-foreground">New purchases are temporarily unavailable.</p></div>}
 
                 {currentOrder && phase !== "confirmed" ? <div className="mt-6 border-t border-border pt-5 text-xs text-muted-foreground"><p className="break-all">Order reference: {currentOrder.order_id}</p>{currentOrder.payment_reference ? <p className="break-all">Payment reference: {currentOrder.payment_reference}</p> : null}<Button type="button" variant="secondary" size="sm" onClick={checkCurrentOrder} disabled={phase === "confirming"} className="mt-3"><RefreshCw size={13} className={phase === "confirming" ? "animate-spin" : ""} />Check payment status</Button></div> : null}
               </div>

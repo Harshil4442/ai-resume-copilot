@@ -136,7 +136,7 @@ export default function BulletOptimizer() {
               onClick={() => trackEvent("premium_cta_clicked", { source: "bullet_optimizer" })}
               className="button-secondary whitespace-nowrap"
             >
-              View Premium
+              View billing
             </Link>
             </div>
           </div>

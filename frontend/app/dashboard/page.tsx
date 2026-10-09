@@ -24,11 +24,13 @@ import { trackEvent } from "../../lib/analytics";
 import type { OpportunityList, Reminder } from "../../lib/career";
 import { stageLabels, stageTone } from "../../lib/career";
 import type { AnalyticsSummary, UserProfile } from "../../lib/types";
+import { finiteCreditBundles } from "../../lib/billingProducts";
 
 type FeatureResponse = { features: Record<string, { enabled: boolean }> };
 type BillingCatalog = {
   checkout_enabled: boolean;
-  products: { sku: string; name: string; amount_minor: number; currency: string; entitlement_quantity: number }[];
+  provider: string | null;
+  products: unknown[];
 };
 
 function firstName(profile: UserProfile | undefined) {
@@ -63,7 +65,9 @@ export default function DashboardPage() {
   ];
   const activated = activation.filter((item) => item.complete).length;
   const nextActivation = activation.find((item) => !item.complete);
-  const upgradeProduct = billingCatalog.data?.checkout_enabled ? billingCatalog.data.products[0] : undefined;
+  const upgradeProduct = billingCatalog.data?.checkout_enabled === true && billingCatalog.data.provider === "razorpay"
+    ? finiteCreditBundles(billingCatalog.data.products).find((product) => product.catalog_visible && product.enabled_for_purchase)
+    : undefined;
 
   useEffect(() => {
     if (!upgradeProduct || upgradeTracked.current) return;
@@ -158,9 +162,9 @@ export default function DashboardPage() {
                     <p className="data-label">Low analysis units</p>
                     <h2 className="font-display mt-2 text-lg font-normal text-foreground">{upgradeProduct.name}</h2>
                     <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                      {new Intl.NumberFormat("en-IN", { style: "currency", currency: upgradeProduct.currency, maximumFractionDigits: 0 }).format(upgradeProduct.amount_minor / 100)} for {upgradeProduct.entitlement_quantity} days. One-time payment, no automatic renewal, with the published Premium usage policy.
+                      {new Intl.NumberFormat("en-IN", { style: "currency", currency: upgradeProduct.currency, maximumFractionDigits: upgradeProduct.amount_minor % 100 === 0 ? 0 : 2 }).format(upgradeProduct.amount_minor / 100)} for {upgradeProduct.analysis_units} analysis units and {upgradeProduct.job_service_credits} job service credits. One-time payment with no automatic renewal.
                     </p>
-                    <Button asChild className="mt-4" size="sm"><Link href="/billing" onClick={() => trackEvent("upgrade_prompt_clicked", { surface: "dashboard_low_units", reason: "low_units", sku: upgradeProduct.sku })}>Review Premium <ArrowRight size={14} /></Link></Button>
+                    <Button asChild className="mt-4" size="sm"><Link href="/billing" onClick={() => trackEvent("upgrade_prompt_clicked", { surface: "dashboard_low_units", reason: "low_units", sku: upgradeProduct.sku })}>Review credit bundle <ArrowRight size={14} /></Link></Button>
                   </section>
                 ) : null}
 

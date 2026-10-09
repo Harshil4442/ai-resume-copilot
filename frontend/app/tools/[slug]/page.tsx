@@ -100,7 +100,7 @@ export default async function ToolPage({ params }: ToolPageProps) {
               href="/pricing"
               className="inline-flex items-center justify-center rounded-full border border-border px-5 py-3 text-sm font-bold text-foreground hover:bg-surface"
             >
-              View Premium
+              View billing
             </Link>
           </div>
         </div>

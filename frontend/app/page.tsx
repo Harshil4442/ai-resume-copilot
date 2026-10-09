@@ -430,9 +430,9 @@ export default function HomePage() {
             A clearer path starts here.
           </h2>
           <p>
-            Create your free account and start with 50 analysis units.
-            <br className={styles.desktopBreak} /> Upgrade to a 30-day Premium
-            pass when you’re ready.
+            Create your free account and build your career workspace.
+            <br className={styles.desktopBreak} /> Review finite credit bundles
+            when purchasing is available.
           </p>
           <Link href="/register" className="button-primary">
             Build your workspace <ArrowUpRight size={17} />
