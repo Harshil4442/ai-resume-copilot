@@ -61,10 +61,11 @@ def test_deleted_sql_account_keeps_schema_use_history_and_refuses_downgrade(pg_e
     with pg_engine.connect() as db:
         assert db.scalar(text("SELECT COUNT(*) FROM candidate_password_accounts")) == 0
         assert db.scalar(text("SELECT COUNT(*) FROM candidate_lifetime_history")) == 1
+        original_revision = db.scalar(text("SELECT version_num FROM alembic_version"))
     with pytest.raises(RuntimeError, match="Cannot discard candidate lifetime projections"):
         _migrate(pg_engine, "20261009_0010", direction="downgrade")
     with pg_engine.connect() as db:
-        assert db.scalar(text("SELECT version_num FROM alembic_version")) == "20261010_0014"
+        assert db.scalar(text("SELECT version_num FROM alembic_version")) == original_revision
 
 
 def test_monetary_preflight_honestly_refuses_unreviewed_schema_0011(context):

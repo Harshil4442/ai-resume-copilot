@@ -15,9 +15,18 @@ depends_on = None
 
 
 def upgrade():
-    op.add_column("employer_searches", sa.Column("history_revision", sa.BigInteger(), nullable=False, server_default="1"))
-    op.create_unique_constraint("uq_employer_search_history_owner", "employer_searches", ["id", "user_id"])
-    op.create_unique_constraint("uq_employer_delivery_history_identity", "employer_job_deliveries", ["id", "user_id", "search_id", "posting_id", "charged_credits", "created_at"])
+    connection = op.get_bind()
+    if connection.dialect.name == "sqlite":
+        # SQLite needs a table copy to add or remove named constraints.
+        with op.batch_alter_table("employer_searches") as batch:
+            batch.add_column(sa.Column("history_revision", sa.BigInteger(), nullable=False, server_default="1"))
+            batch.create_unique_constraint("uq_employer_search_history_owner", ["id", "user_id"])
+        with op.batch_alter_table("employer_job_deliveries") as batch:
+            batch.create_unique_constraint("uq_employer_delivery_history_identity", ["id", "user_id", "search_id", "posting_id", "charged_credits", "created_at"])
+    else:
+        op.add_column("employer_searches", sa.Column("history_revision", sa.BigInteger(), nullable=False, server_default="1"))
+        op.create_unique_constraint("uq_employer_search_history_owner", "employer_searches", ["id", "user_id"])
+        op.create_unique_constraint("uq_employer_delivery_history_identity", "employer_job_deliveries", ["id", "user_id", "search_id", "posting_id", "charged_credits", "created_at"])
     op.create_table('employer_paid_delivery_history',
         sa.Column('delivery_id', sa.String(64), primary_key=True, nullable=False),
         sa.Column('user_id', sa.Integer(), nullable=False),
@@ -157,7 +166,6 @@ def upgrade():
     op.create_index('ix_search_history_nodes_array', 'employer_search_history_nodes', ['search_id', 'generation', 'parent_node_id', 'member_index'])
     op.create_index('ix_search_history_nodes_key', 'employer_search_history_nodes', ['search_id', 'generation', 'parent_node_id', 'member_key_hash'])
     op.create_index('ix_search_history_nodes_parent', 'employer_search_history_nodes', ['search_id', 'generation', 'parent_node_id', 'node_id'])
-    connection = op.get_bind()
     if connection.dialect.name == "postgresql":
         schema = connection.scalar(sa.text("SELECT current_schema()"))
         namespace = connection.dialect.identifier_preparer.quote(schema)
@@ -213,6 +221,13 @@ def downgrade():
     op.drop_table('employer_paid_history_progress')
     op.drop_table('employer_paid_opening_registry')
     op.drop_table('employer_paid_delivery_history')
-    op.drop_constraint("uq_employer_delivery_history_identity", "employer_job_deliveries", type_="unique")
-    op.drop_constraint("uq_employer_search_history_owner", "employer_searches", type_="unique")
-    op.drop_column("employer_searches", "history_revision")
+    if connection.dialect.name == "sqlite":
+        with op.batch_alter_table("employer_job_deliveries") as batch:
+            batch.drop_constraint("uq_employer_delivery_history_identity", type_="unique")
+        with op.batch_alter_table("employer_searches") as batch:
+            batch.drop_constraint("uq_employer_search_history_owner", type_="unique")
+            batch.drop_column("history_revision")
+    else:
+        op.drop_constraint("uq_employer_delivery_history_identity", "employer_job_deliveries", type_="unique")
+        op.drop_constraint("uq_employer_search_history_owner", "employer_searches", type_="unique")
+        op.drop_column("employer_searches", "history_revision")

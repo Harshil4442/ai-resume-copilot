@@ -14,17 +14,22 @@ Production pairing and portal-use permission remain open.
 
 ## Current checkpoint board — 11 October 2026
 
-The pushed Stage C source `3ca229264cef100b4c4f4db67cc5856c6ca1266f` reached
-[CI run 38088878939](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38088878939).
-The backend stopped at three import-order errors before its runtime tests. Security,
-companion and cold-browser jobs passed; frontend was still running at the recorded
-observation. The four-file correction sorts those imports and uses no-op casts for
-existing parser/projection presence invariants. Configured lint passes all eight
-shipping files, and configured finite type checking passes six runtime modules.
-Effective imports/non-import AST and cast-erased AST controls preserve the original
-business operations. [Correction evidence](evidence/2026-10-11-paid-history-ci-correction.json)
-retains the failure. Fresh committed-source CI remains required; production mode
-stays off and no migration or promotion is performed.
+Source `65dc276af1d3f704635c3f0ce664542f50a06922` has terminal
+[CI run 38089438723](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38089438723).
+Frontend, security/container, companion and cold-browser jobs pass. Backend lint,
+types, compilation and migrations pass; runtime tests report eight failures,
+3,535 passes and 455 warnings. Three failures concern SQLite constraint migration;
+other assertions still pin the preceding schema head or source chain.
+
+This correction uses SQLite table-batch mode for the new paid-history constraints.
+PostgreSQL operations and retained-history guards are unchanged by AST comparison.
+Four direct full-chain SQLite controls pass: legacy resume preservation, composite
+constraints, empty-history downgrade/upgrade, and populated-work refusal before drops.
+Rejected-downgrade tests compare the starting revision, and clean migration tests
+compare source metadata. The production schema0009 release allowance remains closed.
+[Migration correction evidence](evidence/2026-10-11-migration-compatibility-correction.json)
+retains the original failure. Fresh committed-source CI remains required; production
+mode stays off and no migration or promotion is performed.
 
 The pushed fixture-correction source `9dd7689e9e8e05bae67a151ab39830668abf01ba`
 passes all five jobs in [run 38085861350](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38085861350):
@@ -47,7 +52,7 @@ and 10/6 shared hit blocks. These are component controls, not full coverage proo
 
 The exact owned PostgreSQL container is removed. Root separately verifies absence
 by ID and name without mutations. Source/schema and final packaging reviews pass.
-Stage C source integration is complete; publication and its own committed-source CI remain pending;
+Stage C source is published; its corrected committed-source CI remains pending;
 production migration, flag activation and promotion have not occurred. Native
 JSON/TOAST conversion during backfill, full-catalog indexed traversal beyond the
 unchanged 1,000-candidate cap, and global authentication/composed release proof
@@ -63,12 +68,21 @@ unique provider cause. See [sanitized refusal evidence](evidence/2026-10-11-docu
 child isolation, private HTTP acceptance and deployment remain open. The preceding
 archive-import failure and broad-search incident stay recorded.
 
+The canonical-target diagnostic is also terminal: writer/export and delete return 0,
+but the expected relative `tmp/request.json` target is absent from the accepted
+archive members. No canonical import is attempted, and no actual unknown member name
+or unique cause is exposed. The failed diagnostic is retained in
+[sanitized canonical-target evidence](evidence/2026-10-11-document-canonical-target.json).
+This does not close scanner, isolation, HTTP or release checks.
+
 - [x] Integrate free paging and verify its local PostgreSQL component.
 - [x] Pass exact `9dd7689` five-job CI for the fixture corrections.
 - [x] Review Stage C row proof, settlement/quote preservation and native component controls.
 - [x] Verify exact owned PostgreSQL cleanup independently.
 - [x] Integrate the exact eight reviewed Stage C source paths.
-- [ ] Publish Stage C and pass its committed-source CI.
+- [x] Publish Stage C source.
+- [x] Reproduce and correct SQLite migration compatibility locally.
+- [ ] Pass corrected committed-source CI.
 - [ ] Bound native legacy JSON/TOAST evaluation and implement full-catalog traversal.
 - [ ] Classify the archive refusal and complete scanner/private HTTP acceptance.
 - [ ] Complete global release checks, permitted promotion and production observation.

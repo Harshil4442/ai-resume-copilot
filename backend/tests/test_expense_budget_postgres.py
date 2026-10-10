@@ -134,6 +134,7 @@ def test_expense_snapshot_downgrade_preserves_paid_history(pg_engine):
 
     _migrate(pg_engine, "head")
     with pg_engine.begin() as db:
+        original_revision = db.scalar(text("SELECT version_num FROM alembic_version"))
         db.execute(
             text("""INSERT INTO service_credit_reservations
           (id,operation,source_id,unit_price,requested_count,reserved_amount,committed_amount,released_amount,state,pricing_version,created_at,cost_policy_snapshot)
@@ -142,7 +143,7 @@ def test_expense_snapshot_downgrade_preserves_paid_history(pg_engine):
     with pytest.raises(RuntimeError, match="financial history"):
         _migrate(pg_engine, "20261009_0012", direction="downgrade")
     with pg_engine.connect() as db:
-        assert db.scalar(text("SELECT version_num FROM alembic_version")) == "20261010_0014"
+        assert db.scalar(text("SELECT version_num FROM alembic_version")) == original_revision
         assert (
             db.scalar(
                 text(

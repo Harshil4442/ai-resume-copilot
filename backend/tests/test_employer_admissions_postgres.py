@@ -15,6 +15,7 @@ from uuid import uuid4
 
 import pytest
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 from backend.app import models as core
 from backend.app.database import get_db
 from backend.app.domains.dispatch.models import DispatchOutbox
@@ -903,7 +904,8 @@ def test_postgres_clean_migrations_build_admission_constraints(pg_engine):
     metadata = MetaData()
     version = Table("alembic_version", metadata, autoload_with=pg_engine)
     with pg_engine.connect() as connection:
-        assert connection.execute(select(version.c.version_num)).scalar_one() == "20261010_0014"
+        source_head = ScriptDirectory(str(Path(__file__).resolve().parents[1] / "alembic")).get_current_head()
+        assert connection.execute(select(version.c.version_num)).scalar_one() == source_head
 
 
 def test_sqlite_admission_migration_can_upgrade_downgrade_and_upgrade(tmp_path):
