@@ -41,6 +41,20 @@ whole-application OpenAPI exporter and new full CI remain remote verification ga
 records source pins and proof limits. The previous committed-source CI belongs to
 `d5c5184`, not these new changes.
 
+## Published-source CI and corrections
+
+The reviewed Stage D source was published as `91bf10b0bd9a095fb499d9eced5b508cb311dbfc`.
+[CI run 38095509980](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38095509980)
+is terminal: frontend, companion and cold-browser jobs pass. Backend lint, types,
+compilation and the PostgreSQL migration chain pass, but runtime tests and the actual
+OpenAPI exporter are skipped after public ECR rate-limits the disposable Redis pull.
+Security scanning detects three reviewed false positives: a public SQL identifier
+and two source-file hashes. The corrections retain the exact Redis image digest,
+use the existing verified Docker Hub cache, and structurally reformat SQL/hash evidence
+without changing scanner rules. The revised migration and full runtime/exporter checks
+still require new-source CI. See [retained failure and correction evidence](evidence/2026-10-11-catalogue-ci-correction.json).
+No production promotion or flag activation has occurred.
+
 ## Checkpoints
 
 - [x] Review and integrate the 15 runtime/UI/migration bodies, including three narrow corrections.
@@ -48,7 +62,10 @@ records source pins and proof limits. The previous committed-source CI belongs t
 - [x] Pass configured backend lint/type checks and frontend lint/types/build locally.
 - [x] Add status, cancellation and asynchronous acceptance to the generated API contract.
 - [x] Integrate the three ordinary test bodies and pass configured test lint.
-- [ ] Publish the reviewed source and run exact new-source CI.
+- [x] Publish the reviewed source and obtain terminal exact-source CI metadata.
+- [x] Identify both CI failures and retain their evidence.
+- [ ] Pass new corrected-source CI, including shipping tests, scanner and actual exporter.
+- [ ] Verify the structurally revised migration on the new source.
 - [ ] Verify actual full-chain migration and exporter drift in CI.
 - [ ] Prove native source/resume/history concurrency and financial outcomes end to end.
 - [ ] Measure cold/warm catalogue work, conversion/allocation cost and pack margins.

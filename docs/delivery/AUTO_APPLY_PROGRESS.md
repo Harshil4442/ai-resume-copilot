@@ -2,6 +2,18 @@
 
 ## Full catalogue source integration — 11 October 2026
 
+The reviewed Stage D source was published as `91bf10b0bd9a095fb499d9eced5b508cb311dbfc`.
+[CI run 38095509980](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38095509980)
+is terminal: frontend, companion and cold-browser jobs pass. Backend lint, types,
+compilation and the PostgreSQL migration chain pass, but runtime tests and the actual
+OpenAPI exporter are skipped after public ECR rate-limits the disposable Redis pull.
+Security scanning detects three reviewed false positives: a public SQL identifier
+and two source-file hashes. The corrections retain the exact Redis image digest,
+use the existing verified Docker Hub cache, and structurally reformat SQL/hash evidence
+without changing scanner rules. The revised migration and full runtime/exporter checks
+still require new-source CI. See [retained failure and correction evidence](evidence/2026-10-11-catalogue-ci-correction.json).
+No production promotion or flag activation has occurred.
+
 The [inactive Stage D integration](FULL_CATALOGUE_SEARCH_2026-10-11.md) now includes durable full-index traversal, canonical ranking, status/cancellation, native item snapshots and free paging. Actual configured backend lint/type checks and frontend lint/types/build pass. The original alias/autoflush, typing and deadline failures are retained. The new full CI, actual native financial concurrency/cost and production migration/activation remain open. Earlier native schema proof keeps its original model scope.
 
 Development and deployment authorized on 8 October 2026. The full requirements remain
@@ -18,14 +30,14 @@ Production pairing and portal-use permission remain open.
 
 ## Current checkpoint board — 11 October 2026
 
-Latest committed source `d5c51846e8ac8ff2224d4cca6a99c32b00aa5f53`, tree
+Most recently fully verified source `d5c51846e8ac8ff2224d4cca6a99c32b00aa5f53`, tree
 `805bacf6264b0285ad2a64cb93dc8868ba5592ce`, passes all five jobs in
 [CI run 38091538381](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38091538381).
 Backend reports 3,545 passes and 455 warnings; responsive browser checks report
 245 passes in 9.3 minutes. Zero skips are not independently established by this
 metadata collection. Artifact metadata binds both returned artifacts to this exact
 commit; their contents were not downloaded. This closes corrected committed-source
-CI, while private Stage D changes and production rollout remain outside its scope.
+CI for that revision; Stage D source and production rollout remain outside its scope.
 See [terminal CI evidence](evidence/2026-10-11-d5c5184-ci-success.json).
 
 Private full-catalogue development now passes eight PostgreSQL 17.11 ARM64 schema

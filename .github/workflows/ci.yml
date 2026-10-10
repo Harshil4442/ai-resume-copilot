@@ -188,7 +188,7 @@ jobs:
         run: |
           pacing_container_id="$(docker run --detach --name hirewiz-lever-pacing-20261008 \
             --publish 127.0.0.1:56379:6379 \
-            public.ecr.aws/docker/library/redis:7.4-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499 \
+            docker.io/library/redis:7.4-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499 \
             redis-server --save '' --appendonly no --maxmemory-policy noeviction)"
           printf 'container_id=%s\n' "$pacing_container_id" >> "$GITHUB_OUTPUT"
           for pacing_attempt in {1..30}; do

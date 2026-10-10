@@ -446,7 +446,10 @@ POSTGRES_PUBLICATION_SQL = [
       INSERT INTO employer_catalogue_source_revisions(source_id,valid_from,enabled,platform,region,board_token,employer_key,employer)
         VALUES(NEW.id,mark,NEW.enabled,NEW.platform,NEW.region,NEW.board_token,NEW.employer_key,NEW.employer)
         ON CONFLICT(source_id,valid_from) DO UPDATE SET enabled=EXCLUDED.enabled,platform=EXCLUDED.platform,
-          region=EXCLUDED.region,board_token=EXCLUDED.board_token,employer_key=EXCLUDED.employer_key,employer=EXCLUDED.employer;
+          region=EXCLUDED.region,
+                "board_token"=EXCLUDED."board_token",
+                "employer_key"=EXCLUDED."employer_key",
+                employer=EXCLUDED.employer;
       RETURN NEW;
     END $$""",
     r"""CREATE FUNCTION employer_catalogue_posting_publication() RETURNS trigger LANGUAGE plpgsql AS $$

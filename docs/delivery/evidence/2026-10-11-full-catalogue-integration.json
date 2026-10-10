@@ -47,6 +47,7 @@
     "native_item_source_sha256": "ba971ff29a2845527dd7ee767ca542340bb771d7ffdb4170053d7e46e9b76c9b",
     "owned_fixture_removed_and_absent": true,
     "schema_cases": 8,
+    "schema_migration_sha256": "012e9d5e6b0dfdf7dc232bd59ecc7e70f8af05ae6f27a7d1e92f877a6ec24a94",
     "schema_model_sha256": "a0ef34b30727331b149f4522e3a2f36286c84e8b8441bc7e6a60e1d72a059702"
   },
   "native_full_catalogue_cost_proven": false,
@@ -61,28 +62,81 @@
   ],
   "retained_root_tool_preflight_errors": [
     "overstrict_test_AST_module_prefix",
-    "test_manifest_key_mismatch"
+    "test_manifest_key_mismatch",
+    "structural_correction_precondition_refused_before_writes"
   ],
-  "schema": 1,
+  "schema": 2,
   "scope": "inactive_full_catalogue_source_integration",
-  "source_sha256": {
-    "backend/alembic/versions/20261011_0016_employer_catalogue_search.py": "012e9d5e6b0dfdf7dc232bd59ecc7e70f8af05ae6f27a7d1e92f877a6ec24a94",
-    "backend/app/domains/dispatch/service.py": "269467a8188c0e9da8774af40975c6890bf08651c34a701581e8a95e5d6287e4",
-    "backend/app/domains/employer/catalogue_search.py": "796d3ca15b32b45e2d12b846041a86c19ad820c9ac6f64db27dee1444043d206",
-    "backend/app/domains/employer/config.py": "ec195e104d542d99c2973cc337e59721ee551c23e90f3538bf3436af09905b78",
-    "backend/app/domains/employer/delivery_history.py": "2c0d3667e7269740b1a293c1aa023c4a6eba3557811193c0d0ff03e924b84052",
-    "backend/app/domains/employer/models.py": "82e29e2ea05e27d42be6aa2894c50cdf570a4d44aff6a1359cdbfdd8a2778759",
-    "backend/app/domains/employer/privacy.py": "bbc8afcf7f6fb7c2a30997e7f7d48753f6f55c2bf27f9e55f74b227d00de6f61",
-    "backend/app/domains/employer/search_pages.py": "68143b905a2e34c7229fc65113460c4c9f75cc5fbb1f5aa68eaeb92e67b65ad1",
-    "backend/app/domains/employer/search_preferences.py": "acf5b1349e9b65747ad9468300eb8edc86bb56fb8f2756460ac4c806962e0852",
-    "backend/app/domains/employer/service.py": "e1d74f05841e7b013a63c645e0a4768ee3ce34ea712dca9a3adb5380c697f7a6",
-    "backend/app/domains/employer/tasks.py": "00337cceaf747254a87213b3c2b7b13217a025e55ae3e4ff9b43b818203ea55c",
-    "backend/app/routers/v1/employer.py": "676767a3de8e9110e903fb92341dd80cd4a1067954171aa7c1aab5ea6db52417",
-    "backend/openapi.json": "9f7895815b0aa2b60917060fa8de19bd03c499779de239663d747ac7ac5cb9a7",
-    "frontend/app/employer-jobs/page.tsx": "8788802212271b57a177b4436db75dbd495012961f0f2e9edd4cfe095b9091c6",
-    "frontend/components/EmployerSavedSearches.tsx": "4874f79a314f044db61326cacf1308d32031bd40abb09d57eb6b76cc5f91cbc7",
-    "frontend/lib/employerJobs.ts": "6f3cdac51345526fc2c9c420884a8a9cada1bfc82f48865dab5d9c95a1e46bb0",
-    "frontend/lib/generated/api.ts": "19785af8904056cf602eea8c085ec6af053b355752585c30ef17f42d726a19b5"
-  },
+  "source_sha256": [
+    {
+      "path": "backend/alembic/versions/20261011_0016_employer_catalogue_search.py",
+      "sha256": "db91fb4d078befd67237dc038edcc3b2ae3fcda150de23eaa6baef83eec3474e"
+    },
+    {
+      "path": "backend/app/domains/dispatch/service.py",
+      "sha256": "269467a8188c0e9da8774af40975c6890bf08651c34a701581e8a95e5d6287e4"
+    },
+    {
+      "path": "backend/app/domains/employer/catalogue_search.py",
+      "sha256": "796d3ca15b32b45e2d12b846041a86c19ad820c9ac6f64db27dee1444043d206"
+    },
+    {
+      "path": "backend/app/domains/employer/config.py",
+      "sha256": "ec195e104d542d99c2973cc337e59721ee551c23e90f3538bf3436af09905b78"
+    },
+    {
+      "path": "backend/app/domains/employer/delivery_history.py",
+      "sha256": "2c0d3667e7269740b1a293c1aa023c4a6eba3557811193c0d0ff03e924b84052"
+    },
+    {
+      "path": "backend/app/domains/employer/models.py",
+      "sha256": "82e29e2ea05e27d42be6aa2894c50cdf570a4d44aff6a1359cdbfdd8a2778759"
+    },
+    {
+      "path": "backend/app/domains/employer/privacy.py",
+      "sha256": "bbc8afcf7f6fb7c2a30997e7f7d48753f6f55c2bf27f9e55f74b227d00de6f61"
+    },
+    {
+      "path": "backend/app/domains/employer/search_pages.py",
+      "sha256": "68143b905a2e34c7229fc65113460c4c9f75cc5fbb1f5aa68eaeb92e67b65ad1"
+    },
+    {
+      "path": "backend/app/domains/employer/search_preferences.py",
+      "sha256": "acf5b1349e9b65747ad9468300eb8edc86bb56fb8f2756460ac4c806962e0852"
+    },
+    {
+      "path": "backend/app/domains/employer/service.py",
+      "sha256": "e1d74f05841e7b013a63c645e0a4768ee3ce34ea712dca9a3adb5380c697f7a6"
+    },
+    {
+      "path": "backend/app/domains/employer/tasks.py",
+      "sha256": "00337cceaf747254a87213b3c2b7b13217a025e55ae3e4ff9b43b818203ea55c"
+    },
+    {
+      "path": "backend/app/routers/v1/employer.py",
+      "sha256": "676767a3de8e9110e903fb92341dd80cd4a1067954171aa7c1aab5ea6db52417"
+    },
+    {
+      "path": "backend/openapi.json",
+      "sha256": "9f7895815b0aa2b60917060fa8de19bd03c499779de239663d747ac7ac5cb9a7"
+    },
+    {
+      "path": "frontend/app/employer-jobs/page.tsx",
+      "sha256": "8788802212271b57a177b4436db75dbd495012961f0f2e9edd4cfe095b9091c6"
+    },
+    {
+      "path": "frontend/components/EmployerSavedSearches.tsx",
+      "sha256": "4874f79a314f044db61326cacf1308d32031bd40abb09d57eb6b76cc5f91cbc7"
+    },
+    {
+      "path": "frontend/lib/employerJobs.ts",
+      "sha256": "6f3cdac51345526fc2c9c420884a8a9cada1bfc82f48865dab5d9c95a1e46bb0"
+    },
+    {
+      "path": "frontend/lib/generated/api.ts",
+      "sha256": "19785af8904056cf602eea8c085ec6af053b355752585c30ef17f42d726a19b5"
+    }
+  ],
+  "source_sha256_format": "path-sha256-rows-v1",
   "worldwide_coverage_proven": false
 }
