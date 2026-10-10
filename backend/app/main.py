@@ -24,6 +24,7 @@ except Exception:
     pass
 
 from .routers import candidate_accounts, auth, resume, jobs, recommendations, llm, analytics, rag, market, billing, public_endpoints  # noqa: E402
+from .routers import resume_uploads  # noqa: E402
 from .routers.v1 import router as v1_router  # noqa: E402
 from .rate_limiter import limiter
 from slowapi.errors import RateLimitExceeded
@@ -144,6 +145,7 @@ def health():
 # Routers
 app.include_router(auth.router, prefix="/api")
 app.include_router(candidate_accounts.router, prefix="/api")
+app.include_router(resume_uploads.router, prefix="/api")
 app.include_router(resume.router, prefix="/api")
 app.include_router(jobs.router, prefix="/api")
 app.include_router(recommendations.router, prefix="/api")

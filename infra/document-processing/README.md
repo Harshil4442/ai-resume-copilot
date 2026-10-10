@@ -22,12 +22,12 @@ The worker now refuses inspection admission after the absolute request-read dead
 | `infra/document-processing/Dockerfile` | `eed6740c58d41a505f6c20d4d67f3fb87d189429173d1fdadcf8b4f2a78d5101` |
 | `backend/tests/test_document_processor.py` | `6d82e37f4c93820675bd951d30e3b165beddfcce39176e4733f7e1c1bb07503b` |
 
-## Current V3 outcome and policy checkpoint
+## V3 outcome checkpoint
 
 The table above retains the original V2 hashes. Current processor/service hashes are
 `fdf4a00fdf92b09f0dd22bf3a8b17d3987cc505bd5b55d313dbfa44f537272a8`
 and `fd65733bfb959cfa6af9283d92170a22debe4765a662be5430a2486a6b2b43c2`.
-The Dockerfile is unchanged. V3 passes 179 existing and 11 independent checks; root's
+At that checkpoint the Dockerfile was unchanged. V3 passes 179 existing and 11 independent checks; root's
 276 affected checks and exact CI Ruff/Mypy129 pass. The original absolute read-deadline
 guards and regression bodies remain unchanged. Only test import whitespace was amended
 for the actual CI working directory, with identical executable AST.
@@ -49,8 +49,37 @@ container metadata checked. Both direct/archived EICAR require genuine ClamAV de
 plus bound processor refusal; missing definitions require exit2. This is local image
 evidence, not AMD64 or Cloud Run isolation proof.
 
+The V3 policy digest was `45c020e5134eeae2159cef5e1fa423249b8f76a4214e6dd7ed3b48b7bb332b33`.
+The updated current policy is recorded below.
+
+## Validated receipts and fresh definition acquisition
+
+`inspect_resume_document_with_receipt` makes one authenticated inspection request and
+returns the exact original byte hash, size, format, image/policy pins and validated
+scanner metadata with the parsed result. The legacy tuple API delegates to the same
+validator. Success requires exact duplicate-free top-level, scanner and parsed key sets.
+The frozen receipt hides parsed content from its representation; callers must use the
+inspection API because constructing a dataclass is not evidence of inspection. Existing
+parsed lists/dictionaries remain mutable and must not be treated as signed content.
+The two-path source repair passes 102 authored and eight independent checks. Original
+TLS, identity, request deadlines, refusal handling and prior tests are preserved.
+
+The Dockerfile now acquires official definitions in a separate build stage. Each new
+build receives a builder-owned 32-character lowercase hexadecimal nonce, retaining
+stable dependency caches while forcing acquisition to run again. The final runtime
+contains no nonce argument/environment setting. Scanner database headers still enforce
+freshness; a nonce alone proves neither successful acquisition nor fresh definitions.
+The three-path repair passes 16 authored and four independent checks.
+
+A fresh actual ARM64 image `sha256:a1a57802080a84bd584a2f119626a39e20a4420c6b7e4e8638b05b91ab3874c9`
+passes all eight real scanner cases with matching source/runtime bytes and restricted
+container metadata. The preceding published `ab5cb5d9` passes all five hosted CI jobs,
+3,149 backend tests, genuine AMD64 scanner cases and the connected five-width journey;
+those published proofs do not certify the later receipt/definition changes. Current
+exact-source hosted CI and native Cloud Run isolation remain required.
+
 [`policy.json`](policy.json) is canonical sorted compact UTF-8 JSON with a terminal
-newline. Its SHA-256 is `45c020e5134eeae2159cef5e1fa423249b8f76a4214e6dd7ed3b48b7bb332b33`.
+newline. Version 2 has SHA-256 `425fd4b326554d8fee8d2686f423c8e2b499eaaa1bd7858eb69f7759ac526bdf`.
 It binds the seven build sources, supported PDF/DOCX limits, outcomes and required native
 isolation controls. Before activation, independently match actual source, image bytes,
 revision configuration and acceptance evidence to this artifact. Its requirements and
@@ -281,3 +310,17 @@ analysis queue or integrate the separately held protected browser paths.
 
 A private worker with successful synthetic fixtures does not close these full
 SD03/SE02–04 requirements or establish all-format resume safety.
+
+## Native registry candidate
+
+The later minimal seven-file source archive was built by native Cloud Build
+`417bc603-00e7-4237-b5cf-1ac60a870cb3`; native source generation and SHA256/MD5
+match the owned archive exactly. Registry image
+`hirewiz-document-inspector@sha256:edc8f5fc3000a40237ed3888c563c5f5ef175008e5ef3c4fb5007976119934e1`
+passes the actual eight-case engine corpus, all six runtime-file byte checks and
+restricted container checks through local Linux AMD64 execution on the ARM host.
+The original system-Python dependency refusal is preserved and only its interpreter
+was corrected for replay; no source or image was rebuilt. The registry candidate
+requires a published-source join and native Cloud Run sandbox/IAM/network/cleanup
+acceptance before API activation. No candidate resume was processed in this build.
+See [sanitized registry evidence](../../docs/delivery/evidence/2026-10-10-document-registry-image.json).

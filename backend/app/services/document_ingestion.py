@@ -15,7 +15,7 @@ import math
 import os
 import re
 import ssl
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from urllib.parse import urlsplit
 
 import certifi
@@ -43,6 +43,24 @@ class WorkerConfig:
     audience: str
     image: str
     policy: str
+
+
+ParsedResume = tuple[str, dict[str, str], list[str], float, dict[str, str | None]]
+
+
+@dataclass(frozen=True)
+class InspectedResume:
+    """Bound worker success; parsed candidate content is omitted from repr."""
+
+    parsed: ParsedResume = field(repr=False)
+    sha256: str
+    size_bytes: int
+    source_format: str
+    worker_image: str
+    policy_sha256: str
+    scan_engine: str
+    scan_version: str
+    scan_definitions: str
 
 
 def worker_config() -> WorkerConfig:
@@ -116,9 +134,11 @@ def _pairs(items):
     return result
 
 
-def _decode(response: bytes, source: bytes, kind: str, config: WorkerConfig) -> tuple:
+def _decode_receipt(response: bytes, source: bytes, kind: str, config: WorkerConfig) -> InspectedResume:
     data = json.loads(response, object_pairs_hook=_pairs)
-    if not isinstance(data, dict) or (
+    if not isinstance(data, dict) or set(data) != {
+        "version", "sha256", "size_bytes", "source_format", "worker_image", "policy_sha256", "scan", "parsed"
+    } or (
         type(data.get("version")) is not int or data["version"] != 1
         or data.get("sha256") != hashlib.sha256(source).hexdigest()
         or type(data.get("size_bytes")) is not int or data["size_bytes"] != len(source)
@@ -128,14 +148,17 @@ def _decode(response: bytes, source: bytes, kind: str, config: WorkerConfig) -> 
     ):
         raise ValueError
     scan = data.get("scan")
-    if not isinstance(scan, dict) or scan.get("engine") != "ClamAV":
+    if (not isinstance(scan, dict) or set(scan) != {"engine", "version", "definitions"}
+            or scan.get("engine") != "ClamAV"):
         raise ValueError
     for name in ("version", "definitions"):
         value = _text(scan.get(name), 200)
         if not value or any(ord(character) < 32 or ord(character) > 126 for character in value):
             raise ValueError
     parsed = data.get("parsed")
-    if not isinstance(parsed, dict):
+    if not isinstance(parsed, dict) or set(parsed) != {
+        "raw_text", "sections", "skills", "experience_years", "contact_info"
+    }:
         raise ValueError
     raw = _text(parsed.get("raw_text"), MAX_TEXT_BYTES)
     sections = parsed.get("sections")
@@ -160,7 +183,16 @@ def _decode(response: bytes, source: bytes, kind: str, config: WorkerConfig) -> 
     for value in contact.values():
         if value is not None:
             _text(value, 1000)
-    return raw, sections, skills, float(years), contact
+    return InspectedResume(
+        parsed=(raw, sections, skills, float(years), contact),
+        sha256=data["sha256"], size_bytes=data["size_bytes"], source_format=data["source_format"],
+        worker_image=data["worker_image"], policy_sha256=data["policy_sha256"],
+        scan_engine=scan["engine"], scan_version=scan["version"], scan_definitions=scan["definitions"],
+    )
+
+
+def _decode(response: bytes, source: bytes, kind: str, config: WorkerConfig) -> tuple:
+    return _decode_receipt(response, source, kind, config).parsed
 
 
 def _refusal_matches(response: bytes, payload: bytes, config: WorkerConfig) -> bool:
@@ -205,7 +237,7 @@ async def _inspect_http(config: WorkerConfig, payload: bytes, token: str) -> byt
                 return bytes(output)
 
 
-def inspect_resume_document(source: bytes, *, source_format: str) -> tuple:
+def inspect_resume_document_with_receipt(source: bytes, *, source_format: str) -> InspectedResume:
     if source_format not in {"pdf", "docx"} or not isinstance(source, bytes) or not 0 < len(source) <= MAX_SOURCE_BYTES:
         raise DocumentInspectionError(refused=True)
     config = worker_config()
@@ -217,9 +249,13 @@ def inspect_resume_document(source: bytes, *, source_format: str) -> tuple:
     try:
         token = _identity_token(config.audience)
         output = asyncio.run(_inspect_http(config, payload, token))
-        return _decode(output, source, source_format, config)
+        return _decode_receipt(output, source, source_format, config)
     except DocumentInspectionError:
         raise
     except Exception:
         # Do not chain parser/provider exceptions into the global API logger.
         raise DocumentInspectionError() from None
+
+
+def inspect_resume_document(source: bytes, *, source_format: str) -> tuple:
+    return inspect_resume_document_with_receipt(source, source_format=source_format).parsed

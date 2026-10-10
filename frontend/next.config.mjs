@@ -19,7 +19,7 @@ const contentSecurityPolicy = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https://*.razorpay.com https://www.google-analytics.com",
   "font-src 'self' data:",
-  `connect-src 'self' ${configuredApiOrigins.join(' ')} https://*.razorpay.com https://www.google-analytics.com https://region1.google-analytics.com`,
+  `connect-src 'self' ${configuredApiOrigins.join(' ')} https://*.razorpay.com https://www.google-analytics.com https://region1.google-analytics.com${process.env.NEXT_PUBLIC_RESUME_DIRECT_UPLOAD_ENABLED === 'true' ? ' https://storage.googleapis.com' : ''}`,
   "frame-src 'self' blob: https://*.razorpay.com",
   "object-src 'none'",
   "base-uri 'self'",

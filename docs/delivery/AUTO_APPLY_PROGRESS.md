@@ -14,9 +14,33 @@ Production pairing and portal-use permission remain open.
 
 ## Current checkpoint board — 10 October 2026
 
-The latest published source is `963c3e04fa7f1221f9c2670c6ff448f807350431`:
-[all five exact CI jobs pass](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38025547657),
-including 2,953 backend tests, migrations, native AMD64 compiler checks and the cold
+A later native minimal-context Cloud Build (`417bc603-00e7-4237-b5cf-1ac60a870cb3`)
+now publishes the private scanner candidate at immutable digest `edc8f5fc3000a40237ed3888c563c5f5ef175008e5ef3c4fb5007976119934e1`. Native
+source generation/SHA256/MD5 match its exact seven-file owned archive; the actual
+registry image passes all eight engine cases in local AMD64 execution on an ARM
+host, with all six runtime files and restricted metadata verified. This is a
+registry candidate, not a Cloud Run deployment or full shipping-commit CI proof.
+[Registry evidence](evidence/2026-10-10-document-registry-image.json) retains those limits.
+The seven-path upload frontend V2 is integrated after independent 74-case review,
+including unchanged controls for both original cancellation defects. Root full
+frontend units pass 291 with lint/types; the flag remains disabled.
+
+The five-path scan/cleanup coordinator is now integrated after independent review
+of 57 checks, including eight actual disposable-PostgreSQL cases. Full CI typing
+now covers 141 files. The original-source access repair separately passes 77
+root regression and 18 independent cases: only an owned legacy resume with no
+direct binding may use the legacy fallback; retained inconsistent bindings refuse.
+Both original counterexamples are preserved. The eight-path original-source
+frontend and enabled-storage CSP repair are now integrated after72 independent
+checks. The author's normal enabled build passes310 units and a five-width
+synthetic browser fixture verifies exact5MiB preview/download bytes; root combined
+verification is separate. No upload/coordinator activation,
+production migration or scanner service deployment has occurred.
+
+
+The latest fully verified published source is `ab5cb5d958b3eff4ab99fb073fb47b5ca7c7bfcf`:
+[all five exact CI jobs pass](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38047639205),
+including 3,149 backend tests, migrations, native AMD64 compiler/scanner checks and the cold
 browser journey. No native paid image of that source has been built or promoted.
 
 On 10 October, bounded compatibility quiescence completed: the API now routes 100%
@@ -47,8 +71,27 @@ calls and successful owned cleanup; its external transports were synthetic. The 
 full regression and scoped replays cover 3,089 distinct passing cases, with original
 setup failures retained. Those preceding-source results do not replace current-source
 hosted CI and cold-browser replay. [Local evidence](evidence/2026-10-10-document-admission-local.json)
-records each scope separately. AMD64 CI, Cloud Run isolation/configuration, direct GCS
+records each scope separately. Published `ab5cb5d9` AMD64 and browser artifacts are
+verified against seven and 27 exact committed source inputs respectively. The cold
+journey uses actual Chromium/NextAuth/BFF/FastAPI/SQL with synthetic external providers:
+zero AI calls, no automatic application fee, five widths and successful owned cleanup.
+Cloud Run isolation/configuration, direct GCS
 quarantine/release, broader formats and protected browser integration remain open.
+
+The subsequent local receipt and fresh-definition repairs are integrated after
+independent 110-case and 20-case source reviews. A newly built actual ARM64 scanner
+image passes all eight real corpus cases. Policy v2 binds the amended Dockerfile and
+exact validated success contract; its digest is `425fd4b326554d8fee8d2686f423c8e2b499eaaa1bd7858eb69f7759ac526bdf`.
+These later bytes need their own hosted CI and immutable release evidence. The direct-GCS upload V2 backend is now integrated with its feature disabled after
+independent 69-case review. Both reproduced privacy/cleanup failures and their unchanged
+probes are retained; the narrow fixes pass. Root composed checks cover 197 distinct
+passing upload/migration/source/release cases and 333 receipt/related cases, with initial
+failures and replay scopes retained. Full typing passes 138 files. See
+[the direct-upload checkpoint](DIRECT_RESUME_UPLOAD_2026-10-10.md).
+The exact four-path disabled document-worker configuration is now integrated after
+independent 76-case review; root passes its 56 authored cases and full typing on
+139 files. It renders configuration and checks offline inputs only: no cloud
+deployment, effective IAM, sandbox isolation or API wiring is claimed.
 
 Progress updates show a checked item only after its stated verification passes. A local
 component, independent review, integrated release and production deployment are separate
@@ -58,9 +101,14 @@ completion claim or a percentage of the full goal.
 
 | Checkpoint | Development / verification | Production deployment |
 | --- | --- | --- |
-| Latest exact published source | [x] `963c3e04`: all five CI lanes, 2,953 backend passes, zero reported skips | [ ] Paid source not built/promoted; native `b306f13` compatibility release serves known routes |
+| Latest exact verified published source | [x] `ab5cb5d9`: all five CI lanes, 3,149 backend passes, genuine AMD64 scanner and connected five-width journey | [ ] Paid source not built/promoted; native `b306f13` compatibility release serves known routes |
 | Known-route generation and checkout quiescence | [x] One reviewed native execution plus independent before/after verification | [x] API/analysis-worker traffic and existing tags remapped; analysis queue dispatch PAUSED. [ ] Global old-consumer/provider fence remains open |
-| PDF/DOCX upload inspection outside the API | [x] V3 bound refusal/unavailability integrated after independent 190-check review. [x] Root 276 affected checks, full CI Ruff/Mypy129 and eight genuine ARM64 engine cases pass. [x] Canonical policy recorded; upload timeout repair passes 51 BFF cases | [ ] Current exact CI/AMD64, Cloud Run isolation and deployment pending; direct GCS quarantine, native projects, retained files and application artifacts remain open |
+| PDF/DOCX upload inspection outside the API | [x] V3 bound refusal/unavailability integrated after independent 190-check review. [x] `ab5cb5d9` hosted CI/native AMD64 and local ARM64 scanner acceptance. [x] Canonical policy recorded; upload timeout repair passes 51 BFF cases | [ ] Cloud Run isolation and deployment pending; direct GCS quarantine, native projects, retained files and application artifacts remain open |
+| Validated inspection receipts and fresh definition acquisition | [x] Independent 110-case receipt and 20-case acquisition reviews; exact five-path integration and fresh ARM64 eight-case scanner acceptance | [ ] Later exact-source CI, registry/image/policy join and operational refresh/promotion pending |
+| Direct GCS upload quarantine and release | [x] V2 independently CLEAR69; exact12-path default-disabled integration; root composed197 cases. [x] Seven-path frontend V2 independently CLEAR74; root291 units/lint/types. Both original backend and frontend defects are repaired and preserved | [ ] Native bucket/IAM/CORS, scheduling, schema0014 grants/cutover and release acceptance pending |
+| Durable scan/cleanup coordinator | [x] Exact five-path default-disabled integration after57 independent checks, including8 actual PostgreSQL cases; whole CI typing141 | [ ] Native identity/HTTP deadline, dedicated SQL/GCS grants, scheduler and child-to-provider acceptance pending |
+| Original-source access consistency and large downloads | [x] Exact two-path V2 repair; root77/independent18 cases. [x] Eight-path frontend/CSP independently CLEAR72 and author's five-width synthetic browser5MiB byte/hash proof. Original failures stay preserved | [ ] Actual GCS generation-specific browser access, native CORS and exact-source release pending |
+| Private document-worker deployment configuration | [x] Exact four-path independently reviewed proposal;76 review and56 root cases. [x] Native seven-file AMD64 registry build and eight real engine cases in local AMD64 execution | [ ] Shipping-commit/image join, native identity/network/isolation proof and activation pending; offline checker does not establish native authority |
 | Employer-origin search pilot, requested result count and separate search/application pricing | [x] Implemented and verified for the disclosed pilot | [x] Pilot backend `e7d8f2b`, schema `0009` |
 | Original/custom resume choice and exact package approval | [x] Connected browser/API/database proof; external transports are synthetic | [x] Preparation/manual handoff; automatic application remains unavailable |
 | Credit purchase links and responsive mobile navigation | [x] Five-width staged/live checks and exact CI | [x] Pilot frontend `06cc112`; narrow offer-retirement frontend `67a51f2` now serves both HireWiz domains |
@@ -118,6 +166,8 @@ records the newer local checkpoint, retained availability concern and website tr
 The [candidate website integration report](CANDIDATE_WEB_ROOT_INTEGRATION_2026-10-09.md)
 records the repaired browser transport, actual local account flow and separate ingress/release gates.
 The detailed implementation history below preserves earlier checkpoint evidence.
+
+The latest joined upload/original-download frontend passes **353 tests in27 files**, plus full lint and TypeScript checks. The author's310-case baseline and five-width synthetic5MiB proof are separate. The root normal build remains live, not a completed build or native storage proof.
 
 ## Implementation checkpoints
 

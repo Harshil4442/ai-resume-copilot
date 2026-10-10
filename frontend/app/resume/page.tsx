@@ -3,21 +3,17 @@
 import { AlertCircle, ArrowRight, CheckCircle2, FileText, FileUp, ShieldCheck, Target } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { Button } from "../../components/ui/Button";
+import { ResumeUploadProgress } from "../../components/ResumeUploadProgress";
 import { LoadingBlock } from "../../components/ui/LoadingBlock";
 import { trackEvent } from "../../lib/analytics";
-import { apiPatchJson, apiPostForm } from "../../lib/api";
+import { apiPatchJson } from "../../lib/api";
 import type { Opportunity, OpportunityDetail } from "../../lib/career";
+import { directResumeUploadEnabled, ResumeUploadCancelled, uploadResumeFile, usesDirectResumeUpload, validateResumeFile, type UploadProgress } from "../../lib/resumeUpload";
 import type { ResumeParseResponse } from "../../lib/types";
-
-const MAX_FILE_BYTES = 5 * 1024 * 1024;
-const ACCEPTED_TYPES = new Set([
-  "application/pdf", "application/x-tex", "text/x-tex", "text/plain", "application/zip", "application/x-zip-compressed", "application/octet-stream", "",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-]);
 
 function ResumeUploadContent() {
   const router = useRouter();
@@ -33,6 +29,16 @@ function ResumeUploadContent() {
   const [dragActive, setDragActive] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
+  const uploadController = useRef<AbortController | null>(null);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; uploadController.current?.abort(); }; }, []);
+  const directFile = Boolean(file && usesDirectResumeUpload(file));
+  function cancelUpload() {
+    setUploadProgress((current) => current ? { ...current, phase: "cancelling" } : current);
+    uploadController.current?.abort();
+  }
+
 
   function chooseFile(candidate: File | null) {
     if (loading || connecting) return;
@@ -43,11 +49,9 @@ function ResumeUploadContent() {
       setFile(null);
       return;
     }
-    if (!/\.(pdf|docx|tex|zip)$/i.test(candidate.name) || !ACCEPTED_TYPES.has(candidate.type) || candidate.size > MAX_FILE_BYTES) {
-      setFile(null);
-      setError("Choose PDF, DOCX, TeX or a source ZIP project no larger than 5 MB.");
-      return;
-    }
+    try { validateResumeFile(candidate); }
+    catch (validationError) { setFile(null); setError(validationError instanceof Error ? validationError.message : "Choose a supported resume."); return; }
+    if (usesDirectResumeUpload(candidate)) setEnrichSkills(false);
     setFile(candidate);
     trackEvent("resume_upload_selected", { file_type: candidate.type, size_bytes: candidate.size });
   }
@@ -67,29 +71,33 @@ function ResumeUploadContent() {
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault();
-    if (!file) return;
+    if (!file || loading || connecting || uploadController.current) return;
+    const controller = new AbortController();
+    uploadController.current = controller;
     setError(null);
     setConnectionError(null);
     setData(null);
     setLoading(true);
     trackEvent("resume_upload_started", { file_type: file.type, size_bytes: file.size });
-    const form = new FormData();
-    form.append("file", file);
-    form.append("enrich_skills", String(enrichSkills));
     try {
-      const parsed = await apiPostForm<ResumeParseResponse>("/resume/parse", form);
+      const parsed = await uploadResumeFile(file, { enrichSkills, signal: controller.signal,
+        onProgress: (progress) => { if (mounted.current && uploadController.current === controller && !controller.signal.aborted) setUploadProgress(progress); } });
+      if (!mounted.current || controller.signal.aborted || uploadController.current !== controller) return;
       setData(parsed);
       await queryClient.invalidateQueries({ queryKey: ["resumes"] });
+      if (!mounted.current || controller.signal.aborted) return;
       trackEvent("resume_upload_completed", {
         resume_id: parsed.resume_id,
         skill_count: parsed.skills.length,
       });
       window.dispatchEvent(new Event("refresh_analysis_units"));
     } catch (uploadError) {
-      setError(uploadError instanceof Error ? uploadError.message : "Failed to parse resume.");
-      trackEvent("resume_upload_failed", { file_type: file.type });
+      if (mounted.current && uploadController.current === controller) {
+        setError(uploadError instanceof Error ? uploadError.message : "Failed to parse resume.");
+        if (!(uploadError instanceof ResumeUploadCancelled)) trackEvent("resume_upload_failed", { file_type: file.type });
+      }
     } finally {
-      setLoading(false);
+      if (mounted.current && uploadController.current === controller) { uploadController.current = null; setLoading(false); setUploadProgress(null); }
     }
   }
 
@@ -127,7 +135,7 @@ function ResumeUploadContent() {
           </div>
           <div className="flex gap-5 text-xs text-muted-foreground">
             <span className="flex items-center gap-2"><ShieldCheck size={16} className="text-primary" /> PDF, DOCX or native TeX</span>
-            <span>5 MB maximum</span>
+            <span>{directResumeUploadEnabled() ? "PDF/DOCX up to 5 MB · TeX/ZIP up to 4 MB" : "Current upload route: 4 MB maximum"}</span>
           </div>
         </header>
 
@@ -140,15 +148,16 @@ function ResumeUploadContent() {
               onDragOver={handleDrag}
               onDrop={handleDrop}
             >
-              <input className="sr-only" type="file" accept=".pdf,.docx,.tex,.zip,application/pdf,application/x-tex,application/zip" disabled={loading || connecting} onChange={(event) => chooseFile(event.target.files?.[0] || null)} />
+              <input aria-label="Choose your source resume" className="sr-only" type="file" accept=".pdf,.docx,.tex,.zip,application/pdf,application/x-tex,application/zip" disabled={loading || connecting} onChange={(event) => chooseFile(event.target.files?.[0] || null)} />
               <span className="icon-tile h-12 w-12">{file ? <FileText size={22} /> : <FileUp size={22} />}</span>
               <h2 className="font-display mt-5 max-w-full break-words text-lg font-normal text-foreground">{file ? file.name : "Choose a resume"}</h2>
               <p className="mt-2 text-sm text-muted-foreground">{file ? `${(file.size / 1024 / 1024).toFixed(2)} MB, ready to parse` : "Drop the file here or open your file browser"}</p>
             </label>
-            <label className="mt-4 flex items-start gap-3 text-sm leading-6"><input type="checkbox" className="mt-1 h-4 w-4 shrink-0 accent-primary" checked={enrichSkills} disabled={loading || connecting} onChange={(event) => setEnrichSkills(event.target.checked)} /><span>Optional AI skill enrichment · 1 analysis unit<span className="mt-1 block text-xs leading-5 text-muted-foreground">Default parsing extracts text and catalog skills without generative AI. Enable this to send resume text for additional source-supported AI skill suggestions. One unit is charged only if useful additional skills are found; New AI requests also require available funding; existing paid access terms remain. Review the results before using them.</span></span></label>
+            <label className="mt-4 flex items-start gap-3 text-sm leading-6"><input type="checkbox" className="mt-1 h-4 w-4 shrink-0 accent-primary" checked={enrichSkills} disabled={loading || connecting || directFile} onChange={(event) => setEnrichSkills(event.target.checked)} /><span>{directFile ? "AI skill enrichment is unavailable on secure direct uploads" : "Optional AI skill enrichment · 1 analysis unit"}<span className="mt-1 block text-xs leading-5 text-muted-foreground">{directFile ? "Resume safety checks and extraction run without generative AI. No enrichment units are charged." : <>Default parsing extracts text and catalog skills without generative AI. Enable this to send resume text for additional source-supported AI skill suggestions. One unit is charged only if useful additional skills are found; New AI requests also require available funding; existing paid access terms remain. Review the results before using them.</>}</span></span></label>
             <Button type="submit" className="mt-4 w-full" disabled={!file || loading || connecting}>
               {loading ? "Extracting evidence..." : "Parse resume"} <ArrowRight size={16} />
             </Button>
+            {loading && uploadProgress ? <ResumeUploadProgress progress={uploadProgress} onCancel={cancelUpload} /> : null}
             {error ? <div className="mt-4 flex gap-3 border border-coral/30 bg-coral/5 p-4 text-sm text-coral" role="alert"><AlertCircle size={18} className="shrink-0" /> {error}</div> : null}
           </form>
 

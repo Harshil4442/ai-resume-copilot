@@ -1,0 +1,137 @@
+{
+  "scope": "Native AMD64 registry image build and actual-image local engine acceptance; no Cloud Run deployment, authority or API activation",
+  "build_id": "417bc603-00e7-4237-b5cf-1ac60a870cb3",
+  "build_url": "https://console.cloud.google.com/cloud-build/builds;region=us-central1/417bc603-00e7-4237-b5cf-1ac60a870cb3?project=ai-resume-parser-482412",
+  "project": "ai-resume-parser-482412",
+  "region": "us-central1",
+  "immutable_image": "us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz-document-inspector@sha256:edc8f5fc3000a40237ed3888c563c5f5ef175008e5ef3c4fb5007976119934e1",
+  "native_image_id": "sha256:edc8f5fc3000a40237ed3888c563c5f5ef175008e5ef3c4fb5007976119934e1",
+  "policy_sha256": "425fd4b326554d8fee8d2686f423c8e2b499eaaa1bd7858eb69f7759ac526bdf",
+  "source_sha256": {
+    "backend/app/services/market/security.py": "a440f4ea26a5fb5982690da8399c75983e9133a23501d12e1973a985487200f6",
+    "backend/app/services/market/skill_extractor.py": "765824e77d2e9e0bfc88c910134a5009dd3ded52eccc958407d8173039746f54",
+    "backend/app/services/market/skill_taxonomy.py": "e210d0c2b97567fae690d4710ffffb1a5a93bb5bb732badcff47cc2839296366",
+    "backend/app/services/parsing.py": "c2533930bbeff9eb226abfb4b71720b6eb29dfaf805f6c2939e57c73226442a8",
+    "infra/document-processing/Dockerfile": "a1ace7a21e2c5add84f5b088daabf394b6b51fe0dc6db1c439869521954be97f",
+    "infra/document-processing/processor.py": "fdf4a00fdf92b09f0dd22bf3a8b17d3987cc505bd5b55d313dbfa44f537272a8",
+    "infra/document-processing/service.py": "fd65733bfb959cfa6af9283d92170a22debe4765a662be5430a2486a6b2b43c2"
+  },
+  "builder": "gcr.io/cloud-builders/docker@sha256:40c2fb4fcd0ad51376eef166c2e7b2b40a3508d5776e2bf33db3783ab39d0f2e",
+  "source_provenance": {
+    "build_id": "417bc603-00e7-4237-b5cf-1ac60a870cb3",
+    "resolved_storage_source": {
+      "bucket": "ai-resume-parser-482412_cloudbuild",
+      "generation": "1791634069482386",
+      "object": "source/1791634068.219323-6c772933de11462fa7350cb4cad4e326.gz"
+    },
+    "archive_sha256": "f4dfa71b943cc1bd71c84cc7921558d6905c75bc1a297c68f23f2e2018ceec7e",
+    "native_SHA256_exact_to_owned_archive": true,
+    "native_MD5_exact_to_owned_archive": true,
+    "input_files": [
+      "backend/app/services/market/security.py",
+      "backend/app/services/market/skill_extractor.py",
+      "backend/app/services/market/skill_taxonomy.py",
+      "backend/app/services/parsing.py",
+      "infra/document-processing/Dockerfile",
+      "infra/document-processing/processor.py",
+      "infra/document-processing/service.py"
+    ],
+    "secret_environment_files": 0,
+    "deployment_proven": false
+  },
+  "engine_proof_sha256": "0580d3127eb139cde00badc2caabcb085b8072b04aa98232e5ce805507e59a8f",
+  "engine_proof": {
+    "scope": "local_native_docker_only",
+    "cloud_run_isolation_proven": false,
+    "image_id": "sha256:edc8f5fc3000a40237ed3888c563c5f5ef175008e5ef3c4fb5007976119934e1",
+    "platform": "linux/amd64",
+    "source_sha256": {
+      "infra/document-processing/Dockerfile": "a1ace7a21e2c5add84f5b088daabf394b6b51fe0dc6db1c439869521954be97f",
+      "infra/document-processing/processor.py": "fdf4a00fdf92b09f0dd22bf3a8b17d3987cc505bd5b55d313dbfa44f537272a8",
+      "infra/document-processing/service.py": "fd65733bfb959cfa6af9283d92170a22debe4765a662be5430a2486a6b2b43c2",
+      "backend/app/services/parsing.py": "c2533930bbeff9eb226abfb4b71720b6eb29dfaf805f6c2939e57c73226442a8",
+      "backend/app/services/market/skill_extractor.py": "765824e77d2e9e0bfc88c910134a5009dd3ded52eccc958407d8173039746f54",
+      "backend/app/services/market/skill_taxonomy.py": "e210d0c2b97567fae690d4710ffffb1a5a93bb5bb732badcff47cc2839296366",
+      "backend/app/services/market/security.py": "a440f4ea26a5fb5982690da8399c75983e9133a23501d12e1973a985487200f6"
+    },
+    "runtime_source_bytes_verified": true,
+    "restricted_container_metadata_verified": true,
+    "corpus": [
+      {
+        "case": "clean_pdf",
+        "outcome": "clean",
+        "passed": true,
+        "scan": {
+          "engine": "ClamAV",
+          "version": "1.4.3",
+          "definitions": "28149/2026-10-10T06:24:04+00:00"
+        }
+      },
+      {
+        "case": "clean_docx",
+        "outcome": "clean",
+        "passed": true,
+        "scan": {
+          "engine": "ClamAV",
+          "version": "1.4.3",
+          "definitions": "28149/2026-10-10T06:24:04+00:00"
+        }
+      },
+      {
+        "case": "page_counter",
+        "outcome": "clean",
+        "passed": true,
+        "scan": {
+          "engine": "ClamAV",
+          "version": "1.4.3",
+          "definitions": "28149/2026-10-10T06:24:04+00:00"
+        }
+      },
+      {
+        "case": "active_pdf",
+        "outcome": "refused",
+        "passed": true
+      },
+      {
+        "case": "includetext",
+        "outcome": "refused",
+        "passed": true
+      },
+      {
+        "case": "eicar_exact_file",
+        "outcome": "detected",
+        "passed": true
+      },
+      {
+        "case": "eicar_zip_member",
+        "outcome": "detected",
+        "passed": true
+      },
+      {
+        "case": "missing_definitions",
+        "outcome": "missing",
+        "passed": true
+      }
+    ],
+    "registry_image": "us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz-document-inspector@sha256:edc8f5fc3000a40237ed3888c563c5f5ef175008e5ef3c4fb5007976119934e1",
+    "native_cloud_build_id": "417bc603-00e7-4237-b5cf-1ac60a870cb3",
+    "execution_host_scope": "Local Docker on ARM host with Linux AMD64 image; not Cloud Run sandbox proof",
+    "build_input_kind": "owned minimal uploaded source archive, not native Git checkout",
+    "full_commit_join": "pending exact shipping source publication"
+  },
+  "initial_invocation_refusal": {
+    "interpreter": "system python3",
+    "stage": "after runtime bytes / image metadata checks, before corpus construction",
+    "reason": "missing local python-docx dependency",
+    "source_changed": false,
+    "image_rebuilt": false,
+    "no_engine_corpus_completion_claim": true
+  },
+  "full_shipping_commit_join": "pending source publication",
+  "cloud_run_isolation_proven": false,
+  "effective_IAM_proven": false,
+  "private_network_route_proven": false,
+  "api_wiring_enabled": false,
+  "customer_data_processed": false,
+  "paid_checkout_activated": false
+}

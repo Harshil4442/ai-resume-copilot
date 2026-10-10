@@ -145,7 +145,11 @@ jobs:
           tests/test_model_key_revocation_observer.py tests/test_legacy_credential_inventory.py
           tests/test_ci_registry_cache.py
           app/services/document_ingestion.py ../infra/document-processing
-          tests/test_document_ingestion.py tests/test_document_processor.py tests/test_monetary_release_transport.py
+          tests/test_document_ingestion.py tests/test_document_processor.py tests/test_document_definition_cache.py tests/test_monetary_release_transport.py
+          app/routers/resume_uploads.py tests/test_resume_upload_quarantine.py tests/test_resume_source_access.py
+          ../infra/gcp/document_worker.py tests/test_document_worker_deployment.py
+          app/resume_upload_worker.py app/services/resume_upload_coordinator.py
+          tests/test_resume_upload_coordinator.py tests/test_resume_upload_coordinator_postgres.py
       - name: Check modified legacy authentication imports
         working-directory: backend
         run: .venv/bin/ruff check --select I,F app/routers/auth.py app/security.py app/schemas.py
@@ -164,6 +168,9 @@ jobs:
           scripts/ci_registry_cache.py
           app/services/document_ingestion.py scripts/document_test_image.py
           ../infra/document-processing/processor.py ../infra/document-processing/service.py
+          app/routers/resume_uploads.py
+          ../infra/gcp/document_worker.py
+          app/resume_upload_worker.py app/services/resume_upload_coordinator.py
       - name: Compile backend
         run: backend/.venv/bin/python -m compileall -q backend/app
       - name: Validate PostgreSQL migrations

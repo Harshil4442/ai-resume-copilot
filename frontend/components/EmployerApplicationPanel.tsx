@@ -4,13 +4,15 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowUpRight, CheckCircle2, Download, LoaderCircle, RefreshCw, ShieldCheck, X } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-import { apiBlob, apiDownload, apiGet, apiPostForm, apiPostJson, apiPutJson } from "../lib/api";
+import { apiBlob, apiDownload, apiGet, apiPostJson, apiPutJson } from "../lib/api";
 import { getSourcePreservingContent, type Opportunity, type ResumeVersion } from "../lib/career";
 import { applicationStatusLabels, employerJobsBase, safeEmployerUrl, type EmployerApplication, type JobServiceCatalog, type ResumeChoice } from "../lib/employerJobs";
-import type { ResumeListResponse, ResumeParseResponse } from "../lib/types";
+import { uploadResumeFile, type UploadProgress } from "../lib/resumeUpload";
+import type { ResumeListResponse } from "../lib/types";
 import { Button } from "./ui/Button";
+import { ResumeUploadProgress } from "./ResumeUploadProgress";
 import { LoadingBlock } from "./ui/LoadingBlock";
 
 type Props = { id: string; onClose: () => void; onChange: () => void; resumes: ResumeListResponse["resumes"] };
@@ -80,6 +82,15 @@ function ApplicationEditor({ application, onChange, resumes }: { application: Em
   const [artifactReady, setArtifactReady] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
+  const uploadController = useRef<AbortController | null>(null);
+  const uploadMounted = useRef(true);
+  useEffect(() => { uploadMounted.current = true; return () => { uploadMounted.current = false; uploadController.current?.abort(); }; }, []);
+  function cancelResumeUpload() {
+    setUploadProgress((current) => current ? { ...current, phase: "cancelling" } : current);
+    uploadController.current?.abort();
+  }
+
   const catalog = useQuery({ queryKey: ["employer-jobs", "catalog"], queryFn: ({ signal }) => apiGet<JobServiceCatalog>(`${employerJobsBase}/catalog`, signal) });
   const versions = useQuery({ queryKey: ["resume-versions", resumeId], queryFn: ({ signal }) => apiGet<ResumeVersion[]>(`/v1/resume-versions?resume_id=${encodeURIComponent(resumeId)}`, signal), enabled: choice === "tailored" && Boolean(resumeId) });
   const immutable = ["queued", "submitting", "confirmed", "unknown", "cancelled"].includes(application.status);
@@ -100,15 +111,18 @@ function ApplicationEditor({ application, onChange, resumes }: { application: Em
   });
   const save = useMutation({ mutationFn: () => apiPutJson<EmployerApplication>(`${employerJobsBase}/applications/${encodeURIComponent(application.id)}/package`, { resume_id: Number(resumeId), resume_choice: choice, resume_version_id: choice === "tailored" ? versionId : null, answers, consents }), onSuccess: (updated) => { setDirty(false); setReviewed(false); update(updated); } });
   const upload = useMutation({
-    mutationFn: async (file: File) => {
-      const formats = ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "application/x-tex", "text/x-tex", "text/plain", "application/zip", "application/x-zip-compressed", "application/octet-stream", ""];
-      if (!/\.(pdf|docx|tex|zip)$/i.test(file.name) || !formats.includes(file.type) || file.size > 5 * 1024 * 1024) throw new Error("Choose PDF, DOCX, TeX or a source ZIP project no larger than 5 MB.");
-      const form = new FormData(); form.append("file", file);
-      return apiPostForm<ResumeParseResponse>("/resume/parse", form);
+    mutationFn: async ({ file, controller }: { file: File; controller: AbortController }) => {
+      return uploadResumeFile(file, { signal: controller.signal, onProgress: (progress) => {
+        if (uploadMounted.current && uploadController.current === controller && !controller.signal.aborted) setUploadProgress(progress);
+      } });
     },
-    onSuccess: (result) => { setResumeId(String(result.resume_id)); setChoice("custom"); setVersionId(""); setDirty(true); setReviewed(false); void client.invalidateQueries({ queryKey: ["resumes"] }); setFileError(null); },
-    onError: (error) => setFileError(error.message),
+    onSuccess: (result, { controller }) => {
+      if (!uploadMounted.current || uploadController.current !== controller || controller.signal.aborted) return;
+      setResumeId(String(result.resume_id)); setChoice("custom"); setVersionId(""); setDirty(true); setReviewed(false);
+      void client.invalidateQueries({ queryKey: ["resumes"] }); setFileError(null);
+    },
+    onError: (error, { controller }) => { if (uploadMounted.current && uploadController.current === controller) setFileError(error.message); },
+    onSettled: (_result, _error, { controller }) => { if (uploadMounted.current && uploadController.current === controller) { uploadController.current = null; setUploadProgress(null); } },
   });
   const submit = useMutation({
     mutationFn: async () => {
@@ -152,7 +166,7 @@ function ApplicationEditor({ application, onChange, resumes }: { application: Em
       <label className="grid gap-2 text-sm font-semibold">Resume choice<select className="field-control" value={choice} disabled={immutable || pending} onChange={(event) => { setChoice(event.target.value as ResumeChoice); setVersionId(""); markDirty(); }}><option value="original">Original resume</option><option value="tailored">Approved tailored version</option><option value="custom">Custom upload</option></select></label>
       <label className="grid gap-2 text-sm font-semibold">Saved original file<select className="field-control min-w-0" value={resumeId} disabled={immutable || pending} onChange={(event) => { setResumeId(event.target.value); setVersionId(""); markDirty(); }}><option value="">Choose retained source</option>{retainedResumes.map((resume) => <option key={resume.id} value={resume.id}>{resume.filename} · #{resume.id}</option>)}{resumeId && !retainedResumes.some((resume) => String(resume.id) === resumeId) ? <option value={resumeId}>Selected file · #{resumeId}</option> : null}</select></label>
       {choice === "tailored" ? <label className="grid gap-2 text-sm font-semibold sm:col-span-2">Approved version<select className="field-control" value={versionId} disabled={immutable || pending || versions.isLoading} onChange={(event) => { setVersionId(event.target.value); markDirty(); }}><option value="">Choose a reviewed version</option>{approvedVersions.map((version) => <option key={version.id} value={version.id}>Version {version.version_number}: {version.label}</option>)}</select>{versions.isError ? <span role="alert" className="text-xs text-coral">Could not load versions. <button type="button" className="underline" onClick={() => void versions.refetch()}>Retry</button></span> : !versions.isLoading && !approvedVersions.length ? <span className="text-xs font-normal leading-5 text-muted-foreground">No source-preserving version has been approved for this resume. Prepare tailoring below, approve its exact native file in Workspace, then return here and choose it.</span> : null}</label> : null}
-      {choice === "custom" ? <label className="grid gap-2 text-sm font-semibold sm:col-span-2">Upload a custom PDF, DOCX or TeX source<input type="file" accept=".pdf,.docx,.tex,.zip,application/pdf,application/x-tex,application/zip" className="field-control text-xs" disabled={immutable || pending} onChange={(event) => { const file = event.target.files?.[0]; if (file) upload.mutate(file); }} />{upload.isPending ? <span className="text-xs font-normal">Saving your original file…</span> : null}</label> : null}
+      {choice === "custom" ? <div className="sm:col-span-2"><label className="grid gap-2 text-sm font-semibold">Upload a custom PDF, DOCX or TeX source<input type="file" accept=".pdf,.docx,.tex,.zip,application/pdf,application/x-tex,application/zip" className="field-control text-xs" disabled={immutable || pending} onChange={(event) => { const file = event.target.files?.[0]; if (file && !uploadController.current) { const controller = new AbortController(); uploadController.current = controller; setFileError(null); upload.mutate({ file, controller }); } }} /></label>{upload.isPending && uploadProgress ? <ResumeUploadProgress progress={uploadProgress} onCancel={cancelResumeUpload} /> : null}</div> : null}
     </div>{choice === "tailored" && !immutable ? <div className="mt-4 space-y-2">{tailoringWorkspace.data ? <Link href={`/workspace/${encodeURIComponent(tailoringWorkspace.data.id)}?tab=resume`} className="inline-flex text-sm font-semibold text-primary underline underline-offset-4">Review tailoring for this job in Workspace</Link> : <Button variant="secondary" size="sm" disabled={!resumeId || pending || tailoringWorkspace.isPending} onClick={() => tailoringWorkspace.mutate()}>Prepare tailored resume for this job</Button>}<p className="text-xs leading-5 text-muted-foreground">This saves the employer job and chosen resume in Workspace. Generate and approve the tailored version there; this action does not submit an application.</p>{tailoringWorkspace.error ? <p role="alert" className="text-sm text-coral">{tailoringWorkspace.error.message}</p> : null}</div> : null}{fileError ? <p role="alert" className="mt-3 text-sm text-coral">{fileError}</p> : null}</section>
     <section aria-labelledby="application-answers-heading"><h3 id="application-answers-heading" className="font-semibold">Application answers</h3><p className="mt-2 text-xs leading-5 text-muted-foreground">Check every value. Missing answers and new requirements pause the application; personal declarations are never guessed.</p><div className="mt-4 grid gap-4">{application.form.fields.filter((field) => !["hidden", "file", "consent"].includes(field.type)).map((field) => {
       const fieldId = `application-field-${field.id}`;

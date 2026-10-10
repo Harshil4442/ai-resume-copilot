@@ -4,29 +4,34 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Download, FileText, FileUp, LoaderCircle } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useState } from "react";
+import { useSession } from "next-auth/react";
+import { Suspense, useEffect, useRef, useState } from "react";
 
 import { Button } from "../../../components/ui/Button";
 import { EmptyState } from "../../../components/ui/EmptyState";
 import { LoadingBlock } from "../../../components/ui/LoadingBlock";
-import { apiDownload, apiGet } from "../../../lib/api";
+import { apiBlob, apiDownload, apiGet } from "../../../lib/api";
 import { fetchResumeSource, fetchResumeVersionPdf } from "../../../lib/career";
+import { directResumeSourceEnabled, fetchDirectResumeSource, saveVerifiedResumeSource } from "../../../lib/resumeSource";
 import type { ResumeListResponse } from "../../../lib/types";
 
 function ResumePreviewContent() {
   const searchParams = useSearchParams();
+  const { data: session, status: sessionStatus } = useSession();
+  const ownerKey = `${sessionStatus}:${session?.user?.id || ""}`;
+  const downloadController = useRef<AbortController | null>(null);
   const requestedId = Number(searchParams.get("resume"));
   const versionId = searchParams.get("version");
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [pdfPreview, setPdfPreview] = useState<{ documentKey: string; url: string } | null>(null);
   const [pdfError, setPdfError] = useState<{ documentKey: string; message: string } | null>(null);
   const [previewAttempt, setPreviewAttempt] = useState(0);
-  const resumes = useQuery({ queryKey: ["resumes"], queryFn: () => apiGet<ResumeListResponse>("/resume/list") });
+  const resumes = useQuery({ queryKey: ["resumes", ownerKey], queryFn: () => apiGet<ResumeListResponse>("/resume/list"), enabled: sessionStatus === "authenticated" });
   const selectedResume = resumes.data?.resumes.find((resume) => resume.id === (selectedId ?? requestedId)) || resumes.data?.resumes[0];
   const resumeId = selectedResume?.id;
   const sourceAvailable = selectedResume?.source_available;
   const sourceFormat = selectedResume?.source_format;
-  const documentKey = `${versionId ? requestedId : resumeId}:${versionId || "source"}:${previewAttempt}`;
+  const documentKey = `${ownerKey}:${versionId ? requestedId : resumeId}:${versionId || "source"}:${previewAttempt}`;
   const sourceRequestId = versionId ? null : resumeId;
   const sourceRequestReady = !versionId && sourceAvailable && sourceFormat === "pdf";
 
@@ -34,7 +39,7 @@ function ResumePreviewContent() {
     if (!versionId && (!sourceRequestId || !sourceRequestReady)) return;
     const controller = new AbortController();
     let objectUrl: string | undefined;
-    const request = versionId ? fetchResumeVersionPdf(versionId, controller.signal) : fetchResumeSource(sourceRequestId!, controller.signal);
+    const request = versionId ? fetchResumeVersionPdf(versionId, controller.signal) : fetchResumeSource(sourceRequestId!, controller.signal, "pdf");
     void request
       .then((blob) => {
         if (controller.signal.aborted) return;
@@ -52,7 +57,27 @@ function ResumePreviewContent() {
     };
   }, [sourceRequestId, sourceRequestReady, versionId, documentKey]);
 
-  const downloadOriginal = useMutation({ mutationFn: (resume: NonNullable<typeof selectedResume>) => apiDownload(`/resume/${resume.id}/source`, resume.filename) });
+  const downloadOriginal = useMutation({ mutationFn: async (resume: NonNullable<typeof selectedResume>) => {
+    if (!directResumeSourceEnabled() || (resume.source_format !== "pdf" && resume.source_format !== "docx")) {
+      return apiDownload(`/resume/${resume.id}/source`, resume.filename);
+    }
+    downloadController.current?.abort();
+    const controller = new AbortController();
+    downloadController.current = controller;
+    try {
+      const direct = await fetchDirectResumeSource(resume.id, controller.signal, resume.source_format);
+      controller.signal.throwIfAborted();
+      const file = direct ?? { blob: await apiBlob(`/resume/${resume.id}/source`, controller.signal), filename: resume.filename };
+      saveVerifiedResumeSource(file, controller.signal);
+    } finally {
+      if (downloadController.current === controller) downloadController.current = null;
+    }
+  } });
+  const resetOriginalDownload = downloadOriginal.reset;
+  useEffect(() => {
+    resetOriginalDownload();
+    return () => { downloadController.current?.abort(); };
+  }, [resumeId, ownerKey, versionId, resetOriginalDownload]);
   const downloadTailored = useMutation({
     mutationFn: () => {
       if (!versionId) throw new Error("Choose a tailored version first.");
@@ -92,7 +117,7 @@ function ResumePreviewContent() {
             <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
               <label className="grid min-w-0 gap-2 text-sm font-semibold sm:max-w-lg sm:flex-1">
                 Source resume
-                <select className="field-control min-w-0 truncate" value={selectedResume.id} onChange={(event) => { setPdfPreview(null); setPdfError(null); setSelectedId(Number(event.target.value)); }}>
+                <select className="field-control min-w-0 truncate" value={selectedResume.id} onChange={(event) => { downloadController.current?.abort(); resetOriginalDownload(); setPdfPreview(null); setPdfError(null); setSelectedId(Number(event.target.value)); }}>
                   {resumes.data?.resumes.map((resume) => <option key={resume.id} value={resume.id}>{resume.filename}</option>)}
                 </select>
               </label>

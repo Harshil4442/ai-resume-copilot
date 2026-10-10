@@ -1,6 +1,7 @@
 import type { components } from "./generated/api";
 import { ApiError } from "./api";
 import type { ResumeSourceFormat } from "./types";
+import { directResumeSourceEnabled, fetchDirectResumeSource } from "./resumeSource";
 
 export type ResumeSourceEdit = {
   unit_id: string;
@@ -40,7 +41,11 @@ async function fetchResumeBlob(path: string, signal?: AbortSignal): Promise<Blob
   return response.blob();
 }
 
-export function fetchResumeSource(resumeId: number, signal?: AbortSignal): Promise<Blob> {
+export async function fetchResumeSource(resumeId: number, signal?: AbortSignal, sourceFormat?: ResumeSourceFormat): Promise<Blob> {
+  if (directResumeSourceEnabled() && (sourceFormat === undefined || sourceFormat === "pdf" || sourceFormat === "docx")) {
+    const file = await fetchDirectResumeSource(resumeId, signal, sourceFormat);
+    if (file) return file.blob;
+  }
   return fetchResumeBlob(`/resume/${resumeId}/source`, signal);
 }
 

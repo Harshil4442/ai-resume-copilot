@@ -361,3 +361,137 @@ def test_refusal_body_has_same_absolute_deadline_and_closes_stream(worker, monke
     with pytest.raises(ingestion.DocumentInspectionError) as caught:
         ingestion.inspect_resume_document(SOURCE, source_format="pdf")
     assert caught.value.status_code == 503 and closed == [True]
+
+
+@pytest.mark.parametrize("with_receipt", [False, True])
+def test_inspection_receipt_and_tuple_each_make_one_validated_request(worker, with_receipt):
+    from dataclasses import FrozenInstanceError
+
+    method = (
+        ingestion.inspect_resume_document_with_receipt
+        if with_receipt else ingestion.inspect_resume_document
+    )
+    result = method(SOURCE, source_format="pdf")
+    expected = ("Synthetic Candidate\nPython", {"skills": "Python"}, ["Python"], 1.0,
+                {"name": "Synthetic Candidate"})
+    if with_receipt:
+        assert isinstance(result, ingestion.InspectedResume) and result.parsed == expected
+        assert result.sha256 == hashlib.sha256(SOURCE).hexdigest()
+        assert result.size_bytes == len(SOURCE) and result.source_format == "pdf"
+        assert result.worker_image == IMAGE and result.policy_sha256 == POLICY
+        assert (result.scan_engine, result.scan_version, result.scan_definitions) == (
+            "ClamAV", "1.4.3", "12345/frozen-test"
+        )
+        assert "Synthetic Candidate" not in repr(result)
+        with pytest.raises(FrozenInstanceError):
+            result.sha256 = "c" * 64
+    else:
+        assert type(result) is tuple and result == expected
+    assert worker[1] == [URL.removesuffix("/inspect")]
+    assert len(worker[2]) == len(worker[3]) == 1
+    assert base64.b64decode(json.loads(worker[2][0].content)["content_base64"]) == SOURCE
+
+
+@pytest.mark.parametrize("with_receipt", [False, True])
+@pytest.mark.parametrize("scope,variant", [
+    ("top", "extra"), ("top", "missing"), ("scan", "extra"), ("parsed", "extra"),
+    ("scan", "duplicate"), ("parsed", "duplicate"),
+    ("scan", "missing"), ("parsed", "missing"),
+])
+def test_receipt_requires_exact_duplicate_free_success_contract(worker, with_receipt, scope, variant):
+    data = _response()
+    node = data if scope == "top" else data[scope]
+    if variant == "extra":
+        node["private_untrusted_field"] = "candidate-private-marker"
+    elif variant == "missing":
+        node.pop("worker_image" if scope == "top" else "version" if scope == "scan" else "skills")
+    raw = json.dumps(data).encode()
+    if variant == "duplicate":
+        marker = b'"engine": "ClamAV"' if scope == "scan" else b'"skills": ["Python"]'
+        raw = raw.replace(marker, marker + b", " + marker)
+    calls = []
+    def response(request):
+        calls.append(request)
+        return httpx.Response(200, content=raw, headers={"content-type": "application/json"})
+    worker[0](response)
+    method = (ingestion.inspect_resume_document_with_receipt
+              if with_receipt else ingestion.inspect_resume_document)
+    with pytest.raises(ingestion.DocumentInspectionError) as caught:
+        method(SOURCE, source_format="pdf")
+    assert caught.value.status_code == 503 and len(calls) == 1
+    assert "candidate-private-marker" not in str(caught.value)
+
+
+@pytest.mark.parametrize("with_receipt", [False, True])
+@pytest.mark.parametrize("field,value", [
+    ("sha256", "c" * 64), ("size_bytes", len(SOURCE) + 1), ("source_format", "docx"),
+    ("worker_image", IMAGE.replace("a" * 64, "c" * 64)), ("policy_sha256", "c" * 64),
+    ("version", True),
+    ("scan", {"engine": "unknown", "version": "1.4.3", "definitions": "fresh"}),
+    ("scan", {"engine": "ClamAV", "version": "private\nmarker", "definitions": "fresh"}),
+    ("scan", {"engine": "ClamAV", "version": "1.4.3", "definitions": ""}),
+])
+def test_no_receipt_or_tuple_from_unbound_or_unscanned_success(worker, with_receipt, field, value):
+    data = _response()
+    data[field] = value
+    calls = []
+    def response(request):
+        calls.append(request)
+        return httpx.Response(200, json=data)
+    worker[0](response)
+    method = (ingestion.inspect_resume_document_with_receipt
+              if with_receipt else ingestion.inspect_resume_document)
+    with pytest.raises(ingestion.DocumentInspectionError) as caught:
+        method(SOURCE, source_format="pdf")
+    assert caught.value.status_code == 503 and len(calls) == 1
+    assert "private" not in str(caught.value)
+
+
+@pytest.mark.parametrize("with_receipt", [False, True])
+@pytest.mark.parametrize("status,bound,expected", [(422, True, 422), (422, False, 503), (503, True, 503)])
+def test_receipt_never_exists_for_refusal_or_unavailable(worker, with_receipt, status, bound, expected):
+    calls = []
+    body = _refusal_response() if bound else {"error": "candidate-private-marker"}
+    def response(request):
+        calls.append(request)
+        return httpx.Response(status, json=body)
+    worker[0](response)
+    method = (ingestion.inspect_resume_document_with_receipt
+              if with_receipt else ingestion.inspect_resume_document)
+    with pytest.raises(ingestion.DocumentInspectionError) as caught:
+        method(SOURCE, source_format="pdf")
+    assert caught.value.status_code == expected and len(calls) == 1
+    assert "candidate-private-marker" not in str(caught.value)
+
+
+def test_receipt_cannot_escape_absolute_deadline(worker, monkeypatch):
+    closed = []
+    monkeypatch.setattr(ingestion, "HTTP_DEADLINE_SECONDS", 0.01)
+    class Delayed(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            await asyncio.sleep(1)
+            pytest.fail("Receipt must not outlive worker request deadline")
+            yield b"never"
+        async def aclose(self):
+            closed.append(True)
+    calls = []
+    def response(request):
+        calls.append(request)
+        return httpx.Response(200, stream=Delayed(), headers={"content-type": "application/json"})
+    worker[0](response)
+    with pytest.raises(ingestion.DocumentInspectionError) as caught:
+        ingestion.inspect_resume_document_with_receipt(SOURCE, source_format="pdf")
+    assert caught.value.status_code == 503 and closed == [True] and len(calls) == 1
+
+
+@pytest.mark.parametrize("variant", ["empty", "invalid_config"])
+def test_receipt_refuses_before_authentication_and_disclosure(worker, monkeypatch, variant):
+    source = SOURCE
+    if variant == "empty":
+        source = b""
+    else:
+        monkeypatch.setenv("DOCUMENT_WORKER_URL", "https://untrusted.example/inspect")
+    with pytest.raises(ingestion.DocumentInspectionError) as caught:
+        ingestion.inspect_resume_document_with_receipt(source, source_format="pdf")
+    assert caught.value.status_code == (422 if variant == "empty" else 503)
+    assert not worker[1] and not worker[2] and not worker[3]

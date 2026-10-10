@@ -330,5 +330,38 @@
     "original_full_mypy_failure": "One unused import-untyped ignore on yaml; YAML is covered by the existing ignore_missing_imports configuration.",
     "repair": "Lock development-only YAML stubs and remove the unnecessary import-untyped comment; identical runtime AST and one exact release-source pin.",
     "source_pin_sha256": "727c08d35520ca9ed84ff250686306e7d15bf4fb7673121d18009a9abe8993d2"
-  }
+  },
+  "published_v3_exact_ci": {
+    "commit": "ab5cb5d958b3eff4ab99fb073fb47b5ca7c7bfcf",
+    "run_id": 38047639205,
+    "all_five_jobs": "success",
+    "backend_summary_matches": [
+      [
+        "3149",
+        "455"
+      ]
+    ],
+    "native_amd64_source_files_verified": 7,
+    "native_amd64_corpus_passed": 8,
+    "native_cloud_isolation_proven": false,
+    "cold_source_files_verified": 27,
+    "cold_scope": "Local production Next + Chromium + actual FastAPI/auth/SQL; finite synthetic external providers only",
+    "cold_widths": [
+      320,
+      390,
+      768,
+      1024,
+      1440
+    ],
+    "cold_model_calls": 0,
+    "cold_automatic_application_fee": 0,
+    "cold_real_employer_contact": false,
+    "cold_cleanup_verified": true,
+    "artifact_sha256": {
+      "native": "f0815f270b87e099ffde0431882d27b958a55df6de83bd6befd708fcffc6eaaa",
+      "cold": "c8fb79b687bfb5694924bfc2e96eadfcea4f733ce4ce8d85ed524cf1670d9657"
+    },
+    "later_receipt_refresh_source_not_certified": true
+  },
+  "later_receipt_refresh_and_direct_upload": "2026-10-10-direct-resume-upload.json"
 }

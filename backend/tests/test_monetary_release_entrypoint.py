@@ -216,9 +216,11 @@ def test_raw_input_duplicate_keys_cannot_replace_a_pinned_reference():
         release._json(b'{"runtime_secret":"one:1","runtime_secret":"two:2"}')
 
 
-def test_legacy_release_still_refuses_the_current_schema13_chain():
+def test_legacy_release_still_refuses_the_current_schema14_chain():
     tracked = {path.relative_to(ROOT).as_posix() for path in (ROOT / 'backend/alembic/versions').glob('*.py')}
-    assert release.source_guard.migration_chain(ROOT, tracked) == release.CHAIN
+    # The upload migration extends the source chain; it does not expand either
+    # release authority's reviewed production migration allowance.
+    assert release.source_guard.migration_chain(ROOT, tracked) == (*release.CHAIN, '20261010_0014')
     with pytest.raises(release.source_guard.PreflightDenied, match="only the reviewed schema0009 chain"):
         release.source_guard.migration_head(ROOT, tracked)
 

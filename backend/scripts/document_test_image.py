@@ -145,7 +145,8 @@ def build(docker: list[str], platform: str, hashes: dict[str, str]) -> str:
             copied.chmod(0o644)
         iid = Path(directory) / "image.id"
         args = docker + ["build", "--pull=false", "--platform", platform, "--iidfile", str(iid),
-                         "--file", str(context / SOURCES[0])]
+                         "--file", str(context / SOURCES[0]),
+                         "--build-arg", "DOCUMENT_DEFINITIONS_NONCE=" + uuid.uuid4().hex]
         for path, digest in hashes.items():
             args += ["--label", LABEL + path + "=" + digest]
         args.append(str(context))

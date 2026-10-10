@@ -2,7 +2,7 @@
 
 Review date: 10 October 2026 (Asia/Kolkata). This register distinguishes the promoted discovery and admission foundation from full development against `docs/requirements/JOB_SEARCH_AND_APPLICATION.md`. It does not close the full requirements checklist. The [current checkpoint board](AUTO_APPLY_PROGRESS.md) supersedes the historical chronology below.
 
-Current published source `963c3e04` passes all five exact CI jobs and 2,953 backend tests.
+Latest fully verified published source `ab5cb5d9` passes all five exact CI jobs and 3,149 backend tests.
 The production API and analysis-worker known routes/tags now serve reviewed `b306f13`
 compatibility revisions with optional generation disabled; checkout is closed and analysis
 queue dispatch is PAUSED. Schema remains `0009`; finite paid plans, global consumer/provider
@@ -21,12 +21,24 @@ The BFF timeout repair passes 51 checks and all 248 frontend units pass.
 
 The preceding V2 source has composed local full-regression/replay evidence for 3,089
 distinct cases and a real five-width local browser/API/SQL journey with synthetic external
-providers. Current exact-source CI/AMD64 and connected-browser replay are still required.
+providers. Published `ab5cb5d9` now passes genuine AMD64 scanner and connected-browser
+replay, with the artifact source hashes matched to that commit. Later local validated
+receipt and fresh-definition changes pass independent 110-case and 20-case reviews and
+all eight fresh real ARM64 scanner cases, but require their own hosted CI.
 [Local evidence](evidence/2026-10-10-document-admission-local.json) preserves scopes and
 original failures. Durable GCS quarantine/release, legacy/native-project admission, safe
 later rendering and native Cloud Run isolation remain open. Full 5 MiB uploads and
 large preview/downloads need direct storage because the Vercel function body ceiling
-is 4.5 MB; direct-upload domain implementation is underway outside managed source.
+is 4.5 MB. The direct-upload V2 domain is now integrated disabled after independent 69-case
+review and root composed197-case verification. Both original privacy/cleanup failures
+and scoped replays remain recorded. The default-disabled upload frontend now passes
+74 independent checks and291 root units. Its scan/cleanup coordinator is integrated
+after57 independent checks, including8 actual PostgreSQL cases. The separate source
+access consistency repair passes77 root and18 independent checks, preserving the two
+original retained-binding failures. The eight-path large-download frontend/CSP now
+passes72 independent checks and the author's five-width synthetic browser fixture
+verifies exact5MiB bytes. Root's joined frontend passes353 tests across27 files, with full lint and TypeScript checks passing; the separate normal build is still live and unclaimed. Native storage/browser CORS, scheduling, grants/schema0014,
+operating expense and full retention acceptance remain open.
 
 Earlier frontend `7c59578` passed exact CI and hosted homepage checks at 320/390/1440 px;
 its GCP API/workers were `ec52279`. That release is superseded by `e7d8f2b` below. The
@@ -168,7 +180,7 @@ The [candidate website integration](CANDIDATE_WEB_ROOT_INTEGRATION_2026-10-09.md
 | P0 | Local disabled foundation; full restore unproved | SE05, DP05; G05C, G06D | Durable artifact cleanup and SQL account deletion are present. Local independently retained lifetime/tombstone and bounded closure tests do not establish production permissions or a restore procedure preventing account, file and approval resurrection. Complete per-subject availability and full recovery; publish separate retention periods for resumes, artifacts, commands, logs and employer copies. |
 | P0 | Promoted foundation; full gate unproved | BI06, NF01–02, FR07; G05D–E | Promoted `7cc49c2` adds durable candidate/day/rolling/pending allowances, immutable price/policy quotes, exact atomic batches, and verified requisition or conservative provider identity. Exact-commit CI includes 26 actual PostgreSQL cases covering admission races, locked balances and creation/deletion ordering. Production schema/health and controlled rollout are recorded. Fleet fairness, off-platform attempts, policy waiting periods, canonical remapping and independent recovery remain open. See [the foundation evidence](EMPLOYER_ADMISSION_FOUNDATION.md). |
 | P0 | Unproved; external prerequisite | CN02–04, EX01, FR06; G05A | Public read access does not authorize writing. Before enabling a tenant, record the exact employer/provider permit, credential scope, origin, expiry and supported actions; validate every conditional question, consent, file constraint and complete-application receipt in an authorized sandbox. HTTP success or candidate creation is insufficient. No production test applications are permitted. |
-| P0 | Missing / unproved | SD03, SE02–04; G03B, G06D | Private generation-bound GCS artifacts, hashes and cleanup leases are present. A quarantine-and-release pipeline with antivirus or an equivalent documented file safety scanner is not present. Production document-worker isolation, egress restrictions, secret exclusion and malicious-file drills remain unproved. |
+| P0 | Locally implemented; production unproved | SD03, SE02–04; G03B, G06D | Private antivirus/parser worker, validated receipts and durable direct-GCS quarantine/release/cleanup are integrated with direct uploads disabled. Actual local and published-source AMD64 scanner cases pass; later source requires new hosted CI. Native bucket/IAM/CORS, scan/cleanup scheduling, restricted grants/schema0014, document-worker isolation/egress/secret exclusion and retention/failure drills remain unproved. |
 | P1 | Local fixture foundation; production missing | EX02, EX04–05, FR06, SE03; G04A–D | A disabled Manifest V3 package with zero host grants passes 56 protocol and 14 actual Chromium tests against a synthetic localhost portal. It reviews exact answers before any autosave, preserves unknown checkpoints across restart and never uploads or submits. Authenticated production pairing, independent current action authority, tenant-specific permitted adapters, permission revocation and real portal validation remain required. See [the companion evidence](BROWSER_COMPANION.md). |
 | P1 | Missing / unproved | CV01–05, CN01; G00A, G02C, G06A–B | Seven adapter families and four reviewed tenants do not establish coverage. The local audit harness is integrated, but a genuinely independent stratified employer/posting/query reference, including unsupported eligible portals and holdouts, remains to be collected. Measure misses, original-date uncertainty, query recall and top-K usefulness separately. Claims require a clustered-sampling 95% confidence-interval lower bound above 95% for each claimed scope. |
 | P1 | Missing / partial | FR01–04, AI02–03, CV05; G01A–B, G02D | Basic extraction and fit use deterministic taxonomy rules. Versioned country/language/salary-currency/employment/sponsorship preferences are independently reviewed and integrated locally, with unknown data retained and 313 backend/218 frontend checks. Full live structured metadata, schema12/13 preflight, writer drain, historical refresh and billing/browser deployment remain open. Evidence is not uniformly claim-level. Strict role-token matching and a 1,000-candidate ranking cap need independent recall evaluation, aliases and an honest view-all path. |

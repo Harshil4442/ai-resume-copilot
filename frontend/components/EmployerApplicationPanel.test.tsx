@@ -1,8 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { apiGet, apiPostForm, apiPostJson, apiPutJson } from "../lib/api";
+import * as uploads from "../lib/resumeUpload";
 import type { EmployerApplication, JobServiceCatalog } from "../lib/employerJobs";
 import EmployerApplicationPanel from "./EmployerApplicationPanel";
 
@@ -45,7 +46,7 @@ async function upload(file: File) {
   clients.push(client);
   render(<QueryClientProvider client={client}><EmployerApplicationPanel id="app_local" onClose={vi.fn()} onChange={vi.fn()} resumes={[]} /></QueryClientProvider>);
   const input = await screen.findByLabelText("Upload a custom PDF, DOCX or TeX source");
-  fireEvent.change(input, { target: { files: [file] } });
+  await act(async () => { fireEvent.change(input, { target: { files: [file] } }); });
 }
 
 describe("custom resume upload admission through the application review UI", () => {
@@ -81,9 +82,10 @@ describe("custom resume upload admission through the application review UI", () 
     expect(apiPutJson).not.toHaveBeenCalled();
   });
 
-  it("allows the exact 5 MB boundary for a supported source file", async () => {
+  it("does not send a 5 MB native source through the limited BFF route", async () => {
     await upload(new File([new Uint8Array(maximum)], "source.zip", { type: "application/zip" }));
-    await waitFor(() => expect(apiPostForm).toHaveBeenCalledTimes(1));
+    expect(await screen.findByRole("alert")).toHaveTextContent("cannot pass through the current website upload route");
+    expect(apiPostForm).not.toHaveBeenCalled();
   });
 
   it("shows the server's source refusal without approving or changing the saved package", async () => {
@@ -95,4 +97,23 @@ describe("custom resume upload admission through the application review UI", () 
     expect(apiPostJson).not.toHaveBeenCalled();
     expect(screen.queryByText("Your saved preview is out of date. Save the package to preview the new file.")).toBeNull();
   });
+});
+
+
+it("custom-upload cancellation never replaces the saved application with a late result", async () => {
+  let signal: AbortSignal | undefined;
+  let finish!: (result: import("../lib/types").ResumeParseResponse) => void;
+  const send = vi.spyOn(uploads, "uploadResumeFile").mockImplementation((_file, options) => {
+    signal = options?.signal; options?.onProgress?.({ phase: "inspecting", mode: "direct" });
+    return new Promise((resolve) => { finish = resolve; });
+  });
+  try {
+    await upload(new File(["synthetic source"], "resume.pdf", { type: "application/pdf" }));
+    expect(await screen.findByRole("button", { name: "Cancel upload" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel upload" }));
+    expect(signal?.aborted).toBe(true);
+    await act(async () => { finish({ resume_id: 42, skills: [], experience_years: 0, sections: {}, contact_info: {}, source_available: true, source_format: "pdf" }); });
+    expect(screen.queryByText("Your saved preview is out of date. Save the package to preview the new file.")).toBeNull();
+    expect(apiPutJson).not.toHaveBeenCalled(); expect(apiPostJson).not.toHaveBeenCalled();
+  } finally { send.mockRestore(); }
 });
