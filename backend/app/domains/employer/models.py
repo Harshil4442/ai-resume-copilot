@@ -5,8 +5,8 @@ Premium access never authorize a free employer-service operation.
 """
 from sqlalchemy import (
     JSON,
-    Boolean,
     BigInteger,
+    Boolean,
     CheckConstraint,
     Column,
     DateTime,

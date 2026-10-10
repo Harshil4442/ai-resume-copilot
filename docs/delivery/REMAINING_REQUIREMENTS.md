@@ -4,6 +4,18 @@ Review date: 11 October 2026 (Asia/Kolkata). This register distinguishes the pro
 
 ## Latest source checkpoint and remaining launch work
 
+The pushed Stage C source `3ca229264cef100b4c4f4db67cc5856c6ca1266f` reached
+[CI run 38088878939](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38088878939).
+The backend stopped at three import-order errors before its runtime tests. Security,
+companion and cold-browser jobs passed; frontend was still running at the recorded
+observation. The four-file correction sorts those imports and uses no-op casts for
+existing parser/projection presence invariants. Configured lint passes all eight
+shipping files, and configured finite type checking passes six runtime modules.
+Effective imports/non-import AST and cast-erased AST controls preserve the original
+business operations. [Correction evidence](evidence/2026-10-11-paid-history-ci-correction.json)
+retains the failure. Fresh committed-source CI remains required; production mode
+stays off and no migration or promotion is performed.
+
 The pushed fixture-correction source `9dd7689e9e8e05bae67a151ab39830668abf01ba`
 passes all five jobs in [run 38085861350](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38085861350):
 backend, security/container, frontend, companion and cold-browser. This is terminal

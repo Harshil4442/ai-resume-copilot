@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "date": "2026-10-11",
+  "scope": "four ordinary Stage C source lint/type corrections",
+  "preceding_commit": "3ca229264cef100b4c4f4db67cc5856c6ca1266f",
+  "preceding_ci": {
+    "run": 38088878939,
+    "backend": "failure",
+    "failure_step": "Ruff modernized modules",
+    "three_I001_import_order_errors": true,
+    "backend_runtime_tests_started": false,
+    "other_jobs_last_observed": {
+      "security-and-container": "success",
+      "cold-browser-journey": "success",
+      "browser-companion": "success",
+      "frontend": "in_progress"
+    }
+  },
+  "correction": {
+    "import_blocks_sorted": 3,
+    "configured_finite_mypy_original_errors": 13,
+    "typing_changes": "Explicit no-op casts for existing parser container/item/projection presence invariants",
+    "new_business_actions": false,
+    "new_runtime_guards": false,
+    "three_import_corrections_effective_imports_and_other_AST_equal": true,
+    "two_type_corrections_nonimport_AST_equal_after_cast_erasure": true
+  },
+  "verification": {
+    "configured_ruff_all_8_shipping_files": "pass",
+    "configured_mypy_6_runtime_modules": "pass",
+    "mypy_follow_imports": "skip (project configuration)",
+    "mypy_incremental_cache_used": false,
+    "new_runtime_tests_repeated": false,
+    "new_committed_source_ci": "required"
+  },
+  "source_files": [
+    {
+      "path": "backend/app/domains/employer/history_stream.py",
+      "sha256": "650db3ddf51cd33a469a2aa490a9890031c3ea62aa78b228870f14b3227e6801",
+      "bytes": 23629
+    },
+    {
+      "path": "backend/app/domains/employer/models.py",
+      "sha256": "866b24c9d7681abf60fa16c74c1ed1e6ba4d78aa5a9ea405152200879f9a1759",
+      "bytes": 30261
+    },
+    {
+      "path": "backend/app/domains/employer/delivery_history.py",
+      "sha256": "4eabd546a6f5ecea7b2e92d72da789415c2c45b13bf7a4fed70b8695198017ce",
+      "bytes": 22122
+    },
+    {
+      "path": "backend/tests/test_employer_delivery_history.py",
+      "sha256": "6595ee17b9e85c724a3b841a9b1fae82a8ad579cf091373940fe579a2529f555",
+      "bytes": 10656
+    }
+  ],
+  "receipt_pins": {
+    "import_repair": "40add7f470f00788e29eed668f1949cf279205c922ecd8b09bf2a3f07754d414",
+    "type_repair": "e8ff80372a17acae2800cabe1052e8126b33bfb9ebc1d627da75b54d125f2e6d"
+  },
+  "release": {
+    "production_mode": "off",
+    "migration_performed": false,
+    "deployed": false,
+    "held_source_bodies_edited_or_read_for_correction": false
+  }
+}

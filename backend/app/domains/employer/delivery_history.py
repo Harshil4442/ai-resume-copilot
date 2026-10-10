@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC
 from types import SimpleNamespace
+from typing import cast
 
 from sqlalchemy import and_, or_, text
 
@@ -17,6 +18,7 @@ from .delivery_history_projector import (
     PREFERENCE_CONTRACT,
     SEARCH_AUTHORITY,
     HistoricalIdentityEvidence,
+    HistoryProjection,
     PaidDeliveryEvidence,
     SavedSearchEvidence,
     project_paid_delivery,
@@ -228,6 +230,9 @@ def _project_legacy(db, delivery, search, stream):
             reason = "duplicate_items_conflict"
     result = None
     if reason is None:
+        # The reason branches above establish both authoritative stream and item.
+        seen = cast(models.EmployerSearchHistorySeen, seen)
+        stream = cast(models.EmployerSearchHistoryProgress, stream)
         posting = seen.facts.get("posting", {})
         contract = OPENING_CONTRACT if "opening_key" in posting else LEGACY_CONTRACT
         # The durable stream checked the complete literal snapshot and semantic
@@ -256,6 +261,9 @@ def _project_legacy(db, delivery, search, stream):
         existing.state = "unresolved"
         existing.static_reason = reason
         return "unresolved"
+    # A missing item or rejected projection returned through the reason branch.
+    result = cast(HistoryProjection, result)
+    seen = cast(models.EmployerSearchHistorySeen, seen)
     existing.state = "proven"
     existing.static_reason = None
     existing.opening_key = result.opening_key

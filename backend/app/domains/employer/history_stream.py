@@ -8,11 +8,12 @@ Normal paid admission never invokes that conversion once history is ready.
 
 from __future__ import annotations
 
-from copy import deepcopy
 import hashlib
 import json
 import math
 import re
+from copy import deepcopy
+from typing import cast
 
 from sqlalchemy import text
 
@@ -162,7 +163,9 @@ def _start_string(db, progress, cp, *, key=False):
         "unicode": None,
         "surrogate": None,
         "hash": _start_hash(),
-        "retain": key or node.member_key in _ITEM_FIELDS | _POSTING_FIELDS,
+        "retain": key
+        or cast(models.EmployerSearchHistoryNode, node).member_key
+        in _ITEM_FIELDS | _POSTING_FIELDS,
     }
 
 
@@ -563,6 +566,8 @@ def advance_snapshot(db, progress, *, byte_budget=16_384, work_budget=32_768):
             expected = (
                 parent.parser_expect if parent else "done" if cp["done"] else "root"
             )
+            # Every non-root parser state came from a present container node.
+            parent = cast(models.EmployerSearchHistoryNode, parent)
             if expected == "colon":
                 if char != ":":
                     _invalid(cp, "snapshot_json_invalid")

@@ -1,13 +1,14 @@
 """Private indexed-history integration against synthetic actual SQL rows."""
 
-from copy import deepcopy
 import json
+from copy import deepcopy
 
 import pytest
-from sqlalchemy import event
 from backend.app import models as core
 from backend.app.domains.employer import admissions, delivery_history, models
-from test_employer_search_new_results import indexed_search as _indexed_search, search
+from sqlalchemy import event
+from test_employer_search_new_results import indexed_search as _indexed_search
+from test_employer_search_new_results import search
 
 indexed_search = _indexed_search
 
