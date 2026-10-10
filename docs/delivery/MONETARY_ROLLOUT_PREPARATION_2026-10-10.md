@@ -135,6 +135,31 @@ check for that commit; new database/inventory changes require their own CI and i
   18.09 seconds; no model, database or mutation calls. It refused
   `native_parent_binding_unavailable`, so retained inventory completeness is still open.
 
+- [x] Resolve the original parent comparison: nine read-only metadata GETs prove
+  short native parent fields with exact full parents present. The independently
+  reviewed compatibility fix passes 154 checks with zero skips; all namespace,
+  complete-list, UID, configuration and privacy guards remain.
+- [x] Perform one corrected bounded native attempt: 145 GETs in 242.37 seconds,
+  with zero model/database/mutation calls. It advances past the parent check,
+  then refuses `native_environment_identity_or_duplicate`. Actual retained
+  credential completeness is still unproved; no ambiguous entry is silently ignored.
+
+A separate seven-GET, list-metadata-only diagnostic counts 225 retained resource
+records: nine contain 18 names outside the collector’s POSIX name pattern, with
+zero duplicate names. Cloud Run documents a broader naming surface; these counts
+identify the unsupported shape without exposing names or values. This is not a
+complete credential inventory or an individual-GET/freshness proof.
+
+Exact `97eaef1` CI passes four jobs; backend records 2,707 passes and one
+failed deadline test (703.36 seconds, 453 warnings, no reported skips). An
+offline fake-transport reproduction proves elapsed-time subtraction can round
+below the exact deadline. Original failure and controls remain preserved; the
+minimal absolute-deadline repair is independently clear with 220 unique passing
+checks, zero skips and Ruff/Mypy. Its three comparisons preserve the exact
+600-second budget, with no precision allowance. Fresh full CI and native image
+proof on the final published composition remain required. The original backend
+failure also prevented its later OpenAPI drift step from running.
+
 - [ ] Establish whether old credentials are shared with other applications.
 - [ ] Complete native provider/issuer and database writer retirement, with new
   restricted identities and exact secret versions.

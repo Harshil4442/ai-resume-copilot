@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import copy
 import json
+import math
 import ssl
 from uuid import uuid4
 
@@ -659,10 +660,18 @@ def test_native_token_type_and_whitespace_refuse_without_native_call(value):
 
 def test_native_time_budget_prevents_another_request(monkeypatch):
     native = inv.NativeTransport("synthetic-native-bearer")
+    calls = []
+
+    def refuse_unexpected_open(*args, **kwargs):
+        calls.append(True)
+        raise AssertionError("synthetic opener refuses network in cutoff test")
+
+    monkeypatch.setattr(native._opener, "open", refuse_unexpected_open)
     now = native._started + inv.MAX_SECONDS
     monkeypatch.setattr(inv.time, "monotonic", lambda: now)
     with pytest.raises(inv.InventoryDenied, match="native_collection_budget_exceeded"):
         native.get("project", "projects/" + inv.PROJECT, {})
+    assert not calls
 
 
 def test_resource_bound_refuses_before_independent_gets(monkeypatch):
@@ -779,4 +788,176 @@ def test_unparseable_credential_uri_refuses_before_any_report_even_without_refle
         inv.collect_retained_credentials(native)
     assert secret not in str(error.value) and dsn not in str(error.value)
     assert error.value.__cause__ is None and error.value.__suppress_context__
+    assert not any(api == "secret" for api, _, _ in native.calls)
+
+
+@pytest.mark.parametrize("kind", ["revision", "execution"])
+@pytest.mark.parametrize("parent_form", ["full", "short"])
+def test_native_child_parent_accepts_only_exact_full_or_observed_short_name(kind, parent_form):
+    native = NativeFixture()
+    row = native.rows["revisions" if kind == "revision" else "executions"][0]
+    field = "service" if kind == "revision" else "job"
+    full_parent = row[field]
+    if parent_form == "short":
+        row[field] = full_parent.rsplit("/", 1)[1]
+    result = inv.collect_retained_credentials(native)
+    assert (kind, row["name"], row["uid"]) in result.resources
+    assert result.sanitized_provenance()["cutover_ready"] is False
+    assert not any(api == "secret" for api, _, _ in native.calls)
+
+
+@pytest.mark.parametrize("kind", ["revision", "execution"])
+@pytest.mark.parametrize(
+    "invalid_parent",
+    [
+        "wrong-short",
+        "empty",
+        "missing",
+        "nonscalar",
+        "foreign-project",
+        "foreign-region",
+        "wrong-type",
+        "numeric-alias",
+    ],
+)
+def test_short_parent_compatibility_keeps_exact_namespace_and_shape_refusals(kind, invalid_parent):
+    native = NativeFixture()
+    row = native.rows["revisions" if kind == "revision" else "executions"][0]
+    field = "service" if kind == "revision" else "job"
+    full_parent = row[field]
+    replacements = {
+        "wrong-short": "some-other-parent",
+        "empty": "",
+        "missing": None,
+        "nonscalar": {"name": full_parent.rsplit("/", 1)[1]},
+        "foreign-project": full_parent.replace(inv.PROJECT, "foreign-project"),
+        "foreign-region": full_parent.replace(inv.REGION, "europe-west1"),
+        "wrong-type": full_parent.replace("/services/", "/jobs/")
+        if kind == "revision"
+        else full_parent.replace("/jobs/", "/services/"),
+        "numeric-alias": full_parent.replace(inv.PROJECT, inv.PROJECT_NUMBER),
+    }
+    row[field] = replacements[invalid_parent]
+    if invalid_parent == "missing":
+        del row[field]
+    with pytest.raises(inv.InventoryDenied, match="native_parent_binding_unavailable"):
+        inv.collect_retained_credentials(native)
+    assert not any(api == "secret" for api, _, _ in native.calls)
+
+
+@pytest.mark.parametrize("kind", ["revision", "execution"])
+@pytest.mark.parametrize("parent_form", ["full", "short"])
+@pytest.mark.parametrize("deleted_child", [False, True])
+def test_retained_child_missing_or_pruned_parent_still_refuses(kind, parent_form, deleted_child):
+    native = NativeFixture()
+    if kind == "revision":
+        full_parent = inv.PARENT + "/services/pruned-parent"
+        row = source(full_parent + "/revisions/retained-child", kind, [env("LLM_API_KEY", MODEL)])
+        native.rows["revisions"].append(row)
+        native.gets[row["name"]] = row
+        field = "service"
+    else:
+        row = native.rows["executions"][0]
+        full_parent = row["job"]
+        native.rows["jobs"] = []
+        field = "job"
+    if parent_form == "short":
+        row[field] = full_parent.rsplit("/", 1)[1]
+    if deleted_child:
+        row["deleteTime"] = "2026-10-09T00:00:00Z"
+        row["expireTime"] = "2026-11-09T00:00:00Z"
+    with pytest.raises(inv.InventoryDenied, match="native_parent_binding_unavailable"):
+        inv.collect_retained_credentials(native)
+
+
+@pytest.mark.parametrize("kind", ["revision", "execution"])
+def test_short_parent_does_not_conflate_numeric_and_id_parent_inventory(kind):
+    native = NativeFixture()
+    row = native.rows["revisions" if kind == "revision" else "executions"][0]
+    old_name = row["name"]
+    field = "service" if kind == "revision" else "job"
+    row["name"] = old_name.replace(inv.PROJECT, inv.PROJECT_NUMBER)
+    row[field] = row[field].rsplit("/", 1)[1]
+    native.gets[row["name"]] = native.gets.pop(old_name)
+    with pytest.raises(inv.InventoryDenied, match="native_parent_binding_unavailable"):
+        inv.collect_retained_credentials(native)
+
+
+@pytest.mark.parametrize("kind", ["revision", "execution"])
+def test_short_full_parent_disagreement_between_list_and_get_still_refuses(kind):
+    native = NativeFixture()
+    row = native.rows["revisions" if kind == "revision" else "executions"][0]
+    field = "service" if kind == "revision" else "job"
+    changed = copy.deepcopy(row)
+    changed[field] = row[field].rsplit("/", 1)[1]
+    native.overrides[("run", row["name"])] = changed
+    with pytest.raises(inv.InventoryDenied, match="native_list_get_configuration_mismatch"):
+        inv.collect_retained_credentials(native)
+
+
+@pytest.mark.parametrize("started", [600.0000000000001, 1536.0000000000002])
+@pytest.mark.parametrize("phase", ["before", "exact", "after"])
+@pytest.mark.parametrize("guard", ["before_request", "after_payload"])
+def test_native_absolute_deadline_at_adverse_float_starts(monkeypatch, started, phase, guard):
+    clock = [started]
+    monkeypatch.setattr(inv.time, "monotonic", lambda: clock[0])
+    native = inv.NativeTransport("synthetic-native-bearer")
+    deadline = started + inv.MAX_SECONDS
+    point = {
+        "before": math.nextafter(deadline, -math.inf),
+        "exact": deadline,
+        "after": math.nextafter(deadline, math.inf),
+    }[phase]
+    calls = []
+
+    def open(request, timeout):
+        assert timeout == 5
+        calls.append(request.full_url)
+        if guard == "after_payload":
+            clock[0] = point
+        return Response(request.full_url, b'{"ok":true}')
+
+    monkeypatch.setattr(native._opener, "open", open)
+    clock[0] = point if guard == "before_request" else math.nextafter(deadline, -math.inf)
+    if phase == "before":
+        assert native.get("project", "projects/" + inv.PROJECT, {}) == {"ok": True}
+    else:
+        with pytest.raises(inv.InventoryDenied, match="native_collection_budget_exceeded"):
+            native.get("project", "projects/" + inv.PROJECT, {})
+    assert native._calls == 1
+    assert len(calls) == (0 if guard == "before_request" and phase != "before" else 1)
+
+
+@pytest.mark.parametrize("started", [600.0000000000001, 1536.0000000000002])
+@pytest.mark.parametrize("phase", ["before", "exact", "after"])
+def test_collection_absolute_deadline_at_adverse_float_starts(monkeypatch, started, phase):
+    native = NativeFixture()
+    clock = [started]
+    monkeypatch.setattr(inv.time, "monotonic", lambda: clock[0])
+    deadline = started + inv.MAX_SECONDS
+    point = {
+        "before": math.nextafter(deadline, -math.inf),
+        "exact": deadline,
+        "after": math.nextafter(deadline, math.inf),
+    }[phase]
+    original = native.get
+
+    def get(api, path, params):
+        value = original(api, path, params)
+        if (
+            api == "run"
+            and params
+            and path.endswith("/executions")
+            and native.list_counts["executions"] == 2
+        ):
+            clock[0] = point
+        return value
+
+    native.get = get
+    if phase == "before":
+        assert inv.collect_retained_credentials(native).sanitized_provenance()["cutover_ready"] is False
+    else:
+        with pytest.raises(inv.InventoryDenied, match="native_collection_budget_exceeded"):
+            inv.collect_retained_credentials(native)
+    assert all(count == 2 for count in native.list_counts.values())
     assert not any(api == "secret" for api, _, _ in native.calls)

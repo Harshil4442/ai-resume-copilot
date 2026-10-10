@@ -19,13 +19,14 @@
   "new_bounded_components": {
     "deleted_database_role_review_cases": 138,
     "native_postgres_session_review_cases": 44,
-    "retained_inventory_review_cases": 122,
+    "retained_inventory_review_cases": 154,
     "case_counts_are_separate_scoped_reviews": true,
     "skipped_cases": 0,
     "root_combined_ruff": "pass",
     "root_combined_mypy": "pass",
-    "new_published_source_ci": "pending",
-    "new_native_image": "pending"
+    "new_published_source_ci": "pending_for_parent_and_deadline_composition",
+    "new_native_image": "pending",
+    "deadline_repair_review_cases": 220
   },
   "actual_retained_inventory_observation": {
     "status": "refused",
@@ -40,7 +41,7 @@
     "cutover_ready": false
   },
   "remaining": [
-    "Native retained parent/resource binding unresolved after strict refusal",
+    "18 retained environment names across 9 metadata records exceed collector POSIX-name surface; native compatibility unresolved",
     "Other consumers and issuer restoration/minting authority unverified",
     "Credential sharing unanswered",
     "Distinct restricted DB identities and old writer/provider retirement pending",
@@ -51,5 +52,104 @@
     "Wider coverage/performance/recovery acceptance open"
   ],
   "real_model_payment_employer_smoke_calls": 0,
-  "goal_complete": false
+  "goal_complete": false,
+  "actual_parent_contract_diagnostic": {
+    "status": "observed_parent_contract_only",
+    "native_get_calls": 9,
+    "comparisons": [
+      {
+        "kind": "revision",
+        "parent_field_present": true,
+        "parent_field_is_string": true,
+        "field_equals_full_parent": false,
+        "field_equals_short_parent": true,
+        "field_equals_numeric_project_parent": false,
+        "derived_full_parent_in_completed_list": true,
+        "raw_parent_in_completed_list": false,
+        "parent_count": 3,
+        "child_count": 215
+      },
+      {
+        "kind": "execution",
+        "parent_field_present": true,
+        "parent_field_is_string": true,
+        "field_equals_full_parent": false,
+        "field_equals_short_parent": true,
+        "field_equals_numeric_project_parent": false,
+        "derived_full_parent_in_completed_list": true,
+        "raw_parent_in_completed_list": false,
+        "parent_count": 1,
+        "child_count": 6
+      }
+    ],
+    "scope": "first20_children_per_kind",
+    "mutations": 0,
+    "secret_payload_accesses": 0,
+    "model_calls": 0,
+    "database_connections": 0,
+    "cutover_ready": false
+  },
+  "actual_retained_inventory_v4_observation": {
+    "status": "refused",
+    "reason": "native_environment_identity_or_duplicate",
+    "source_sha256": "ad3fc8af5838c6330778a97865ff84993956e547686171f498b6e14abd670866",
+    "started_at": "2026-10-10T00:36:37.719967+00:00",
+    "observed_at": "2026-10-10T00:40:40.092717+00:00",
+    "native_get_calls": 145,
+    "mutations": 0,
+    "model_calls": 0,
+    "database_connections": 0,
+    "cutover_ready": false
+  },
+  "actual_environment_shape_diagnostic": {
+    "status": "observed_environment_shape_counts_only",
+    "source": "native_complete_retained_lists_without_individual_GET_or_second_list",
+    "native_get_calls": 7,
+    "resources": 225,
+    "containers": 225,
+    "affected_resources": 9,
+    "issues": {
+      "entry_not_object": 0,
+      "name_not_string": 0,
+      "name_not_posix_identifier": 18,
+      "duplicate_name": 0,
+      "duplicate_known_model_or_database_name": 0
+    },
+    "mutations": 0,
+    "secret_payload_accesses": 0,
+    "model_calls": 0,
+    "database_connections": 0,
+    "cutover_ready": false
+  },
+  "current_published_ci_attempt": {
+    "commit": "97eaef1afce3a415fd20539bb61469388dd56e37",
+    "run_id": 38009216899,
+    "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38009216899",
+    "other_four_jobs": "success",
+    "backend_passed": 2707,
+    "backend_failed": 1,
+    "backend_warnings": 453,
+    "backend_seconds": 703.36,
+    "failed_test": "test_native_time_budget_prevents_another_request",
+    "failure_reproduced_offline": true,
+    "source_repair": "independently_clear_source_only",
+    "not_release_clearance": true,
+    "openapi_drift_step": "not_run_after_backend_failure"
+  },
+  "deadline_repair_review": {
+    "source_sha256": "dc0b1f0959a536c38b094db1273a0f62c5933d8431bd3d61204e2cfc43840e86",
+    "independent_verdict_sha256": "8c284f385751b1223bb3c4e8b9c14ebe6f5fa416916250b4aee0affa4ae442ac",
+    "unique_cases_passed": 220,
+    "skipped": 0,
+    "ruff": "pass",
+    "mypy": "pass",
+    "budget_seconds": 600,
+    "changed_production_expressions": 3,
+    "precision_allowance": false,
+    "native_invocation": false,
+    "global_fence": "unavailable",
+    "cutover_ready": false,
+    "fresh_full_ci": "pending",
+    "new_native_image": "pending"
+  }
 }

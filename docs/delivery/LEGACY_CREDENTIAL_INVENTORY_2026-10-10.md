@@ -1,7 +1,9 @@
 # Retained native credential configuration collector
 
-This is a read-only source component, based on reviewed commit
-`7fac1c4d76b8a5de4396b3f010c50941d61827db`. It does not implement the global
+This is a read-only source component, initially based on reviewed commit
+`7fac1c4d76b8a5de4396b3f010c50941d61827db`. The bounded v4 parent-field
+compatibility amendment is based on published commit
+`97eaef1afce3a415fd20539bb61469388dd56e37`. It does not implement the global
 credential fence, publish a release, prove provider deletion or permit deployment.
 `NativeBoundary.verify_fences` and every existing release gate remain unchanged.
 
@@ -87,6 +89,14 @@ an empty inventory.
 
 ## In-memory boundary and unsupported scope
 
+The collection budget remains 600 seconds. The pre-request, post-payload and final
+collection checks compare the monotonic clock directly with the absolute start
+time plus that budget. A reading exactly at or beyond the deadline is refused;
+there is no precision allowance or extended time limit. Denied request attempts
+still count toward the existing request bound. Boundary tests use fake openers
+and metadata responses, including the original cutoff test, so an assertion
+failure cannot trigger an actual native request.
+
 `Credential`, `SecretHandle` and `RetainedInventory` hide values from `repr`.
 Use only `sanitized_provenance()` for output. Never pass private return objects
 through `dataclasses.asdict`, pickle, logging, artifact serialization or crash
@@ -164,3 +174,58 @@ Primary native contracts: [Cloud Run service listing](https://docs.cloud.google.
 [Container/EnvVar/SecretKeySelector](https://docs.cloud.google.com/run/docs/reference/rest/v2/Container),
 [secret-version metadata](https://docs.cloud.google.com/secret-manager/docs/reference/rest/v1/projects.secrets.versions/get),
 [exact-version payload access](https://docs.cloud.google.com/secret-manager/docs/reference/rest/v1/projects.secrets.versions/access).
+
+## V4 native parent-field compatibility
+
+After independently cleared v3 was published, the operator's bounded authenticated
+read-only observation refused with `native_parent_binding_unavailable` after 11
+GETs. That refusal did not establish that a parent had been pruned. A separate
+nine-GET diagnostic found a short `Revision.service` and a short `Execution.job`
+in the sampled children. In each case the exact full parent derived from the
+child's full resource name existed in its completed native parent list. The
+diagnostic covered the first failure of each kind within a bounded first-20-child
+inspection; it did not certify all children or a complete credential inventory.
+Both observations made zero mutations, model calls or database connections; the
+parent diagnostic made zero secret-payload requests. The original refusal and
+sanitized diagnostic are preserved separately from this source amendment.
+
+V4 derives the canonical parent only from the independently validated full child
+resource name. It accepts the native parent field only when it is a string equal
+to that exact full parent or its exact basename. The derived full parent must
+still be present in the completed parent list. Project ID/number spellings are
+not normalized or conflated. A foreign project, region, parent type, arbitrary
+short name, missing parent or pruned parent still refuses. The native list and
+independent GET must still agree on the original parent field, UID, generation,
+etag and every configuration binding before this compatibility check runs.
+
+The two observed short-parent cases genuinely failed against unchanged published
+`97eaef1`, while the full-parent controls passed; that original red log is retained.
+Final author checks on this amendment passed 142 focused cases, two unchanged
+release refusal cases and all ten unchanged independent privacy probes (154
+tests, zero skips), plus Ruff/Mypy. Existing test definitions, privacy helpers,
+credential classification, transport and global `NativeBoundary` remain unchanged.
+Independent v4 review and actual native invocation of v4 remain pending. The author
+made no new native requests, database connections, source publication or deployment.
+This correction does not implement a global credential fence or permit cutover.
+
+## Root actual v4 observation
+
+Independent final v4 review passes 154 unique cases with zero skips, plus Ruff/Mypy.
+One bounded native invocation at 00:36–00:40 UTC on 10 October makes 145 GETs
+over 242.37 seconds, with zero model, database or mutation calls. It advances past
+the repaired parent field comparison, then refuses
+`native_environment_identity_or_duplicate`. This fixed code distinguishes neither
+the failing condition nor the affected entry publicly; no duplicate or unsupported
+identity is ignored. [Root checkpoint evidence](evidence/2026-10-10-preflight-checkpoint.json)
+preserves both actual refusals and the sampled parent diagnostic. Complete retained
+inventory, provider retirement, global fencing and deployment remain unproved.
+
+## Root deadline repair checkpoint
+
+Independent review of the exact v5 source passes 220 unique checks with zero skips,
+plus Ruff/Mypy. The three absolute cutoff comparisons preserve the 600-second
+budget, request limits, privacy and all release refusals. The original native CI
+failure (one failed deadline case, 2,707 passes) and the unchanged independent
+exact-cutoff counterexamples remain preserved. This source proof does not establish
+actual inventory success; the environment-name refusal above remains unchanged.
+Fresh published-source full CI and native image verification remain pending.

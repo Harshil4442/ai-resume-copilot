@@ -159,7 +159,7 @@ class NativeTransport:
         if not _request_allowed(api, path, params):
             raise InventoryDenied("native_request_shape_refused")
         self._calls += 1
-        if self._calls > MAX_CALLS or time.monotonic() - self._started >= MAX_SECONDS:
+        if self._calls > MAX_CALLS or time.monotonic() >= self._started + MAX_SECONDS:
             raise InventoryDenied("native_collection_budget_exceeded")
         origins = {
             "run": "https://run.googleapis.com/v2/",
@@ -190,7 +190,7 @@ class NativeTransport:
             parsed = json.loads(raw, object_pairs_hook=_object)
             if not isinstance(parsed, dict):
                 raise InventoryDenied("native_payload_shape_refused")
-            if time.monotonic() - self._started >= MAX_SECONDS:
+            if time.monotonic() >= self._started + MAX_SECONDS:
                 raise InventoryDenied("native_collection_budget_exceeded")
             return parsed
         except InventoryDenied:
@@ -523,12 +523,13 @@ def collect_retained_credentials(transport: Transport) -> RetainedInventory:
             )
             if kind in {"revision", "execution"}:
                 parent_name = native.get(parent_field)
+                derived_parent = name.rsplit(
+                    "/" + ("revisions" if kind == "revision" else "executions") + "/", 1
+                )[0]
                 if (
-                    parent_name
-                    != name.rsplit(
-                        "/" + ("revisions" if kind == "revision" else "executions") + "/", 1
-                    )[0]
-                    or parent_name not in lists[cast(ResourceKind, parent_kind)]
+                    not isinstance(parent_name, str)
+                    or parent_name not in (derived_parent, derived_parent.rsplit("/", 1)[1])
+                    or derived_parent not in lists[cast(ResourceKind, parent_kind)]
                 ):
                     raise InventoryDenied("native_parent_binding_unavailable")
             identities.append((kind, name, uid))
@@ -667,7 +668,7 @@ def collect_retained_credentials(transport: Transport) -> RetainedInventory:
             _binding(fresh[name], kind) != _binding(lists[kind][name], kind) for name in fresh
         ):
             raise InventoryDenied("native_collection_changed")
-    if time.monotonic() - started >= MAX_SECONDS:
+    if time.monotonic() >= started + MAX_SECONDS:
         raise InventoryDenied("native_collection_budget_exceeded")
     handles = tuple(
         SecretHandle(reference, state, tuple(secret_origins[reference]), value)
