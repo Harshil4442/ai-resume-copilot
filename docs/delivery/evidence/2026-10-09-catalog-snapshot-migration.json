@@ -1,0 +1,36 @@
+{
+  "metadata": {
+    "creationTimestamp": "2026-10-08T20:47:18.245725Z",
+    "name": "hirewiz-schema-migration-6267x"
+  },
+  "status": {
+    "completionTime": "2026-10-08T20:50:29.971689Z",
+    "conditions": [
+      {
+        "lastTransitionTime": "2026-10-08T20:50:29.971689Z",
+        "message": "Execution completed successfully in 2m4.12s.",
+        "status": "True",
+        "type": "Completed"
+      },
+      {
+        "lastTransitionTime": "2026-10-08T20:48:12.498858Z",
+        "message": "Provisioned imported containers.",
+        "status": "True",
+        "type": "ResourcesAvailable"
+      },
+      {
+        "lastTransitionTime": "2026-10-08T20:50:12.440169Z",
+        "message": "Started deployed execution in 1m59.94s.",
+        "status": "True",
+        "type": "Started"
+      },
+      {
+        "lastTransitionTime": "2026-10-08T20:48:12.320723Z",
+        "message": "Imported container image in 54.08s.",
+        "status": "True",
+        "type": "ContainerReady"
+      }
+    ],
+    "succeededCount": 1
+  }
+}

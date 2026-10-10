@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import time
 import uuid
 
@@ -46,7 +47,8 @@ async def worker_request_context(request: Request, call_next):
 
 @app.get("/api/health")
 def health() -> dict[str, object]:
-    return {"ok": True, "role": "analysis-worker"}
+    return {"ok": True, "role": os.getenv("WORKER_LABEL", "analysis-worker"),
+            "release": os.getenv("APP_RELEASE", "development")}
 
 
 app.include_router(worker_router)

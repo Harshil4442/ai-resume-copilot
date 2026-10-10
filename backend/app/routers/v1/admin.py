@@ -5,10 +5,12 @@ import os
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.exc import NoResultFound
 
 from ... import models
 from ...database import get_db
 from ...domains.common import public_id, utcnow
+from ...domains.entitlements import lock_entitlement_owner
 from ...security import get_current_user
 
 router = APIRouter(prefix="/admin", tags=["support-admin"])
@@ -259,14 +261,10 @@ def adjust_usage(
 ):
     if payload.amount == 0:
         raise HTTPException(status_code=422, detail="Adjustment amount cannot be zero")
-    user = (
-        db.query(models.User)
-        .filter(models.User.id == payload.user_id)
-        .with_for_update()
-        .first()
-    )
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+    try:
+        user = lock_entitlement_owner(db, payload.user_id)
+    except NoResultFound as exc:
+        raise HTTPException(status_code=404, detail="User not found") from exc
     event_key = f"admin:{idempotency_key}"
     existing = db.query(models.UsageEvent).filter(
         models.UsageEvent.user_id == user.id,

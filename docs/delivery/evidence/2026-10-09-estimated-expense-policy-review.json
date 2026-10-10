@@ -1,0 +1,564 @@
+{
+  "scope": "Independent offline estimated expense review; no production activation or merchant contract/invoice verification.",
+  "policy": {
+    "path": "docs/examples/expense-policy-estimated-reviewed-2026-10-09.json",
+    "sha256": "8ce31e98039c768340a1d6137d798e345e5c02c432b3d84d54331256828d1631",
+    "review_status": "approved",
+    "provenance": "estimated"
+  },
+  "reviewed_input": {
+    "path": "hirewiz-expense-policy-estimated-v2-candidate-20261009.json",
+    "sha256": "aa9cae89a26a83ed1ae9ac670213bbabb95fc7aa12b71afab91b9d6b3ea3e590"
+  },
+  "independent_review": {
+    "observed_at": "2026-10-09T18:59:56.687655+00:00",
+    "verdict": "CLEAR for offline review/approval of estimated scenario; activation and rollout HOLD",
+    "reviewer": "cutover_independent_review",
+    "input_sha256": {
+      "hirewiz-expense-policy-estimated-v2-candidate-20261009.json": "aa9cae89a26a83ed1ae9ac670213bbabb95fc7aa12b71afab91b9d6b3ea3e590",
+      "hirewiz-expense-policy-estimated-v2-audit-20261009.json": "1cf7a5c9af779627e1a10947474eefbf235c8c67c2d87c76b0c63d715b5e34da",
+      "hirewiz-finite-pack-production-readiness-20261009-psycopg3.json": "862727e0628fd1d641cfef9733da5c25efc4470f307b1e628cfabf93be2082ae",
+      "hirewiz-razorpay-methods-readonly-20261009.json": "581571022b523118b3e4912eea9979f84e84ece6965a270892a6f54ada1fcf70"
+    },
+    "audit": {
+      "version": "estimated-india-2026-10-09-v2",
+      "search_floor": 1,
+      "apply_floor": 17,
+      "packs": [
+        {
+          "sku": "starter_bundle",
+          "net_receipts_minor": 46825,
+          "required_net_minor": 45600,
+          "allocation_minor": 15000,
+          "analysis_units": 2,
+          "service_credits": 100
+        },
+        {
+          "sku": "growth_bundle",
+          "net_receipts_minor": 80055,
+          "required_net_minor": 76800,
+          "allocation_minor": 15000,
+          "analysis_units": 6,
+          "service_credits": 300
+        },
+        {
+          "sku": "scale_bundle",
+          "net_receipts_minor": 161285,
+          "required_net_minor": 144500,
+          "allocation_minor": 15000,
+          "analysis_units": 15,
+          "service_credits": 700
+        }
+      ],
+      "analysis_cost_minor_per_unit": 2650,
+      "fixed_allocation_minor_per_pack": 15000
+    },
+    "checks": [
+      "candidate refuses activation",
+      "estimated approved copy passes exact current catalogue/rates in process only",
+      "expiry boundary refuses",
+      "future validity refuses",
+      "higher adverse fees refuse unsafe exact pack arithmetic"
+    ],
+    "policy_unchanged": true,
+    "policy_activated": false,
+    "cloud_mutations": false,
+    "account_facts": {
+      "captured_payments": 0,
+      "analysis_runs_terminal": 39,
+      "database_schema": "20261008_0009",
+      "invoices_reconciled": false,
+      "merchant_enabled_instruments_and_fee_contract_verified": false
+    },
+    "basis": [
+      "owner expressly authorized estimates",
+      "published ordinary/premium fees lie below modeled 5% plus18%-fee-GST plusINR1fixed plusINR10FX assumption",
+      "supported-method categories included in broad estimated scenario",
+      "actual captured/refund ledger review through2026-10-09T18:37:32Z has no captured/refund rows",
+      "7day expiry, no promotions, 100pack fixed allocation, finite separate legacy/failed budgets"
+    ],
+    "limits": [
+      "all_enabled_payment_methods_covered means covered by reviewed estimates in this approval; it does not prove enabled instrument list or contracted fees",
+      "zero captured rows is not zero infrastructure/provider expense, invoices or bank funding proof",
+      "5% plus fixed/FX amounts are conservative assumptions, not provider maximum guarantees; undocumented negotiated or optional-product charges remain unknown",
+      "knownlaterwebhookfee-erasurebug must be independently repaired before reliance on adverse-fee guard",
+      "provider/DBconsumer retirement, separate credentials, backup provenance, schema migration and joined production release remain separate gates",
+      "no guaranteed profit at low sales volume; actual invoices/monthly review remain required"
+    ],
+    "sources": [
+      "https://razorpay.com/solutions/e-commerce/",
+      "https://razorpay.com/pricing/"
+    ]
+  },
+  "observations": {
+    "ledger": {
+      "scope": "Read-only aggregate production readiness; no invoices, profit, writer retirement or deployment asserted",
+      "observed_at": "2026-10-09T18:37:26.812533+00:00",
+      "release_candidate": "29919c2de38fb9e2b45975fad7ea9d822b2442fb",
+      "driver": "locked psycopg3",
+      "read_only": true,
+      "schema": "20261008_0009",
+      "active_other_sessions": 0,
+      "role_observation": {
+        "rolcanlogin": true,
+        "rolsuper": false,
+        "rolcreatedb": true,
+        "rolcreaterole": true,
+        "rolreplication": true,
+        "rolbypassrls": true
+      },
+      "optional_tables_present": {
+        "model_cost_liabilities": false,
+        "candidate_password_accounts": false,
+        "candidate_lifetime_history": false
+      },
+      "payment_orders": {
+        "rows": 1,
+        "status_counts": [
+          {
+            "status": "created",
+            "count": 1
+          }
+        ],
+        "provider_fee_amount_minor_present": true,
+        "provider_tax_amount_minor_present": false,
+        "customer_tax_amount_minor_present": true,
+        "paid_at_present": true,
+        "cost_policy_snapshot_present": false,
+        "paid_count": 0,
+        "paid_gross_minor": 0,
+        "paid_known_fee_count": 0,
+        "paid_known_fee_minor": 0
+      },
+      "payment_refunds": {
+        "rows": 0,
+        "status_counts": []
+      },
+      "analysis_runs": {
+        "rows": 39,
+        "status_counts": [
+          {
+            "status": "succeeded",
+            "count": 27
+          },
+          {
+            "status": "failed",
+            "count": 8
+          },
+          {
+            "status": "cancelled",
+            "count": 4
+          }
+        ]
+      },
+      "employer_applications": {
+        "rows": 0,
+        "status_counts": []
+      },
+      "aggregate_read_complete": true,
+      "observed_through": "2026-10-09T18:37:32.299353+00:00",
+      "cutover_ready": false,
+      "invoices_reconciled": false,
+      "all_enabled_payment_methods_verified": false
+    },
+    "supported_payment_methods": {
+      "observed_at": "2026-10-09T18:53:08.219072+00:00",
+      "scope": "Read-only supported payment methods, not negotiated contract/fee or complete enabled-instrument attestation",
+      "endpoint": "https://api.razorpay.com/v1/methods",
+      "documentation": "https://razorpay.com/docs/payments/payment-methods/netbanking/",
+      "mutations": false,
+      "all_enabled_payment_methods_verified": false,
+      "status": 200,
+      "entity": "methods",
+      "methods": [
+        {
+          "method": "ach",
+          "value": false,
+          "options_count": null,
+          "shape": "bool"
+        },
+        {
+          "method": "amex",
+          "value": false,
+          "options_count": null,
+          "shape": "bool"
+        },
+        {
+          "method": "app",
+          "value": null,
+          "options_count": 7,
+          "shape": "dict"
+        },
+        {
+          "method": "apple_pay_provider",
+          "value": null,
+          "options_count": 2,
+          "shape": "dict"
+        },
+        {
+          "method": "card",
+          "value": true,
+          "options_count": null,
+          "shape": "bool"
+        },
+        {
+          "method": "card_networks",
+          "value": null,
+          "options_count": 9,
+          "shape": "dict"
+        },
+        {
+          "method": "card_subtype",
+          "value": null,
+          "options_count": 3,
+          "shape": "dict"
+        },
+        {
+          "method": "cardless_emi",
+          "value": null,
+          "options_count": 18,
+          "shape": "dict"
+        },
+        {
+          "method": "cod",
+          "value": false,
+          "options_count": null,
+          "shape": "bool"
+        },
+        {
+          "method": "credit_card",
+          "value": true,
+          "options_count": null,
+          "shape": "bool"
+        },
+        {
+          "method": "debit_card",
+          "value": true,
+          "options_count": null,
+          "shape": "bool"
+        },
+        {
+          "method": "debit_emi_providers",
+          "value": null,
+          "options_count": 4,
+          "shape": "dict"
+        },
+        {
+          "method": "duitnow",
+          "value": false,
+          "options_count": null,
+          "shape": "bool"
+        },
+        {
+          "method": "duitnow_flow_type",
+          "value": null,
+          "options_count": 2,
+          "shape": "dict"
+        },
+        {
+          "method": "duitnow_pay",
+          "value": false,
+          "options_count": null,
+          "shape": "bool"
+        },
+        {
+          "method": "duitnow_qr",
+          "value": false,
+          "options_count": null,
+          "shape": "bool"
+        },
+        {
+          "method": "emi",
+          "value": true,
+          "options_count": null,
+          "shape": "bool"
+        },
+        {
+          "method": "emi_options",
+          "value": null,
+          "options_count": 14,
+          "shape": "dict"
+        },
+        {
+          "method": "emi_plans",
+          "value": null,
+          "options_count": 14,
+          "shape": "dict"
+        },
+        {
+          "method": "emi_subvention",
+          "value": null,
+          "options_count": null,
+          "shape": "str"
+        },
+        {
+          "method": "emi_types",
+          "value": null,
+          "options_count": 4,
+          "shape": "dict"
+        },
+        {
+          "method": "fpx",
+          "value": null,
+          "options_count": 0,
+          "shape": "list"
+        },
+        {
+          "method": "gift_cards",
+          "value": false,
+          "options_count": null,
+          "shape": "bool"
+        },
+        {
+          "method": "google_pay_cards",
+          "value": false,
+          "options_count": null,
+          "shape": "bool"
+        },
+        {
+          "method": "google_pay_provider",
+          "value": false,
+          "options_count": null,
+          "shape": "bool"
+        },
+        {
+          "method": "gpay",
+          "value": false,
+          "options_count": null,
+          "shape": "bool"
+        },
+        {
+          "method": "in_app",
+          "value": false,
+          "options_count": null,
+          "shape": "bool"
+        },
+        {
+          "method": "instalment",
+          "value": null,
+          "options_count": 3,
+          "shape": "dict"
+        },
+        {
+          "method": "nach",
+          "value": true,
+          "options_count": null,
+          "shape": "bool"
+        },
+        {
+          "method": "netbanking",
+          "value": null,
+          "options_count": 45,
+          "shape": "dict"
+        },
+        {
+          "method": "netbanking_2_0",
+          "value": null,
+          "options_count": 0,
+          "shape": "list"
+        },
+        {
+          "method": "offline",
+          "value": false,
+          "options_count": null,
+          "shape": "bool"
+        },
+        {
+          "method": "offline_credit_emi_providers",
+          "value": null,
+          "options_count": 20,
+          "shape": "dict"
+        },
+        {
+          "method": "offline_debit_emi_providers",
+          "value": null,
+          "options_count": 3,
+          "shape": "dict"
+        },
+        {
+          "method": "paylater",
+          "value": null,
+          "options_count": 14,
+          "shape": "dict"
+        },
+        {
+          "method": "paynow",
+          "value": false,
+          "options_count": null,
+          "shape": "bool"
+        },
+        {
+          "method": "pix",
+          "value": false,
+          "options_count": null,
+          "shape": "bool"
+        },
+        {
+          "method": "prepaid_card",
+          "value": true,
+          "options_count": null,
+          "shape": "bool"
+        },
+        {
+          "method": "recurring",
+          "value": null,
+          "options_count": 6,
+          "shape": "dict"
+        },
+        {
+          "method": "sodexo",
+          "value": false,
+          "options_count": null,
+          "shape": "bool"
+        },
+        {
+          "method": "upi",
+          "value": true,
+          "options_count": null,
+          "shape": "bool"
+        },
+        {
+          "method": "upi_config",
+          "value": null,
+          "options_count": 1,
+          "shape": "dict"
+        },
+        {
+          "method": "upi_intent",
+          "value": true,
+          "options_count": null,
+          "shape": "bool"
+        },
+        {
+          "method": "upi_type",
+          "value": null,
+          "options_count": 2,
+          "shape": "dict"
+        },
+        {
+          "method": "wallet",
+          "value": null,
+          "options_count": 4,
+          "shape": "dict"
+        }
+      ],
+      "response_body_sha256": "d616d5a790b5faa9818fdfda614bdb833f1b4aa77c0400797f096d7daf210ed8",
+      "finished_at": "2026-10-09T18:53:13.755216+00:00"
+    }
+  },
+  "audit": {
+    "review_status": "candidate",
+    "provenance": "estimated",
+    "audit": {
+      "version": "estimated-india-2026-10-09-v2",
+      "search_floor": 1,
+      "apply_floor": 17,
+      "packs": [
+        {
+          "sku": "starter_bundle",
+          "net_receipts_minor": 46825,
+          "required_net_minor": 45600,
+          "allocation_minor": 15000,
+          "analysis_units": 2,
+          "service_credits": 100
+        },
+        {
+          "sku": "growth_bundle",
+          "net_receipts_minor": 80055,
+          "required_net_minor": 76800,
+          "allocation_minor": 15000,
+          "analysis_units": 6,
+          "service_credits": 300
+        },
+        {
+          "sku": "scale_bundle",
+          "net_receipts_minor": 161285,
+          "required_net_minor": 144500,
+          "allocation_minor": 15000,
+          "analysis_units": 15,
+          "service_credits": 700
+        }
+      ],
+      "analysis_cost_minor_per_unit": 2650,
+      "fixed_allocation_minor_per_pack": 15000
+    },
+    "forecasts": [
+      {
+        "sku": "starter_bundle",
+        "break_even_paid_packs": 49,
+        "monthly_forecasts": [
+          {
+            "paid_packs": 10,
+            "estimated_after_buffer_contribution_minor": -1425350
+          },
+          {
+            "paid_packs": 50,
+            "estimated_after_buffer_contribution_minor": 73250
+          },
+          {
+            "paid_packs": 100,
+            "estimated_after_buffer_contribution_minor": 1946500
+          }
+        ],
+        "basis": "estimated full mixed use; actual expenses and sales unknown"
+      },
+      {
+        "sku": "growth_bundle",
+        "break_even_paid_packs": 35,
+        "monthly_forecasts": [
+          {
+            "paid_packs": 10,
+            "estimated_after_buffer_contribution_minor": -1280250
+          },
+          {
+            "paid_packs": 50,
+            "estimated_after_buffer_contribution_minor": 798750
+          },
+          {
+            "paid_packs": 100,
+            "estimated_after_buffer_contribution_minor": 3397500
+          }
+        ],
+        "basis": "estimated full mixed use; actual expenses and sales unknown"
+      },
+      {
+        "sku": "scale_bundle",
+        "break_even_paid_packs": 20,
+        "monthly_forecasts": [
+          {
+            "paid_packs": 10,
+            "estimated_after_buffer_contribution_minor": -874150
+          },
+          {
+            "paid_packs": 50,
+            "estimated_after_buffer_contribution_minor": 2829250
+          },
+          {
+            "paid_packs": 100,
+            "estimated_after_buffer_contribution_minor": 7458500
+          }
+        ],
+        "basis": "estimated full mixed use; actual expenses and sales unknown"
+      }
+    ]
+  },
+  "interpretation": {
+    "all_enabled_payment_methods_covered": "Current supported-method superset included in conservative reviewed planning estimates; not verified merchant contract/fee or hard instrument restriction.",
+    "funding": "Owner-authorized finite planning allocations; forecast revenue is not current cash or an invoice.",
+    "known_variance_review": "Bounded recorded payment/refund/analysis aggregates through 2026-10-09T18:37:32Z. Schema9 lacks retained-liability table; older failed/provider invoice exposure remains unknown and generation must remain disabled until fenced/reconciled.",
+    "costs_unknown": [
+      "actual GCP/Vercel/Gemini invoices",
+      "custom merchant contract and optional/instant-settlement charges",
+      "legacy provider charges and external credential consumers"
+    ]
+  },
+  "activation_gates_open": [
+    "independent fee/tax retention source clearance",
+    "runtime and migration credential separation",
+    "old database/provider writer fencing",
+    "fresh protected backup and schema0010-0013 migration",
+    "immutable joined deployment and production verification"
+  ],
+  "cloud_mutations": false,
+  "policy_activated": false
+}

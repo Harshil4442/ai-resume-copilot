@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     Column,
     DateTime,
@@ -30,6 +31,7 @@ class User(Base):
     password_hash = Column(String, default="")
     tier = Column(String, default="free")
     ai_credits = Column(Integer, default=FREE_SIGNUP_ANALYSIS_UNITS, nullable=False)
+    job_service_credits = Column(Integer, default=0, nullable=False)
     # When premium access expires. NULL while free; NULL on a legacy/lifetime
     # premium grant is treated as still-active.
     premium_until = Column(DateTime, nullable=True)
@@ -54,6 +56,24 @@ class User(Base):
         return expires > datetime.now(timezone.utc)
 
 
+class CandidatePasswordAccount(Base):
+    """Nullable-by-absence enrollment projection; retained authority owns its lifetime."""
+    __tablename__ = "candidate_password_accounts"
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    subject_uuid = Column(String(36), nullable=False, unique=True)
+    account_binding_id = Column(String(36), nullable=False, unique=True)
+    principal_sha256 = Column(String(64), nullable=False)
+    credential_sha256 = Column(String(64), nullable=False)
+    auth_generation = Column(BigInteger, nullable=False)
+    state = Column(String(24), nullable=False)
+
+
+class CandidateLifetimeHistory(Base):
+    """Detached schema-use marker; user deletion cannot authorize unsafe downgrade."""
+    __tablename__ = "candidate_lifetime_history"
+    registration_id = Column(String(36), primary_key=True)
+
+
 class PaymentOrder(Base):
     """Provider-neutral, server-priced checkout order.
 
@@ -63,6 +83,7 @@ class PaymentOrder(Base):
     redirect.
     """
     __tablename__ = "payment_orders"
+    __table_args__ = (Index("ix_payment_orders_paid_at", "paid_at"),)
 
     id = Column(Integer, primary_key=True, index=True)
     public_id = Column(String(64), unique=True, index=True, nullable=False)
@@ -77,6 +98,7 @@ class PaymentOrder(Base):
     provider_subscription_id = Column(String(120), nullable=True)
     sku = Column(String(64), nullable=False)
     catalog_version = Column(String(64), nullable=False)
+    cost_policy_snapshot = Column(JSON, nullable=True)
     billing_type = Column(String(32), nullable=False, default="one_time")
     # Immutable fulfilment snapshot. Delayed webhooks must grant what was
     # purchased, even after the current catalog changes or removes the SKU.
@@ -142,6 +164,7 @@ class PaymentRefund(Base):
     __tablename__ = "payment_refunds"
     __table_args__ = (
         UniqueConstraint("provider", "provider_refund_id", name="uq_payment_provider_refund"),
+        Index("ix_payment_refunds_processed_at", "processed_at"),
     )
 
     id = Column(Integer, primary_key=True, index=True)
@@ -233,7 +256,7 @@ class Resume(Base):
     source_document = deferred(Column(LargeBinary, nullable=True))
     source_format = Column(String(8), nullable=True)
     source_available = column_property(
-        source_document.expression.is_not(None) & source_format.in_(("pdf", "docx"))
+        source_document.expression.is_not(None) & source_format.in_(("pdf", "docx", "tex", "texzip"))
     )
 
     skills = Column(JSON, default=list)
@@ -346,6 +369,14 @@ class AnalysisRun(Base):
     error_code = Column(String(80), nullable=True)
     error_message = Column(String(500), nullable=True)
     attempt_count = Column(Integer, nullable=False, default=0)
+    generation_attempt_limit = Column(Integer, nullable=False, default=3)
+    generation_attempt_count = Column(Integer, nullable=False, default=0)
+    model_cost_quote = Column(JSON, nullable=True)
+    model_cost_ceiling_micros = Column(BigInteger, nullable=True)
+    model_cost_reserved_micros = Column(BigInteger, nullable=False, default=0)
+    model_cost_settled_micros = Column(BigInteger, nullable=False, default=0)
+    model_cost_state = Column(String(32), nullable=False, default="unquoted")
+    model_cost_group_id = Column(String(64), nullable=True)
     cancel_requested = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime, nullable=False, default=_utcnow)
     updated_at = Column(DateTime, nullable=False, default=_utcnow, onupdate=_utcnow)
@@ -491,6 +522,33 @@ class CareerMemoryEntry(Base):
     updated_at = Column(DateTime, nullable=False, default=_utcnow, onupdate=_utcnow)
 
 
+class ModelCostLiability(Base):
+    """Detached provider-cost evidence, independent of live customer row lifetime."""
+
+    __tablename__ = "model_cost_liabilities"
+    __table_args__ = (UniqueConstraint("financial_group_id", "attempt_number", name="uq_model_liability_attempt"),
+                      Index("ix_model_liability_state_created", "cost_state", "created_at"),
+                      Index("ix_model_liability_created", "created_at"))
+
+    id = Column(String(64), primary_key=True)
+    financial_group_id = Column(String(64), nullable=False, index=True)
+    attempt_number = Column(Integer, nullable=False)
+    provider = Column(String(80), nullable=False)
+    model = Column(String(120), nullable=False)
+    endpoint_key = Column(String(64), nullable=False)
+    currency = Column(String(3), nullable=False, default="USD")
+    pricing_quote = Column(JSON, nullable=False)
+    input_token_estimate = Column(Integer, nullable=False)
+    reserved_cost_micros = Column(BigInteger, nullable=False)
+    settled_cost_micros = Column(BigInteger, nullable=True)
+    input_tokens = Column(Integer, nullable=True)
+    output_tokens = Column(Integer, nullable=True)
+    usage_provenance = Column(String(64), nullable=True)
+    cost_state = Column(String(32), nullable=False, default="reserved")
+    created_at = Column(DateTime, nullable=False, default=_utcnow)
+    settled_at = Column(DateTime, nullable=True)
+
+
 class ModelCallEvent(Base):
     __tablename__ = "model_call_events"
     __table_args__ = (Index("ix_model_calls_run_created", "analysis_run_id", "created_at"),)
@@ -498,13 +556,24 @@ class ModelCallEvent(Base):
     id = Column(String(64), primary_key=True)
     analysis_run_id = Column(String(64), ForeignKey("analysis_runs.id"), nullable=False, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    liability_id = Column(String(64), ForeignKey("model_cost_liabilities.id"), nullable=True, index=True)
     provider = Column(String(80), nullable=False)
     model = Column(String(120), nullable=False)
     prompt_version = Column(String(64), nullable=False)
     input_tokens = Column(Integer, nullable=False, default=0)
     output_tokens = Column(Integer, nullable=False, default=0)
+    tokens_estimated = Column(Boolean, nullable=False, default=True)
+    attempt_number = Column(Integer, nullable=True)
     latency_ms = Column(Integer, nullable=False, default=0)
-    estimated_cost_micros = Column(Integer, nullable=False, default=0)
+    estimated_cost_micros = Column(BigInteger, nullable=True)
+    pricing_quote = Column(JSON, nullable=True)
+    reserved_cost_micros = Column(BigInteger, nullable=True)
+    settled_cost_micros = Column(BigInteger, nullable=True)
+    cost_state = Column(String(32), nullable=False, default="unavailable")
+    token_estimate_provenance = Column(String(64), nullable=True)
+    usage_provenance = Column(String(64), nullable=True)
+    output_token_limit = Column(Integer, nullable=True)
+    settled_at = Column(DateTime, nullable=True)
     status = Column(String(24), nullable=False)
     error_code = Column(String(80), nullable=True)
     cache_status = Column(String(24), nullable=True)
@@ -573,3 +642,11 @@ class AdminAuditEvent(Base):
     after_state = Column(JSON, nullable=False, default=dict)
     correlation_id = Column(String(64), nullable=True)
     created_at = Column(DateTime, nullable=False, default=_utcnow)
+
+
+# Register employer-domain tables for metadata and controlled Alembic releases.
+from .domains.employer import models as _employer_models  # noqa: E402,F401
+from .domains.dispatch import models as _dispatch_models  # noqa: E402,F401
+
+# Register private admission aliases after the core run model is defined.
+from .domains.analysis import models as _analysis_models  # noqa: E402,F401

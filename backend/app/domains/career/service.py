@@ -353,6 +353,18 @@ def latest_opportunity_match(
     )
     if not match:
         raise HTTPException(status_code=404, detail="Match analysis not found")
+    analysis = (
+        db.query(models.AnalysisRun)
+        .filter(
+            models.AnalysisRun.user_id == user_id,
+            models.AnalysisRun.opportunity_id == opportunity_id,
+            models.AnalysisRun.operation == "job_match",
+            models.AnalysisRun.status == "succeeded",
+            models.AnalysisRun.result_payload["match_id"].as_integer() == match.id,
+        )
+        .order_by(models.AnalysisRun.created_at.desc()).first()
+    )
+    metadata = dict(analysis.result_payload or {}) if analysis else {}
     return schemas.OpportunityMatchResponse(
         match_id=match.id,
         match_score=float(match.match_score or 0),
@@ -366,6 +378,10 @@ def latest_opportunity_match(
         fit_summary=match.fit_summary or "",
         improvement_tips=list(match.improvement_tips or []),
         created_at=match.created_at,
+        mode=metadata.get("mode"),
+        provenance=metadata.get("provenance"),
+        scoring_version=metadata.get("scoring_version"),
+        uncertainties=metadata.get("uncertainties", []),
     )
 
 
@@ -598,7 +614,7 @@ def create_resume_version(
     ) + 1
     content = payload.structured_content
     if not content:
-        if resume.source_available and resume.source_format in {"pdf", "docx"}:
+        if resume.source_available and resume.source_format in {"pdf", "docx", "tex", "texzip"}:
             content = {
                 "format_preservation": "source",
                 "source_format": resume.source_format,
@@ -611,6 +627,30 @@ def create_resume_version(
                 "skills": resume.skills or [],
                 "experience_years": resume.experience_years or 0,
             }
+    if resume.source_format in {"tex", "texzip"}:
+        from ...services.llm_client import TailoringOutputError
+        from ...services.native_tex import prepare_artifact
+        from ...services.resume_layout import ResumeLayoutError
+        if content.get("format_preservation") != "source" or content.get("source_format") != resume.source_format or not isinstance(content.get("source_edits"), list):
+            raise HTTPException(422, "Native TeX versions must preserve the uploaded source and identify exact source edits.")
+        try:
+            if content["source_edits"]:
+                from ...services.llm_client import _validate_tailoring_edit
+                from ...services.resume_layout import extract_source_units
+                units = {unit["unit_id"]: unit for unit in extract_source_units(resume.source_document, resume.source_format)}
+                evidence = db.query(models.EvidenceItem).filter(
+                    models.EvidenceItem.user_id == user_id, models.EvidenceItem.resume_id == resume.id,
+                    models.EvidenceItem.approval_state == "approved", models.EvidenceItem.id.in_(payload.evidence_ids)).all()
+                allowed = {item.id: {"text": item.evidence_text, "skills": item.skills or []} for item in evidence}
+                validated = []
+                seen: set[str] = set()
+                for edit in content["source_edits"]:
+                    validated.append(_validate_tailoring_edit(edit, units, allowed, seen))
+                    seen.add(edit["unit_id"])
+                content = {**content, "source_edits": validated}
+            content = {**content, "sealed_native_artifact": prepare_artifact(resume.source_document, resume.source_format, content["source_edits"], [{"id": identity, **item} for identity, item in allowed.items()] if content["source_edits"] else [])}
+        except (ResumeLayoutError, TailoringOutputError) as exc:
+            raise HTTPException(422, str(exc)) from exc
     version = models.ResumeVersion(
         id=public_id("rsv"),
         user_id=user_id,
@@ -670,6 +710,15 @@ def update_resume_version_state(
     payload: schemas.ResumeVersionStateUpdate,
 ) -> models.ResumeVersion:
     version = get_resume_version(db, user_id, version_id)
+    if payload.approval_state == "approved":
+        resume = _owned_resume(db, user_id, version.resume_id)
+        if resume.source_format in {"tex", "texzip"}:
+            from ...services.resume_artifacts import ResumeArtifactError, render_resume_version
+            from ...services.resume_layout import ResumeLayoutError
+            try:
+                render_resume_version(version, resume, "pdf")
+            except (ResumeArtifactError, ResumeLayoutError) as exc:
+                raise HTTPException(409, str(exc)) from exc
     version.approval_state = payload.approval_state
     db.commit()
     db.refresh(version)

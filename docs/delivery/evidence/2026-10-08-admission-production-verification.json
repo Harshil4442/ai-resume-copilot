@@ -1,0 +1,133 @@
+[
+  {
+    "check": "api_health",
+    "http": 200,
+    "result": {
+      "ok": true,
+      "release": "7cc49c2c08a296b33cb30f96e383b959caf214c0",
+      "revision": "ai-resume-parser-00252-vor"
+    },
+    "server_timing": "app;dur=4.4",
+    "elapsed_ms": 391
+  },
+  {
+    "check": "private_worker",
+    "service": "hirewiz-analysis-worker",
+    "anonymous_http": 403,
+    "authenticated_http": 200,
+    "result": {
+      "ok": true,
+      "role": "analysis-worker",
+      "release": "7cc49c2c08a296b33cb30f96e383b959caf214c0"
+    },
+    "allowed_topics": "analysis.run"
+  },
+  {
+    "check": "private_worker",
+    "service": "hirewiz-employer-worker",
+    "anonymous_http": 403,
+    "authenticated_http": 200,
+    "result": {
+      "ok": true,
+      "role": "employer-worker",
+      "release": "7cc49c2c08a296b33cb30f96e383b959caf214c0"
+    },
+    "allowed_topics": "employer.search,employer.refresh,employer.apply,employer.artifact-delete"
+  },
+  {
+    "check": "production_database",
+    "schema": "20261008_0009",
+    "sources": [
+      {
+        "employer": "Figma",
+        "platform": "greenhouse",
+        "status": "healthy",
+        "last_error_code": null,
+        "submission_enabled": false
+      },
+      {
+        "employer": "Freshworks",
+        "platform": "smartrecruiters",
+        "status": "healthy",
+        "last_error_code": null,
+        "submission_enabled": false
+      },
+      {
+        "employer": "Razorpay Software Private Limited",
+        "platform": "greenhouse",
+        "status": "healthy",
+        "last_error_code": null,
+        "submission_enabled": false
+      },
+      {
+        "employer": "Supabase",
+        "platform": "ashby",
+        "status": "healthy",
+        "last_error_code": null,
+        "submission_enabled": false
+      }
+    ],
+    "open_postings": [
+      {
+        "employer": "Figma",
+        "open_count": 150
+      },
+      {
+        "employer": "Freshworks",
+        "open_count": 126
+      },
+      {
+        "employer": "Razorpay Software Private Limited",
+        "open_count": 27
+      },
+      {
+        "employer": "Supabase",
+        "open_count": 53
+      }
+    ],
+    "dispatch": [
+      {
+        "topic": "employer.refresh",
+        "status": "cancelled",
+        "count": 4
+      },
+      {
+        "topic": "employer.refresh",
+        "status": "completed",
+        "count": 9
+      }
+    ]
+  },
+  {
+    "check": "authenticated_catalog",
+    "http": 200,
+    "enabled": true,
+    "auto_submit_enabled": false,
+    "search_credits_per_job": 1,
+    "apply_credits_per_job": 5,
+    "admission_limits": {
+      "version": "employer-admissions-v1",
+      "daily_limit": 10,
+      "rolling_limit": 50,
+      "rolling_days": 30,
+      "pending_limit": 10,
+      "daily_credit_limit": 100,
+      "rolling_credit_limit": 500,
+      "batch_limit": 10,
+      "batch_credit_limit": 100,
+      "quote_hours": 24,
+      "day_boundary": "UTC",
+      "counting_policy": "pending_and_unknown_plus_possible_sends_in_window"
+    },
+    "source_count": 4,
+    "application_modes": [
+      "manual"
+    ],
+    "coverage": {
+      "scope": "Verified enabled employer sources",
+      "worldwide_recall_verified": false
+    },
+    "server_timing": "app;dur=4463.2",
+    "elapsed_ms": 4810
+  }
+]

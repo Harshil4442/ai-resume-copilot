@@ -431,8 +431,8 @@ export default function HomePage() {
           </h2>
           <p>
             Create your free account and start with 50 analysis units.
-            <br className={styles.desktopBreak} /> Upgrade to a 30-day Premium
-            pass when you’re ready.
+            <br className={styles.desktopBreak} /> Choose a finite prepaid pack
+            when you’re ready.
           </p>
           <Link href="/register" className="button-primary">
             Build your workspace <ArrowUpRight size={17} />

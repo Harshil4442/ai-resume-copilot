@@ -1,0 +1,25 @@
+{
+  "release": "ec52279d236e82813bc486b9d5de9eb97a80408d",
+  "deployment": {
+    "id": "dpl_JB49tvj5iVqA2Zf8BBN4Py5jxmZg",
+    "url": "ai-resume-copilot-7qc83e4ie-harshil4442s-projects.vercel.app",
+    "readyState": "READY",
+    "target": "production",
+    "projectId": "prj_yM58wylX64Ehx97cYUPdBhXvXI3J",
+    "createdAt": 1791479112059,
+    "ready": 1791479145186
+  },
+  "commit_metadata": {
+    "githubCommitSha": "ec52279d236e82813bc486b9d5de9eb97a80408d",
+    "githubCommitRef": "codex/employer-application-system-design",
+    "githubCommitRepo": "ai-resume-copilot",
+    "githubCommitOrg": "Harshil4442"
+  },
+  "custom_alias": {
+    "alias": "www.hirewizhq.com",
+    "deployment_id": "dpl_JB49tvj5iVqA2Zf8BBN4Py5jxmZg"
+  },
+  "credentials_retained": false,
+  "promotion_command_succeeded": true,
+  "promotion_time_exact_recorded": false
+}

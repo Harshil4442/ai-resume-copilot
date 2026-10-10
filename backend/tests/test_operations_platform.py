@@ -132,7 +132,7 @@ def test_maintenance_purges_sensitive_payloads_and_old_model_telemetry(monkeypat
         engine.dispose()
 
 
-def test_model_call_cost_uses_configured_rates(monkeypatch):
+def test_logical_model_event_has_no_invented_cost_from_unscoped_rates(monkeypatch):
     monkeypatch.setenv("LLM_INPUT_COST_MICROS_PER_MILLION", "1000000")
     monkeypatch.setenv("LLM_OUTPUT_COST_MICROS_PER_MILLION", "2000000")
     engine, factory = _database()
@@ -170,7 +170,8 @@ def test_model_call_cost_uses_configured_rates(monkeypatch):
             event = db.query(models.ModelCallEvent).one()
             assert event.input_tokens > 900
             assert event.output_tokens > 400
-            assert event.estimated_cost_micros > 1_500
+            assert event.estimated_cost_micros is None
+            assert event.cost_state == "unavailable"
     finally:
         engine.dispose()
 

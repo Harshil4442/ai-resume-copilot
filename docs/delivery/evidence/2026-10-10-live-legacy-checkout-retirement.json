@@ -1,0 +1,60 @@
+{
+  "observed_at_utc": "2026-10-09T19:45:39.999471+00:00",
+  "status": "LIVE_NEW_LEGACY_CHECKOUT_CONTAINED",
+  "revision": "ai-resume-parser-e7-checkout-off-20261010",
+  "existing_release": "e7d8f2ba0435fd3d4a504ccdce83fac365ec6835",
+  "existing_digest": "cf2cb125a72c79a7b41f9c263c1a999521363d6c944affb3c017e0dc5e112f4d",
+  "business_configuration_delta": "RAZORPAY_CHECKOUT_ENABLED true -> false only",
+  "base_traffic_percent": 100,
+  "all_remaining_public_tags_checkout_disabled": true,
+  "removed_maintenance_tag": "generation-quiesce",
+  "old_release_candidate_url_preserved": true,
+  "origins": [
+    {
+      "origin": "cloud-run",
+      "base_url": "https://ai-resume-parser-mqff62d75a-uc.a.run.app",
+      "healthy_exact_revision": true,
+      "checkout_false_all_products_disabled_no_store": true,
+      "unauthenticated_config_status": 401
+    },
+    {
+      "origin": "custom-api",
+      "base_url": "https://api.hirewizhq.com",
+      "healthy_exact_revision": true,
+      "checkout_false_all_products_disabled_no_store": true,
+      "unauthenticated_config_status": 401
+    },
+    {
+      "origin": "release-candidate",
+      "base_url": "https://release-candidate---ai-resume-parser-mqff62d75a-uc.a.run.app",
+      "healthy_exact_revision": true,
+      "checkout_false_all_products_disabled_no_store": true,
+      "unauthenticated_config_status": 401
+    },
+    {
+      "origin": "checkout-contained",
+      "base_url": "https://checkout-contained---ai-resume-parser-mqff62d75a-uc.a.run.app",
+      "healthy_exact_revision": true,
+      "checkout_false_all_products_disabled_no_store": true,
+      "unauthenticated_config_status": 401
+    }
+  ],
+  "service_iam_unchanged": true,
+  "accepted_order_capture_refund_routes": "same code, keys, signatures and routes; local exact e7 flag checks passed; no live payment smoke test",
+  "payments_created": 0,
+  "model_calls": 0,
+  "employer_submissions": 0,
+  "schema_migration_commands": 0,
+  "worker_changes": 0,
+  "provider_key_changes": 0,
+  "full_finite_pack_activation": false,
+  "optional_AI_generation_quiesced": false,
+  "goal_complete": false,
+  "initial_refusals_retained": [
+    "Missing Cloud Resource Manager API; original service unchanged before enabling required API.",
+    "Case-sensitive HTTP header verification harness; corrected read-only lookup, service/catalog already valid."
+  ],
+  "private_proof_sha256": "dc21a4adffe646fb996fbe137bd6f55f896b887b24ea8b0aa60c0d0e4bb06010",
+  "reviewed_replacement_sha256": "5d83176e4fd3576031c2dd7615a77a33be4f7e4ac7520f921269a2f1d46f7c3e",
+  "production_frontend": "Old frontend purchase-screen retirement is being separately reviewed; source06cc112."
+}

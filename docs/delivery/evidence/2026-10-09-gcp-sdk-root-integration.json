@@ -1,0 +1,41 @@
+{
+  "scope": "root merged GCP SDK status primitives; not production pairing or action authority",
+  "frozen_patch_sha256": "68100d9df55161fd2fc3c1c9a727d41741234f0abdcde56ac06bf35089562a37",
+  "original_emulator_fixture_sha256": "f3959cfdd42140ceda2e177aebe3f5e672cc16eed9d6bee1e9c478c3468ab9b6",
+  "root_change": "required CI emulator unavailability fails rather than skips; local optional emulator use may skip",
+  "focused_tests": {
+    "passed": 196,
+    "skipped": 0,
+    "seconds": 7.0,
+    "emulator_cases": 6,
+    "command": "HIREWIZ_AUTHORITY_EMULATOR_REQUIRED=true .venv/bin/pytest -q tests/test_gcp_rpc.py tests/test_gcp_journal_sdk.py tests/test_gcp_safety_coordinator.py tests/test_gcp_rpc_emulator.py"
+  },
+  "ruff": {
+    "exit_code": 0,
+    "files": 10
+  },
+  "mypy": {
+    "exit_code": 0,
+    "source_files": 6
+  },
+  "independent_review": "Root read the byte bound, raw-reader proxy, independent client view and owned response cleanup after the independent v1 full-object download finding.",
+  "limitations": [
+    "GCS HTTP is intercepted; Firestore data RPCs use the owned localhost emulator.",
+    "No emulator database UID, IAM, journal retention, production factory, authenticated pairing or employer action proof.",
+    "Metadata/upload responses, socket read-ahead and hard end-to-end deadlines are outside the bounded media-read proof."
+  ],
+  "cloud_mutations": false,
+  "real_candidate_data_used": false,
+  "source_sha256": {
+    "backend/app/domains/recovery/gcp_buffer.py": "7cf1b1727d8dadb735c60c35e0a01d0b011802658f5819cdc6ab310f55189add",
+    "backend/app/domains/recovery/gcp_contracts.py": "e3c65edefebe272f15dc04a56592d09a654404478ed47f2729082ad4d10d4231",
+    "backend/app/domains/recovery/gcp_journal.py": "9a1fff356ba9541a6ce7a755280baf168c3df7a5416bbc276b22d98ff72b983d",
+    "backend/app/domains/recovery/gcp_media.py": "4ff3d14e1246b29ab2f8ba13e7e032af522c77d4688186cca22d501d514c2062",
+    "backend/app/domains/recovery/gcp_rpc.py": "f9a664ec804421158a43af7adb741faa20a794d5782e641a70fb0f741d2b1d45",
+    "backend/app/domains/recovery/gcp_service.py": "efb0829ed1ba53d9453e9b65a060ff0f9294b0d34a960f78d4f8d09b526d5f53",
+    "backend/tests/test_gcp_journal_sdk.py": "a45035655ebf00b724c6770c1caee6533503d18ca855d28a5b442fe0537d11ed",
+    "backend/tests/test_gcp_rpc.py": "5d994da7780b0b72019e72dcab1c1be2ac86f5df6d7c0759a3af3b3aece64dbb",
+    "backend/tests/test_gcp_rpc_emulator.py": "16358de3e934da393f1f1314684d2d96510d5e9d307662462d027db45c564817",
+    "backend/tests/test_gcp_safety_coordinator.py": "46bde1d5c38a7035c177a083d30a5d1a7148864153a058e914471c142dfe111d"
+  }
+}

@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .observability import configure_observability, correlation_id_var
+from .catalog_timing import CatalogTimingMiddleware, catalog_span, current_catalog_timing
 
 configure_observability()
 
@@ -22,13 +23,20 @@ try:
 except Exception:
     pass
 
-from .routers import auth, resume, jobs, recommendations, llm, analytics, rag, market, billing, public_endpoints  # noqa: E402
+from .routers import candidate_accounts, auth, resume, jobs, recommendations, llm, analytics, rag, market, billing, public_endpoints  # noqa: E402
+from .routers import resume_uploads  # noqa: E402
 from .routers.v1 import router as v1_router  # noqa: E402
 from .rate_limiter import limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi import _rate_limit_exceeded_handler
 
-app = FastAPI(title="HireWiz API")
+class CatalogObservedFastAPI(FastAPI):
+    async def __call__(self, scope, receive, send):
+        # Preserve FastAPI's public app API while observing outside its error layer.
+        await CatalogTimingMiddleware(super().__call__)(scope, receive, send)
+
+
+app = CatalogObservedFastAPI(title="HireWiz API")
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
@@ -56,8 +64,10 @@ from .security import JWT_SECRET, JWT_ALGORITHM
 
 @app.middleware("http")
 async def request_context_middleware(request: Request, call_next):
+    catalog_timing = current_catalog_timing()
     incoming = (request.headers.get("X-Correlation-ID") or "").strip()
     correlation_id = (
+        catalog_timing.request_id if catalog_timing is not None else
         incoming
         if incoming and len(incoming) <= 64 and all(ch.isalnum() or ch in "-_." for ch in incoming)
         else uuid.uuid4().hex[:16]
@@ -86,30 +96,37 @@ async def jwt_validation_middleware(request: Request, call_next):
         path == "/api/auth/login" or
         path == "/api/auth/google-login" or
         path == "/api/auth/register" or
+        path == "/api/auth/candidate/v1/register" or
+        path == "/api/auth/candidate/v1/login" or
+        path == "/api/auth/candidate/v1/availability" or
+        path == "/api/auth/candidate/v1/registration-status" or
+        path == "/api/auth/candidate/v1/web-logout" or
         path.startswith("/api/public") or
-        path == "/api/billing/webhooks/razorpay"
+        path == "/api/billing/webhooks/razorpay" or
+        path.startswith("/api/v1/browser-pairing/")
     ):
-        auth_header = request.headers.get("Authorization")
-        if not auth_header or not auth_header.startswith("Bearer "):
-            return JSONResponse(
-                status_code=401,
-                content={"detail": "Not authenticated - Missing or invalid Authorization header"},
-            )
-        token = auth_header.split(" ")[1]
-        try:
-            payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-            sub = payload.get("sub")
-            if sub is None:
+        with catalog_span("middleware_jwt"):
+            auth_header = request.headers.get("Authorization")
+            if not auth_header or not auth_header.startswith("Bearer "):
                 return JSONResponse(
                     status_code=401,
-                    content={"detail": "Not authenticated - Invalid token claims"},
+                    content={"detail": "Not authenticated - Missing or invalid Authorization header"},
                 )
-            request.state.user_id = int(sub)
-        except (JWTError, ValueError):
-            return JSONResponse(
-                status_code=401,
-                content={"detail": "Not authenticated - Expired or malformed token"},
-            )
+            token = auth_header.split(" ")[1]
+            try:
+                payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+                sub = payload.get("sub")
+                if sub is None:
+                    return JSONResponse(
+                        status_code=401,
+                        content={"detail": "Not authenticated - Invalid token claims"},
+                    )
+                request.state.user_id = int(sub)
+            except (JWTError, ValueError):
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "Not authenticated - Expired or malformed token"},
+                )
 
     response = await call_next(request)
     if path.startswith("/api") and not (
@@ -122,10 +139,13 @@ async def jwt_validation_middleware(request: Request, call_next):
 
 @app.get("/api/health")
 def health():
-    return {"ok": True}
+    return {"ok": True, "release": os.getenv("APP_RELEASE", "development"),
+            "revision": os.getenv("K_REVISION", "development")}
 
 # Routers
 app.include_router(auth.router, prefix="/api")
+app.include_router(candidate_accounts.router, prefix="/api")
+app.include_router(resume_uploads.router, prefix="/api")
 app.include_router(resume.router, prefix="/api")
 app.include_router(jobs.router, prefix="/api")
 app.include_router(recommendations.router, prefix="/api")

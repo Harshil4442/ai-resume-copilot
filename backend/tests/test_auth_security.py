@@ -88,7 +88,7 @@ def test_google_login_derives_identity_from_verified_token(monkeypatch):
             json={
                 "id_token": "x" * 200,
                 "registration_consent": True,
-                "policy_version": "2026-07-11",
+                "policy_version": "2026-10-08",
             },
         )
         assert response.status_code == 200, response.text
@@ -99,7 +99,7 @@ def test_google_login_derives_identity_from_verified_token(monkeypatch):
             assert user.email == "verified.user@example.com"
             assert user.password_hash == ""
             assert user.ai_credits == 50
-            assert user.terms_version == "2026-07-11"
+            assert user.terms_version == "2026-10-08"
             assert user.terms_accepted_at is not None
     finally:
         client.close()

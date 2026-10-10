@@ -99,8 +99,8 @@ def _format(source_bytes: bytes, source_format: str) -> str:
     if not isinstance(source_bytes, bytes) or not source_bytes or len(source_bytes) > _MAX_BYTES:
         raise ResumeLayoutError("The original resume document is missing or too large.")
     kind = source_format.lower().lstrip(".") if isinstance(source_format, str) else ""
-    if kind not in {"pdf", "docx"}:
-        raise ResumeLayoutError("Layout-preserving tailoring supports PDF and DOCX sources.")
+    if kind not in {"pdf", "docx", "tex", "texzip"}:
+        raise ResumeLayoutError("Layout-preserving tailoring supports PDF, DOCX and supported native TeX projects.")
     return kind
 
 
@@ -178,6 +178,9 @@ def _validated_edits(units: list[dict[str, Any]], edits: list[dict]) -> dict[str
 def extract_source_units(source_bytes: bytes, source_format: str) -> list[dict]:
     """Return eligible source text and stable identities for concise local edits."""
     kind = _format(source_bytes, source_format)
+    if kind in {"tex", "texzip"}:
+        from .native_tex import source_units
+        return source_units(source_bytes, kind, _candidate)
     if kind == "pdf":
         with _PDF_LOCK:
             try:
@@ -209,6 +212,10 @@ def apply_source_edits(source_bytes: bytes, source_format: str, edits: list[dict
         raise ResumeLayoutError("The source edit list is invalid.")
     if not edits:
         return source_bytes
+    if kind in {"tex", "texzip"}:
+        from .native_tex import prepare_artifact, sealed_bytes
+        seal = prepare_artifact(source_bytes, kind, edits)
+        return sealed_bytes(seal, source_bytes, kind, edits, kind)
     if kind == "pdf":
         with _PDF_LOCK:
             try:

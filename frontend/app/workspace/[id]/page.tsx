@@ -63,8 +63,11 @@ type Tab = "overview" | "resume" | "learning" | "interview" | "activity" | "outc
 type SourceState = "no_selection" | "loading" | "request_error" | "missing_row" | "unknown_metadata" | "confirmed_absent" | "ready";
 type Outcome = "offer_accepted" | "offer_declined" | "rejected" | "withdrawn";
 type InterviewResult = {
+  mode?: "curated" | "enhanced";
+  provenance?: "curated" | "generated";
   opportunity_id: string;
   questions: {
+    provenance?: "curated" | "generated";
     question: string;
     answer: string;
     answer_state?: "evidence_backed" | "evidence_needed";
@@ -111,6 +114,7 @@ function useRunResult(run: AnalysisRun | undefined) {
 }
 
 function MatchSummary({ match }: { match: OpportunityMatch }) {
+  const mode = (match as OpportunityMatch & { mode?: string }).mode;
   const score = Math.round(match.match_score);
   return (
     <div className="grid gap-7 lg:grid-cols-[180px_1fr]">
@@ -123,8 +127,9 @@ function MatchSummary({ match }: { match: OpportunityMatch }) {
         </div>
       </div>
       <div className="min-w-0">
-        <h2 className="font-display text-lg font-normal text-foreground">Evidence-aware assessment</h2>
+        <h2 className="font-display text-lg font-normal text-foreground">{mode === "basic" ? "Basic skill comparison" : mode === "enhanced" ? "Enhanced AI assessment" : "Role assessment"}</h2>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">{match.fit_summary || "Your role-specific summary will appear here."}</p>
+        {mode === "basic" ? <p className="mt-2 text-xs leading-5 text-muted-foreground">Deterministic skill overlap. This score is not a hiring probability and does not assess every job requirement.</p> : null}
         <div className="mt-5 flex flex-wrap gap-2">
           {match.full_matches.slice(0, 8).map((skill) => (
             <span key={skill} className="rounded-md border border-primary/20 bg-primary/8 px-2 py-1 text-xs font-semibold text-primary">{skill}</span>
@@ -171,6 +176,8 @@ function OpportunityContent() {
   const opportunityId = params.id;
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<Tab>(() => tabs.find((entry) => entry.id === searchParams.get("tab"))?.id || "overview");
+  const [matchMode, setMatchMode] = useState<"basic" | "enhanced">("basic");
+  const [interviewMode, setInterviewMode] = useState<"curated" | "enhanced">("curated");
   const [matchRunId, setMatchRunId] = useState<string | null>(null);
   const [interviewRunId, setInterviewRunId] = useState<string | null>(null);
   const [tailorRunId, setTailorRunId] = useState<string | null>(null);
@@ -203,7 +210,7 @@ function OpportunityContent() {
     : resumes.isError ? "request_error"
     : !sourceResume ? "missing_row"
     : sourceResume.source_available === false ? "confirmed_absent"
-    : sourceResume.source_available === true && (sourceResume.source_format === "pdf" || sourceResume.source_format === "docx") ? "ready"
+    : sourceResume.source_available === true && ["pdf", "docx", "tex", "texzip"].includes(sourceResume.source_format || "") ? "ready"
     : "unknown_metadata";
   const sourceReady = sourceState === "ready";
   const match = useQuery({
@@ -309,7 +316,7 @@ function OpportunityContent() {
         {
           operation: "job_match",
           opportunity_id: opportunityId,
-          input: { resume_id: opportunity.data.resume_id },
+          input: { resume_id: opportunity.data.resume_id, mode: matchMode },
         },
         { "Idempotency-Key": crypto.randomUUID() },
       );
@@ -322,7 +329,7 @@ function OpportunityContent() {
   const startInterview = useMutation({
     mutationFn: () => apiPostJson<AnalysisRun>(
       "/v1/analysis-runs",
-      { operation: "interview_questions", opportunity_id: opportunityId, input: { num_questions: interviewQuestionCount } },
+      { operation: "interview_questions", opportunity_id: opportunityId, input: { num_questions: interviewQuestionCount, mode: interviewMode } },
       { "Idempotency-Key": crypto.randomUUID() },
     ),
     onSuccess: (run) => {
@@ -516,7 +523,7 @@ function OpportunityContent() {
               <select ref={resumeSelectRef} className="field-control min-w-0 truncate pr-8" title={sourceResume?.filename} value={item.resume_id || ""} onChange={(event) => connectResume.mutate(event.target.value)} disabled={connectResume.isPending}>
                 <option value="">Not connected</option>
                 {item.resume_id && !sourceResume ? <option value={item.resume_id}>Connected resume #{item.resume_id} · details unavailable</option> : null}
-                {(resumes.data?.resumes || []).map((resume) => <option key={resume.id} value={resume.id}>{resume.filename} · #{resume.id} · {resume.source_available === false ? "needs upload" : resume.source_available === true && (resume.source_format === "pdf" || resume.source_format === "docx") ? `${resume.source_format.toUpperCase()} original saved` : "source status unknown"}</option>)}
+                {(resumes.data?.resumes || []).map((resume) => <option key={resume.id} value={resume.id}>{resume.filename} · #{resume.id} · {resume.source_available === false ? "needs upload" : resume.source_available === true && ["pdf", "docx", "tex", "texzip"].includes(resume.source_format || "") ? `${(resume.source_format || "").toUpperCase()} original saved` : "source status unknown"}</option>)}
               </select>
             </label>
             <label className="grid min-w-0 gap-2 text-xs font-bold text-muted-foreground">
@@ -548,7 +555,7 @@ function OpportunityContent() {
                 </select>
               </label>
             ) : null}
-            <div className="flex items-end gap-2 sm:col-span-2 xl:col-span-1">
+            <div className="grid gap-2 sm:col-span-2 xl:col-span-1"><label className="grid gap-2 text-xs font-bold text-muted-foreground">Match mode · 1 analysis unit<select className="field-control" value={matchMode} onChange={(event) => setMatchMode(event.target.value as "basic" | "enhanced")} disabled={startMatch.isPending || Boolean(matchRun.data && !terminal.has(matchRun.data.status))}><option value="basic">Basic skill comparison · no generative AI</option><option value="enhanced">Enhanced assessment · uses AI</option></select></label><div className="flex items-end gap-2">
               <Button className="min-h-11 flex-1 whitespace-nowrap xl:flex-none" onClick={() => startMatch.mutate()} disabled={startMatch.isPending || Boolean(matchRun.data && !terminal.has(matchRun.data.status))}>
                 {matchRun.data && !terminal.has(matchRun.data.status) ? <LoaderCircle size={16} className="animate-spin" /> : <Sparkles size={16} />}
                 {latestMatch ? "Refresh match" : "Run match"}
@@ -556,7 +563,7 @@ function OpportunityContent() {
               <Button className="h-11 w-11 shrink-0" size="icon" variant="secondary" onClick={() => exportOpportunity.mutate()} disabled={exportOpportunity.isPending} aria-label="Export opportunity" title="Export opportunity">
                 <Download size={16} />
               </Button>
-            </div>
+            </div></div>
           </div>
         </header>
 
@@ -579,7 +586,7 @@ function OpportunityContent() {
             <div className="grid gap-10 xl:grid-cols-[1fr_340px]">
               <section className="min-w-0">
                 {latestMatch ? <MatchSummary match={latestMatch} /> : (
-                  <EmptyState icon={Gauge} title="No match analysis yet" description="Connect a resume and run a match to compare this role with your approved career evidence." action={<Button onClick={() => startMatch.mutate()}><Sparkles size={16} /> Run match</Button>} />
+                  <EmptyState icon={Gauge} title="No match analysis yet" description="Connect a resume and run a match to compare this role with your approved career evidence." action={<Button disabled={startMatch.isPending || !item.resume_id || Boolean(matchRun.data && !terminal.has(matchRun.data.status))} onClick={() => startMatch.mutate()}><Sparkles size={16} /> Run match</Button>} />
                 )}
                 {latestMatch?.improvement_tips.length ? (
                   <div className="mt-10 border-t border-border pt-7">
@@ -708,6 +715,7 @@ function OpportunityContent() {
                     const content = getSourcePreservingContent(version.structured_content);
                     const versionResume = resumes.data?.resumes.find((resume) => resume.id === version.resume_id);
                     const nativeFormat = content && versionResume?.source_available && versionResume.source_format === content.source_format ? content.source_format : null;
+                    const hasPdf = nativeFormat === "pdf" || nativeFormat === "tex" || nativeFormat === "texzip";
                     const isUpdating = updateVersion.isPending && updateVersion.variables?.id === version.id;
                     const isDownloading = downloadVersion.isPending && downloadVersion.variables?.id === version.id;
                     return (
@@ -719,7 +727,8 @@ function OpportunityContent() {
                           </div>
                           <div className="flex shrink-0 flex-wrap items-center gap-3">
                             <StatusBadge tone={version.approval_state === "approved" ? "teal" : version.approval_state === "rejected" ? "coral" : "neutral"}>{version.approval_state}</StatusBadge>
-                            {nativeFormat === "pdf" ? <Button asChild size="sm" variant="ghost"><Link href={`/resume/preview?resume=${version.resume_id}&version=${encodeURIComponent(version.id)}`}><FileText size={14} /> Preview version</Link></Button> : null}
+                            {hasPdf ? <Button asChild size="sm" variant="ghost"><Link href={`/resume/preview?resume=${version.resume_id}&version=${encodeURIComponent(version.id)}`}><FileText size={14} /> Preview version</Link></Button> : null}
+                            {nativeFormat === "tex" || nativeFormat === "texzip" ? <Button size="sm" variant="secondary" onClick={() => downloadVersion.mutate({ id: version.id, versionNumber: version.version_number, format: "pdf" })} disabled={isDownloading}><Download size={14} /> Download review PDF</Button> : null}
                             {nativeFormat ? <Button size="sm" variant="secondary" onClick={() => downloadVersion.mutate({ id: version.id, versionNumber: version.version_number, format: nativeFormat })} disabled={isDownloading}>{isDownloading ? <LoaderCircle size={14} className="animate-spin" /> : <Download size={14} />} {nativeFormat === "docx" && version.approval_state !== "approved" ? "Download draft DOCX" : `Download ${nativeFormat.toUpperCase()}`}</Button> : null}
                           </div>
                         </div>
@@ -727,7 +736,8 @@ function OpportunityContent() {
                           <details className="mt-5 border-t border-border pt-4" open={version.id === tailored?.resume_version_id}>
                             <summary className="cursor-pointer text-sm font-semibold text-primary">{content.source_edits.length ? `Review ${content.source_edits.length} proposed ${content.source_edits.length === 1 ? "change" : "changes"}` : "Review source snapshot"}</summary>
                             <div className="mt-5 space-y-5">
-                              {nativeFormat === "docx" ? <p className="text-sm leading-6 text-muted-foreground">Download the draft DOCX and review its text and layout in your document editor before approving this version.</p> : nativeFormat === "pdf" ? <p className="text-sm leading-6 text-muted-foreground">Use Preview version to check the exact PDF layout before approving.</p> : null}
+                              {content.partial_tailoring ? <p role="status" className="text-sm leading-6 text-muted-foreground">Partial tailoring: {content.omitted_edits || "some"} proposed edits were omitted because they could not satisfy the evidence or original layout checks. Review the retained changes before approval; your original and custom resume options remain available.</p> : null}
+                              {nativeFormat === "docx" ? <p className="text-sm leading-6 text-muted-foreground">Download the draft DOCX and review its text and layout in your document editor before approving this version.</p> : hasPdf ? <p className="text-sm leading-6 text-muted-foreground">Use Preview version to check the exact PDF layout before approving.</p> : null}
                               {content.source_edits.map((edit, index) => (
                                 <div key={edit.unit_id} className="min-w-0 rounded-lg bg-surface p-4 sm:p-5">
                                   <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -792,15 +802,16 @@ function OpportunityContent() {
                 <div className="max-w-2xl">
                   <p className="eyebrow">Role-specific preparation</p>
                   <h2 id="interview-heading" className="font-display mt-2 text-3xl font-normal">Interview questions</h2>
-                  <p className="mt-2 max-w-prose text-sm leading-6 text-muted-foreground">Generate {interviewQuestionCount} practice questions for this role. Review the guidance, then build your answers from approved evidence.</p>
+                  <p className="mt-2 max-w-prose text-sm leading-6 text-muted-foreground">Prepare {interviewQuestionCount} practice questions for this role. Curated questions use a role catalog; enhanced generation sends role and approved evidence to AI. Review guidance before practicing.</p>
                 </div>
-                <Button className="min-h-11 shrink-0 self-start sm:self-auto" onClick={() => startInterview.mutate()} disabled={interviewIsRunning}>
+                <div className="grid min-w-0 gap-3 sm:w-72 sm:shrink-0"><label className="grid gap-2 text-xs font-semibold text-muted-foreground">Question mode · 1 analysis unit<select className="field-control" value={interviewMode} disabled={interviewIsRunning} onChange={(event) => setInterviewMode(event.target.value as "curated" | "enhanced")}><option value="curated">Curated role catalog · no generative AI</option><option value="enhanced">Enhanced questions · uses AI</option></select></label><Button className="min-h-11 shrink-0 self-start sm:self-auto" onClick={() => startInterview.mutate()} disabled={interviewIsRunning}>
                   {interviewIsRunning ? <LoaderCircle size={16} className="animate-spin" /> : <BrainCircuit size={16} />}
                   {interviewIsRunning ? "Generating questions" : interviewQuestions.length ? "Regenerate questions" : "Generate questions"}
-                </Button>
+                </Button></div>
               </div>
               {interviewQuestions.length ? (
                 <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-2 border-y border-border py-4 text-sm">
+                  {questions?.mode ? <span className="text-xs font-semibold text-primary">{questions.mode === "curated" ? "Curated role catalog" : "AI-generated questions"}</span> : null}
                   <span className="font-semibold text-foreground">{interviewQuestions.length} {interviewQuestions.length === 1 ? "question" : "questions"}</span>
                   {evidenceBackedCount ? <span className="inline-flex items-center gap-2 text-primary"><ShieldCheck size={16} aria-hidden="true" /> {evidenceBackedCount} evidence-backed</span> : null}
                   {interviewQuestions.length > evidenceBackedCount ? <span className="inline-flex items-center gap-2 text-muted-foreground"><CircleAlert size={16} aria-hidden="true" /> {interviewQuestions.length - evidenceBackedCount} {interviewQuestions.length - evidenceBackedCount === 1 ? "needs" : "need"} evidence</span> : null}

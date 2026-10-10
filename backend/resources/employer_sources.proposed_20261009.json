@@ -1,0 +1,71 @@
+{
+  "status": "proposed_not_enrolled",
+  "observed_utc": "2026-10-09",
+  "scope": "Three exact employer-origin public-feed proposals; default reviewed registry and production catalog unchanged",
+  "limitations": [
+    "Source identity/feed compatibility is not source-use permission, submission permission or worldwide coverage proof.",
+    "Workable requires the exact bounded redirect patch; independent component and source-use review remain pending.",
+    "Pinpoint publication dates remain unknown; feed presence is not a recent publication date.",
+    "Location/remote labels do not prove candidate eligibility or work authorization.",
+    "Personio origins were verified but both XML endpoints returned 404. No source is enrolled from those observations.",
+    "No job-board search, AI calls, applications, payments or database writes were performed."
+  ],
+  "sources": [
+    {
+      "employer": "Workable",
+      "platform": "workable",
+      "board_token": "careers",
+      "careers_url": "https://apply.workable.com/careers/",
+      "allowed_hosts": [
+        "www.workable.com",
+        "apply.workable.com",
+        "careers.workable.com"
+      ],
+      "verification_url": "https://www.workable.com/about",
+      "region": "global",
+      "verification_note": "Observed 9 October 2026: official employer origin links the exact careers tenant; bounded public feed returned 2 normalized jobs. Technical proposal only; source-use and independent review pending. No submission permission, credential or receipt contract.",
+      "submission_enabled": false,
+      "submission_grant": null,
+      "credential_env": null,
+      "form_parity_verified": false,
+      "receipt_contract": null
+    },
+    {
+      "employer": "Common App",
+      "platform": "workable",
+      "board_token": "commonapp",
+      "careers_url": "https://commonapp.workable.com/",
+      "allowed_hosts": [
+        "www.commonapp.org",
+        "commonapp.workable.com",
+        "apply.workable.com"
+      ],
+      "verification_url": "https://www.commonapp.org/careers/",
+      "region": "global",
+      "verification_note": "Observed 9 October 2026: official employer origin links the exact careers tenant; bounded public feed returned 4 normalized jobs. Technical proposal only; source-use and independent review pending. No submission permission, credential or receipt contract.",
+      "submission_enabled": false,
+      "submission_grant": null,
+      "credential_env": null,
+      "form_parity_verified": false,
+      "receipt_contract": null
+    },
+    {
+      "employer": "Pinpoint",
+      "platform": "pinpoint",
+      "board_token": "workwithus",
+      "careers_url": "https://workwithus.pinpointhq.com/",
+      "allowed_hosts": [
+        "www.pinpointhq.com",
+        "workwithus.pinpointhq.com"
+      ],
+      "verification_url": "https://www.pinpointhq.com/",
+      "region": "global",
+      "verification_note": "Observed 9 October 2026: official employer origin links the exact careers tenant; bounded public feed returned 3 normalized jobs. Technical proposal only; source-use and independent review pending. No submission permission, credential or receipt contract.",
+      "submission_enabled": false,
+      "submission_grant": null,
+      "credential_env": null,
+      "form_parity_verified": false,
+      "receipt_contract": null
+    }
+  ]
+}

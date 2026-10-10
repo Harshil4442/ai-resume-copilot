@@ -1,0 +1,745 @@
+{
+  "status": "proposed_not_enrolled",
+  "observed_utc": "2026-10-08T14:17:45.350343+00:00",
+  "observed_utc_semantics": "Completion of the UTC research batch. Exact individual scan timestamps are retained where available; missing individual times are not reconstructed.",
+  "recorded_utc": "2026-10-08T14:26:05.186292+00:00",
+  "scope": {
+    "discovery_only": true,
+    "application_mode": "manual_only",
+    "manual_registration_review_required": true,
+    "auto_submit": false,
+    "production_enrollment_performed": false,
+    "existing_default_reviewed_registry_sources": 4,
+    "release_relationship": "Next-stage proposal; does not change the current default reviewed registry or live/frozen release."
+  },
+  "limitations": [
+    "Proposed catalog only. Root/operator must independently review source identity, source terms and indexing limits before explicit enrollment; this file does not authorize enrollment.",
+    "No employer submission grant, credentials, form-parity approval, browser permit or complete-application receipt contract was obtained. Candidate applications must remain a manual employer-portal handoff.",
+    "Opening counts are observation-time normalized adapter results and will change. Complete scan describes the supported public feed, not all company vacancies or worldwide recall.",
+    "No claim of more than 95 percent coverage or any measured worldwide/India recall is supported by this catalog.",
+    "India-location and technical-title counts are independent case-insensitive regex heuristics, not eligibility or a combined count of India software vacancies.",
+    "Remote status does not establish that an individual candidate can work from India or another jurisdiction; location, employment and authorization restrictions still need review.",
+    "Provider dates are retained with vendor-specific uncertainty. Existing active posts can be several years old; presence and first observation must not be relabeled as recent publication.",
+    "Some tenant mappings are established by explicit serialized job data or official self-hosted career scripts rather than a static rendered hyperlink. Evidence kinds and exact observed references are retained.",
+    "Default source destination safeguards, response-size bounds, complete-scan checks, partial-scan protections and tenant isolation must remain intact. An outage is not proof of job closure.",
+    "Lever may require further pages as the feed grows. The single-feed request count here describes the observed size without transient retries; it is not a permanent request ceiling.",
+    "The current reviewed default registry remains four sources. These sixteen proposals are not live source availability claims."
+  ],
+  "sources": [
+    {
+      "employer": "Meesho",
+      "platform": "lever",
+      "board_token": "meesho",
+      "region": "global",
+      "careers_url": "https://www.meesho.io/jobs",
+      "allowed_hosts": [
+        "www.meesho.io"
+      ],
+      "verification_url": "https://www.meesho.io/jobs",
+      "verification_note": "Verified 8 October 2026: Official careers page references its self-hosted jobs-721b32edb85df57d.js, which explicitly uses https://api.lever.co/v0/postings/meesho. Current bounded adapter scan completed. Public discovery only; no submission permission or credentials.",
+      "submission_enabled": false,
+      "submission_grant": null,
+      "credential_env": null,
+      "form_parity_verified": false,
+      "receipt_contract": null
+    },
+    {
+      "employer": "Mindtickle",
+      "platform": "lever",
+      "board_token": "mindtickle",
+      "region": "global",
+      "careers_url": "https://www.mindtickle.com/careers/",
+      "allowed_hosts": [
+        "www.mindtickle.com"
+      ],
+      "verification_url": "https://www.mindtickle.com/careers/",
+      "verification_note": "Verified 8 October 2026: Official careers URL redirects directly to https://jobs.lever.co/mindtickle. Current bounded adapter scan completed. Public discovery only; no submission permission or credentials.",
+      "submission_enabled": false,
+      "submission_grant": null,
+      "credential_env": null,
+      "form_parity_verified": false,
+      "receipt_contract": null
+    },
+    {
+      "employer": "Harness",
+      "platform": "greenhouse",
+      "board_token": "harnessinc",
+      "region": "global",
+      "careers_url": "https://www.harness.io/company/jobs",
+      "allowed_hosts": [
+        "www.harness.io"
+      ],
+      "verification_url": "https://www.harness.io/company/jobs",
+      "verification_note": "Verified 8 October 2026: Official jobs page inline JavaScript explicitly fetches https://boards-api.greenhouse.io/v1/boards/harnessinc/jobs?content=true. Current bounded adapter scan completed. Public discovery only; no submission permission or credentials.",
+      "submission_enabled": false,
+      "submission_grant": null,
+      "credential_env": null,
+      "form_parity_verified": false,
+      "receipt_contract": null
+    },
+    {
+      "employer": "Observe.AI",
+      "platform": "greenhouse",
+      "board_token": "observeai",
+      "region": "global",
+      "careers_url": "https://www.observe.ai/careers",
+      "allowed_hosts": [
+        "www.observe.ai"
+      ],
+      "verification_url": "https://www.observe.ai/careers",
+      "verification_note": "Verified 8 October 2026: Official careers page embeds https://boards.greenhouse.io/embed/job_board/js?for=observeai. Current bounded adapter scan completed. Public discovery only; no submission permission or credentials.",
+      "submission_enabled": false,
+      "submission_grant": null,
+      "credential_env": null,
+      "form_parity_verified": false,
+      "receipt_contract": null
+    },
+    {
+      "employer": "Notion",
+      "platform": "ashby",
+      "board_token": "notion",
+      "region": "global",
+      "careers_url": "https://www.notion.com/careers",
+      "allowed_hosts": [
+        "www.notion.com"
+      ],
+      "verification_url": "https://www.notion.com/careers",
+      "verification_note": "Verified 8 October 2026: Official careers page includes exact job hyperlinks on https://jobs.ashbyhq.com/notion/. Current bounded adapter scan completed. Public discovery only; no submission permission or credentials.",
+      "submission_enabled": false,
+      "submission_grant": null,
+      "credential_env": null,
+      "form_parity_verified": false,
+      "receipt_contract": null
+    },
+    {
+      "employer": "Mixpanel",
+      "platform": "greenhouse",
+      "board_token": "mixpanel",
+      "region": "global",
+      "careers_url": "https://mixpanel.com/careers/",
+      "allowed_hosts": [
+        "mixpanel.com"
+      ],
+      "verification_url": "https://mixpanel.com/careers/",
+      "verification_note": "Verified 8 October 2026: Official careers page links https://job-boards.greenhouse.io/mixpanel. Current bounded adapter scan completed. Public discovery only; no submission permission or credentials.",
+      "submission_enabled": false,
+      "submission_grant": null,
+      "credential_env": null,
+      "form_parity_verified": false,
+      "receipt_contract": null
+    },
+    {
+      "employer": "Amplitude",
+      "platform": "ashby",
+      "board_token": "amplitude",
+      "region": "global",
+      "careers_url": "https://amplitude.com/careers",
+      "allowed_hosts": [
+        "amplitude.com"
+      ],
+      "verification_url": "https://amplitude.com/careers",
+      "verification_note": "Verified 8 October 2026: Official careers page links https://jobs.ashbyhq.com/amplitude. Current bounded adapter scan completed. Public discovery only; no submission permission or credentials.",
+      "submission_enabled": false,
+      "submission_grant": null,
+      "credential_env": null,
+      "form_parity_verified": false,
+      "receipt_contract": null
+    },
+    {
+      "employer": "Vercel",
+      "platform": "greenhouse",
+      "board_token": "vercel",
+      "region": "global",
+      "careers_url": "https://vercel.com/careers",
+      "allowed_hosts": [
+        "vercel.com"
+      ],
+      "verification_url": "https://vercel.com/careers",
+      "verification_note": "Verified 8 October 2026: Official careers page serialized job data contains exact https://job-boards.greenhouse.io/vercel/jobs/ absolute_url entries. Current bounded adapter scan completed. Public discovery only; no submission permission or credentials.",
+      "submission_enabled": false,
+      "submission_grant": null,
+      "credential_env": null,
+      "form_parity_verified": false,
+      "receipt_contract": null
+    },
+    {
+      "employer": "Commercetools",
+      "platform": "greenhouse",
+      "board_token": "commercetools",
+      "region": "global",
+      "careers_url": "https://commercetools.com/careers",
+      "allowed_hosts": [
+        "commercetools.com"
+      ],
+      "verification_url": "https://commercetools.com/careers",
+      "verification_note": "Verified 8 October 2026: Official careers page inline JavaScript assigns BOARD=commercetools and requests the corresponding boards-api.greenhouse.io jobs endpoint. Current bounded adapter scan completed. Public discovery only; no submission permission or credentials.",
+      "submission_enabled": false,
+      "submission_grant": null,
+      "credential_env": null,
+      "form_parity_verified": false,
+      "receipt_contract": null
+    },
+    {
+      "employer": "Sentry",
+      "platform": "ashby",
+      "board_token": "sentry",
+      "region": "global",
+      "careers_url": "https://sentry.io/careers/",
+      "allowed_hosts": [
+        "sentry.io"
+      ],
+      "verification_url": "https://sentry.io/careers/",
+      "verification_note": "Verified 8 October 2026: Official careers page serialized job data includes exact https://jobs.ashbyhq.com/sentry/ job URLs. Current bounded adapter scan completed. Public discovery only; no submission permission or credentials.",
+      "submission_enabled": false,
+      "submission_grant": null,
+      "credential_env": null,
+      "form_parity_verified": false,
+      "receipt_contract": null
+    },
+    {
+      "employer": "Docker",
+      "platform": "ashby",
+      "board_token": "docker",
+      "region": "global",
+      "careers_url": "https://www.docker.com/career-openings/",
+      "allowed_hosts": [
+        "www.docker.com"
+      ],
+      "verification_url": "https://www.docker.com/career-openings/",
+      "verification_note": "Verified 8 October 2026: Official career openings page embeds https://jobs.ashbyhq.com/docker/embed. Current bounded adapter scan completed. Public discovery only; no submission permission or credentials.",
+      "submission_enabled": false,
+      "submission_grant": null,
+      "credential_env": null,
+      "form_parity_verified": false,
+      "receipt_contract": null
+    },
+    {
+      "employer": "Linear",
+      "platform": "ashby",
+      "board_token": "Linear",
+      "region": "global",
+      "careers_url": "https://linear.app/careers",
+      "allowed_hosts": [
+        "linear.app"
+      ],
+      "verification_url": "https://linear.app/careers",
+      "verification_note": "Verified 8 October 2026: Official careers page serialized job data contains exact https://jobs.ashbyhq.com/Linear/ job and application links; tenant case is preserved. Current bounded adapter scan completed. Public discovery only; no submission permission or credentials.",
+      "submission_enabled": false,
+      "submission_grant": null,
+      "credential_env": null,
+      "form_parity_verified": false,
+      "receipt_contract": null
+    },
+    {
+      "employer": "Reddit",
+      "platform": "greenhouse",
+      "board_token": "reddit",
+      "region": "global",
+      "careers_url": "https://redditinc.com/careers",
+      "allowed_hosts": [
+        "redditinc.com"
+      ],
+      "verification_url": "https://redditinc.com/careers",
+      "verification_note": "Verified 8 October 2026: Official careers page links multiple exact jobs on https://job-boards.greenhouse.io/reddit/jobs/. Current bounded adapter scan completed. Public discovery only; no submission permission or credentials.",
+      "submission_enabled": false,
+      "submission_grant": null,
+      "credential_env": null,
+      "form_parity_verified": false,
+      "receipt_contract": null
+    },
+    {
+      "employer": "Ramp",
+      "platform": "ashby",
+      "board_token": "ramp",
+      "region": "global",
+      "careers_url": "https://ramp.com/careers",
+      "allowed_hosts": [
+        "ramp.com"
+      ],
+      "verification_url": "https://ramp.com/careers",
+      "verification_note": "Verified 8 October 2026: Official careers page contains exact https://jobs.ashbyhq.com/ramp/ job and application hyperlinks. Current bounded adapter scan completed. Public discovery only; no submission permission or credentials.",
+      "submission_enabled": false,
+      "submission_grant": null,
+      "credential_env": null,
+      "form_parity_verified": false,
+      "receipt_contract": null
+    },
+    {
+      "employer": "Sourcegraph",
+      "platform": "greenhouse",
+      "board_token": "sourcegraph91",
+      "region": "global",
+      "careers_url": "https://sourcegraph.com/jobs",
+      "allowed_hosts": [
+        "sourcegraph.com"
+      ],
+      "verification_url": "https://sourcegraph.com/jobs",
+      "verification_note": "Verified 8 October 2026: Official /careers redirects to /jobs, which links https://job-boards.greenhouse.io/sourcegraph91/jobs/; exact current tenant is sourcegraph91. Current bounded adapter scan completed. Public discovery only; no submission permission or credentials.",
+      "submission_enabled": false,
+      "submission_grant": null,
+      "credential_env": null,
+      "form_parity_verified": false,
+      "receipt_contract": null
+    },
+    {
+      "employer": "Freetrade",
+      "platform": "ashby",
+      "board_token": "freetrade",
+      "region": "global",
+      "careers_url": "https://freetrade.io/careers",
+      "allowed_hosts": [
+        "freetrade.io"
+      ],
+      "verification_url": "https://freetrade.io/careers",
+      "verification_note": "Verified 8 October 2026: Official careers page embeds https://jobs.ashbyhq.com/freetrade/embed?version=2. Current bounded adapter scan completed. Public discovery only; no submission permission or credentials.",
+      "submission_enabled": false,
+      "submission_grant": null,
+      "credential_env": null,
+      "form_parity_verified": false,
+      "receipt_contract": null
+    }
+  ],
+  "origin_proofs": [
+    {
+      "source_key": "lever:global:meesho",
+      "employer": "Meesho",
+      "official_careers_url": "https://www.meesho.io/jobs",
+      "evidence_kind": "official_self_hosted_careers_script",
+      "observed_ats_reference": "https://api.lever.co/v0/postings/meesho",
+      "evidence_note": "Official careers page references its self-hosted jobs-721b32edb85df57d.js, which explicitly uses https://api.lever.co/v0/postings/meesho.",
+      "official_script_url": "https://www.meesho.io/_next/static/chunks/pages/jobs-721b32edb85df57d.js"
+    },
+    {
+      "source_key": "lever:global:mindtickle",
+      "employer": "Mindtickle",
+      "official_careers_url": "https://www.mindtickle.com/careers/",
+      "evidence_kind": "official_careers_redirect",
+      "observed_ats_reference": "https://jobs.lever.co/mindtickle",
+      "evidence_note": "Official careers URL redirects directly to https://jobs.lever.co/mindtickle.",
+      "resolved_official_destination": "https://jobs.lever.co/mindtickle"
+    },
+    {
+      "source_key": "greenhouse:global:harnessinc",
+      "employer": "Harness",
+      "official_careers_url": "https://www.harness.io/company/jobs",
+      "evidence_kind": "official_inline_careers_script",
+      "observed_ats_reference": "https://boards-api.greenhouse.io/v1/boards/harnessinc/jobs?content=true",
+      "evidence_note": "Official jobs page inline JavaScript explicitly fetches https://boards-api.greenhouse.io/v1/boards/harnessinc/jobs?content=true."
+    },
+    {
+      "source_key": "greenhouse:global:observeai",
+      "employer": "Observe.AI",
+      "official_careers_url": "https://www.observe.ai/careers",
+      "evidence_kind": "official_careers_embed",
+      "observed_ats_reference": "https://boards.greenhouse.io/embed/job_board/js?for=observeai",
+      "evidence_note": "Official careers page embeds https://boards.greenhouse.io/embed/job_board/js?for=observeai."
+    },
+    {
+      "source_key": "ashby:global:notion",
+      "employer": "Notion",
+      "official_careers_url": "https://www.notion.com/careers",
+      "evidence_kind": "official_careers_job_hyperlink",
+      "observed_ats_reference": "https://jobs.ashbyhq.com/notion/00960f3c-46b6-4ad5-ae6b-4175035b3cb9",
+      "evidence_note": "Official careers page includes exact job hyperlinks on https://jobs.ashbyhq.com/notion/."
+    },
+    {
+      "source_key": "greenhouse:global:mixpanel",
+      "employer": "Mixpanel",
+      "official_careers_url": "https://mixpanel.com/careers/",
+      "evidence_kind": "official_careers_board_hyperlink",
+      "observed_ats_reference": "https://job-boards.greenhouse.io/mixpanel",
+      "evidence_note": "Official careers page links https://job-boards.greenhouse.io/mixpanel."
+    },
+    {
+      "source_key": "ashby:global:amplitude",
+      "employer": "Amplitude",
+      "official_careers_url": "https://amplitude.com/careers",
+      "evidence_kind": "official_careers_board_hyperlink",
+      "observed_ats_reference": "https://jobs.ashbyhq.com/amplitude",
+      "evidence_note": "Official careers page links https://jobs.ashbyhq.com/amplitude."
+    },
+    {
+      "source_key": "greenhouse:global:vercel",
+      "employer": "Vercel",
+      "official_careers_url": "https://vercel.com/careers",
+      "evidence_kind": "official_serialized_careers_job_data",
+      "observed_ats_reference": "https://job-boards.greenhouse.io/vercel/jobs/6136160004",
+      "evidence_note": "Official careers page serialized job data contains exact https://job-boards.greenhouse.io/vercel/jobs/ absolute_url entries."
+    },
+    {
+      "source_key": "greenhouse:global:commercetools",
+      "employer": "Commercetools",
+      "official_careers_url": "https://commercetools.com/careers",
+      "evidence_kind": "official_inline_careers_script",
+      "observed_ats_reference": "https://boards-api.greenhouse.io/v1/boards/commercetools/jobs?content=true",
+      "evidence_note": "Official careers page inline JavaScript assigns BOARD=commercetools and requests the corresponding boards-api.greenhouse.io jobs endpoint."
+    },
+    {
+      "source_key": "ashby:global:sentry",
+      "employer": "Sentry",
+      "official_careers_url": "https://sentry.io/careers/",
+      "evidence_kind": "official_serialized_careers_job_data",
+      "observed_ats_reference": "https://jobs.ashbyhq.com/sentry/26c3535f-fcaa-4419-8272-43faa00582f1",
+      "evidence_note": "Official careers page serialized job data includes exact https://jobs.ashbyhq.com/sentry/ job URLs."
+    },
+    {
+      "source_key": "ashby:global:docker",
+      "employer": "Docker",
+      "official_careers_url": "https://www.docker.com/career-openings/",
+      "evidence_kind": "official_careers_embed",
+      "observed_ats_reference": "https://jobs.ashbyhq.com/docker/embed",
+      "evidence_note": "Official career openings page embeds https://jobs.ashbyhq.com/docker/embed."
+    },
+    {
+      "source_key": "ashby:global:Linear",
+      "employer": "Linear",
+      "official_careers_url": "https://linear.app/careers",
+      "evidence_kind": "official_serialized_careers_job_data",
+      "observed_ats_reference": "https://jobs.ashbyhq.com/Linear/069c4628-88d7-4e4d-b393-c996fc7f3076",
+      "evidence_note": "Official careers page serialized job data contains exact https://jobs.ashbyhq.com/Linear/ job and application links; tenant case is preserved."
+    },
+    {
+      "source_key": "greenhouse:global:reddit",
+      "employer": "Reddit",
+      "official_careers_url": "https://redditinc.com/careers",
+      "evidence_kind": "official_careers_job_hyperlink",
+      "observed_ats_reference": "https://job-boards.greenhouse.io/reddit/jobs/6469397",
+      "evidence_note": "Official careers page links multiple exact jobs on https://job-boards.greenhouse.io/reddit/jobs/."
+    },
+    {
+      "source_key": "ashby:global:ramp",
+      "employer": "Ramp",
+      "official_careers_url": "https://ramp.com/careers",
+      "evidence_kind": "official_careers_job_hyperlink",
+      "observed_ats_reference": "https://jobs.ashbyhq.com/ramp/34413f8d-26bf-4bbc-8ade-eb309a0e2245",
+      "evidence_note": "Official careers page contains exact https://jobs.ashbyhq.com/ramp/ job and application hyperlinks."
+    },
+    {
+      "source_key": "greenhouse:global:sourcegraph91",
+      "employer": "Sourcegraph",
+      "official_careers_url": "https://sourcegraph.com/jobs",
+      "evidence_kind": "official_careers_job_hyperlink_after_redirect",
+      "observed_ats_reference": "https://job-boards.greenhouse.io/sourcegraph91/jobs/4621149004",
+      "evidence_note": "Official /careers redirects to /jobs, which links https://job-boards.greenhouse.io/sourcegraph91/jobs/; exact current tenant is sourcegraph91.",
+      "official_redirect_from": "https://sourcegraph.com/careers"
+    },
+    {
+      "source_key": "ashby:global:freetrade",
+      "employer": "Freetrade",
+      "official_careers_url": "https://freetrade.io/careers",
+      "evidence_kind": "official_careers_embed",
+      "observed_ats_reference": "https://jobs.ashbyhq.com/freetrade/embed?version=2",
+      "evidence_note": "Official careers page embeds https://jobs.ashbyhq.com/freetrade/embed?version=2."
+    }
+  ],
+  "feed_observations": [
+    {
+      "source_key": "lever:global:meesho",
+      "observed_date_utc": "2026-10-08",
+      "observed_utc": "2026-10-08T14:16:51.885846+00:00",
+      "timestamp_precision_note": "Exact scan completion UTC retained.",
+      "adapter_scan_complete": true,
+      "normalized_openings": 60,
+      "india_location_regex_matches": 57,
+      "technical_title_regex_matches": 11,
+      "publication_field_known": 60,
+      "source_update_field_known": 0,
+      "public_feed_endpoint": "https://api.lever.co/v0/postings/meesho?mode=json&limit=100&skip=0",
+      "unauthenticated_get_only": true,
+      "feed_requests_without_retries_at_observed_size": 1
+    },
+    {
+      "source_key": "lever:global:mindtickle",
+      "observed_date_utc": "2026-10-08",
+      "observed_utc": null,
+      "timestamp_precision_note": "Exact individual scan time was not retained; observed during this UTC research batch before its completion.",
+      "adapter_scan_complete": true,
+      "normalized_openings": 20,
+      "india_location_regex_matches": 19,
+      "technical_title_regex_matches": 7,
+      "publication_field_known": 20,
+      "source_update_field_known": 0,
+      "public_feed_endpoint": "https://api.lever.co/v0/postings/mindtickle?mode=json&limit=100&skip=0",
+      "unauthenticated_get_only": true,
+      "feed_requests_without_retries_at_observed_size": 1
+    },
+    {
+      "source_key": "greenhouse:global:harnessinc",
+      "observed_date_utc": "2026-10-08",
+      "observed_utc": null,
+      "timestamp_precision_note": "Exact individual scan time was not retained; observed during this UTC research batch before its completion.",
+      "adapter_scan_complete": true,
+      "normalized_openings": 65,
+      "india_location_regex_matches": 8,
+      "technical_title_regex_matches": 30,
+      "publication_field_known": 65,
+      "source_update_field_known": 65,
+      "public_feed_endpoint": "https://boards-api.greenhouse.io/v1/boards/harnessinc/jobs?content=true",
+      "unauthenticated_get_only": true,
+      "feed_requests_without_retries_at_observed_size": 1
+    },
+    {
+      "source_key": "greenhouse:global:observeai",
+      "observed_date_utc": "2026-10-08",
+      "observed_utc": "2026-10-08T14:16:46.186917+00:00",
+      "timestamp_precision_note": "Exact scan completion UTC retained.",
+      "adapter_scan_complete": true,
+      "normalized_openings": 12,
+      "india_location_regex_matches": 5,
+      "technical_title_regex_matches": 6,
+      "publication_field_known": 12,
+      "source_update_field_known": 12,
+      "public_feed_endpoint": "https://boards-api.greenhouse.io/v1/boards/observeai/jobs?content=true",
+      "unauthenticated_get_only": true,
+      "feed_requests_without_retries_at_observed_size": 1
+    },
+    {
+      "source_key": "ashby:global:notion",
+      "observed_date_utc": "2026-10-08",
+      "observed_utc": null,
+      "timestamp_precision_note": "Exact individual scan time was not retained; observed during this UTC research batch before its completion.",
+      "adapter_scan_complete": true,
+      "normalized_openings": 135,
+      "india_location_regex_matches": 4,
+      "technical_title_regex_matches": 32,
+      "publication_field_known": 135,
+      "source_update_field_known": 0,
+      "public_feed_endpoint": "https://api.ashbyhq.com/posting-api/job-board/notion",
+      "unauthenticated_get_only": true,
+      "feed_requests_without_retries_at_observed_size": 1
+    },
+    {
+      "source_key": "greenhouse:global:mixpanel",
+      "observed_date_utc": "2026-10-08",
+      "observed_utc": "2026-10-08T14:16:04.164193+00:00",
+      "timestamp_precision_note": "Exact scan completion UTC retained.",
+      "adapter_scan_complete": true,
+      "normalized_openings": 51,
+      "india_location_regex_matches": 4,
+      "technical_title_regex_matches": 18,
+      "publication_field_known": 51,
+      "source_update_field_known": 51,
+      "public_feed_endpoint": "https://boards-api.greenhouse.io/v1/boards/mixpanel/jobs?content=true",
+      "unauthenticated_get_only": true,
+      "feed_requests_without_retries_at_observed_size": 1
+    },
+    {
+      "source_key": "ashby:global:amplitude",
+      "observed_date_utc": "2026-10-08",
+      "observed_utc": "2026-10-08T14:16:03.912119+00:00",
+      "timestamp_precision_note": "Exact scan completion UTC retained.",
+      "adapter_scan_complete": true,
+      "normalized_openings": 39,
+      "india_location_regex_matches": 2,
+      "technical_title_regex_matches": 18,
+      "publication_field_known": 39,
+      "source_update_field_known": 0,
+      "public_feed_endpoint": "https://api.ashbyhq.com/posting-api/job-board/amplitude",
+      "unauthenticated_get_only": true,
+      "feed_requests_without_retries_at_observed_size": 1
+    },
+    {
+      "source_key": "greenhouse:global:vercel",
+      "observed_date_utc": "2026-10-08",
+      "observed_utc": null,
+      "timestamp_precision_note": "Exact individual scan time was not retained; observed during this UTC research batch before its completion.",
+      "adapter_scan_complete": true,
+      "normalized_openings": 86,
+      "india_location_regex_matches": 2,
+      "technical_title_regex_matches": 34,
+      "publication_field_known": 86,
+      "source_update_field_known": 86,
+      "public_feed_endpoint": "https://boards-api.greenhouse.io/v1/boards/vercel/jobs?content=true",
+      "unauthenticated_get_only": true,
+      "feed_requests_without_retries_at_observed_size": 1
+    },
+    {
+      "source_key": "greenhouse:global:commercetools",
+      "observed_date_utc": "2026-10-08",
+      "observed_utc": "2026-10-08T14:16:04.058103+00:00",
+      "timestamp_precision_note": "Exact scan completion UTC retained.",
+      "adapter_scan_complete": true,
+      "normalized_openings": 35,
+      "india_location_regex_matches": 0,
+      "technical_title_regex_matches": 20,
+      "publication_field_known": 35,
+      "source_update_field_known": 35,
+      "public_feed_endpoint": "https://boards-api.greenhouse.io/v1/boards/commercetools/jobs?content=true",
+      "unauthenticated_get_only": true,
+      "feed_requests_without_retries_at_observed_size": 1
+    },
+    {
+      "source_key": "ashby:global:sentry",
+      "observed_date_utc": "2026-10-08",
+      "observed_utc": null,
+      "timestamp_precision_note": "Exact individual scan time was not retained; observed during this UTC research batch before its completion.",
+      "adapter_scan_complete": true,
+      "normalized_openings": 43,
+      "india_location_regex_matches": 0,
+      "technical_title_regex_matches": 31,
+      "publication_field_known": 43,
+      "source_update_field_known": 0,
+      "public_feed_endpoint": "https://api.ashbyhq.com/posting-api/job-board/sentry",
+      "unauthenticated_get_only": true,
+      "feed_requests_without_retries_at_observed_size": 1
+    },
+    {
+      "source_key": "ashby:global:docker",
+      "observed_date_utc": "2026-10-08",
+      "observed_utc": null,
+      "timestamp_precision_note": "Exact individual scan time was not retained; observed during this UTC research batch before its completion.",
+      "adapter_scan_complete": true,
+      "normalized_openings": 61,
+      "india_location_regex_matches": 0,
+      "technical_title_regex_matches": 28,
+      "publication_field_known": 61,
+      "source_update_field_known": 0,
+      "public_feed_endpoint": "https://api.ashbyhq.com/posting-api/job-board/docker",
+      "unauthenticated_get_only": true,
+      "feed_requests_without_retries_at_observed_size": 1
+    },
+    {
+      "source_key": "ashby:global:Linear",
+      "observed_date_utc": "2026-10-08",
+      "observed_utc": null,
+      "timestamp_precision_note": "Exact individual scan time was not retained; observed during this UTC research batch before its completion.",
+      "adapter_scan_complete": true,
+      "normalized_openings": 31,
+      "india_location_regex_matches": 0,
+      "technical_title_regex_matches": 12,
+      "publication_field_known": 31,
+      "source_update_field_known": 0,
+      "public_feed_endpoint": "https://api.ashbyhq.com/posting-api/job-board/Linear",
+      "unauthenticated_get_only": true,
+      "feed_requests_without_retries_at_observed_size": 1
+    },
+    {
+      "source_key": "greenhouse:global:reddit",
+      "observed_date_utc": "2026-10-08",
+      "observed_utc": null,
+      "timestamp_precision_note": "Exact individual scan time was not retained; observed during this UTC research batch before its completion.",
+      "adapter_scan_complete": true,
+      "normalized_openings": 153,
+      "india_location_regex_matches": 0,
+      "technical_title_regex_matches": 90,
+      "publication_field_known": 153,
+      "source_update_field_known": 153,
+      "public_feed_endpoint": "https://boards-api.greenhouse.io/v1/boards/reddit/jobs?content=true",
+      "unauthenticated_get_only": true,
+      "feed_requests_without_retries_at_observed_size": 1
+    },
+    {
+      "source_key": "ashby:global:ramp",
+      "observed_date_utc": "2026-10-08",
+      "observed_utc": "2026-10-08T14:17:45.350343+00:00",
+      "timestamp_precision_note": "Exact scan completion UTC retained.",
+      "adapter_scan_complete": true,
+      "normalized_openings": 161,
+      "india_location_regex_matches": 0,
+      "technical_title_regex_matches": 41,
+      "publication_field_known": 161,
+      "source_update_field_known": 0,
+      "public_feed_endpoint": "https://api.ashbyhq.com/posting-api/job-board/ramp",
+      "unauthenticated_get_only": true,
+      "feed_requests_without_retries_at_observed_size": 1
+    },
+    {
+      "source_key": "greenhouse:global:sourcegraph91",
+      "observed_date_utc": "2026-10-08",
+      "observed_utc": null,
+      "timestamp_precision_note": "Exact individual scan time was not retained; observed during this UTC research batch before its completion.",
+      "adapter_scan_complete": true,
+      "normalized_openings": 10,
+      "india_location_regex_matches": 0,
+      "technical_title_regex_matches": 2,
+      "publication_field_known": 10,
+      "source_update_field_known": 10,
+      "public_feed_endpoint": "https://boards-api.greenhouse.io/v1/boards/sourcegraph91/jobs?content=true",
+      "unauthenticated_get_only": true,
+      "feed_requests_without_retries_at_observed_size": 1
+    },
+    {
+      "source_key": "ashby:global:freetrade",
+      "observed_date_utc": "2026-10-08",
+      "observed_utc": null,
+      "timestamp_precision_note": "Exact individual scan time was not retained; observed during this UTC research batch before its completion.",
+      "adapter_scan_complete": true,
+      "normalized_openings": 7,
+      "india_location_regex_matches": 0,
+      "technical_title_regex_matches": 5,
+      "publication_field_known": 7,
+      "source_update_field_known": 0,
+      "public_feed_endpoint": "https://api.ashbyhq.com/posting-api/job-board/freetrade",
+      "unauthenticated_get_only": true,
+      "feed_requests_without_retries_at_observed_size": 1
+    }
+  ],
+  "heuristics": {
+    "india_location_regex": "India|Bengaluru|Bangalore|Hyderabad|Pune|Chennai|Mumbai|Gurugram|Noida|Delhi",
+    "technical_title_regex": "engineer|developer|software|data scien|machine learning|research scientist",
+    "regex_flags": "IGNORECASE",
+    "combination_policy": "Independent counts; their intersection was not measured."
+  },
+  "observed_totals": {
+    "validated_sources": 16,
+    "normalized_openings": 969,
+    "india_location_regex_matches": 101,
+    "technical_title_regex_matches": 385
+  },
+  "date_semantics": {
+    "greenhouse": {
+      "publication_field": "first_published",
+      "source_update_field": "updated_at",
+      "note": "Provider publication and update fields are distinct; never substitute updated_at for first publication. All proposed GH openings had both in this observation."
+    },
+    "lever": {
+      "publication_field": "createdAt",
+      "note": "Vendor posting creation timestamp, not independent proof of uninterrupted publication since creation."
+    },
+    "ashby": {
+      "publication_field": "publishedAt",
+      "note": "Vendor publication timestamp, not an independently verified historical first-publication date."
+    }
+  },
+  "deferred_not_sources": [
+    {
+      "employer": "Mercari, Inc. (India)",
+      "official_careers_url": "https://about.in.mercari.com/careers/",
+      "platform": "workable",
+      "observed_account_id": "539716",
+      "origin_proof": "Official careers page embeds whr_embed(539716) via the official Workable widget.",
+      "observed_public_feed": "https://www.workable.com/api/accounts/539716?details=true",
+      "resolved_public_feed": "https://apply.workable.com/api/v1/widget/accounts/539716?details=true",
+      "observed_openings": 9,
+      "current_adapter_error": "source_http_302",
+      "reason": "Current no-redirect adapter requires a reviewed modern widget endpoint contract before this source can be enrolled."
+    },
+    {
+      "employer": "Dream Sports",
+      "official_careers_url": "https://www.dreamsports.group/lifeatdreamsports",
+      "platform": "lever",
+      "observed_tenant": "dreamsports",
+      "observed_ats_reference": "https://jobs.lever.co/dreamsports",
+      "current_adapter_error": "posting_or_source_closed",
+      "reason": "Official tenant link is established, but the current feed scan did not return a usable complete collection."
+    },
+    {
+      "employer": "Groww",
+      "official_careers_url": "https://groww.in/careers",
+      "platform": "greenhouse",
+      "observed_ats_reference": "https://job-boards.eu.greenhouse.io/groww",
+      "reason": "This release supports explicit EU hosting only for Lever. Do not infer a compatible global Greenhouse tenant."
+    },
+    {
+      "employer": "FreeAgent",
+      "official_careers_url": "https://www.freeagent.com/company/careers/",
+      "resolved_careers_url": "https://careers.freeagent.com/",
+      "reason": "Exact supported Pinpoint tenant was not established from the official custom-domain page."
+    },
+    {
+      "employer": "BrowserStack",
+      "official_careers_url": "https://www.browserstack.com/careers",
+      "reason": "The observed employer careers destination uses Workday, outside the supported adapter families."
+    }
+  ]
+}

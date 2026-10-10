@@ -1,0 +1,84 @@
+{
+  "candidate": "7c59578d169290a91f45d39552ad48d41ea40d16",
+  "deployment": "dpl_3p7SbZsNbSGDbvK47qpTQodwzfMa",
+  "backendRelease": "ec52279d236e82813bc486b9d5de9eb97a80408d",
+  "apiRevision": "ai-resume-parser-00257-tov",
+  "ciRun": "37821078441",
+  "total": 3,
+  "planned": 3,
+  "passed": 3,
+  "widths": [
+    320,
+    390,
+    1440
+  ],
+  "failures": [],
+  "runtimeErrors": 0,
+  "consoleErrors": 0,
+  "blockedNonGet": 0,
+  "blockedPrivateReads": 0,
+  "blockedExternal": 0,
+  "visualReview": {
+    "status": "passed",
+    "inspected_count": 9,
+    "coverage": "Three readable story-list crops, three story viewports, two mobile menu views and one desktop navigation focus view. Four counters and nearby copy show no clipping, overlap or wrapped digits at 320/390/1440. Mobile public links and focus indicators remain visible. Consent banner was left untouched."
+  },
+  "screenshots": [
+    {
+      "width": 320,
+      "path": "/tmp/hirewiz-home-counter-hosted-7c59578-1791483495798/home-320-menu.png",
+      "sha256": "6d75406d621321c9a312f427b6766c079ff589ff9649ea8bf5476ce6dd76d12e"
+    },
+    {
+      "width": 320,
+      "path": "/tmp/hirewiz-home-counter-hosted-7c59578-1791483495798/story-counters-320.png",
+      "sha256": "42ac15dfee0abffe26950ed4f3b26f7cca6606e2efddf72e1c6d288b01c6c8fb"
+    },
+    {
+      "width": 320,
+      "path": "/tmp/hirewiz-home-counter-hosted-7c59578-1791483495798/story-viewport-320.png",
+      "sha256": "70e3127e7c3b5ec809f42dc731eeb0f7a3ef6e43398988bd2c71fa1935c099f3"
+    },
+    {
+      "width": 390,
+      "path": "/tmp/hirewiz-home-counter-hosted-7c59578-1791483495798/home-390-menu.png",
+      "sha256": "7d102b3268076804b0d32bdc70c717c5f2e4b4d33e0d4dad721f096187f501f0"
+    },
+    {
+      "width": 390,
+      "path": "/tmp/hirewiz-home-counter-hosted-7c59578-1791483495798/story-counters-390.png",
+      "sha256": "0a6d5176c66d49129191fb2e4777c41f91c0adadd2160172a9c637b8387770de"
+    },
+    {
+      "width": 390,
+      "path": "/tmp/hirewiz-home-counter-hosted-7c59578-1791483495798/story-viewport-390.png",
+      "sha256": "99e9599be87913a983e73f4fa3e3cde52d5d596c51a2371c8f80523cf8a526a3"
+    },
+    {
+      "width": 1440,
+      "path": "/tmp/hirewiz-home-counter-hosted-7c59578-1791483495798/home-1440-navigation.png",
+      "sha256": "0a6d670739d50be0f86c1664d9e9d204246b26ff19ed48dfc627c23e3399e8cf"
+    },
+    {
+      "width": 1440,
+      "path": "/tmp/hirewiz-home-counter-hosted-7c59578-1791483495798/story-counters-1440.png",
+      "sha256": "b31b3ed75b3b80db3f9cd38affe887315239624afd6b06e46e882026575efc24"
+    },
+    {
+      "width": 1440,
+      "path": "/tmp/hirewiz-home-counter-hosted-7c59578-1791483495798/story-viewport-1440.png",
+      "sha256": "a4bc15794616a7cc4d8dfbd1f3dc5665398b3f98fdddee5b20220eaaa614ea92"
+    }
+  ],
+  "counter_width_px": [
+    14.40625
+  ],
+  "all_story_counters_single_line": true,
+  "all_story_counters_zero_grow_shrink_nowrap": true,
+  "horizontal_overflow": false,
+  "resource_warning_classification": {
+    "count": 3,
+    "type": "Three aborted public login/register navigation prefetch fetches; not required-resource failures or runtime errors. No retry was performed."
+  },
+  "identity_evidence": "/tmp/hirewiz-home-counter-hosted-7c59578-1791483495798/selected-promotion-identity.json"
+}

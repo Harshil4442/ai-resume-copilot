@@ -1,0 +1,14 @@
+{
+  "id": "7bcf909b-c9d1-40ae-8431-25324ac5c33a",
+  "status": "SUCCESS",
+  "createTime": "2026-10-08T20:39:45.552785517Z",
+  "startTime": "2026-10-08T20:39:46.320981450Z",
+  "finishTime": "2026-10-08T20:52:40.518698Z",
+  "logUrl": "https://console.cloud.google.com/cloud-build/builds;region=us-central1/7bcf909b-c9d1-40ae-8431-25324ac5c33a?project=157225724590",
+  "images": [
+    {
+      "name": "us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz:e7d8f2ba0435fd3d4a504ccdce83fac365ec6835",
+      "digest": "sha256:cf2cb125a72c79a7b41f9c263c1a999521363d6c944affb3c017e0dc5e112f4d"
+    }
+  ]
+}

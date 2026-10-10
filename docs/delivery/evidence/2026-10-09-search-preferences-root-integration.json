@@ -1,0 +1,144 @@
+{
+  "status": "ROOT_INTEGRATED_COMPONENT_PASS_RELEASE_HOLD",
+  "baseline": "b50d9f7433698d534af63940f1f010a409d270af",
+  "author_base": "4911d1f637c0dab28817e10a41ed352e56d166a3",
+  "author_report_sha256": "eca662706953230b7ef15a8196239207ed209ca855c9474b7ee6a42f608406c8",
+  "independent_report_sha256": "c488d98295759930f9f5a8b76b5555ec9f08c9b9a09f8140c9a9ece1adbd4621",
+  "verified_author_source_count": 682,
+  "verified_author_artifact_count": 728,
+  "verified_independent_source_count": 682,
+  "verified_independent_artifact_count": 755,
+  "independent_results": {
+    "original": {
+      "passed": 32,
+      "failed": 0
+    },
+    "additional_actual_postgresql": {
+      "passed": 12,
+      "failed": 0
+    },
+    "broader_mocked_browser": {
+      "passed": 75,
+      "failed": 5,
+      "cause": "Preserved old SKU link expectation; authorized generic billing link. Billing full responsive integration is separate."
+    }
+  },
+  "root_results": {
+    "backend": {
+      "tests": 313,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "frontend_units": {
+      "passed": 218,
+      "failed": 0
+    },
+    "lint": "PASS",
+    "typecheck": "PASS",
+    "mypy_domains": {
+      "passed": true,
+      "source_files": 89
+    },
+    "ruff_preferences_and_four_new_tests": "PASS after import-only sort in new R2 test; source assertion semantics unchanged",
+    "api_contracts_no_drift": true,
+    "public_read_class_ast_unchanged": true
+  },
+  "root_adjustments": [
+    "Import-only sort in new R2 test; original author source report remains immutable.",
+    "Generated OpenAPI/types rebuilt and hashes unchanged after exact patch composition."
+  ],
+  "changed_path_digests": [
+    {
+      "path": "backend/alembic/versions/20261009_0012_employer_search_preferences.py",
+      "sha256": "8289c4b138b0edbc371953868522840871b5cb6abd2c109d4d6163f467743ac4"
+    },
+    {
+      "path": "backend/app/domains/employer/connectors.py",
+      "sha256": "327cbc5af38baf3e62875cf3330587d86daf5f42f38887cda48778407585b5d0"
+    },
+    {
+      "path": "backend/app/domains/employer/models.py",
+      "sha256": "79a1e5dc732b21ccadd190c85365e2b3bc38c884f030f2b2382aba63b24c6371"
+    },
+    {
+      "path": "backend/app/domains/employer/preference_metadata.py",
+      "sha256": "9183b7aa45c35ad9bcf34b2b4234571f9d9bae554e7572ce38733352fa44bdb9"
+    },
+    {
+      "path": "backend/app/domains/employer/role_aliases.py",
+      "sha256": "ce0bc4bf407176a0028e396c2501084528b4415df3f98dd2895924c96fa2e4e8"
+    },
+    {
+      "path": "backend/app/domains/employer/schemas.py",
+      "sha256": "02a6d1fd4da3da462677ed02e87f3facbfa5cf7b064b4d3dcff619d7af480eba"
+    },
+    {
+      "path": "backend/app/domains/employer/search_preferences.py",
+      "sha256": "fb3d950a1eabae5e385bac0cec2e4239589173c46e30aeed7dbc423d259b5292"
+    },
+    {
+      "path": "backend/app/domains/employer/service.py",
+      "sha256": "362f6a6913e0b1a1f75afd334730559b355597f1182f49b2b8e59c0aede8c1a9"
+    },
+    {
+      "path": "backend/openapi.json",
+      "sha256": "7c5235062dfb66637c83c963ead0e1d6997d9b0917c25db833193787738e12d7"
+    },
+    {
+      "path": "backend/tests/test_employer_preference_metadata.py",
+      "sha256": "103a8eb55822d2d79ff3d8816cbea8ff0a5cae648bd9afc458f1b654523bd8a2"
+    },
+    {
+      "path": "backend/tests/test_employer_preference_metadata_r2.py",
+      "sha256": "8e08060b7727f066f774413487c5e859f8bba233ea585fd092f9ca1767b094bd"
+    },
+    {
+      "path": "backend/tests/test_employer_preferences_postgres.py",
+      "sha256": "be60db447533f5e59c74b1a10d567cddc956cf54179969abec4ef36c22cba8df"
+    },
+    {
+      "path": "backend/tests/test_employer_search_preferences.py",
+      "sha256": "85871cd607c749b1dc3e65b7a277ec3a90a60a73e7253738dfaadf8391c1f19d"
+    },
+    {
+      "path": "docs/delivery/SEARCH_PREFERENCES_IMPLEMENTATION_2026-10-09.md",
+      "sha256": "189e526ce1f4c414bea1cc943c6612e1f32e8f790a9414a183148b8e99847245"
+    },
+    {
+      "path": "frontend/app/employer-jobs/page.tsx",
+      "sha256": "40b20ad7357f9e44c85ed87c64e04a64463850ac2b8fb8d2445725de1cd685fe"
+    },
+    {
+      "path": "frontend/components/EmployerSearchPreferences.test.tsx",
+      "sha256": "a632bcaf169b3703acd5d6e1bcb28e3a58b3d5a7ff9a988982f443103072b977"
+    },
+    {
+      "path": "frontend/components/EmployerSearchPreferences.tsx",
+      "sha256": "c784bf3edc043f26f50bcbfdb9a0cf39d0bb07c02dd6861658daa3fb358b7006"
+    },
+    {
+      "path": "frontend/e2e/employer-search-preferences.spec.ts",
+      "sha256": "46fba21650848e5345806a2eb5325442a656fcecbc030a4611dc1e82d718fe41"
+    },
+    {
+      "path": "frontend/lib/employerJobs.ts",
+      "sha256": "abdaeb193e5fa8f006fba3fde9a8f1ea04115c0ba27ad7a4190e8bcef2194a8f"
+    },
+    {
+      "path": "frontend/lib/generated/api.ts",
+      "sha256": "50fae8643f8074379e26b6977946dff1b82b50877672e2e3459c4602dc4395f8"
+    },
+    {
+      "path": "frontend/lib/searchPreferences.ts",
+      "sha256": "5f8cd7e5aa6ef630e6d243d9cfd032bf7078103ec42d34d929f0d641ab0ae2ca"
+    }
+  ],
+  "release_dependencies": [
+    "Full billing catalog and responsive suite; original five old SKU assertion failures preserved.",
+    "Schema12/13 preflight and staged migrations, old ingestion writer drain and Lever country refresh/quarantine.",
+    "Production deployment and live source conformance.",
+    "Independent corpus/relevance and worldwide coverage target not established."
+  ],
+  "local_evidence": "/var/folders/ck/cyzkgt2d1yx6hzpsdflcg83c0000gn/T/hirewiz-root-preferences-r2-20261009-qke2592t"
+}

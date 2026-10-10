@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from ..database import get_db
 from .. import models, schemas
+from ..database import get_db
 from ..security import get_current_user
 from ..services.guardrails import billable_operation
 from ..services.recommender import (
@@ -158,41 +158,50 @@ async def match_learning_strategy(
     improvement_tips = _as_list(match.improvement_tips)
     dimension_scores = _as_list(match.dimension_scores)
 
-    with billable_operation(
-        user_id=current_user.id,
-        db=db,
-        operation="learning_strategy",
-        amount=1,
-        input_payload={"match_id": match.id},
-    ):
-        generated_by = "llm"
-        try:
-            from ..services.llm_client import generate_learning_strategy_llm
+    warnings = ["Suggested projects are future work. Add resume claims only after completing the work and approving its evidence."]
+    generated_by = "curated"
+    try:
+        with billable_operation(
+            user_id=current_user.id, db=db, operation="learning_strategy", amount=1,
+            input_payload={"match_id": match.id, "mode": payload.mode},
+        ):
+            if payload.mode == "enhanced":
+                from starlette.concurrency import run_in_threadpool
 
-            strategy = generate_learning_strategy_llm(
-                job_title=match.job_title,
-                company=match.company,
-                jd_text=match.job_description or "",
-                resume_skills=resume_skills,
-                experience_years=experience_years,
-                true_gaps=true_gaps,
-                partial_matches=partial_matches,
-                required_skills=required_skills,
-                match_score=float(match.match_score or 0.0),
-                fit_summary=match.fit_summary or "",
-                dimension_scores=dimension_scores,
-                improvement_tips=improvement_tips,
-            )
-        except Exception:
-            generated_by = "fallback"
-            strategy = build_fallback_learning_strategy(
-                job_title=match.job_title,
-                company=match.company,
-                match_score=float(match.match_score or 0.0),
-                true_gaps=true_gaps,
-                partial_matches=partial_matches,
-                improvement_tips=improvement_tips,
-            )
+                from ..services.llm_client import generate_learning_strategy_llm
+
+                strategy = await run_in_threadpool(
+                    generate_learning_strategy_llm,
+                    job_title=match.job_title, company=match.company,
+                    jd_text=match.job_description or "", resume_skills=resume_skills,
+                    experience_years=experience_years, true_gaps=true_gaps,
+                    partial_matches=partial_matches, required_skills=required_skills,
+                    match_score=float(match.match_score or 0.0), fit_summary=match.fit_summary or "",
+                    dimension_scores=dimension_scores, improvement_tips=improvement_tips,
+                )
+                if not isinstance(strategy, dict) or not str(strategy.get("readiness_summary", "")).strip():
+                    raise ValueError("Learning generation did not return a usable strategy")
+                generated_by = "llm"
+            else:
+                strategy = build_fallback_learning_strategy(
+                    job_title=match.job_title, company=match.company,
+                    match_score=float(match.match_score or 0.0), true_gaps=true_gaps,
+                    partial_matches=partial_matches, improvement_tips=improvement_tips,
+                )
+            # Suggestions cannot become fabricated completed-project bullets.
+            for project in _as_list(strategy.get("project_recommendations")):
+                if isinstance(project, dict):
+                    project["resume_bullets"] = []
+    except Exception as exc:
+        if payload.mode != "enhanced" or isinstance(exc, HTTPException):
+            raise
+        generated_by = "fallback"
+        warnings.append("Enhanced generation was unavailable. The curated plan is shown and reserved units were released.")
+        strategy = build_fallback_learning_strategy(
+            job_title=match.job_title, company=match.company,
+            match_score=float(match.match_score or 0.0), true_gaps=true_gaps,
+            partial_matches=partial_matches, improvement_tips=improvement_tips,
+        )
 
     skills_hint = strategy.pop("_resource_skills", None) or [*true_gaps, *required_skills[:3]]
     strategy = _normalize_strategy(strategy)
@@ -208,5 +217,7 @@ async def match_learning_strategy(
         "learning_priorities": _as_list(strategy.get("learning_priorities")),
         "project_recommendations": _as_list(strategy.get("project_recommendations")),
         "timeline": _as_list(strategy.get("timeline")),
-        "generated_by": strategy.get("generated_by") or generated_by,
+        "generated_by": generated_by,
+        "provenance": "generated" if generated_by == "llm" else "curated",
+        "warnings": warnings,
     }

@@ -1,0 +1,169 @@
+{
+  "checked_at_utc": "2026-10-09T00:08:31.034277+00:00",
+  "project": "ai-resume-parser-482412",
+  "job": "hirewiz-schema-migration",
+  "region": "us-central1",
+  "list_limit": 1000,
+  "visible_execution_count": 6,
+  "records": [
+    {
+      "name": "hirewiz-schema-migration-6267x",
+      "start_time": "2026-10-08T20:48:25.848605Z",
+      "completion_time": "2026-10-08T20:50:29.971689Z",
+      "running_task_count": 0,
+      "succeeded_task_count": 1,
+      "failed_task_count": 0,
+      "conditions": [
+        {
+          "type": "Completed",
+          "status": "True"
+        },
+        {
+          "type": "ResourcesAvailable",
+          "status": "True"
+        },
+        {
+          "type": "Started",
+          "status": "True"
+        },
+        {
+          "type": "ContainerReady",
+          "status": "True"
+        }
+      ]
+    },
+    {
+      "name": "hirewiz-schema-migration-dr4jh",
+      "start_time": "2026-10-08T19:44:39.773304Z",
+      "completion_time": "2026-10-08T19:46:50.878481Z",
+      "running_task_count": 0,
+      "succeeded_task_count": 1,
+      "failed_task_count": 0,
+      "conditions": [
+        {
+          "type": "Completed",
+          "status": "True"
+        },
+        {
+          "type": "ResourcesAvailable",
+          "status": "True"
+        },
+        {
+          "type": "Started",
+          "status": "True"
+        },
+        {
+          "type": "ContainerReady",
+          "status": "True"
+        }
+      ]
+    },
+    {
+      "name": "hirewiz-schema-migration-mvbhz",
+      "start_time": "2026-10-08T17:21:13.570316Z",
+      "completion_time": "2026-10-08T17:24:17.535263Z",
+      "running_task_count": 0,
+      "succeeded_task_count": 1,
+      "failed_task_count": 0,
+      "conditions": [
+        {
+          "type": "Completed",
+          "status": "True"
+        },
+        {
+          "type": "ResourcesAvailable",
+          "status": "True"
+        },
+        {
+          "type": "Started",
+          "status": "True"
+        },
+        {
+          "type": "ContainerReady",
+          "status": "True"
+        }
+      ]
+    },
+    {
+      "name": "hirewiz-schema-migration-f6645",
+      "start_time": "2026-10-08T16:04:11.485494Z",
+      "completion_time": "2026-10-08T16:08:40.725016Z",
+      "running_task_count": 0,
+      "succeeded_task_count": 1,
+      "failed_task_count": 0,
+      "conditions": [
+        {
+          "type": "Completed",
+          "status": "True"
+        },
+        {
+          "type": "ResourcesAvailable",
+          "status": "True"
+        },
+        {
+          "type": "Started",
+          "status": "True"
+        },
+        {
+          "type": "ContainerReady",
+          "status": "True"
+        }
+      ]
+    },
+    {
+      "name": "hirewiz-schema-migration-tsf5n",
+      "start_time": "2026-10-08T14:21:27.328556Z",
+      "completion_time": "2026-10-08T14:24:31.190461Z",
+      "running_task_count": 0,
+      "succeeded_task_count": 1,
+      "failed_task_count": 0,
+      "conditions": [
+        {
+          "type": "Completed",
+          "status": "True"
+        },
+        {
+          "type": "ResourcesAvailable",
+          "status": "True"
+        },
+        {
+          "type": "Started",
+          "status": "True"
+        },
+        {
+          "type": "ContainerReady",
+          "status": "True"
+        }
+      ]
+    },
+    {
+      "name": "hirewiz-schema-migration-66fbl",
+      "start_time": "2026-10-08T12:45:05.225260Z",
+      "completion_time": "2026-10-08T12:46:36.382034Z",
+      "running_task_count": 0,
+      "succeeded_task_count": 1,
+      "failed_task_count": 0,
+      "conditions": [
+        {
+          "type": "Completed",
+          "status": "True"
+        },
+        {
+          "type": "ResourcesAvailable",
+          "status": "True"
+        },
+        {
+          "type": "Started",
+          "status": "True"
+        },
+        {
+          "type": "ContainerReady",
+          "status": "True"
+        }
+      ]
+    }
+  ],
+  "earlier_expired_history_proven": false,
+  "read_only": true,
+  "writer_retirement_proven": false
+}

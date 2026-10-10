@@ -1,4 +1,4 @@
-import { Crimson_Text, DM_Sans, Roboto_Mono } from 'next/font/google';
+import localFont from 'next/font/local';
 import "./globals.css";
 import Nav from "../components/Nav";
 import Footer from "../components/Footer";
@@ -7,9 +7,34 @@ import AnalyticsConsent from "../components/AnalyticsConsent";
 import { Metadata } from 'next';
 import { SITE } from "../lib/site";
 
-const dmSans = DM_Sans({ subsets: ['latin'], variable: '--font-dm-sans', display: 'swap' });
-const crimsonText = Crimson_Text({ subsets: ['latin'], weight: ['400', '600'], style: ['normal', 'italic'], variable: '--font-crimson-text', display: 'swap' });
-const robotoMono = Roboto_Mono({ subsets: ['latin'], weight: ['400', '500'], variable: '--font-roboto-mono', display: 'swap' });
+const dmSans = localFont({
+  src: './fonts/DMSans-Variable.woff2',
+  weight: '100 1000',
+  style: 'normal',
+  variable: '--font-dm-sans',
+  display: 'swap',
+  adjustFontFallback: 'Arial',
+});
+const crimsonText = localFont({
+  src: [
+    { path: './fonts/CrimsonText-Regular.woff2', weight: '400', style: 'normal' },
+    { path: './fonts/CrimsonText-SemiBold.woff2', weight: '600', style: 'normal' },
+    { path: './fonts/CrimsonText-Italic.woff2', weight: '400', style: 'italic' },
+    { path: './fonts/CrimsonText-SemiBoldItalic.woff2', weight: '600', style: 'italic' },
+  ],
+  variable: '--font-crimson-text',
+  display: 'swap',
+  adjustFontFallback: 'Times New Roman',
+});
+const robotoMono = localFont({
+  src: './fonts/RobotoMono-Variable.woff2',
+  weight: '400 500',
+  style: 'normal',
+  variable: '--font-roboto-mono',
+  display: 'swap',
+  preload: false,
+  adjustFontFallback: 'Arial',
+});
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE.canonicalUrl),
@@ -40,7 +65,7 @@ export const metadata: Metadata = {
   },
 };
 
-const GA_MEASUREMENT_ID = process.env.NEXT_PUBLIC_GA_ID?.trim() || null;
+const GA_MEASUREMENT_ID = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID?.trim() || process.env.NEXT_PUBLIC_GA_ID?.trim() || null;
 const POSTHOG_KEY = process.env.NEXT_PUBLIC_POSTHOG_KEY?.trim() || null;
 const POSTHOG_HOST = process.env.NEXT_PUBLIC_POSTHOG_HOST?.trim() || "https://us.i.posthog.com";
 
@@ -71,7 +96,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="flex min-h-screen flex-col bg-background text-foreground selection:bg-accent/30 selection:text-foreground">
         <SessionProviderWrapper>
           <Nav />
-          <div className="flex flex-grow flex-col pt-16">{children}</div>
+          <div className="flex min-h-svh flex-grow flex-col pt-16">{children}</div>
           <Footer />
           <AnalyticsConsent
             gaMeasurementId={GA_MEASUREMENT_ID}

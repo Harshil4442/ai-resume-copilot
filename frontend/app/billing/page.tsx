@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   CheckCircle2,
@@ -22,7 +23,7 @@ import { LoadingBlock } from "../../components/ui/LoadingBlock";
 import { trackEvent } from "../../lib/analytics";
 
 const RAZORPAY_CHECKOUT_SRC = "https://checkout.razorpay.com/v1/checkout.js";
-const SUPPORTED_SKUS = ["premium_30d"] as const;
+const SUPPORTED_SKUS = ["starter_bundle", "growth_bundle", "scale_bundle"] as const;
 const CONFIRMATION_ATTEMPTS = 24;
 const CONFIRMATION_INTERVAL_MS = 2500;
 
@@ -38,6 +39,9 @@ interface BillingProduct {
   currency: "INR";
   billing_type: "one_time";
   duration_days: number;
+  entitlement_kind: "credit_bundle" | "premium_access" | "job_service_credits";
+  analysis_units: number;
+  entitlement_quantity: number;
   auto_renews: false;
   catalog_visible: boolean;
   enabled_for_purchase: boolean;
@@ -49,6 +53,7 @@ interface BillingCatalog {
   checkout_enabled: boolean;
   provider: "razorpay" | null;
   products: BillingProduct[];
+  availability_message?: string | null;
 }
 
 interface CreateOrderResponse {
@@ -68,7 +73,7 @@ interface CreateOrderResponse {
 interface BillingOrderStatus {
   order_id: string;
   payment_reference?: string | null;
-  sku: SupportedSku;
+  sku: string;
   status: "pending" | "paid" | "failed" | "refunded";
   fulfilled: boolean;
   amount_minor: number;
@@ -143,8 +148,8 @@ declare global {
 
 let checkoutScriptPromise: Promise<void> | null = null;
 
-function isSupportedSku(value: string): value is SupportedSku {
-  return SUPPORTED_SKUS.includes(value as SupportedSku);
+function isSupportedSku(value: unknown): value is SupportedSku {
+  return typeof value === "string" && SUPPORTED_SKUS.includes(value as SupportedSku);
 }
 
 function loadHostedCheckout(): Promise<void> {
@@ -191,10 +196,11 @@ function formatPrice(amountMinor: number, currency: string): string {
 
 function productFacts(product: BillingProduct): string[] {
   return [
-    `${product.duration_days} days of Premium access`,
-    "Unlimited AI-assisted operations during the access period",
-    "One-time payment with no automatic renewal",
-    "No free trial or stored payment mandate",
+    `${product.entitlement_quantity} job service credits`,
+    `${product.analysis_units} AI analysis units · full tailoring uses 2 units`,
+    "Search and confirmed automatic applications use job service credits",
+    "Optional AI uses its own displayed analysis-unit quote",
+    "Finite prepaid balances · one-time payment · no automatic renewal",
   ];
 }
 
@@ -211,16 +217,17 @@ function usageEventLabel(event: UsageEvent): string {
   return event.event_type.replaceAll("_", " ");
 }
 
-export default function BillingPage() {
+function BillingContent({ requestedSku }: { requestedSku: string | null }) {
   const mountedRef = useRef(true);
   const pollRunRef = useRef(0);
   const confirmedOrderRef = useRef(new Set<string>());
   const [catalog, setCatalog] = useState<BillingCatalog | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(true);
-  const [selectedSku, setSelectedSku] = useState<SupportedSku | null>(null);
+  const [selection, setSelection] = useState<{ sku: SupportedSku; querySku: string | null } | null>(null);
   const [currentTier, setCurrentTier] = useState<string | null>(null);
   const [premiumUntil, setPremiumUntil] = useState<string | null>(null);
   const [analysisUnits, setAnalysisUnits] = useState(0);
+  const [serviceCredits, setServiceCredits] = useState(0);
   const [usageHistory, setUsageHistory] = useState<UsageHistoryResponse | null>(null);
   const [usageLoading, setUsageLoading] = useState(true);
   const [indiaBillingConfirmed, setIndiaBillingConfirmed] = useState(false);
@@ -229,10 +236,11 @@ export default function BillingPage() {
   const [error, setError] = useState<string | null>(null);
 
   const refreshProfile = useCallback(async () => {
-    const profile = await apiGet<{ tier?: string; ai_credits?: number; premium_until?: string | null }>("/auth/profile");
+    const profile = await apiGet<{ tier?: string; ai_credits?: number; job_service_credits?: number; premium_until?: string | null }>("/auth/profile");
     if (!mountedRef.current) return;
     setCurrentTier(profile.tier || "free");
     setAnalysisUnits(profile.ai_credits ?? 0);
+    setServiceCredits(profile.job_service_credits ?? 0);
     setPremiumUntil(profile.premium_until || null);
   }, []);
 
@@ -299,9 +307,12 @@ export default function BillingPage() {
 
   const visibleProducts = useMemo(() => {
     if (!catalog) return [];
-    return catalog.products.filter((product) => product.catalog_visible);
+    return catalog.products.filter((product) => product.catalog_visible && isSupportedSku(product.sku));
   }, [catalog]);
 
+  const selectedSku = selection?.querySku === requestedSku
+    ? selection.sku
+    : isSupportedSku(requestedSku) ? requestedSku : null;
   const effectiveSelectedSku =
     selectedSku && visibleProducts.some((product) => product.sku === selectedSku)
       ? selectedSku
@@ -318,7 +329,7 @@ export default function BillingPage() {
   const purchaseAllowed = Boolean(
     checkoutEnabled &&
       selectedProduct?.enabled_for_purchase &&
-      currentTier === "free" &&
+      currentTier !== null &&
       indiaBillingConfirmed,
   );
   const checkoutBusy = phase === "opening" || phase === "confirming";
@@ -564,15 +575,16 @@ export default function BillingPage() {
             <p className="eyebrow mt-6">Verified fulfilment</p>
             <h1 id="payment-confirmed-heading" className="font-display mt-2 text-4xl font-normal text-foreground sm:text-5xl">Payment confirmed</h1>
             <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
-              The server received verified payment confirmation and activated the purchased HireWiz access.
+              The server received verified payment confirmation and delivered your purchased {"entitlements"}.
             </p>
             <div className="mx-auto mt-6 max-w-xl border-y border-border py-4 text-xs leading-5 text-muted-foreground">
               <p className="break-all">Order reference: {currentOrder.order_id}</p>
               {currentOrder.payment_reference ? <p className="break-all">Payment reference: {currentOrder.payment_reference}</p> : null}
             </div>
             <div className="mt-7 flex flex-col justify-center gap-3 sm:flex-row">
-              <Button asChild><Link href="/dashboard">Continue to dashboard</Link></Button>
-              <Button asChild variant="secondary"><Link href="/contact">Billing support</Link></Button>
+              <Button asChild><Link href={"/employer-jobs"}>Continue to {"employer jobs"}</Link></Button>
+              <Button variant="secondary" onClick={() => { setPhase("idle"); setCurrentOrder(null); setIndiaBillingConfirmed(false); }}>Review another purchase</Button>
+              <Button asChild variant="ghost"><Link href="/contact">Billing support</Link></Button>
             </div>
           </section>
         </div>
@@ -586,8 +598,8 @@ export default function BillingPage() {
         <header className="grid gap-6 border-b border-border pb-7 lg:grid-cols-[1fr_auto] lg:items-end">
           <div>
             <p className="eyebrow">Account billing</p>
-            <h1 className="font-display mt-2 text-4xl font-normal text-foreground sm:text-5xl">Premium access</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">One INR payment for 30 days, with no trial, stored mandate, or automatic renewal.</p>
+            <h1 className="font-display mt-2 text-4xl font-normal text-foreground sm:text-5xl">Your prepaid balances</h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Choose one of three finite packs. Each includes job service credits and separate AI analysis units, with no automatic renewal.</p>
           </div>
           <div className="flex items-center gap-3">
             <span className="icon-tile">{currentTier === "premium" ? <Crown size={19} className="text-primary" /> : <CircleGauge size={19} />}</span>
@@ -595,8 +607,9 @@ export default function BillingPage() {
           </div>
         </header>
 
-        <section className="grid gap-5 border-y border-border py-6 sm:grid-cols-2" aria-label="Current entitlement">
-          <div><p className="data-label">Analysis units</p><p className="mt-2 text-3xl font-semibold text-primary">{currentTier === "premium" ? "Included" : currentTier === "free" ? analysisUnits : "..."}</p><p className="mt-1 text-xs text-muted-foreground">{currentTier === "premium" ? "No unit deductions while Premium is active." : "Durable balance after reservations and releases."}</p></div>
+        <section className="grid gap-5 border-y border-border py-6 sm:grid-cols-3" aria-label="Current entitlement">
+          <div><p className="data-label">Analysis units</p><p className="mt-2 text-3xl font-semibold text-primary">{currentTier ? analysisUnits : "..."}</p><p className="mt-1 text-xs text-muted-foreground">{currentTier === "premium" ? "Existing paid access terms remain; new AI requests depend on available funding." : "Finite balance after reservations and releases."}</p></div>
+          <div className="sm:border-l sm:border-border sm:pl-6"><p className="data-label">Job service credits</p><p className="mt-2 text-3xl font-semibold text-primary">{currentTier ? serviceCredits : "..."}</p><p className="mt-1 text-xs text-muted-foreground">Employer search and automatic apply. Charged separately, including for Premium members.</p></div>
           <div className="sm:border-l sm:border-border sm:pl-6"><p className="data-label">Access period</p><p className="mt-2 text-lg font-semibold text-foreground">{currentTier === "premium" && premiumUntil ? `Through ${new Date(premiumUntil).toLocaleDateString("en-IN")}` : currentTier === "premium" ? "Active" : "Free tier"}</p><p className="mt-1 text-xs text-muted-foreground">Premium ends automatically. No renewal payment is scheduled.</p></div>
         </section>
 
@@ -605,7 +618,7 @@ export default function BillingPage() {
         {catalogLoading ? <LoadingBlock rows={6} /> : (
           <div className="grid gap-10 lg:grid-cols-[minmax(0,1.08fr)_minmax(360px,0.92fr)] lg:items-start">
             <section aria-labelledby="products-heading">
-              <div><p className="data-label">Available product</p><h2 id="products-heading" className="font-display mt-2 text-2xl font-normal text-foreground">Premium pass</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">Price and entitlement terms come from the server catalog.</p></div>
+              <div><p className="data-label">Available products</p><h2 id="products-heading" className="font-display mt-2 text-2xl font-normal text-foreground">Choose your purchase</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">Price and entitlement terms come from the server catalog.</p></div>
               <div className="mt-6 grid gap-4">
                 {visibleProducts.length ? visibleProducts.map((product) => {
                   const selected = product.sku === effectiveSelectedSku;
@@ -613,30 +626,30 @@ export default function BillingPage() {
                     <article key={product.sku} className={`surface-panel p-5 sm:p-7 ${selected ? "border-primary/70" : ""}`}>
                       <div className="grid gap-6 sm:grid-cols-[1fr_auto] sm:items-start">
                         <div className="min-w-0">
-                          <div className="flex items-start gap-3"><span className="icon-tile"><Crown size={19} className="text-primary" /></span><div><h3 className="text-xl font-semibold text-foreground">{product.name}</h3><p className="mt-1 text-xs font-bold uppercase text-muted-foreground">One-time purchase | no renewal</p></div></div>
+                          <div className="flex items-start gap-3"><span className="icon-tile">{product.entitlement_kind === "credit_bundle" ? <CreditCard size={19} className="text-primary" /> : <Crown size={19} className="text-primary" />}</span><div><h3 className="text-xl font-semibold text-foreground">{product.name}</h3><p className="mt-1 text-xs font-bold uppercase text-muted-foreground">One-time purchase | no renewal</p></div></div>
                           <p className="mt-5 text-sm leading-6 text-muted-foreground">{product.description}</p>
                           <ul className="mt-5 grid gap-2.5">{productFacts(product).map((fact) => <li key={fact} className="flex items-start gap-2 text-sm text-muted-foreground"><CheckCircle2 size={15} className="mt-0.5 shrink-0 text-primary" /><span>{fact}</span></li>)}</ul>
                         </div>
-                        <div className="sm:min-w-44 sm:text-right"><p className="text-3xl font-semibold text-primary">{formatPrice(product.amount_minor, product.currency)}</p><p className="mt-1 text-xs text-muted-foreground">INR total</p><Button type="button" variant={selected ? "secondary" : "primary"} className="mt-4 w-full" onClick={() => { setSelectedSku(product.sku); trackEvent("checkout_product_selected", { sku: product.sku, amount_minor: product.amount_minor, currency: product.currency }); }} disabled={currentTier !== "free"}>{currentTier === "premium" ? "Already active" : currentTier === null ? "Checking status" : selected ? "Selected" : "Review purchase"}</Button></div>
+                        <div className="sm:min-w-44 sm:text-right"><p className="text-3xl font-semibold text-primary">{formatPrice(product.amount_minor, product.currency)}</p><p className="mt-1 text-xs text-muted-foreground">INR total</p><Button type="button" variant={selected ? "secondary" : "primary"} className="mt-4 w-full transition-transform" onClick={() => { setSelection({ sku: product.sku, querySku: requestedSku }); trackEvent("checkout_product_selected", { sku: product.sku, amount_minor: product.amount_minor, currency: product.currency }); }} disabled={currentTier === null}>{currentTier === null ? "Checking status" : selected ? "Selected" : "Review purchase"}</Button></div>
                       </div>
                     </article>
                   );
                 }) : <div className="border-y border-border py-8"><p className="font-bold text-foreground">No paid product is currently available.</p><p className="mt-2 text-sm text-muted-foreground">No checkout provider has been loaded.</p></div>}
               </div>
-              <div className="mt-8 border-y border-border py-6 text-sm leading-6 text-muted-foreground"><h3 className="font-semibold text-foreground">About analysis units</h3><p className="mt-2">Analysis units are software usage allowances, not money or stored value. They cannot be withdrawn, resold, or transferred.</p><Link href="/pricing" className="mt-3 inline-flex items-center gap-1 font-bold text-primary hover:underline">Read full pricing and usage details <ExternalLink size={13} /></Link></div>
+              <div className="mt-8 border-y border-border py-6 text-sm leading-6 text-muted-foreground"><h3 className="font-semibold text-foreground">About analysis units</h3><p className="mt-2">Analysis units are software usage allowances, not money or stored value. They cannot be withdrawn, resold, or transferred. Job service credits are a separate prepaid allowance for employer search and confirmed automatic applications. Optional AI always has a separate reviewed quote. Free and legacy access AI work can pause when its finite funding pool is exhausted.</p><Link href="/pricing" className="mt-3 inline-flex items-center gap-1 font-bold text-primary hover:underline">Read full pricing and usage details <ExternalLink size={13} /></Link></div>
             </section>
 
             <section aria-labelledby="checkout-heading">
               <div><p className="data-label">Purchase review</p><h2 id="checkout-heading" className="font-display mt-2 text-2xl font-normal text-foreground">Order summary</h2><p className="mt-2 text-sm text-muted-foreground">Review the amount, seller, delivery, and renewal terms.</p></div>
               <div className="surface-panel mt-6 p-5 sm:p-7">
                 {selectedProduct ? <div>
-                  <div className={`border-l-2 pl-4 ${checkoutEnabled ? "border-primary" : "border-primary/30"}`}><div className="flex items-start gap-3">{checkoutEnabled ? <Shield className="mt-0.5 shrink-0 text-primary" size={18} /> : <Clock3 className="mt-0.5 shrink-0 text-primary" size={18} />}<div><h3 className="font-semibold text-foreground">{checkoutEnabled ? "Secure checkout available" : "Checkout is not available yet"}</h3><p className="mt-1 text-sm leading-6 text-muted-foreground">{checkoutEnabled ? "Confirm India billing, then continue to Razorpay hosted checkout." : "The product remains visible while purchases are paused."}</p></div></div></div>
+                  <div className={`border-l-2 pl-4 ${checkoutEnabled ? "border-primary" : "border-primary/30"}`}><div className="flex items-start gap-3">{checkoutEnabled ? <Shield className="mt-0.5 shrink-0 text-primary" size={18} /> : <Clock3 className="mt-0.5 shrink-0 text-primary" size={18} />}<div><h3 className="font-semibold text-foreground">{checkoutEnabled ? "Secure checkout available" : "Checkout is not available yet"}</h3><p className="mt-1 text-sm leading-6 text-muted-foreground">{checkoutEnabled ? "Confirm India billing, then continue to Razorpay hosted checkout." : catalog?.availability_message || "The product remains visible while purchases are paused."}</p></div></div></div>
                   <div className="mt-6 grid grid-cols-[1fr_auto] gap-4 border-y border-border py-5"><div><p className="data-label">Product</p><p className="mt-2 font-semibold text-foreground">{selectedProduct.name}</p></div><div className="text-right"><p className="data-label">Due today</p><p className="mt-2 text-2xl font-semibold text-primary">{formatPrice(selectedProduct.amount_minor, selectedProduct.currency)}</p></div></div>
-                  <dl className="divide-y divide-border text-sm">{[["Purchase type", "One-time payment"], ["Automatic renewal", "No"], ["Trial", "None"], ["Billing country", "India"], ["Seller", "HireWiz, operated by SAVALIYA HARSHIL YOGESHBHAI"], ["Delivery", "Digital account access after verified payment"]].map(([term, value]) => <div key={term} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)] gap-4 py-3"><dt className="text-muted-foreground">{term}</dt><dd className="text-right font-semibold text-foreground">{value}</dd></div>)}</dl>
+                  <dl className="divide-y divide-border text-sm">{[["Purchase type", "One-time payment"], ["Automatic renewal", "No"], ["Trial", "None"], ["Billing country", "India"], ["Seller", "HireWiz, operated by SAVALIYA HARSHIL YOGESHBHAI"], ["Delivery", `${selectedProduct.entitlement_quantity} service credits + ${selectedProduct.analysis_units} analysis units after verified payment`]].map(([term, value]) => <div key={term} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)] gap-4 py-3"><dt className="text-muted-foreground">{term}</dt><dd className="text-right font-semibold text-foreground">{value}</dd></div>)}</dl>
                   <p className="border-y border-border py-4 text-xs leading-5 text-muted-foreground">The server locks this total before checkout. Compare the same amount in the hosted payment window before authorizing payment.</p>
-                  <label className="mt-5 flex cursor-pointer items-start gap-3 text-sm leading-6 text-muted-foreground"><input type="checkbox" checked={indiaBillingConfirmed} onChange={(event) => setIndiaBillingConfirmed(event.target.checked)} disabled={currentTier !== "free" || !checkoutEnabled} className="mt-1 h-4 w-4 shrink-0 accent-primary" /><span>I confirm my billing country is India and this INR pass is for domestic use.</span></label>
+                  <label className="mt-5 flex cursor-pointer items-start gap-3 text-sm leading-6 text-muted-foreground"><input type="checkbox" checked={indiaBillingConfirmed} onChange={(event) => setIndiaBillingConfirmed(event.target.checked)} disabled={currentTier === null || !checkoutEnabled} className="mt-1 h-4 w-4 shrink-0 accent-primary" /><span>I confirm my billing country is India and this INR purchase is for domestic use.</span></label>
                   <div className="mt-5">
-                    {currentTier === "premium" ? <div className="flex items-start gap-3 border-y border-border py-4 text-sm text-muted-foreground"><Lock size={17} className="mt-0.5 shrink-0" />Additional purchases are disabled while Premium is active.</div> : currentTier === null ? <div className="flex items-start gap-3 border-y border-border py-4 text-sm text-muted-foreground"><Lock size={17} className="mt-0.5 shrink-0" />Checkout waits for account status.</div> : checkoutEnabled && selectedProduct.enabled_for_purchase ? <Button type="button" onClick={handleCheckout} disabled={!purchaseAllowed || checkoutBusy} className="w-full">{checkoutBusy ? <><RefreshCw size={17} className="animate-spin" />{phase === "confirming" ? "Waiting for verified confirmation" : "Opening hosted checkout"}</> : <><CreditCard size={17} />Pay with Razorpay | {formatPrice(selectedProduct.amount_minor, selectedProduct.currency)}</>}</Button> : <Button type="button" variant="secondary" disabled className="w-full">Checkout unavailable</Button>}
+                    {currentTier === null ? <div className="flex items-start gap-3 border-y border-border py-4 text-sm text-muted-foreground"><Lock size={17} className="mt-0.5 shrink-0" />Checkout waits for account status.</div> : checkoutEnabled && selectedProduct.enabled_for_purchase ? <Button type="button" onClick={handleCheckout} disabled={!purchaseAllowed || checkoutBusy} className="w-full">{checkoutBusy ? <><RefreshCw size={17} className="animate-spin" />{phase === "confirming" ? "Waiting for verified confirmation" : "Opening hosted checkout"}</> : <><CreditCard size={17} />Pay with Razorpay | {formatPrice(selectedProduct.amount_minor, selectedProduct.currency)}</>}</Button> : <Button type="button" variant="secondary" disabled className="w-full">Checkout unavailable</Button>}
                   </div>
                 </div> : <div className="py-8 text-center"><FileText className="mx-auto text-muted-foreground" size={28} /><p className="mt-3 font-bold text-foreground">Select a product to review it.</p></div>}
 
@@ -649,10 +662,19 @@ export default function BillingPage() {
         )}
 
         <section className="border-t border-border pt-8" aria-labelledby="usage-history-heading">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><p className="data-label">Durable ledger</p><h2 id="usage-history-heading" className="font-display mt-2 flex items-center gap-2 text-2xl font-normal text-foreground"><History size={20} className="text-primary" /> Usage history</h2><p className="mt-2 text-sm text-muted-foreground">Reservations, completed operations, Premium waivers, and automatic releases.</p></div><p className="text-sm font-bold text-foreground">Current balance: <span className="text-primary">{analysisUnits}</span></p></div>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><p className="data-label">Durable ledger</p><h2 id="usage-history-heading" className="font-display mt-2 flex items-center gap-2 text-2xl font-normal text-foreground"><History size={20} className="text-primary" /> Usage history</h2><p className="mt-2 text-sm text-muted-foreground">Reservations, completed operations, legacy access events, and automatic releases.</p></div><p className="text-sm font-bold text-foreground">Current balance: <span className="text-primary">{analysisUnits}</span></p></div>
           {usageLoading ? <div className="mt-6"><LoadingBlock rows={4} /></div> : usageHistory?.items.length ? <div className="mt-6 divide-y divide-border border-y border-border">{usageHistory.items.map((event) => <div key={event.id} className="grid gap-2 py-4 sm:grid-cols-[1fr_auto_auto] sm:items-center sm:gap-6"><div><p className="text-sm font-bold text-foreground">{usageEventLabel(event)}</p><p className="mt-1 text-xs text-muted-foreground">{new Date(event.created_at).toLocaleString("en-IN")}{event.analysis_run_id ? ` | Run ${event.analysis_run_id.slice(-8)}` : ""}</p></div><p className={`text-sm font-semibold ${event.amount > 0 ? "text-primary" : event.amount < 0 ? "text-primary" : "text-muted-foreground"}`}>{event.amount > 0 ? "+" : ""}{event.amount} units</p><p className="text-xs text-muted-foreground sm:text-right">Balance {event.balance_after}</p></div>)}</div> : <p className="mt-6 border-y border-border py-7 text-sm text-muted-foreground">No analysis-unit activity yet.</p>}
         </section>
       </div>
     </main>
   );
+}
+
+function BillingQuery() {
+  const searchParams = useSearchParams();
+  return <BillingContent requestedSku={searchParams.get("sku")} />;
+}
+
+export default function BillingPage() {
+  return <Suspense fallback={<main className="app-page"><div className="page-container"><LoadingBlock rows={5} /></div></main>}><BillingQuery /></Suspense>;
 }

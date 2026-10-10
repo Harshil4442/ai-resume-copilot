@@ -1,6 +1,7 @@
 import type { components } from "./generated/api";
 import { ApiError } from "./api";
 import type { ResumeSourceFormat } from "./types";
+import { directResumeSourceEnabled, fetchDirectResumeSource } from "./resumeSource";
 
 export type ResumeSourceEdit = {
   unit_id: string;
@@ -15,10 +16,12 @@ export type SourcePreservingResumeContent = {
   source_format: ResumeSourceFormat;
   source_edits: ResumeSourceEdit[];
   evidence_needed?: string[];
+  partial_tailoring?: boolean;
+  omitted_edits?: number;
 };
 
 export function getSourcePreservingContent(content: Record<string, unknown>): SourcePreservingResumeContent | null {
-  if (content.format_preservation !== "source" || (content.source_format !== "pdf" && content.source_format !== "docx") || !Array.isArray(content.source_edits)) return null;
+  if (content.format_preservation !== "source" || (content.source_format !== "pdf" && content.source_format !== "docx" && content.source_format !== "tex" && content.source_format !== "texzip") || !Array.isArray(content.source_edits)) return null;
   const valid = content.source_edits.every((edit: unknown) => {
     if (!edit || typeof edit !== "object") return false;
     const item = edit as Record<string, unknown>;
@@ -38,7 +41,11 @@ async function fetchResumeBlob(path: string, signal?: AbortSignal): Promise<Blob
   return response.blob();
 }
 
-export function fetchResumeSource(resumeId: number, signal?: AbortSignal): Promise<Blob> {
+export async function fetchResumeSource(resumeId: number, signal?: AbortSignal, sourceFormat?: ResumeSourceFormat): Promise<Blob> {
+  if (directResumeSourceEnabled() && (sourceFormat === undefined || sourceFormat === "pdf" || sourceFormat === "docx")) {
+    const file = await fetchDirectResumeSource(resumeId, signal, sourceFormat);
+    if (file) return file.blob;
+  }
   return fetchResumeBlob(`/resume/${resumeId}/source`, signal);
 }
 

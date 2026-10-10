@@ -18,13 +18,13 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:17-alpine
+        image: public.ecr.aws/docker/library/postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
         env:
           POSTGRES_USER: hirewiz
           POSTGRES_PASSWORD: hirewiz
           POSTGRES_DB: hirewiz_test
         ports:
-          - 5432:5432
+          - 55433:5432
         options: >-
           --health-cmd "pg_isready -U hirewiz -d hirewiz_test"
           --health-interval 5s
@@ -32,43 +32,233 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Node runtime for native HTTP to TypeScript contract checks
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4, verified official ref
+        with:
+          node-version: "24"
       - name: Install uv and locked dependencies
         run: |
           python -m pip install --disable-pip-version-check uv==0.11.32
           uv sync --project backend --frozen --all-groups
+      - name: Configure verified public cache without restarting PostgreSQL
+        timeout-minutes: 2
+        env:
+          CI_POSTGRES_CONTAINER_ID: ${{ job.services.postgres.id }}
+        run: |
+          [ "$(docker inspect --format '{{.State.Running}} {{.State.Health.Status}}' "$CI_POSTGRES_CONTAINER_ID")" = "true healthy" ]
+          postgres_before="$(docker inspect --format '{{.Id}} {{.State.Running}} {{.State.Pid}} {{.State.Health.Status}}' "$CI_POSTGRES_CONTAINER_ID")"
+          sudo --preserve-env=GITHUB_ACTIONS,RUNNER_OS python3 backend/scripts/ci_registry_cache.py
+          sudo dockerd --validate --config-file /etc/docker/daemon.json
+          daemon_pid="$(systemctl show --property=MainPID --value docker)"
+          [[ "$daemon_pid" =~ ^[1-9][0-9]*$ ]]
+          [ "$daemon_pid" -gt 1 ]
+          sudo kill -HUP "$daemon_pid"
+          timeout 15s python3 backend/scripts/ci_registry_cache.py --verify
+          postgres_after="$(docker inspect --format '{{.Id}} {{.State.Running}} {{.State.Pid}} {{.State.Health.Status}}' "$CI_POSTGRES_CONTAINER_ID")"
+          [ "$postgres_before" = "$postgres_after" ]
+          docker pull --platform linux/amd64 public.ecr.aws/docker/library/debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587
+      - name: Build and attest immutable native TeX test compiler
+        timeout-minutes: 12
+        run: >-
+          backend/.venv/bin/python backend/scripts/native_tex_test_image.py
+          --platform linux/amd64 --github-env "$GITHUB_ENV"
+          --output "$RUNNER_TEMP/native-tex-test-image.json"
+      - name: Build and verify genuine native document engines
+        timeout-minutes: 20
+        run: >-
+          backend/.venv/bin/python backend/scripts/document_test_image.py
+          --platform linux/amd64
+          --output "$RUNNER_TEMP/document-engine-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.json"
+      - name: Save sanitized native document engine proof
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, verified official ref
+        with:
+          name: native-document-engine-proof-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 7
+          path: ${{ runner.temp }}/document-engine-${{ github.run_id }}-${{ github.run_attempt }}.json
+      - name: Provision disposable admission test database
+        working-directory: backend
+        run: |
+          .venv/bin/python - <<'PY'
+          import psycopg
+          with psycopg.connect("postgresql://hirewiz:hirewiz@127.0.0.1:55433/hirewiz_test", autocommit=True) as connection:
+              connection.execute("CREATE DATABASE hirewiz_admission_test")
+          PY
       - name: Ruff modernized modules
         working-directory: backend
         run: >-
           .venv/bin/ruff check app/domains app/services/guardrails.py app/services/resume_artifacts.py app/services/resume_layout.py app/services/pdf_streams.py app/routers/v1
-          app/routers/worker.py app/worker_main.py app/observability.py app/feature_flags.py app/migrate.py scripts
+          app/routers/worker.py app/worker_main.py app/observability.py app/catalog_timing.py app/feature_flags.py app/migrate.py scripts
+          tests/native_tex_ci_fixtures.py tests/test_native_tex_ci.py tests/test_native_tex.py
+          tests/test_native_tex_r2.py tests/test_native_tex_application.py
           tests/test_analysis_runs.py tests/test_career_workspace.py tests/test_alembic_schema.py
           tests/test_usage_guardrails.py tests/test_feature_flags.py tests/test_operations_platform.py
           tests/test_prompt_evaluations.py tests/test_resume_source.py tests/test_resume_source_migrations.py
           tests/test_resume_layout.py tests/test_pdf_streams.py tests/test_docx_parsing.py tests/test_llm_client.py
+          tests/test_ai_efficiency.py tests/test_dispatch_outbox.py tests/test_employer_services.py
+          tests/test_employer_connectors.py tests/test_employer_artifact_lifecycle.py tests/test_learning_rag_privacy.py
+          tests/test_employer_feed_adapters.py tests/test_employer_admissions.py tests/test_employer_admissions_postgres.py
+          tests/test_employer_host_pacing.py tests/test_employer_catalog_queries.py
+          tests/test_employer_preference_metadata.py tests/test_employer_preference_metadata_r2.py
+          tests/test_employer_preferences_postgres.py tests/test_employer_search_preferences.py
+          tests/fixtures/recovery_authority.py tests/test_recovery_authority.py tests/test_recovery_authority_processes.py
+          tests/fixtures/recovery_sequence_projection.py tests/test_recovery_sequences.py tests/test_recovery_sequences_processes.py
+          tests/test_catalog_timing.py
+          tests/fixtures/pairing_authority.py tests/fixtures/firestore_emulator.py tests/test_pairing_crypto.py tests/test_pairing_service.py tests/test_pairing_processes.py
+          tests/test_pairing_kms.py tests/test_password_reauth.py
+          tests/test_browser_pairing_http.py
+          tests/test_job_coverage_audit.py
+          tests/test_gcp_rpc.py tests/test_gcp_journal_sdk.py tests/test_gcp_safety_coordinator.py tests/test_gcp_rpc_emulator.py tests/test_gcp_pairing_emulator.py tests/test_gcp_pairing_admission_emulator.py tests/test_gcp_password_reauth_emulator.py
+          tests/test_gcp_password_lifetime_emulator.py
+          tests/fixtures/gcp_closure.py tests/fixtures/gcp_publication.py
+          tests/test_gcp_password_closure_emulator.py tests/test_gcp_publication_emulator.py
+          app/domains/recovery/gcp_media.py
+          tests/conftest.py tests/model_cost_fixtures.py tests/test_model_cost_budgets.py tests/test_model_cost_budgets_postgres.py
+          tests/test_model_cost_liabilities.py tests/test_model_cost_liabilities_postgres.py tests/test_model_cost_result_lifetime_postgres.py
+          app/services/model_cost_policy.py app/services/generation_budget.py app/services/llm_client.py app/services/result_commit.py
+          app/services/generation_gate.py tests/test_generation_gate.py
+          tests/test_monetary_cutover_preflight_postgres.py
+          tests/test_monetary_cutover_deleted_role_postgres.py tests/test_monetary_cutover_session_ids_postgres.py
+          app/routers/candidate_accounts.py app/routers/sensitive_auth.py app/routers/candidate_ingress.py
+          tests/test_sensitive_auth_http.py tests/test_legacy_password_compatibility.py
+          tests/test_candidate_account_lifecycle.py tests/test_candidate_legacy_auth_guards.py
+          tests/test_candidate_private_ingress.py tests/test_candidate_private_ingress_http.py
+          tests/fixtures/candidate_ingress.py tests/fixtures/candidate_ingress_process.py
+          tests/test_candidate_lifetime_migration_postgres.py tests/test_candidate_native_enrollment_emulator.py
+          tests/fixtures/gcp_partitioned_publication.py tests/test_candidate_scoped_lifecycle_emulator.py
+          tests/test_gcp_partitioned_export_emulator.py tests/test_gcp_partitioned_publication_emulator.py
+          tests/test_gcp_publication_scan_emulator.py tests/test_gcp_scoped_authority_emulator.py
+          tests/test_gcp_password_reset_emulator.py
+          tests/test_monetary_cutover_schema11_postgres.py
+          tests/test_monetary_cutover_schema13_postgres.py
+          app/billing/cost_policy.py tests/expense_policy_fixtures.py tests/test_expense_policy.py
+          tests/test_expense_budget.py tests/test_expense_budget_postgres.py
+          tests/test_migration_logging_postgres.py
+          tests/test_fresh_user_no_ai_journey.py
+          tests/fixtures/cold_browser_app.py tests/test_cold_browser_runner.py
+          ../infra/gcp/release_preflight.py ../infra/gcp/monetary_release.py ../tests/test_release_preflight.py
+          tests/test_monetary_release_entrypoint.py tests/test_monetary_schema_step_postgres.py
+          tests/test_model_key_revocation_observer.py tests/test_legacy_credential_inventory.py
+          tests/test_ci_registry_cache.py
+          app/services/document_ingestion.py ../infra/document-processing
+          tests/test_document_ingestion.py tests/test_document_processor.py tests/test_document_definition_cache.py tests/test_monetary_release_transport.py
+          app/routers/resume_uploads.py tests/test_resume_upload_quarantine.py tests/test_resume_source_access.py
+          ../infra/gcp/document_worker.py tests/test_document_worker_deployment.py
+          app/resume_upload_worker.py app/services/resume_upload_coordinator.py
+          tests/test_resume_upload_coordinator.py tests/test_resume_upload_coordinator_postgres.py
+      - name: Check modified legacy authentication imports
+        working-directory: backend
+        run: .venv/bin/ruff check --select I,F app/routers/auth.py app/security.py app/schemas.py
       - name: Type-check modernized modules
         working-directory: backend
         run: >-
           .venv/bin/mypy app/domains app/services/guardrails.py app/services/resume_artifacts.py app/services/resume_layout.py app/services/pdf_streams.py app/routers/v1
-          app/routers/worker.py app/worker_main.py app/observability.py app/feature_flags.py app/migrate.py
+          app/routers/worker.py app/worker_main.py app/observability.py app/catalog_timing.py app/main.py app/security.py app/feature_flags.py app/migrate.py
+          app/services/model_cost_policy.py app/services/generation_budget.py app/services/llm_client.py app/services/result_commit.py
+          app/services/generation_gate.py
+          scripts/monetary_cutover_preflight.py scripts/native_tex_test_image.py
+          app/billing/cost_policy.py
+          app/routers/candidate_accounts.py app/routers/sensitive_auth.py app/routers/candidate_ingress.py
+          ../infra/gcp/release_preflight.py ../infra/gcp/monetary_release.py scripts/monetary_schema_step.py
+          scripts/model_key_revocation_observer.py scripts/legacy_credential_inventory.py
+          scripts/ci_registry_cache.py
+          app/services/document_ingestion.py scripts/document_test_image.py
+          ../infra/document-processing/processor.py ../infra/document-processing/service.py
+          app/routers/resume_uploads.py
+          ../infra/gcp/document_worker.py
+          app/resume_upload_worker.py app/services/resume_upload_coordinator.py
       - name: Compile backend
         run: backend/.venv/bin/python -m compileall -q backend/app
       - name: Validate PostgreSQL migrations
         working-directory: backend
         env:
           APP_ENV: test
-          DATABASE_URL: postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:5432/hirewiz_test
+          DATABASE_URL: postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55433/hirewiz_test
         run: |
           .venv/bin/alembic upgrade head
           .venv/bin/alembic downgrade 20260803_0001
           .venv/bin/alembic upgrade head
+      - name: Provision disposable Lever pacing Redis
+        id: lever-redis
+        timeout-minutes: 3
+        run: |
+          pacing_container_id="$(docker run --detach --name hirewiz-lever-pacing-20261008 \
+            --publish 127.0.0.1:56379:6379 \
+            public.ecr.aws/docker/library/redis:7.4-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499 \
+            redis-server --save '' --appendonly no --maxmemory-policy noeviction)"
+          printf 'container_id=%s\n' "$pacing_container_id" >> "$GITHUB_OUTPUT"
+          for pacing_attempt in {1..30}; do
+            pacing_response="$(timeout 2s docker exec "$pacing_container_id" redis-cli ping 2>/dev/null || true)"
+            if [[ "$pacing_response" == "PONG" ]]; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo '::error::Disposable Lever pacing Redis did not become ready after 30 bounded checks.'
+          exit 1
+      - name: Provision disposable Firestore data emulator
+        id: authority-emulator
+        working-directory: backend
+        timeout-minutes: 3
+        run: |
+          authority_container_id="$(docker run --detach --name hirewiz-authority-emulator-20261009 \
+            --label hirewiz.test=authority-emulator-20261009 \
+            --publish 127.0.0.1:58877:8080 --cpus=1 --memory=2g \
+            --cap-drop=ALL --security-opt=no-new-privileges \
+            --env CLOUDSDK_CONFIG=/tmp/hirewiz-cloudsdk \
+            --env CLOUDSDK_CORE_DISABLE_USAGE_REPORTING=true --env JAVA_TOOL_OPTIONS=-Xmx1536m --workdir=/tmp \
+            gcr.io/google.com/cloudsdktool/google-cloud-cli:573.0.0-emulators@sha256:1b083a6a9647024a98d4f38c2b51906a0f61ca36adcba11672b8933544962efe \
+            gcloud emulators firestore start --project=hirewiz-local-authority \
+              --host-port=0.0.0.0:8080 --quiet)"
+          printf 'container_id=%s\n' "$authority_container_id" >> "$GITHUB_OUTPUT"
+          .venv/bin/python - <<'PY'
+          import time
+          import grpc
+          with grpc.insecure_channel("127.0.0.1:58877") as channel:
+              deadline = time.monotonic() + 60
+              while time.monotonic() < deadline:
+                  try:
+                      grpc.channel_ready_future(channel).result(timeout=2)
+                      print("Disposable localhost Firestore data emulator is ready.")
+                      break
+                  except grpc.FutureTimeoutError:
+                      time.sleep(1)
+              else:
+                  raise RuntimeError("Disposable localhost Firestore data emulator did not become ready")
+          PY
       - name: Run backend tests
         working-directory: backend
+        env:
+          HIREWIZ_TEST_POSTGRES_URL: postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55433/hirewiz_admission_test
+          PAIRING_PASSWORD_TEST_POSTGRES_ADMIN_URL: postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55433/postgres
+          PAIRING_PASSWORD_TEST_POSTGRES_REQUIRED: "true"
+          EMPLOYER_PACING_TEST_REDIS_URL: redis://127.0.0.1:56379/0
+          HIREWIZ_AUTHORITY_EMULATOR_REQUIRED: "true"
         run: |
           .venv/bin/python scripts/run_prompt_evals.py
           .venv/bin/pytest -q
+      - name: Remove disposable Lever pacing Redis
+        if: always()
+        timeout-minutes: 1
+        env:
+          PACING_REDIS_CONTAINER_ID: ${{ steps.lever-redis.outputs.container_id }}
+        run: |
+          if [[ -n "$PACING_REDIS_CONTAINER_ID" ]]; then
+            timeout 15s docker rm --force "$PACING_REDIS_CONTAINER_ID"
+          fi
+      - name: Remove disposable Firestore data emulator
+        if: always()
+        timeout-minutes: 1
+        env:
+          AUTHORITY_EMULATOR_CONTAINER_ID: ${{ steps.authority-emulator.outputs.container_id }}
+        run: |
+          if [[ -n "$AUTHORITY_EMULATOR_CONTAINER_ID" ]]; then
+            timeout 15s docker rm --force "$AUTHORITY_EMULATOR_CONTAINER_ID"
+          fi
       - name: Check OpenAPI artifact drift
         working-directory: backend
         env:
@@ -82,6 +272,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
@@ -120,6 +312,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
@@ -129,9 +322,120 @@ jobs:
       - name: Audit production frontend dependencies
         working-directory: frontend
         run: npm audit --omit=dev --audit-level=critical
+      - name: Configure verified public cache before security Docker operations
+        timeout-minutes: 2
+        run: |
+          sudo --preserve-env=GITHUB_ACTIONS,RUNNER_OS python3 backend/scripts/ci_registry_cache.py
+          sudo dockerd --validate --config-file /etc/docker/daemon.json
+          daemon_pid="$(systemctl show --property=MainPID --value docker)"
+          [[ "$daemon_pid" =~ ^[1-9][0-9]*$ ]]
+          [ "$daemon_pid" -gt 1 ]
+          sudo kill -HUP "$daemon_pid"
+          timeout 15s python3 backend/scripts/ci_registry_cache.py --verify
       - name: Scan repository for committed secrets
         run: >-
-          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.24.2
+          docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.24.2@sha256:b5918eb91b8d2473cec722f066abb4352e4ffdc4ec9f4283ec143aba9ec9ebc4
           detect --source /repo --no-banner --redact
       - name: Build production container
         run: docker build --tag hirewiz-ci:${{ github.sha }} .
+
+  browser-companion:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: browser-companion/package-lock.json
+      - name: Install companion test dependencies
+        working-directory: browser-companion
+        run: npm ci --ignore-scripts
+      - name: Check disabled package and protocol regressions
+        working-directory: browser-companion
+        run: |
+          npm run check
+          npm test
+          npm audit --audit-level=high
+      - name: Verify synthetic Razorpay fixture contracts
+        working-directory: browser-companion
+        run: node --test tests/razorpay-fixture.test.js
+      - name: Install Playwright Chromium
+        working-directory: browser-companion
+        run: npx playwright install --with-deps chromium
+      - name: Verify local synthetic MV3 flow
+        working-directory: browser-companion
+        run: npm run test:browser
+      - name: Verify native MV3 connection failure and restart boundaries
+        working-directory: browser-companion
+        run: npm run test:native-runtime
+      - name: Verify synthetic Razorpay browser boundary
+        working-directory: browser-companion
+        run: node --test tests/razorpay-browser.test.js
+
+  cold-browser-journey:
+    # Independent of mocked responsive tests: production Next → real API → PG.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: public.ecr.aws/docker/library/postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+        env:
+          POSTGRES_USER: hirewiz
+          POSTGRES_PASSWORD: hirewiz
+          POSTGRES_DB: hirewiz_admission_test
+        ports:
+          - 55433:5432
+        options: >-
+          --health-cmd "pg_isready -U hirewiz -d hirewiz_admission_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, verified official ref
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5, verified official ref
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4, verified official ref
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install both locked runtimes
+        run: |
+          python -m pip install --disable-pip-version-check uv==0.11.32
+          uv sync --project backend --frozen --all-groups
+          npm ci --ignore-scripts --prefix frontend
+      - name: Check journey harness and manual review UI
+        run: |
+          cd backend
+          .venv/bin/ruff check scripts/run_cold_browser_journey.py tests/fixtures/cold_browser_app.py tests/test_cold_browser_runner.py
+          .venv/bin/mypy scripts/run_cold_browser_journey.py tests/fixtures/cold_browser_app.py
+          .venv/bin/pytest -q tests/test_cold_browser_runner.py
+          cd ../frontend
+          npx eslint components/EmployerApplicationPanel.tsx journey/cold-no-ai.spec.ts playwright.cold.config.ts
+          npm run typecheck
+      - name: Install Chromium
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: Verify complete cold no-AI browser journey
+        working-directory: backend
+        run: >-
+          .venv/bin/python scripts/run_cold_browser_journey.py --allow-disposable-postgres
+          --evidence "${{ runner.temp }}/hirewiz-cold-browser-evidence"
+      - name: Save sanitized workflow evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, verified official ref
+        with:
+          name: cold-browser-connected-proof
+          retention-days: 7
+          path: |
+            ${{ runner.temp }}/hirewiz-cold-browser-evidence/summary.json
+            ${{ runner.temp }}/hirewiz-cold-browser-evidence/manual-handoff-*.png

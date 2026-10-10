@@ -1,0 +1,176 @@
+{
+  "status": "CLEAR",
+  "scope": "Completed GitHub CI and actual checkout SHA proof for exact 44e0d92 published source only. Does not prove production deployment, live-provider behavior, actual expense reconciliation, or completion of the broader goal.",
+  "run": {
+    "databaseId": 37982735845,
+    "headSha": "44e0d927a0305cee103bdff93288e22090dee4f3",
+    "event": "pull_request",
+    "status": "completed",
+    "conclusion": "success",
+    "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37982735845",
+    "createdAt": "2026-10-09T19:48:29Z",
+    "updatedAt": "2026-10-09T19:59:01Z"
+  },
+  "jobs": [
+    {
+      "databaseId": 113997036478,
+      "name": "security-and-container",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37982735845/job/113997036478",
+      "startedAt": "2026-10-09T19:48:31Z",
+      "completedAt": "2026-10-09T19:50:08Z"
+    },
+    {
+      "databaseId": 113997036663,
+      "name": "backend",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37982735845/job/113997036663",
+      "startedAt": "2026-10-09T19:48:31Z",
+      "completedAt": "2026-10-09T19:58:46Z"
+    },
+    {
+      "databaseId": 113997036710,
+      "name": "frontend",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37982735845/job/113997036710",
+      "startedAt": "2026-10-09T19:48:31Z",
+      "completedAt": "2026-10-09T19:58:59Z"
+    },
+    {
+      "databaseId": 113997036779,
+      "name": "browser-companion",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37982735845/job/113997036779",
+      "startedAt": "2026-10-09T19:48:31Z",
+      "completedAt": "2026-10-09T19:49:36Z"
+    },
+    {
+      "databaseId": 113997036848,
+      "name": "cold-browser-journey",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37982735845/job/113997036848",
+      "startedAt": "2026-10-09T19:48:31Z",
+      "completedAt": "2026-10-09T19:50:51Z"
+    }
+  ],
+  "checkout_proofs": [
+    {
+      "job": "security-and-container",
+      "job_id": 113997036478,
+      "checkout_SHA_proofs": [
+        {
+          "line": 142,
+          "sha": "44e0d927a0305cee103bdff93288e22090dee4f3"
+        }
+      ],
+      "exact_head_verified": true
+    },
+    {
+      "job": "backend",
+      "job_id": 113997036663,
+      "checkout_SHA_proofs": [
+        {
+          "line": 207,
+          "sha": "44e0d927a0305cee103bdff93288e22090dee4f3"
+        }
+      ],
+      "exact_head_verified": true
+    },
+    {
+      "job": "frontend",
+      "job_id": 113997036710,
+      "checkout_SHA_proofs": [
+        {
+          "line": 123,
+          "sha": "44e0d927a0305cee103bdff93288e22090dee4f3"
+        }
+      ],
+      "exact_head_verified": true
+    },
+    {
+      "job": "browser-companion",
+      "job_id": 113997036779,
+      "checkout_SHA_proofs": [
+        {
+          "line": 123,
+          "sha": "44e0d927a0305cee103bdff93288e22090dee4f3"
+        }
+      ],
+      "exact_head_verified": true
+    },
+    {
+      "job": "cold-browser-journey",
+      "job_id": 113997036848,
+      "checkout_SHA_proofs": [
+        {
+          "line": 209,
+          "sha": "44e0d927a0305cee103bdff93288e22090dee4f3"
+        }
+      ],
+      "exact_head_verified": true
+    }
+  ],
+  "test_and_static_summaries": {
+    "backend": [
+      {
+        "line": 1149,
+        "summary": "All checks passed!"
+      },
+      {
+        "line": 1162,
+        "summary": "All checks passed!"
+      },
+      {
+        "line": 1175,
+        "summary": "Success: no issues found in 122 source files"
+      },
+      {
+        "line": 1460,
+        "summary": "2447 passed, 453 warnings in 505.37s (0:08:25)"
+      }
+    ],
+    "frontend": [
+      {
+        "line": 228,
+        "summary": " Test Files  22 passed (22)"
+      },
+      {
+        "line": 229,
+        "summary": "      Tests  240 passed (240)"
+      },
+      {
+        "line": 565,
+        "summary": "215 passed (8.6m)"
+      },
+      {
+        "line": 566,
+        "summary": "##[notice]  215 passed (8.6m)"
+      }
+    ],
+    "browser-companion": [],
+    "cold-browser-journey": [
+      {
+        "line": 477,
+        "summary": "All checks passed!"
+      },
+      {
+        "line": 478,
+        "summary": "Success: no issues found in 2 source files"
+      },
+      {
+        "line": 480,
+        "summary": "14 passed in 8.06s"
+      }
+    ]
+  },
+  "retained_availability_errors": [
+    "GitHub CLI refused two early completed-job logs until the entire run completed; early logs and errors retained.",
+    "First concurrent final downloads of frontend and browser-companion logs returned EOF; first attempt empty raw logs and errors retained. Sequential retries succeeded; no source/test failure occurred."
+  ],
+  "mutations": "Owned evidence files only; no source, tests, cloud, payments, or shared services changed."
+}

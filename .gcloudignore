@@ -3,6 +3,25 @@ backend/.venv/
 backend/__pycache__/
 backend/*.db
 backend/.env*
+.env*
+**/.env*
+.vercel/
+**/.vercel/
+**/*.pem
+**/*.key
+**/credentials.json
+**/__pycache__/
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/*.db
+frontend/test-results/
+frontend/playwright-report/
+**/.terraform/
+**/*.tfstate*
+**/*.tfplan
+**/*.tfvars
+**/*.tfvars.json
 
 # Node
 frontend/node_modules/

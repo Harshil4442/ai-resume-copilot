@@ -1,0 +1,25 @@
+{
+  "service": "hirewiz-analysis-worker",
+  "release": "b306f135fcd5d8f10336c8cfb4174c71ac028649",
+  "image": "us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz@sha256:de8dcc2d778d04f5afc87f4d1513ce6495fca4713676031635d55a0486a20fce",
+  "candidate_revision": "hirewiz-analysis-worker-00022-qut",
+  "candidate_url": "https://generation-quiesce---hirewiz-analysis-worker-mqff62d75a-uc.a.run.app",
+  "safe_environment": {
+    "APP_RELEASE": "b306f135fcd5d8f10336c8cfb4174c71ac028649",
+    "OPTIONAL_AI_GENERATION_ENABLED": "false",
+    "AUTO_DB_MIGRATE": "false"
+  },
+  "serving_revision": "hirewiz-analysis-worker-00021-5zd",
+  "serving_percent": 100,
+  "iam_unchanged": true,
+  "candidate_health_verified": true,
+  "scope": "Zero-traffic generation-disabled analysis-worker stage only; no queue pause, promotion, provider call or database migration.",
+  "checked_at_utc": "2026-10-08T22:51:45.337124+00:00",
+  "anonymous_http_status": 403,
+  "operator_authenticated_http_status": 200,
+  "health": {
+    "ok": true,
+    "role": "analysis-worker",
+    "release": "b306f135fcd5d8f10336c8cfb4174c71ac028649"
+  }
+}

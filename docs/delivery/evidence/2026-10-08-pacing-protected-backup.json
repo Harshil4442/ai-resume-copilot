@@ -1,0 +1,11 @@
+{
+  "object": "gs://ai-resume-parser-482412-hirewiz-application-artifacts/releases/pre-pacing-20261008T170107Z.dump",
+  "generation": "1791478904143733",
+  "bytes": 880087,
+  "sha256": "2f2d822b0f3ac1479bad3eca92ca87c10c33d34094ca9d5f913317f06b9b16a4",
+  "schema": "20261008_0009",
+  "created": "2026-10-08T17:01:44+0000",
+  "format_checked": true,
+  "catalogue_checked": true,
+  "restore_verified": false
+}

@@ -1,0 +1,413 @@
+{
+  "status": "independent_read_only_review",
+  "date": "2026-10-08",
+  "methods": [
+    "official unauthenticated GET origin/tenant checks",
+    "unchanged production feed adapter unauthenticated bounded GET scan"
+  ],
+  "production_mutations": false,
+  "employer_submissions": false,
+  "results": [
+    {
+      "employer": "Meesho",
+      "source_key": "lever:global:meesho",
+      "checked_utc": "2026-10-08T15:38:16.673838+00:00",
+      "submission_enabled": false,
+      "official_status": 200,
+      "official_resolved_url": "https://www.meesho.io/jobs",
+      "official_sha256": "5c69313e0952ccdcec7f88c60c65771722fc64f254dd302d2eb3e685d1cbc41c",
+      "expected_ats_reference": "https://api.lever.co/v0/postings/meesho",
+      "official_script_url": "https://www.meesho.io/_next/static/chunks/pages/jobs-721b32edb85df57d.js",
+      "script_sha256": "d3b21360a5896a453b17fa3044d7e5ae39d63dcfdfb1ef01287bc3ec8640be22",
+      "official_tenant_established": true,
+      "adapter_complete": true,
+      "normalized_openings": 60,
+      "india_location_regex_matches": 57,
+      "known_publication_dates": 60,
+      "known_update_dates": 0,
+      "canonical_hostnames": [
+        "jobs.lever.co"
+      ],
+      "enrollment_recommendation": "priority_operator_review",
+      "enrollment_reason": "Exact origin/adapter pass. No applicable discovery prohibition located. Lever Crawl-delay1 requires host pacing; no commercial redistribution license established.",
+      "enrolled": false,
+      "employer_group_alias_assumed": false,
+      "submission_permission_assumed": false
+    },
+    {
+      "employer": "Mindtickle",
+      "source_key": "lever:global:mindtickle",
+      "checked_utc": "2026-10-08T15:38:16.674325+00:00",
+      "submission_enabled": false,
+      "official_status": 200,
+      "official_resolved_url": "https://jobs.lever.co/mindtickle",
+      "official_sha256": "3eb4e4a26158bf4b1e9b0cc48a43e4c671ba32274a88bf6b27f4635f0a2e934d",
+      "expected_ats_reference": "https://jobs.lever.co/mindtickle",
+      "official_tenant_established": true,
+      "adapter_complete": true,
+      "normalized_openings": 20,
+      "india_location_regex_matches": 19,
+      "known_publication_dates": 20,
+      "known_update_dates": 0,
+      "canonical_hostnames": [
+        "jobs.lever.co"
+      ],
+      "enrollment_recommendation": "priority_operator_review",
+      "enrollment_reason": "Exact origin/adapter pass. Service terms not located as applicable to public Lever feed. Crawl-delay1 requires host pacing; no commercial redistribution license established.",
+      "enrolled": false,
+      "employer_group_alias_assumed": false,
+      "submission_permission_assumed": false
+    },
+    {
+      "employer": "Harness",
+      "source_key": "greenhouse:global:harnessinc",
+      "checked_utc": "2026-10-08T15:38:16.674418+00:00",
+      "submission_enabled": false,
+      "official_status": 200,
+      "official_resolved_url": "https://www.harness.io/company/jobs",
+      "official_sha256": "e4c9d3ecbdbbce53894cfcad46865562181e0a44d4a13c936241857557c678d7",
+      "expected_ats_reference": "https://boards-api.greenhouse.io/v1/boards/harnessinc/jobs?content=true",
+      "official_tenant_established": true,
+      "adapter_complete": true,
+      "normalized_openings": 65,
+      "india_location_regex_matches": 8,
+      "known_publication_dates": 65,
+      "known_update_dates": 65,
+      "canonical_hostnames": [
+        "www.harness.io"
+      ],
+      "enrollment_recommendation": "defer_terms",
+      "enrollment_reason": "Explicit website rules prohibit automated indexing/systematic storage without written consent. Working Greenhouse feed does not override this.",
+      "enrolled": false,
+      "employer_group_alias_assumed": false,
+      "submission_permission_assumed": false
+    },
+    {
+      "employer": "Observe.AI",
+      "source_key": "greenhouse:global:observeai",
+      "checked_utc": "2026-10-08T15:38:18.665060+00:00",
+      "submission_enabled": false,
+      "official_status": 200,
+      "official_resolved_url": "https://www.observe.ai/careers",
+      "official_sha256": "8a0c80a67f614bd5b12bb66a4c4470c70404cff5f830f08bc841b2079e7d731a",
+      "expected_ats_reference": "https://boards.greenhouse.io/embed/job_board/js?for=observeai",
+      "official_tenant_established": true,
+      "adapter_complete": true,
+      "normalized_openings": 12,
+      "india_location_regex_matches": 5,
+      "known_publication_dates": 12,
+      "known_update_dates": 12,
+      "canonical_hostnames": [
+        "www.observe.ai"
+      ],
+      "enrollment_recommendation": "priority_operator_review",
+      "enrollment_reason": "Exact origin/adapter pass. Located terms cover contracted SaaS; no applicable discovery prohibition found. No commercial redistribution license established.",
+      "enrolled": false,
+      "employer_group_alias_assumed": false,
+      "submission_permission_assumed": false
+    },
+    {
+      "employer": "Notion",
+      "source_key": "ashby:global:notion",
+      "checked_utc": "2026-10-08T15:38:19.518860+00:00",
+      "submission_enabled": false,
+      "official_status": 200,
+      "official_resolved_url": "https://www.notion.com/careers",
+      "official_sha256": "e93e2be9f92a857aaf72923c8edf40231d3175fc00508f4bf7da015b535dc15f",
+      "expected_ats_reference": "https://jobs.ashbyhq.com/notion/00960f3c-46b6-4ad5-ae6b-4175035b3cb9",
+      "official_tenant_established": true,
+      "adapter_complete": true,
+      "normalized_openings": 135,
+      "india_location_regex_matches": 4,
+      "known_publication_dates": 135,
+      "known_update_dates": 0,
+      "canonical_hostnames": [
+        "jobs.ashbyhq.com"
+      ],
+      "enrollment_recommendation": "defer_rights_scope",
+      "enrollment_reason": "Exact origin/adapter pass. Current careers-content terms unresolved; Ashby public feed does not establish third-party commercial reuse permission; partner feeds use customer opt-in.",
+      "enrolled": false,
+      "employer_group_alias_assumed": false,
+      "submission_permission_assumed": false
+    },
+    {
+      "employer": "Mixpanel",
+      "source_key": "greenhouse:global:mixpanel",
+      "checked_utc": "2026-10-08T15:38:20.185184+00:00",
+      "submission_enabled": false,
+      "official_status": 200,
+      "official_resolved_url": "https://mixpanel.com/jobs/",
+      "official_sha256": "a0390dcfb0e566c472d17caab5447f8908c846129dcdb5c86db47c9f026b0834",
+      "expected_ats_reference": "https://job-boards.greenhouse.io/mixpanel",
+      "official_tenant_established": true,
+      "adapter_complete": true,
+      "normalized_openings": 51,
+      "india_location_regex_matches": 4,
+      "known_publication_dates": 51,
+      "known_update_dates": 51,
+      "canonical_hostnames": [
+        "job-boards.greenhouse.io"
+      ],
+      "enrollment_recommendation": "priority_operator_review",
+      "enrollment_reason": "Exact origin/adapter pass. Official careers redirects to jobs; located terms concern subscription services, no public feed prohibition located. No commercial redistribution license established.",
+      "enrolled": false,
+      "employer_group_alias_assumed": false,
+      "submission_permission_assumed": false
+    },
+    {
+      "employer": "Amplitude",
+      "source_key": "ashby:global:amplitude",
+      "checked_utc": "2026-10-08T15:41:40.275773+00:00",
+      "submission_enabled": false,
+      "official_status": 200,
+      "official_resolved_url": "https://amplitude.com/careers",
+      "official_sha256": "02824d279c03c44d806f0f81d99cb99f032e9f7dbf61b7d76aaa46f311128476",
+      "checked_ats_reference": "https://jobs.ashbyhq.com/amplitude",
+      "official_tenant_established": true,
+      "adapter_complete": true,
+      "normalized_openings": 39,
+      "india_location_regex_matches": 2,
+      "known_publication_dates": 39,
+      "canonical_hostnames": [
+        "jobs.ashbyhq.com"
+      ],
+      "enrollment_recommendation": "defer_operator_terms_review",
+      "enrollment_reason": "Exact employer tenant and adapter confirmed; remaining discovery terms/limits review not sufficient for enrollment clearance.",
+      "enrolled": false,
+      "employer_group_alias_assumed": false,
+      "submission_permission_assumed": false
+    },
+    {
+      "employer": "Vercel",
+      "source_key": "greenhouse:global:vercel",
+      "checked_utc": "2026-10-08T15:41:40.276204+00:00",
+      "submission_enabled": false,
+      "official_status": 200,
+      "official_resolved_url": "https://vercel.com/careers",
+      "official_sha256": "311db5bb13e162ff310b246187194740291a228e8a55a1d95a1f2bc7dce54961",
+      "checked_ats_reference": "https://job-boards.greenhouse.io/vercel",
+      "official_tenant_established": true,
+      "adapter_complete": true,
+      "normalized_openings": 86,
+      "india_location_regex_matches": 2,
+      "known_publication_dates": 86,
+      "canonical_hostnames": [
+        "job-boards.greenhouse.io"
+      ],
+      "enrollment_recommendation": "defer_operator_terms_review",
+      "enrollment_reason": "Exact employer tenant and adapter confirmed; remaining discovery terms/limits review not sufficient for enrollment clearance.",
+      "enrolled": false,
+      "employer_group_alias_assumed": false,
+      "submission_permission_assumed": false
+    },
+    {
+      "employer": "Commercetools",
+      "source_key": "greenhouse:global:commercetools",
+      "checked_utc": "2026-10-08T15:41:40.276305+00:00",
+      "submission_enabled": false,
+      "official_status": 200,
+      "official_resolved_url": "https://commercetools.com/careers",
+      "official_sha256": "cf35639cec4f852da61c18267630c7ab31b3bc5e42d4ea52ff7b3b4966851cb4",
+      "checked_ats_reference": "https://boards-api.greenhouse.io/v1/boards/commercetools/jobs?content=true",
+      "official_tenant_established": true,
+      "adapter_complete": true,
+      "normalized_openings": 35,
+      "india_location_regex_matches": 0,
+      "known_publication_dates": 35,
+      "canonical_hostnames": [
+        "job-boards.greenhouse.io"
+      ],
+      "enrollment_recommendation": "defer_operator_terms_review",
+      "enrollment_reason": "Exact employer tenant and adapter confirmed; remaining discovery terms/limits review not sufficient for enrollment clearance.",
+      "enrolled": false,
+      "employer_group_alias_assumed": false,
+      "submission_permission_assumed": false
+    },
+    {
+      "employer": "Sentry",
+      "source_key": "ashby:global:sentry",
+      "checked_utc": "2026-10-08T15:41:42.165993+00:00",
+      "submission_enabled": false,
+      "official_status": 200,
+      "official_resolved_url": "https://sentry.io/careers/",
+      "official_sha256": "5118c5511c0851ae860e0d71d1a82b16db1e8363dfe2d6090bfac9d6adf260a1",
+      "checked_ats_reference": "https://jobs.ashbyhq.com/sentry",
+      "official_tenant_established": true,
+      "adapter_complete": true,
+      "normalized_openings": 43,
+      "india_location_regex_matches": 0,
+      "known_publication_dates": 43,
+      "canonical_hostnames": [
+        "jobs.ashbyhq.com"
+      ],
+      "enrollment_recommendation": "defer_operator_terms_review",
+      "enrollment_reason": "Exact employer tenant and adapter confirmed; remaining discovery terms/limits review not sufficient for enrollment clearance.",
+      "enrolled": false,
+      "employer_group_alias_assumed": false,
+      "submission_permission_assumed": false
+    },
+    {
+      "employer": "Docker",
+      "source_key": "ashby:global:docker",
+      "checked_utc": "2026-10-08T15:41:42.227960+00:00",
+      "submission_enabled": false,
+      "official_status": 200,
+      "official_resolved_url": "https://www.docker.com/career-openings/",
+      "official_sha256": "b9a42d4279f3f7ca2e98f9d1b81ae32c5273930d2f4f588e33bcb970c6687ab5",
+      "checked_ats_reference": "https://jobs.ashbyhq.com/docker",
+      "official_tenant_established": true,
+      "adapter_complete": true,
+      "normalized_openings": 61,
+      "india_location_regex_matches": 0,
+      "known_publication_dates": 61,
+      "canonical_hostnames": [
+        "jobs.ashbyhq.com"
+      ],
+      "enrollment_recommendation": "defer_operator_terms_review",
+      "enrollment_reason": "Exact employer tenant and adapter confirmed; remaining discovery terms/limits review not sufficient for enrollment clearance.",
+      "enrolled": false,
+      "employer_group_alias_assumed": false,
+      "submission_permission_assumed": false
+    },
+    {
+      "employer": "Linear",
+      "source_key": "ashby:global:Linear",
+      "checked_utc": "2026-10-08T15:41:42.894087+00:00",
+      "submission_enabled": false,
+      "official_status": 200,
+      "official_resolved_url": "https://linear.app/careers",
+      "official_sha256": "4f8088b387749c52d7e75061a3391acc34a667214cfa3ba2da9e433ab6634ffc",
+      "checked_ats_reference": "https://jobs.ashbyhq.com/Linear",
+      "official_tenant_established": true,
+      "adapter_complete": true,
+      "normalized_openings": 31,
+      "india_location_regex_matches": 0,
+      "known_publication_dates": 31,
+      "canonical_hostnames": [
+        "jobs.ashbyhq.com"
+      ],
+      "enrollment_recommendation": "defer_operator_terms_review",
+      "enrollment_reason": "Exact employer tenant and adapter confirmed; remaining discovery terms/limits review not sufficient for enrollment clearance.",
+      "enrolled": false,
+      "employer_group_alias_assumed": false,
+      "submission_permission_assumed": false
+    },
+    {
+      "employer": "Reddit",
+      "source_key": "greenhouse:global:reddit",
+      "checked_utc": "2026-10-08T15:41:42.946335+00:00",
+      "submission_enabled": false,
+      "official_status": 200,
+      "official_resolved_url": "https://redditinc.com/careers",
+      "official_sha256": "459e6b41731380a4b80b70274cdce73ada2f42d71ccec7bbb550979206b66d52",
+      "checked_ats_reference": "https://job-boards.greenhouse.io/reddit",
+      "official_tenant_established": true,
+      "adapter_complete": true,
+      "normalized_openings": 153,
+      "india_location_regex_matches": 0,
+      "known_publication_dates": 153,
+      "canonical_hostnames": [
+        "job-boards.greenhouse.io"
+      ],
+      "enrollment_recommendation": "defer_operator_terms_review",
+      "enrollment_reason": "Exact employer tenant and adapter confirmed; remaining discovery terms/limits review not sufficient for enrollment clearance.",
+      "enrolled": false,
+      "employer_group_alias_assumed": false,
+      "submission_permission_assumed": false
+    },
+    {
+      "employer": "Ramp",
+      "source_key": "ashby:global:ramp",
+      "checked_utc": "2026-10-08T15:41:44.021069+00:00",
+      "submission_enabled": false,
+      "official_status": 200,
+      "official_resolved_url": "https://ramp.com/careers",
+      "official_sha256": "f52fa116f417b8fe8196eda9a598815b5ed829a5674750332517609eb270e6dd",
+      "checked_ats_reference": "https://jobs.ashbyhq.com/ramp",
+      "official_tenant_established": true,
+      "adapter_complete": true,
+      "normalized_openings": 161,
+      "india_location_regex_matches": 0,
+      "known_publication_dates": 161,
+      "canonical_hostnames": [
+        "jobs.ashbyhq.com"
+      ],
+      "enrollment_recommendation": "defer_operator_terms_review",
+      "enrollment_reason": "Exact employer tenant and adapter confirmed; remaining discovery terms/limits review not sufficient for enrollment clearance.",
+      "enrolled": false,
+      "employer_group_alias_assumed": false,
+      "submission_permission_assumed": false
+    },
+    {
+      "employer": "Sourcegraph",
+      "source_key": "greenhouse:global:sourcegraph91",
+      "checked_utc": "2026-10-08T15:41:44.067928+00:00",
+      "submission_enabled": false,
+      "official_status": 200,
+      "official_resolved_url": "https://sourcegraph.com/jobs",
+      "official_sha256": "e41109fade198b1c327269c2958c32362bedbae367bf9ba375daf188b11a3e38",
+      "checked_ats_reference": "https://job-boards.greenhouse.io/sourcegraph91",
+      "official_tenant_established": true,
+      "adapter_complete": true,
+      "normalized_openings": 10,
+      "india_location_regex_matches": 0,
+      "known_publication_dates": 10,
+      "canonical_hostnames": [
+        "job-boards.greenhouse.io"
+      ],
+      "enrollment_recommendation": "defer_operator_terms_review",
+      "enrollment_reason": "Exact employer tenant and adapter confirmed; remaining discovery terms/limits review not sufficient for enrollment clearance.",
+      "enrolled": false,
+      "employer_group_alias_assumed": false,
+      "submission_permission_assumed": false
+    },
+    {
+      "employer": "Freetrade",
+      "source_key": "ashby:global:freetrade",
+      "checked_utc": "2026-10-08T15:41:45.043026+00:00",
+      "submission_enabled": false,
+      "official_status": 200,
+      "official_resolved_url": "https://freetrade.io/careers",
+      "official_sha256": "476b11e3e901c5f5bf165825bc03303e2f5cac22fc0cfcc861b118813d08a31a",
+      "checked_ats_reference": "https://jobs.ashbyhq.com/freetrade/embed?version=2",
+      "official_tenant_established": true,
+      "adapter_complete": true,
+      "normalized_openings": 7,
+      "india_location_regex_matches": 0,
+      "known_publication_dates": 7,
+      "canonical_hostnames": [
+        "jobs.ashbyhq.com"
+      ],
+      "evidence_kind": "official_careers_embed",
+      "enrollment_recommendation": "defer_operator_terms_review",
+      "enrollment_reason": "Exact employer tenant and adapter confirmed; remaining discovery terms/limits review not sufficient for enrollment clearance.",
+      "enrolled": false,
+      "employer_group_alias_assumed": false,
+      "submission_permission_assumed": false
+    }
+  ],
+  "terms_review_complete": false,
+  "review_limit": "All16 origins/adapters checked; detailed first-six terms plus preliminary remaining10 triage. Operator must review rights/limits before any authenticated manual-only enrollment.",
+  "deferred_adapter_sources": [
+    {
+      "employer": "Mercari India",
+      "reason": "Existing Workable endpoint returns302; current no-redirect adapter needs supported modern widget contract."
+    },
+    {
+      "employer": "Dream Sports",
+      "reason": "Existing exact public Lever tenant feed returns404; do not infer another tenant."
+    },
+    {
+      "employer": "Groww",
+      "reason": "Exact EU Greenhouse host unsupported by current SourceCreate/adapter; no global tenant inference."
+    },
+    {
+      "employer": "FreeAgent",
+      "reason": "Exact supported Pinpoint tenant not established."
+    },
+    {
+      "employer": "BrowserStack",
+      "reason": "Observed employer platformWorkday not among supported adapter families."
+    }
+  ]
+}

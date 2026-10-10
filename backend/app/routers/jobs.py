@@ -1,14 +1,14 @@
 import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-log = logging.getLogger(__name__)
-
-from ..database import get_db
 from .. import models, schemas
+from ..database import get_db
 from ..security import get_current_user
 from ..services.guardrails import billable_operation
 
+log = logging.getLogger(__name__)
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
 @router.post("/match", response_model=schemas.JobMatchResponse)
@@ -37,7 +37,7 @@ def match_job(
             db=db,
             operation="job_match_legacy",
             amount=1,
-            input_payload={"resume_id": resume.id, "job_title": payload.job_title},
+            input_payload={"resume_id": resume.id, "job_title": payload.job_title, "mode": payload.mode},
         ):
             result = execute_job_match(
                 db,
@@ -47,6 +47,7 @@ def match_job(
                     "job_title": payload.job_title,
                     "company": payload.company or "",
                     "job_description": jd_text,
+                    "mode": payload.mode,
                 },
             )
     except HTTPException:
@@ -67,6 +68,10 @@ def match_job(
         dimensions=[schemas.DimensionScore(**item) for item in result["dimensions"]],
         fit_summary=result["fit_summary"],
         improvement_tips=result["improvement_tips"],
+        mode=result["mode"],
+        provenance=result["provenance"],
+        scoring_version=result["scoring_version"],
+        uncertainties=result.get("uncertainties", []),
     )
 
 @router.get("/matches", response_model=schemas.JobMatchHistoryResponse)
@@ -138,7 +143,7 @@ def tailor_resume(
             user_id=current_user.id,
             db=db,
             operation="resume_tailor_legacy",
-            amount=10,
+            amount=2,
             input_payload={
                 "match_id": match.id,
                 "resume_id": resume.id,
@@ -157,32 +162,15 @@ def tailor_resume(
                 approved_evidence=evidence_payload,
             )
 
-            pdf_b64 = None
             import base64
-            import os
-            import subprocess
-            import tempfile
 
-            with tempfile.TemporaryDirectory() as tempdir:
-                tex_path = os.path.join(tempdir, "resume.tex")
-                with open(tex_path, "w", encoding="utf-8") as file:
-                    file.write(tailored_latex)
-
-                try:
-                    subprocess.run(
-                        ["pdflatex", "-interaction=nonstopmode", "resume.tex"],
-                        cwd=tempdir,
-                        check=True,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        timeout=15,
-                    )
-                    pdf_path = os.path.join(tempdir, "resume.pdf")
-                    if os.path.exists(pdf_path):
-                        with open(pdf_path, "rb") as pdf_file:
-                            pdf_b64 = base64.b64encode(pdf_file.read()).decode("utf-8")
-                except Exception as latex_error:
-                    log.warning("Failed to compile LaTeX: %s", latex_error)
+            from ..services.native_tex import compile_project
+            from ..services.resume_layout import ResumeLayoutError
+            try:
+                pdf, _image = compile_project(tailored_latex.encode(), "tex")
+                pdf_b64 = base64.b64encode(pdf).decode()
+            except ResumeLayoutError as exc:
+                raise HTTPException(422, str(exc)) from exc
 
             return schemas.ResumeTailorResponse(
                 tailored_resume_markdown=tailored_latex,

@@ -1,0 +1,110 @@
+{
+  "scope": "Local durable Python guard protocol evidence only; independent application-only restore",
+  "worktree_base": "8c246dcad0cc20eacf48f266a5ec85fcb8a05074",
+  "files": {
+    "backend/app/domains/recovery/contracts.py": "3cff31bd4181e51ac0a8ed7313cbc486ad643225bc65afcdeccdc18b7ed0449e",
+    "backend/app/domains/recovery/store.py": "f2905cff9210bade17dfaf3ced0277c0f2b61890ca79eaa88a400b28160ecdf2",
+    "backend/app/domains/recovery/service.py": "1f6dfb14352973fd167d1f6571fdd9c70f079f2b4b3f959945ede1e4819d2b8f",
+    "backend/tests/fixtures/recovery_authority.py": "e1aa328bf916ceee2cdefe973055d9430c2e380463632d7755094fe01d34b24f",
+    "backend/tests/test_recovery_authority.py": "80932f11f1d430b4d0dea6a89b37334add5e23aa142ebaabbd49e678aa5ab132",
+    "backend/tests/test_recovery_authority_processes.py": "bf9a4d3cd3e5c5ce50a3b38cdcc1bf5c80602091cde79801604d47994c1626c8"
+  },
+  "patch_sha256": "1fd38ac74bc34ac1c82b2f3aff2b0b78bd6e13e9a4ee1fc447c4bb3d4ce87dd8",
+  "pytest": {
+    "passed": 85,
+    "failed": 0,
+    "skipped": 0,
+    "by_suite": {
+      "tests.test_recovery_authority": 70,
+      "tests.test_recovery_authority_processes": 15
+    },
+    "actual_spawned_cases": 10,
+    "actual_spawned_executor_processes": 18
+  },
+  "checks": {
+    "ruff": "passed (six owned files)",
+    "mypy": "passed (three core files + test adapter)",
+    "whole_repository_suite": "not run; bounded isolated core proof requested"
+  },
+  "critical_proofs": [
+    "Default CLOSED, explicit fresh complete local replay barrier and operator registry checks",
+    "Production store always unavailable; no environment/SQL/Redis/test adapter fallback",
+    "Fresh single-use current candidate challenge, identity key/executor rotation invalidates old challenge/approval",
+    "All exact binding fields and owner/device/key/revision/origin/action/deadline checks",
+    "Four independent spawned begin processes: one permission, three status-only duplicates",
+    "Two independent devices/packages/approvals share one permanent opening claim",
+    "Two independent registration processes cannot consume one candidate challenge twice",
+    "Independent cancellation/begin compete and both committed orderings preserve winner boundary",
+    "Actual process exit 73 after FULL/WAL commit and before reply: restart observes BEGUN; never reconstructs permission",
+    "Bounded independent writer contention timeout returns unavailable without a claim",
+    "Application-only logical backup/restore preserves separately retained begun and deletion evidence",
+    "Missing/replaced identity, event gaps and claim/permit/tombstone/approval/epoch projection loss fail closed",
+    "Monotonic observed clock; stale/expired/delayed reply grants no permission",
+    "UNKNOWN/LOCAL_FILLED outcomes do not claim receipt, refund, remove claims, reopen or change terminal outcome",
+    "Consumed challenge projection cannot be rolled back selectively to register another opening while retained journal remains intact"
+  ],
+  "absent": [
+    "Production auth/signing/device pairing",
+    "Production Firestore/GCS/IAM/journal retention adapter",
+    "Authority-file rollback detection or retained-cloud restore proof",
+    "Physical old-process egress fencing",
+    "HTTP/router/browser integration",
+    "Upload/submit/financial settlement",
+    "Real employer networking"
+  ],
+  "limits": [
+    "One fill step per stable subject/employer/tenant/opening in this slice",
+    "Future multi-field sequencing needs attempt-bound step ownership; never clear the stable claim",
+    "SQLite authority file exists only under tests and is intentionally separate from application SQL",
+    "Trusted adapter must authenticate actor before constructing AuthenticatedActor; fixture registry checks do not provide real authentication"
+  ],
+  "warnings": [],
+  "side_effects": {
+    "cloud_changes": false,
+    "employer_requests": false,
+    "root_release_edits": false,
+    "commits": false,
+    "financial_operations": false,
+    "browser_changes": false
+  },
+  "review": {
+    "reviewer": "source_terms_review",
+    "repairs": [
+      "current candidate identity digest checks",
+      "journal-to-stable-claim and deny/epoch projection checks",
+      "approval-to-consumed-challenge projection checks"
+    ],
+    "remaining_confirmed_core_flaws": "none reported after bounded review; production guarantees explicitly absent",
+    "final_confirmation": "Read-only reviewer confirmed approval/challenge projection repair closes the last reported gap; no review expansion or further source edits."
+  },
+  "freeze": "Six files frozen after final 85-test run; no further edits planned",
+  "root_integration": {
+    "observed_utc": "2026-10-08T17:45:27.572081+00:00",
+    "backend_passed": 630,
+    "failed": 0,
+    "skipped": 0,
+    "existing_deprecation_warnings": 3,
+    "actual_postgresql_cases": 26,
+    "host_pacing_cases": 30,
+    "actual_redis_cases": 8,
+    "recovery_cases": 85,
+    "ruff_exact_ci_scope": "passed",
+    "mypy_exact_ci_scope": "passed across 53 source files",
+    "production_authority_or_employer_calls": false,
+    "exact_remote_ci": {
+      "run_id": 37821078441,
+      "commit": "7c59578d169290a91f45d39552ad48d41ea40d16",
+      "conclusion": "success",
+      "backend_passed": 630,
+      "backend_skipped": 0,
+      "mypy_source_files": 53
+    },
+    "source_hashes_match_frozen_patch": true,
+    "compile": "passed",
+    "prompt_evaluations": {
+      "passed": true,
+      "case_count": 6
+    },
+    "openapi_drift": "zero after completed regeneration"
+  }
+}

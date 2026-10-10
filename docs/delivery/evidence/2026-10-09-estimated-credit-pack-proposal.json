@@ -1,0 +1,108 @@
+{
+  "status": "ESTIMATED_PROPOSAL_ARITHMETIC_PASS_NOT_ACTIVATED",
+  "actual_invoices_used": false,
+  "owner_authorized_estimates": true,
+  "assumptions": {
+    "gross_inclusive_sale_tax_reserve": "18% (planning assumption, not legal tax determination)",
+    "payment_cost": "3.54% of gross",
+    "refund_and_chargeback_reserve": "5% of gross",
+    "fixed_and_marketing_cost_inr_monthly": 15000,
+    "paid_pack_forecast": 100,
+    "fixed_allocation_inr_per_pack": 150,
+    "contingency": "20%",
+    "target_contribution_margin": "40%",
+    "search_cost_bound_inr": ".25 per delivered job",
+    "confirmed_application_cost_bound_inr": "5 per application, requiring20jobcredits",
+    "ai_unit_cost_bound_inr": "26.50; providerUSD.25 at adverse100INR/USD plus1.50worker/document allowance for three attempts; tailoring2units with operation-total providercapUSD.50",
+    "marketing_subpools_inr_monthly": {
+      "promotion_and_failed_ai": 1000,
+      "legacy_premium_ai": 500,
+      "legacy_service_quotes": 500
+    },
+    "net_receipt_rounding": "Round each modeled tax/fee/refund reserve up to whole paise; no fractional proceeds credited."
+  },
+  "candidate_bundles": [
+    {
+      "name": "Starter",
+      "gross_inr": 649,
+      "service_credits": 100,
+      "analysis_units": 2,
+      "net_receipts_minor": 49457,
+      "bounded_cost_minor": 27360,
+      "estimated_margin_percent": "44.68",
+      "volume_scenarios": [
+        {
+          "packs_per_month": 10,
+          "net_contribution_after_fixed_minor": -1399030
+        },
+        {
+          "packs_per_month": 50,
+          "net_contribution_after_fixed_minor": 204850
+        },
+        {
+          "packs_per_month": 100,
+          "net_contribution_after_fixed_minor": 2209700
+        }
+      ],
+      "break_even_packs_if_only_this_pack": 45
+    },
+    {
+      "name": "Growth",
+      "gross_inr": 1099,
+      "service_credits": 300,
+      "analysis_units": 6,
+      "net_receipts_minor": 83749,
+      "bounded_cost_minor": 46080,
+      "estimated_margin_percent": "44.98",
+      "volume_scenarios": [
+        {
+          "packs_per_month": 10,
+          "net_contribution_after_fixed_minor": -1243310
+        },
+        {
+          "packs_per_month": 50,
+          "net_contribution_after_fixed_minor": 983450
+        },
+        {
+          "packs_per_month": 100,
+          "net_contribution_after_fixed_minor": 3766900
+        }
+      ],
+      "break_even_packs_if_only_this_pack": 33
+    },
+    {
+      "name": "Scale",
+      "gross_inr": 2199,
+      "service_credits": 700,
+      "analysis_units": 15,
+      "net_receipts_minor": 167575,
+      "bounded_cost_minor": 86700,
+      "estimated_margin_percent": "48.26",
+      "volume_scenarios": [
+        {
+          "packs_per_month": 10,
+          "net_contribution_after_fixed_minor": -811250
+        },
+        {
+          "packs_per_month": 50,
+          "net_contribution_after_fixed_minor": 3143750
+        },
+        {
+          "packs_per_month": 100,
+          "net_contribution_after_fixed_minor": 8087500
+        }
+      ],
+      "break_even_packs_if_only_this_pack": 19
+    }
+  ],
+  "limits": [
+    "Operation-cost bounds and atomic bundle runtime not yet independently verified.",
+    "Global providers/documents/fleet budget guards required.",
+    "Tax/gateway/hosting assumptions must be reconciled with actual contracts/bills.",
+    "Positive forecast margin does not imply profit below break-even volume.",
+    "Accepted old orders/quotes retained."
+  ],
+  "arithmetic_version": "expense-planning-v2-three-attempt-overhead",
+  "updated_at_utc": "2026-10-09T15:48:57.370696+00:00",
+  "previous_arithmetic_evidence": "2026-10-09-estimated-credit-pack-proposal-initial.json"
+}

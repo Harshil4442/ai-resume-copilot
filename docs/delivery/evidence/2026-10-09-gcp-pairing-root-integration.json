@@ -1,0 +1,40 @@
+{
+  "checked_at_utc": "2026-10-08T22:50:29.630639+00:00",
+  "root_base_commit": "9ebfc7dafd220f059f91a72cf83e4324a77f8642",
+  "agent_patch_sha256": "23cedee6961e9e8365b7f26c20e69449695d7435d23a595f91156c321b431a73",
+  "agent_baseline_and_dependency_hashes_verified": true,
+  "agent_focused_cases": 336,
+  "independent_audit_emulator_cases": 18,
+  "independent_audit_result": "18 passed, 4.25s; no confirmed bounded-bridge defect",
+  "parent_typing_repair": "An explicit None-safe _controls_match helper closes four Optional[dict] errors found by the actual full CI Mypy import context. No retry or authorization policy was changed.",
+  "integrated_python_sha256": {
+    "backend/app/domains/recovery/pairing_service.py": "e58c6e259edd093a628022e28be919f589946b25353ed7057afb2f05b2290212",
+    "backend/app/domains/recovery/gcp_buffer.py": "578fe3bfe0d31ca6b518f2b5e65e2a18bd3cd632fb8c2fb9be770f915ceb31fc",
+    "backend/app/domains/recovery/gcp_journal.py": "9c3d8633e36eb3b4f4f490f0b7df653a682dc839475c375ba7ae91dec0e8b2d8",
+    "backend/app/domains/recovery/gcp_pairing_contracts.py": "cd3be17c3b3833f01b8f689ec895edfb6cdd8b48dee8a52a076db1f1873de1b4",
+    "backend/app/domains/recovery/gcp_pairing.py": "75931bad29d3420620093709b0f26cba6627967d90a86ecfaffd6662a3068e0a",
+    "backend/tests/test_gcp_pairing_emulator.py": "8744d8c0333e8fb2049bac2cdec9ac17250f36b80135bfac71e28f5cb98db6a3"
+  },
+  "whole_backend_result": {
+    "tests": 1279,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "whole_backend_duration_seconds": 75.8,
+  "junit_sha256": "0a6c48fae7aacabdbead0d77c427d803ee52bb76c659b9a3faa4aa90a8147c98",
+  "static_checks": {
+    "ruff": "app/domains/recovery and new emulator test passed",
+    "mypy": "77 source files passed the full CI selection",
+    "prompt_evaluations": "6 cases passed"
+  },
+  "emulator_scope": "Only localhost 127.0.0.1:58877, unique anonymous named databases; no reset/delete or cloud authority calls.",
+  "production_enabled": false,
+  "remaining_production_gates": [
+    "durable invocation across process restarts and replicas",
+    "recent candidate authentication and independently retained account lifecycle",
+    "protected key-owner/deny projection restoration",
+    "real UID/witness/IAM/retention/KMS policy",
+    "HTTP/BFF/MV3 integration and employer portal permission/form parity"
+  ]
+}

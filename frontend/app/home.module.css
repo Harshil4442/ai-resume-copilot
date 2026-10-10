@@ -434,6 +434,8 @@
   border-bottom: 1px solid #dedfd9;
 }
 .storyList li > span {
+  flex: 0 0 2ch;
+  white-space: nowrap;
   font-family: var(--font-roboto-mono), monospace;
   color: #656a5d;
   font-size: 12px;

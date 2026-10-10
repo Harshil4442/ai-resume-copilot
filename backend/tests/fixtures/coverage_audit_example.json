@@ -1,0 +1,176 @@
+{
+  "audit_id": "synthetic-coverage-example",
+  "captured_employers": [
+    {
+      "employer_id": "employer-2",
+      "observed_at": "2026-10-09T12:00:00Z",
+      "origin_verified": true
+    }
+  ],
+  "captured_postings": [
+    {
+      "canonical_destination": "https://example.invalid/employer-2",
+      "canonical_key": "employer-2:opening",
+      "destination_verified": true,
+      "first_seen_at": "2026-10-08T12:00:00Z",
+      "last_origin_check_at": "2026-10-09T12:00:00Z",
+      "observed_at": "2026-10-09T12:00:00Z",
+      "original_published_at": "2026-10-08T12:00:00Z",
+      "reference_posting_id": "employer-2-job"
+    }
+  ],
+  "development_employer_ids": [],
+  "employers": [
+    {
+      "connector_status": "unsupported",
+      "id": "employer-0",
+      "stratum_id": "IN-small-custom"
+    },
+    {
+      "connector_status": "unsupported",
+      "id": "employer-1",
+      "stratum_id": "IN-small-custom"
+    },
+    {
+      "connector_status": "unsupported",
+      "id": "employer-2",
+      "stratum_id": "IN-small-custom"
+    },
+    {
+      "connector_status": "unsupported",
+      "id": "employer-3",
+      "stratum_id": "IN-small-custom"
+    }
+  ],
+  "frozen_at": "2026-10-01T12:00:00Z",
+  "observation_at": "2026-10-09T12:00:00Z",
+  "provenance": {
+    "draw_evidence_ref": null,
+    "draw_frozen_before_collection": false,
+    "frame_evidence_ref": null,
+    "frame_independent_of_registry": false,
+    "holdout_evidence_ref": null,
+    "human_review_evidence_ref": null,
+    "independent_human_review_declared": false,
+    "independent_queries_declared": false,
+    "query_collection_evidence_ref": null,
+    "reference_evidence_ref": null,
+    "reference_frozen_before_results": false,
+    "sampling_method": "stratified_srs_without_replacement",
+    "synthetic": true,
+    "whole_employer_holdout_declared": false
+  },
+  "queries": [
+    {
+      "criteria_ref": "synthetic-query",
+      "id": "query-1",
+      "independent_judgment_ref": "synthetic-judgment",
+      "judged_irrelevant_ids": [],
+      "observed_at": "2026-10-09T12:00:00Z",
+      "ranked_ids": [
+        "employer-2-job",
+        "outside-unjudged"
+      ],
+      "relevant_posting_ids": [
+        "employer-2-job",
+        "employer-0-job"
+      ],
+      "relevant_reference_complete": true,
+      "retrieved_ids": [
+        "employer-2-job",
+        "outside-unjudged"
+      ],
+      "scope_id": "india-software",
+      "top_k": 2
+    }
+  ],
+  "reference": [
+    {
+      "authoritative_snapshot_ref": "synthetic-snapshot",
+      "employer_id": "employer-2",
+      "enumeration_complete": true,
+      "human_reviewed": true,
+      "independent_review_ref": "synthetic-review",
+      "observed_at": "2026-10-09T12:00:00Z",
+      "postings": [
+        {
+          "canonical_destination": "https://example.invalid/employer-2",
+          "canonical_key": "employer-2:opening",
+          "country": "IN",
+          "destination_verified": true,
+          "id": "employer-2-job",
+          "language": "en",
+          "original_date_status": "known",
+          "original_published_at": "2026-10-08T12:00:00Z",
+          "role_family": "software",
+          "status": "active"
+        }
+      ]
+    },
+    {
+      "authoritative_snapshot_ref": "synthetic-snapshot",
+      "employer_id": "employer-0",
+      "enumeration_complete": true,
+      "human_reviewed": true,
+      "independent_review_ref": "synthetic-review",
+      "observed_at": "2026-10-09T12:00:00Z",
+      "postings": [
+        {
+          "canonical_destination": "https://example.invalid/employer-0",
+          "canonical_key": "employer-0:opening",
+          "country": "IN",
+          "destination_verified": true,
+          "id": "employer-0-job",
+          "language": "en",
+          "original_date_status": "known",
+          "original_published_at": "2026-10-08T12:00:00Z",
+          "role_family": "software",
+          "status": "active"
+        }
+      ]
+    }
+  ],
+  "schema_version": 1,
+  "scopes": [
+    {
+      "candidate_query_criteria_ref": "synthetic-queries",
+      "critical_stratum_ids": [
+        "IN-small-custom"
+      ],
+      "description": "Synthetic bounded employer population only",
+      "eligibility_policy_ref": "synthetic-policy",
+      "excluded_private_or_inaccessible_classes": [
+        "private-vacancies"
+      ],
+      "id": "india-software",
+      "languages": [
+        "en"
+      ],
+      "posting_countries": [
+        "IN"
+      ],
+      "role_families": [
+        "software"
+      ],
+      "stratum_ids": [
+        "IN-small-custom"
+      ]
+    }
+  ],
+  "seed": "0000000000000000000000000000000000000000000000000000000000000000",
+  "strata": [
+    {
+      "ats_family": "custom",
+      "bound_evidence_ref": "synthetic-bound",
+      "country": "IN",
+      "id": "IN-small-custom",
+      "max_reference_postings": 2,
+      "sample_size": 2,
+      "sector": "software",
+      "size_band": "small"
+    }
+  ],
+  "system_snapshot_ref": "synthetic-index-snapshot",
+  "window_end": "2026-10-09T12:00:00Z",
+  "window_start": "2026-10-02T00:00:00Z"
+}

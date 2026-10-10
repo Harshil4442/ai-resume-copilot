@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "project": "ai-resume-parser-482412",
+  "region": "us-central1",
+  "service": "hirewiz-document-inspector",
+  "service_account": "hirewiz-document-inspector@ai-resume-parser-482412.iam.gserviceaccount.com",
+  "api_invoker": "hirewiz-api@ai-resume-parser-482412.iam.gserviceaccount.com",
+  "policy_sha256": "e7d6680ee78da0cda5a8e4d9abfaf178ce5684b8b55ebcc5c168b69e3ece8e34",
+  "image": null,
+  "api_wiring_enabled": false,
+  "deployment_proven": false
+}

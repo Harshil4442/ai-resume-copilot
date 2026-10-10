@@ -9,6 +9,8 @@ from typing import Any
 
 import sentry_sdk
 
+from .catalog_timing import CatalogTimingEvent
+
 correlation_id_var: contextvars.ContextVar[str] = contextvars.ContextVar(
     "correlation_id",
     default="unassigned",
@@ -17,6 +19,9 @@ correlation_id_var: contextvars.ContextVar[str] = contextvars.ContextVar(
 
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
+        timing = getattr(record, "catalog_timing", None)
+        if isinstance(timing, CatalogTimingEvent):
+            return json.dumps(timing.payload(), separators=(",", ":"), allow_nan=False)
         payload: dict[str, Any] = {
             "timestamp": datetime.now(UTC).isoformat(),
             "severity": record.levelname,

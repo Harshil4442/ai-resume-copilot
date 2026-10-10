@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   BriefcaseBusiness,
   CircleGauge,
@@ -16,7 +16,7 @@ import {
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 
 import { apiGet } from "../lib/api";
 import Logo from "./ui/Logo";
@@ -24,6 +24,7 @@ import Logo from "./ui/Logo";
 type ProfileSummary = {
   ai_credits: number;
   tier: string;
+  job_service_credits?: number;
 };
 type FeatureResponse = {
   features: Record<string, { enabled: boolean }>;
@@ -38,6 +39,7 @@ type NavLink = {
 const appLinks: NavLink[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/workspace", label: "Workspace", icon: BriefcaseBusiness, feature: "career_workspace" },
+  { href: "/employer-jobs", label: "Jobs", icon: Search },
   { href: "/resume", label: "Resume", icon: FileText },
   { href: "/market", label: "Market", icon: Search },
   { href: "/profile", label: "Profile", icon: User },
@@ -51,13 +53,19 @@ const publicLinks: NavLink[] = [
   { href: "/contact", label: "Contact", icon: User },
 ];
 
+const subscribeHydration = () => () => {};
+const clientHydrationSnapshot = () => true;
+const serverHydrationSnapshot = () => false;
+
 export default function Nav() {
+  const queryClient = useQueryClient();
   const pathname = usePathname();
-  const { status } = useSession();
+  const { data: session, status } = useSession();
   const authenticated = status === "authenticated";
   const [mobileOpen, setMobileOpen] = useState(false);
+  const hydrated = useSyncExternalStore(subscribeHydration, clientHydrationSnapshot, serverHydrationSnapshot);
   const profile = useQuery({
-    queryKey: ["nav-profile", pathname],
+    queryKey: ["nav-profile", session?.user?.email],
     queryFn: () => apiGet<ProfileSummary>("/auth/profile"),
     enabled: authenticated,
   });
@@ -72,11 +80,21 @@ export default function Nav() {
     localStorage.removeItem("access_token");
   }, [pathname]);
 
+  useEffect(() => {
+    function refreshCredits() {
+      void queryClient.invalidateQueries({ queryKey: ["nav-profile"] });
+      void queryClient.invalidateQueries({ queryKey: ["profile"] });
+      void queryClient.invalidateQueries({ queryKey: ["employer-jobs", "catalog"] });
+    }
+    window.addEventListener("refresh_analysis_units", refreshCredits);
+    return () => window.removeEventListener("refresh_analysis_units", refreshCredits);
+  }, [queryClient]);
+
   const links = authenticated
     ? appLinks.filter((link) => !link.feature || features.data?.features[link.feature]?.enabled !== false)
     : publicLinks;
   const units = profile.data?.ai_credits;
-  const premium = profile.data?.tier === "premium";
+  const serviceCredits = profile.data?.job_service_credits;
 
   return (
     <header className="fixed inset-x-0 top-0 z-50 h-16 border-b border-border bg-white/95 backdrop-blur-md">
@@ -86,7 +104,7 @@ export default function Nav() {
           <span className="font-display text-[26px] leading-none text-foreground">HireWiz</span>
         </Link>
 
-        <nav className="hidden h-full min-w-0 items-stretch lg:flex" aria-label="Primary navigation">
+        <nav className="hidden h-full min-w-0 items-stretch xl:flex" aria-label="Primary navigation">
           {links.map((link) => {
             const active = pathname === link.href || pathname.startsWith(`${link.href}/`);
             return (
@@ -111,19 +129,21 @@ export default function Nav() {
             <Link
               href="/billing"
               className="hidden min-h-9 items-center gap-2 rounded-full border border-border bg-surface px-3 text-xs font-medium text-foreground transition-colors hover:border-accent hover:bg-accent/10 sm:flex"
-              title={premium ? "Premium is active" : `${units} analysis units remaining`}
+              title={`${units} analysis units remaining`}
             >
               <CircleGauge size={14} className="text-primary" aria-hidden="true" />
-              <span>{premium ? "Premium" : units}</span>
+              <span>{units}</span>
             </Link>
           ) : null}
 
+          {authenticated && typeof serviceCredits === "number" ? <Link href="/billing" className="hidden min-h-9 items-center gap-1.5 rounded-full border border-border px-3 text-xs sm:flex" title={`${serviceCredits} job service credits`}><CreditCard size={14} aria-hidden="true" /><span>{serviceCredits} service</span></Link> : null}
+
           {authenticated ? (
-            <Link href="/logout" className="icon-button hidden lg:inline-flex" aria-label="Log out" title="Log out">
+            <Link href="/logout" className="icon-button hidden xl:inline-flex" aria-label="Log out" title="Log out">
               <LogOut size={17} />
             </Link>
           ) : (
-            <div className="hidden items-center gap-2 lg:flex">
+            <div className="hidden items-center gap-2 xl:flex">
               <Link href="/login" className="button-ghost">Log in</Link>
               <Link href="/register" className="button-primary">Build your workspace</Link>
             </div>
@@ -131,10 +151,11 @@ export default function Nav() {
 
           <button
             type="button"
-            className="icon-button lg:hidden"
+            className="icon-button size-11 basis-11 xl:hidden"
             aria-label={mobileOpen ? "Close navigation" : "Open navigation"}
             aria-expanded={mobileOpen}
             aria-controls={mobileOpen ? "mobile-navigation" : undefined}
+            disabled={!hydrated}
             onClick={() => setMobileOpen((value) => !value)}
           >
             {mobileOpen ? <X size={19} /> : <Menu size={19} />}
@@ -143,7 +164,7 @@ export default function Nav() {
       </div>
 
       {mobileOpen ? (
-        <div className="absolute inset-x-0 top-16 max-h-[calc(100vh-4rem)] overflow-y-auto border-b border-border bg-white p-4 shadow-[0_16px_30px_rgba(23,23,23,0.06)] lg:hidden">
+        <div className="absolute inset-x-0 top-16 max-h-[calc(100vh-4rem)] overflow-y-auto border-b border-border bg-white p-4 shadow-[0_16px_30px_rgba(23,23,23,0.06)] xl:hidden">
           <nav id="mobile-navigation" className="page-container grid gap-1 p-0" aria-label="Mobile navigation">
             {links.map((link) => {
               const active = pathname === link.href || pathname.startsWith(`${link.href}/`);

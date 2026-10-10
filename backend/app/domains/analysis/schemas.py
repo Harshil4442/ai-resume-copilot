@@ -28,7 +28,7 @@ class AnalysisRunResponse(BaseModel):
 
     id: str
     opportunity_id: str | None
-    operation: AnalysisOperation
+    operation: str
     status: str
     estimated_units: int
     committed_units: int
@@ -38,6 +38,8 @@ class AnalysisRunResponse(BaseModel):
     prompt_version: str | None
     error_code: str | None
     attempt_count: int
+    generation_attempt_limit: int = 3
+    generation_attempt_count: int = 0
     cancel_requested: bool
     created_at: datetime
     updated_at: datetime
@@ -54,7 +56,7 @@ class AnalysisRunListResponse(BaseModel):
 
 class AnalysisRunResultResponse(BaseModel):
     id: str
-    operation: AnalysisOperation
+    operation: str
     result: dict[str, Any]
     completed_at: datetime
 

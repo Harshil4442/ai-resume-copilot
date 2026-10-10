@@ -1,0 +1,156 @@
+{
+  "scope": "Disabled Python-only v2, incremental against exact frozen 85-test v1 snapshot",
+  "frozen": true,
+  "patch": {
+    "path": "/tmp/hirewiz-recovery-v2-incremental-20261008.patch",
+    "sha256": "19e8dcb04e710ee98c1fd7830874bff0b45f9ad21eb937c428edcf1bbcdcbe23",
+    "files": [
+      "backend/app/domains/recovery/sequence_contracts.py",
+      "backend/app/domains/recovery/sequence_service.py",
+      "backend/tests/fixtures/recovery_authority.py",
+      "backend/tests/fixtures/recovery_sequence_projection.py",
+      "backend/tests/test_recovery_sequences.py",
+      "backend/tests/test_recovery_sequences_processes.py"
+    ]
+  },
+  "source_sha256": {
+    "backend/app/domains/recovery/sequence_contracts.py": "295554ab64a8ac238aa43b256ba040b5dbb9ffc61aef1277f75320c853168510",
+    "backend/app/domains/recovery/sequence_service.py": "3d56e927d02ac8ff4e6ba4fc1fc9973666eee5ca4d025ab046f66d7ae79e15b9",
+    "backend/tests/fixtures/recovery_authority.py": "4b025be9471a0e4353e87e6d88399930b65ef75ac1450b514a0f471b6b4d6d4e",
+    "backend/tests/fixtures/recovery_sequence_projection.py": "6449ce7c01c042db79d9dc048aeb27efbbdb4dfe79205a1c7c6f1fcab145028e",
+    "backend/tests/test_recovery_sequences.py": "a10b783b30bbbb03b112bc529e43188ba1d8ebe61eb2c2bca4ad5ad67d06e81f",
+    "backend/tests/test_recovery_sequences_processes.py": "6f9cf5040690440ef8d1dc304b984ef45e5a8a6bf12e933391e14ae84432c40a"
+  },
+  "baseline": {
+    "snapshot": "/tmp/hirewiz-recovery-v1-frozen-20261008/snapshot.json",
+    "snapshot_sha256": "9505e78cd8d11718e9c39904961e905c2e7b9ead6e51c1330055818329105cac",
+    "unchanged_v1_core_and_tests": {
+      "backend/app/domains/recovery/contracts.py": "3cff31bd4181e51ac0a8ed7313cbc486ad643225bc65afcdeccdc18b7ed0449e",
+      "backend/app/domains/recovery/store.py": "f2905cff9210bade17dfaf3ced0277c0f2b61890ca79eaa88a400b28160ecdf2",
+      "backend/app/domains/recovery/service.py": "1f6dfb14352973fd167d1f6571fdd9c70f079f2b4b3f959945ede1e4819d2b8f",
+      "backend/tests/test_recovery_authority.py": "80932f11f1d430b4d0dea6a89b37334add5e23aa142ebaabbd49e678aa5ab132",
+      "backend/tests/test_recovery_authority_processes.py": "bf9a4d3cd3e5c5ce50a3b38cdcc1bf5c80602091cde79801604d47994c1626c8"
+    },
+    "only_baseline_edit": "Fixture keys, hash-validated event collection and separate v2 projection verification"
+  },
+  "verification": {
+    "total_passed": 222,
+    "v1_preserved": 85,
+    "v2_unit": 122,
+    "v2_process_restore": 15,
+    "per_file_counts": {
+      "tests.test_recovery_sequences": 122,
+      "tests.test_recovery_sequences_processes": 15,
+      "tests.test_recovery_authority": 70,
+      "tests.test_recovery_authority_processes": 15
+    },
+    "failures": 0,
+    "errors": 0,
+    "warnings": 0,
+    "ruff": "passed, recovery core + fixtures + all four scoped test files",
+    "mypy": "passed, 9 source files",
+    "canonical_vectors": {
+      "path": "/tmp/hirewiz-recovery-v2-canonical-vectors-20261008.json",
+      "sha256": "653f6f218ed977015f8335d69ab6961ba3fd37ee9a690c37233c6878a97f5a8a",
+      "node": "24.18.1",
+      "full_manifest_sequence_review_context_and_4_steps": "independently matched",
+      "typed_value_vectors": 7,
+      "python_regressions": "persisted constants; Node is not a backend test dependency"
+    },
+    "process_cases": "15 v2 cases each use real spawn; 2 actual kill-after-commit-before-reply cases; bounded join/terminate/kill cleanup",
+    "patch_application": "git apply --check + actual apply into disposable exact v1 snapshot: all six resulting SHA256s match frozen safety sources"
+  },
+  "critical_proofs": [
+    "1\u20138 unique static fill steps; exact manifest/context/form/artifact/value/expected-before bindings",
+    "Fresh candidate challenge for exact presealed review; current actor/device/key/epoch/grants before every begin",
+    "Permanent stable opening claim owned by one attempt across device/epoch/package changes",
+    "Single transactional begin winner; decision nonce hash stored; duplicate or lost replies never reconstruct permission",
+    "Contiguous local prefix; one-time completion continuation hash gates next step without granting disclosure",
+    "Unknown, cancel, epoch closure and tombstones stop next-step decisions; late observations do not unlock",
+    "Projection restore/corruption including float/bool cursor aliases fails closed",
+    "Application-only restore keeps separate authority evidence; v1 claim cannot be upgraded to sequence ownership",
+    "Registered v2 approval revocation works without changing v1 core; rotated/inactive identity boundaries tested"
+  ],
+  "limitations": [
+    "No production store/authentication/device pairing/sealed-package or browser verification adapter exists",
+    "Client-declared digests alone do not prove bytes, current DOM, field value or reviewed content",
+    "Local durable evidence is not Firestore/GCS/IAM proof, authority-file rollback detection or journal retention proof",
+    "No physical old-process egress fencing or compromised-device guarantee",
+    "No HTTP/browser integration, dynamic forms, upload, final submit, receipt, refund or credit settlement",
+    "Inherited Python-only artifact tombstones convert decimal generation strings to unbounded int revisions; not v2 wire vectors",
+    "New production runtime and restore integration remain absent; unavailable default cannot fall back to SQLite"
+  ],
+  "root_release_files_edited": false,
+  "cloud_or_employer_requests": false,
+  "commits_or_pushes": false,
+  "root_integration": {
+    "source_hashes_match_frozen_patch": true,
+    "independent_review": "requirements_qa read all six files and tests; no confirmed defect within disabled local scope; did not rerun suites",
+    "whole_repository_ci": "passed; see exact_commit_remote_ci",
+    "production_enabled": false,
+    "canonical_digest_maps_match": true,
+    "independent_typed_value_vectors": {
+      "node_version": "v24.18.1",
+      "count": 7,
+      "all_equal": true
+    },
+    "retained_canonical_file_sha256": "9d7d0265a6770d1b9b72624a937e0101071d62430529a3b428dbd6b62a578d93",
+    "whole_repository_local": {
+      "backend": {
+        "tests": 780,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "backend_warnings": 3,
+      "frontend_unit_tests": 71,
+      "ruff": "passed exact current CI scope",
+      "mypy": "passed 58 source files",
+      "prompt_evaluations": 6,
+      "compile": "passed",
+      "frontend_lint": "passed",
+      "frontend_typecheck": "passed",
+      "frontend_production_build": "passed exact synthetic CI settings",
+      "backend_openapi_drift": "zero",
+      "frontend_generated_api_drift": "zero",
+      "logs": {
+        "backend": {
+          "path": "/tmp/hirewiz-sequences-catalog-merged-backend-recheck-20261009.log",
+          "sha256": "84dfeac10b2772ff0c3b12e165767063a082f60801491cde4926a044fbb6917d"
+        },
+        "backend_junit": {
+          "path": "/tmp/hirewiz-sequences-catalog-merged-backend-recheck-20261009.xml",
+          "sha256": "a6fde6f92f8dd310f5297be3f7479e65163d060ab9016cb86a495895b344b60e"
+        },
+        "frontend_build": {
+          "path": "/tmp/hirewiz-sequences-catalog-frontend-build-recheck-20261009.log",
+          "sha256": "0561da96283dc876a4a290ee8288d6983d66d03f19c97d0378ecb51e6842a813"
+        }
+      },
+      "remote_exact_commit_ci": "passed 6f38020 / 37831706133",
+      "local_setup_corrections": [
+        "Owned disposable Redis was renamed to the existing hardcoded fixture name; unchanged full suite rerun passed.",
+        "Required NEXTAUTH_SECRET absent on first local build; unchanged build rerun with synthetic CI settings passed."
+      ],
+      "production_enabled": false
+    },
+    "exact_commit_remote_ci": {
+      "commit": "6f380203c55b8574d2d345420de6ac5e3da1b784",
+      "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37831706133",
+      "conclusion": "success",
+      "jobs": {
+        "backend": "success",
+        "browser-companion": "success",
+        "frontend": "success",
+        "security-and-container": "success"
+      },
+      "backend_cases": 780,
+      "backend_skipped": 0,
+      "frontend_units": 71,
+      "frontend_browser_cases": 190,
+      "companion_protocol_cases": 56,
+      "companion_mv3_cases": 14
+    },
+    "production_image_integration": "6f38020 controlled rollout verified; disabled recovery core has no routes/store/auth/browser execution"
+  }
+}

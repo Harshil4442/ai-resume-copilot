@@ -1,0 +1,52 @@
+{
+  "date": "2026-10-08",
+  "state": "locally_verified_release_candidate",
+  "previous_live_release": "3565655712c2ceee431bee8306678a020b2f462d",
+  "backend": {
+    "passed": 511,
+    "postgres_cases": 26,
+    "skipped": 0,
+    "mypy_files": 49,
+    "migration": "20261008_0009"
+  },
+  "frontend": {
+    "unit_passed": 55,
+    "browser_before_presentation_cleanup": 190,
+    "focused_browser_after_cleanup": 35,
+    "viewport_widths": [
+      320,
+      390,
+      768,
+      1024,
+      1440
+    ]
+  },
+  "companion": {
+    "protocol_passed": 55,
+    "chromium_passed": 14,
+    "production_enabled": false,
+    "production_pairing_endpoints": false
+  },
+  "changes": [
+    "authoritative locked credit/unit/Premium refresh",
+    "durable candidate/employer/opening admission",
+    "immutable batch review and budget",
+    "atomic queue admission and cancellation",
+    "additive schema0009",
+    "disabled browser companion foundation"
+  ],
+  "production_safety": {
+    "employer_auto_submit_enabled": false,
+    "current_reviewed_sources": 4,
+    "proposed_additional_sources": 16,
+    "additional_sources_enrolled": false,
+    "real_employer_submissions_tested": false,
+    "real_customer_payments_tested": false,
+    "independent_recovery_authority_implemented": false
+  },
+  "evidence": {
+    "backend": "2026-10-08-foundation-backend-local.json",
+    "frontend": "2026-10-08-batch-ui-local.json",
+    "companion": "2026-10-08-companion-local.json"
+  }
+}

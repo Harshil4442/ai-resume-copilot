@@ -1,0 +1,546 @@
+{
+  "status": "LOCAL_COMPONENT_INTEGRATION_AND_EXACT_REMOTE_CI_VERIFIED",
+  "base_commit": "e6a94843ecbd4a9db43cb905b12ed6ad09bd96fe",
+  "source_sha256": [
+    {
+      "path": "tests/test_release_preflight.py",
+      "sha256": "a2ade40b155ace75d1d5848778acfa61bd3408c2c20ee3b705bdab468d6ee5d1"
+    },
+    {
+      "path": "backend/openapi.json",
+      "sha256": "62fb9984f490d0200cfbfed592250c2703f68d7261430671486d77f598955ec6"
+    },
+    {
+      "path": "browser-companion/package.json",
+      "sha256": "696a0a3ce34f275e6fe6594ec3b0b0b64f57a98125c1a7ba2a3a8f3b5a43f2bb"
+    },
+    {
+      "path": "browser-companion/extension/pairing-transport.js",
+      "sha256": "348602dccc1017251fb1a9a900dcadc9639fa822ddc5de6d9c2cdcaaefeb7351"
+    },
+    {
+      "path": "browser-companion/tests/pairing-transport.test.js",
+      "sha256": "fa788bbf0c2ed6779d26b1f9baef83e5776480617f496f3801824d0ee06308d8"
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "sha256": "cbc928d639938f0145f01cb901ca3118ebd0d18a2bfdc6db6d6ff0005265bf55"
+    },
+    {
+      "path": "docs/delivery/MONETARY_PREFLIGHT_2026-10-09.md",
+      "sha256": "9a8896bfe10eef901101906cfd79a6147b3cd4569de49b2cd7e4fe9099afc673"
+    },
+    {
+      "path": "docs/delivery/BROWSER_PAIRING_TRANSPORT_2026-10-09.md",
+      "sha256": "11bb0248fef137b5e7a5f775b555a4d7e3bbdfd11fc1d91d883d17f0400c2fd4"
+    },
+    {
+      "path": "docs/delivery/CANDIDATE_PASSWORD_LIFECYCLE_2026-10-09.md",
+      "sha256": "1e00f5e6741910861dd537c344f309ba8a6bb4c75929eb15d04597371cefe279"
+    },
+    {
+      "path": "docs/delivery/SUBJECT_PARTITION_PROVISIONING_GATES_2026-10-09.md",
+      "sha256": "98b59564a85c8cf96cb7bf41a6523aaf08809fd6e55c4f85d3fac0692ae1a912"
+    },
+    {
+      "path": "docs/delivery/SUBJECT_PARTITION_PUBLICATION_PLAN_2026-10-09.md",
+      "sha256": "5c9d88c8bcd31574fbd1034d6ebd0c610745bb96ec212fd417a3b5af79bffcdd"
+    },
+    {
+      "path": "backend/app/models.py",
+      "sha256": "5c994d44e791687f1cf53755e6833ce323ecb08798351e653e8124213d6af308"
+    },
+    {
+      "path": "backend/app/security.py",
+      "sha256": "7045e7a0064b24a8e5024b8548c62d2625b7479361a8a9f4c52a738a3778bc88"
+    },
+    {
+      "path": "backend/app/schemas.py",
+      "sha256": "2b09b3624cf63eb868c64b6fd2e711c324cc88c588c8ff541215695472044edc"
+    },
+    {
+      "path": "backend/app/main.py",
+      "sha256": "3f2d1a8894b250ea73c10adda6e5e7cdec273fee69a2b48ed4e63333efdfec1a"
+    },
+    {
+      "path": "backend/tests/test_model_cost_liabilities_postgres.py",
+      "sha256": "65f673518aea05a303e50556e6fea5e9d7d85c39e2153e0bcfe5ce82dfb05400"
+    },
+    {
+      "path": "backend/tests/test_gcp_password_lifetime_emulator.py",
+      "sha256": "46e01d5f4b69f48940338f679236f872102a40384fec39082d607d9227abd9e8"
+    },
+    {
+      "path": "backend/tests/test_candidate_legacy_auth_guards.py",
+      "sha256": "8627908d60bd2437c1bf4f0d33f3a005f3375a938d4894f401fe629b6dbd972a"
+    },
+    {
+      "path": "backend/tests/test_monetary_cutover_schema11_postgres.py",
+      "sha256": "690404db316cc569043910b8dce078a7f703163297175e03356198858caf4fa2"
+    },
+    {
+      "path": "backend/tests/test_resume_source.py",
+      "sha256": "826cbb570dcb182d3d327de595d3f5b92f88a538ac32bfb54a9e9aead2298402"
+    },
+    {
+      "path": "backend/tests/test_browser_pairing_http.py",
+      "sha256": "78c91116416131a18f3f499ea411e30d8e3c772949341450d60c20fbae90b940"
+    },
+    {
+      "path": "backend/tests/test_gcp_publication_scan_emulator.py",
+      "sha256": "41eab88d6ef10c9f7587599a6ff7677b5aa3c6a19c905d809fccf01e66ff79c5"
+    },
+    {
+      "path": "backend/tests/test_employer_admissions_postgres.py",
+      "sha256": "67c8237eb2fd6039463032ef72d921651455c1682d6be1c4c29aae75bac2d4de"
+    },
+    {
+      "path": "backend/tests/test_gcp_scoped_authority_emulator.py",
+      "sha256": "131ff4c78e163fe75821c5f1563830a82ac8ec5b3ef18b215f843f4502efb420"
+    },
+    {
+      "path": "backend/tests/test_gcp_partitioned_export_emulator.py",
+      "sha256": "de0921cc43f9f8c8bd4f8763b7441c36c5be7309802dee968cac96b5daa70cdd"
+    },
+    {
+      "path": "backend/tests/test_gcp_partitioned_publication_emulator.py",
+      "sha256": "cd8305cf1afa2dcc1a12ca445b5e26d80132ac7cb4aa2a4aeb27e6acaac3d0e1"
+    },
+    {
+      "path": "backend/tests/test_model_cost_budgets_postgres.py",
+      "sha256": "8c305bcfbe77ee13792a94832ff8e670ecd29d948f2f46874777995c867297bd"
+    },
+    {
+      "path": "backend/tests/test_sensitive_auth_http.py",
+      "sha256": "e03834a65d6951bb1dac7a27c9af2a2be878759c68fb075dd325889f378ac716"
+    },
+    {
+      "path": "backend/tests/test_migration_logging_postgres.py",
+      "sha256": "64a3a1664350a0cbf5fac47c4dc644842b1fd35f701ea395bd10928e3f25d581"
+    },
+    {
+      "path": "backend/tests/test_candidate_native_enrollment_emulator.py",
+      "sha256": "0d9dd38e94f19fd15b277618df3f8939be428a257163ce98a1c6e56dadbc234e"
+    },
+    {
+      "path": "backend/tests/test_candidate_scoped_lifecycle_emulator.py",
+      "sha256": "e3306a458783f31b4e3948aba90369f4b84ff7d65862625e6eb1aeabfa152de3"
+    },
+    {
+      "path": "backend/tests/test_candidate_account_lifecycle.py",
+      "sha256": "e36db20d2efd3ee12e0b8482fb5cbcde61e1690b9d2768e0c1642658d3d74a6e"
+    },
+    {
+      "path": "backend/tests/test_legacy_password_compatibility.py",
+      "sha256": "f644be16659e01edf477154d5d494959956f286b81fd387be60f5d6c1422b9fa"
+    },
+    {
+      "path": "backend/tests/test_candidate_lifetime_migration_postgres.py",
+      "sha256": "1e3200ab64f3bd8f9941e9f34d1f62e35e1143e912fbfafe6eafda26a46ff6e5"
+    },
+    {
+      "path": "backend/scripts/monetary_cutover_preflight.py",
+      "sha256": "a449ed480d01cd23c13454c270e74c5c6758969a1a79356e9e5785c3641d4f20"
+    },
+    {
+      "path": "backend/alembic/env.py",
+      "sha256": "93b0f09a006337abc2b4ce86bafe470a3d126ffd1a1e103d4df1d64d615b8e98"
+    },
+    {
+      "path": "backend/alembic/versions/20261009_0011_candidate_password_lifetimes.py",
+      "sha256": "abe38bc5214d39488b89610ecacff8458946d8d91fd361c966937618f8643b5a"
+    },
+    {
+      "path": "backend/tests/fixtures/gcp_partitioned_publication.py",
+      "sha256": "513800c5e5ceb0eac33246b6eef4f8e757943185dd33fe4dad351e7d53e7eb4f"
+    },
+    {
+      "path": "backend/app/routers/auth.py",
+      "sha256": "9e7ab574213b2c29bf680927377e3680736780529e255b3f808d33825a3b90f6"
+    },
+    {
+      "path": "backend/app/routers/candidate_accounts.py",
+      "sha256": "25843c7eac61f0c3a226823a5a0a3b9f257835d558e61735895fdef5b9f897b4"
+    },
+    {
+      "path": "backend/app/routers/sensitive_auth.py",
+      "sha256": "ef745ac7f07b0457db53076cc5784d4d385a447c50f47bb1dcb06e0faa3b8797"
+    },
+    {
+      "path": "backend/app/services/legacy_passwords.py",
+      "sha256": "4bd72b2a4fd0ce4a75009c5fdda4619461fb798bbb165523bd8e9db4a8f5777b"
+    },
+    {
+      "path": "backend/app/domains/recovery/gcp_partitioned_export.py",
+      "sha256": "f18e59d09aa195e4a1996318ff3057ae6e5cbb380fcd5e33b5ccbc9a70d23d04"
+    },
+    {
+      "path": "backend/app/domains/recovery/gcp_partitioned_publication.py",
+      "sha256": "fae37bf9e49bf054386c0f6f3ad484038b6e5bfac1ceb5d90db3b5dceb595482"
+    },
+    {
+      "path": "backend/app/domains/recovery/gcp_password_lifetime_journal.py",
+      "sha256": "c3d8a88234de5f535c65bc27a25b88ae172c640a11ab229a1c5de8b9d4aa2597"
+    },
+    {
+      "path": "backend/app/domains/recovery/gcp_journal.py",
+      "sha256": "20bb99c844305c052a558312fa8cce4250eebe103ccc9bab084dcd01ade8fc0d"
+    },
+    {
+      "path": "backend/app/domains/recovery/gcp_password_lifetime_contracts.py",
+      "sha256": "31a437e38e77dd5e5f318a43a09744e55080fd33ddb5c516c250d981a12ceb9c"
+    },
+    {
+      "path": "backend/app/domains/recovery/gcp_scoped_census.py",
+      "sha256": "688dedf0408a9db8d0fc6707dd2103e7b54c64069ea1e069d0171cfa519f0647"
+    },
+    {
+      "path": "backend/app/domains/recovery/gcp_publication.py",
+      "sha256": "2bc29eddb93748052beac811fd4f307ec6474679f473cee2c21cd5d2094bf591"
+    },
+    {
+      "path": "backend/app/domains/recovery/gcp_password_lifetime.py",
+      "sha256": "a9a905f403554191fdeedf08cd80ab987f081dbbb3466489a4a1937fc44d366e"
+    },
+    {
+      "path": "backend/app/domains/recovery/gcp_publication_scan.py",
+      "sha256": "f105eead42836a359e6102d4101a46813eb52ffa0f67af72a138d3bed5ef759c"
+    },
+    {
+      "path": "backend/app/domains/recovery/gcp_scoped_authority.py",
+      "sha256": "e344edd28cbd5d4b4b97319c117a9d37584749701e78f0c403972cb43d43a545"
+    },
+    {
+      "path": "backend/app/domains/recovery/gcp_pairing_attempts.py",
+      "sha256": "e5eb397f064a940fbf7b267c9be8c816c1624a9ae64558f62911f057eb253654"
+    },
+    {
+      "path": "backend/app/domains/recovery/browser_pairing.py",
+      "sha256": "1db3ff8935710ec90ad42d645970957d6fc6b247bb92b867011ce90c814dff8c"
+    },
+    {
+      "path": "backend/app/domains/recovery/gcp_partitioned_contracts.py",
+      "sha256": "f6159dccae8104bf091446c7d4756f517d8e9668bb7c0b38eb88cec0aef46732"
+    },
+    {
+      "path": "backend/app/domains/recovery/gcp_candidate_lifetimes.py",
+      "sha256": "4737b7d8d37bc13af59e74be53fcbced7bf90401aae17d506d263c74d81ef441"
+    },
+    {
+      "path": "backend/app/domains/recovery/gcp_password.py",
+      "sha256": "8eae33e084eb550553003f2a63ce6a331bf7cabf73f6fedc0f30db9dd421eb24"
+    },
+    {
+      "path": "backend/app/domains/candidate_accounts/service.py",
+      "sha256": "f8272c5df92ba05337f1b1bb86b5bb579d7fb1425d66b4c0fe90bfc23bf90865"
+    },
+    {
+      "path": "backend/app/domains/candidate_accounts/access.py",
+      "sha256": "108c70ed606a4cc3ea75f057a84ca8688800215f6cc6ecbec2f0d558df40fd46"
+    },
+    {
+      "path": "backend/app/domains/candidate_accounts/__init__.py",
+      "sha256": "31376d458092579be351a275f2b8c82367d115becb62a918436700a08e7499f7"
+    },
+    {
+      "path": "backend/app/domains/candidate_accounts/retention.py",
+      "sha256": "a1d5b7bedc345ecfec5c672ad7760405d8737c332ff0c862411122c85186d07a"
+    },
+    {
+      "path": "backend/app/domains/candidate_accounts/contracts.py",
+      "sha256": "147d4749c74e87e9b56f50ceeb99d0576c7727a4bb906e20944aadb1f1602678"
+    },
+    {
+      "path": "backend/app/routers/v1/__init__.py",
+      "sha256": "d2e1edb4ab9a03820139ce2371ad1d2bca53568edac2ac6e21ab2e285aa4ac9f"
+    },
+    {
+      "path": "backend/app/routers/v1/browser_pairing.py",
+      "sha256": "d697e804785f4b63783fbbd475299419d53917dc80b6499493a8abc170959705"
+    },
+    {
+      "path": "frontend/types/next-auth.d.ts",
+      "sha256": "584725e2eff2216233f02b2d36d35eb1a5ba0c867220271cac10b288edafb8ef"
+    },
+    {
+      "path": "frontend/components/BrowserPairingReview.test.tsx",
+      "sha256": "91f47026ebe3d891ba9429a87970858a4b829b97dc3195885262e3119809e71c"
+    },
+    {
+      "path": "frontend/components/BrowserPairingReview.tsx",
+      "sha256": "d332664a97b095da2da2acd7d734ab3e389a5d93ca4c2cd46efa2eb981e67eea"
+    },
+    {
+      "path": "frontend/lib/browserPairingGateway.ts",
+      "sha256": "c3dc33cb8ff4deae379da33dc6c9a68eb3ad22bf24146ba6e40d988aa599d559"
+    },
+    {
+      "path": "frontend/lib/authOptions.ts",
+      "sha256": "68f86da5eb0727eaa3cbec771eaac329f5b061896a1c91d05cdd103be702a9a0"
+    },
+    {
+      "path": "frontend/lib/authOptions.test.ts",
+      "sha256": "921f13b053f40d8d9b81bc8346a8016fd26dd1bb36c18afc5bd37a70896a2681"
+    },
+    {
+      "path": "frontend/lib/browserPairingGateway.test.ts",
+      "sha256": "6fe9b1ab9fff7723ca7d3e11f736d507ea7e9271be411dd93ec1ee4eba652019"
+    },
+    {
+      "path": "frontend/lib/generated/api.ts",
+      "sha256": "38c032eda21687a6aa2fd81cf27f82e986950ad64f1b57d5216f3d813182362b"
+    },
+    {
+      "path": "frontend/app/browser-companion/page.tsx",
+      "sha256": "d6774b60aa1465ced0cea125a7c42dcd613082e33d6f8a01e0c3a35c567d7951"
+    },
+    {
+      "path": "frontend/app/api/backend/[...path]/route.ts",
+      "sha256": "57d9070512be39df55d3895767927b5d74e7f6e210ccc4050a2ddbaf6b78708e"
+    },
+    {
+      "path": "frontend/app/api/browser-pairing/device/[operation]/route.test.ts",
+      "sha256": "b94c662e3963da32eba945d71d7de11af5e32d72ddb1b4a55d03bad1509a26de"
+    },
+    {
+      "path": "frontend/app/api/browser-pairing/device/[operation]/route.ts",
+      "sha256": "ec1daf67d3e61ea368c86561e03fee8608124b4f6478fe90c107c45990885bb4"
+    },
+    {
+      "path": "frontend/app/api/browser-pairing/candidate/[operation]/route.test.ts",
+      "sha256": "572d8df5f6b6970e76610e4ae29aadc361744d5abe10b75a0adc3d85e67c01fd"
+    },
+    {
+      "path": "frontend/app/api/browser-pairing/candidate/[operation]/route.ts",
+      "sha256": "e00d19ac794a533988bcbec2a427093907f59a63a61e1931929c8a9189c7b410"
+    }
+  ],
+  "excluded_generated_artifacts": [
+    "frontend/tsconfig.tsbuildinfo"
+  ],
+  "reviews": [
+    {
+      "component": "browser_transport",
+      "path": "/var/folders/ck/cyzkgt2d1yx6hzpsdflcg83c0000gn/T/hirewiz-browser-transport-r3-review-20261009-_s0drjfp/independent-r3-review.json",
+      "sha256": "69ae8dcd1a75c2c2ce728bcf57678ab6c7e3af657a4eae8e9cf0282cbfb7c456"
+    },
+    {
+      "component": "candidate_lifecycle",
+      "path": "/tmp/hirewiz-candidate-r2-independent-review-20261009.json",
+      "sha256": "c9c0115c2f913948a6dcad2cf03275d58cbc391e81e11f2769e30576acaa1be2"
+    },
+    {
+      "component": "scoped_publication",
+      "path": "/var/folders/ck/cyzkgt2d1yx6hzpsdflcg83c0000gn/T/hirewiz-scoped-publication-independent-20261009-kb3bp95r/independent-review.json",
+      "sha256": "e3a210235b51a7e895606745afdf804ee015ff31f18981b7a549c28c0d11f2a9"
+    },
+    {
+      "component": "financial_schema11",
+      "path": "/var/folders/ck/cyzkgt2d1yx6hzpsdflcg83c0000gn/T/hirewiz-monetary-schema11-independent-20261009-8c872r7z/independent-review.json",
+      "sha256": "47b0f429a537d4c0b56e778bfcaaec5c6bb6361a67f61d99eb05e6b1d0caef9e"
+    }
+  ],
+  "backend_runs_including_preserved_failures": [
+    {
+      "path": "/tmp/hirewiz-combined-auth-backend-full-20261009.xml",
+      "sha256": "210dad45a5c65c475d5aed96addf226e83b070fd40bdf466c0c8d6824b4cfff8",
+      "suites": [
+        {
+          "errors": "0",
+          "failures": "15",
+          "skipped": "0",
+          "tests": "1952",
+          "time": "274.953"
+        }
+      ]
+    },
+    {
+      "path": "/tmp/hirewiz-combined-auth-backend-full-repaired-20261009.xml",
+      "sha256": "b7f4ab1d8f5fbec1268d8b9eed584c5baee40fa2350a10497ed57cb2dc2e1bca",
+      "suites": [
+        {
+          "errors": "0",
+          "failures": "1",
+          "skipped": "0",
+          "tests": "1953",
+          "time": "307.156"
+        }
+      ]
+    },
+    {
+      "path": "/tmp/hirewiz-publication-conflict-isolation-20261009.xml",
+      "sha256": "4f8a4c31923fc35068ebcfacef0437d978dbe561034d39e805c1c62c2ff107dd",
+      "suites": [
+        {
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "1",
+          "time": "4.909"
+        }
+      ]
+    },
+    {
+      "path": "/tmp/hirewiz-combined-auth-backend-full-final-20261009.xml",
+      "sha256": "e5985ac832650a99f8f9bdfd054172972fd68ca2059685cc5d5c87a97927cc35",
+      "suites": [
+        {
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "1953",
+          "time": "336.365"
+        }
+      ]
+    },
+    {
+      "path": "/tmp/hirewiz-combined-auth-repairs-targeted-20261009.xml",
+      "sha256": "0218982ae4ad70b91fa038ec1706d704c9c60aa436336c0f83dfbea12b7671ef",
+      "suites": [
+        {
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "78",
+          "time": "14.428"
+        }
+      ]
+    }
+  ],
+  "checks": {
+    "enlarged_ci_ruff": "passed",
+    "legacy_import_ruff": "passed",
+    "configured_mypy_source_files": 108,
+    "frontend_units": 120,
+    "frontend_lint": "passed",
+    "frontend_types": "passed",
+    "optimized_frontend_build": "passed",
+    "generated_contracts_byte_unchanged": true,
+    "pinned_network_disabled_gitleaks_findings": 0,
+    "synthetic_scan_annotation": {
+      "path": "/var/folders/ck/cyzkgt2d1yx6hzpsdflcg83c0000gn/T/hirewiz-candidate-browser-integration-20261009-221uvn1v/ai-resume-copilot/backend/tests/test_candidate_account_lifecycle.py",
+      "purpose": "Exact synthetic fixture password scan annotation; no executable or literal change",
+      "before_sha256": "403f562d8ba8ff61ccfb89fa98f34c77d0fd6daf241d6c6d308dd3cf1c2c0aa3",
+      "after_sha256": "e36db20d2efd3ee12e0b8482fb5cbcde61e1690b9d2768e0c1642658d3d74a6e",
+      "ast_unchanged": true,
+      "full_suite_before_annotation": {
+        "tests": 1953,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    }
+  },
+  "local_log_references": [
+    {
+      "path": "/tmp/hirewiz-combined-auth-final-ruff-20261009.log",
+      "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+    },
+    {
+      "path": "/tmp/hirewiz-combined-auth-final-check-20261009.log",
+      "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+    },
+    {
+      "path": "/tmp/hirewiz-combined-auth-final-type-check-20261009.log",
+      "sha256": "06ad9491f22f2b933115a2edf580ad42e4e206075e3323e32f6e9d3a750916c2"
+    },
+    {
+      "path": "/tmp/hirewiz-combined-auth-frontend-lint-20261009.log",
+      "sha256": "6ba41d3386946f3480608c0bcb80bb893d785c187db4178012a840ea9081d89b"
+    },
+    {
+      "path": "/tmp/hirewiz-combined-auth-frontend-types-20261009.log",
+      "sha256": "8fa1cf5506304e8abac55868e7f1a136c9b1dde57a3981a382da4c21ea129a6f"
+    },
+    {
+      "path": "/tmp/hirewiz-combined-auth-frontend-units-20261009.json",
+      "sha256": "6b082f621e380ff05e3cad6680dbaf6c2446f30062ecdc0d601d1535bb29dcd8"
+    },
+    {
+      "path": "/tmp/hirewiz-combined-auth-frontend-build-final-20261009.log",
+      "sha256": "742d2557479322f595c5190515297bd2f99e98b60c198b2f57ae194bce8f916e"
+    },
+    {
+      "path": "/tmp/hirewiz-combined-auth-gitleaks-final-20261009.log",
+      "sha256": "620b6d1a435f2f1936475fc97de0f02946f360a187e32a9e478d4e713a8cb98f"
+    },
+    {
+      "path": "/tmp/hirewiz-combined-auth-contracts-final-20261009.log",
+      "sha256": "711ee11538eed5f64caf6ebb6321c514304f523a7c4a62fe2665b26df1c7aa52"
+    }
+  ],
+  "production": {
+    "backend_unchanged": "e7d8f2ba0435fd3d4a504ccdce83fac365ec6835",
+    "observed_schema": "20261008_0009",
+    "frontend_unchanged": "06cc112278e94aadb358fbe347f5430e373c4eb1",
+    "new_authority_or_pairing_enabled": false,
+    "automatic_application_enabled": false,
+    "real_employer_submissions": 0,
+    "real_test_payments": 0,
+    "new_migration_executed_in_production": false
+  },
+  "open_gates": [
+    "actual MV3 and website first connection",
+    "protected challenge/signing/dispatch join",
+    "normal reset follow-up",
+    "production authority custody and construction",
+    "credential retirement and controlled schema0010/0011 migration",
+    "permitted portal full workflow",
+    "wider acceptance and worldwide recall"
+  ],
+  "history_scan_correction": {
+    "historical_commit": "4b941fcd50e8c06b448ab44d352b12f51aae14f6",
+    "finding_count": 16,
+    "classification": "Computed SHA256 digests of exact repository source files; no credentials",
+    "all_digest_values_verified_against_historical_source": true,
+    "new_format": "Separate path and sha256 fields avoid interpreting source filenames as credential names",
+    "historical_exclusions": "Exact 16 commit/file/rule/line fingerprints in .gitleaksignore only"
+  },
+  "remote_ci": {
+    "head_sha": "46274a5ef6acc8c96eb9198fa306301a3274fe85",
+    "run_id": 37924962950,
+    "status": "completed",
+    "conclusion": "success",
+    "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37924962950",
+    "jobs": [
+      {
+        "name": "browser-companion",
+        "status": "completed",
+        "conclusion": "success",
+        "id": 113801579827
+      },
+      {
+        "name": "frontend",
+        "status": "completed",
+        "conclusion": "success",
+        "id": 113801580100
+      },
+      {
+        "name": "backend",
+        "status": "completed",
+        "conclusion": "success",
+        "id": 113801580301
+      },
+      {
+        "name": "cold-browser-journey",
+        "status": "completed",
+        "conclusion": "success",
+        "id": 113801580371
+      },
+      {
+        "name": "security-and-container",
+        "status": "completed",
+        "conclusion": "success",
+        "id": 113801580624
+      }
+    ],
+    "backend_pass_lines": [
+      "1953 passed, 345 warnings in 472.04s"
+    ],
+    "backend_log": {
+      "path": "/tmp/hirewiz-46274a5-backend-ci-success-20261009.log",
+      "sha256": "5a1e1721e22ace17d96b83105fa1c0a6afead508dd4f7e810b14e0a0306ab5da"
+    },
+    "production_deployment": false
+  }
+}

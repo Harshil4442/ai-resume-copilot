@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import { usePathname } from "next/navigation";
 import posthog from "posthog-js";
 import { useCallback, useEffect, useRef, useState } from "react";
+import CoreWebVitals from "./CoreWebVitals";
 
 const STORAGE_KEY = "hirewiz_cookie_consent";
 const CONSENT_VERSION = 2;
@@ -167,6 +168,7 @@ export default function AnalyticsConsent({
     <>
       {analyticsAllowed ? (
         <>
+          <CoreWebVitals />
           <Script
             src={`https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(gaMeasurementId!)}`}
             strategy="afterInteractive"
