@@ -18,3 +18,7 @@ bfc3c448e8bfbdb27efb4b2b590779d8f57833b2:backend/tests/test_generation_gate.py:g
 4b941fcd50e8c06b448ab44d352b12f51aae14f6:docs/delivery/evidence/2026-10-09-candidate-browser-component-integration.json:generic-api-key:73
 4b941fcd50e8c06b448ab44d352b12f51aae14f6:docs/delivery/evidence/2026-10-09-candidate-browser-component-integration.json:generic-api-key:74
 4b941fcd50e8c06b448ab44d352b12f51aae14f6:docs/delivery/evidence/2026-10-09-candidate-browser-component-integration.json:generic-api-key:76
+
+# Known false positive in rollout documentation.
+# This exact historical finding leaves scanner rules unchanged.
+757903f19ccb98b35c48a5d5d2488f262d66edab:docs/delivery/MONETARY_ROLLOUT_PREPARATION_2026-10-10.md:generic-api-key:172
