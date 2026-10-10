@@ -5,7 +5,7 @@ import logging
 import os
 import uuid
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -21,6 +21,8 @@ from .models import DispatchOutbox
 log = logging.getLogger("hirewiz.dispatch")
 TOPICS = {"analysis.run", "employer.search", "employer.refresh", "employer.apply", "employer.artifact-delete"}
 IN_PROGRESS_RESULTS = {"pending", "queued", "running"}
+SEARCH_CONTINUATION_MARKERS = ("domain_continuation_advanced", "domain_continuation_publish_deferred",
+                               "domain_continuation_in_progress", "domain_continuation_retry_deferred")
 LOCAL_ENVIRONMENTS = {"development", "dev", "local", "test"}
 TASK_QUEUE_SETTINGS = {
     "analysis.run": "ANALYSIS_TASKS_QUEUE",
@@ -109,6 +111,13 @@ class DispatchSnapshot:
     topic: str
     execution_attempts: int
     task_name: str | None = None
+    available_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class EmployerSearchContinuation:
+    """Only the exact search worker may report a persisted advancing turn."""
+    aggregate_id: str
 
 
 def enqueue(
@@ -161,6 +170,9 @@ def _cloud_task(event: DispatchOutbox | DispatchSnapshot) -> str:
         },
         "dispatch_deadline": {"seconds": 900},
     }
+    if event.topic == "employer.search" and event.available_at is not None:
+        stamp = event.available_at.timestamp()
+        task["schedule_time"] = {"seconds": int(stamp), "nanos": int((stamp - int(stamp)) * 1_000_000_000)}
     try:
         return str(client.create_task(parent=parent, task=tasks_v2.Task(task)).name)
     except AlreadyExists:
@@ -205,7 +217,9 @@ def dispatch_pending(*, limit: int = 100, topics: set[str] | None = None) -> dic
                 queue, _ = _task_route(topic)
                 parent = f"projects/{_setting('GOOGLE_CLOUD_PROJECT')}/locations/{_setting('ANALYSIS_TASKS_LOCATION')}/queues/{queue}"
                 task_name = case(
-                    (and_(DispatchOutbox.status.in_(["pending", "publishing"]),
+                    (and_(or_(DispatchOutbox.status.in_(["pending", "publishing"]),
+                              and_(DispatchOutbox.status == "retry", DispatchOutbox.topic == "employer.search",
+                                   DispatchOutbox.last_error.in_(["domain_continuation_advanced", "domain_continuation_publish_deferred"]))),
                           DispatchOutbox.task_name.is_not(None),
                           DispatchOutbox.task_name.startswith(f"{parent}/tasks/", autoescape=True)), DispatchOutbox.task_name),
                     else_=f"{parent}/tasks/{event_id}-dispatch-" + cast(DispatchOutbox.dispatch_attempts + 1, String),
@@ -231,7 +245,8 @@ def dispatch_pending(*, limit: int = 100, topics: set[str] | None = None) -> dic
             event = db.get(DispatchOutbox, event_id)
             if event is None:
                 continue
-            snapshot = DispatchSnapshot(str(event.id), str(event.topic), int(event.execution_attempts or 0), event.task_name)
+            snapshot = DispatchSnapshot(str(event.id), str(event.topic), int(event.execution_attempts or 0), event.task_name,
+                event.available_at if event.topic == "employer.search" else None)
             db.rollback()
             try:
                 if mode == "inline":
@@ -243,7 +258,9 @@ def dispatch_pending(*, limit: int = 100, topics: set[str] | None = None) -> dic
                     task_name = _cloud_task(snapshot)
                     db.query(DispatchOutbox).filter_by(id=event_id, lease_token=token, status="publishing").update(
                         {"status": "dispatched", "task_name": task_name, "lease_token": None,
-                         "lease_until": None, "last_error": None, "updated_at": utcnow()},
+                         "lease_until": None, "last_error": case((and_(DispatchOutbox.topic == "employer.search",
+                             DispatchOutbox.last_error.in_(SEARCH_CONTINUATION_MARKERS)),
+                             DispatchOutbox.last_error), else_=None), "updated_at": utcnow()},
                         synchronize_session=False,
                     )
                     db.commit()
@@ -254,7 +271,9 @@ def dispatch_pending(*, limit: int = 100, topics: set[str] | None = None) -> dic
                     {"status": "pending", "task_name": None if mode == "inline" else DispatchOutbox.task_name,
                      "lease_token": None, "lease_until": None,
                      "available_at": utcnow() + timedelta(seconds=30),
-                     "last_error": type(exc).__name__, "updated_at": utcnow()},
+                     "last_error": case((and_(DispatchOutbox.topic == "employer.search",
+                         DispatchOutbox.last_error.in_(SEARCH_CONTINUATION_MARKERS)), "domain_continuation_publish_deferred"),
+                         else_=type(exc).__name__), "updated_at": utcnow()},
                     synchronize_session=False,
                 )
                 db.commit()
@@ -265,7 +284,7 @@ def dispatch_pending(*, limit: int = 100, topics: set[str] | None = None) -> dic
         db.close()
 
 
-def _execute(topic: str, aggregate_id: str) -> str:
+def _execute(topic: str, aggregate_id: str) -> str | EmployerSearchContinuation:
     if topic == "analysis.run":
         from ..analysis.tasks import process_analysis_run
         return process_analysis_run(aggregate_id)
@@ -276,7 +295,68 @@ def _execute(topic: str, aggregate_id: str) -> str:
         "employer.apply": service.execute_application,
         "employer.artifact-delete": service.delete_artifact,
     }[topic]
-    return str(handler(aggregate_id))
+    result = handler(aggregate_id)
+    if topic == "employer.search" and isinstance(result, EmployerSearchContinuation):
+        if result.aggregate_id != aggregate_id:
+            raise ValueError("Search continuation belongs to different work")
+        return result
+    return str(result)
+
+
+def _continue_search(db, event_id, token, outcome):
+    """Persist one same-event physical generation, then publish without locks.
+
+    Cancellation before the fresh publication check suppresses the task. A
+    cancellation racing an external publication is fenced by the domain lease
+    and terminal plan state when that delivery arrives.
+    """
+    from ..employer import models as employer_models
+    event = db.query(DispatchOutbox).filter_by(id=event_id, lease_token=token,
+        status="running", topic="employer.search", aggregate_id=outcome.aggregate_id).with_for_update().one_or_none()
+    if event is None:
+        db.rollback()
+        return "cancelled"
+    state = db.query(employer_models.EmployerSearchPreparation.state).filter_by(id=outcome.aggregate_id).scalar()
+    if state not in {"pending", "scanning", "classifying", "selecting"}:
+        event.status, event.completed_at = "completed", utcnow()
+        event.lease_token, event.lease_until = None, None
+        db.commit()
+        return str(state or "missing")
+    mode = _dispatch_mode()
+    now = utcnow()
+    event.status, event.available_at = "retry", now + timedelta(seconds=2)
+    event.execution_attempts -= 1
+    event.dispatch_attempts += 1
+    event.lease_token, event.lease_until, event.last_error = None, None, "domain_continuation_advanced"
+    if mode == "cloud_tasks":
+        queue, _ = _task_route("employer.search")
+        parent = f"projects/{_setting('GOOGLE_CLOUD_PROJECT')}/locations/{_setting('ANALYSIS_TASKS_LOCATION')}/queues/{queue}"
+        event.task_name = f"{parent}/tasks/{event.id}-dispatch-{event.dispatch_attempts}"
+    else:
+        event.task_name = None
+    snapshot = DispatchSnapshot(event.id, event.topic, event.execution_attempts, event.task_name, event.available_at)
+    db.commit()
+    if mode != "cloud_tasks":
+        # No recursive inline execution; the existing outbox sweep continues.
+        return "continuing"
+    fresh = db.query(DispatchOutbox.id).filter_by(id=event_id, status="retry",
+        task_name=snapshot.task_name, last_error="domain_continuation_advanced").first()
+    state = db.query(employer_models.EmployerSearchPreparation.state).filter_by(id=outcome.aggregate_id).scalar()
+    db.rollback()
+    if fresh is None or state not in {"pending", "scanning", "classifying", "selecting"}:
+        return str(state or "cancelled")
+    try:
+        _cloud_task(snapshot)
+    except Exception:
+        db.query(DispatchOutbox).filter_by(id=event_id, status="retry", task_name=snapshot.task_name).update(
+            {"last_error": "domain_continuation_publish_deferred", "available_at": utcnow() + timedelta(seconds=30)}, synchronize_session=False)
+        db.commit()
+        log.warning("Search continuation publication deferred")
+        return "continuing"
+    db.query(DispatchOutbox).filter_by(id=event_id, status="retry", task_name=snapshot.task_name).update(
+        {"status": "dispatched", "updated_at": utcnow(), "last_error": "domain_continuation_advanced"}, synchronize_session=False)
+    db.commit()
+    return "continuing"
 
 
 def _settle_exhausted(topic: str, aggregate_id: str) -> None:
@@ -297,7 +377,7 @@ def _settle_exhausted(topic: str, aggregate_id: str) -> None:
             db.commit()
 
 
-def process_event(event_id: str) -> str:
+def process_event(event_id: str) -> str | EmployerSearchContinuation:
     db = SessionLocal()
     token = uuid.uuid4().hex
     try:
@@ -319,6 +399,11 @@ def process_event(event_id: str) -> str:
         now = utcnow()
         claimed = db.query(DispatchOutbox).filter(
             DispatchOutbox.id == event_id,
+            # Only typed search continuations carry this due-time fence. The
+            # worker receives event_id, so after due time any physical delivery
+            # may advance the same plan under its domain lease.
+            or_(DispatchOutbox.topic != "employer.search", DispatchOutbox.last_error.is_(None),
+                DispatchOutbox.last_error.not_in(SEARCH_CONTINUATION_MARKERS), DispatchOutbox.available_at <= now),
             or_(
                 DispatchOutbox.status.in_(["pending", "publishing", "dispatched", "retry"]),
                 and_(DispatchOutbox.status == "running", DispatchOutbox.lease_until < now),
@@ -334,6 +419,8 @@ def process_event(event_id: str) -> str:
         if not claimed:
             if event.status == "running":
                 raise RetryableDispatchError("Work has a live lease")
+            if event.topic == "employer.search" and event.last_error in SEARCH_CONTINUATION_MARKERS:
+                return "continuing"
             return str(event.status)
         topic, aggregate_id = str(event.topic), str(event.aggregate_id)
         attempts = int(event.execution_attempts or 0)
@@ -355,13 +442,17 @@ def process_event(event_id: str) -> str:
             db.query(DispatchOutbox).filter_by(id=event_id, lease_token=token, status="running").update(
                 {"status": "retry", "lease_token": None, "lease_until": None,
                  "available_at": utcnow() + timedelta(hours=1),
-                 "last_error": type(exc).__name__, "updated_at": utcnow()},
+                 "last_error": case((and_(DispatchOutbox.topic == "employer.search",
+                     DispatchOutbox.last_error.in_(SEARCH_CONTINUATION_MARKERS)), "domain_continuation_retry_deferred"),
+                     else_=type(exc).__name__), "updated_at": utcnow()},
                 synchronize_session=False,
             )
             db.commit()
             # Domain handlers own terminal settlement and possible-sent states.
             # A task retry re-reads those states; it never directly repeats POST.
             raise RetryableDispatchError(type(exc).__name__) from exc
+        if topic == "employer.search" and isinstance(result, EmployerSearchContinuation):
+            return _continue_search(db, event_id, token, result)
         if result in IN_PROGRESS_RESULTS:
             # Domain leases can outlive the dispatch lease. A handler that did
             # not claim that work must not complete its recovery intent or
@@ -370,7 +461,9 @@ def process_event(event_id: str) -> str:
                 {"status": "retry", "lease_token": None, "lease_until": None,
                  "available_at": utcnow() + timedelta(minutes=5),
                  "execution_attempts": DispatchOutbox.execution_attempts - 1,
-                 "last_error": "domain_work_in_progress", "updated_at": utcnow()},
+                 "last_error": case((and_(DispatchOutbox.topic == "employer.search",
+                     DispatchOutbox.last_error.in_(SEARCH_CONTINUATION_MARKERS)), "domain_continuation_in_progress"),
+                     else_="domain_work_in_progress"), "updated_at": utcnow()},
                 synchronize_session=False,
             )
             db.commit()

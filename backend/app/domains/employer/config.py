@@ -100,3 +100,8 @@ def paid_history_mode() -> str:
     if mode not in {"off", "shadow", "indexed"}:
         raise ValueError("Invalid employer paid history rollout mode")
     return mode
+
+
+def catalogue_search_enabled() -> bool:
+    """Off until reader compatibility and measured catalogue costs are reviewed."""
+    return enabled("EMPLOYER_FULL_CATALOGUE_SEARCH_ENABLED")

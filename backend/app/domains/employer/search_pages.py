@@ -1,9 +1,8 @@
 """Read saved employer searches without creating new deliveries or credits.
 
-Summary SQL excludes the result JSON. Result pagination bounds the response,
-not JSON decoding: the complete saved array is loaded and hashed so an edited
-snapshot cannot silently skip or repeat results. Large valid snapshots remain
-readable; this module deliberately imposes no historical body or row cap.
+Summary SQL excludes result JSON. Proven native snapshots page immutable item
+rows without decoding the complete saved array. Legacy result pagination still
+loads and hashes its saved array so edits cannot silently skip or repeat results.
 """
 from __future__ import annotations
 
@@ -195,10 +194,83 @@ def _result_boundary(cursor: str, owner_id: int, identity: str) -> tuple[int, st
     return offset, "saved-search-v1:" + payload[-32:].hex()
 
 
+def _native_version(metadata: schemas.SearchSummary, snapshot_id: str,
+                    digest: str, total: int) -> str:
+    # The immutable native digest covers the original query and all item bodies.
+    # Bind mutable public search metadata without hashing that complete array.
+    body = metadata.model_dump(exclude={"query"})
+    body["created_at"] = _utc(metadata.created_at).isoformat(timespec="microseconds")
+    body["native_snapshot"] = {"id": snapshot_id, "digest": digest, "count": total}
+    return "saved-search-v1:" + hashlib.sha256(_json_bytes(body)).hexdigest()
+
+
+def _native_results(db: Session, owner_id: int, identity: str, row: Any, *, limit: int,
+                    offset: int, expected_version: str | None,
+                    has_cursor: bool) -> schemas.SavedSearchResultsPage:
+    metadata = _metadata(row)
+    values = row._mapping
+    snapshot_id, total, digest = (values["native_snapshot_id"], values["_snapshot_count"],
+                                  values["_snapshot_digest"])
+    if (metadata.status != "completed" or values["_snapshot_state"] != "proven"
+            or values["_snapshot_owner"] != owner_id or values["_snapshot_id"] != snapshot_id
+            or type(total) is not int or total < 0 or total != metadata.delivered_count
+            or not isinstance(digest, str) or re.fullmatch(r"[a-f0-9]{64}", digest) is None):
+        raise _unavailable()
+    version = _native_version(metadata, snapshot_id, digest, total)
+    if expected_version is not None and expected_version != version:
+        raise _error(409, "saved_search_snapshot_changed", "This saved search changed. Reload its first page.")
+    if has_cursor and offset >= total:
+        raise _invalid()
+    end = min(offset + limit, total)
+    with db.no_autoflush:
+        try:
+            item = models.EmployerCatalogueSnapshotItem
+            rows = db.query(item.ordinal, item.body, item.item_digest, item.proof_state).filter(
+                item.snapshot_id == snapshot_id, item.user_id == owner_id,
+                item.ordinal >= offset, item.ordinal < end,
+            ).order_by(item.ordinal).limit(limit).all()
+        except (json.JSONDecodeError, UnicodeError, RecursionError):
+            raise _unavailable() from None
+    if len(rows) != end - offset or any(
+            saved.ordinal != offset + index or saved.proof_state != "proven"
+            or not isinstance(saved.item_digest, str)
+            or re.fullmatch(r"[a-f0-9]{64}", saved.item_digest) is None
+            for index, saved in enumerate(rows)):
+        raise _unavailable()
+    next_cursor = _result_cursor(owner_id, identity, end, version) if end < total else None
+    try:
+        return schemas.SavedSearchResultsPage(
+            search=metadata, items=[saved.body for saved in rows], total_items=total,
+            start_index=offset, next_cursor=next_cursor, snapshot_version=version,
+        )
+    except ValidationError:
+        raise _unavailable() from None
+
+
 def saved_results(db: Session, owner_id: int, identity: str, *, limit: int = 10,
                   cursor: str | None = None) -> schemas.SavedSearchResultsPage:
     _limit(limit)
     offset, expected_version = _result_boundary(cursor, owner_id, identity) if cursor is not None else (0, None)
+    # Select only metadata and proof scalars first. Neither hybrid items nor the
+    # aggregate native body may appear in this query or in summary SQL.
+    with db.no_autoflush:
+        try:
+            snapshot = models.EmployerCatalogueSnapshot
+            native = db.query(*(getattr(models.EmployerSearch, key) for key in _METADATA_FIELDS),
+                              models.EmployerSearch.native_snapshot_id,
+                              snapshot.id.label("_snapshot_id"), snapshot.user_id.label("_snapshot_owner"),
+                              snapshot.state.label("_snapshot_state"), snapshot.item_count.label("_snapshot_count"),
+                              snapshot.snapshot_digest.label("_snapshot_digest")).outerjoin(snapshot, and_(
+                snapshot.id == models.EmployerSearch.native_snapshot_id,
+                snapshot.user_id == models.EmployerSearch.user_id,
+            )).filter(models.EmployerSearch.id == identity, models.EmployerSearch.user_id == owner_id).first()
+        except (json.JSONDecodeError, UnicodeError, RecursionError):
+            raise _unavailable() from None
+    if native is None:
+        raise _error(404, "saved_search_not_found", "Saved search not found.")
+    if native._mapping["native_snapshot_id"] is not None:
+        return _native_results(db, owner_id, identity, native, limit=limit, offset=offset,
+                               expected_version=expected_version, has_cursor=cursor is not None)
     with db.no_autoflush:
         try:
             row = db.query(*(getattr(models.EmployerSearch, key) for key in _METADATA_FIELDS), models.EmployerSearch.items).filter(

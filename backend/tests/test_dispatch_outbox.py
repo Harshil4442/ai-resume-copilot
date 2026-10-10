@@ -8,6 +8,8 @@ from backend.app.domains.analysis import tasks as analysis_tasks
 from backend.app.domains.common import utcnow
 from backend.app.domains.dispatch import service
 from backend.app.domains.dispatch.models import DispatchOutbox
+from backend.app.domains.employer import catalogue_search
+from backend.app.domains.employer import models as employer_models
 from google.api_core.exceptions import AlreadyExists
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -487,3 +489,90 @@ def test_invalid_cloud_worker_origin_fails_before_claim_and_does_not_expose_valu
     assert value not in str(err.value)
     with factory() as db:
         assert db.get(DispatchOutbox, event_id).dispatch_attempts == 0
+
+
+def _catalogue_intent(factory):
+    now = utcnow()
+    with factory() as db:
+        db.add(models.User(id=1, email="catalogue@example.invalid", job_service_credits=50))
+        db.add(models.Resume(id=10, user_id=1, original_filename="synthetic.pdf", skills=["Python"]))
+        db.add(employer_models.ServiceCreditReservation(
+            id="catalogue_reservation", user_id=1, operation="employer.search", source_id="catalogue_plan",
+            unit_price=7, requested_count=3, reserved_amount=0, committed_amount=0,
+            released_amount=0, state="reserved", pricing_version="original-fixture-v1",
+        ))
+        db.add(employer_models.EmployerSearchPreparation(
+            id="catalogue_plan", user_id=1, resume_id=10, reservation_id="catalogue_reservation",
+            idempotency_key="catalogue-key", input_fingerprint="0" * 64, query={}, worker_query={},
+            projection_version=catalogue_search.PROJECTION_VERSION,
+            accepted_quote={"unit_price": 7, "pricing_version": "original-fixture-v1"},
+            resume_fingerprint="1" * 64, resume_source_revision=1, resume_skills=["Python"],
+            as_of=now, watermark=0, max_source_age_hours=24, desired_count=3, state="scanning",
+        ))
+        event = service.enqueue(db, topic="employer.search", aggregate_id="catalogue_plan",
+                                payload={"search_id": "catalogue_plan"}, key="catalogue-dispatch")
+        db.commit()
+        return event.id
+
+
+def test_catalogue_continuation_is_due_in_two_seconds_and_early_duplicate_does_no_work(factory, monkeypatch):
+    event_id = _catalogue_intent(factory)
+    clock = [utcnow()]
+    monkeypatch.setattr(service, "utcnow", lambda: clock[0])
+    published, executed = [], []
+    monkeypatch.setattr(service, "_cloud_task", lambda snapshot: published.append(snapshot.task_name) or snapshot.task_name)
+    monkeypatch.setattr(service, "_execute", lambda topic, identity: executed.append((topic, identity))
+                        or service.EmployerSearchContinuation(identity))
+    assert service.dispatch_pending(topics={"employer.search"}) == {"dispatched": 1, "failed": 0}
+    assert service.process_event(event_id) == "continuing"
+    with factory() as db:
+        event = db.get(DispatchOutbox, event_id)
+        assert event.execution_attempts == 0
+        assert event.available_at == (clock[0] + timedelta(seconds=2)).replace(tzinfo=None)
+        first_generation = event.dispatch_attempts
+        first_name = event.task_name
+    assert service.process_event(event_id) == "continuing"
+    assert executed == [("employer.search", "catalogue_plan")]
+    assert len(published) == 2
+    clock[0] += timedelta(seconds=2)
+    assert service.process_event(event_id) == "continuing"
+    with factory() as db:
+        event = db.get(DispatchOutbox, event_id)
+        assert event.execution_attempts == 0 and event.dispatch_attempts == first_generation + 1
+        assert event.task_name != first_name
+        reservation = db.get(employer_models.ServiceCreditReservation, "catalogue_reservation")
+        assert (reservation.unit_price, reservation.reserved_amount, reservation.committed_amount) == (7, 0, 0)
+        assert db.query(employer_models.EmployerSearch).count() == 0
+        assert db.query(employer_models.EmployerJobDelivery).count() == 0
+
+
+def test_cancelled_catalogue_after_publication_failure_is_not_republished_by_recovery(factory, monkeypatch):
+    event_id = _catalogue_intent(factory)
+    clock = [utcnow()]
+    monkeypatch.setattr(service, "utcnow", lambda: clock[0])
+    calls = []
+
+    def publish(snapshot):
+        calls.append(snapshot.task_name)
+        if len(calls) > 1:
+            raise RuntimeError("Synthetic continuation publication failure")
+        return snapshot.task_name
+
+    monkeypatch.setattr(service, "_cloud_task", publish)
+    monkeypatch.setattr(service, "_execute", lambda topic, identity: service.EmployerSearchContinuation(identity))
+    assert service.dispatch_pending(topics={"employer.search"}) == {"dispatched": 1, "failed": 0}
+    assert service.process_event(event_id) == "continuing"
+    assert len(calls) == 2
+    with factory() as db:
+        assert catalogue_search.cancel(db, 1, "catalogue_plan")["status"] == "cancelled"
+    clock[0] += timedelta(seconds=31)
+    assert service.dispatch_pending(topics={"employer.search"}) == {"dispatched": 0, "failed": 0}
+    assert len(calls) == 2
+    assert service.process_event(event_id) == "completed"
+    with factory() as db:
+        assert db.get(DispatchOutbox, event_id).status == "completed"
+        reservation = db.get(employer_models.ServiceCreditReservation, "catalogue_reservation")
+        assert (reservation.reserved_amount, reservation.committed_amount, reservation.released_amount) == (0, 0, 0)
+        assert db.get(models.User, 1).job_service_credits == 50
+        assert db.query(employer_models.EmployerSearch).count() == 0
+        assert db.query(employer_models.EmployerJobDelivery).count() == 0

@@ -4,6 +4,7 @@ import copy
 from types import SimpleNamespace
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
@@ -11,7 +12,15 @@ from sqlalchemy.orm import Session
 
 from ... import models as core
 from ...database import get_db
-from ...domains.employer import artifacts, batches, models, schemas, search_pages, service
+from ...domains.employer import (
+    artifacts,
+    batches,
+    catalogue_search,
+    models,
+    schemas,
+    search_pages,
+    service,
+)
 from ...security import decode_access_token_user_id, get_current_user, oauth2_scheme
 from .admin import require_admin
 
@@ -48,9 +57,15 @@ def get_catalog(db: Session = Depends(get_db), token: str = Depends(oauth2_schem
     return service.catalog_for_verified_subject(db, decode_access_token_user_id(token))
 
 
-@router.post("/searches", status_code=201)
+@router.post("/searches", status_code=201, responses={
+    202: {"description": "Search preparation accepted", "content": {"application/json": {"schema": {}}}},
+})
 def create_search(payload: schemas.SearchCreate, db: Session = Depends(get_db), user: core.User = Depends(get_current_user)):
-    return service.search_response(service.create_search(db, user.id, payload))
+    result = service.create_search(db, user.id, payload)
+    if isinstance(result, models.EmployerSearchPreparation):
+        return JSONResponse(status_code=202, content=jsonable_encoder(catalogue_search.status(db, user.id, result.id)),
+                            headers={"Cache-Control": "private, no-store"})
+    return service.search_response(result)
 
 
 @router.get("/searches")
@@ -64,6 +79,20 @@ def list_search_summaries(response: Response, limit: int = Query(10, ge=1, le=20
                           db: Session = Depends(get_db), user: core.User = Depends(get_current_user)):
     response.headers["Cache-Control"] = "private, no-store"
     return search_pages.list_summaries(db, user.id, limit=limit, cursor=cursor)
+
+
+@_saved_search_reads.get("/search-preparations/{identity}")
+def get_search_preparation(response: Response, identity: str = Path(min_length=1, max_length=64),
+                           db: Session = Depends(get_db), user: core.User = Depends(get_current_user)):
+    response.headers["Cache-Control"] = "private, no-store"
+    return catalogue_search.status(db, user.id, identity)
+
+
+@_saved_search_reads.post("/search-preparations/{identity}/cancel")
+def cancel_search_preparation(response: Response, identity: str = Path(min_length=1, max_length=64),
+                              db: Session = Depends(get_db), user: core.User = Depends(get_current_user)):
+    response.headers["Cache-Control"] = "private, no-store"
+    return catalogue_search.cancel(db, user.id, identity)
 
 
 @_saved_search_reads.get("/searches/{identity}/results", response_model=schemas.SavedSearchResultsPage,

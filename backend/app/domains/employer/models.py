@@ -18,12 +18,250 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    case,
     false,
+    select,
 )
-from sqlalchemy.orm import deferred
+from sqlalchemy.ext.hybrid import hybrid_property
+from sqlalchemy.orm import deferred, relationship
 
 from ...database import Base
 from ..common import utcnow
+
+
+class EmployerCatalogueClock(Base):
+    """One committed publication watermark; never a financial owner lock."""
+    __tablename__ = "employer_catalogue_clock"
+    __table_args__ = (CheckConstraint("id = 1 AND watermark >= 0", name="ck_catalogue_clock_singleton"),)
+    id = Column(Integer, primary_key=True, default=1)
+    watermark = Column(BigInteger, nullable=False, default=0, server_default="0")
+    inventory_state = Column(String(16), nullable=False, default="sources", server_default="sources")
+    source_cursor = Column(String(64), nullable=True)
+    posting_cursor = Column(String(64), nullable=True)
+    prune_cursor = Column(String(64), nullable=True)
+
+
+class EmployerCatalogueSourceRevision(Base):
+    __tablename__ = "employer_catalogue_source_revisions"
+    __table_args__ = (
+        CheckConstraint("valid_from >= 0 AND (valid_to IS NULL OR valid_to > valid_from)", name="ck_catalogue_source_interval"),
+        Index("ix_catalogue_sources_snapshot", "source_id", "valid_from", "valid_to"),
+    )
+    source_id = Column(String(64), primary_key=True)
+    valid_from = Column(BigInteger, primary_key=True)
+    valid_to = Column(BigInteger, nullable=True)
+    enabled = Column(Boolean, nullable=False)
+    platform = Column(String(40), nullable=False)
+    region = Column(String(16), nullable=False)
+    board_token = Column(String(120), nullable=False)
+    employer_key = Column(String(120), nullable=True)
+    employer = Column(String(200), nullable=False)
+
+
+class EmployerCatalogueContent(Base):
+    """Immutable shared public body, stored once per exact content hash."""
+    __tablename__ = "employer_catalogue_contents"
+    id = Column(String(64), primary_key=True)
+    description = deferred(Column(Text, nullable=False))
+    preference_metadata = deferred(Column(JSON, nullable=True))
+    public_fields = deferred(Column(JSON, nullable=False))
+
+
+class EmployerCatalogueProjection(Base):
+    """Derived facts and cold work are immutable per content/version pair."""
+    __tablename__ = "employer_catalogue_projections"
+    __table_args__ = (
+        CheckConstraint("projection_state IN ('pending','preparing','ready')", name="ck_catalogue_projection_projection_state"),
+        CheckConstraint("projection_state <> 'ready' OR (required_skills IS NOT NULL AND CAST(required_skills AS TEXT) <> 'null' AND scoring_warnings IS NOT NULL AND CAST(scoring_warnings AS TEXT) <> 'null' AND preference_valid IS NOT NULL AND preference_facts IS NOT NULL AND CAST(preference_facts AS TEXT) <> 'null')", name="ck_catalogue_projection_ready"),
+        CheckConstraint("projection_offset >= 0", name="ck_catalogue_projection_offset"),
+        CheckConstraint("length(CAST(required_skills AS TEXT)) <= 16384", name="ck_catalogue_projection_skills_size"),
+        CheckConstraint("length(CAST(scoring_warnings AS TEXT)) <= 16384", name="ck_catalogue_projection_warnings_size"),
+        CheckConstraint("length(CAST(preference_facts AS TEXT)) <= 8192", name="ck_catalogue_projection_facts_size"),
+        # Capacity follows the finite normalized preference contract, not raw input.
+        CheckConstraint("length(CAST(projection_checkpoint AS TEXT)) <= 3145728", name="ck_catalogue_projection_checkpoint_size"),
+    )
+    content_id = Column(String(64), ForeignKey("employer_catalogue_contents.id"), primary_key=True)
+    projection_version = Column(String(160), primary_key=True)
+    projection_state = Column(String(16), nullable=False, default="pending", server_default="pending")
+    required_skills = Column(JSON, nullable=True)
+    scoring_warnings = Column(JSON, nullable=True)
+    preference_valid = Column(Boolean, nullable=True)
+    preference_provider = Column(String(40), nullable=True)
+    preference_facts = Column(JSON, nullable=True)
+    projection_phase = Column(String(16), nullable=False, default="description", server_default="description")
+    projection_offset = Column(BigInteger, nullable=False, default=0, server_default="0")
+    projection_checkpoint = Column(JSON, nullable=True)
+    lease_token = Column(String(64), nullable=True)
+    lease_until = Column(DateTime(timezone=True), nullable=True)
+
+
+class EmployerCataloguePostingRevision(Base):
+    __tablename__ = "employer_catalogue_posting_revisions"
+    __table_args__ = (
+        CheckConstraint("valid_from >= 0 AND (valid_to IS NULL OR valid_to > valid_from)", name="ck_catalogue_posting_interval"),
+        Index("ix_catalogue_postings_snapshot", "posting_id", "valid_from", "valid_to"),
+        Index("ix_catalogue_postings_open_checked", "is_open", "last_checked_at", "posting_id"),
+    )
+    posting_id = Column(String(64).with_variant(String(64, collation="C"), "postgresql"), primary_key=True)
+    valid_from = Column(BigInteger, primary_key=True)
+    valid_to = Column(BigInteger, nullable=True)
+    content_id = Column(String(64), ForeignKey("employer_catalogue_contents.id"), nullable=False)
+    source_id = Column(String(64), nullable=False)
+    external_id = Column(String(160), nullable=False)
+    requisition_id = Column(String(160), nullable=True)
+    title = Column(String(300), nullable=False)
+    employer = Column(String(200), nullable=False)
+    location = Column(String(400), nullable=False)
+    remote = Column(Boolean, nullable=False)
+    is_open = Column(Boolean, nullable=False)
+    publication_at = Column(DateTime(timezone=True), nullable=True)
+    first_seen_at = Column(DateTime(timezone=True), nullable=False)
+    last_checked_at = Column(DateTime(timezone=True), nullable=False)
+    content_sha256 = Column(String(64), nullable=False)
+
+
+class EmployerCatalogueResumeBinding(Base):
+    """A monotonic fence for resume skill/owner edits, including edit then restore."""
+    __tablename__ = "employer_catalogue_resume_bindings"
+    __table_args__ = (CheckConstraint("revision >= 1", name="ck_catalogue_resume_binding_revision"),)
+    resume_id = Column(Integer, ForeignKey("resumes.id", ondelete="CASCADE", onupdate="CASCADE"), primary_key=True)
+    revision = Column(BigInteger, nullable=False, default=1, server_default="1")
+
+
+class EmployerSearchPreparation(Base):
+    __tablename__ = "employer_search_preparations"
+    __table_args__ = (
+        UniqueConstraint("user_id", "idempotency_key", name="uq_search_preparation_owner_key"),
+        UniqueConstraint("id", "user_id", name="uq_search_preparation_owner"),
+        CheckConstraint("state IN ('accepting','pending','scanning','classifying','selecting','completed','failed','cancelled')", name="ck_search_preparation_state"),
+        CheckConstraint("resume_offset >= 0 AND (resume_checkpoint IS NULL OR length(CAST(resume_checkpoint AS TEXT)) <= 16384)", name="ck_search_preparation_resume_checkpoint"),
+        CheckConstraint("state = 'accepting' OR resume_source_revision IS NOT NULL", name="ck_search_preparation_resume_revision"),
+        CheckConstraint("resume_source_revision IS NULL OR resume_source_revision >= 1", name="ck_search_preparation_resume_revision_positive"),
+        CheckConstraint("watermark >= 0 AND desired_count BETWEEN 1 AND 100", name="ck_search_preparation_bounds"),
+        Index("ix_search_preparation_active_pin", "state", "watermark", "id"),
+        Index("ix_search_preparation_owner_created", "user_id", "created_at"),
+        Index("ix_search_preparation_owner_lease", "user_id", "lease_until", "id"),
+    )
+    id = Column(String(64), primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    resume_id = Column(Integer, ForeignKey("resumes.id", ondelete="CASCADE"), nullable=False)
+    reservation_id = Column(String(64), ForeignKey("service_credit_reservations.id", ondelete="CASCADE"), nullable=False)
+    idempotency_key = Column(String(160), nullable=False)
+    input_fingerprint = Column(String(64), nullable=False)
+    query = deferred(Column(JSON, nullable=False))
+    worker_query = Column(JSON, nullable=False)
+    projection_version = Column(String(160), nullable=False)
+    accepted_quote = Column(JSON, nullable=False)
+    resume_fingerprint = Column(String(64), nullable=False)
+    resume_source_revision = Column(BigInteger, nullable=True)
+    resume_skills = Column(JSON, nullable=False)
+    resume_offset = Column(BigInteger, nullable=False, default=0, server_default="0")
+    resume_checkpoint = Column(JSON, nullable=True)
+    resume_ready = Column(Boolean, nullable=False, default=False, server_default=false())
+    as_of = Column(DateTime(timezone=True), nullable=False)
+    watermark = Column(BigInteger, nullable=False)
+    max_source_age_hours = Column(Integer, nullable=False)
+    desired_count = Column(Integer, nullable=False)
+    state = Column(String(16), nullable=False, default="pending", server_default="pending")
+    posting_cursor = Column(String(64), nullable=True)
+    classification_cursor = Column(String(64), nullable=True)
+    history_generation = Column(BigInteger, nullable=True)
+    candidates_before_preferences = Column(BigInteger, nullable=False, default=0, server_default="0")
+    known_preference_conflicts = Column(BigInteger, nullable=False, default=0, server_default="0")
+    candidates_with_unknown_preferences = Column(BigInteger, nullable=False, default=0, server_default="0")
+    eligible_candidates = Column(BigInteger, nullable=False, default=0, server_default="0")
+    work_generation = Column(BigInteger, nullable=False, default=1, server_default="1")
+    lease_token = Column(String(64), nullable=True)
+    lease_until = Column(DateTime(timezone=True), nullable=True)
+    failure_reason = Column(String(64), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class EmployerCatalogueSnapshot(Base):
+    """Private native JSON assembly; a completed search publishes a proven pointer."""
+    __tablename__ = "employer_catalogue_snapshots"
+    __table_args__ = (
+        UniqueConstraint("id", "user_id", name="uq_catalogue_snapshot_owner"),
+        ForeignKeyConstraint(["preparation_id", "user_id"], ["employer_search_preparations.id", "employer_search_preparations.user_id"], name="fk_catalogue_snapshot_preparation_owner", ondelete="CASCADE"),
+        CheckConstraint("state IN ('building','proven')", name="ck_catalogue_snapshot_state"),
+        CheckConstraint("item_count BETWEEN 0 AND 100 AND history_generation >= 0", name="ck_catalogue_snapshot_bounds"),
+        CheckConstraint("state <> 'proven' OR (items IS NOT NULL AND CAST(items AS TEXT) <> 'null' AND snapshot_digest IS NOT NULL AND length(snapshot_digest) = 64)", name="ck_catalogue_snapshot_proven"),
+        Index("ix_catalogue_snapshot_preparation", "preparation_id", "history_generation", "created_at", "id"),
+    )
+    id = Column(String(64), primary_key=True)
+    user_id = Column(Integer, nullable=False)
+    preparation_id = Column(String(64), nullable=False)
+    query = deferred(Column(JSON, nullable=False))
+    items = deferred(Column(JSON, nullable=True))
+    state = Column(String(16), nullable=False, default="building", server_default="building")
+    item_count = Column(Integer, nullable=False, default=0, server_default="0")
+    snapshot_digest = Column(String(64), nullable=True)
+    history_generation = Column(BigInteger, nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+
+
+class EmployerCatalogueSnapshotItem(Base):
+    """Bounded authority fields plus a database-owned original public item body."""
+    __tablename__ = "employer_catalogue_snapshot_items"
+    __table_args__ = (
+        ForeignKeyConstraint(["snapshot_id", "user_id"], ["employer_catalogue_snapshots.id", "employer_catalogue_snapshots.user_id"], name="fk_catalogue_snapshot_item_owner", ondelete="CASCADE"),
+        ForeignKeyConstraint(["posting_id", "posting_revision"], ["employer_catalogue_posting_revisions.posting_id", "employer_catalogue_posting_revisions.valid_from"], name="fk_catalogue_snapshot_item_posting_revision"),
+        ForeignKeyConstraint(["source_id", "source_revision"], ["employer_catalogue_source_revisions.source_id", "employer_catalogue_source_revisions.valid_from"], name="fk_catalogue_snapshot_item_source_revision"),
+        Index("ix_catalogue_snapshot_item_posting_revision", "posting_id", "posting_revision"),
+        Index("ix_catalogue_snapshot_item_source_revision", "source_id", "source_revision"),
+        CheckConstraint("ordinal BETWEEN 0 AND 99 AND unit_price >= 0", name="ck_catalogue_snapshot_item_bounds"),
+        CheckConstraint("proof_state IN ('prepared','proven')", name="ck_catalogue_snapshot_item_proof_state"),
+        CheckConstraint("length(item_digest) = 64 AND length(CAST(identity_proof AS TEXT)) <= 16384", name="ck_catalogue_snapshot_item_proof_size"),
+    )
+    snapshot_id = Column(String(64), primary_key=True)
+    ordinal = Column(Integer, primary_key=True)
+    user_id = Column(Integer, nullable=False)
+    posting_id = Column(String(64).with_variant(String(64, collation="C"), "postgresql"), nullable=False)
+    posting_revision = Column(BigInteger, nullable=False)
+    source_id = Column(String(64), nullable=False)
+    source_revision = Column(BigInteger, nullable=False)
+    opening_key = Column(String(64), nullable=False)
+    seen = Column(Boolean, nullable=False)
+    unit_price = Column(Integer, nullable=False)
+    item_digest = Column(String(64), nullable=False)
+    identity_proof = Column(JSON, nullable=False)
+    body = deferred(Column(JSON, nullable=False))
+    proof_state = Column(String(16), nullable=False, default="prepared", server_default="prepared")
+
+
+class EmployerCatalogueWinner(Base):
+    __tablename__ = "employer_catalogue_winners"
+    __table_args__ = (
+        ForeignKeyConstraint(["posting_id", "posting_revision"], ["employer_catalogue_posting_revisions.posting_id", "employer_catalogue_posting_revisions.valid_from"], name="fk_catalogue_winner_posting_revision"),
+        ForeignKeyConstraint(["source_id", "source_revision"], ["employer_catalogue_source_revisions.source_id", "employer_catalogue_source_revisions.valid_from"], name="fk_catalogue_winner_source_revision"),
+        Index("ix_catalogue_winner_posting_revision", "posting_id", "posting_revision"),
+        Index("ix_catalogue_winner_source_revision", "source_id", "source_revision"),
+        CheckConstraint("score_tenths BETWEEN 0 AND 1000", name="ck_catalogue_winner_score"),
+        CheckConstraint("length(CAST(fit AS TEXT)) <= 16384 AND length(CAST(preference_evaluation AS TEXT)) <= 8192", name="ck_catalogue_winner_result_size"),
+        Index("ix_catalogue_winner_classify", "preparation_id", "opening_key"),
+    )
+    preparation_id = Column(String(64), ForeignKey("employer_search_preparations.id", ondelete="CASCADE"), primary_key=True)
+    opening_key = Column(String(64), primary_key=True)
+    posting_id = Column(String(64).with_variant(String(64, collation="C"), "postgresql"), nullable=False)
+    posting_revision = Column(BigInteger, nullable=False)
+    source_id = Column(String(64), nullable=False)
+    source_revision = Column(BigInteger, nullable=False)
+    score_tenths = Column(Integer, nullable=False)
+    title_hit = Column(Boolean, nullable=False)
+    fit = Column(JSON, nullable=False)
+    preference_evaluation = Column(JSON, nullable=False)
+    seen = Column(Boolean, nullable=True)
+    classification_generation = Column(BigInteger, nullable=True)
+    stale = Column(Boolean, nullable=False, default=False, server_default=false())
+    stale_reason = Column(String(64), nullable=True)
+
+
+Index("ix_catalogue_winner_selection", EmployerCatalogueWinner.preparation_id,
+      EmployerCatalogueWinner.classification_generation, EmployerCatalogueWinner.stale,
+      EmployerCatalogueWinner.seen, EmployerCatalogueWinner.score_tenths.desc(),
+      EmployerCatalogueWinner.title_hit.desc(), EmployerCatalogueWinner.posting_id)
 
 
 class EmployerSource(Base):
@@ -138,6 +376,8 @@ class EmployerSearch(Base):
     __table_args__ = (
         UniqueConstraint("user_id", "idempotency_key", name="uq_employer_search_user_key"),
         UniqueConstraint("id", "user_id", name="uq_employer_search_history_owner"),
+        ForeignKeyConstraint(["native_snapshot_id", "user_id"], ["employer_catalogue_snapshots.id", "employer_catalogue_snapshots.user_id"], name="fk_employer_search_native_snapshot_owner"),
+        Index("ix_employer_search_native_snapshot", "native_snapshot_id"),
         Index("ix_employer_search_user_created", "user_id", "created_at"),
     )
     id = Column(String(64), primary_key=True)
@@ -145,17 +385,72 @@ class EmployerSearch(Base):
     resume_id = Column(Integer, ForeignKey("resumes.id"), nullable=False)
     idempotency_key = Column(String(160), nullable=False)
     input_fingerprint = Column(String(64), nullable=False)
-    query = Column(JSON, nullable=False)
+    _legacy_query = Column("query", JSON, nullable=False)
     status = Column(String(24), nullable=False, default="completed")
     desired_count = Column(Integer, nullable=False)
     delivered_count = Column(Integer, nullable=False, default=0)
     reserved_credits = Column(Integer, nullable=False, default=0)
     charged_credits = Column(Integer, nullable=False, default=0)
     refunded_credits = Column(Integer, nullable=False, default=0)
-    items = Column(JSON, nullable=False, default=list)
+    _legacy_items = Column("items", JSON, nullable=False, default=list)
+    native_snapshot_id = Column(String(64), nullable=True)
+    _native_snapshot = relationship("EmployerCatalogueSnapshot", viewonly=True, lazy="select", uselist=False,
+                                    foreign_keys=[native_snapshot_id, user_id])
     scope = Column(JSON, nullable=False, default=dict)
     history_revision = Column(BigInteger, nullable=False, default=1, server_default="1")
     created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+
+
+    def _resolved_native_snapshot(self):
+        cached = self.__dict__.get("_native_snapshot")
+        if cached is not None and (cached.id != self.native_snapshot_id or cached.user_id != self.user_id):
+            self.__dict__.pop("_native_snapshot", None)
+        snapshot = self._native_snapshot
+        if snapshot is None or snapshot.state != "proven":
+            raise RuntimeError("Completed catalogue snapshot is unavailable")
+        return snapshot
+
+    @hybrid_property
+    def items(self):
+        if self.native_snapshot_id is None:
+            return self._legacy_items
+        return self._resolved_native_snapshot().items
+
+    @items.inplace.setter
+    def _set_items(self, value):
+        self._legacy_items = value
+        self.native_snapshot_id = None
+        self.__dict__.pop("_native_snapshot", None)
+
+    @items.inplace.expression
+    @classmethod
+    def _items_expression(cls):
+        body = select(EmployerCatalogueSnapshot.items).where(
+            EmployerCatalogueSnapshot.id == cls.native_snapshot_id,
+            EmployerCatalogueSnapshot.user_id == cls.user_id,
+        ).correlate(cls.__table__).scalar_subquery()
+        return case((cls.native_snapshot_id.is_(None), cls._legacy_items), else_=body).label("items")
+
+    @hybrid_property
+    def query(self):
+        if self.native_snapshot_id is None:
+            return self._legacy_query
+        return self._resolved_native_snapshot().query
+
+    @query.inplace.setter
+    def _set_query(self, value):
+        self._legacy_query = value
+        self.native_snapshot_id = None
+        self.__dict__.pop("_native_snapshot", None)
+
+    @query.inplace.expression
+    @classmethod
+    def _query_expression(cls):
+        body = select(EmployerCatalogueSnapshot.query).where(
+            EmployerCatalogueSnapshot.id == cls.native_snapshot_id,
+            EmployerCatalogueSnapshot.user_id == cls.user_id,
+        ).correlate(cls.__table__).scalar_subquery()
+        return case((cls.native_snapshot_id.is_(None), cls._legacy_query), else_=body).label("query")
 
 
 class EmployerJobDelivery(Base):

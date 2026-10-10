@@ -10870,6 +10870,100 @@
         ]
       }
     },
+    "/api/v1/employer-jobs/search-preparations/{identity}": {
+      "get": {
+        "operationId": "get_search_preparation_api_v1_employer_jobs_search_preparations__identity__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "identity",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Identity",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Search Preparation",
+        "tags": [
+          "employer-jobs"
+        ]
+      }
+    },
+    "/api/v1/employer-jobs/search-preparations/{identity}/cancel": {
+      "post": {
+        "operationId": "cancel_search_preparation_api_v1_employer_jobs_search_preparations__identity__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "identity",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Identity",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Cancel Search Preparation",
+        "tags": [
+          "employer-jobs"
+        ]
+      }
+    },
     "/api/v1/employer-jobs/search-summaries": {
       "get": {
         "operationId": "list_search_summaries_api_v1_employer_jobs_search_summaries_get",
@@ -11005,6 +11099,14 @@
               }
             },
             "description": "Successful Response"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Search preparation accepted"
           },
           "422": {
             "content": {

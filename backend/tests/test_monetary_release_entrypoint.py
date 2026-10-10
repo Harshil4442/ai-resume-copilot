@@ -222,7 +222,7 @@ def test_legacy_release_still_refuses_the_current_extended_chain():
     # release authority's reviewed production migration allowance.
     chain = release.source_guard.migration_chain(ROOT, tracked)
     assert chain[:len(release.CHAIN)] == release.CHAIN
-    assert chain[len(release.CHAIN):len(release.CHAIN) + 2] == ('20261010_0014', '20261011_0015')
+    assert chain[len(release.CHAIN):len(release.CHAIN) + 3] == ('20261010_0014', '20261011_0015', '20261011_0016')
     with pytest.raises(release.source_guard.PreflightDenied, match="only the reviewed schema0009 chain"):
         release.source_guard.migration_head(ROOT, tracked)
 

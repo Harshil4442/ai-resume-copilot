@@ -63,10 +63,27 @@ export type EmployerSearch = {
   refunded_credits: number;
   created_at: string;
   query: { resume_id: number; role: string; location: string; remote_only: boolean; published_within_days: number | null; desired_count?: number; excluded_employers?: string[]; preferences?: SearchPreferencesV1 | null };
-  scope?: { candidate_limit_reached?: boolean; known_preference_conflicts?: number; candidates_with_unknown_preferences?: number; candidates_before_preferences?: number; price_quote?: { unit_price: number; pricing_version: string; requested_count: number; maximum_credits: number; search_input_fingerprint: string } };
+  scope?: { candidate_limit_reached?: boolean; catalogue_as_of?: string; catalogue_plan_version?: string; known_preference_conflicts?: number; candidates_with_unknown_preferences?: number; candidates_before_preferences?: number; price_quote?: { unit_price: number; pricing_version: string; requested_count: number; maximum_credits: number; search_input_fingerprint: string } };
   items: SearchResult[];
 };
 export type EmployerSearchSummary = Omit<EmployerSearch, "items">;
+export type EmployerSearchPreparation = {
+  id: string;
+  kind: "search_preparation";
+  status: "accepting" | "pending" | "scanning" | "classifying" | "selecting" | "completed" | "failed" | "cancelled";
+  as_of: string;
+  desired_count: number;
+  accepted_quote: { unit_price: number; pricing_version: string; requested_count: number; maximum_credits: number; search_input_fingerprint: string };
+  candidates_examined: number;
+  charged_credits: number;
+  completed_search_id: string | null;
+  failure_reason: string | null;
+};
+export type EmployerSearchCreateResult = EmployerSearch | EmployerSearchPreparation;
+
+export function isSearchPreparation(result: EmployerSearchCreateResult): result is EmployerSearchPreparation {
+  return "kind" in result && result.kind === "search_preparation";
+}
 export type EmployerSearchSummaryPage = {
   items: EmployerSearchSummary[];
   next_cursor: string | null;

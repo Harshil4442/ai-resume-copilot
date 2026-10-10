@@ -5,7 +5,14 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictBool,
+    field_validator,
+    model_validator,
+)
 
 CountryCode = Annotated[str, Field(pattern=r"^[A-Z]{2}$")]
 LanguageCode = Annotated[str, Field(pattern=r"^[a-z]{2,3}(?:-[A-Z]{2})?$")]
@@ -134,7 +141,6 @@ def evaluate(preferences: SearchPreferencesV1 | None, metadata: dict | None, *, 
     """Confirmed incompatible preferences exclude; unknown stays visible by default."""
     from pydantic import ValidationError
 
-    states, messages = {}, []
     if preferences is None:
         return {"version": POLICY_VERSION, "eligible": True, "states": {}, "messages": [], "eligibility_verified": False}
     try:
@@ -143,7 +149,14 @@ def evaluate(preferences: SearchPreferencesV1 | None, metadata: dict | None, *, 
             facts = None
     except (ValidationError, TypeError):
         facts = None  # Unsupported/malformed historic metadata cannot invent a conflict.
+    return evaluate_facts(preferences, facts)
 
+
+def evaluate_facts(preferences: SearchPreferencesV1 | None, facts) -> dict:
+    """Evaluate facts whose complete original metadata was already validated."""
+    states, messages = {}, []
+    if preferences is None:
+        return {"version": POLICY_VERSION, "eligible": True, "states": {}, "messages": [], "eligibility_verified": False}
     def choice(name, selected):
         if not selected:
             return

@@ -144,8 +144,35 @@ def delete_account_data(db: Session, user_id: int) -> None:
     db.query(models.EmployerApplication).filter_by(user_id=user_id).delete(synchronize_session=False)
     db.query(models.EmployerApplicationBatch).filter_by(user_id=user_id).delete(synchronize_session=False)
     db.query(models.SealedApplicationArtifact).filter_by(user_id=user_id).delete(synchronize_session=False)
+    # Owner-bound paid-history indexes are derived caches. Clear their FK
+    # children before deleting the original saved Search/Delivery PII below.
+    history_ids = db.query(models.EmployerSearchHistoryProgress.search_id).filter_by(user_id=user_id)
+    db.query(models.EmployerSearchHistoryNode).filter(models.EmployerSearchHistoryNode.search_id.in_(history_ids)).delete(synchronize_session=False)
+    db.query(models.EmployerSearchHistorySeen).filter(models.EmployerSearchHistorySeen.search_id.in_(history_ids)).delete(synchronize_session=False)
+    db.query(models.EmployerSearchHistoryProgress).filter_by(user_id=user_id).delete(synchronize_session=False)
+    db.query(models.EmployerPaidOpeningRegistry).filter_by(user_id=user_id).delete(synchronize_session=False)
+    db.query(models.EmployerPaidDeliveryHistory).filter_by(user_id=user_id).delete(synchronize_session=False)
+    db.query(models.EmployerPaidHistoryProgress).filter_by(user_id=user_id).delete(synchronize_session=False)
     db.query(models.EmployerJobDelivery).filter_by(user_id=user_id).delete(synchronize_session=False)
     db.query(models.EmployerSearch).filter_by(user_id=user_id).delete(synchronize_session=False)
+    # The existing User fence also excludes final catalogue settlement. Private
+    # snapshots may be erased after published Search/Delivery ownership ends.
+    from sqlalchemy import or_
+
+    from ..dispatch.models import DispatchOutbox
+    preparation = models.EmployerSearchPreparation
+    reservation = models.ServiceCreditReservation
+    invalid = db.query(preparation.id).join(reservation, preparation.reservation_id == reservation.id).filter(
+        preparation.user_id == user_id, preparation.state != "completed",
+        or_(reservation.reserved_amount != 0, reservation.committed_amount != 0)).limit(1).first()
+    if invalid is not None:
+        raise ValueError("Incomplete catalogue preparation has a financial effect")
+    plan_ids = db.query(preparation.id).filter_by(user_id=user_id)
+    db.query(DispatchOutbox).filter(DispatchOutbox.topic == "employer.search",
+        DispatchOutbox.aggregate_id.in_(plan_ids), ~DispatchOutbox.status.in_(("completed", "failed"))).update(
+        {"status": "completed", "completed_at": utcnow(), "lease_token": None, "lease_until": None,
+         "last_error": "account_data_deleted"}, synchronize_session=False)
+    db.query(preparation).filter_by(user_id=user_id).delete(synchronize_session=False)
     db.query(models.ServiceCreditReservation).filter_by(user_id=user_id).update({"user_id": None}, synchronize_session=False)
     db.query(models.ServiceCreditEvent).filter_by(user_id=user_id).update({"user_id": None}, synchronize_session=False)
     db.query(models.EmployerSource).filter_by(verified_by=user_id).update({"verified_by": None}, synchronize_session=False)

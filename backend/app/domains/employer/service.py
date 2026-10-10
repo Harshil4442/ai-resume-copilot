@@ -5,6 +5,7 @@ import os
 import re
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
+from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
 from fastapi import HTTPException
@@ -15,8 +16,20 @@ from ... import models as core
 from ...catalog_timing import catalog_span, current_catalog_timing
 from ...services.basic_matching import basic_match
 from ..common import payload_fingerprint, public_id, utcnow
-from . import admissions, artifacts, config, connectors, credits, models, role_aliases, schemas
+from . import (
+    admissions,
+    artifacts,
+    config,
+    connectors,
+    credits,
+    models,
+    role_aliases,
+    schemas,
+)
 from .search_preferences import POLICY_VERSION, evaluate
+
+if TYPE_CHECKING:
+    from ..dispatch.service import EmployerSearchContinuation
 
 LOCKED_APPLICATION_STATES = {"queued", "submitting", "confirmed", "unknown", "failed"}
 
@@ -152,6 +165,9 @@ def _search_input(payload: schemas.SearchCreate) -> dict:
 
 
 def create_search(db: Session, user_id: int, payload: schemas.SearchCreate):
+    if config.catalogue_search_enabled():
+        from . import catalogue_search
+        return catalogue_search.accept(db, user_id, payload)
     from ..entitlements import lock_entitlement_owner
     _require_enabled()
     history_mode = config.paid_history_mode()
@@ -346,6 +362,11 @@ def search_response(row):
     return {key: getattr(row, key) for key in (
         "id", "status", "desired_count", "delivered_count", "reserved_credits", "charged_credits", "refunded_credits", "created_at", "query", "items", "scope",
     )}
+
+
+def finish_catalogue_preparation(db, identity, token):
+    from . import catalogue_search
+    return catalogue_search.finish(db, identity, token)
 
 
 def list_searches(db, user_id, limit=30):
@@ -795,7 +816,7 @@ def reconcile_application(db: Session, identity: str, admin, payload: schemas.Re
     return application
 
 
-def execute_search(identity: str) -> str:
+def execute_search(identity: str) -> str | EmployerSearchContinuation:
     from .tasks import execute_search as execute
     return execute(identity)
 

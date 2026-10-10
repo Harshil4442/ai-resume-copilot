@@ -6,6 +6,7 @@ import logging
 import os
 from datetime import timedelta
 from types import SimpleNamespace
+from typing import TYPE_CHECKING
 
 from fastapi import HTTPException
 
@@ -14,14 +15,26 @@ from ...services.market.skill_extractor import extract_skills_from_text
 from ..common import public_id, utcnow
 from . import admissions, artifacts, config, connectors, credits, models, service
 
+if TYPE_CHECKING:
+    from ..dispatch.service import EmployerSearchContinuation
+
 log = logging.getLogger("hirewiz.artifact_cleanup")
 
 
-def execute_search(search_id: str) -> str:
-    # Search is one short atomic index transaction; no dispatch is necessary.
+def execute_search(search_id: str) -> str | EmployerSearchContinuation:
     with SessionLocal() as db:
-        search = db.query(models.EmployerSearch).filter_by(id=search_id).first()
-        return search.status if search else "missing"
+        state = db.query(models.EmployerSearch.status).filter_by(id=search_id).scalar()
+        if state is not None:
+            return state
+        if not config.catalogue_search_enabled():
+            from sqlalchemy import inspect
+            if not inspect(db.connection()).has_table("employer_search_preparations"):
+                return "missing"
+        preparation = db.query(models.EmployerSearchPreparation.id).filter_by(id=search_id).first()
+        if preparation:
+            from . import catalogue_search
+            return catalogue_search.execute_plan(db, search_id)
+        return "missing"
 
 
 def refresh_source(source_id: str) -> str:
@@ -81,6 +94,15 @@ def refresh_source(source_id: str) -> str:
         source.next_refresh_at = checked_at + timedelta(hours=6)
         source.scan_token, source.scan_started_at = None, None
         db.commit()
+        if config.catalogue_search_enabled():
+            from sqlalchemy.exc import DBAPIError
+
+            from . import catalogue_search
+            try:
+                catalogue_search.maintenance_step(db)
+            except DBAPIError:
+                db.rollback()
+                log.warning("Catalogue retention work deferred")
         return "completed"
 
 
@@ -232,7 +254,13 @@ def execute_application(application_id: str) -> str:
 
 def fail_dispatched_work(topic: str, identity: str) -> None:
     with SessionLocal() as db:
-        if topic == "employer.refresh":
+        if topic == "employer.search":
+            from sqlalchemy import inspect
+
+            from . import catalogue_search
+            if inspect(db.connection()).has_table("employer_search_preparations"):
+                catalogue_search.cancel(db, None, identity, reason="dispatch_attempts_exhausted")
+        elif topic == "employer.refresh":
             source = db.query(models.EmployerSource).filter_by(id=identity).with_for_update().first()
             if source:
                 source.status, source.last_error_code = "unavailable", "dispatch_attempts_exhausted"

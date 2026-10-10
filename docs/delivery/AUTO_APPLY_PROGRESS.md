@@ -1,5 +1,9 @@
 # Employer search and application delivery
 
+## Full catalogue source integration — 11 October 2026
+
+The [inactive Stage D integration](FULL_CATALOGUE_SEARCH_2026-10-11.md) now includes durable full-index traversal, canonical ranking, status/cancellation, native item snapshots and free paging. Actual configured backend lint/type checks and frontend lint/types/build pass. The original alias/autoflush, typing and deadline failures are retained. The new full CI, actual native financial concurrency/cost and production migration/activation remain open. Earlier native schema proof keeps its original model scope.
+
 Development and deployment authorized on 8 October 2026. The full requirements remain
 in [the acceptance register](../requirements/JOB_SEARCH_AND_APPLICATION.md). This file
 tracks implementation evidence and does not replace the wider worldwide coverage target.
@@ -14,7 +18,26 @@ Production pairing and portal-use permission remain open.
 
 ## Current checkpoint board — 11 October 2026
 
-Source `65dc276af1d3f704635c3f0ce664542f50a06922` has terminal
+Latest committed source `d5c51846e8ac8ff2224d4cca6a99c32b00aa5f53`, tree
+`805bacf6264b0285ad2a64cb93dc8868ba5592ce`, passes all five jobs in
+[CI run 38091538381](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38091538381).
+Backend reports 3,545 passes and 455 warnings; responsive browser checks report
+245 passes in 9.3 minutes. Zero skips are not independently established by this
+metadata collection. Artifact metadata binds both returned artifacts to this exact
+commit; their contents were not downloaded. This closes corrected committed-source
+CI, while private Stage D changes and production rollout remain outside its scope.
+See [terminal CI evidence](evidence/2026-10-11-d5c5184-ci-success.json).
+
+Private full-catalogue development now passes eight PostgreSQL 17.11 ARM64 schema
+controls and two actual native item-builder controls on an immutable source snapshot.
+The item controls verify paid/seen charge metadata, native body digests and preparation
+proof state, with zero Search/Delivery rows or financial reservation/commit. Submission
+capability is stubbed; these checks do not prove settlement or the full catalogue runtime.
+The original fixture errors and source-pin refusal are retained. The exact owned test
+database is removed and its absence is independently verified by ID and name. No provider
+credentials or production migration are used. See [component evidence](evidence/2026-10-11-catalogue-native-components.json).
+
+The preceding source `65dc276af1d3f704635c3f0ce664542f50a06922` has terminal
 [CI run 38089438723](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38089438723).
 Frontend, security/container, companion and cold-browser jobs pass. Backend lint,
 types, compilation and migrations pass; runtime tests report eight failures,
@@ -28,7 +51,7 @@ constraints, empty-history downgrade/upgrade, and populated-work refusal before 
 Rejected-downgrade tests compare the starting revision, and clean migration tests
 compare source metadata. The production schema0009 release allowance remains closed.
 [Migration correction evidence](evidence/2026-10-11-migration-compatibility-correction.json)
-retains the original failure. Fresh committed-source CI remains required; production
+retains the original failure. The latest committed-source CI above passes; production
 mode stays off and no migration or promotion is performed.
 
 The pushed fixture-correction source `9dd7689e9e8e05bae67a151ab39830668abf01ba`
@@ -52,7 +75,7 @@ and 10/6 shared hit blocks. These are component controls, not full coverage proo
 
 The exact owned PostgreSQL container is removed. Root separately verifies absence
 by ID and name without mutations. Source/schema and final packaging reviews pass.
-Stage C source is published; its corrected committed-source CI remains pending;
+Stage C source is published; its corrected committed-source CI passes on `d5c5184`;
 production migration, flag activation and promotion have not occurred. Native
 JSON/TOAST conversion during backfill, full-catalog indexed traversal beyond the
 unchanged 1,000-candidate cap, and global authentication/composed release proof
@@ -82,7 +105,9 @@ This does not close scanner, isolation, HTTP or release checks.
 - [x] Integrate the exact eight reviewed Stage C source paths.
 - [x] Publish Stage C source.
 - [x] Reproduce and correct SQLite migration compatibility locally.
-- [ ] Pass corrected committed-source CI.
+- [x] Pass corrected committed-source CI.
+- [x] Verify eight private catalogue schema controls on PostgreSQL.
+- [x] Verify two native item-builder controls and remove the owned test database.
 - [ ] Bound native legacy JSON/TOAST evaluation and implement full-catalog traversal.
 - [ ] Classify the archive refusal and complete scanner/private HTTP acceptance.
 - [ ] Complete global release checks, permitted promotion and production observation.

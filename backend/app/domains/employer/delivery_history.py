@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from typing import cast
 
 from sqlalchemy import and_, or_, text
+from sqlalchemy.orm import load_only
 
 from . import history_stream, models
 from .delivery_history_projector import (
@@ -320,6 +321,7 @@ def advance_owner(
     delivery_budget=MAX_DELIVERIES_PER_CHUNK,
     byte_budget=MAX_SOURCE_BYTES_PER_CHUNK,
     work_budget=MAX_WORK_PER_CHUNK,
+    statement_timeout_ms=None,
 ):
     """Commit a brief claim, parse without money locks, then stage proof writes.
 
@@ -330,12 +332,21 @@ def advance_owner(
     """
     from ..entitlements import lock_entitlement_owner
 
+    def phase_budget():
+        if statement_timeout_ms is not None:
+            if type(statement_timeout_ms) is not int or not 1 <= statement_timeout_ms <= 5000:
+                raise ValueError("Invalid history statement deadline")
+            if db.get_bind().dialect.name == "postgresql":
+                db.execute(text("SELECT set_config('statement_timeout', :budget, true)"), {"budget": str(statement_timeout_ms)})
+                db.execute(text("SET LOCAL lock_timeout = '100ms'"))
+
     if not 1 <= delivery_budget <= 64:
         raise ValueError("Invalid delivery chunk budget")
     if byte_budget < 32 or work_budget < history_stream.FIXED_ITEM_WORK + 16:
         raise ValueError("Invalid aggregate history chunk budget")
     if db.new or db.dirty or db.deleted:
         raise ValueError("History advancement requires a clean transaction")
+    phase_budget()
     lock_entitlement_owner(db, owner)
     progress = _progress(db, owner)
     if _readiness(db, owner, progress) == "ready":
@@ -408,6 +419,7 @@ def advance_owner(
     ]
     claimed = _position(progress)
     db.commit()  # No saved JSON is decoded while the owner/progress are locked.
+    phase_budget()
 
     used_bytes, used_work = 0, 0
     plans = []
@@ -442,6 +454,7 @@ def advance_owner(
             break
         plans.append((delivery, search.history_revision, stream.stream_generation))
     db.commit()  # Persist parser progress and release all parser/FK locks.
+    phase_budget()
 
     cls = models.EmployerSearch
     search_ids = sorted({delivery.search_id for delivery, _, _ in plans})
@@ -611,6 +624,104 @@ def write_completed(db, search, deliveries, selected, *, restore_ready=False):
             source_revision=search.history_revision,
             identity_proof=proof,
         )
+        db.add(history)
+        db.flush([history])
+        _registry(db, history)
+    progress.generation += bool(deliveries)
+    if restore_ready:
+        progress.state = "ready"
+
+
+def write_completed_native(db, *, search_id, snapshot_id, reservation_id, deliveries, restore_ready=False):
+    """Bounded server-only proof; caller retains owner/fences/settlement/commit.
+
+    Native immutable bodies were verified before this financial transaction.
+    This entry point reads only <=100 fixed-contract scalar proof records.
+    """
+    search = db.query(models.EmployerSearch).options(load_only(*(getattr(models.EmployerSearch, name) for name in (
+        "id", "user_id", "native_snapshot_id", "input_fingerprint", "desired_count", "delivered_count",
+        "charged_credits", "reserved_credits", "refunded_credits", "scope", "history_revision")))).filter_by(id=search_id).one()
+    snapshot = db.query(models.EmployerCatalogueSnapshot).filter_by(
+        id=snapshot_id, user_id=search.user_id, state="proven").one()
+    plan = db.query(models.EmployerSearchPreparation).options(load_only(
+        models.EmployerSearchPreparation.id, models.EmployerSearchPreparation.user_id,
+        models.EmployerSearchPreparation.reservation_id, models.EmployerSearchPreparation.input_fingerprint,
+        models.EmployerSearchPreparation.accepted_quote, models.EmployerSearchPreparation.history_generation)).filter_by(
+        id=snapshot.preparation_id, user_id=search.user_id).one()
+    reservation = db.query(models.ServiceCreditReservation).options(load_only(*(getattr(models.ServiceCreditReservation, name) for name in (
+        "id", "user_id", "source_id", "operation", "unit_price", "pricing_version", "reserved_amount", "state")))).filter_by(
+        id=reservation_id, user_id=search.user_id, source_id=search.id, operation="job_search").one()
+    quote = plan.accepted_quote
+    if (search.native_snapshot_id != snapshot.id or plan.id != search.id
+            or plan.reservation_id != reservation.id or search.input_fingerprint != plan.input_fingerprint
+            or quote["search_input_fingerprint"] != plan.input_fingerprint
+            or quote["unit_price"] != reservation.unit_price
+            or quote["pricing_version"] != reservation.pricing_version
+            or quote["requested_count"] != search.desired_count
+            or quote["maximum_credits"] != search.desired_count * reservation.unit_price
+            or search.scope["price_quote"] != quote
+            or snapshot.item_count != search.delivered_count or not 0 <= snapshot.item_count <= 100
+            or reservation.state != "reserved" or snapshot.history_generation != plan.history_generation):
+        raise ValueError("Native completed-search authority mismatch")
+    rows = db.query(models.EmployerCatalogueSnapshotItem).filter_by(
+        snapshot_id=snapshot.id, user_id=search.user_id).order_by(
+        models.EmployerCatalogueSnapshotItem.ordinal).limit(101).all()
+    if len(rows) != snapshot.item_count or any(
+        item.ordinal != ordinal or item.proof_state != "proven"
+        or len(item.item_digest or "") != 64 or item.unit_price != (0 if item.seen else reservation.unit_price)
+        for ordinal, item in enumerate(rows)
+    ):
+        raise ValueError("Native completed-search proof is incomplete")
+    by_posting = {item.posting_id: item for item in rows if item.unit_price > 0}
+    if (len(by_posting) != len(deliveries) or {d.posting_id for d in deliveries} != set(by_posting)
+            or search.charged_credits != len(deliveries) * reservation.unit_price
+            or search.reserved_credits != reservation.reserved_amount
+            or search.refunded_credits != reservation.reserved_amount - search.charged_credits):
+        raise ValueError("Native completed-search delivery/settlement mismatch")
+    progress = _progress(db, search.user_id)
+    for delivery in deliveries:
+        item = by_posting[delivery.posting_id]
+        posting = db.query(models.EmployerCataloguePostingRevision).options(load_only(
+            models.EmployerCataloguePostingRevision.posting_id, models.EmployerCataloguePostingRevision.valid_from,
+            models.EmployerCataloguePostingRevision.source_id, models.EmployerCataloguePostingRevision.requisition_id,
+            models.EmployerCataloguePostingRevision.external_id)).filter_by(posting_id=item.posting_id, valid_from=item.posting_revision).one_or_none()
+        source = db.query(models.EmployerCatalogueSourceRevision).options(load_only(
+            models.EmployerCatalogueSourceRevision.source_id, models.EmployerCatalogueSourceRevision.valid_from,
+            models.EmployerCatalogueSourceRevision.platform, models.EmployerCatalogueSourceRevision.region,
+            models.EmployerCatalogueSourceRevision.board_token, models.EmployerCatalogueSourceRevision.employer_key)).filter_by(source_id=item.source_id, valid_from=item.source_revision).one_or_none()
+        if (posting is None or source is None or posting.source_id != source.source_id
+                or delivery.user_id != search.user_id or delivery.search_id != search.id
+                or delivery.charged_credits != item.unit_price or delivery.opening_key != item.opening_key
+                or _time(delivery.created_at) < _time(snapshot.created_at)):
+            raise ValueError("Native paid-delivery lineage mismatch")
+        recipe = {"recipe_version": IDENTITY_RECIPE_VERSION, "source_id": source.source_id,
+            "platform": source.platform, "region": source.region, "tenant": source.board_token,
+            "verified_employer_key": source.employer_key, "requisition_id": posting.requisition_id,
+            "external_id": posting.external_id}
+        if item.identity_proof != recipe:
+            raise ValueError("Native identity recipe mismatch")
+        archive = HistoricalIdentityEvidence(ARCHIVE_AUTHORITY, True, True,
+            f"completed:{search.id}:{delivery.id}", IDENTITY_RECIPE_VERSION, search.user_id,
+            delivery.id, search.id, posting.posting_id, source.source_id, source.platform,
+            source.region, source.board_token, source.employer_key, posting.requisition_id,
+            posting.external_id, item.opening_key)
+        facts = {"posting": {"id": posting.posting_id, "source_id": source.source_id,
+            "external_id": posting.external_id, "platform": source.platform,
+            "opening_key": item.opening_key}, "charged_credits": item.unit_price}
+        saved = SavedSearchEvidence(SEARCH_AUTHORITY, search.user_id, search.id,
+            PREFERENCE_CONTRACT, f"completed:{search.id}", [facts])
+        result = project_paid_delivery(owner_id=search.user_id, delivery=_evidence(delivery),
+            search=saved, identity_archive=archive)
+        if not result.canonical_entry_authorized or result.opening_key != item.opening_key:
+            raise ValueError("Native paid history proof failed")
+        history = _new_history(delivery, search.user_id, provenance="new_search", state="proven",
+            opening_key=result.opening_key, saved_ordinal=item.ordinal,
+            snapshot_charged_credits=delivery.charged_credits, content_digest=item.item_digest,
+            source_revision=search.history_revision,
+            identity_proof=dict(recipe, preimage=result.preimage.__dict__,
+                native_snapshot_id=snapshot.id, native_item_digest=item.item_digest,
+                native_digest_recipe=("postgresql-jsonb-sha256-v1" if db.get_bind().dialect.name == "postgresql"
+                    else "sqlite-fixture-canonical-json-sha256-v1")))
         db.add(history)
         db.flush([history])
         _registry(db, history)
