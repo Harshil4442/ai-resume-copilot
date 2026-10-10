@@ -53,13 +53,26 @@ free read retry. Fixture prices are test values, not production pricing changes.
 The shared preparation response is the existing fixed fixture; the new scenario
 proves the selected request payload, not actual returned-package identity binding.
 
+Actual local PostgreSQL 17.11 acceptance verifies keyset ties, Unicode/native JSON
+behavior, cross-owner/stale cursors, snapshot changes and unchanged financial rows.
+The original 19-case run preserves one timestamp-spelling difference (`Z` versus
+`+00:00`, same instant); three focused checks pass. Root verifies 193 artifacts and
+owned database removal. This is a component test with an injected owner, not global
+authentication, PostgreSQL concurrency or the composed live browser/API journey.
+
+Committed source `4c287dc` passes four CI lanes and frontend 399 units/types/build;
+35/245 responsive cases fail from two stale GET mocks. The reviewed two-file repair
+is integrated, with a final 245/245 mocked responsive run at five widths and no
+retries/skips. Original failures remain retained. Its fresh source CI is pending.
+
 ## Remaining requirements
 
 Result paging bounds response size and rendered cards. It still loads, decodes and
 hashes the complete saved JSON array. The search's first-1,000 candidate cap,
 legacy-history work under the financial lock, durable projection/checkpoint work,
 global authentication, PostgreSQL concurrency, real composed backend acceptance,
-fresh committed-source CI and production deployment remain open.
+fresh committed-source CI and production deployment remain open. The local
+PostgreSQL component acceptance above closes only that narrower database check.
 
 This does not establish worldwide job coverage or greater-than-95-percent recall.
 Checkout, analysis dispatch and production application submission stay disabled
@@ -76,7 +89,9 @@ author reads. This integration uses only the reviewed ordinary path allowlist.
 - [x] Repair and independently replay the three original failure boundaries.
 - [x] Verify composed production build and responsive mocked-browser behavior.
 - [x] Independently clear and integrate the separate browser fixture.
-- [ ] Pass fresh committed-source CI and the actual backend journey.
+- [x] Verify the actual local PostgreSQL paging component.
+- [x] Integrate the two additional fixture corrections; final 245-case responsive run passes.
+- [ ] Pass fresh committed-source CI and the composed backend journey.
 - [ ] Close bounded candidate/history/database processing requirements.
 - [ ] Deploy and observe the final permitted production release.
 

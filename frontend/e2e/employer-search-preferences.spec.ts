@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { encode } from "next-auth/jwt";
 import type { EmployerSearch } from "../lib/employerJobs";
+import { searchSummary, type EmployerSavedResultPage, type EmployerSearchSummaryPage } from "../lib/employerJobs";
 
 // UI integration only: API responses are explicit synthetic fixtures. Actual
 // search/ledger/PG behaviour is independently exercised by backend tests.
@@ -11,6 +12,7 @@ test("preferences bind paid search retries, restore saved choices and remain usa
   await context.addCookies([{ name: "next-auth.session-token", value: token, domain: root.hostname, path: "/", httpOnly: true, sameSite: "Lax", secure: false }]);
   await context.addInitScript(() => { localStorage.setItem("hirewiz_cookie_consent", JSON.stringify({ version: 2, preference: "essential", savedAt: new Date().toISOString() })); });
   const requests: Record<string, unknown>[] = [], searches: EmployerSearch[] = [];
+  const savedReads: { path: string; method: string }[] = [];
   let interrupted = true;
   const unexpected: string[] = [];
   await page.route((url) => url.pathname.startsWith("/api/backend/") || url.pathname === "/api/account/profile", async (route) => {
@@ -22,6 +24,16 @@ test("preferences bind paid search retries, restore saved choices and remain usa
     else if (path === "/resume/list") value = { resumes: [{ id: 10, filename: "Fixture.pdf", source_available: true, source_format: "pdf" }] };
     else if (path === "/v1/employer-jobs/catalog") value = { enabled: true, auto_submit_enabled: false, search_credits_per_job: 2, apply_credits_per_job: 7, max_search_jobs: 20, balance: 100, sources: [] };
     else if (path === "/v1/employer-jobs/applications") value = { items: [] };
+    else if (path === "/v1/employer-jobs/search-summaries" && method === "GET") {
+      savedReads.push({ path, method });
+      value = { items: searches.map(searchSummary), next_cursor: null } satisfies EmployerSearchSummaryPage;
+    }
+    else if (method === "GET" && /^\/v1\/employer-jobs\/searches\/[^/]+\/results$/.test(path)) {
+      savedReads.push({ path, method });
+      const saved = searches.find((entry) => entry.id === path.split("/").at(-2));
+      if (!saved) { status = 409; value = { detail: "Saved fixture not found." }; }
+      else value = { search: searchSummary(saved), items: saved.items, total_items: saved.items.length, start_index: 0, next_cursor: null, snapshot_version: `saved-search-v1:${"a".repeat(64)}` } satisfies EmployerSavedResultPage;
+    }
     else if (path === "/v1/employer-jobs/searches" && method === "GET") value = { items: searches };
     else if (path === "/v1/employer-jobs/searches" && method === "POST") {
       const body = request.postDataJSON(); requests.push(body);
@@ -49,6 +61,8 @@ test("preferences bind paid search retries, restore saved choices and remain usa
   await page.getByRole("combobox", { name: "Do you need sponsorship?", exact: true }).selectOption("yes");
   await page.getByLabel("Countries where you have work authorization").fill("IN");
   await page.getByRole("combobox", { name: "Are you willing to relocate?", exact: true }).selectOption("no");
+  expect(requests).toHaveLength(0); // Initial saved-history reads do not start a paid search.
+  expect(savedReads.some((request) => request.path === "/v1/employer-jobs/search-summaries")).toBe(true);
   await page.getByRole("button", { name: "Find jobs", exact: true }).click();
   await expect(page.getByRole("alert").filter({ hasText: "interrupted" })).toContainText("interrupted");
   await page.getByRole("button", { name: "Find jobs", exact: true }).click();
@@ -67,6 +81,10 @@ test("preferences bind paid search retries, restore saved choices and remain usa
   const accessibility = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa"]).analyze();
   expect(accessibility.violations.filter((violation) => ["serious", "critical"].includes(violation.impact ?? ""))).toEqual([]);
   await page.screenshot({ path: testInfo.outputPath("preferences-results.png"), fullPage: true });
+  expect(requests).toHaveLength(2); // Opening saved history preserves the two explicit search attempts.
+  expect(savedReads.every((request) => request.method === "GET")).toBe(true);
+  expect(savedReads.some((request) => request.path === "/v1/employer-jobs/searches/search-preference-fixture/results")).toBe(true);
+  await expect(page.getByText("2 service credits charged · 4 returned", { exact: true })).toBeVisible();
   expect(unexpected).toEqual([]);
   expect(requests.every((request) => !("answers" in request))).toBe(true); // Search never creates a submission.
 });

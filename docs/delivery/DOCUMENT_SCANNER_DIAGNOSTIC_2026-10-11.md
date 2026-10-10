@@ -65,10 +65,48 @@ not establish the underlying cause. The SDK can materialize its response before 
 256 KiB serialized-size guard; this is not a wire-byte cap. The selected log route
 does not establish exhaustive lifecycle coverage or native sandbox absence.
 
-Repeated broader log queries are not the next action. The next private diagnostic
-proposal separates baseline absolute-command launch, writable overlay, the existing
-single-file archive import and exact Python entry. It remains unexecuted pending
-source/limit review and does not replace full scanner acceptance.
+## Native archive boundary identified
+
+The repaired v2 command ladder is independently clear: 60 focused cases, 54 adapted
+controls and six transport controls pass; the original v1 cleanup/startup defects
+remain preserved. Registration is guaranteed before the parent unmasks its alarm,
+not before the child can exec. The 15-second command allowance remains uncalibrated.
+Root verifies all 65 author and 31 final review artifacts, exact predecessor Job
+parity except its name/inline program, and seven fresh metadata commands confirming
+the existing keyless identity, no application grants and empty private-service IAM.
+
+One create and one execution request produce Job
+`hirewiz-document-argv-ladder-diagnostic`, UID
+`b47c389c-d836-4d7b-967e-15f0eefa99ef`, and execution
+`hirewiz-document-argv-ladder-diagnostic-xqsmz`, UID
+`11aba65d-92c3-4f09-bc31-ae93c8b4bb81`. The same handle is terminal
+`NonZeroExitCode`, with one failed task, zero successes/retries and source/spec joined
+to image1fd. It starts at `2026-10-10T20:41:23.778905Z` and completes at
+`2026-10-10T20:43:25.250125Z`; it is not restarted.
+
+| Fixed case | Result | Meaning |
+| --- | --- | --- |
+| Named absolute echo | Exact marker, exit0; delete0 | Basic sandbox command works |
+| Add writable overlay | Exact marker, exit0; delete0 | Writable mode works |
+| Add one-file tar import | Exit1, stdout0, stderr133; delete0 | Failure is reached when archive import is added |
+| Python entry/import check | Not run | The ladder stops at the first failed case |
+
+One bounded same-execution stdout request returns exactly one fixed JSON result,
+without pagination. The first local reader used the wrong generated SDK request
+wrapper and refused; that source/result remains preserved. The corrected reader
+uses the already reviewed `ListLogEntriesRequest` contract. Raw stderr, log messages,
+provider tokens and sandbox names are not retained. SDK response materialization
+still precedes its serialized-size guard. Root freezes the native receipt packet;
+[the sanitized boundary evidence](evidence/2026-10-11-document-argv-boundary.json)
+records its artifact hash and complete fixed results.
+
+This narrows the failing operation to archive import under this exact synthetic
+configuration. It does not identify its unique cause or prove document processing,
+Python entry, child isolation, private HTTP, provider absence or customer readiness.
+The next action is to investigate the supported archive-transfer contract rather
+than repeat broad log queries. The provider documents import/export and shows
+standard directory-bearing archives in its
+[code-execution guide](https://docs.cloud.google.com/run/docs/code-execution#persist-data).
 
 The [sanitized evidence](evidence/2026-10-11-document-scanner-diagnostic.json)
 retains source, execution and fixed-result hashes. All original failed probes remain
@@ -79,7 +117,8 @@ promotion follows this diagnostic.
 - [x] Reconcile its one execution to terminal state and read bounded fixed results.
 - [x] Read the exact execution's bounded system-log projection; retain its
   inconclusive one-entry result without restarting the execution.
-- [ ] Identify and repair the underlying SDK failure.
+- [x] Isolate the failing command boundary to archive import in a native synthetic ladder.
+- [ ] Identify and repair the underlying archive-import failure.
 - [ ] Prove the full real document corpus, isolation, deadlines and cleanup.
 - [ ] Prove positive private HTTP and integrated storage/browser acceptance.
 - [ ] Promote a matching tested release and enable customer uploads.

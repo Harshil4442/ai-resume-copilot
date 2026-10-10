@@ -38,7 +38,13 @@
     "typecheck": true,
     "edited_lint": true,
     "chromium_cases": 90,
-    "widths": [320, 390, 768, 1024, 1440],
+    "widths": [
+      320,
+      390,
+      768,
+      1024,
+      1440
+    ],
     "failures": 0,
     "skips": 0,
     "retries": 0,
@@ -65,5 +71,35 @@
     "customer_activation": false,
     "protected_integration_held": true,
     "earlier_author_broad_search_scope_incident_preserved": true
+  },
+  "source_commit": "4c287dc3843d6328f59bc247df4c223e0100df88",
+  "source_ci": {
+    "run_id": 38083618720,
+    "status": "completed",
+    "conclusion": "failure",
+    "passed_lanes": 4,
+    "failed_lane": "frontend",
+    "frontend_units_passed": 399,
+    "browser_passed": 210,
+    "browser_failed": 35,
+    "failure_scope": "two unchanged mocks omit the new paging GET endpoints",
+    "repair_status": "two-file proposal reviewed and integrated; final 245-case mocked responsive run passes; fresh committed-source CI pending",
+    "repair_evidence": "2026-10-11-frontend-ci-fixture-repair.json"
+  },
+  "actual_local_postgresql": {
+    "verdict": "PASS_SCOPED_WITH_TIMESTAMP_FORMAT_CAVEAT",
+    "version": "17.11",
+    "artifact_count": 193,
+    "artifact_manifest_sha256": "2c7113870a61c42f976051dbe7d94a937cfe9433a6f94c7169a764203adca0f6",
+    "report_sha256": "0729dd5052ceeb8add362cdc25a35efbb7847ccd35177a8695d50bef41f495c6",
+    "original_cases": 19,
+    "original_passed": 18,
+    "original_strict_timestamp_spelling_failures": 1,
+    "focused_diagnostics_passed": 3,
+    "same_instant_only_metadata_difference": "Z versus +00:00",
+    "items_order_quotes_charges_preserved": true,
+    "native_full_financial_application_rows_unchanged": true,
+    "owned_database_removed_and_absent": true,
+    "global_auth_or_composed_browser_acceptance": false
   }
 }

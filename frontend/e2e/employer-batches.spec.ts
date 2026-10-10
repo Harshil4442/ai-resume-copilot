@@ -5,6 +5,7 @@ import { encode } from "next-auth/jwt";
 
 import { batchApplication, batchCatalog, quotedBatch } from "../lib/fixtures/employerBatch";
 import type { EmployerApplicationBatch } from "../lib/employerJobs";
+import type { EmployerSearchSummaryPage } from "../lib/employerJobs";
 
 const base = "/v1/employer-jobs";
 const errors = new WeakMap<Page, string[]>();
@@ -36,6 +37,7 @@ function fixture() {
       else if (path === "/v1/features") value = { features: { career_workspace: { enabled: true } } };
       else if (path === "/resume/list") value = { resumes: [] };
       else if (path === `${base}/catalog`) value = catalog;
+      else if (path === `${base}/search-summaries` && method === "GET") value = { items: [], next_cursor: null } satisfies EmployerSearchSummaryPage;
       else if (path === `${base}/searches`) value = { items: [] };
       else if (path === `${base}/applications`) value = { items: owner === "a" ? applications : [] };
       else if (path === `${base}/application-batches` && method === "POST") {
@@ -60,6 +62,11 @@ function fixture() {
     });
   }
   return { applications, catalog, state, requests, unexpected, install, get batch() { return batch; }, set batch(value: EmployerApplicationBatch | null) { batch = value; }, switchOwner() { owner = "b"; } };
+}
+function assertFreeSavedSearchReads(requests: { path: string; method: string; body: Record<string, unknown> }[]) {
+  const reads = requests.filter((request) => request.path === `${base}/search-summaries`);
+  expect(reads.length).toBeGreaterThan(0);
+  expect(reads.every((request) => request.method === "GET" && Object.keys(request.body).length === 0)).toBe(true);
 }
 async function selectBatch(page: Page) {
   await page.goto("/employer-jobs");
@@ -152,7 +159,7 @@ test("exact jobs, files, actions, fixed prices and budget require review before 
   expect(f.requests.filter((request) => request.method === "GET" && request.path === `${base}/application-batches/batch_local_fixture`).length).toBe(terminalReads);
   await screenshots(page, info.project.name, "status");
   expect(f.requests.filter((request) => request.path.endsWith("/execute"))).toHaveLength(1); expect(f.requests.filter((request) => request.path.endsWith("/approve"))).toHaveLength(1);
-  const quoted = f.requests.find((request) => request.path === `${base}/application-batches`)!; expect(quoted.body.max_total_credits).toBe(20); expect(quoted.body.items).toEqual(f.applications.map((app) => ({ application_id: app.id, package_digest: app.package_digest, allowed_actions: ["fill", "upload", "submit"] }))); expect(f.unexpected).toEqual([]);
+  const quoted = f.requests.find((request) => request.path === `${base}/application-batches`)!; expect(quoted.body.max_total_credits).toBe(20); expect(quoted.body.items).toEqual(f.applications.map((app) => ({ application_id: app.id, package_digest: app.package_digest, allowed_actions: ["fill", "upload", "submit"] }))); assertFreeSavedSearchReads(f.requests); expect(f.unexpected).toEqual([]);
 });
 
 test("interrupted quote retries reuse one immutable intent without approving or queueing", async ({ page, context, baseURL }) => {
@@ -160,13 +167,13 @@ test("interrupted quote retries reuse one immutable intent without approving or 
   await dialog.getByRole("button", { name: "Create exact batch quote" }).click(); await expect(dialog.getByRole("alert").filter({ hasText: "Quote response interrupted" })).toBeVisible();
   await dialog.getByRole("button", { name: "Create exact batch quote" }).click(); await expect(dialog.getByRole("heading", { name: /2 exact jobs/ })).toBeVisible();
   const intents = f.requests.filter((request) => request.path === `${base}/application-batches`);
-  expect(intents).toHaveLength(2); expect(intents[0].body).toEqual(intents[1].body); expect(f.requests.some((request) => /\/(approve|execute)$/.test(request.path))).toBe(false); expect(f.unexpected).toEqual([]); await layout(page);
+  expect(intents).toHaveLength(2); expect(intents[0].body).toEqual(intents[1].body); expect(f.requests.some((request) => /\/(approve|execute)$/.test(request.path))).toBe(false); assertFreeSavedSearchReads(f.requests); expect(f.unexpected).toEqual([]); await layout(page);
 });
 
 test("changed packages cannot reuse an earlier exact batch review", async ({ page, context, baseURL }) => {
   const f = fixture(); await f.install(context, baseURL!); await selectBatch(page); const dialog = page.getByRole("dialog"); await dialog.getByRole("button", { name: "Create exact batch quote" }).click(); await reviewEveryJob(page);
   await expect(dialog.getByRole("button", { name: "Approve these 2 exact applications" })).toBeEnabled(); f.applications[1].package_digest = "f".repeat(64); f.applications[1].artifact!.filename = "Changed-not-approved.docx";
-  await dialog.getByRole("button", { name: "Refresh batch status" }).click(); await expect(dialog.getByRole("alert").filter({ hasText: "An application no longer matches" })).toBeVisible(); await expect(dialog.getByRole("button", { name: "Approve these 2 exact applications" })).toBeDisabled(); await expect(dialog.getByText("Changed-not-approved.docx", { exact: true })).toHaveCount(0); expect(f.requests.some((request) => /\/(approve|execute)$/.test(request.path))).toBe(false); expect(f.unexpected).toEqual([]); await layout(page);
+  await dialog.getByRole("button", { name: "Refresh batch status" }).click(); await expect(dialog.getByRole("alert").filter({ hasText: "An application no longer matches" })).toBeVisible(); await expect(dialog.getByRole("button", { name: "Approve these 2 exact applications" })).toBeDisabled(); await expect(dialog.getByText("Changed-not-approved.docx", { exact: true })).toHaveCount(0); expect(f.requests.some((request) => /\/(approve|execute)$/.test(request.path))).toBe(false); assertFreeSavedSearchReads(f.requests); expect(f.unexpected).toEqual([]); await layout(page);
 });
 
 test("expired bookmarked batches cannot be approved or queued", async ({ page, context, baseURL }) => {
@@ -176,17 +183,17 @@ test("expired bookmarked batches cannot be approved or queued", async ({ page, c
 
 test("manual portals remain individual handoffs and canonical duplicates cannot be quoted", async ({ page, context, baseURL }) => {
   const f = fixture(); f.applications.forEach((app) => { app.application_mode = "manual"; }); await f.install(context, baseURL!); await page.goto("/employer-jobs"); await expect(page.getByRole("button", { name: "Review selected batch (0)" })).toBeDisabled(); await expect(page.getByRole("checkbox", { name: /^Select / })).toHaveCount(0); await expect(page.getByText("Individual manual handoff. This employer is not included in API batches.", { exact: true })).toHaveCount(2);
-  f.applications.forEach((app) => { app.application_mode = "api"; }); f.applications[1].opening_key = f.applications[0].opening_key; f.applications[1].admission_snapshot!.opening_key = f.applications[0].opening_key!; await selectBatch(page); const dialog = page.getByRole("dialog"); await expect(dialog.getByRole("alert").filter({ hasText: "one representation of each employer opening" })).toBeVisible(); await expect(dialog.getByRole("button", { name: "Create exact batch quote" })).toBeDisabled(); expect(f.requests.every((request) => request.method === "GET")).toBe(true); expect(f.unexpected).toEqual([]); await layout(page);
+  f.applications.forEach((app) => { app.application_mode = "api"; }); f.applications[1].opening_key = f.applications[0].opening_key; f.applications[1].admission_snapshot!.opening_key = f.applications[0].opening_key!; await selectBatch(page); const dialog = page.getByRole("dialog"); await expect(dialog.getByRole("alert").filter({ hasText: "one representation of each employer opening" })).toBeVisible(); await expect(dialog.getByRole("button", { name: "Create exact batch quote" })).toBeDisabled(); expect(f.requests.every((request) => request.method === "GET")).toBe(true); assertFreeSavedSearchReads(f.requests); expect(f.unexpected).toEqual([]); await layout(page);
 });
 
 test("account switching clears the batch selection, exact-file review and cached quote", async ({ page, context, baseURL }) => {
   const f = fixture(); await f.install(context, baseURL!); await selectBatch(page); const dialog = page.getByRole("dialog"); await dialog.getByRole("button", { name: "Create exact batch quote" }).click(); await reviewEveryJob(page); await expect(dialog.getByRole("button", { name: "Approve these 2 exact applications" })).toBeEnabled();
   f.switchOwner(); await page.evaluate(() => window.dispatchEvent(new StorageEvent("storage", { key: "nextauth.message", newValue: JSON.stringify({ event: "session", data: { trigger: "signIn" } }) })));
-  await expect(page.getByRole("dialog")).toHaveCount(0); await expect(page.getByRole("button", { name: "Review selected batch (0)" })).toBeDisabled(); await expect(page.getByRole("button", { name: /Backend Engineer Example Studio/ })).toHaveCount(0); expect(f.requests.filter((request) => request.owner === "b").every((request) => request.method === "GET" && !request.path.includes("application-batches") && !request.path.includes("/applications/"))).toBe(true); expect(f.unexpected).toEqual([]); await layout(page);
+  await expect(page.getByRole("dialog")).toHaveCount(0); await expect(page.getByRole("button", { name: "Review selected batch (0)" })).toBeDisabled(); await expect(page.getByRole("button", { name: /Backend Engineer Example Studio/ })).toHaveCount(0); expect(f.requests.filter((request) => request.owner === "b").every((request) => request.method === "GET" && !request.path.includes("application-batches") && !request.path.includes("/applications/"))).toBe(true); assertFreeSavedSearchReads(f.requests); expect(f.unexpected).toEqual([]); await layout(page);
 });
 
 test("withdrawing the source API route disables an already reviewed batch", async ({ page, context, baseURL }) => {
   const f = fixture(); await f.install(context, baseURL!); await selectBatch(page); const dialog = page.getByRole("dialog"); await dialog.getByRole("button", { name: "Create exact batch quote" }).click(); await reviewEveryJob(page);
   await expect(dialog.getByRole("button", { name: "Approve these 2 exact applications" })).toBeEnabled(); f.catalog.sources[0].application_mode = "manual";
-  await dialog.getByRole("button", { name: "Close batch review" }).click(); await page.goto("/employer-jobs/batches/batch_local_fixture"); await expect(dialog.getByRole("alert").filter({ hasText: "no longer offers a current permissioned API route" })).toBeVisible(); await expect(dialog.getByRole("button", { name: "Approve these 2 exact applications" })).toBeDisabled(); expect(f.requests.some((request) => /\/(approve|execute)$/.test(request.path))).toBe(false); expect(f.unexpected).toEqual([]); await layout(page);
+  await dialog.getByRole("button", { name: "Close batch review" }).click(); await page.goto("/employer-jobs/batches/batch_local_fixture"); await expect(dialog.getByRole("alert").filter({ hasText: "no longer offers a current permissioned API route" })).toBeVisible(); await expect(dialog.getByRole("button", { name: "Approve these 2 exact applications" })).toBeDisabled(); expect(f.requests.some((request) => /\/(approve|execute)$/.test(request.path))).toBe(false); assertFreeSavedSearchReads(f.requests); expect(f.unexpected).toEqual([]); await layout(page);
 });

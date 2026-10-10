@@ -4,29 +4,48 @@ Review date: 11 October 2026 (Asia/Kolkata). This register distinguishes the pro
 
 ## Latest source checkpoint and remaining launch work
 
-The later [separate scanner diagnostic](DOCUMENT_SCANNER_DIAGNOSTIC_2026-10-11.md)
-distinguishes the failing `do` command (exit 1, empty stdout, 133 stderr bytes) from
-the separate successful `delete` command. One bounded same-execution read returns
-ten fixed events without truncation; no execution is restarted. This does not prove
-child execution, a unique underlying cause, sandbox absence or scanner acceptance.
-The same terminal diagnostic now has one reviewed system-log read: one unclassified
-entry, no pagination and an explicitly inconclusive result. No new Job, execution,
-raw message retention, unique cause or scanner acceptance follows. The next finite
-command/write/import/Python proposal remains private and unexecuted. Its independent
-review reproduces two required cleanup/startup-deadline defects; private repairs are
-underway before any native execution can be considered.
+The current pushed source `4c287dc3843d6328f59bc247df4c223e0100df88` has a terminal
+[five-lane CI run](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38083618720):
+backend, security/container, companion and cold-browser jobs pass. Frontend types,
+lint, build and 399 unit tests pass; responsive checks retain 35 failures and 210
+passes caused by two unchanged API fixtures missing the new free paging GETs.
+The exact two-file correction is now reviewed and integrated. One final run passes
+245/245 responsive cases at five widths with zero retries or skips, preserving all
+original tests, assertions, legacy responses and accepted quotes. APIs are mocked.
+Root verifies 55 retained artifacts and exact pre/post source bytes; the normal
+production build is unchanged. Fresh committed-source CI and deployment remain open.
+See [the fixture evidence](evidence/2026-10-11-frontend-ci-fixture-repair.json).
 
-Saved-search paging is now integrated locally after v2 clearance: independent review retains three required
-API validation/cache and frontend metadata-render defects in the original freeze.
-The repaired v2 freeze passes 402 frontend executions and 109 backend cases, with
-types/lint/contracts passing. Independent post-repair review clears the original
-counterexamples, with 29 necessary backend controls and 37 focused frontend executions.
-Root's composed production build and 90 browser cases across five widths pass using
-mocked APIs. The separate one-file browser fixture is independently clear and integrated;
-all 16 original scenarios/assertions remain intact. Fresh committed
-CI, actual backend acceptance and deployment remain pending. See
-[the paging checkpoint](SAVED_SEARCH_PAGING_2026-10-11.md). This read-only paging work does not
-close legacy-history decoding or the 1,000-candidate cap.
+The separately reviewed command/write/import/Python diagnostic was executed once
+under the same keyless GCP identity and immutable scanner image. Named echo and
+writable echo pass with exact markers; importing the synthetic input archive fails
+with exit 1, empty stdout and 133 unclassified stderr bytes. Python is not reached.
+The same execution is terminal; it is not restarted. Individual delete commands
+return 0, but native sandbox absence, the underlying archive cause, document-corpus,
+child isolation and private HTTP acceptance remain unproved. The earlier diagnostic,
+system-log ambiguity and local reader-wrapper refusal are retained. See
+[the native archive-boundary evidence](evidence/2026-10-11-document-argv-boundary.json)
+and [the scanner checkpoint](DOCUMENT_SCANNER_DIAGNOSTIC_2026-10-11.md).
+
+Saved-search paging has also passed scoped acceptance against an actual, owned
+local PostgreSQL 17.11 database. Items, ordering, accepted quotes and charges remain
+unchanged; native financial/application rows are identical before and after reads.
+The original 19-case run retains one strict timestamp-spelling failure (`Z` versus
+`+00:00`, the same instant); three focused checks establish the metadata-only
+projection difference. Root verifies 193 artifacts. The owned database is removed.
+This closes the local database component check, not global authentication,
+PostgreSQL concurrency or the composed browser/API/database journey. Durable
+indexed history integration is still private work; the 1,000-candidate cap and
+worldwide coverage target remain open.
+
+- [x] Integrate free saved-search paging and preserve original quotes.
+- [x] Verify the local PostgreSQL paging component.
+- [x] Integrate the two stale-fixture corrections; final mocked responsive suite passes.
+- [x] Identify the native scanner failure boundary as archive import.
+- [ ] Pass fresh committed-source CI for the fixture correction.
+- [ ] Fix native archive import and complete scanner/private HTTP acceptance.
+- [ ] Complete durable history integration and bounded full-catalog search.
+- [ ] Complete permitted deployment and observe the production release.
 
 Pushed guidance source `ca5ea7b` retains a terminal frontend CI failure: four old
 banner scenarios at five widths omit finite guidance and expect earlier copy, giving
