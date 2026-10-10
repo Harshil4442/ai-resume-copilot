@@ -92,3 +92,11 @@ def employer_limits(source) -> dict:
         "rolling_days": positive_int("EMPLOYER_PER_EMPLOYER_ROLLING_DAYS", 30, 365),
         "evidence_url": None, "evidence_note": "Conservative service safety limits; no employer submission permission is implied.",
     }
+
+
+def paid_history_mode() -> str:
+    """Explicit ordinary rollout: off, dual-write shadow, or indexed admission."""
+    mode = (os.getenv("EMPLOYER_PAID_HISTORY_MODE") or "off").strip().lower()
+    if mode not in {"off", "shadow", "indexed"}:
+        raise ValueError("Invalid employer paid history rollout mode")
+    return mode

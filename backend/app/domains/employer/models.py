@@ -6,15 +6,19 @@ Premium access never authorize a free employer-service operation.
 from sqlalchemy import (
     JSON,
     Boolean,
+    BigInteger,
+    CheckConstraint,
     Column,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     LargeBinary,
     String,
     Text,
     UniqueConstraint,
+    false,
 )
 from sqlalchemy.orm import deferred
 
@@ -133,6 +137,7 @@ class EmployerSearch(Base):
     __tablename__ = "employer_searches"
     __table_args__ = (
         UniqueConstraint("user_id", "idempotency_key", name="uq_employer_search_user_key"),
+        UniqueConstraint("id", "user_id", name="uq_employer_search_history_owner"),
         Index("ix_employer_search_user_created", "user_id", "created_at"),
     )
     id = Column(String(64), primary_key=True)
@@ -149,6 +154,7 @@ class EmployerSearch(Base):
     refunded_credits = Column(Integer, nullable=False, default=0)
     items = Column(JSON, nullable=False, default=list)
     scope = Column(JSON, nullable=False, default=dict)
+    history_revision = Column(BigInteger, nullable=False, default=1, server_default="1")
     created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
 
 
@@ -157,6 +163,7 @@ class EmployerJobDelivery(Base):
     __table_args__ = (
         UniqueConstraint("user_id", "posting_id", name="uq_employer_delivery_user_posting"),
         UniqueConstraint("user_id", "opening_key", name="uq_employer_delivery_user_opening"),
+        UniqueConstraint("id", "user_id", "search_id", "posting_id", "charged_credits", "created_at", name="uq_employer_delivery_history_identity"),
     )
     id = Column(String(64), primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
@@ -320,3 +327,164 @@ class EmployerArtifactUpload(Base):
     gcs_generation = Column(String(80), nullable=True)
     lease_until = Column(DateTime(timezone=True), nullable=False, index=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+
+
+class EmployerPaidDeliveryHistory(Base):
+    __tablename__ = "employer_paid_delivery_history"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["delivery_id", "user_id", "search_id", "posting_id", "original_charged_credits", "delivery_created_at"],
+            ["employer_job_deliveries.id", "employer_job_deliveries.user_id", "employer_job_deliveries.search_id", "employer_job_deliveries.posting_id", "employer_job_deliveries.charged_credits", "employer_job_deliveries.created_at"],
+            name="fk_paid_history_delivery_identity",
+        ),
+        ForeignKeyConstraint(["search_id", "search_owner_id"], ["employer_searches.id", "employer_searches.user_id"], name="fk_paid_history_search_owner"),
+        UniqueConstraint("user_id", "delivery_id", "opening_key", "state", name="uq_paid_history_registry_proof"),
+        CheckConstraint("state IN ('pending','proven','unresolved')", name="ck_paid_history_state"),
+        CheckConstraint("saved_ordinal IS NULL OR saved_ordinal >= 0", name="ck_paid_history_ordinal"),
+        CheckConstraint("source_revision IS NULL OR source_revision >= 1", name="ck_paid_history_source_revision"),
+        CheckConstraint("content_digest IS NULL OR length(content_digest) = 64", name="ck_paid_history_digest"),
+        CheckConstraint("provenance IN ('legacy_backfill','new_search')", name="ck_paid_history_provenance"),
+        CheckConstraint("state != 'proven' OR (search_owner_id = user_id AND original_charged_credits > 0 AND snapshot_charged_credits IS NOT NULL AND snapshot_charged_credits = original_charged_credits AND opening_key IS NOT NULL AND length(opening_key) = 64 AND saved_ordinal IS NOT NULL AND content_digest IS NOT NULL AND source_revision IS NOT NULL AND static_reason IS NULL)", name="ck_paid_history_proven"),
+        CheckConstraint("state != 'unresolved' OR static_reason IS NOT NULL", name="ck_paid_history_unresolved"),
+        CheckConstraint("identity_proof IS NULL OR length(CAST(identity_proof AS TEXT)) <= 16384", name="ck_paid_history_identity_size"),
+        CheckConstraint("state != 'proven' OR provenance != 'new_search' OR (identity_proof IS NOT NULL AND CAST(identity_proof AS TEXT) != 'null')", name="ck_paid_history_new_identity"),
+        CheckConstraint("(review_required = false AND review_reason IS NULL) OR (review_required = true AND review_reason IS NOT NULL)", name="ck_paid_history_review_reason"),
+        Index("ix_paid_history_owner_time", "user_id", "delivery_created_at", "delivery_id"),
+        Index("ix_paid_history_owner_key_time", "user_id", "opening_key", "state", "delivery_created_at", "delivery_id"),
+        Index("ix_paid_history_search_state", "search_id", "state", "delivery_id"),
+    )
+    delivery_id = Column(String(64), primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    search_id = Column(String(64), nullable=False)
+    search_owner_id = Column(Integer, nullable=False)
+    posting_id = Column(String(64), ForeignKey("employer_postings.id"), nullable=False)
+    original_charged_credits = Column(Integer, nullable=False)
+    delivery_created_at = Column(DateTime(timezone=True), nullable=False)
+    state = Column(String(24), nullable=False, default="pending", server_default="pending")
+    opening_key = Column(String(64), nullable=True)
+    saved_ordinal = Column(BigInteger, nullable=True)
+    snapshot_charged_credits = Column(Integer, nullable=True)
+    content_digest = Column(String(64), nullable=True)
+    source_revision = Column(BigInteger, nullable=True)
+    static_reason = Column(String(64), nullable=True)
+    provenance = Column(String(24), nullable=False)
+    identity_proof = Column(JSON, nullable=True)
+    review_required = Column(Boolean, nullable=False, default=False, server_default=false())
+    review_reason = Column(String(64), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
+
+
+class EmployerPaidOpeningRegistry(Base):
+    __tablename__ = "employer_paid_opening_registry"
+    __table_args__ = (
+        ForeignKeyConstraint(["user_id", "canonical_delivery_id", "opening_key", "history_state"], ["employer_paid_delivery_history.user_id", "employer_paid_delivery_history.delivery_id", "employer_paid_delivery_history.opening_key", "employer_paid_delivery_history.state"], name="fk_paid_registry_proven_history"),
+        CheckConstraint("history_state = 'proven'", name="ck_paid_registry_proven"),
+        CheckConstraint("length(opening_key) = 64", name="ck_paid_registry_opening"),
+    )
+    user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
+    opening_key = Column(String(64), primary_key=True)
+    canonical_delivery_id = Column(String(64), nullable=False)
+    history_state = Column(String(24), nullable=False, default="proven", server_default="proven")
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+
+
+class EmployerPaidHistoryProgress(Base):
+    __tablename__ = "employer_paid_history_progress"
+    __table_args__ = (
+        CheckConstraint("state IN ('pending','backfilling','ready','unresolved')", name="ck_paid_progress_state"),
+        CheckConstraint("generation >= 1", name="ck_paid_progress_generation"),
+        CheckConstraint("examined_count >= 0 AND proven_count >= 0 AND unresolved_count >= 0 AND proven_count + unresolved_count <= examined_count", name="ck_paid_progress_counts"),
+        CheckConstraint("(checkpoint_created_at IS NULL) = (checkpoint_delivery_id IS NULL)", name="ck_paid_progress_checkpoint"),
+        CheckConstraint("(highwater_created_at IS NULL) = (highwater_delivery_id IS NULL)", name="ck_paid_progress_highwater"),
+        CheckConstraint("state != 'ready' OR unresolved_count = 0", name="ck_paid_progress_ready"),
+    )
+    user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
+    generation = Column(BigInteger, nullable=False, default=1, server_default="1")
+    state = Column(String(24), nullable=False, default="pending", server_default="pending")
+    checkpoint_created_at = Column(DateTime(timezone=True), nullable=True)
+    checkpoint_delivery_id = Column(String(64), nullable=True)
+    highwater_created_at = Column(DateTime(timezone=True), nullable=True)
+    highwater_delivery_id = Column(String(64), nullable=True)
+    examined_count = Column(BigInteger, nullable=False, default=0, server_default="0")
+    proven_count = Column(BigInteger, nullable=False, default=0, server_default="0")
+    unresolved_count = Column(BigInteger, nullable=False, default=0, server_default="0")
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
+
+
+class EmployerSearchHistoryProgress(Base):
+    __tablename__ = "employer_search_history_progress"
+    __table_args__ = (
+        ForeignKeyConstraint(["search_id", "user_id"], ["employer_searches.id", "employer_searches.user_id"], name="fk_search_history_progress_owner"),
+        CheckConstraint("state IN ('pending','scanning','reducing','complete','unresolved')", name="ck_search_history_progress_state"),
+        CheckConstraint("generation >= 1 AND stream_generation >= 1 AND source_revision >= 1", name="ck_search_history_progress_generation"),
+        CheckConstraint("source_size_bytes >= 0 AND byte_offset >= 0 AND byte_offset <= source_size_bytes AND next_ordinal >= 0 AND unresolved_count >= 0", name="ck_search_history_progress_work"),
+        CheckConstraint("source_sha256 IS NULL OR length(source_sha256) = 64", name="ck_search_history_progress_digest"),
+        CheckConstraint("length(CAST(parser_checkpoint AS TEXT)) <= 8192", name="ck_search_history_progress_parser_size"),
+        Index("ix_search_history_progress_owner_state", "user_id", "state", "search_id"),
+    )
+    search_id = Column(String(64), primary_key=True)
+    user_id = Column(Integer, nullable=False)
+    generation = Column(BigInteger, nullable=False, default=1, server_default="1")
+    stream_generation = Column(BigInteger, nullable=False, default=1, server_default="1")
+    source_revision = Column(BigInteger, nullable=False, default=1, server_default="1")
+    state = Column(String(24), nullable=False, default="pending", server_default="pending")
+    source_size_bytes = Column(BigInteger, nullable=False, default=0, server_default="0")
+    byte_offset = Column(BigInteger, nullable=False, default=0, server_default="0")
+    next_ordinal = Column(BigInteger, nullable=False, default=0, server_default="0")
+    parser_checkpoint = Column(JSON, nullable=False, default=dict, server_default="{}")
+    source_sha256 = Column(String(64), nullable=True)
+    unresolved_count = Column(BigInteger, nullable=False, default=0, server_default="0")
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
+
+
+class EmployerSearchHistorySeen(Base):
+    __tablename__ = "employer_search_history_seen"
+    __table_args__ = (
+        CheckConstraint("generation >= 1 AND first_ordinal >= 0 AND occurrence_count >= 1", name="ck_search_history_seen_counts"),
+        CheckConstraint("content_digest IS NULL OR length(content_digest) = 64", name="ck_search_history_seen_digest"),
+        CheckConstraint("length(CAST(facts AS TEXT)) <= 4096", name="ck_search_history_seen_facts_size"),
+    )
+    search_id = Column(String(64), ForeignKey("employer_search_history_progress.search_id"), primary_key=True)
+    generation = Column(BigInteger, primary_key=True)
+    posting_id = Column(String(64), primary_key=True)
+    first_ordinal = Column(BigInteger, nullable=False)
+    occurrence_count = Column(BigInteger, nullable=False, default=1, server_default="1")
+    content_digest = Column(String(64), nullable=True)
+    opening_key = Column(String(64), nullable=True)
+    facts = Column(JSON, nullable=False, default=dict, server_default="{}")
+    static_reason = Column(String(64), nullable=True)
+    conflicting = Column(Boolean, nullable=False, default=False, server_default=false())
+
+
+class EmployerSearchHistoryNode(Base):
+    __tablename__ = "employer_search_history_nodes"
+    __table_args__ = (
+        ForeignKeyConstraint(["search_id", "generation", "parent_node_id"], ["employer_search_history_nodes.search_id", "employer_search_history_nodes.generation", "employer_search_history_nodes.node_id"], name="fk_search_history_node_parent"),
+        CheckConstraint("generation >= 1 AND node_id >= 0 AND child_reduce_cursor >= 0 AND child_count >= 0 AND (member_index IS NULL OR member_index >= 0)", name="ck_search_history_node_counts"),
+        CheckConstraint("parent_node_id IS NULL OR (parent_node_id >= 0 AND parent_node_id < node_id)", name="ck_search_history_node_parent"),
+        CheckConstraint("kind IN ('object','array','string','number','boolean','null')", name="ck_search_history_node_kind"),
+        CheckConstraint("content_digest IS NULL OR length(content_digest) = 64", name="ck_search_history_node_digest"),
+        CheckConstraint("member_key_hash IS NULL OR length(member_key_hash) = 64", name="ck_search_history_node_key_digest"),
+        CheckConstraint("small_value IS NULL OR length(CAST(small_value AS TEXT)) <= 4096", name="ck_search_history_node_value_size"),
+        CheckConstraint("hash_checkpoint IS NULL OR length(CAST(hash_checkpoint AS TEXT)) <= 4096", name="ck_search_history_node_hash_size"),
+        Index("ix_search_history_nodes_parent", "search_id", "generation", "parent_node_id", "node_id"),
+        Index("ix_search_history_nodes_array", "search_id", "generation", "parent_node_id", "member_index"),
+        Index("ix_search_history_nodes_key", "search_id", "generation", "parent_node_id", "member_key_hash"),
+    )
+    search_id = Column(String(64), ForeignKey("employer_search_history_progress.search_id"), primary_key=True)
+    generation = Column(BigInteger, primary_key=True)
+    node_id = Column(BigInteger, primary_key=True)
+    parent_node_id = Column(BigInteger, nullable=True)
+    member_key_hash = Column(String(64), nullable=True)
+    member_key = Column(String(64), nullable=True)
+    member_index = Column(BigInteger, nullable=True)
+    kind = Column(String(12), nullable=False)
+    parser_expect = Column(String(24), nullable=True)
+    content_digest = Column(String(64), nullable=True)
+    small_value = Column(JSON, nullable=True)
+    hash_checkpoint = Column(JSON, nullable=True)
+    child_reduce_cursor = Column(BigInteger, nullable=False, default=0, server_default="0")
+    child_count = Column(BigInteger, nullable=False, default=0, server_default="0")

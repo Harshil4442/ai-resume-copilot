@@ -1,0 +1,219 @@
+{
+  "version": 1,
+  "date": "2026-10-11",
+  "scope": "reviewed private inactive Stage C paid-search history runtime/schema component",
+  "status": {
+    "component_review": "pass",
+    "integration": "complete_in_managed_worktree",
+    "new_source_ci": "pending",
+    "production_migration": "not_performed",
+    "mode_default": "off",
+    "flag_activation": "not_performed",
+    "promotion": "pending",
+    "publication": "pending"
+  },
+  "source": {
+    "backend_base": "4c287dc3843d6328f59bc247df4c223e0100df88",
+    "preceding_managed_source": "9dd7689e9e8e05bae67a151ab39830668abf01ba",
+    "shipping_count": 8,
+    "shipping_pins": [
+      {
+        "path": "backend/app/domains/employer/config.py",
+        "sha256": "6cfc0d07207a1ba8d11a3c5ed1f2e40b91bb1f5c11ade15e7c540e3e2ac30635",
+        "preimage_sha256": "dfc406334a026152840b6fa0d6360dc70f08d4d38f7182ccfc9c532686989cc6"
+      },
+      {
+        "path": "backend/app/domains/employer/service.py",
+        "sha256": "a91d168783d0f330c27aa7e26378625b028b388caf0f406019abd81457d74146",
+        "preimage_sha256": "1d0a6132034368a80f6195c971b6a72a630c8ff4640af0abe333b5fe204fbf57"
+      },
+      {
+        "path": "backend/app/domains/employer/models.py",
+        "sha256": "9b926e48e09a8f48d34b24fbe024b122d2369fd6d960b065bccb89b0ac831841",
+        "preimage_sha256": "e50521389d091ec2e6b96ae720f06bc12964a12dd9dd373843abe24b43d86b4f"
+      },
+      {
+        "path": "backend/app/domains/employer/delivery_history_projector.py",
+        "sha256": "20980fa1d33e175088b78b071469af60bfdc1d8e746f898b4b1aa8347e8540de",
+        "preimage_sha256": null
+      },
+      {
+        "path": "backend/app/domains/employer/history_stream.py",
+        "sha256": "62113a5887ee5f14e10315316418b5513b7c5d891b4234c71597478406b2b69b",
+        "preimage_sha256": null
+      },
+      {
+        "path": "backend/app/domains/employer/delivery_history.py",
+        "sha256": "652f7e37c972c4bb1d02a53f906707495591cbb600756783b405f11599b75e74",
+        "preimage_sha256": null
+      },
+      {
+        "path": "backend/alembic/versions/20261011_0015_employer_paid_history.py",
+        "sha256": "216a579c0539017028978c66f969262b28d6523cb08aa82859901187b2fd3f1c",
+        "preimage_sha256": null
+      },
+      {
+        "path": "backend/tests/test_employer_delivery_history.py",
+        "sha256": "a4b862813a77879d22310efd55ea0979219fba85750f130646d9ae33339a23f9",
+        "preimage_sha256": null
+      }
+    ],
+    "migration": "20261011_0015",
+    "down_revision": "20261010_0014",
+    "integration_receipt_sha256": "4b2bcdacdf068884cedae269d080158e64ff3d66a2ec5d6573872cb19abe5bbf"
+  },
+  "packet_pins": {
+    "artifact_manifest": "5b6ba1fb1d54e6c69841b05c5185725ca09bacc078e33f4f00b49359ad6edc91",
+    "shipping_manifest": "1fcc3d718406d993558d7f22fb8f3464f73a846ded85c46ccee6a38985e3ac58",
+    "source_manifest": "100d5df639ebd41732361855a107a2eb50cf51aa8b72dce5f5a4307fe7b7f4aa",
+    "patch": "82e212e23167d83fd088d591b2bae2041438187106c9727b191763ef8e8c06f1",
+    "report": "f1f654554bb0e84141b30839392fc5614dd722af0aeeab961d7f65435ed3cbe2"
+  },
+  "proof": {
+    "authoritative_row_binding": [
+      "delivery_id",
+      "owner_id",
+      "search_id",
+      "posting_id",
+      "original_positive_charge",
+      "delivery_timestamp"
+    ],
+    "registry_references_proven_history": true,
+    "duplicate_paid_rows_preserved": true,
+    "ambiguous_authority_stays_closed": true,
+    "accepted_quotes_free_matches_refunds_settlement_preserved_scoped": true,
+    "new_completed_proof_atomic_with_settlement": true,
+    "default_backfill_delivery_budget": 8,
+    "default_aggregate_source_bytes": 16384,
+    "default_aggregate_parser_work": 32768,
+    "arbitrary_total_history_cutoff": false
+  },
+  "execution": {
+    "native_pg_cases_before_final_generation_only_delta": 29,
+    "final_unchanged_generation_control": {
+      "passed": 1,
+      "deselected": 29
+    },
+    "final_focused_exact_source": {
+      "passed": 3,
+      "deselected": 27
+    },
+    "full_30_case_final_source_run_claimed": false,
+    "unchanged_off_mode_baseline": 23,
+    "independent_offline_schema_controls": 76,
+    "original_failures_preserved": true,
+    "lint_all_shipping_pass": true
+  },
+  "work": {
+    "legacy_snapshots_before": 24,
+    "legacy_snapshots_ready_indexed": 0,
+    "ready_finite_membership_queries": 2,
+    "candidate_cap_unchanged": 1000,
+    "irrelevant_siblings_per_native_plan": 5000,
+    "object_index": "ix_search_history_nodes_key",
+    "object_actual_rows": 1,
+    "object_shared_hit_blocks": 10,
+    "array_index": "ix_search_history_nodes_array",
+    "array_actual_rows": 65,
+    "array_shared_hit_blocks": 6,
+    "temporary_blocks": 0,
+    "native_toast_backfill_work_claimed_bounded": false
+  },
+  "owned_pg": {
+    "version": "17.11",
+    "architecture": "aarch64",
+    "image_id": "sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24",
+    "localhost_only": true,
+    "dummy_credentials_only": true,
+    "tmpfs_mib": 256,
+    "persistent_volume_mounts": 0,
+    "exact_id": "90556e6fb3b25cb76ef36294f8763aaaabe7fe5a7c2568d4e24ae80bcda0559f",
+    "exact_name": "hw-stagec-pg-3w230pvw",
+    "removed": true,
+    "absence_verified_by": [
+      "id",
+      "name"
+    ],
+    "cleanup_receipt_sha256": "8d7f696cc8f24c85d57fa59410849b35834047a58084349107d68ad6080a2b1b",
+    "root_independent_receipt_sha256": "4be8ec03c45ca1e9be3c88332ace75b7837de6dc6e7d60c3180575f908eb4a97",
+    "root_metadata_mutations": 0,
+    "live_handle": null
+  },
+  "preceding_ci": {
+    "commit": "9dd7689e9e8e05bae67a151ab39830668abf01ba",
+    "run": 38085861350,
+    "status": "completed",
+    "conclusion": "success",
+    "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38085861350",
+    "jobs": [
+      {
+        "name": "backend",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "security-and-container",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "frontend",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "browser-companion",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "cold-browser-journey",
+        "status": "completed",
+        "conclusion": "success"
+      }
+    ],
+    "metadata_sha256": "fe6ba8327a2c4e7ff220fba71f84365856e64de9388f0351564a9bc6ed4c7777",
+    "proves_new_stage_c_source": false
+  },
+  "separate_archive_comparison": {
+    "manifest_sha256": "9fbc14e0c69d989642afa3f26dd3b3c30cf29077256eaef1904e0db3e81bd1ce",
+    "verdict_sha256": "c3ce38c5727f998698a28f86a3ceea9348df449dd92fd864a7601c65d7bf6315",
+    "terminal": true,
+    "writer_export_command_exit_code": 0,
+    "exact_delete_exit_code": 0,
+    "local_export_validation": "refused_without_closed_reason",
+    "sdk_import_attempted": false,
+    "sandbox_absence_independently_verified": false,
+    "unique_cause_verified": false,
+    "refusal_instrumentation": "native_terminal_local_member_path_refusal",
+    "scanner_private_http_acceptance": false,
+    "new_refusal_evidence": "2026-10-11-document-archive-refusal.json"
+  },
+  "scope_limits": [
+    "native JSON/TOAST backfill conversion",
+    "1000 cap and complete indexed catalog traversal",
+    "global auth and entitlements",
+    "composed browser/API/provider acceptance",
+    "production migration flag activation deployment and promotion",
+    "SQLite fallback native performance/migration compatibility",
+    "non-default non-expiring ORM sessions"
+  ],
+  "source_safety": {
+    "effective_base_bodies": 148,
+    "effective_runtime_bodies": 154,
+    "original_metadata_counts": [
+      150,
+      156
+    ],
+    "aggregate_bodies_excluded_from_stage_c_freeze": true,
+    "prior_broad_search_incident_retained": true,
+    "blanket_historical_no_held_read_claimed": false
+  },
+  "documentation_authoring": {
+    "managed_edits": false,
+    "new_tests": false,
+    "native_calls": false,
+    "provider_actions": false,
+    "paths": 4
+  }
+}

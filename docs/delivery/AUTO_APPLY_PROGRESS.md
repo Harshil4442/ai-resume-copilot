@@ -14,48 +14,52 @@ Production pairing and portal-use permission remain open.
 
 ## Current checkpoint board — 11 October 2026
 
-The current pushed source `4c287dc3843d6328f59bc247df4c223e0100df88` has a terminal
-[five-lane CI run](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38083618720):
-backend, security/container, companion and cold-browser jobs pass. Frontend types,
-lint, build and 399 unit tests pass; responsive checks retain 35 failures and 210
-passes caused by two unchanged API fixtures missing the new free paging GETs.
-The exact two-file correction is now reviewed and integrated. One final run passes
-245/245 responsive cases at five widths with zero retries or skips, preserving all
-original tests, assertions, legacy responses and accepted quotes. APIs are mocked.
-Root verifies 55 retained artifacts and exact pre/post source bytes; the normal
-production build is unchanged. Fresh committed-source CI and deployment remain open.
-See [the fixture evidence](evidence/2026-10-11-frontend-ci-fixture-repair.json).
+The pushed fixture-correction source `9dd7689e9e8e05bae67a151ab39830668abf01ba`
+passes all five jobs in [run 38085861350](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38085861350):
+backend, security/container, frontend, companion and cold-browser. This is terminal
+metadata for that exact source, not CI evidence for the new Stage C backend. The
+reviewed fixture replay passes 245/245 responsive cases at five widths without
+retries or skips; those browser APIs are mocked. Original failures remain recorded.
 
-The separately reviewed command/write/import/Python diagnostic was executed once
-under the same keyless GCP identity and immutable scanner image. Named echo and
-writable echo pass with exact markers; importing the synthetic input archive fails
-with exit 1, empty stdout and 133 unclassified stderr bytes. Python is not reached.
-The same execution is terminal; it is not restarted. Individual delete commands
-return 0, but native sandbox absence, the underlying archive cause, document-corpus,
-child isolation and private HTTP acceptance remain unproved. The earlier diagnostic,
-system-log ambiguity and local reader-wrapper refusal are retained. See
-[the native archive-boundary evidence](evidence/2026-10-11-document-argv-boundary.json)
-and [the scanner checkpoint](DOCUMENT_SCANNER_DIAGNOSTIC_2026-10-11.md).
+[Durable paid-search history](PAID_SEARCH_HISTORY_2026-10-11.md) now has a reviewed
+eight-path runtime/migration change integrated in the managed worktree. Default mode stays `off`.
+Indexed mode binds history to exact owner/search/posting/delivery/charge/time proof,
+retains original accepted quotes and refund/settlement outcomes, and atomically
+writes new proof with settlement. Resumable parsing runs outside money locks;
+unfinished or conflicting history remains closed for new canonical paid admission.
+The 29-case native PostgreSQL run precedes the final generation-only correction;
+the unchanged generation control then passes, followed by three final focused
+cases. Ready admission decodes zero legacy snapshots versus 24 previously. With
+5,000 siblings, the corrected object/array predicates use their matching indexes
+and 10/6 shared hit blocks. These are component controls, not full coverage proof.
 
-Saved-search paging has also passed scoped acceptance against an actual, owned
-local PostgreSQL 17.11 database. Items, ordering, accepted quotes and charges remain
-unchanged; native financial/application rows are identical before and after reads.
-The original 19-case run retains one strict timestamp-spelling failure (`Z` versus
-`+00:00`, the same instant); three focused checks establish the metadata-only
-projection difference. Root verifies 193 artifacts. The owned database is removed.
-This closes the local database component check, not global authentication,
-PostgreSQL concurrency or the composed browser/API/database journey. Durable
-indexed history integration is still private work; the 1,000-candidate cap and
-worldwide coverage target remain open.
+The exact owned PostgreSQL container is removed. Root separately verifies absence
+by ID and name without mutations. Source/schema and final packaging reviews pass.
+Stage C source integration is complete; publication and its own committed-source CI remain pending;
+production migration, flag activation and promotion have not occurred. Native
+JSON/TOAST conversion during backfill, full-catalog indexed traversal beyond the
+unchanged 1,000-candidate cap, and global authentication/composed release proof
+remain open. See [sanitized evidence](evidence/2026-10-11-paid-search-history.json).
 
-- [x] Integrate free saved-search paging and preserve original quotes.
-- [x] Verify the local PostgreSQL paging component.
-- [x] Integrate the two stale-fixture corrections; final mocked responsive suite passes.
-- [x] Identify the native scanner failure boundary as archive import.
-- [ ] Pass fresh committed-source CI for the fixture correction.
-- [ ] Fix native archive import and complete scanner/private HTTP acceptance.
-- [ ] Complete durable history integration and bounded full-catalog search.
-- [ ] Complete permitted deployment and observe the production release.
+The separate native archive comparison reaches terminal writer/export-command
+success and delete exit 0, then the local exported-archive validator refuses without
+a closed reason. SDK import is not attempted; absence and a unique cause are not
+proved. The one-shot refusal diagnostic is terminal: the local `member_path` gate refuses
+an unclassified member role. Both writer/export and delete return 0; imports are
+unattempted. This identifies a local validation category, not the actual name or a
+unique provider cause. See [sanitized refusal evidence](evidence/2026-10-11-document-archive-refusal.json). Scanner corpus,
+child isolation, private HTTP acceptance and deployment remain open. The preceding
+archive-import failure and broad-search incident stay recorded.
+
+- [x] Integrate free paging and verify its local PostgreSQL component.
+- [x] Pass exact `9dd7689` five-job CI for the fixture corrections.
+- [x] Review Stage C row proof, settlement/quote preservation and native component controls.
+- [x] Verify exact owned PostgreSQL cleanup independently.
+- [x] Integrate the exact eight reviewed Stage C source paths.
+- [ ] Publish Stage C and pass its committed-source CI.
+- [ ] Bound native legacy JSON/TOAST evaluation and implement full-catalog traversal.
+- [ ] Classify the archive refusal and complete scanner/private HTTP acceptance.
+- [ ] Complete global release checks, permitted promotion and production observation.
 
 Guidance source `ca5ea7b` is pushed. Its exact run 38078938219 is terminal FAILURE:
 four lanes pass, including 3,464 backend cases with zero skips, migrations and API

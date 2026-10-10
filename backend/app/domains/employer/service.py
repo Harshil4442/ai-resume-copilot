@@ -154,6 +154,20 @@ def _search_input(payload: schemas.SearchCreate) -> dict:
 def create_search(db: Session, user_id: int, payload: schemas.SearchCreate):
     from ..entitlements import lock_entitlement_owner
     _require_enabled()
+    history_mode = config.paid_history_mode()
+    if history_mode == "indexed":
+        from . import delivery_history
+        # Replays retain their exact accepted result, independent of rollout.
+        with db.no_autoflush:
+            replay = db.query(models.EmployerSearch).filter_by(user_id=user_id, idempotency_key=payload.idempotency_key).first()
+        if replay is not None:
+            if replay.input_fingerprint != payload_fingerprint(_search_input(payload)):
+                raise HTTPException(409, "This request key was already used with different search settings")
+            return replay
+        if db.new or db.dirty or db.deleted:
+            raise ValueError("History preparation requires a clean request transaction")
+        delivery_history.advance_owner(db, user_id)
+        db.commit()  # Bounded legacy parsing holds no financial owner lock.
     # Serialize balance and per-user delivery/idempotency checks in one short transaction.
     lock_entitlement_owner(db, user_id)
     search_input = _search_input(payload)
@@ -164,26 +178,45 @@ def create_search(db: Session, user_id: int, payload: schemas.SearchCreate):
             raise HTTPException(409, "This request key was already used with different search settings")
         return existing
     from ...billing.cost_policy import CostPolicyUnavailable
-    try:
-        prices = config.prices()
-    except CostPolicyUnavailable as exc:
-        raise HTTPException(503, detail=str(exc)) from None
+    search_id = "search_" + payload_fingerprint({"owner": user_id, "key": payload.idempotency_key})[:48]
+    preparation = db.query(models.ServiceCreditReservation).filter_by(user_id=user_id, source_id=search_id,
+        operation="job_search").first()
+    if preparation is not None:
+        authority = preparation.cost_policy_snapshot or {}
+        if (history_mode != "indexed" or preparation.state != "reserved" or preparation.reserved_amount != 0
+                or authority.get("history_search_fingerprint") != fingerprint
+                or authority.get("history_desired_count") != payload.desired_count
+                or not authority.get("search_preparation")):
+            raise HTTPException(409, "This search preparation is already in progress or needs review; use its saved result when available")
+        # Resumable history waits retain this server-owned accepted price/version.
+        prices = {"search_credits_per_job": preparation.unit_price,
+                  "pricing_version": preparation.pricing_version,
+                  "max_search_jobs": authority["history_accepted_max_jobs"]}
+    else:
+        try:
+            prices = config.prices()
+        except CostPolicyUnavailable as exc:
+            raise HTTPException(503, detail=str(exc)) from None
     if payload.desired_count > int(prices["max_search_jobs"]):
         raise HTTPException(422, "Requested job count exceeds the current service limit")
     resume = _owned(db, core.Resume, payload.resume_id, user_id)
-    # Persist finite zero-credit preparation authority before the bounded
-    # index scan/scoring. Empty results and interrupted work must retain it.
-    search_id = "search_" + payload_fingerprint({"owner": user_id, "key": payload.idempotency_key})[:48]
-    if db.query(models.ServiceCreditReservation.id).filter_by(user_id=user_id, source_id=search_id,
-            operation="job_search").first():
-        raise HTTPException(409, "This search preparation is already in progress or needs review; use its saved result when available")
-    preparation = credits.reserve(db, user_id=user_id, operation="job_search", source_id=search_id,
-                                  unit_price=int(prices["search_credits_per_job"]), count=0,
-                                  pricing_version=str(prices["pricing_version"]), record_event=False)
+    if preparation is None:
+        preparation = credits.reserve(db, user_id=user_id, operation="job_search", source_id=search_id,
+                                      unit_price=int(prices["search_credits_per_job"]), count=0,
+                                      pricing_version=str(prices["pricing_version"]), record_event=False)
+        if history_mode == "indexed":
+            preparation.cost_policy_snapshot = dict(preparation.cost_policy_snapshot) | {
+                "history_search_fingerprint": fingerprint, "history_desired_count": payload.desired_count,
+                "history_accepted_max_jobs": int(prices["max_search_jobs"])}
     preparation.cost_policy_snapshot = dict(preparation.cost_policy_snapshot) | {"search_preparation": True}
     db.commit()
     # Keep the original owner-serialized delivery/idempotency semantics.
     lock_entitlement_owner(db, user_id)
+    existing = db.query(models.EmployerSearch).filter_by(user_id=user_id, idempotency_key=payload.idempotency_key).first()
+    if existing is not None:
+        if existing.input_fingerprint != fingerprint:
+            raise HTTPException(409, "This request key was already used with different search settings")
+        return existing
     resume = _owned(db, core.Resume, payload.resume_id, user_id)
     stale_before = utcnow() - timedelta(hours=config.positive_int("EMPLOYER_MAX_SOURCE_AGE_HOURS", 24, 168))
     query = db.query(models.EmployerPosting, models.EmployerSource).join(models.EmployerSource, models.EmployerSource.id == models.EmployerPosting.source_id).filter(
@@ -227,37 +260,45 @@ def create_search(db: Session, user_id: int, payload: schemas.SearchCreate):
     for item in ranked:
         item[0].opening_key = admissions.opening_identity(item[0], item[1])
         unique.setdefault(item[0].opening_key, item)
-    previous = {row.opening_key for row in db.query(models.EmployerJobDelivery).filter_by(user_id=user_id).filter(models.EmployerJobDelivery.opening_key.in_(list(unique))).all()}
-    # Recover legacy canonical identity only from the saved paid delivery's
-    # owner-bound search snapshot, never from today's mutable posting fields.
-    legacy_rows = db.query(models.EmployerJobDelivery, models.EmployerSearch).outerjoin(
-        models.EmployerSearch, and_(models.EmployerSearch.id == models.EmployerJobDelivery.search_id,
-                                   models.EmployerSearch.user_id == user_id),
-    ).filter(models.EmployerJobDelivery.user_id == user_id,
-             models.EmployerJobDelivery.opening_key.is_(None)).all()
-    legacy = {delivery.posting_id for delivery, _ in legacy_rows}
-    legacy_identity_unavailable = False
-    for delivery, saved_search in legacy_rows:
-        saved_items = saved_search.items if saved_search is not None else None
-        matches = [item for item in saved_items if isinstance(item, dict)
-                   and isinstance(item.get("posting"), dict)
-                   and item["posting"].get("id") == delivery.posting_id] if isinstance(saved_items, list) else []
-        saved_key = matches[0]["posting"].get("opening_key") if len(matches) == 1 else None
-        saved_charge = matches[0].get("charged_credits") if len(matches) == 1 else None
-        if (not isinstance(saved_key, str) or not re.fullmatch(r"[0-9a-f]{64}", saved_key)
-                or type(saved_charge) is not int or saved_charge <= 0
-                or type(delivery.charged_credits) is not int or saved_charge != delivery.charged_credits):
-            legacy_identity_unavailable = True
-        else:
-            previous.add(saved_key)
+    if history_mode == "indexed":
+        from . import delivery_history
+        previous, legacy, history_state = delivery_history.membership(
+            db, user_id, list(unique), [item[0].id for item in unique.values()])
+        legacy_identity_unavailable = history_state != "ready"
+    else:
+        previous = {row.opening_key for row in db.query(models.EmployerJobDelivery).filter_by(user_id=user_id).filter(models.EmployerJobDelivery.opening_key.in_(list(unique))).all()}
+        # Recover legacy canonical identity only from the saved paid delivery's
+        # owner-bound search snapshot, never from today's mutable posting fields.
+        legacy_rows = db.query(models.EmployerJobDelivery, models.EmployerSearch).outerjoin(
+            models.EmployerSearch, and_(models.EmployerSearch.id == models.EmployerJobDelivery.search_id,
+                                       models.EmployerSearch.user_id == user_id),
+        ).filter(models.EmployerJobDelivery.user_id == user_id,
+                 models.EmployerJobDelivery.opening_key.is_(None)).all()
+        legacy = {delivery.posting_id for delivery, _ in legacy_rows}
+        legacy_identity_unavailable = False
+        for delivery, saved_search in legacy_rows:
+            saved_items = saved_search.items if saved_search is not None else None
+            matches = [item for item in saved_items if isinstance(item, dict)
+                       and isinstance(item.get("posting"), dict)
+                       and item["posting"].get("id") == delivery.posting_id] if isinstance(saved_items, list) else []
+            saved_key = matches[0]["posting"].get("opening_key") if len(matches) == 1 else None
+            saved_charge = matches[0].get("charged_credits") if len(matches) == 1 else None
+            if (not isinstance(saved_key, str) or not re.fullmatch(r"[0-9a-f]{64}", saved_key)
+                    or type(saved_charge) is not int or saved_charge <= 0
+                    or type(delivery.charged_credits) is not int or saved_charge != delivery.charged_credits):
+                legacy_identity_unavailable = True
+            else:
+                previous.add(saved_key)
     # Deliver unseen openings first; stable sorting retains deterministic fit
     # order within new and free saved matches from the same bounded index pool.
     selected = sorted(unique.values(), key=lambda item:
         item[0].opening_key in previous or item[0].id in legacy)[:payload.desired_count]
     new_count = sum(posting.opening_key not in previous and posting.id not in legacy for posting, _, _ in selected)
     if new_count and legacy_identity_unavailable:
-        raise HTTPException(409, {"code": "legacy_delivery_identity_unavailable",
-            "message": "Saved delivery history needs review before charging for more openings."})
+        pending = history_mode == "indexed" and history_state in {"pending", "backfilling"}
+        raise HTTPException(409, {"code": "paid_delivery_history_preparing" if pending else "legacy_delivery_identity_unavailable",
+            "message": "Saved delivery history is being prepared. Retry this request to resume it." if pending
+                       else "Saved delivery history needs review before charging for more openings."})
     reservation = credits.reserve(db, user_id=user_id, operation="job_search", source_id=search_id,
                                   unit_price=int(prices["search_credits_per_job"]), count=payload.desired_count if new_count else 0,
                                   pricing_version=str(prices["pricing_version"]), preparation=preparation)
@@ -291,6 +332,11 @@ def create_search(db: Session, user_id: int, payload: schemas.SearchCreate):
     db.add(search)
     db.flush([search])
     db.add_all(deliveries)
+    if history_mode != "off":
+        from . import delivery_history
+        db.flush(deliveries)
+        delivery_history.write_completed(db, search, deliveries, selected,
+            restore_ready=history_mode == "indexed" and history_state == "ready")
     credits.settle(db, reservation, completed_count=new_count, reason="Unique useful employer jobs delivered")
     db.commit()
     return search
