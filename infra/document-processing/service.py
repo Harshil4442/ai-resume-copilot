@@ -146,10 +146,11 @@ def inspect_in_sandbox(payload: bytes) -> dict:
                 archive.addfile(entry, io.BytesIO(payload))
         archive_path.chmod(0o600)
         try:
-            _run([SANDBOX, "run", name, "--write", "--detach",
-                "--import-tar=" + str(archive_path), "--", "/usr/bin/sleep", "90"], timeout=10, limit=65536)
-            code, output = _run([SANDBOX, "exec", name, "--", "/usr/local/bin/python3", "-I",
-                "/opt/document/processor.py", "/tmp/request.json"], timeout=45, limit=MAX_OUTPUT, allow_outcome=True)
+            # One synchronous create/inspect/destroy call uses the existing
+            # combined 10-second create + 45-second inspection allowance.
+            code, output = _run([SANDBOX, "do", "--sandbox-name=" + name, "--write",
+                "--import-tar=" + str(archive_path), "--", "/usr/local/bin/python3", "-I",
+                "/opt/document/processor.py", "/tmp/request.json"], timeout=55, limit=MAX_OUTPUT, allow_outcome=True)
             result = json.loads(output, object_pairs_hook=_pairs)
             if (type(result) is not dict or type(result.get("version")) is not int or result["version"] != 1
                     or result.get("sha256") != sha256 or result.get("source_format") != kind
@@ -174,7 +175,7 @@ def inspect_in_sandbox(payload: bytes) -> dict:
         except Exception:
             raise InspectionDenied() from None
         finally:
-            # Force cleanup after timeouts/nonzero run/exec as well. Any failed
+            # Force cleanup after timeouts/nonzero do as well. Any failed
             # cleanup refuses release; no fallback or mutation retry.
             _run([SANDBOX, "delete", name, "--force"], timeout=5, limit=65536)
 

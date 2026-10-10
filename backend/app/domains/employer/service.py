@@ -227,11 +227,37 @@ def create_search(db: Session, user_id: int, payload: schemas.SearchCreate):
     for item in ranked:
         item[0].opening_key = admissions.opening_identity(item[0], item[1])
         unique.setdefault(item[0].opening_key, item)
-    selected = list(unique.values())[:payload.desired_count]
     previous = {row.opening_key for row in db.query(models.EmployerJobDelivery).filter_by(user_id=user_id).filter(models.EmployerJobDelivery.opening_key.in_(list(unique))).all()}
-    # Compatibility for an old delivery whose opening key could not be backfilled.
-    legacy = {row.posting_id for row in db.query(models.EmployerJobDelivery).filter_by(user_id=user_id, opening_key=None).all()}
+    # Recover legacy canonical identity only from the saved paid delivery's
+    # owner-bound search snapshot, never from today's mutable posting fields.
+    legacy_rows = db.query(models.EmployerJobDelivery, models.EmployerSearch).outerjoin(
+        models.EmployerSearch, and_(models.EmployerSearch.id == models.EmployerJobDelivery.search_id,
+                                   models.EmployerSearch.user_id == user_id),
+    ).filter(models.EmployerJobDelivery.user_id == user_id,
+             models.EmployerJobDelivery.opening_key.is_(None)).all()
+    legacy = {delivery.posting_id for delivery, _ in legacy_rows}
+    legacy_identity_unavailable = False
+    for delivery, saved_search in legacy_rows:
+        saved_items = saved_search.items if saved_search is not None else None
+        matches = [item for item in saved_items if isinstance(item, dict)
+                   and isinstance(item.get("posting"), dict)
+                   and item["posting"].get("id") == delivery.posting_id] if isinstance(saved_items, list) else []
+        saved_key = matches[0]["posting"].get("opening_key") if len(matches) == 1 else None
+        saved_charge = matches[0].get("charged_credits") if len(matches) == 1 else None
+        if (not isinstance(saved_key, str) or not re.fullmatch(r"[0-9a-f]{64}", saved_key)
+                or type(saved_charge) is not int or saved_charge <= 0
+                or type(delivery.charged_credits) is not int or saved_charge != delivery.charged_credits):
+            legacy_identity_unavailable = True
+        else:
+            previous.add(saved_key)
+    # Deliver unseen openings first; stable sorting retains deterministic fit
+    # order within new and free saved matches from the same bounded index pool.
+    selected = sorted(unique.values(), key=lambda item:
+        item[0].opening_key in previous or item[0].id in legacy)[:payload.desired_count]
     new_count = sum(posting.opening_key not in previous and posting.id not in legacy for posting, _, _ in selected)
+    if new_count and legacy_identity_unavailable:
+        raise HTTPException(409, {"code": "legacy_delivery_identity_unavailable",
+            "message": "Saved delivery history needs review before charging for more openings."})
     reservation = credits.reserve(db, user_id=user_id, operation="job_search", source_id=search_id,
                                   unit_price=int(prices["search_credits_per_job"]), count=payload.desired_count if new_count else 0,
                                   pricing_version=str(prices["pricing_version"]), preparation=preparation)

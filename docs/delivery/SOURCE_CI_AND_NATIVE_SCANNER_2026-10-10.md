@@ -2,9 +2,47 @@
 
 Review date: 10 October 2026. Full paid service delivery remains active.
 
-## Current published source, CI and native backend build
+## Latest documentation CI and locally integrated source amendments
 
-Current source `a162890ff50a606f9c23493ea11266d32ad416d6`, tree
+Published documentation head `01f88fd4a515e29a76f82cd920278633e4a81ace` passes all five jobs in
+[CI run 38067151227](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38067151227).
+Its runtime implementation remains the preceding a162 source. This CI result does not
+cover the newer scanner lifecycle, policy-pin or search amendments described below.
+The last independently joined full native backend build remains a162; known production
+routes still serve the quiesced `b306f13` compatibility release.
+
+The newer synchronous-do scanner source is independently reviewed and locally integrated:
+service SHA256 `040710f23e83ce61a8401338b52defb613b51e4344bf1bb2a4a063ce39962d11`
+and policy SHA256 `e7d6680ee78da0cda5a8e4d9abfaf178ce5684b8b55ebcc5c168b69e3ece8e34`.
+Root's source replay passes 143 cases. The original broader replay retains 49 stale-policy
+failures; two exact policy literals in the renderer and disabled configuration are repaired
+after 56 configuration checks plus two independent custody controls. The post-pin affected
+replay passes 376 with zero failures and 44 disposable-PostgreSQL cases skipped. Those
+44 cases and the amended committed source still require fresh full CI. The staged EDC
+scanner image retains its original `425fd4…` policy; it does not contain this amendment.
+
+Actual synthetic execution `rp5hg` succeeds with the fixed `sandbox do` echo marker only
+(exit 0, stdout 25 bytes, stderr 0). It establishes neither document scanning, sandbox
+isolation nor deletion/retirement. The new full native acceptance proposal passes 51
+offline checks, but needs a new immutable image/source join and actual execution.
+The earlier split-lifecycle Job failures and private HTTP holds remain preserved.
+
+The search V2 source is also independently reviewed and locally integrated: 39 existing/
+combined cases plus five independent controls pass, followed by 54 root unfiltered cases
+with no skips. It prefers unseen qualifying canonical openings before free saved matches.
+A legacy paid identity is accepted only from the same owner's exact saved search snapshot;
+missing or ambiguous history refuses a new paid reservation with
+`legacy_delivery_identity_unavailable`. Requested-count limits, accepted quotes, owner
+locking and credit rates stay unchanged. Large unbounded legacy-history lookup cost and
+latency, current-source PostgreSQL concurrency, the 1,000-candidate cap, honest view-all
+and broader recall remain open. This improves indexed-result progression and does not
+establish worldwide coverage. The [source-only checkpoint](evidence/2026-10-10-scanner-search-source-checkpoint.json) records these scopes;
+new source CI, backend/scanner images, native full scanner/HTTP acceptance and customer
+activation remain separate pending checkpoints.
+
+## Last joined runtime source, CI and native backend build
+
+Preceding runtime source `a162890ff50a606f9c23493ea11266d32ad416d6`, tree
 `7d9608d221f8cdc1704f802171b1968d7ed36f6e`, passes all five jobs in
 [CI run 38057690476, attempt 1](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38057690476).
 The backend passes 3,389 cases with zero failures/skips, including disposable
@@ -217,11 +255,15 @@ existing-API signing steps 23–24 and all customer activation remain held.
 - [x] Stage and independently verify native private service configuration.
 - [x] Review the four test corrections with actual PostgreSQL retention checks.
 - [x] Pass full a162 CI for the corrected source, including OpenAPI verification.
+- [x] Confirm all five jobs succeed for documentation head 01f; this covers the preceding runtime source only.
+- [x] Review and locally integrate synchronous-do source, two policy pins and conservative search V2; preserve original failures and replay skips.
+- [x] Verify actual rp5hg fixed do echo marker only; scanner/isolation/deletion remain unproved.
+- [ ] Publish and pass full exact-source CI for these amendments; build and join new immutable backend/scanner images.
 - [x] Build and independently join the exact native a162 backend image and registry metadata.
 - [x] Compile Workflow V4; preserve its failed private HTTP/final-denial outcomes.
 - [x] Verify one later actual post-retirement 403 private invocation denial; positive HTTP acceptance remains open.
 - [x] Remove and read back the exact owned temporary quarantine project lease.
-- [ ] Diagnose and pass actual Job isolation and private HTTP receipt acceptance.
+- [ ] Execute the reviewed new-image full native scanner/corpus/isolation/deadline/deletion proposal and pass private HTTP receipt acceptance.
 - [ ] Retire only owned temporary probes and verify permissions afterward.
 - [x] Acknowledge and read back the permanent quarantine metadata-admin policy and remove the later temporary lease.
 - [x] Independently verify the later quarantine policy/lease closure and post-expiry four metadata permissions.
@@ -242,5 +284,5 @@ performance requirements remain open.
 
 The earlier machine-readable [checkpoint receipt](evidence/2026-10-10-source-ci-native-scanner.json)
 is retained as the historical e353/configuration checkpoint. The later sealed
-a162 build/CI, diagnostic, HTTP and lease-removal receipts linked above supersede
+a162 build/CI, 01f documentation CI, diagnostic, HTTP and lease-removal receipts linked above supersede
 its pending-status fields; no source, runtime or held pairing files are changed here.

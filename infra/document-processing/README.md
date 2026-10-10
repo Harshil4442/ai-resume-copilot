@@ -1,6 +1,6 @@
 # Private PDF/DOCX inspection worker
 
-Reviewed 10 October 2026. This draft describes the integrated V3 worker and the current
+Reviewed 10 October 2026. This private proposal adds synchronous sandbox execution to the V3 worker and the current
 `backend/app/services/document_ingestion.py` contract. It is a proposed deployment
 and acceptance procedure. No cloud resource, IAM permission or production upload
 capability is created by this document.
@@ -24,7 +24,7 @@ The worker now refuses inspection admission after the absolute request-read dead
 
 ## V3 outcome checkpoint
 
-The table above retains the original V2 hashes. Current processor/service hashes are
+The table above retains the original V2 hashes. At the integrated V3 checkpoint, processor/service hashes were
 `fdf4a00fdf92b09f0dd22bf3a8b17d3987cc505bd5b55d313dbfa44f537272a8`
 and `fd65733bfb959cfa6af9283d92170a22debe4765a662be5430a2486a6b2b43c2`.
 At that checkpoint the Dockerfile was unchanged. V3 passes 179 existing and 11 independent checks; root's
@@ -75,11 +75,10 @@ A fresh actual ARM64 image `sha256:a1a57802080a84bd584a2f119626a39e20a4420c6b7e4
 passes all eight real scanner cases with matching source/runtime bytes and restricted
 container metadata. The preceding published `ab5cb5d9` passes all five hosted CI jobs,
 3,149 backend tests, genuine AMD64 scanner cases and the connected five-width journey;
-those published proofs do not certify the later receipt/definition changes. Current
-exact-source hosted CI and native Cloud Run isolation remain required.
+those published proofs do not certify the later receipt/definition changes. At that earlier checkpoint, exact-source hosted CI and native Cloud Run isolation remained required. Published `a162890ff50a606f9c23493ea11266d32ad416d6` later passed all five hosted CI jobs; see the delivery checkpoint. That does not certify this new private synchronous-call proposal or close native isolation acceptance.
 
 [`policy.json`](policy.json) is canonical sorted compact UTF-8 JSON with a terminal
-newline. Version 2 has SHA-256 `425fd4b326554d8fee8d2686f423c8e2b499eaaa1bd7858eb69f7759ac526bdf`.
+newline. This synchronous-call version 2 proposal has SHA-256 `e7d6680ee78da0cda5a8e4d9abfaf178ce5684b8b55ebcc5c168b69e3ece8e34`. Its service SHA-256 is `040710f23e83ce61a8401338b52defb613b51e4344bf1bb2a4a063ce39962d11`; the processor and other six build-source hashes remain unchanged. The integrated predecessor policy was `425fd4b326554d8fee8d2686f423c8e2b499eaaa1bd7858eb69f7759ac526bdf`.
 It binds the seven build sources, supported PDF/DOCX limits, outcomes and required native
 isolation controls. Before activation, independently match actual source, image bytes,
 revision configuration and acceptance evidence to this artifact. Its requirements and
@@ -130,9 +129,11 @@ share the host container's CPU/memory allocation. Record the exact revision's
 native configuration, rather than inferring enablement from an environment value.
 [Google sandbox configuration](https://docs.cloud.google.com/run/docs/configuring/services/sandboxes)
 
-The controller requires `/usr/local/gcp/bin/sandbox` and calls its named
-`run`, `exec` and forced `delete` lifecycle. It imports only one internally
-constructed regular JSON file into a writable ephemeral overlay. It requests no
+The proposed controller requires `/usr/local/gcp/bin/sandbox` and makes one synchronous
+`do --sandbox-name=<uniqueName> --write --import-tar=<privateTar> -- /usr/local/bin/python3 -I /opt/document/processor.py /tmp/request.json` call, followed by explicit named `delete --force` in `finally`. Google documents that `do` creates a sandbox, runs the command and automatically destroys it on exit. The explicit cleanup must still return zero before any result is released; an absent-name heuristic never counts as cleanup success. Verify that behavior on the deployed launcher, because absent-sandbox forced-delete semantics and controlled child-exit propagation are native acceptance gates. The current marker-only native `do` success establishes command viability, not scanner, isolation or retirement acceptance. Earlier split `run`/`exec` failures remain retained with their cause unproved.
+[Google sandbox CLI](https://docs.cloud.google.com/run/docs/reference/sandbox-cli)
+
+It imports only one internally constructed regular JSON file into a writable ephemeral overlay. It requests no
 outbound networking, environment passthrough, bind mount, export or persisted
 snapshot. Google documents default network, environment and metadata isolation;
 these are properties to verify in the actual deployment with harmless probes,
@@ -177,7 +178,7 @@ These initial service settings are proposals to measure, not accepted capacity:
 | Cloud Run request timeout | Initially 90 seconds; verify handler/phase budgets fit the 75-second client window |
 | API network deadline | 75 seconds total for the inspection HTTP transaction; identity requests have separate 5-second request timeouts |
 | Worker header/body deadline | 10 seconds total from handler setup; deadline is cancelled before scanning |
-| Launcher phases | Create 10 seconds; inspection 45 seconds; explicit delete 5 seconds |
+| Launcher phases | Synchronous `do` 55 seconds (the prior create 10 + inspection 45 allowance); explicit delete 5 seconds; combined launcher allowance remains 60 seconds |
 | Processor limits | CPU 40 seconds; address space 2 GiB; regular file size 32 MiB; 64 open descriptors; core dumps disabled |
 | Original / request / response | Original ≤5 MiB; JSON request ≤7 MiB; response ≤1 MiB |
 | PDF structure | 1–20 pages, no encryption/active actions/embedded content; bounded reachable-object walk |
@@ -262,17 +263,19 @@ Logging/access-log configuration separately; application logging suppression is
 not a platform logging audit.
 
 Host temporary-directory cleanup runs on exit; a named sandbox is force-deleted
-before a result can return. Failed create, execution or deletion refuses release.
+before a result can return. Failed synchronous execution or deletion refuses release.
 Native timeout, disconnect, worker crash, restart and forced deletion drills must
 prove no cross-request source/file retention and owned process cleanup. A cleanup
 exception alone does not prove that residual native resources are gone.
 
 The API rejects invalid format/size locally, and all worker/network/binding errors
-occur before resume persistence or enrichment charging. The worker currently returns
-fixed 503 for permanent refusals and temporary unavailability alike. The client has
-a 422 refusal branch, but the current worker does not use it remotely. This is a documented UX
-limitation: repeated retries cannot repair an encrypted or active-content file.
-Do not expose scanner findings or underlying provider exceptions to candidates.
+occur before resume persistence or enrichment charging. The original V1/V2 worker used
+fixed 503 responses for both permanent refusals and temporary unavailability. The current
+V3 protocol returns 422 only for an exact, original-byte-bound processor exit1 refusal
+after successful cleanup. Coherent processor exit2, unbound/ambiguous responses and
+failed cleanup remain unavailable with 503. Repeated retries cannot repair an encrypted
+or active-content file. Do not expose scanner findings or underlying provider exceptions
+to candidates.
 
 ## Deployment order and remaining acceptance
 
@@ -313,14 +316,12 @@ SD03/SE02–04 requirements or establish all-format resume safety.
 
 ## Native registry candidate
 
-The later minimal seven-file source archive was built by native Cloud Build
+The predecessor split-lifecycle seven-file source archive was built by native Cloud Build
 `417bc603-00e7-4237-b5cf-1ac60a870cb3`; native source generation and SHA256/MD5
 match the owned archive exactly. Registry image
 `hirewiz-document-inspector@sha256:edc8f5fc3000a40237ed3888c563c5f5ef175008e5ef3c4fb5007976119934e1`
 passes the actual eight-case engine corpus, all six runtime-file byte checks and
 restricted container checks through local Linux AMD64 execution on the ARM host.
 The original system-Python dependency refusal is preserved and only its interpreter
-was corrected for replay; no source or image was rebuilt. The registry candidate
-requires a published-source join and native Cloud Run sandbox/IAM/network/cleanup
-acceptance before API activation. No candidate resume was processed in this build.
+was corrected for replay; no source or image was rebuilt. The predecessor registry/source join is recorded in the delivery checkpoint; native sandbox/IAM/network/cleanup acceptance remains open. This synchronous-call proposal requires a new immutable build and exact seven-input/runtime-byte join plus new image/policy pins. The earlier image and eight-case engine proof cannot certify the changed service. No new image or native acceptance is claimed by this proposal. No candidate resume was processed in this build.
 See [sanitized registry evidence](../../docs/delivery/evidence/2026-10-10-document-registry-image.json).

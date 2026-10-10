@@ -14,7 +14,43 @@ Production pairing and portal-use permission remain open.
 
 ## Current checkpoint board — 10 October 2026
 
-The latest fully verified published source is `a162890ff50a606f9c23493ea11266d32ad416d6`.
+Published documentation head `01f88fd4a515e29a76f82cd920278633e4a81ace` passes all five jobs in
+[CI run 38067151227](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38067151227).
+Its runtime implementation remains the preceding a162 source. This CI result does not
+cover the newer scanner lifecycle, policy-pin or search amendments described below.
+The last independently joined full native backend build remains a162; known production
+routes still serve the quiesced `b306f13` compatibility release.
+
+The newer synchronous-do scanner source is independently reviewed and locally integrated:
+service SHA256 `040710f23e83ce61a8401338b52defb613b51e4344bf1bb2a4a063ce39962d11`
+and policy SHA256 `e7d6680ee78da0cda5a8e4d9abfaf178ce5684b8b55ebcc5c168b69e3ece8e34`.
+Root's source replay passes 143 cases. The original broader replay retains 49 stale-policy
+failures; two exact policy literals in the renderer and disabled configuration are repaired
+after 56 configuration checks plus two independent custody controls. The post-pin affected
+replay passes 376 with zero failures and 44 disposable-PostgreSQL cases skipped. Those
+44 cases and the amended committed source still require fresh full CI. The staged EDC
+scanner image retains its original `425fd4…` policy; it does not contain this amendment.
+
+Actual synthetic execution `rp5hg` succeeds with the fixed `sandbox do` echo marker only
+(exit 0, stdout 25 bytes, stderr 0). It establishes neither document scanning, sandbox
+isolation nor deletion/retirement. The new full native acceptance proposal passes 51
+offline checks, but needs a new immutable image/source join and actual execution.
+The earlier split-lifecycle Job failures and private HTTP holds remain preserved.
+
+The search V2 source is also independently reviewed and locally integrated: 39 existing/
+combined cases plus five independent controls pass, followed by 54 root unfiltered cases
+with no skips. It prefers unseen qualifying canonical openings before free saved matches.
+A legacy paid identity is accepted only from the same owner's exact saved search snapshot;
+missing or ambiguous history refuses a new paid reservation with
+`legacy_delivery_identity_unavailable`. Requested-count limits, accepted quotes, owner
+locking and credit rates stay unchanged. Large unbounded legacy-history lookup cost and
+latency, current-source PostgreSQL concurrency, the 1,000-candidate cap, honest view-all
+and broader recall remain open. This improves indexed-result progression and does not
+establish worldwide coverage. The [source-only checkpoint](evidence/2026-10-10-scanner-search-source-checkpoint.json) records these scopes;
+new source CI, backend/scanner images, native full scanner/HTTP acceptance and customer
+activation remain separate pending checkpoints.
+
+The preceding fully verified runtime source is `a162890ff50a606f9c23493ea11266d32ad416d6`.
 Its exact CI run [38057690476](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38057690476)
 passes all five jobs: 3,389 backend cases with zero skips, migrations through source
 head 0014, OpenAPI generation/drift checks, 353 frontend units, 215 responsive cases,
@@ -102,8 +138,8 @@ Original step 22 is not executed; existing-API signing grants 23–24 remain hel
 
 Earlier verified source `ab5cb5d958b3eff4ab99fb073fb47b5ca7c7bfcf` passed
 [all five CI jobs](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38047639205),
-including 3,149 backend cases. Its evidence remains historical; a162 is the current
-verified source. Native known routes still serve the compatibility release described below.
+including 3,149 backend cases. Its evidence remains historical; a162 remains the last joined native
+runtime build, while 01f is the latest verified documentation head. Native known routes still serve the compatibility release described below.
 
 On 10 October, bounded compatibility quiescence completed: the API now routes 100%
 and all three existing tags to `ai-resume-parser-b306-checkout-ai-off-20261010`;
@@ -144,7 +180,7 @@ The subsequent local receipt and fresh-definition repairs are integrated after
 independent 110-case and 20-case source reviews. A newly built actual ARM64 scanner
 image passes all eight real corpus cases. Policy v2 binds the amended Dockerfile and
 exact validated success contract; its digest is `425fd4b326554d8fee8d2686f423c8e2b499eaaa1bd7858eb69f7759ac526bdf`.
-The current a162 CI and exact scanner archive/image join now cover these source bytes;
+The preceding a162 CI and exact scanner archive/image join cover those source bytes;
 operational refresh and customer rollout remain open. The direct-GCS upload V2 backend is now integrated with its feature disabled after
 independent 69-case review. Both reproduced privacy/cleanup failures and their unchanged
 probes are retained; the narrow fixes pass. Root composed checks cover 197 distinct
@@ -166,14 +202,16 @@ completion claim or a percentage of the full goal.
 | --- | --- | --- |
 | Direct-upload publication and current-head correction | [x] a162 all five exact CI jobs pass: 3,389 backend cases, migrations and OpenAPI; original e353 four failures remain preserved. [x] Four-literal correction independently clear; 51 actual PostgreSQL cases pass | [ ] Application promotion remains required |
 | Native scanner configuration and runtime acceptance | [x] Seven source/image inputs joined; native config independently clear; Workflow V4 compiles and later post-retirement 403 denial passes one case. [ ] r8nc7 SDK exec1/stdout0 and c9zll smoke failure remain HOLD; c9zll missing-sandbox hint is false. Positive private HTTP remains open; original 403/503 failures retained | [x] Private Ready revision 00001-xcf. [ ] Runtime/customer acceptance and activation remain disabled |
-| Latest exact verified published source | [x] a162: all five CI lanes, 3,389 backend passes, genuine AMD64 scanner/compiler and connected five-width journey. [x] Exact native Git image build/registry metadata join | [ ] Built a162 backend image unpromoted; native `b306f13` compatibility release serves known routes |
+| Latest published documentation and prior runtime checkpoint | [x] 01f all five CI jobs pass; runtime source remains a162. [x] Prior a162 full CI/native Git backend image join. [ ] New scanner/search source still needs exact committed CI and images | [ ] Built a162 backend image unpromoted; native `b306f13` compatibility release serves known routes |
+| Synchronous-do scanner source and native marker | [x] Root143; exact two policy pins independently clear56+2; post-pin376 passes/44 PG skips. [x] Actual rp5hg fixed echo marker only; reviewed51-case offline full acceptance proposal | [ ] New immutable scanner/source join, full native corpus/isolation/deadline/deletion and positive private HTTP acceptance required; customer wiring disabled |
+| Indexed search progression and conservative paid legacy identity | [x] Search V2 independently clear39+5; root54 passes/no skips. Requested count and price/quote contracts unchanged | [ ] New-source CI/PG concurrency and deployment; unbounded legacy-history performance, 1,000-candidate cap, view-all and worldwide recall remain open |
 | Known-route generation and checkout quiescence | [x] One reviewed native execution plus independent before/after verification | [x] API/analysis-worker traffic and existing tags remapped; analysis queue dispatch PAUSED. [ ] Global old-consumer/provider fence remains open |
-| PDF/DOCX upload inspection outside the API | [x] V3 bound refusal/unavailability integrated after independent 190-check review. [x] Current a162 CI/native AMD64 and local ARM64 scanner acceptance. [x] Canonical policy and BFF timeout checks | [x] Private scanner staged. [ ] Actual Cloud Run isolation/HTTP acceptance, direct GCS release, native projects, retained files and application artifacts remain open |
-| Validated inspection receipts and fresh definition acquisition | [x] Independent 110-case receipt and 20-case acquisition reviews; fresh ARM64 eight-case scanner acceptance. [x] Current a162 CI and exact scanner source/image/policy join | [ ] Operational definition refresh, runtime acceptance and customer promotion pending |
+| PDF/DOCX upload inspection outside the API | [x] V3 bound refusal/unavailability integrated after independent 190-check review. [x] Preceding a162 CI/native AMD64 and local ARM64 engine cases. [x] Canonical policy and BFF timeout checks | [x] Private scanner staged. [ ] Actual Cloud Run isolation/HTTP acceptance, direct GCS release, native projects, retained files and application artifacts remain open |
+| Validated inspection receipts and fresh definition acquisition | [x] Independent 110-case receipt and 20-case acquisition reviews; fresh ARM64 eight-case scanner acceptance. [x] Preceding a162 CI and exact scanner source/image/policy join | [ ] Operational definition refresh, runtime acceptance and customer promotion pending |
 | Direct GCS upload quarantine and release | [x] V2 independently CLEAR 69; exact 12-path default-disabled integration; root composed 197 cases. [x] Seven-path frontend V2 independently CLEAR 74; original backend/frontend defects preserved | [x] Quarantine policy ACK/raw readback and both owned lease removals independently verified. [x] Selected-human four metadata permissions observed after lease expiry; clean steps 20–21 creation/settings read back. [x] Reviewed clean V3 CAS exact three-row ACK/readback and human metadata4 verified. [ ] Effective application actors, native browser CORS/signed objects, scheduling, schema 0014 grants/cutover and release acceptance pending |
 | Owned temporary quarantine metadata lease retirement | [x] First exact-removal proposal and retained receipts independently clear | [x] Both fresh-etag owned removals and later policy ACK/raw readback independently verified; all 19 unrelated bindings preserved. [x] Four selected-human metadata permissions recorded after second lease expiry with native project readback showing no owned lease. Application/object permissions remain open |
 | Durable scan/cleanup coordinator | [x] Exact five-path default-disabled integration after57 independent checks, including8 actual PostgreSQL cases; whole CI typing141 | [ ] Native identity/HTTP deadline, dedicated SQL/GCS grants, scheduler and child-to-provider acceptance pending |
-| Original-source access consistency and large downloads | [x] Exact two-path V2 repair; root 77/independent 18 cases. [x] Eight-path frontend/CSP independently CLEAR 72 and author's five-width synthetic browser 5 MiB byte/hash proof. [x] Current a162 CI/build; original failures stay preserved | [ ] Actual GCS generation-specific browser access, native CORS and customer release pending |
+| Original-source access consistency and large downloads | [x] Exact two-path V2 repair; root 77/independent 18 cases. [x] Eight-path frontend/CSP independently CLEAR 72 and author's five-width synthetic browser 5 MiB byte/hash proof. [x] Preceding a162 CI/build; original failures stay preserved | [ ] Actual GCS generation-specific browser access, native CORS and customer release pending |
 | Private document-worker deployment configuration | [x] Exact four-path reviewed proposal;76 review and56 root cases. [x] Native seven-file AMD64 registry build and eight real engine cases in local AMD64 execution. [x] Published source/image join and actual native configuration review | [x] Detached private service Ready. [ ] Actual runtime isolation/HTTP and customer activation remain open; the first native Job failure is retained |
 | Employer-origin search pilot, requested result count and separate search/application pricing | [x] Implemented and verified for the disclosed pilot | [x] Pilot backend `e7d8f2b`, schema `0009` |
 | Original/custom resume choice and exact package approval | [x] Connected browser/API/database proof; external transports are synthetic | [x] Preparation/manual handoff; automatic application remains unavailable |

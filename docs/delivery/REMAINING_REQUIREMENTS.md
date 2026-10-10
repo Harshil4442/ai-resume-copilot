@@ -2,7 +2,45 @@
 
 Review date: 10 October 2026 (Asia/Kolkata). This register distinguishes the promoted discovery and admission foundation from full development against `docs/requirements/JOB_SEARCH_AND_APPLICATION.md`. It does not close the full requirements checklist. The [current checkpoint board](AUTO_APPLY_PROGRESS.md) supersedes the historical chronology below.
 
-Latest fully verified published source `a162890ff50a606f9c23493ea11266d32ad416d6`
+## Latest source checkpoint and remaining launch work
+
+Published documentation head `01f88fd4a515e29a76f82cd920278633e4a81ace` passes all five jobs in
+[CI run 38067151227](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38067151227).
+Its runtime implementation remains the preceding a162 source. This CI result does not
+cover the newer scanner lifecycle, policy-pin or search amendments described below.
+The last independently joined full native backend build remains a162; known production
+routes still serve the quiesced `b306f13` compatibility release.
+
+The newer synchronous-do scanner source is independently reviewed and locally integrated:
+service SHA256 `040710f23e83ce61a8401338b52defb613b51e4344bf1bb2a4a063ce39962d11`
+and policy SHA256 `e7d6680ee78da0cda5a8e4d9abfaf178ce5684b8b55ebcc5c168b69e3ece8e34`.
+Root's source replay passes 143 cases. The original broader replay retains 49 stale-policy
+failures; two exact policy literals in the renderer and disabled configuration are repaired
+after 56 configuration checks plus two independent custody controls. The post-pin affected
+replay passes 376 with zero failures and 44 disposable-PostgreSQL cases skipped. Those
+44 cases and the amended committed source still require fresh full CI. The staged EDC
+scanner image retains its original `425fd4…` policy; it does not contain this amendment.
+
+Actual synthetic execution `rp5hg` succeeds with the fixed `sandbox do` echo marker only
+(exit 0, stdout 25 bytes, stderr 0). It establishes neither document scanning, sandbox
+isolation nor deletion/retirement. The new full native acceptance proposal passes 51
+offline checks, but needs a new immutable image/source join and actual execution.
+The earlier split-lifecycle Job failures and private HTTP holds remain preserved.
+
+The search V2 source is also independently reviewed and locally integrated: 39 existing/
+combined cases plus five independent controls pass, followed by 54 root unfiltered cases
+with no skips. It prefers unseen qualifying canonical openings before free saved matches.
+A legacy paid identity is accepted only from the same owner's exact saved search snapshot;
+missing or ambiguous history refuses a new paid reservation with
+`legacy_delivery_identity_unavailable`. Requested-count limits, accepted quotes, owner
+locking and credit rates stay unchanged. Large unbounded legacy-history lookup cost and
+latency, current-source PostgreSQL concurrency, the 1,000-candidate cap, honest view-all
+and broader recall remain open. This improves indexed-result progression and does not
+establish worldwide coverage. The [source-only checkpoint](evidence/2026-10-10-scanner-search-source-checkpoint.json) records these scopes;
+new source CI, backend/scanner images, native full scanner/HTTP acceptance and customer
+activation remain separate pending checkpoints.
+
+The preceding fully verified runtime source `a162890ff50a606f9c23493ea11266d32ad416d6`
 passes [all five exact CI jobs](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38057690476),
 including 3,389 backend cases with zero skips, migrations, OpenAPI drift checks,
 353 frontend units, 215 responsive cases, the normal production build and connected
@@ -13,7 +51,7 @@ source/tree and backend image digest
 `3d4d7f7a9ada1873949998d91c89b1a0109f4997e89300ecd5398232ec4d3052`.
 The built application image is unpromoted. Earlier ab5 success and e353's 3,385 passes/
 four stale-head failures remain historical; the reviewed correction's 51 actual
-PostgreSQL cases and the later a162 full CI close the current-source test gate.
+PostgreSQL cases and the later a162 full CI close that preceding-source test gate.
 
 The scanner is a private Ready service with independently checked configuration,
 using a separate seven-input image. Actual runtime acceptance remains HOLD: r8nc7
@@ -81,7 +119,7 @@ access consistency repair passes77 root and18 independent checks, preserving the
 original retained-binding failures. The eight-path large-download frontend/CSP now
 passes72 independent checks and the author's five-width synthetic browser fixture
 verifies exact 5 MiB bytes. Root's joined frontend passes 353 tests across 27 files,
-with full lint and TypeScript checks; current a162 hosted CI also passes the normal
+with full lint and TypeScript checks; preceding a162 hosted CI also passes the normal
 production build. Native storage/browser CORS, scheduling, grants/schema 0014,
 operating expense and full retention acceptance remain open.
 
@@ -225,10 +263,10 @@ The [candidate website integration](CANDIDATE_WEB_ROOT_INTEGRATION_2026-10-09.md
 | P0 | Local disabled foundation; full restore unproved | SE05, DP05; G05C, G06D | Durable artifact cleanup and SQL account deletion are present. Local independently retained lifetime/tombstone and bounded closure tests do not establish production permissions or a restore procedure preventing account, file and approval resurrection. Complete per-subject availability and full recovery; publish separate retention periods for resumes, artifacts, commands, logs and employer copies. |
 | P0 | Promoted foundation; full gate unproved | BI06, NF01–02, FR07; G05D–E | Promoted `7cc49c2` adds durable candidate/day/rolling/pending allowances, immutable price/policy quotes, exact atomic batches, and verified requisition or conservative provider identity. Exact-commit CI includes 26 actual PostgreSQL cases covering admission races, locked balances and creation/deletion ordering. Production schema/health and controlled rollout are recorded. Fleet fairness, off-platform attempts, policy waiting periods, canonical remapping and independent recovery remain open. See [the foundation evidence](EMPLOYER_ADMISSION_FOUNDATION.md). |
 | P0 | Unproved; external prerequisite | CN02–04, EX01, FR06; G05A | Public read access does not authorize writing. Before enabling a tenant, record the exact employer/provider permit, credential scope, origin, expiry and supported actions; validate every conditional question, consent, file constraint and complete-application receipt in an authorized sandbox. HTTP success or candidate creation is insufficient. No production test applications are permitted. |
-| P0 | Locally implemented; partially staged; acceptance unproved | SD03, SE02–04; G03B, G06D | Private antivirus/parser worker, validated receipts and durable direct-GCS quarantine/release/cleanup are integrated with direct uploads disabled. Current a162 full CI and native backend source/image build pass; the separate private scanner service is Ready but actual SDK isolation/private HTTP probes remain HOLD. Quarantine policy/lease closure is independently verified; four selected-human metadata permissions are recorded after second lease expiry and clean steps 20–21 raw birth/settings are verified. Reviewed clean V3 exact policy ACK/readback and human metadata4 are verified. Effective application actors, signed-object/browser CORS, scan/cleanup scheduling, restricted grants/schema 0014, document-worker isolation/egress and retention/failure drills remain unproved. |
+| P0 | Locally implemented; partially staged; acceptance unproved | SD03, SE02–04; G03B, G06D | Private antivirus/parser worker, validated receipts and durable direct-GCS quarantine/release/cleanup are integrated with direct uploads disabled. Preceding a162 full CI and native backend source/image build pass; synchronous-do/policy/search changes have local source review but require new committed CI/images; the separate private scanner service is Ready but actual SDK isolation/private HTTP probes remain HOLD. Quarantine policy/lease closure is independently verified; four selected-human metadata permissions are recorded after second lease expiry and clean steps 20–21 raw birth/settings are verified. Reviewed clean V3 exact policy ACK/readback and human metadata4 are verified. Effective application actors, signed-object/browser CORS, scan/cleanup scheduling, restricted grants/schema 0014, document-worker isolation/egress and retention/failure drills remain unproved. |
 | P1 | Local fixture foundation; production missing | EX02, EX04–05, FR06, SE03; G04A–D | A disabled Manifest V3 package with zero host grants passes 56 protocol and 14 actual Chromium tests against a synthetic localhost portal. It reviews exact answers before any autosave, preserves unknown checkpoints across restart and never uploads or submits. Authenticated production pairing, independent current action authority, tenant-specific permitted adapters, permission revocation and real portal validation remain required. See [the companion evidence](BROWSER_COMPANION.md). |
 | P1 | Missing / unproved | CV01–05, CN01; G00A, G02C, G06A–B | Seven adapter families and four reviewed tenants do not establish coverage. The local audit harness is integrated, but a genuinely independent stratified employer/posting/query reference, including unsupported eligible portals and holdouts, remains to be collected. Measure misses, original-date uncertainty, query recall and top-K usefulness separately. Claims require a clustered-sampling 95% confidence-interval lower bound above 95% for each claimed scope. |
-| P1 | Missing / partial | FR01–04, AI02–03, CV05; G01A–B, G02D | Basic extraction and fit use deterministic taxonomy rules. Versioned country/language/salary-currency/employment/sponsorship preferences are independently reviewed and integrated locally, with unknown data retained and 313 backend/218 frontend checks. Full live structured metadata, schema12/13 preflight, writer drain, historical refresh and billing/browser deployment remain open. Evidence is not uniformly claim-level. Strict role-token matching and a 1,000-candidate ranking cap need independent recall evaluation, aliases and an honest view-all path. |
+| P1 | Missing / partial | FR01–04, AI02–03, CV05; G01A–B, G02D | Basic extraction and fit use deterministic taxonomy rules. Versioned country/language/salary-currency/employment/sponsorship preferences are independently reviewed and integrated locally, with unknown data retained and 313 backend/218 frontend checks. Full live structured metadata, schema12/13 preflight, writer drain, historical refresh and billing/browser deployment remain open. Evidence is not uniformly claim-level. Existing versioned role aliases and strict qualifier matching plus a 1,000-candidate ranking cap need independent recall evaluation and an honest view-all path. Unseen-first search V2 and owner-bound legacy identity refusal are locally reviewed; unbounded history-query latency/cost remains unmeasured. |
 | P1 | Local connected proof; broader release unproved | AI01, AI03–06; G00B, G01A–D, G07B | Optional generation, shared three-attempt budgets and owner-scoped reuse exist. Persisted cost ceilings, retained detached liabilities and the real no-AI browser journey pass local review, including actual PostgreSQL result/erasure races and five widths. External payment/feed transports are synthetic. Monetary schema/policy remain unpromoted. Complete writer retirement, rollout and independent basic/enhanced quality and useful-completion cost measurement. |
 | P1 | Locally integrated native source; broader release unproved | RS01–08; G03A–D | Conservative source-preserving PDF/DOCX patches and exact-byte sealed artifacts exist. Scoped native LaTeX/project support is independently reviewed and integrated locally, including truth/action/date admission and guided application-boundary refusals. Positive local compilation and protected layout checks cover admitted fixtures, not arbitrary templates. Fresh immutable compiler CI portability, production worker isolation/custody and a broader representative visual/extraction report remain required. Preserve original/custom alternatives and actionable failure guidance. |
 | P1 | Hosted public scope proved; full flow/field scope unproved | FR10, NF06; G02D, G04D, G06E | Lazy loading, owner-bound cache reset and browser accessibility/layout fixtures support the UI. Twenty public hosted route/width cases pass, including 44px mobile controls, keyboard, focus and reduced motion; current lab LCP medians are 476–864ms. Employer launch fixtures intercept provider responses. Exact-release CI also proves 190 browser fixture cases, including the batch UI. These checks do not prove real submissions, field p75/INP or sustained load. Collect privacy-safe field metrics and validate each newly integrated launch flow. |

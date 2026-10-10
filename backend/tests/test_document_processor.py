@@ -278,7 +278,7 @@ def test_sandbox_exact_import_lifecycle_and_cleanup_before_result(service, monke
     monkeypatch.setattr(service.os, "access", lambda *_: True)
     def run(args, **options):
         calls.append(args)
-        if args[1] == "run":
+        if args[1] == "do":
             path = Path(next(a.split("=", 1)[1] for a in args if a.startswith("--import-tar=")))
             tar_paths.append(path)
             assert path.stat().st_mode & 0o777 == 0o600
@@ -287,12 +287,12 @@ def test_sandbox_exact_import_lifecycle_and_cleanup_before_result(service, monke
                 entry = archive.getmembers()[0]
                 assert entry.name == "tmp/request.json" and entry.isreg() and entry.mode == 0o444
                 assert archive.extractfile(entry).read() == original
-            return 0, b""
-        return 0, json.dumps(result_for(content)).encode() if args[1] == "exec" else b""
+            return 0, json.dumps(result_for(content)).encode()
+        return 0, b""
     monkeypatch.setattr(service, "_run", run)
     result = service.inspect_in_sandbox(original)
-    assert [args[1] for args in calls] == ["run", "exec", "delete"]
-    assert calls[0][2] == calls[1][2] == calls[2][2]
+    assert [args[1] for args in calls] == ["do", "delete"]
+    assert calls[0][2] == "--sandbox-name=" + calls[1][2]
     assert all(args[0] == service.SANDBOX for args in calls)
     assert not any(a.startswith(("--allow-egress", "--env", "--mount", "--export", "--sync")) for args in calls for a in args)
     assert all(not path.exists() for path in tar_paths)
@@ -300,8 +300,8 @@ def test_sandbox_exact_import_lifecycle_and_cleanup_before_result(service, monke
     assert result["policy_sha256"] == "b" * 64
 
 
-@pytest.mark.parametrize("failure_step", ["run", "exec", "delete"])
-def test_failed_run_exec_or_delete_never_releases_result(service, monkeypatch, failure_step):
+@pytest.mark.parametrize("failure_step", ["do", "delete"])
+def test_failed_do_or_delete_never_releases_result(service, monkeypatch, failure_step):
     content = pdf()
     calls = []
     monkeypatch.setattr(service.os.path, "isfile", lambda _: True)
@@ -310,7 +310,7 @@ def test_failed_run_exec_or_delete_never_releases_result(service, monkeypatch, f
         calls.append(args[1])
         if args[1] == failure_step:
             raise service.InspectionDenied()
-        return 0, json.dumps(result_for(content)).encode() if args[1] == "exec" else b""
+        return 0, json.dumps(result_for(content)).encode() if args[1] == "do" else b""
     monkeypatch.setattr(service, "_run", run)
     with pytest.raises(service.InspectionDenied):
         service.inspect_in_sandbox(payload(content))
@@ -778,16 +778,16 @@ def test_controlled_exec_outcome_requires_successful_cleanup_before_release(
 
     def run(args, **options):
         calls.append(args[1])
-        assert options.get("allow_outcome", False) is (args[1] == "exec")
+        assert options.get("allow_outcome", False) is (args[1] == "do")
         return (
             (code, json.dumps(private_outcome(content, code)).encode())
-            if args[1] == "exec"
+            if args[1] == "do"
             else (0, b"")
         )
 
     monkeypatch.setattr(service, "_run", run)
     result = service.inspect_in_sandbox(payload(content))
-    assert calls == ["run", "exec", "delete"]
+    assert calls == ["do", "delete"]
     assert result == {
         **private_outcome(content, code),
         "worker_image": "registry.invalid/document@sha256:" + "a" * 64,
@@ -821,12 +821,12 @@ def test_exec_error_protocol_disagreement_is_unavailable_and_always_deleted(
 
     def run(args, **options):
         calls.append(args[1])
-        return (code, json.dumps(outcome).encode()) if args[1] == "exec" else (0, b"")
+        return (code, json.dumps(outcome).encode()) if args[1] == "do" else (0, b"")
 
     monkeypatch.setattr(service, "_run", run)
     with pytest.raises(service.InspectionDenied) as caught:
         service.inspect_in_sandbox(payload(content))
-    assert "private-marker" not in str(caught.value) and calls == ["run", "exec", "delete"]
+    assert "private-marker" not in str(caught.value) and calls == ["do", "delete"]
 
 
 @pytest.mark.parametrize("code", [1, 2])
@@ -842,14 +842,14 @@ def test_failed_delete_overrides_controlled_document_outcome(service, monkeypatc
             raise service.InspectionDenied()
         return (
             (code, json.dumps(private_outcome(content, code)).encode())
-            if args[1] == "exec"
+            if args[1] == "do"
             else (0, b"")
         )
 
     monkeypatch.setattr(service, "_run", run)
     with pytest.raises(service.InspectionDenied):
         service.inspect_in_sandbox(payload(content))
-    assert calls == ["run", "exec", "delete"]
+    assert calls == ["do", "delete"]
 
 
 @pytest.mark.parametrize("code,allowed", [(1, False), (2, False), (1, True), (2, True), (3, True)])
@@ -875,9 +875,9 @@ def test_exec_duplicate_keys_never_release_a_controlled_result(service, monkeypa
 
     def run(args, **options):
         calls.append(args[1])
-        return (code, raw) if args[1] == "exec" else (0, b"")
+        return (code, raw) if args[1] == "do" else (0, b"")
 
     monkeypatch.setattr(service, "_run", run)
     with pytest.raises(service.InspectionDenied):
         service.inspect_in_sandbox(payload(content))
-    assert calls == ["run", "exec", "delete"]
+    assert calls == ["do", "delete"]
