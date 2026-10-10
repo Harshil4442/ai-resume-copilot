@@ -35,6 +35,7 @@ import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 
+import { AnalysisRunFeedback } from "../../../components/AnalysisRunFeedback";
 import { Button } from "../../../components/ui/Button";
 import { EmptyState } from "../../../components/ui/EmptyState";
 import { LoadingBlock } from "../../../components/ui/LoadingBlock";
@@ -139,33 +140,6 @@ function MatchSummary({ match }: { match: OpportunityMatch }) {
           ))}
         </div>
       </div>
-    </div>
-  );
-}
-
-function RunFeedback({ run }: { run: AnalysisRun | undefined }) {
-  if (!run || run.status === "succeeded") return null;
-  if (run.status === "failed") {
-    const incompleteInterview = run.operation === "interview_questions" && run.error_code === "InterviewOutputError";
-    const preservationFailed = run.operation === "resume_tailor" && run.error_code === "ResumeLayoutError";
-    const tailoringOutputFailed = run.operation === "resume_tailor" && run.error_code === "TailoringOutputError";
-    const usageMessage = run.committed_units === 0 && run.usage_state === "released"
-      ? "Any reserved units were released."
-      : run.committed_units === 0 && run.usage_state === "waived"
-        ? "No analysis units were charged."
-        : "";
-    return (
-      <div className="mt-4 flex gap-3 border-y border-coral/25 bg-coral/5 px-4 py-4 text-sm text-coral" role="alert">
-        <CircleAlert size={18} className="mt-0.5 shrink-0" />
-        <div><strong>{tailoringOutputFailed ? "Could not generate safe, useful changes for this role." : preservationFailed ? "Could not apply the changes while preserving your resume format." : incompleteInterview ? "Could not generate a complete question set." : "Analysis did not complete."}</strong><p className="mt-1 text-muted-foreground">{incompleteInterview || preservationFailed || tailoringOutputFailed ? "Please try again." : "Try again later."} {usageMessage}</p></div>
-      </div>
-    );
-  }
-  if (run.status === "cancelled") return <p className="mt-4 text-sm text-muted-foreground">Analysis cancelled. Reserved units were released.</p>;
-  return (
-    <div className="mt-4 flex items-center gap-3 border-y border-primary/20 bg-primary/5 px-4 py-4 text-sm text-foreground" role="status">
-      <LoaderCircle size={18} className="animate-spin text-primary" />
-      <span>{run.status === "queued" ? "Analysis is queued" : "Analyzing the role against your approved resume evidence"}</span>
     </div>
   );
 }
@@ -567,7 +541,7 @@ function OpportunityContent() {
           </div>
         </header>
 
-        {(startMatch.isError || matchRun.data) ? <RunFeedback run={matchRun.data} /> : null}
+        {(startMatch.isError || matchRun.data) ? <AnalysisRunFeedback run={matchRun.data} /> : null}
         {startMatch.isError ? <p className="mt-3 text-sm text-coral">{startMatch.error instanceof Error ? startMatch.error.message : "Could not start analysis."}</p> : null}
         {stageError || transition.isError ? <p className="mt-3 text-sm text-coral">{stageError || (transition.error instanceof Error ? transition.error.message : "Could not update application stage.")}</p> : null}
         {exportOpportunity.isError ? <p className="mt-3 text-sm text-coral">{exportOpportunity.error instanceof Error ? exportOpportunity.error.message : "Could not export this opportunity."}</p> : null}
@@ -704,7 +678,7 @@ function OpportunityContent() {
                     {sourceReady && evidence.isError ? <Button size="sm" variant="secondary" disabled={evidence.isFetching} onClick={() => void evidence.refetch()}><RefreshCw size={14} /> Refresh evidence</Button> : null}
                   </div>
                 </div>
-                <RunFeedback run={tailorRun.data} />
+                <AnalysisRunFeedback run={tailorRun.data} onSaveSourceSnapshot={() => createVersion.mutate()} sourceSnapshotDisabled={connectResume.isPending || !sourceReady || createVersion.isPending} />
                 {startTailoring.isError ? <p className="mt-3 text-sm text-coral" role="alert">{startTailoring.error instanceof Error ? startTailoring.error.message : "Could not start tailoring."}</p> : null}
                 {tailored ? <p className="mt-4 border-l-2 border-primary pl-4 text-sm font-semibold text-primary" role="status">Version {tailored.version_number} created. Review its proposed changes below before approval.</p> : null}
                 {createVersion.isError ? <p className="mt-3 text-sm text-coral" role="alert">{createVersion.error instanceof Error ? createVersion.error.message : "Could not save the source snapshot."}</p> : null}
@@ -817,7 +791,7 @@ function OpportunityContent() {
                   {interviewQuestions.length > evidenceBackedCount ? <span className="inline-flex items-center gap-2 text-muted-foreground"><CircleAlert size={16} aria-hidden="true" /> {interviewQuestions.length - evidenceBackedCount} {interviewQuestions.length - evidenceBackedCount === 1 ? "needs" : "need"} evidence</span> : null}
                 </div>
               ) : null}
-              <RunFeedback run={interviewRun.data} />
+              <AnalysisRunFeedback run={interviewRun.data} />
               {startInterview.isError ? <p className="mt-4 text-sm text-coral" role="alert">{startInterview.error instanceof Error ? startInterview.error.message : "Could not generate questions. Please try again."}</p> : null}
               {interviewResult.isLoading ? <div className="mt-6"><LoadingBlock rows={3} /></div> : null}
               {interviewResult.isError ? <div className="mt-4 flex flex-wrap items-center gap-3 text-sm" role="alert"><p className="text-coral">Could not load your interview questions.</p><Button variant="secondary" size="sm" onClick={() => void interviewResult.refetch()}>Retry loading</Button></div> : null}

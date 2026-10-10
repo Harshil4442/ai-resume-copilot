@@ -1736,6 +1736,7 @@ export interface components {
             error_code: string | null;
             /** Estimated Units */
             estimated_units: number;
+            failure_guidance?: components["schemas"]["TailoringFailureGuidance"] | null;
             /**
              * Generation Attempt Count
              * @default 0
@@ -3398,6 +3399,19 @@ export interface components {
             enabled: boolean;
             /** Reason */
             reason: string;
+        };
+        /** TailoringFailureGuidance */
+        TailoringFailureGuidance: {
+            /**
+             * Next Action
+             * @enum {string}
+             */
+            next_action: "choose_source" | "upload_editable_source" | "check_source_file" | "reduce_source_size" | "use_supported_font" | "shorten_wording" | "keep_original_layout" | "edit_source_manually" | "keep_link_text" | "review_evidence" | "check_tex_dependencies" | "check_tex_source" | "use_original_or_custom";
+            /**
+             * Reason Code
+             * @enum {string}
+             */
+            reason_code: "source_required" | "editable_source_required" | "source_unreadable" | "source_too_large" | "source_protected" | "source_format_unsupported" | "font_unsupported" | "replacement_does_not_fit" | "source_layout_changed" | "source_span_unavailable" | "source_links_protected" | "evidence_changes_unsupported" | "tex_dependency_unsupported" | "tex_compile_failed" | "tex_worker_unavailable" | "tex_artifact_invalid" | "no_supported_changes" | "validation_failed";
         };
         /** UploadCreate */
         UploadCreate: {

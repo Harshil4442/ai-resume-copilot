@@ -12,9 +12,31 @@ selected by the candidate on 9 October. Actual host fields exceed the public API
 and current static subset; native attachment and final submission remain manual.
 Production pairing and portal-use permission remain open.
 
-## Current checkpoint board — 10 October 2026
+## Current checkpoint board — 11 October 2026
 
-Verified scanner/search runtime checkpoint `eeb53d6ad982b629c07bd4f526477d0966e3669c`, tree
+The ordinary [actionable tailoring guidance](TAILORING_FAILURE_GUIDANCE_2026-10-11.md)
+is integrated locally after eleven-path independent clearance, 102 backend/367
+frontend independent executions and root 96 backend/365 frontend executions, all
+without failures or skips. Static reason-specific guidance offers explicit unchanged
+snapshot and original/custom choices, with zero added AI calls. Refunds, attempts and
+partial source edits are unchanged. New source CI, the composed workspace flow and
+promotion remain open; the verified626 runtime checkpoint below precedes this change.
+
+Latest fully verified runtime checkpoint `626efa901565ab8c089d8c8603739788a6038823`,
+tree `65f471b2a8b8f2b0569fd7c41351ee77cd04e158`, passes all five jobs in
+[run 38075728280, attempt 1](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38075728280).
+Root verifies all 38 independently retained artifacts and the exact six-path commit.
+Backend passes 3,449 cases with zero skips; PostgreSQL migrations, Ruff/Mypy, native
+AMD64 document/TeX checks and actual OpenAPI drift checks pass. Frontend passes
+353 units and 215 responsive cases; companion passes 136 controls. The connected
+cold-browser journey makes zero model calls and uses synthetic external providers.
+This closes fresh committed-source CI for the PDF/DOCX link-fidelity repair. It does
+not close Word-compatible DOCX pagination, Cloud Run isolation, positive private HTTP,
+production migration or customer activation. The eeb backend image below precedes
+the new layout source; a matching new application image and promotion remain required.
+Any later runtime source changes require their own committed-source verification.
+
+Preceding scanner/search runtime checkpoint `eeb53d6ad982b629c07bd4f526477d0966e3669c`, tree
 `353300538d2b86b17269ac1514e38ed79d3cbd5e`, passes all five CI lanes in
 [run 38070998618, attempt 2](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38070998618).
 The original four successful jobs carry forward unchanged; only the backend is rerun
@@ -100,9 +122,9 @@ skips, including actual restricted local TeX compilation; configured Ruff/Mypy p
 The initial missing local compiler prerequisite is retained and corrected by an actual
 source-attested ARM64 image, without changing test bodies. These checks do not establish
 arbitrary resume-format compatibility, Word-compatible DOCX pagination, native customer
-rendering/custody or production acceptance. Fresh committed-source CI remains required
-for this newly changed layout source; eeb CI and its backend image remain the preceding
-scanner/search checkpoint.
+rendering/custody or production acceptance. Fresh626 committed-source CI now passes for this layout source; eeb CI and its backend
+image remain the preceding scanner/search checkpoint. Matching application image, native
+acceptance and production promotion remain open.
 
 The [current CI and scanner-image checkpoint](evidence/2026-10-10-current-source-ci-and-scanner-image.json)
 records the new scoped evidence. The [earlier source-only checkpoint](evidence/2026-10-10-scanner-search-source-checkpoint.json)
@@ -259,12 +281,13 @@ completion claim or a percentage of the full goal.
 
 | Checkpoint | Development / verification | Production deployment |
 | --- | --- | --- |
-| Direct-upload publication and current-head correction | [x] Current eeb all five exact CI jobs pass: 3,433 backend cases, zero skips, migrations and OpenAPI; original ECR429 and preceding e353 failures retained | [ ] Application promotion remains required |
+| Direct-upload publication and current-head correction | [x] Latest fully verified626 all five exact CI jobs pass: 3,449 backend cases, zero skips, migrations and OpenAPI; original ECR429 and preceding e353 failures retained | [ ] Application promotion remains required |
 | Native scanner configuration and runtime acceptance | [x] Seven source/image inputs joined; native config independently clear; Workflow V4 compiles and later post-retirement 403 denial passes one case. [ ] r8nc7 SDK exec1/stdout0 and c9zll smoke failure remain HOLD; c9zll missing-sandbox hint is false. Positive private HTTP remains open; original 403/503 failures retained | [x] Private Ready revision 00001-xcf. [ ] Runtime/customer acceptance and activation remain disabled |
 | Latest committed runtime and native backend image | [x] Current eeb exact CI and native Git backend build/source/registry join, digest eb6369; 17 review artifacts verified | [ ] Built backend image unpromoted; known routes retain the compatibility release |
 | Synchronous-do scanner source and native acceptance | [x] Current-source CI, exact seven-input native build/image1fd and eight actual local AMD64 cases. [x] Strict startup/live-clock repair independently clear72/0skip | [x] One synthetic Job Ready with verified configuration. [ ] Full r724t execution fails at isolation_do; runtime/host controls pass only. Child corpus/cleanup/private HTTP and customer acceptance remain open |
 | Indexed search progression and conservative paid legacy identity | [x] Search V2 independently clear39+5; root54/0skip and current eeb full CI including PostgreSQL pass. Requested count and prices unchanged | [ ] Deployment, bounded legacy-history performance, 1,000-candidate cap, view-all and worldwide recall remain open |
-| PDF/DOCX link-label and clickable-region fidelity | [x] Exact two-path repair/source review; root110 unique related checks, zero skips, Ruff/Mypy. Three original failures preserved | [ ] Fresh-source CI/backend image and deployment; DOCX native pagination and broader fidelity acceptance remain open |
+| PDF/DOCX link-label and clickable-region fidelity | [x] Exact two-path repair/source review; root110 unique related checks, zero skips, Ruff/Mypy. Three original failures preserved | [x] Fresh626 source CI. [ ] Matching backend image and deployment; DOCX native pagination and broader fidelity acceptance remain open |
+| Actionable tailoring failure guidance | [x] Exact eleven-path source integration; independent102 backend/367 frontend executions and root96 backend/365 frontend executions, zero failures/skips; finite sanitized contract and static choices, no new AI call | [ ] New committed-source CI, composed workspace switch flow, matching release and customer promotion |
 | Known-route generation and checkout quiescence | [x] One reviewed native execution plus independent before/after verification | [x] API/analysis-worker traffic and existing tags remapped; analysis queue dispatch PAUSED. [ ] Global old-consumer/provider fence remains open |
 | PDF/DOCX upload inspection outside the API | [x] V3 bound refusal/unavailability integrated after independent 190-check review. [x] Preceding a162 CI/native AMD64 and local ARM64 engine cases. [x] Canonical policy and BFF timeout checks | [x] Private scanner staged. [ ] Actual Cloud Run isolation/HTTP acceptance, direct GCS release, native projects, retained files and application artifacts remain open |
 | Validated inspection receipts and fresh definition acquisition | [x] Independent 110-case receipt and 20-case acquisition reviews; fresh ARM64 eight-case scanner acceptance. [x] Preceding a162 CI and exact scanner source/image/policy join | [ ] Operational definition refresh, runtime acceptance and customer promotion pending |

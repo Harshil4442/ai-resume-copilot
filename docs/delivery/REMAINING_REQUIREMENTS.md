@@ -1,10 +1,33 @@
 # Remaining requirements after the discovery pilot
 
-Review date: 10 October 2026 (Asia/Kolkata). This register distinguishes the promoted discovery and admission foundation from full development against `docs/requirements/JOB_SEARCH_AND_APPLICATION.md`. It does not close the full requirements checklist. The [current checkpoint board](AUTO_APPLY_PROGRESS.md) supersedes the historical chronology below.
+Review date: 11 October 2026 (Asia/Kolkata). This register distinguishes the promoted discovery and admission foundation from full development against `docs/requirements/JOB_SEARCH_AND_APPLICATION.md`. It does not close the full requirements checklist. The [current checkpoint board](AUTO_APPLY_PROGRESS.md) supersedes the historical chronology below.
 
 ## Latest source checkpoint and remaining launch work
 
-Verified scanner/search runtime checkpoint `eeb53d6ad982b629c07bd4f526477d0966e3669c`, tree
+The ordinary [tailoring failure guidance](TAILORING_FAILURE_GUIDANCE_2026-10-11.md)
+is now integrated locally across eleven reviewed paths. Finite persisted reasons,
+owner-only optional API guidance and static original/custom/snapshot actions pass
+independent 102 backend/367 frontend executions and root 96 backend/365 frontend
+executions, with zero failures or skips. Credit/refund/attempt and source-selection
+behaviour is unchanged. New committed-source CI, the composed workspace browser flow
+and production promotion remain pending; the fully verified626 checkpoint below
+precedes this guidance source.
+
+Latest fully verified runtime checkpoint `626efa901565ab8c089d8c8603739788a6038823`,
+tree `65f471b2a8b8f2b0569fd7c41351ee77cd04e158`, passes all five jobs in
+[run 38075728280, attempt 1](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38075728280).
+Root verifies all 38 independently retained artifacts and the exact six-path commit.
+Backend passes 3,449 cases with zero skips; PostgreSQL migrations, Ruff/Mypy, native
+AMD64 document/TeX checks and actual OpenAPI drift checks pass. Frontend passes
+353 units and 215 responsive cases; companion passes 136 controls. The connected
+cold-browser journey makes zero model calls and uses synthetic external providers.
+This closes fresh committed-source CI for the PDF/DOCX link-fidelity repair. It does
+not close Word-compatible DOCX pagination, Cloud Run isolation, positive private HTTP,
+production migration or customer activation. The eeb backend image below precedes
+the new layout source; a matching new application image and promotion remain required.
+Any later runtime source changes require their own committed-source verification.
+
+Preceding scanner/search runtime checkpoint `eeb53d6ad982b629c07bd4f526477d0966e3669c`, tree
 `353300538d2b86b17269ac1514e38ed79d3cbd5e`, passes all five CI lanes in
 [run 38070998618, attempt 2](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38070998618).
 The original four successful jobs carry forward unchanged; only the backend is rerun
@@ -90,9 +113,9 @@ skips, including actual restricted local TeX compilation; configured Ruff/Mypy p
 The initial missing local compiler prerequisite is retained and corrected by an actual
 source-attested ARM64 image, without changing test bodies. These checks do not establish
 arbitrary resume-format compatibility, Word-compatible DOCX pagination, native customer
-rendering/custody or production acceptance. Fresh committed-source CI remains required
-for this newly changed layout source; eeb CI and its backend image remain the preceding
-scanner/search checkpoint.
+rendering/custody or production acceptance. Fresh626 committed-source CI now passes for this layout source; eeb CI and its backend
+image remain the preceding scanner/search checkpoint. Matching application image, native
+acceptance and production promotion remain open.
 
 The [current CI and scanner-image checkpoint](evidence/2026-10-10-current-source-ci-and-scanner-image.json)
 records the new scoped evidence. The [earlier source-only checkpoint](evidence/2026-10-10-scanner-search-source-checkpoint.json)
@@ -207,8 +230,9 @@ cases and 72 frontend unit cases; those results do not close production pairing.
 
 ## Resume fidelity priorities
 
-The new link guards close reproduced defects only. Remaining requirements include a
-sanitized reason/next-action response instead of the generic retry message; actual
+The new link guards close reproduced defects only. The sanitized reason/next-action
+response is integrated with scoped verification; its committed-source and composed
+browser/deployment acceptance remains open. Other requirements include actual
 Word-compatible DOCX page/line/font verification; PDF/DOCX render validation before
 approval and sealing; and a representative multi-column, embedded-font, hyperlink and
 reading-order corpus. The original/custom resume remains an explicit alternative when

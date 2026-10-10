@@ -16,6 +16,7 @@ from ..common import utcnow
 from ..notifications import enqueue_notification
 from ..usage import commit_run_usage, release_run_usage
 from .operations import execute_operation
+from .tailoring_failures import persist_tailoring_failure
 
 log = logging.getLogger("hirewiz.analysis.tasks")
 TERMINAL_STATES = {"succeeded", "failed", "cancelled"}
@@ -195,7 +196,11 @@ def process_analysis_run(run_id: str) -> str:
                 db.rollback()
                 return status
             run.error_code = type(exc).__name__[:80]
-            run.error_message = str(exc)[:500]
+            run.error_message = (
+                persist_tailoring_failure(exc)
+                if run.operation == "resume_tailor"
+                else str(exc)[:500]
+            )
             run.updated_at = utcnow()
             if run.cancel_requested:
                 run.status = "cancelled"
@@ -211,7 +216,11 @@ def process_analysis_run(run_id: str) -> str:
             run.completed_at = utcnow()
             release_run_usage(db, run, reason=f"Analysis failed: {type(exc).__name__}")
             db.commit()
-            log.exception("Analysis run %s failed", run_id)
+            if run.operation == "resume_tailor":
+                # A traceback may contain source text, paths or provider output.
+                log.error("Analysis run %s failed code=%s reason=%s", run_id, run.error_code, run.error_message)
+            else:
+                log.exception("Analysis run %s failed", run_id)
             return run.status
     finally:
         db.close()

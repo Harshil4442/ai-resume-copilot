@@ -3,7 +3,13 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from .tailoring_failures import (
+    TailoringFailureReason,
+    TailoringNextAction,
+    public_tailoring_guidance,
+)
 
 AnalysisOperation = Literal[
     "job_match",
@@ -23,6 +29,11 @@ class AnalysisRunCreate(BaseModel):
     idempotency_key: str | None = Field(default=None, min_length=8, max_length=160)
 
 
+class TailoringFailureGuidance(BaseModel):
+    reason_code: TailoringFailureReason
+    next_action: TailoringNextAction
+
+
 class AnalysisRunResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -37,6 +48,8 @@ class AnalysisRunResponse(BaseModel):
     model: str | None
     prompt_version: str | None
     error_code: str | None
+    failure_guidance: TailoringFailureGuidance | None = Field(default_factory=lambda: None)
+
     attempt_count: int
     generation_attempt_limit: int = 3
     generation_attempt_count: int = 0
@@ -48,6 +61,22 @@ class AnalysisRunResponse(BaseModel):
     cancelled_at: datetime | None
     input_purged_at: datetime | None
     result_purged_at: datetime | None
+
+    @model_validator(mode="before")
+    @classmethod
+    def add_failure_guidance(cls, value: Any) -> Any:
+        if isinstance(value, cls):
+            return value
+        if isinstance(value, dict):
+            data = dict(value)
+            stored_message = data.pop("error_message", None)
+        else:
+            data = {name: getattr(value, name) for name in cls.model_fields if hasattr(value, name)}
+            stored_message = getattr(value, "error_message", None)
+        data["failure_guidance"] = public_tailoring_guidance(
+            data.get("operation", ""), data.get("status", ""), stored_message,
+        )
+        return data
 
 
 class AnalysisRunListResponse(BaseModel):

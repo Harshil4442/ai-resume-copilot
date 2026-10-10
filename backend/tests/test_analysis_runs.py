@@ -1012,7 +1012,7 @@ def test_failed_tailoring_keeps_layout_diagnostics_and_cause_after_rollback(monk
             run = db.get(AnalysisRun, run_id)
             assert run.usage_state == "released" and run.committed_units == 0
             assert run.error_code == "TailoringOutputError"
-            assert run.error_message == "Could not apply useful changes while preserving the resume format"
+            assert run.error_message == "resume-tailoring-failure/v1:replacement_does_not_fit"
             assert run.result_payload is None
             assert db.query(ResumeVersion).count() == 0
             assert db.query(ModelCallEvent).count() == 0

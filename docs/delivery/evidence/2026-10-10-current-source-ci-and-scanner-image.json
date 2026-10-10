@@ -99,6 +99,26 @@
     "submission_acknowledged": true,
     "terminal_outcome_not_yet_joined": false
   },
+  "latest_fully_verified_runtime_CI": {
+    "all_five_jobs": "success",
+    "artifact_manifest_sha256": "2b307da2883474c921b81a34dc75cc40a609a73d77140856ce19da19010f5d79",
+    "attempt": 1,
+    "backend_passed": 3449,
+    "backend_skipped": 0,
+    "cloud_run_isolation_proven": false,
+    "companion_cases": 136,
+    "customer_activation": false,
+    "frontend_units": 353,
+    "independent_verdict_sha256": "b258bab482e74879168033018c2817488c20541fa5fa34b09d98835d4bfe6b9d",
+    "later_runtime_source_requires_fresh_CI": true,
+    "new_matching_backend_image_built": false,
+    "production_promoted": false,
+    "responsive_cases": 215,
+    "root_verified_artifacts": 38,
+    "run_id": 38075728280,
+    "source_head": "626efa901565ab8c089d8c8603739788a6038823",
+    "source_tree": "65f471b2a8b8f2b0569fd7c41351ee77cd04e158"
+  },
   "limitations": [
     "Local AMD64 engine success is separate from actual sandbox do and Cloud Run isolation/cleanup/HTTP evidence.",
     "Known production routes retain the compatibility release; no application promotion or database migration follows.",
@@ -153,6 +173,21 @@
     "uid": "9e3fcf95-2fb7-4f1f-9cde-7a176e02db60"
   },
   "observed_at_utc": "2026-10-10T18:24:42.125218+00:00",
+  "ordinary_tailoring_failure_guidance": {
+    "added_model_calls": 0,
+    "evidence": "2026-10-11-tailoring-failure-guidance.json",
+    "full_browser_native_customer_acceptance": false,
+    "independent_backend_cases": 102,
+    "independent_frontend_executions": 367,
+    "integrated_shipping_paths": 11,
+    "new_committed_source_CI_pending": true,
+    "protected_source_reads_or_changes": 0,
+    "root_backend_cases": 96,
+    "root_frontend_executions": 365,
+    "root_integration_sha256": "9be7b39dd344ad5a2d920ef6949625941676ef7b14549aa6df30dfc85ee7a4bc",
+    "skips": 0,
+    "source_base_head": "626efa901565ab8c089d8c8603739788a6038823"
+  },
   "remaining": {
     "GCS_SQL_API_customer_wiring": false,
     "global_consumer_provider_fence": false,
@@ -165,7 +200,7 @@
   "resume_link_repair": {
     "author_artifacts_sha256": "ccf215fcbb58e1572ae265c8fe121259a840adfdf8442f41c15589ffc3f6279f",
     "author_manifest_sha256": "800467e0c879ded843ba9aa286f80e817f577f2f9235becabbe81d5f392a2092",
-    "fresh_committed_CI_pending": true,
+    "fresh_committed_CI_pending": false,
     "original_three_failure_bodies_preserved": true,
     "production_promoted": false,
     "root_result": {
