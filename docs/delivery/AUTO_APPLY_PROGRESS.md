@@ -14,12 +14,36 @@ Production pairing and portal-use permission remain open.
 
 ## Current checkpoint board — 10 October 2026
 
+The direct-upload source is now published as `e353e83dbd86700c979262f6680fb7913d205ac8`.
+Its exact CI run [38054665085](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38054665085)
+passes frontend, cold-browser, companion and security/container jobs. Backend reports
+3,385 passes and four failures: current-head assertions still expect schema0013 after
+the additive upload migration advances the source head to0014. The independently
+reviewed four-literal test correction passes all 51 affected actual PostgreSQL cases,
+preserves historical downgrade targets and leaves the complete local catalog unchanged.
+The successor still requires its own full CI, including OpenAPI checks skipped after
+the original test failure. The original failed run is retained.
+
+The private scanner is now actually staged Ready as revision
+`hirewiz-document-inspector-00001-xcf`, with its seven published source inputs joined
+to image `edc8f5fc3000a40237ed3888c563c5f5ef175008e5ef3c4fb5007976119934e1`.
+Independent native metadata review verifies internal ingress, IAM checks, exact pins,
+sandbox launcher configuration and a dedicated keyless identity with no application
+grants. The sole revision has maximum 2 instances; the provider service-wide maximum is 10.
+This configuration proof is separate from runtime acceptance: the actual synthetic Job
+`hirewiz-document-isolation-probe-grvwv` exits1 and records a fixed failed result.
+Its original configuration and failure are preserved; customer wiring remains disabled.
+The private HTTP acceptance workflow also exposed a real provider expression-parser
+error, requiring a separate repair before execution. See
+[the source and native checkpoint](SOURCE_CI_AND_NATIVE_SCANNER_2026-10-10.md).
+
 A later native minimal-context Cloud Build (`417bc603-00e7-4237-b5cf-1ac60a870cb3`)
 now publishes the private scanner candidate at immutable digest `edc8f5fc3000a40237ed3888c563c5f5ef175008e5ef3c4fb5007976119934e1`. Native
 source generation/SHA256/MD5 match its exact seven-file owned archive; the actual
 registry image passes all eight engine cases in local AMD64 execution on an ARM
 host, with all six runtime files and restricted metadata verified. This is a
-registry candidate, not a Cloud Run deployment or full shipping-commit CI proof.
+registry proof; the later private Cloud Run stage is recorded above. It is not full
+paid-release CI or runtime-acceptance proof.
 [Registry evidence](evidence/2026-10-10-document-registry-image.json) retains those limits.
 The seven-path upload frontend V2 is integrated after independent 74-case review,
 including unchanged controls for both original cancellation defects. Root full
@@ -34,8 +58,8 @@ Both original counterexamples are preserved. The eight-path original-source
 frontend and enabled-storage CSP repair are now integrated after72 independent
 checks. The author's normal enabled build passes310 units and a five-width
 synthetic browser fixture verifies exact5MiB preview/download bytes; root combined
-verification is separate. No upload/coordinator activation,
-production migration or scanner service deployment has occurred.
+verification is separate. Upload/coordinator activation and production migration
+have not occurred; the detached scanner service stage is recorded above.
 
 
 The latest fully verified published source is `ab5cb5d958b3eff4ab99fb073fb47b5ca7c7bfcf`:
@@ -101,6 +125,8 @@ completion claim or a percentage of the full goal.
 
 | Checkpoint | Development / verification | Production deployment |
 | --- | --- | --- |
+| Direct-upload publication and current-head correction | [x] `e353e83d` published; four successful CI jobs,3385 backend passes/four stale-head failures retained. [x] Four-literal correction independently clear;51 actual PostgreSQL cases pass | [ ] Corrected-source full CI and application promotion remain required |
+| Native scanner configuration and runtime acceptance | [x] Seven source/image inputs joined; native config independently clear. [ ] First actual Job fails; diagnostic and Workflow parser repairs remain required | [x] Private Ready revision00001-xcf with no application invokers. [ ] Runtime/customer acceptance and activation remain disabled |
 | Latest exact verified published source | [x] `ab5cb5d9`: all five CI lanes, 3,149 backend passes, genuine AMD64 scanner and connected five-width journey | [ ] Paid source not built/promoted; native `b306f13` compatibility release serves known routes |
 | Known-route generation and checkout quiescence | [x] One reviewed native execution plus independent before/after verification | [x] API/analysis-worker traffic and existing tags remapped; analysis queue dispatch PAUSED. [ ] Global old-consumer/provider fence remains open |
 | PDF/DOCX upload inspection outside the API | [x] V3 bound refusal/unavailability integrated after independent 190-check review. [x] `ab5cb5d9` hosted CI/native AMD64 and local ARM64 scanner acceptance. [x] Canonical policy recorded; upload timeout repair passes 51 BFF cases | [ ] Cloud Run isolation and deployment pending; direct GCS quarantine, native projects, retained files and application artifacts remain open |
@@ -108,7 +134,7 @@ completion claim or a percentage of the full goal.
 | Direct GCS upload quarantine and release | [x] V2 independently CLEAR69; exact12-path default-disabled integration; root composed197 cases. [x] Seven-path frontend V2 independently CLEAR74; root291 units/lint/types. Both original backend and frontend defects are repaired and preserved | [ ] Native bucket/IAM/CORS, scheduling, schema0014 grants/cutover and release acceptance pending |
 | Durable scan/cleanup coordinator | [x] Exact five-path default-disabled integration after57 independent checks, including8 actual PostgreSQL cases; whole CI typing141 | [ ] Native identity/HTTP deadline, dedicated SQL/GCS grants, scheduler and child-to-provider acceptance pending |
 | Original-source access consistency and large downloads | [x] Exact two-path V2 repair; root77/independent18 cases. [x] Eight-path frontend/CSP independently CLEAR72 and author's five-width synthetic browser5MiB byte/hash proof. Original failures stay preserved | [ ] Actual GCS generation-specific browser access, native CORS and exact-source release pending |
-| Private document-worker deployment configuration | [x] Exact four-path independently reviewed proposal;76 review and56 root cases. [x] Native seven-file AMD64 registry build and eight real engine cases in local AMD64 execution | [ ] Shipping-commit/image join, native identity/network/isolation proof and activation pending; offline checker does not establish native authority |
+| Private document-worker deployment configuration | [x] Exact four-path reviewed proposal;76 review and56 root cases. [x] Native seven-file AMD64 registry build and eight real engine cases in local AMD64 execution. [x] Published source/image join and actual native configuration review | [x] Detached private service Ready. [ ] Actual runtime isolation/HTTP and customer activation remain open; the first native Job failure is retained |
 | Employer-origin search pilot, requested result count and separate search/application pricing | [x] Implemented and verified for the disclosed pilot | [x] Pilot backend `e7d8f2b`, schema `0009` |
 | Original/custom resume choice and exact package approval | [x] Connected browser/API/database proof; external transports are synthetic | [x] Preparation/manual handoff; automatic application remains unavailable |
 | Credit purchase links and responsive mobile navigation | [x] Five-width staged/live checks and exact CI | [x] Pilot frontend `06cc112`; narrow offer-retirement frontend `67a51f2` now serves both HireWiz domains |

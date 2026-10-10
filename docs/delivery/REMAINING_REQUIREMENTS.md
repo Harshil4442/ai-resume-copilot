@@ -3,6 +3,14 @@
 Review date: 10 October 2026 (Asia/Kolkata). This register distinguishes the promoted discovery and admission foundation from full development against `docs/requirements/JOB_SEARCH_AND_APPLICATION.md`. It does not close the full requirements checklist. The [current checkpoint board](AUTO_APPLY_PROGRESS.md) supersedes the historical chronology below.
 
 Latest fully verified published source `ab5cb5d9` passes all five exact CI jobs and 3,149 backend tests.
+Later published `e353e83d` has four successful jobs and a backend result of 3,385 passes/four
+stale current-head assertion failures. The reviewed four-literal correction passes 51
+affected actual PostgreSQL tests; corrected-source full CI remains required. The scanner
+is now a private Ready Cloud Run service with independently checked native configuration,
+but its first actual isolation Job fails. Private HTTP Workflow compilation also found
+an invalid map expression; runtime acceptance and customer activation remain open.
+The [current native checkpoint](SOURCE_CI_AND_NATIVE_SCANNER_2026-10-10.md) supersedes older
+statements below that the scanner has not been staged.
 The production API and analysis-worker known routes/tags now serve reviewed `b306f13`
 compatibility revisions with optional generation disabled; checkout is closed and analysis
 queue dispatch is PAUSED. Schema remains `0009`; finite paid plans, global consumer/provider
