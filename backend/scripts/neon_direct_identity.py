@@ -274,6 +274,7 @@ def collect_neon_direct_proxy(
 def verify_transport(connection: Any, binding: NeonDirectProxyBinding) -> None:
     """Recheck genuine transport before protected metadata/session observation."""
     try:
+        _registered(binding)
         driver = connection.connection.driver_connection
         if _guarded_drivers.get(driver) is not binding:
             raise NeonIdentityDenied("neon_direct_guarded_driver_unavailable")
