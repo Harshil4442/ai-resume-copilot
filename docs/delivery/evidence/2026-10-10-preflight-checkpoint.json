@@ -24,8 +24,8 @@
     "skipped_cases": 0,
     "root_combined_ruff": "pass",
     "root_combined_mypy": "pass",
-    "new_published_source_ci": "pending_for_parent_and_deadline_composition",
-    "new_native_image": "pending",
+    "new_published_source_ci": "pending_for_v6_environment_amendment",
+    "new_native_image": "pending_for_v6_environment_amendment",
     "deadline_repair_review_cases": 220
   },
   "actual_retained_inventory_observation": {
@@ -41,7 +41,7 @@
     "cutover_ready": false
   },
   "remaining": [
-    "18 retained environment names across 9 metadata records exceed collector POSIX-name surface; native compatibility unresolved",
+    "Environment-name compatibility independently clear; native inventory and unsupported-source resolution still pending",
     "Other consumers and issuer restoration/minting authority unverified",
     "Credential sharing unanswered",
     "Distinct restricted DB identities and old writer/provider retirement pending",
@@ -134,7 +134,8 @@
     "failure_reproduced_offline": true,
     "source_repair": "independently_clear_source_only",
     "not_release_clearance": true,
-    "openapi_drift_step": "not_run_after_backend_failure"
+    "openapi_drift_step": "not_run_after_backend_failure",
+    "historical_attempt": true
   },
   "deadline_repair_review": {
     "source_sha256": "dc0b1f0959a536c38b094db1273a0f62c5933d8431bd3d61204e2cfc43840e86",
@@ -149,7 +150,40 @@
     "native_invocation": false,
     "global_fence": "unavailable",
     "cutover_ready": false,
-    "fresh_full_ci": "pending",
-    "new_native_image": "pending"
+    "fresh_full_ci": "verified_on_exact_1c2519",
+    "new_native_image": "verified_on_exact_1c2519_not_deployed"
+  },
+  "last_verified_full_source": {
+    "commit": "1c2519bc3989c60405dce5154d8e6bd73067d826",
+    "tree": "42566b73b8f36686bbe22d0890cd8e53582121b8",
+    "ci_run_id": 38011041181,
+    "ci_url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38011041181",
+    "all_five_jobs": "success",
+    "backend_passed": 2758,
+    "backend_warnings": 453,
+    "frontend_units_passed": 240,
+    "responsive_passed": 215,
+    "companion_passed": 136,
+    "cold_harness_passed": 14,
+    "skipped_reported": 0,
+    "openapi_drift": "executed_pass",
+    "strict_amd64_compiler": "fresh_pass",
+    "build_id": "efd9b7f4-3b2d-4d20-a9dc-21e1df5eca5c",
+    "image_digest": "sha256:37d38766cf84f825a398df6d26c49eb0e4475de48426b7f2f349d46133ed3c5a",
+    "source_and_native_image_independently_root_verified": true,
+    "production_deployment": false,
+    "not_proof_for_v6_amendment": true
+  },
+  "environment_name_amendment": {
+    "status": "independently_clear_source_only",
+    "base_commit": "1c2519bc3989c60405dce5154d8e6bd73067d826",
+    "source_sha256": "8a6e01be89acdc25b18d9282b20a10b868cf43f6b1b95a955bfaba2a1bfe0493",
+    "author_packet_sha256": "448b64b81658b24bedb5a49e7955f46306b45031690192598f582ad0328c24c1",
+    "independent_verdict_sha256": "2963f1e39b79d15a8ea4765111cb0a92d9377090ca5328b5c3423d7f12e2738f",
+    "unique_affected_passes": 310,
+    "skips": 0,
+    "native_inventory": "pending_bounded_read_only_observation",
+    "global_fence": "unchanged_unavailable",
+    "cutover_ready": false
   }
 }

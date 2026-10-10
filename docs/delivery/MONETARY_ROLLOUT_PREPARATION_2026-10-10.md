@@ -160,11 +160,18 @@ checks, zero skips and Ruff/Mypy. Its three comparisons preserve the exact
 proof on the final published composition remain required. The original backend
 failure also prevented its later OpenAPI drift step from running.
 
+The deadline composition is now fully verified on exact `1c2519bc`: all five CI jobs pass, including 2,758 backend cases and the executed OpenAPI check. Its independent native Git build and registry reads agree on `sha256:37d38766cf84f825a398df6d26c49eb0e4475de48426b7f2f349d46133ed3c5a`. Root verified 61 CI artifacts and 20 native-build artifacts. This completes that source's CI/image checkpoint, not its production rollout.
+
+The v6 native-name amendment independently passes 310 unique affected checks with zero skips. It accepts bounded opaque names, preserves exact identity/candidate matching, keeps unknown credential aliases unresolved, and hides raw names from reports. Additional transient privacy checks prevent lowercase/confusable values or arbitrary raw names from reflecting into otherwise-public metadata. Original failures are preserved. Root integrated exactly the three cleared files; a fresh native attempt and amended-source CI/image remain pending. The global native fence is unchanged.
+
+Neon administrative access is available for the already-bound project. The role audit confirms the installed control function's NULL ACL implies PUBLIC execution; native public PG17 session IDs need no monitor grant. Independently authenticated replacement execution still needs verification. Preparation, ownership transfer, old-role deletion and migration remain distinct operations; none has been executed by this checkpoint.
+
 - [ ] Establish whether old credentials are shared with other applications.
 - [ ] Complete native provider/issuer and database writer retirement, with new
   restricted identities and exact secret versions.
 - [ ] Verify a fresh fenced backup and restoration, then migrate through schema 0013.
-- [ ] Verify the exact published CI source and returned native image provenance.
+- [x] Verify exact 1c source CI and returned native image provenance.
+- [ ] Verify fresh CI/image on the v6 amended composition before release.
 - [ ] Stage and promote the joined API/workers with admission closed, then independently
   verify funded runtime configuration and intentionally activate useful workflows.
 - [ ] Activate finite checkout after catalog/payment observation verification.

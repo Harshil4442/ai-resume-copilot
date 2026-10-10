@@ -229,3 +229,63 @@ failure (one failed deadline case, 2,707 passes) and the unchanged independent
 exact-cutoff counterexamples remain preserved. This source proof does not establish
 actual inventory success; the environment-name refusal above remains unchanged.
 Fresh published-source full CI and native image verification remain pending.
+
+
+## V6 opaque environment-name compatibility
+
+This source-only amendment is based exactly on published commit
+`1c2519bc3989c60405dce5154d8e6bd73067d826`. The earlier native observation's
+`native_environment_identity_or_duplicate` refusal remains preserved. Separate
+sanitized metadata reported 18 non-POSIX names across nine records and zero
+exact duplicates; no actual names or values were exposed to this author. That
+observation establishes the repair's scope, not successful inventory or retirement.
+
+Cloud Run's [EnvVar contract](https://docs.cloud.google.com/run/docs/reference/rest/v2/Container#EnvVar)
+limits names to 32,768 characters. Its [configuration guide](https://docs.cloud.google.com/run/docs/configuring/services/environment-variables)
+includes hyphenated names and rejects empty names and `=`. The collector now
+accepts nonempty UTF-8-encodable names within that character bound, excluding `=`
+and NUL. It retains raw identity exactly: no case, punctuation, whitespace or
+Unicode normalization, and exact duplicate names still refuse. Unicode and
+leading digits do not imply credential usage. The guide's `X_GOOGLE_` reservation
+is a creation rule; this read-only component preserves observed reserved names
+without creating variables or claiming their runtime validity. Existing payload,
+value-byte, environment-count, resource, page, request and absolute time limits
+remain unchanged.
+
+Only the existing exact model/database name sets select credential candidates.
+The existing credible-alias rule is retained. A separate case-insensitive,
+separator-tolerant plausibility check marks unfamiliar model/database spellings
+unresolved, including surrounding ASCII whitespace; it never normalizes identity,
+promotes those spellings to candidates or accesses their secret references.
+Other unclassified names are not proof that arbitrary configuration contains no
+credentials. The global scope limitations above remain in force.
+
+Raw environment names in `Origin` are private and hidden from `repr`. Sanitized
+unresolved provenance uses zero-based container/environment indexes and fixed
+reasons. Mounted configuration has no environment entry and uses a null index.
+Unknown raw names participate in a transient reflection check, so a name copied
+into a public resource, UID or secret-version field refuses output. Literal value
+redaction searches the same existing generic privacy markers case-insensitively;
+non-ASCII names also receive conservative literal-value redaction, protecting
+confusable spellings without changing candidate classification. Reflected values,
+decoded URL authentication fragments or raw names are never persisted or hashed.
+An incidental match can conservatively refuse output; these privacy heuristics
+are not exhaustive credential discovery. Unknown/excluded references remain
+unaccessed and settlement/JWT/task credentials remain excluded from retirement.
+
+The unchanged-script red run reproduced 30 failures with 13 passing controls.
+The first repair passed those 43 cases; an unchanged independent probe then found
+one trailing-space alias omission (36 passes/one failure). Four additional
+independent lowercase-marker reflection cases and two authored Unicode-confusable
+reflection cases also failed before their privacy-only correction; all original
+failures are retained outside Git. A first test-launch path error occurred before
+pytest and is preserved separately. Final-byte verification passes 209 collector
+cases, 41 unchanged independent name/privacy probes and two unchanged global
+release-refusal/observation cases: 252 passed, zero skipped. Ruff and Mypy pass.
+The original 160 collector cases, native transport, candidate/exclusion sets,
+source/secret identity checks and every global release gate retain their behavior.
+
+No native credential inventory, cloud/SQL/provider call, mutation, CI/build,
+publication or deployment was performed by this author. Independent frozen-source
+review and any authorized native observation are separate next steps. This fix
+never produces a global fence or true `cutover_ready`.

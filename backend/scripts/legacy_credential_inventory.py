@@ -70,10 +70,40 @@ SECRET = re.compile(
     rf"projects/{PROJECT_NUMBER}/secrets/[A-Za-z0-9_-]{{1,255}}/versions/[1-9][0-9]{{0,18}}"
 )
 UID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}")
-ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}")
+MAX_ENV_NAME_CHARACTERS = 32768
 CREDIBLE_ALIAS = re.compile(
     r"(?:(?:LLM|GEMINI|GOOGLE|OPENAI|GROQ|ANTHROPIC|AZURE_OPENAI)_[A-Z0-9_]*(?:KEY|TOKEN|CREDENTIALS|KEY_FILE)|(?:DATABASE|DB|POSTGRES|PG)_(?:URL|DSN|PASSWORD|PASS|USER|USERNAME|HOST|SERVICE|SERVICEFILE)|(?:LLM_API_KEY|DATABASE_URL)_FILE)"
 )
+# Plausibility only: unfamiliar spellings remain unresolved, never candidates.
+# This does not normalize the native identity or select additional secret reads.
+OPAQUE_CREDENTIAL_ALIAS = re.compile(
+    r"\s*(?:(?:LLM|GEMINI|GOOGLE|OPENAI|GROQ|ANTHROPIC|AZURE[^A-Za-z0-9]+OPENAI)[^A-Za-z0-9][\s\S]*(?:KEY|TOKEN|CREDENTIALS|KEY[^A-Za-z0-9]+FILE)|(?:DATABASE|DB|POSTGRES|PG)[^A-Za-z0-9]+(?:URL|DSN|PASSWORD|PASS|USER|USERNAME|HOST|SERVICE|SERVICEFILE)|(?:LLM[^A-Za-z0-9]+API[^A-Za-z0-9]+KEY|DATABASE[^A-Za-z0-9]+URL)[^A-Za-z0-9]+FILE)\s*",
+    re.IGNORECASE | re.ASCII,
+)
+# Privacy only; this never selects a credential candidate or secret reference.
+SENSITIVE_MARKER = re.compile(
+    r"KEY|SECRET|TOKEN|DATABASE|DSN|PASSWORD|PASS", re.IGNORECASE | re.ASCII
+)
+
+
+def _environment_name_valid(name: Any) -> bool:
+    # Read retained EnvVar identity; do not apply shell-identifier grammar.
+    if (
+        not isinstance(name, str)
+        or not 1 <= len(name) <= MAX_ENV_NAME_CHARACTERS
+        or "=" in name
+        or "\0" in name
+    ):
+        return False
+    try:
+        name.encode("utf-8")
+    except UnicodeError:
+        return False
+    return True
+
+
+def _unsupported_credential_alias(name: str) -> bool:
+    return bool(CREDIBLE_ALIAS.fullmatch(name) or OPAQUE_CREDENTIAL_ALIAS.fullmatch(name))
 
 
 class InventoryDenied(RuntimeError):
@@ -205,7 +235,8 @@ class Origin:
     uid: str
     kind: ResourceKind
     container_index: int
-    environment_name: str
+    environment_name: str = field(repr=False)
+    environment_index: int | None = None
 
 
 @dataclass(frozen=True)
@@ -263,7 +294,7 @@ class RetainedInventory:
                     "resource": u.origin.resource,
                     "uid": u.origin.uid,
                     "container_index": u.origin.container_index,
-                    "environment_name": u.origin.environment_name,
+                    "environment_index": u.origin.environment_index,
                     "reason": u.reason,
                 }
                 for u in self.unresolved
@@ -546,17 +577,20 @@ def collect_retained_credentials(transport: Transport) -> RetainedInventory:
                 if not isinstance(env, list) or len(env) > 1000:
                     raise InventoryDenied("native_environment_bound_or_shape")
                 names: set[str] = set()
-                for entry in env:
+                for environment_index, entry in enumerate(env):
                     if (
                         not isinstance(entry, dict)
-                        or not isinstance(entry.get("name"), str)
-                        or ENV_NAME.fullmatch(entry["name"]) is None
+                        or not _environment_name_valid(entry.get("name"))
                         or entry["name"] in names
                     ):
                         raise InventoryDenied("native_environment_identity_or_duplicate")
                     key = entry["name"]
                     names.add(key)
-                    origin = Origin(name, uid, kind, index, key)
+                    origin = Origin(name, uid, kind, index, key, environment_index)
+                    if key not in MODEL_NAMES | DB_NAMES | SETTLEMENT_NAMES:
+                        # Unknown raw names are private too; deny indirect reflection
+                        # into otherwise-public resource/version/UID provenance.
+                        sensitive.add(key)
                     if (
                         set(entry) == {"name", "value"}
                         and isinstance(entry["value"], str)
@@ -567,19 +601,9 @@ def collect_retained_credentials(transport: Transport) -> RetainedInventory:
                         reference = None
                         if (
                             key in MODEL_NAMES | DB_NAMES | SETTLEMENT_NAMES
-                            or CREDIBLE_ALIAS.fullmatch(key)
-                            or any(
-                                marker in key
-                                for marker in (
-                                    "KEY",
-                                    "SECRET",
-                                    "TOKEN",
-                                    "DATABASE",
-                                    "DSN",
-                                    "PASSWORD",
-                                    "PASS",
-                                )
-                            )
+                            or _unsupported_credential_alias(key)
+                            or SENSITIVE_MARKER.search(key)
+                            or not key.isascii()
                         ):
                             sensitive.update(_redaction_values(inline_value))
                     elif (
@@ -596,7 +620,7 @@ def collect_retained_credentials(transport: Transport) -> RetainedInventory:
                     if key in SETTLEMENT_NAMES:
                         continue
                     if key not in MODEL_NAMES | DB_NAMES:
-                        if CREDIBLE_ALIAS.fullmatch(key):
+                        if _unsupported_credential_alias(key):
                             unresolved.append(
                                 Unresolved(
                                     origin, "credential_alias_not_supported_by_source_contract"

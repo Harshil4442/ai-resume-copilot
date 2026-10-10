@@ -961,3 +961,185 @@ def test_collection_absolute_deadline_at_adverse_float_starts(monkeypatch, start
             inv.collect_retained_credentials(native)
     assert all(count == 2 for count in native.list_counts.values())
     assert not any(api == "secret" for api, _, _ in native.calls)
+
+
+# V6: native identities are opaque names, not shell identifiers. These cases use
+# only the synthetic transport; no provider credentials or native calls exist.
+@pytest.mark.parametrize(
+    "name",
+    [
+        "KEY-1",
+        "synthetic.label",
+        "1SYNTHETIC",
+        "synthetic_é",
+        "名",
+        "N" * 129,
+        "N" * 32768,
+        "名" * 32768,
+    ],
+)
+def test_v6_documented_opaque_environment_names_collect_without_public_names(name):
+    native = NativeFixture()
+    native.rows["revisions"][0]["containers"][0]["env"] = [env(name, "ordinary-literal")]
+    result = inv.collect_retained_credentials(native)
+    summary = json.dumps(result.sanitized_provenance(), ensure_ascii=False)
+    assert name not in summary and name not in repr(result)
+    assert result.sanitized_provenance()["cutover_ready"] is False
+    assert not any(api == "secret" for api, _, _ in native.calls)
+
+
+@pytest.mark.parametrize(
+    "name", ["", "N" * 32769, "名" * 32769, "contains=value", "contains\0nul", "\ud800", None, 1]
+)
+def test_v6_invalid_environment_identity_refuses_fixed_reason_without_echo(name):
+    native = NativeFixture()
+    native.rows["revisions"][0]["containers"][0]["env"] = [env(name, "ordinary-literal")]
+    with pytest.raises(
+        inv.InventoryDenied, match="^native_environment_identity_or_duplicate$"
+    ) as caught:
+        inv.collect_retained_credentials(native)
+    assert str(caught.value) == "native_environment_identity_or_duplicate"
+    assert not any(api == "secret" for api, _, _ in native.calls)
+
+
+@pytest.mark.parametrize("name", ["KEY-1", "synthetic.label", "1SYNTHETIC", "名", "N" * 32768])
+def test_v6_exact_duplicate_opaque_environment_names_refuse(name):
+    native = NativeFixture()
+    native.rows["revisions"][0]["containers"][0]["env"] = [env(name, "first"), env(name, "second")]
+    with pytest.raises(inv.InventoryDenied, match="^native_environment_identity_or_duplicate$"):
+        inv.collect_retained_credentials(native)
+
+
+def test_v6_distinct_case_punctuation_and_unicode_names_are_not_collapsed():
+    native = NativeFixture()
+    names = ["APP-FIELD", "app-field", "APP.FIELD", "1APP", "café", "cafe\u0301"]
+    native.rows["revisions"][0]["containers"][0]["env"] = [
+        env(name, "ordinary-literal") for name in names
+    ]
+    result = inv.collect_retained_credentials(native)
+    assert result.sanitized_provenance()["cutover_ready"] is False
+    assert not any(api == "secret" for api, _, _ in native.calls)
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "llm-api-key",
+        "openai.api.key",
+        "GROQ-API-TOKEN",
+        "db.url",
+        "PG-PASSWORD",
+        "GEMINI·API·KEY",
+        "database_url",
+        "DATABASE_URL ",
+    ],
+)
+@pytest.mark.parametrize("source_kind", ["literal", "reference"])
+def test_v6_unknown_credential_aliases_stay_unresolved_private_and_unaccessed(name, source_kind):
+    native = NativeFixture()
+    secret = "synthetic-unknown-alias-private-value"
+    entry = (
+        env(name, secret)
+        if source_kind == "literal"
+        else {
+            "name": name,
+            "valueSource": {"secretKeyRef": {"secret": "unclassified", "version": "7"}},
+        }
+    )
+    native.rows["revisions"][0]["containers"][0]["env"] = [entry]
+    result = inv.collect_retained_credentials(native)
+    unresolved = [item for item in result.unresolved if item.origin.environment_name == name]
+    assert len(unresolved) == 1
+    assert unresolved[0].reason == "credential_alias_not_supported_by_source_contract"
+    assert unresolved[0].origin.environment_index == 0
+    summary = json.dumps(result.sanitized_provenance(), ensure_ascii=False)
+    for text in (name, secret):
+        assert text not in summary and text not in repr(result) and text not in repr(unresolved[0])
+    item = result.sanitized_provenance()["unresolved"][0]
+    assert item["environment_index"] == 0 and "environment_name" not in item
+    assert secret not in [credential.value for credential in result.credentials]
+    assert not result.secret_handles and not any(api == "secret" for api, _, _ in native.calls)
+
+
+@pytest.mark.parametrize("name", ["llm-api-key", "openai.api.key", "PG-PASSWORD"])
+def test_v6_unknown_credential_alias_value_reflection_refuses(name):
+    native = NativeFixture()
+    secret = "reflected-unknown-private-value"
+    row = _reflect_revision_name(native, secret)
+    row["containers"][0]["env"] = [env(name, secret)]
+    with pytest.raises(inv.InventoryDenied, match="^sanitized_provenance_secret_reflection$"):
+        inv.collect_retained_credentials(native)
+    assert not any(api == "secret" for api, _, _ in native.calls)
+
+
+def test_v6_unknown_database_alias_decoded_password_reflection_refuses():
+    native = NativeFixture()
+    row = _reflect_revision_name(native, "private-test-password")
+    row["containers"][0]["env"] = [env("db.url", DATABASE)]
+    with pytest.raises(inv.InventoryDenied, match="^sanitized_provenance_secret_reflection$"):
+        inv.collect_retained_credentials(native)
+
+
+def test_v6_unknown_raw_environment_name_reflected_in_resource_refuses():
+    native = NativeFixture()
+    private_name = "raw-environment-private-name"
+    row = _reflect_revision_name(native, private_name)
+    row["containers"][0]["env"] = [env(private_name, "ordinary-literal")]
+    with pytest.raises(inv.InventoryDenied, match="^sanitized_provenance_secret_reflection$"):
+        inv.collect_retained_credentials(native)
+
+
+def test_v6_origin_raw_name_is_hidden_even_when_name_equals_a_credential():
+    native = NativeFixture()
+    native.rows["revisions"][0]["containers"][0]["env"] = [env(MODEL, "ordinary-literal")]
+    result = inv.collect_retained_credentials(native)
+    assert MODEL not in repr(result)
+    origin = inv.Origin("fixed-resource", "fixed-uid", "revision", 0, MODEL, 0)
+    assert MODEL not in repr(origin)
+    assert origin.environment_name == MODEL and origin.environment_index == 0
+
+
+def test_v6_known_candidates_keep_exact_names_and_environment_indexes():
+    native = NativeFixture()
+    row = native.rows["revisions"][0]
+    row["containers"][0]["env"] = [
+        env("ordinary.field", "ordinary-literal"),
+        env("LLM_API_KEY", MODEL),
+        env("llm-api-key", "synthetic-unresolved-key"),
+    ]
+    result = inv.collect_retained_credentials(native)
+    credential = next(item for item in result.credentials if item.value == MODEL)
+    origin = next(item for item in credential.origins if item.resource == row["name"])
+    assert origin.environment_name == "LLM_API_KEY" and origin.environment_index == 1
+    assert any(item.origin.environment_index == 2 for item in result.unresolved)
+    assert "synthetic-unresolved-key" not in [item.value for item in result.credentials]
+    assert inv.MODEL_NAMES == {
+        "LLM_API_KEY",
+        "GOOGLE_API_KEY",
+        "GEMINI_API_KEY",
+        "OPENAI_API_KEY",
+        "GROQ_API_KEY",
+    }
+    assert inv.DB_NAMES == {"DATABASE_URL"}
+
+
+@pytest.mark.parametrize("name", ["custom.ｋｅｙ", "merchant.ſecret"])
+def test_v6_confusable_name_marker_value_reflection_refuses_without_normalization(name):
+    native = NativeFixture()
+    secret = "reflected-confusable-private-value"
+    row = _reflect_revision_name(native, secret)
+    row["containers"][0]["env"] = [env(name, secret)]
+    with pytest.raises(inv.InventoryDenied, match="^sanitized_provenance_secret_reflection$"):
+        inv.collect_retained_credentials(native)
+    assert not any(api == "secret" for api, _, _ in native.calls)
+
+
+@pytest.mark.parametrize("name", ["custom.ｋｅｙ", "merchant.ſecret"])
+def test_v6_unreflected_confusable_identity_is_not_normalized_or_a_candidate(name):
+    native = NativeFixture()
+    value = "unreflected-confusable-private-value"
+    native.rows["revisions"][0]["containers"][0]["env"] = [env(name, value)]
+    result = inv.collect_retained_credentials(native)
+    assert value not in [credential.value for credential in result.credentials]
+    assert name not in repr(result) and name not in json.dumps(result.sanitized_provenance())
+    assert not any(api == "secret" for api, _, _ in native.calls)
