@@ -1,0 +1,184 @@
+import React from "react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const state = vi.hoisted(() => ({ owner: "one", session: { status: "authenticated", data: { user: { id: "one" } } } as { status: string; data: { user: { id: string } } | null }, get: vi.fn(), post: vi.fn() }));
+vi.mock("../../lib/api", () => ({ apiGet: state.get, apiPostJson: state.post }));
+vi.mock("next-auth/react", () => ({ SessionProvider: ({ children }: { children: React.ReactNode }) => children, useSession: () => state.session }));
+vi.mock("next/navigation", () => ({ usePathname: () => "/employer-jobs" }));
+vi.mock("next/dynamic", () => ({ default: () => ({ id }: { id: string }) => <div data-testid="application-panel">Review application {id}</div> }));
+
+import EmployerJobsPage from "./page";
+import SessionProviderWrapper from "../../components/SessionProviderWrapper";
+import type { EmployerSearchSummary, SearchResult } from "../../lib/employerJobs";
+
+let client: QueryClient;
+function summary(owner = state.owner): EmployerSearchSummary {
+  return { id: `search_${owner}`, status: "completed", desired_count: 3, delivered_count: 3, reserved_credits: 6, charged_credits: 4, refunded_credits: 2, created_at: "2026-10-11T00:00:00Z", query: { resume_id: owner === "one" ? 10 : 20, role: `Python Engineer ${owner}`, location: "Bengaluru", remote_only: true, published_within_days: 7, desired_count: 3, excluded_employers: ["Excluded Employer"] }, scope: { candidate_limit_reached: true, price_quote: { unit_price: 2, pricing_version: "original-price", requested_count: 3, maximum_credits: 6, search_input_fingerprint: "exact-original-input" } } };
+}
+function item(owner = state.owner): SearchResult {
+  return { posting: { id: `job_${owner}`, source_id: "source_fixture", external_id: "1", title: `Saved job for ${owner}`, employer: "Synthetic Employer", location: "Bengaluru", description: "Python", canonical_url: "https://employer.example/jobs/1", apply_url: "https://employer.example/jobs/1", platform: "greenhouse", publication_at: null, last_checked_at: "2026-10-11T00:00:00Z", application_mode: "manual" }, fit: { score: 80, matched_skills: ["Python"], missing_evidence: [], reasons: ["Documented overlap"], scoring_version: "basic-catalog-overlap-v1" }, charged_credits: 2 };
+}
+function read(url: string) {
+  const owner = state.owner;
+  if (url.endsWith("/catalog")) return Promise.resolve({ enabled: true, auto_submit_enabled: false, balance: 50, search_credits_per_job: 9, apply_credits_per_job: 20, max_search_jobs: 100, sources: [] });
+  if (url === "/resume/list") return Promise.resolve({ resumes: [{ id: owner === "one" ? 10 : 20, filename: `original-${owner}.pdf`, source_available: true }] });
+  if (url.endsWith("/applications")) return Promise.resolve({ items: [] });
+  if (url.includes("/search-summaries?")) return Promise.resolve({ items: [summary(owner)], next_cursor: null });
+  if (url.includes("/results?")) return Promise.resolve({ search: summary(owner), items: [item(owner)], total_items: 1, start_index: 0, next_cursor: null, snapshot_version: "v1-exact-snapshot" });
+  throw new Error(`Unexpected GET in local control: ${url}`);
+}
+function withClient() {
+  return function TestQueryProvider({ children }: { children: React.ReactNode }) { return <QueryClientProvider client={client}>{children}</QueryClientProvider>; };
+}
+
+beforeEach(() => {
+  client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 30_000 }, mutations: { retry: false } } });
+  state.owner = "one"; state.session = { status: "authenticated", data: { user: { id: "one" } } };
+  state.get.mockReset().mockImplementation(read); state.post.mockReset();
+});
+afterEach(() => { cleanup(); client.clear(); });
+
+describe("employer page saved-search composition", () => {
+  it("loads summaries, restores the selected query, and shows its original quote despite current price changes", async () => {
+    render(<EmployerJobsPage />, { wrapper: withClient() });
+    await screen.findByText("Python Engineer one");
+    expect(state.get.mock.calls.some(([url]) => url === "/v1/employer-jobs/searches")).toBe(false);
+    expect(state.get.mock.calls.some(([url]) => String(url).includes("/results?"))).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: /Python Engineer one/ }));
+    await screen.findByRole("heading", { name: "Saved job for one" });
+    expect(screen.getByLabelText("Resume")).toHaveValue("10");
+    expect(screen.getByLabelText("Target role")).toHaveValue("Python Engineer one");
+    expect(screen.getByLabelText("Location")).toHaveValue("Bengaluru");
+    expect(screen.getByLabelText("Jobs to find")).toHaveValue(3);
+    expect(screen.getByLabelText("Published/released within")).toHaveValue("7");
+    expect(screen.getByLabelText("Remote roles only")).toBeChecked();
+    expect(screen.getByText("4 service credits charged · 2 returned")).toBeInTheDocument();
+    expect(screen.getByText("Saved quote: 2 per new job · up to 6 service credits for 3 requested jobs.")).toBeInTheDocument();
+    expect(screen.getByText("Up to 27 service credits")).toBeInTheDocument();
+    expect(state.post).not.toHaveBeenCalled();
+  });
+
+  it("retains explicit original-resume preparation for the selected job and opens the existing review flow", async () => {
+    state.post.mockResolvedValue({ id: "application_saved", status: "manual_handoff" });
+    render(<EmployerJobsPage />, { wrapper: withClient() });
+    await screen.findByText("Python Engineer one");
+    fireEvent.click(screen.getByRole("button", { name: /Python Engineer one/ }));
+    await screen.findByRole("heading", { name: "Saved job for one" });
+    fireEvent.click(screen.getByRole("button", { name: "Prepare application" }));
+    await screen.findByTestId("application-panel");
+    expect(state.post).toHaveBeenCalledTimes(1);
+    const [url, payload] = state.post.mock.calls[0];
+    expect(url).toBe("/v1/employer-jobs/applications");
+    expect(payload).toMatchObject({ posting_id: "job_one", resume_id: 10, resume_choice: "original" });
+    expect(payload.idempotency_key).toEqual(expect.any(String));
+    expect(state.post.mock.calls.some(([target]) => String(target).includes("tailor") || String(target).includes("execute") || String(target).includes("approve"))).toBe(false);
+  });
+
+  it("keeps requested count, excluded employers, and idempotency for an interrupted explicit paid search", async () => {
+    state.post.mockRejectedValueOnce(new Error("Synthetic interrupted search")).mockResolvedValueOnce({ ...summary(), items: [item()] });
+    render(<EmployerJobsPage />, { wrapper: withClient() });
+    await screen.findByText("Python Engineer one");
+    fireEvent.click(screen.getByRole("button", { name: /Python Engineer one/ }));
+    await screen.findByRole("heading", { name: "Saved job for one" });
+    fireEvent.click(screen.getByRole("button", { name: "Find jobs" }));
+    await screen.findByRole("alert");
+    fireEvent.click(screen.getByRole("button", { name: "Find jobs" }));
+    await waitFor(() => expect(state.post).toHaveBeenCalledTimes(2));
+    const [first, retry] = state.post.mock.calls;
+    expect(first[0]).toBe("/v1/employer-jobs/searches");
+    expect(first[1]).toMatchObject({ desired_count: 3, resume_id: 10, excluded_employers: ["Excluded Employer"], role: "Python Engineer one" });
+    expect(retry[1]).toEqual(first[1]);
+    expect(first[1].idempotency_key).toEqual(expect.any(String));
+  });
+
+  it("remounts summary/result caches and local selection before another owner renders, including late old-owner reads", async () => {
+    const view = render(<SessionProviderWrapper><EmployerJobsPage /></SessionProviderWrapper>);
+    await screen.findByText("Python Engineer one");
+    let completeOldRead!: (value: unknown) => void;
+    state.get.mockImplementation((url: string) => url.includes("/searches/search_one/results?") ? new Promise((resolve) => { completeOldRead = resolve; }) : read(url));
+    fireEvent.click(screen.getByRole("button", { name: /Python Engineer one/ }));
+    await screen.findByRole("status", { name: "Loading saved results" });
+    state.owner = "two"; state.session = { status: "authenticated", data: { user: { id: "two" } } };
+    view.rerender(<SessionProviderWrapper><EmployerJobsPage /></SessionProviderWrapper>);
+    expect(screen.queryByText("Python Engineer one")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Resume")).toHaveValue("");
+    expect(screen.getByLabelText("Target role")).toHaveValue("");
+    await screen.findByText("Python Engineer two");
+    fireEvent.click(screen.getByRole("button", { name: /Python Engineer two/ }));
+    await screen.findByRole("heading", { name: "Saved job for two" });
+    await act(async () => { completeOldRead({ search: summary("one"), items: [item("one")], total_items: 1, start_index: 0, next_cursor: null, snapshot_version: "old" }); });
+    expect(screen.queryByRole("heading", { name: "Saved job for one" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Python Engineer one")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Resume")).toHaveValue("20");
+    expect(state.post).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["role", { sentinel: "nested role" }], ["resume_id", { sentinel: "nested resume" }],
+    ["location", { sentinel: "nested location" }], ["remote_only", { sentinel: "nested remote flag" }],
+    ["published_within_days", { sentinel: "nested date choice" }], ["desired_count", { sentinel: "nested count" }],
+    ["excluded_employers", [{ sentinel: "nested employer" }]],
+    ["preferences", { version: 1, country_codes: { sentinel: "nested country" } }],
+    ["preferences", { version: 1, unknown_metadata: "include", country_codes: null, posting_languages: null, authorized_country_codes: null, employment_types: null, sponsorship_required: null, willing_to_relocate: null, salary: { minimum: { sentinel: "nested salary" }, maximum: null, currency: "INR", period: "year" } }],
+  ])("opens saved jobs safely without restoring malformed %s into form state", async (field, value) => {
+    const saved = summary();
+    (saved.query as unknown as Record<string, unknown>)[field as string] = value;
+    state.get.mockImplementation((url: string) => url.includes("search-summaries?")
+      ? Promise.resolve({ items: [saved], next_cursor: null })
+      : url.includes("/results?") ? Promise.resolve({ search: saved, items: [item()], total_items: 1, start_index: 0, next_cursor: null, snapshot_version: "saved-v1" }) : read(url));
+    render(<EmployerJobsPage />, { wrapper: withClient() });
+    await screen.findByText("Saved search choices need review.");
+    fireEvent.click(screen.getByRole("button", { pressed: false }));
+    await screen.findByRole("heading", { name: "Saved job for one" });
+    expect(screen.getByLabelText("Resume")).toHaveValue("");
+    expect(screen.getByLabelText("Target role")).toHaveValue("");
+    expect(screen.getByLabelText("Location")).toHaveValue("");
+    expect(screen.getByLabelText("Jobs to find")).toHaveValue(null);
+    expect(screen.getByText("4 service credits charged · 2 returned")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Prepare application" })).toBeDisabled();
+    expect(state.post).not.toHaveBeenCalled();
+  });
+
+  it("allows an explicit new resume choice after a damaged saved query, with no implicit application or repricing", async () => {
+    const saved = summary();
+    (saved.query as unknown as Record<string, unknown>).resume_id = { sentinel: "unusable saved resume" };
+    state.get.mockImplementation((url: string) => url.includes("search-summaries?")
+      ? Promise.resolve({ items: [saved], next_cursor: null })
+      : url.includes("/results?") ? Promise.resolve({ search: saved, items: [item()], total_items: 1, start_index: 0, next_cursor: null, snapshot_version: "saved-v1" }) : read(url));
+    state.post.mockResolvedValue({ id: "explicit_application", status: "manual_handoff" });
+    render(<EmployerJobsPage />, { wrapper: withClient() });
+    await screen.findByText("Saved search choices need review.");
+    fireEvent.click(screen.getByRole("button", { pressed: false }));
+    await screen.findByRole("heading", { name: "Saved job for one" });
+    expect(state.post).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText("Resume"), { target: { value: "10" } });
+    fireEvent.click(screen.getByRole("button", { name: "Prepare application" }));
+    await screen.findByTestId("application-panel");
+    expect(state.post).toHaveBeenCalledTimes(1);
+    expect(state.post.mock.calls[0][0]).toBe("/v1/employer-jobs/applications");
+    expect(state.post.mock.calls[0][1]).toMatchObject({ posting_id: "job_one", resume_id: 10, resume_choice: "original" });
+  });
+
+  it("clears a prior valid resume and draft before opening a different damaged saved search", async () => {
+    const valid = summary();
+    const damaged = { ...summary(), id: "damaged_second" };
+    (damaged.query as unknown as Record<string, unknown>).role = { sentinel: "nested second query" };
+    state.get.mockImplementation((url: string) => url.includes("search-summaries?")
+      ? Promise.resolve({ items: [valid, damaged], next_cursor: null })
+      : url.includes("/results?") ? Promise.resolve({ search: url.includes("damaged_second") ? damaged : valid, items: [{ ...item(), posting: { ...item().posting, title: url.includes("damaged_second") ? "Second saved job" : "First saved job" } }], total_items: 1, start_index: 0, next_cursor: null, snapshot_version: "saved-v1" }) : read(url));
+    render(<EmployerJobsPage />, { wrapper: withClient() });
+    await screen.findByText("Python Engineer one");
+    fireEvent.click(screen.getByRole("button", { name: /Python Engineer one/ }));
+    await screen.findByRole("heading", { name: "First saved job" });
+    expect(screen.getByLabelText("Resume")).toHaveValue("10");
+    fireEvent.click(screen.getByRole("button", { name: /Saved search.*3 jobs/ }));
+    await screen.findByRole("heading", { name: "Second saved job" });
+    expect(screen.queryByRole("heading", { name: "First saved job" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Resume")).toHaveValue("");
+    expect(screen.getByLabelText("Target role")).toHaveValue("");
+    expect(screen.getByRole("button", { name: "Prepare application" })).toBeDisabled();
+    expect(state.post).not.toHaveBeenCalled();
+  });
+});

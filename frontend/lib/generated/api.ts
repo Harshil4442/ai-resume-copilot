@@ -1281,6 +1281,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/employer-jobs/search-summaries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Search Summaries */
+        get: operations["list_search_summaries_api_v1_employer_jobs_search_summaries_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/employer-jobs/searches": {
         parameters: {
             query?: never;
@@ -1308,6 +1325,23 @@ export interface paths {
         };
         /** Get Search */
         get: operations["get_search_api_v1_employer_jobs_searches__identity__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/employer-jobs/searches/{identity}/results": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Saved Search Results */
+        get: operations["get_saved_search_results_api_v1_employer_jobs_searches__identity__results_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3245,6 +3279,39 @@ export interface components {
              */
             period: "year" | "month" | "week" | "day" | "hour";
         };
+        /** SavedSearchResult */
+        SavedSearchResult: {
+            /** Charged Credits */
+            charged_credits: number;
+            /** Fit */
+            fit: {
+                [key: string]: unknown;
+            };
+            /** Posting */
+            posting: {
+                [key: string]: unknown;
+            };
+            /** Preference Evaluation */
+            preference_evaluation?: {
+                [key: string]: unknown;
+            } | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /** SavedSearchResultsPage */
+        SavedSearchResultsPage: {
+            /** Items */
+            items: components["schemas"]["SavedSearchResult"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+            search: components["schemas"]["SearchSummary"];
+            /** Snapshot Version */
+            snapshot_version: string;
+            /** Start Index */
+            start_index: number;
+            /** Total Items */
+            total_items: number;
+        };
         /** SearchCreate */
         SearchCreate: {
             /**
@@ -3301,6 +3368,46 @@ export interface components {
             version: 1;
             /** Willing To Relocate */
             willing_to_relocate?: boolean | null;
+        };
+        /**
+         * SearchSummary
+         * @description Saved search metadata, including the original query and complete quote.
+         */
+        SearchSummary: {
+            /** Charged Credits */
+            charged_credits: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Delivered Count */
+            delivered_count: number;
+            /** Desired Count */
+            desired_count: number;
+            /** Id */
+            id: string;
+            /** Query */
+            query: {
+                [key: string]: unknown;
+            };
+            /** Refunded Credits */
+            refunded_credits: number;
+            /** Reserved Credits */
+            reserved_credits: number;
+            /** Scope */
+            scope: {
+                [key: string]: unknown;
+            };
+            /** Status */
+            status: string;
+        };
+        /** SearchSummaryPage */
+        SearchSummaryPage: {
+            /** Items */
+            items: components["schemas"]["SearchSummary"][];
+            /** Next Cursor */
+            next_cursor: string | null;
         };
         /** SkillRoiItem */
         SkillRoiItem: {
@@ -6877,6 +6984,38 @@ export interface operations {
             };
         };
     };
+    list_search_summaries_api_v1_employer_jobs_search_summaries_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchSummaryPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_searches_api_v1_employer_jobs_searches_get: {
         parameters: {
             query?: {
@@ -6959,6 +7098,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_saved_search_results_api_v1_employer_jobs_searches__identity__results_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string | null;
+            };
+            header?: never;
+            path: {
+                identity: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedSearchResultsPage"];
                 };
             };
             /** @description Validation Error */

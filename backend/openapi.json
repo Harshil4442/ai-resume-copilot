@@ -4509,6 +4509,91 @@
         "title": "SalaryPreference",
         "type": "object"
       },
+      "SavedSearchResult": {
+        "additionalProperties": true,
+        "properties": {
+          "charged_credits": {
+            "title": "Charged Credits",
+            "type": "integer"
+          },
+          "fit": {
+            "additionalProperties": true,
+            "title": "Fit",
+            "type": "object"
+          },
+          "posting": {
+            "additionalProperties": true,
+            "title": "Posting",
+            "type": "object"
+          },
+          "preference_evaluation": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preference Evaluation"
+          }
+        },
+        "required": [
+          "posting",
+          "fit",
+          "charged_credits"
+        ],
+        "title": "SavedSearchResult",
+        "type": "object"
+      },
+      "SavedSearchResultsPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SavedSearchResult"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "search": {
+            "$ref": "#/components/schemas/SearchSummary"
+          },
+          "snapshot_version": {
+            "title": "Snapshot Version",
+            "type": "string"
+          },
+          "start_index": {
+            "title": "Start Index",
+            "type": "integer"
+          },
+          "total_items": {
+            "title": "Total Items",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "search",
+          "items",
+          "total_items",
+          "start_index",
+          "next_cursor",
+          "snapshot_version"
+        ],
+        "title": "SavedSearchResultsPage",
+        "type": "object"
+      },
       "SearchCreate": {
         "additionalProperties": false,
         "properties": {
@@ -4713,6 +4798,96 @@
           }
         },
         "title": "SearchPreferencesV1",
+        "type": "object"
+      },
+      "SearchSummary": {
+        "description": "Saved search metadata, including the original query and complete quote.",
+        "properties": {
+          "charged_credits": {
+            "title": "Charged Credits",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "delivered_count": {
+            "title": "Delivered Count",
+            "type": "integer"
+          },
+          "desired_count": {
+            "title": "Desired Count",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "query": {
+            "additionalProperties": true,
+            "title": "Query",
+            "type": "object"
+          },
+          "refunded_credits": {
+            "title": "Refunded Credits",
+            "type": "integer"
+          },
+          "reserved_credits": {
+            "title": "Reserved Credits",
+            "type": "integer"
+          },
+          "scope": {
+            "additionalProperties": true,
+            "title": "Scope",
+            "type": "object"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "desired_count",
+          "delivered_count",
+          "reserved_credits",
+          "charged_credits",
+          "refunded_credits",
+          "created_at",
+          "query",
+          "scope"
+        ],
+        "title": "SearchSummary",
+        "type": "object"
+      },
+      "SearchSummaryPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SearchSummary"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "SearchSummaryPage",
         "type": "object"
       },
       "SkillRoiItem": {
@@ -10695,6 +10870,74 @@
         ]
       }
     },
+    "/api/v1/employer-jobs/search-summaries": {
+      "get": {
+        "operationId": "list_search_summaries_api_v1_employer_jobs_search_summaries_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "maximum": 20,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchSummaryPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "List Search Summaries",
+        "tags": [
+          "employer-jobs"
+        ]
+      }
+    },
     "/api/v1/employer-jobs/searches": {
       "get": {
         "operationId": "list_searches_api_v1_employer_jobs_searches_get",
@@ -10825,6 +11068,85 @@
           }
         ],
         "summary": "Get Search",
+        "tags": [
+          "employer-jobs"
+        ]
+      }
+    },
+    "/api/v1/employer-jobs/searches/{identity}/results": {
+      "get": {
+        "operationId": "get_saved_search_results_api_v1_employer_jobs_searches__identity__results_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "identity",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Identity",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "maximum": 20,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedSearchResultsPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Saved Search Results",
         "tags": [
           "employer-jobs"
         ]

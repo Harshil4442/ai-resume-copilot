@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -21,6 +22,43 @@ class SearchCreate(StrictModel):
     excluded_employers: list[str] = Field(default_factory=list, max_length=100)
     preferences: SearchPreferencesV1 | None = None
     idempotency_key: str = Field(min_length=8, max_length=160, pattern=r"^[A-Za-z0-9_.:-]+$")
+
+
+class SearchSummary(BaseModel):
+    """Saved search metadata, including the original query and complete quote."""
+    id: str
+    status: str
+    desired_count: int
+    delivered_count: int
+    reserved_credits: int
+    charged_credits: int
+    refunded_credits: int
+    created_at: datetime
+    query: dict[str, Any]
+    scope: dict[str, Any]
+
+
+class SearchSummaryPage(BaseModel):
+    items: list[SearchSummary]
+    next_cursor: str | None
+
+
+class SavedSearchResult(BaseModel):
+    # Preserve optional/additive fields from older or newer stored snapshots.
+    model_config = ConfigDict(extra="allow", strict=True)
+    posting: dict[str, Any]
+    fit: dict[str, Any]
+    charged_credits: int
+    preference_evaluation: dict[str, Any] | None = None
+
+
+class SavedSearchResultsPage(BaseModel):
+    search: SearchSummary
+    items: list[SavedSearchResult]
+    total_items: int
+    start_index: int
+    next_cursor: str | None
+    snapshot_version: str
 
 
 class ResumeSelection(StrictModel):

@@ -4,7 +4,7 @@ import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import { createHash } from "node:crypto";
 import { encode } from "next-auth/jwt";
 
-import type { EmployerApplication, EmployerSearch, JobServiceCatalog } from "../lib/employerJobs";
+import { searchSummary, type EmployerApplication, type EmployerSearch, type JobServiceCatalog } from "../lib/employerJobs";
 
 const base = "/v1/employer-jobs";
 const now = "2026-10-08T10:00:00Z";
@@ -35,8 +35,8 @@ function fixture() {
   const catalog: JobServiceCatalog = { enabled: true, auto_submit_enabled: true, search_credits_per_job: 2, apply_credits_per_job: 7, max_search_jobs: 20, balance: 100, sources: [{ id: "src_fixture", employer: "Example Studio", platform: "greenhouse", careers_url: "https://employer.example/careers", last_success_at: now, status: "healthy", application_mode: "api" }] };
   const posting = { id: "job_fixture", source_id: "src_fixture", external_id: "123", title: "Backend Engineer", employer: "Example Studio", location: "Remote", description: "Build reliable Python and PostgreSQL services.", canonical_url: "https://employer.example/careers/123", apply_url: "https://employer.example/apply/123", platform: "greenhouse", publication_at: null, last_checked_at: now, application_mode: "api" };
   const application: EmployerApplication = { id: "app_fixture", status: "needs_action", application_mode: "api", posting, resume_id: 1, resume_choice: "original", resume_version_id: null, form: { version: "fixture-v1", fields: [{ id: "name", label: "Full name", type: "text", required: true, options: [] }, { id: "work", label: "Work authorization", type: "single_select", required: true, options: [{ value: "yes", label: "Yes" }, { value: "no", label: "No" }] }], consents: [{ id: "privacy", label: "Employer privacy consent", required: true, policy_url: "https://employer.example/privacy" }] }, package_digest: digest, artifact: { sha256: "b".repeat(64), filename: "Taylor-resume.docx", size_bytes: 1000, media_type: docxType, preview_url: "unused" }, answers: {}, consents: {}, missing_fields: ["name", "work", "privacy"], credit_cost: 7, charged_credits: 0, requires_user_action: true, error: null };
-  const state = { searchFailures: 0, prepareFailures: 0, executeOutcome: "confirmed" as EmployerApplication["status"], premium: false, recentPaidPack: false, applicationsVisible: false, badPdf: false };
-  const requests: { path: string; method: string; body: Record<string, unknown> }[] = [];
+  const state = { searchFailures: 0, prepareFailures: 0, executeOutcome: "confirmed" as EmployerApplication["status"], premium: false, recentPaidPack: false, applicationsVisible: false, badPdf: false, savedResultsUnavailable: false };
+  const requests: { path: string; method: string; body: Record<string, unknown>; query: string }[] = [];
   const unexpected: string[] = [];
   const searches: EmployerSearch[] = [];
   const runs: Record<string, unknown>[] = [];
@@ -54,10 +54,11 @@ function fixture() {
     await context.addInitScript(() => { localStorage.setItem("hirewiz_cookie_consent", JSON.stringify({ version: 2, preference: "essential", savedAt: new Date().toISOString() })); });
     await context.route((url) => url.pathname.startsWith("/api/backend/") || url.pathname === "/api/account/profile", async (route) => {
       const request = route.request();
-      const path = new URL(request.url()).pathname.replace(/^\/api\/account\/profile$/, "/auth/profile").replace("/api/backend", "");
+      const url = new URL(request.url());
+      const path = url.pathname.replace(/^\/api\/account\/profile$/, "/auth/profile").replace("/api/backend", "");
       const method = request.method();
       const body = request.headers()["content-type"]?.includes("application/json") ? request.postDataJSON() as Record<string, unknown> : {};
-      requests.push({ path, method, body });
+      requests.push({ path, method, body, query: url.searchParams.toString() });
       let value: unknown; let status = 200;
       if (path === "/auth/profile") value = { email: "fixture@example.com", tier: state.premium ? "premium" : "free", ai_credits: 40, job_service_credits: catalog.balance, profile_completeness: 80, full_name: "Taylor Example", skills: ["Python"], missing_fields: [], premium_until: "2026-11-08T10:00:00Z" };
       else if (path === "/v1/features") value = { features: { career_workspace: { enabled: true } } };
@@ -70,6 +71,21 @@ function fixture() {
       else if (path.startsWith("/v1/analysis-runs/run_fixture_")) value = runs.find((run) => run.id === path.split("/").at(-1));
       else if (path === "/resume/list") value = { resumes };
       else if (path === `${base}/catalog`) value = catalog;
+      else if (path === `${base}/search-summaries` && method === "GET") {
+        const offset = Number(url.searchParams.get("cursor")?.replace("history_", "") ?? 0);
+        const limit = Number(url.searchParams.get("limit") ?? 10);
+        value = { items: searches.slice(offset, offset + limit).map(searchSummary), next_cursor: offset + limit < searches.length ? `history_${offset + limit}` : null };
+      }
+      else if (path.startsWith(`${base}/searches/`) && path.endsWith("/results") && method === "GET") {
+        const saved = searches.find((entry) => entry.id === path.split("/").at(-2));
+        if (state.savedResultsUnavailable) { status = 503; value = { detail: "Saved results are temporarily unavailable." }; }
+        else if (!saved) { status = 409; value = { detail: "Saved fixture not found." }; }
+        else {
+          const offset = Number(url.searchParams.get("cursor")?.replace("results_", "") ?? 0);
+          const limit = Number(url.searchParams.get("limit") ?? 10);
+          value = { search: searchSummary(saved), items: saved.items.slice(offset, offset + limit), total_items: saved.items.length, start_index: offset, next_cursor: offset + limit < saved.items.length ? `results_${offset + limit}` : null, snapshot_version: `saved-search-v1:${digest}` };
+        }
+      }
       else if (path === `${base}/searches` && method === "GET") value = { items: searches };
       else if (path === `${base}/searches` && method === "POST") {
         if (state.searchFailures-- > 0) { status = 503; value = { detail: "Search request interrupted." }; }
@@ -93,7 +109,7 @@ function fixture() {
       await route.fulfill({ status, contentType: "application/json", body: JSON.stringify(value) });
     });
   }
-  return { catalog, application, state, requests, unexpected, install };
+  return { catalog, application, state, requests, unexpected, searches, install };
 }
 
 async function searchOne(page: Page) {
@@ -110,6 +126,74 @@ async function checkLayout(page: Page) {
   expect(result.violations).toEqual([]);
 }
 
+function seedSavedSearch(f: ReturnType<typeof fixture>) {
+  const saved: EmployerSearch = {
+    id: "search_saved_pages", status: "completed", desired_count: 27, delivered_count: 27,
+    reserved_credits: 54, charged_credits: 54, refunded_credits: 0, created_at: now,
+    query: { resume_id: 1, role: "Saved Backend Engineer", location: "Remote", desired_count: 27, remote_only: false, published_within_days: null, excluded_employers: [] },
+    scope: { price_quote: { unit_price: 2, maximum_credits: 54, requested_count: 27, pricing_version: "original-fixture-price", search_input_fingerprint: digest } },
+    items: Array.from({ length: 27 }, (_, index) => ({
+      posting: { ...f.application.posting, id: `job_saved_${index}`, title: `Saved engineer ${index + 1}` },
+      fit: { score: 67, matched_skills: ["Python"], missing_evidence: [], reasons: ["Saved deterministic skill comparison."], scoring_version: "fixture-rules" },
+      charged_credits: 2,
+    })),
+  };
+  f.searches.push(saved);
+  return saved;
+}
+
+test("saved result pages keep their original quote and require explicit application preparation", async ({ page, context, baseURL }, testInfo) => {
+  const f = fixture(); seedSavedSearch(f); f.catalog.search_credits_per_job = 9;
+  await f.install(context, baseURL!); await page.goto("/employer-jobs");
+  await page.getByRole("button", { name: /Saved Backend Engineer/ }).click();
+  await expect(page.getByText("Showing 1–10 of 27 saved jobs", { exact: true })).toBeVisible();
+  await expect(page.getByRole("article")).toHaveCount(10);
+  await expect(page.getByText("Saved quote: 2 per new job · up to 54 service credits for 27 requested jobs.", { exact: true })).toBeVisible();
+  await expect(page.getByText("54 service credits charged · 0 returned", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Next results", exact: true }).click();
+  await expect(page.getByText("Showing 11–20 of 27 saved jobs", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Saved engineer 11", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Next results", exact: true }).click();
+  await expect(page.getByText("Showing 21–27 of 27 saved jobs", { exact: true })).toBeVisible();
+  await expect(page.getByRole("article")).toHaveCount(7);
+  await expect(page.getByRole("button", { name: "Next results", exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: "Previous results", exact: true }).click();
+  await expect(page.getByText("Showing 11–20 of 27 saved jobs", { exact: true })).toBeVisible();
+  expect(f.requests.filter((request) => request.method !== "GET")).toEqual([]);
+  expect(f.catalog.balance).toBe(100);
+  await checkLayout(page);
+  await mkdir("../root-saved-search-screenshots", { recursive: true });
+  await page.screenshot({ path: `../root-saved-search-screenshots/${testInfo.project.name}-page-2.png`, fullPage: true });
+  await page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Saved engineer 11", exact: true }) }).getByRole("button", { name: "Prepare application", exact: true }).click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  const mutations = f.requests.filter((request) => request.method !== "GET");
+  expect(mutations).toHaveLength(1);
+  expect(mutations[0].path).toBe(`${base}/applications`);
+  expect(mutations[0].body).toMatchObject({ posting_id: "job_saved_10", resume_id: 1, resume_choice: "original" });
+  expect(f.requests.some((request) => request.path.endsWith("/approve") || request.path.endsWith("/execute") || request.path === "/v1/analysis-runs")).toBe(false);
+  expect(f.unexpected).toEqual([]);
+});
+
+test("unavailable saved pages preserve totals and retry without starting paid work", async ({ page, context, baseURL }, testInfo) => {
+  const f = fixture(); seedSavedSearch(f); f.state.savedResultsUnavailable = true;
+  await f.install(context, baseURL!); await page.goto("/employer-jobs");
+  await page.getByRole("button", { name: /Saved Backend Engineer/ }).click();
+  await expect(page.getByRole("heading", { name: "27 of 27 requested jobs", exact: true })).toBeVisible();
+  await expect(page.getByText("Could not load this saved result page. Your saved search and charges are unchanged.", { exact: true })).toBeVisible();
+  await expect(page.getByText("This search saved no jobs.", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Next results", exact: true })).toBeDisabled();
+  expect(f.requests.filter((request) => request.method !== "GET")).toEqual([]);
+  f.state.savedResultsUnavailable = false;
+  await page.getByRole("button", { name: "Retry saved results", exact: true }).click();
+  await expect(page.getByText("Showing 1–10 of 27 saved jobs", { exact: true })).toBeVisible();
+  await expect(page.getByText("54 service credits charged · 0 returned", { exact: true })).toBeVisible();
+  expect(f.requests.filter((request) => request.method !== "GET")).toEqual([]);
+  expect(f.catalog.balance).toBe(100);
+  await checkLayout(page); expect(f.unexpected).toEqual([]);
+  await mkdir("../root-saved-search-screenshots", { recursive: true });
+  await page.screenshot({ path: `../root-saved-search-screenshots/${testInfo.project.name}-retried-page-1.png`, fullPage: true });
+});
+
 test("account switching clears the previous search, resume cache, and reviewed approval package", async ({ page, context, baseURL }) => {
   const f = fixture(); await f.install(context, baseURL!);
   let owner = "a";
@@ -125,6 +209,7 @@ test("account switching clears the previous search, resume cache, and reviewed a
     if (path === "/resume/list") value = { resumes: [{ id: 3, filename: "New-owner-resume.docx", source_available: true, source_format: "docx", created_at: now }] };
     else if (path === `${base}/catalog`) value = { ...f.catalog, balance: 37, sources: [] };
     else if (path === `${base}/searches` || path === `${base}/applications`) value = { items: [] };
+    else if (path === `${base}/search-summaries`) value = { items: [], next_cursor: null };
     else if (path === "/v1/features") value = { features: { career_workspace: { enabled: false } } };
     else if (path === "/auth/profile") value = { email: "b@fixture.example", tier: "free", ai_credits: 9, job_service_credits: 37 };
     else { await route.abort(); return; }

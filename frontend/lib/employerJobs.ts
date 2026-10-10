@@ -63,9 +63,88 @@ export type EmployerSearch = {
   refunded_credits: number;
   created_at: string;
   query: { resume_id: number; role: string; location: string; remote_only: boolean; published_within_days: number | null; desired_count?: number; excluded_employers?: string[]; preferences?: SearchPreferencesV1 | null };
-  scope?: { candidate_limit_reached?: boolean; known_preference_conflicts?: number; candidates_with_unknown_preferences?: number; candidates_before_preferences?: number };
+  scope?: { candidate_limit_reached?: boolean; known_preference_conflicts?: number; candidates_with_unknown_preferences?: number; candidates_before_preferences?: number; price_quote?: { unit_price: number; pricing_version: string; requested_count: number; maximum_credits: number; search_input_fingerprint: string } };
   items: SearchResult[];
 };
+export type EmployerSearchSummary = Omit<EmployerSearch, "items">;
+export type EmployerSearchSummaryPage = {
+  items: EmployerSearchSummary[];
+  next_cursor: string | null;
+};
+export type EmployerSavedResultPage = {
+  search: EmployerSearchSummary;
+  items: SearchResult[];
+  total_items: number;
+  start_index: number;
+  next_cursor: string | null;
+  snapshot_version: string;
+};
+
+export function searchSummary(search: EmployerSearch): EmployerSearchSummary {
+  const { items, ...summary } = search;
+  void items; // The legacy POST body is not kept in page-local selection state.
+  return summary;
+}
+
+function record(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function strings(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+}
+
+function nonnegativeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+function savedPreferences(value: unknown): value is SearchPreferencesV1 | null | undefined {
+  if (value == null) return true;
+  if (!record(value) || value.version !== 1 || value.unknown_metadata !== "include") return false;
+  for (const field of ["country_codes", "posting_languages", "authorized_country_codes"] as const) {
+    if (value[field] !== null && !strings(value[field])) return false;
+  }
+  if (value.employment_types !== null && (!strings(value.employment_types) || value.employment_types.some((entry) =>
+    !["full_time", "part_time", "contract", "internship", "temporary", "freelance", "permanent", "traineeship"].includes(entry)))) return false;
+  for (const field of ["sponsorship_required", "willing_to_relocate"] as const) {
+    if (value[field] !== null && typeof value[field] !== "boolean") return false;
+  }
+  if (value.salary !== null) {
+    if (!record(value.salary) || typeof value.salary.currency !== "string" ||
+      typeof value.salary.period !== "string" || !["year", "month", "week", "day", "hour"].includes(value.salary.period)) return false;
+    for (const field of ["minimum", "maximum"] as const) {
+      if (value.salary[field] !== null && typeof value.salary[field] !== "string") return false;
+    }
+  }
+  return true;
+}
+
+// Saved query/scope JSON intentionally accepts historical additive fields.
+// Validate only before using its known leaves as form state or React children;
+// never rewrite the saved record or coerce a quote into a current price.
+export function readSavedSearchQuery(value: unknown): EmployerSearch["query"] | null {
+  if (!record(value) || !nonnegativeInteger(value.resume_id) || value.resume_id === 0 ||
+    typeof value.role !== "string" || typeof value.location !== "string" || typeof value.remote_only !== "boolean" ||
+    (value.published_within_days !== null && (!nonnegativeInteger(value.published_within_days) || value.published_within_days === 0)) ||
+    (value.desired_count !== undefined && (!nonnegativeInteger(value.desired_count) || value.desired_count === 0)) ||
+    (value.excluded_employers !== undefined && !strings(value.excluded_employers)) || !savedPreferences(value.preferences)) return null;
+  return value as EmployerSearch["query"];
+}
+
+export function savedSearchRole(value: unknown): string {
+  return record(value) && typeof value.role === "string" && value.role.trim() ? value.role : "Saved search";
+}
+
+export function readSavedSearchQuote(value: unknown): { unit_price: number; requested_count: number; maximum_credits: number } | null {
+  if (!record(value) || !nonnegativeInteger(value.unit_price) || !nonnegativeInteger(value.requested_count) ||
+    !nonnegativeInteger(value.maximum_credits)) return null;
+  return { unit_price: value.unit_price, requested_count: value.requested_count, maximum_credits: value.maximum_credits };
+}
+
+export function savedPreferenceConflicts(value: unknown): number | null {
+  return value === undefined ? 0 : nonnegativeInteger(value) ? value : null;
+}
+
 export type ApplicationField = {
   id: string;
   label: string;

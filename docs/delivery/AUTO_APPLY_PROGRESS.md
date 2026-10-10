@@ -14,6 +14,49 @@ Production pairing and portal-use permission remain open.
 
 ## Current checkpoint board — 11 October 2026
 
+The later [separate scanner diagnostic](DOCUMENT_SCANNER_DIAGNOSTIC_2026-10-11.md)
+is reconciled to terminal failure without restarting its one execution. One bounded
+read returns ten fixed events: `do` exits 1 with no child stdout and 133 stderr bytes;
+the separate `delete` exits 0. The underlying cause, child isolation and native sandbox
+absence remain unproved. Full scanner/storage/private HTTP acceptance remains open.
+One separately reviewed read-only system-log projection for that same execution
+returns one unclassified entry without pagination. Root replays 57 author and 59
+reviewer controls; no native messages or tokens are retained. The result remains
+inconclusive. A finite command/write/import/Python ladder remains private and unexecuted.
+Its independent review reproduces two required defects: an alarm can skip owned-child
+cleanup, and post-alarm process startup lacks an independently enforced bound. Repairs
+are underway; no new Job or execution follows from the log read or private proposal.
+
+Saved-search response paging is now integrated locally after independent v2 clearance.
+Independent review finds three required defects in its original freeze: malformed historical metadata
+returns 500 without private cache headers, oversized-cursor validation reflects raw
+input, and reachable nested role/quote values crash the UI. Exact negative controls
+are retained. The repaired v2 freeze passes 402 frontend executions and 109 backend
+cases, plus types, lint and additive contract checks. Independent review passes the
+unchanged originals plus 29 necessary backend controls and 37 focused frontend executions.
+Root verifies 441 author and 22 review artifacts. The composed production build and
+90 employer-flow browser cases across five widths pass with mocked APIs and zero retries.
+The separate browser fixture is independently clear and integrated after root verifies
+its 26 artifacts, 194 composed frontend sources and eight review artifacts. All original
+16 scenarios and assertions remain intact. Fresh committed-source CI, actual backend
+acceptance and deployment remain pending.
+See [the paging checkpoint](SAVED_SEARCH_PAGING_2026-10-11.md).
+The existing 1,000-candidate cap and
+unbounded saved-history/JSON work remain open; paging does not establish worldwide
+coverage or bounded database decoding.
+
+Guidance source `ca5ea7b` is pushed. Its exact run 38078938219 is terminal FAILURE:
+four lanes pass, including 3,464 backend cases with zero skips, migrations and API
+drift. Frontend 365 units/types/build pass, but responsive CI retains 20 failed older
+banner assertions and 195 passing cases. Four mocked failure scenarios at five widths
+omit the new guidance and expect earlier copy. The separately reviewed
+[one-file browser fixture correction](TAILORING_BROWSER_RECOVERY_2026-10-11.md)
+is now integrated locally: 95 actual production-browser cases across five widths pass
+with no retries/skips, preserving legacy responses and testing explicit current-source
+snapshot recovery. APIs are mocked; actual composed backend acceptance remains open.
+Root verifies 58 ordinary source claims and 34 artifacts for the original failed run.
+The correction requires its own committed-source CI; no production promotion follows.
+
 The ordinary [actionable tailoring guidance](TAILORING_FAILURE_GUIDANCE_2026-10-11.md)
 is integrated locally after eleven-path independent clearance, 102 backend/367
 frontend independent executions and root 96 backend/365 frontend executions, all

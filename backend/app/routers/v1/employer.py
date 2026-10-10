@@ -3,16 +3,44 @@ from __future__ import annotations
 import copy
 from types import SimpleNamespace
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from fastapi.routing import APIRoute
 from sqlalchemy.orm import Session
 
 from ... import models as core
 from ...database import get_db
-from ...domains.employer import artifacts, batches, models, schemas, service
+from ...domains.employer import artifacts, batches, models, schemas, search_pages, service
 from ...security import decode_access_token_user_id, get_current_user, oauth2_scheme
 from .admin import require_admin
 
 router = APIRouter(prefix="/employer-jobs", tags=["employer-jobs"])
+
+
+class _PrivateSavedSearchReadRoute(APIRoute):
+    """Keep personal saved-search responses, including validation errors, private."""
+    def get_route_handler(self):
+        original = super().get_route_handler()
+
+        async def private_response(request: Request) -> Response:
+            try:
+                response = await original(request)
+            except RequestValidationError:
+                response = JSONResponse(status_code=422, content={"detail": [{
+                    "loc": ["request"], "msg": "Invalid saved-search page request. Check the page size, cursor and saved search.",
+                    "type": "invalid_search_page_request",
+                }]})
+            except HTTPException as exc:
+                exc.headers = {**(exc.headers or {}), "Cache-Control": "private, no-store"}
+                raise
+            response.headers["Cache-Control"] = "private, no-store"
+            return response
+
+        return private_response
+
+
+_saved_search_reads = APIRouter(route_class=_PrivateSavedSearchReadRoute)
 
 
 @router.get("/catalog")
@@ -28,6 +56,27 @@ def create_search(payload: schemas.SearchCreate, db: Session = Depends(get_db), 
 @router.get("/searches")
 def list_searches(limit: int = Query(30, ge=1, le=100), db: Session = Depends(get_db), user: core.User = Depends(get_current_user)):
     return {"items": service.list_searches(db, user.id, limit)}
+
+
+@_saved_search_reads.get("/search-summaries", response_model=schemas.SearchSummaryPage)
+def list_search_summaries(response: Response, limit: int = Query(10, ge=1, le=20),
+                          cursor: str | None = Query(None, min_length=1, max_length=512),
+                          db: Session = Depends(get_db), user: core.User = Depends(get_current_user)):
+    response.headers["Cache-Control"] = "private, no-store"
+    return search_pages.list_summaries(db, user.id, limit=limit, cursor=cursor)
+
+
+@_saved_search_reads.get("/searches/{identity}/results", response_model=schemas.SavedSearchResultsPage,
+            response_model_exclude_unset=True)
+def get_saved_search_results(response: Response, identity: str = Path(min_length=1, max_length=64),
+                             limit: int = Query(10, ge=1, le=20),
+                             cursor: str | None = Query(None, min_length=1, max_length=512),
+                             db: Session = Depends(get_db), user: core.User = Depends(get_current_user)):
+    response.headers["Cache-Control"] = "private, no-store"
+    return search_pages.saved_results(db, user.id, identity, limit=limit, cursor=cursor)
+
+
+router.include_router(_saved_search_reads)
 
 
 @router.get("/searches/{identity}")

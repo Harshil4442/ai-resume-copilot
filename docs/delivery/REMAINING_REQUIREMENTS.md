@@ -4,6 +4,39 @@ Review date: 11 October 2026 (Asia/Kolkata). This register distinguishes the pro
 
 ## Latest source checkpoint and remaining launch work
 
+The later [separate scanner diagnostic](DOCUMENT_SCANNER_DIAGNOSTIC_2026-10-11.md)
+distinguishes the failing `do` command (exit 1, empty stdout, 133 stderr bytes) from
+the separate successful `delete` command. One bounded same-execution read returns
+ten fixed events without truncation; no execution is restarted. This does not prove
+child execution, a unique underlying cause, sandbox absence or scanner acceptance.
+The same terminal diagnostic now has one reviewed system-log read: one unclassified
+entry, no pagination and an explicitly inconclusive result. No new Job, execution,
+raw message retention, unique cause or scanner acceptance follows. The next finite
+command/write/import/Python proposal remains private and unexecuted. Its independent
+review reproduces two required cleanup/startup-deadline defects; private repairs are
+underway before any native execution can be considered.
+
+Saved-search paging is now integrated locally after v2 clearance: independent review retains three required
+API validation/cache and frontend metadata-render defects in the original freeze.
+The repaired v2 freeze passes 402 frontend executions and 109 backend cases, with
+types/lint/contracts passing. Independent post-repair review clears the original
+counterexamples, with 29 necessary backend controls and 37 focused frontend executions.
+Root's composed production build and 90 browser cases across five widths pass using
+mocked APIs. The separate one-file browser fixture is independently clear and integrated;
+all 16 original scenarios/assertions remain intact. Fresh committed
+CI, actual backend acceptance and deployment remain pending. See
+[the paging checkpoint](SAVED_SEARCH_PAGING_2026-10-11.md). This read-only paging work does not
+close legacy-history decoding or the 1,000-candidate cap.
+
+Pushed guidance source `ca5ea7b` retains a terminal frontend CI failure: four old
+banner scenarios at five widths omit finite guidance and expect earlier copy, giving
+20 failures and 195 passes. Backend 3,464 cases/migrations/API drift and the three
+other lanes pass; frontend 365 units/types/build also pass. The independently reviewed
+[one-file fixture correction](TAILORING_BROWSER_RECOVERY_2026-10-11.md) is integrated
+locally with 95 no-retry browser cases at five widths, including legacy guidance and
+explicit snapshot recovery after a delayed source switch. Its backend APIs are mocked.
+Fresh committed-source CI, actual composed backend flow and deployment remain required.
+
 The ordinary [tailoring failure guidance](TAILORING_FAILURE_GUIDANCE_2026-10-11.md)
 is now integrated locally across eleven reviewed paths. Finite persisted reasons,
 owner-only optional API guidance and static original/custom/snapshot actions pass

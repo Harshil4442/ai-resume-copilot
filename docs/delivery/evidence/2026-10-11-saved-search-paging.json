@@ -1,0 +1,69 @@
+{
+  "checkpoint": "saved_search_paging_development",
+  "date": "2026-10-11",
+  "parent_commit": "ca5ea7b07710d70e2753d70237859ebf46c53a24",
+  "shipping_paths": 11,
+  "author": {
+    "artifact_count": 441,
+    "artifact_manifest_sha256": "66c49e25a28ea8245544ee7d1eb37844d4fd3a67b3f35312de74c41d77be97cd",
+    "source_manifest_sha256": "10ad9f37bfa7171251e767e3905fd13b7d95711eb4a8f94ca17e6eaad2f8bbf4",
+    "patch_sha256": "61754cd3e05c79d4f280e6e20eb417bfba9bd6effcfd02f99e46e3a53eb3a13c",
+    "backend_cases": 109,
+    "frontend_executions": 402
+  },
+  "independent_review": {
+    "verdict": "scoped_pass",
+    "artifacts_verified": 22,
+    "report_sha256": "057dbb4db3a0f753ea575c2e47767f8a9bb93af0171b164b875d13696cf11e1e",
+    "artifact_manifest_sha256": "5a9c901d5ffbfb0a0e7af5f49f0f344542f59c1a59bb0ecb9881c7ebae34183f",
+    "source_manifest_sha256": "a03e3a0ab006c4f8cf8b8a35b649023c2ab2344199182d77e82b57235967edbc",
+    "original_backend_controls": 6,
+    "new_backend_controls": 29,
+    "frontend_executions": 37,
+    "finite_backend_sources_per_run": 38,
+    "external_connections": 0,
+    "original_failures_preserved": true
+  },
+  "root_integration": {
+    "preflight_sha256": "908dd0c9223b2774ef3ad2d5c2a6ac7955e6b4714143f3e73f087c62c0bb761e",
+    "receipt_sha256": "58b6ed5bbaec4711c8dcb15388d5b50638b0e37a7c5a0c6b26d908e6b9d0b6ec",
+    "local_runtime_source_integrated": true,
+    "commit_state_at_integration": "not_yet_committed",
+    "deployed": false
+  },
+  "separate_browser_fixture": {
+    "artifact_manifest_sha256": "f2438841881c1361b9530c06e370e44399dcc6a7d9d31db9e7179f5a14633f45",
+    "source_sha256": "ca8ce1849c04c233c049aacbb98407705170e58da507c2863c1e84195bed3e95",
+    "normal_turbopack_build": true,
+    "typecheck": true,
+    "edited_lint": true,
+    "chromium_cases": 90,
+    "widths": [320, 390, 768, 1024, 1440],
+    "failures": 0,
+    "skips": 0,
+    "retries": 0,
+    "api_scope": "mocked",
+    "independent_fixture_review_complete": true,
+    "independent_report_sha256": "7c53f929d390055e24fbf8b868e88adef04a900036b0b39a347e70ee5faa14e4",
+    "independent_artifact_manifest_sha256": "8631013869a1e723924ec14a94c1dc1f247d0b0b974fe318833afe4e42ec7b76",
+    "independent_review_artifacts_verified": 8,
+    "root_integration_receipt_sha256": "efa79c756a7af39ad5ceb655d53bf48a32fa7585c60a3f560e1fe7f5b21c8fd3",
+    "managed_fixture_integrated": true,
+    "selected_preparation_request_verified": true,
+    "actual_returned_package_binding_proven": false
+  },
+  "limitations": {
+    "test_suites_overlap": true,
+    "complete_saved_json_decoding_bounded": false,
+    "first_1000_candidate_cap_removed": false,
+    "legacy_history_financial_lock_work_bounded": false,
+    "global_authentication_proven": false,
+    "postgresql_concurrency_proven": false,
+    "actual_browser_api_database_journey_proven": false,
+    "fresh_committed_source_ci_passed": false,
+    "worldwide_coverage_proven": false,
+    "customer_activation": false,
+    "protected_integration_held": true,
+    "earlier_author_broad_search_scope_incident_preserved": true
+  }
+}
