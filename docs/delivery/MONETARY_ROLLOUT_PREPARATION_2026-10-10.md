@@ -162,16 +162,52 @@ failure also prevented its later OpenAPI drift step from running.
 
 The deadline composition is now fully verified on exact `1c2519bc`: all five CI jobs pass, including 2,758 backend cases and the executed OpenAPI check. Its independent native Git build and registry reads agree on `sha256:37d38766cf84f825a398df6d26c49eb0e4475de48426b7f2f349d46133ed3c5a`. Root verified 61 CI artifacts and 20 native-build artifacts. This completes that source's CI/image checkpoint, not its production rollout.
 
-The v6 native-name amendment independently passes 310 unique affected checks with zero skips. It accepts bounded opaque names, preserves exact identity/candidate matching, keeps unknown credential aliases unresolved, and hides raw names from reports. Additional transient privacy checks prevent lowercase/confusable values or arbitrary raw names from reflecting into otherwise-public metadata. Original failures are preserved. Root integrated exactly the three cleared files; a fresh native attempt and amended-source CI/image remain pending. The global native fence is unchanged.
+The v6 native-name amendment independently passes 310 unique affected checks with zero skips. It accepts bounded opaque names, preserves exact identity/candidate matching, keeps unknown credential aliases unresolved, and hides raw names from reports. Additional transient privacy checks prevent lowercase/confusable values or arbitrary raw names from reflecting into otherwise-public metadata. Original failures are preserved. Root integrated exactly the three cleared files. Published88d now has all five same-source CI gates passing across the original four successful jobs and the backend-only second attempt; original dependency-acquisition failure remains preserved. Native Git build `040478a5-f046-4727-8350-cbe739d4356d` and registry reads agree on the immutable `1aa52d` image. That image is not deployed, and the global native fence is unchanged. A corrected actual v6 collection returned 225 retained UID resources after 238 native GETs, with 20 unresolved unpinned-version references, zero database connections, model calls or mutations. The bootstrap zero-GET failure remains preserved. This fixed-region retained inventory does not establish external consumer/provider completeness or retirement.
 
-Neon administrative access is available for the already-bound project. The role audit confirms the installed control function's NULL ACL implies PUBLIC execution; native public PG17 session IDs need no monitor grant. Independently authenticated replacement execution still needs verification. Preparation, ownership transfer, old-role deletion and migration remain distinct operations; none has been executed by this checkpoint.
+Neon administrative access is available for the already-bound project. The role audit confirms the installed control function's NULL ACL implies PUBLIC execution; native public PG17 session IDs need no monitor grant. Independently authenticated replacement execution still needs verification. Preparation, ownership transfer, old-role deletion and migration remain distinct operations. The later bounded NOLOGIN preparation below is now acknowledged; ownership transfer, old-role deletion and migration remain unexecuted.
+
+
+A separately reviewed preparation component permits only three restricted NOLOGIN
+roles and explicit current-schema grants. Its 39-case independent disposable PG17
+proof preserves old authentication, ownership/default grants and accepted settlements;
+creator ADMIN membership is recorded rather than described as isolation. One bounded
+production preparation transaction was subsequently acknowledged, as recorded below.
+The private Neon V5 correction is independently reviewed for
+scoped source/runner: 109 author and 124 independent offline checks pass in
+separate runs, and prior actual PostgreSQL proofs remain retained. It binds only
+the current e7/old-owner/schema9 direct route, preserves default PostgreSQL PID
+checks and the global refusal, and explicitly disables child SDK HTTP logging.
+
+The original V4 capture refused during genuine connection acquisition after one
+native GET, without SQL mutations or a manifest. A separate reviewed diagnostic
+returned fixed setting groups only; primary driver source, rather than that
+mask, establishes how automatic address injection works. Both observations stay
+preserved. A single reviewed V5 read-only capture then succeeded at 03:59 UTC on
+10 October: one native GET, metadata for 40 tables and nine sequences, zero
+subject rows and zero SQL/cloud mutations. The actual public-schema owner is
+PostgreSQL's predefined pg_database_owner, whose implicit member is the current
+database owner; the mistaken local direct-owner assumption remains preserved.
+There was no native capture retry to resolve that local assumption.
+
+At approximately 04:19 UTC on 10 October, one separately reviewed preparation
+transaction returned a commit acknowledgment for exactly three restricted NOLOGIN
+roles and the reviewed grants on 40 tables and nine sequences. Independent receipt
+review confirms zero passwords or LOGIN activation, ownership transfer or default
+privilege changes, with legacy permissions and merchant/settlement handling preserved.
+Three creator ADMIN edges remain; SET and INHERIT edges are zero. This does not
+prove replacement isolation or authorize release.
+
+The read-only capture and acknowledged NOLOGIN preparation checkpoints are complete.
+Authenticated replacement credentials, removal of creator ADMIN bridges, provider/
+database retirement, the global fence and deployment remain unchecked. The published
+88d source CI/image does not certify the later private V5 bytes.
 
 - [ ] Establish whether old credentials are shared with other applications.
 - [ ] Complete native provider/issuer and database writer retirement, with new
   restricted identities and exact secret versions.
 - [ ] Verify a fresh fenced backup and restoration, then migrate through schema 0013.
 - [x] Verify exact 1c source CI and returned native image provenance.
-- [ ] Verify fresh CI/image on the v6 amended composition before release.
+- [x] Verify published commit `88d410e` CI/image on the v6 amended composition; this does not certify later private tooling.
 - [ ] Stage and promote the joined API/workers with admission closed, then independently
   verify funded runtime configuration and intentionally activate useful workflows.
 - [ ] Activate finite checkout after catalog/payment observation verification.

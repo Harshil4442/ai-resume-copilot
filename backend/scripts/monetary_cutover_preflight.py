@@ -20,6 +20,11 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.pool import NullPool
 
+try:
+    from scripts import neon_direct_identity as neon_identity
+except ModuleNotFoundError:  # Direct standalone script invocation.
+    import neon_direct_identity as neon_identity
+
 MAX_INPUT_BYTES = 131072
 MAX_ROWS = 256
 SCHEMA_ORDER = ("20261008_0009", "20261009_0010", "20261009_0011", "20261009_0012", "20261009_0013")
@@ -557,7 +562,10 @@ def _activity_view_tokens(definition: str) -> str:
 
 def _native_session_ids(
     connection: Connection, database_oid: int,
+    *, neon_binding: neon_identity.NeonDirectProxyBinding | None = None,
 ) -> tuple[list[tuple[int, int | None, int | None]], dict[str, Any]]:
+    if neon_binding is not None:
+        neon_identity.verify_transport(connection, neon_binding)
     # PQuser identifies the actual connection startup login. SQL session_user can
     # be changed by a privileged login; engine URL usernames can be overridden.
     # Read only these documented Connection.info fields, never DSN/password.
@@ -575,7 +583,8 @@ def _native_session_ids(
         raise Denied("database_observer_protocol_identity_unavailable") from None
     if (type(authenticated_user) is not str or not authenticated_user
         or len(authenticated_user) > 63 or "\x00" in authenticated_user
-        or type(protocol_pid) is not int or protocol_pid <= 0
+        or (neon_binding is None and (type(protocol_pid) is not int or protocol_pid <= 0))
+        or (neon_binding is not None and not neon_identity.cancellation_key_shape(protocol_pid))
         or type(protocol_version) is not int or protocol_version <= 0):
         raise Denied("database_observer_protocol_identity_unavailable")
     version = str(connection.exec_driver_sql("SHOW server_version_num").scalar_one())
@@ -628,8 +637,10 @@ def _native_session_ids(
         "SELECT pg_catalog.pg_backend_pid(),r.oid "
         "FROM pg_catalog.pg_roles r WHERE r.rolname=:authenticated_user"
     ), {"authenticated_user": authenticated_user}).one()
-    if own[0] != protocol_pid:
+    if neon_binding is None and own[0] != protocol_pid:
         raise Denied("database_observer_protocol_identity_mismatch")
+    if neon_binding is not None:
+        neon_identity.verify_native_target(connection, neon_binding, database_oid)
     rows = connection.execute(text(
         "SELECT pid,usesysid,datid FROM pg_catalog.pg_stat_activity ORDER BY pid LIMIT 257"
     )).all()
@@ -652,6 +663,8 @@ def _native_session_ids(
         "native_view_oid": int(view[0][0]), "authenticated_login_bound": True,
         "protocol_identity_bound": True,
         "requires_all_session_activity_details": False,
+        **({"transport_contract": "neon_direct_proxy", "protocol_pid_is_cancellation_key": True,
+            "native_own_session_bound": True} if neon_binding is not None else {}),
     }
 
 
@@ -661,7 +674,14 @@ def observe(
     inventory: Inventory,
     roles: Mapping[str, str],
     operator_roles: tuple[str, ...] = (),
+    *, neon_binding: neon_identity.NeonDirectProxyBinding | None = None,
 ) -> dict[str, Any]:
+    if neon_binding is not None and (
+        inventory.database_namespace != neon_identity.NAMESPACE
+        or inventory.expected_database_oid != neon_identity.DATABASE_OID
+        or inventory.expected_system_identifier_sha256 != neon_identity.CLUSTER
+    ):
+        raise Denied("neon_direct_inventory_target_mismatch")
     if (
         engine.dialect.name != "postgresql"
         or set(roles) != set(inventory.role_env)
@@ -675,6 +695,8 @@ def observe(
     # A standalone fresh direct connection, never a shared Session or pooled tx.
     # psycopg connect timeout is supplied by the CLI; every SQL query is bounded.
     with engine.connect() as connection:
+        if neon_binding is not None:
+            neon_identity.verify_transport(connection, neon_binding)
         with connection.begin():
             connection.exec_driver_sql("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
             connection.exec_driver_sql("SET LOCAL search_path = pg_catalog")
@@ -721,6 +743,8 @@ def observe(
             if len(versions) != 1 or versions[0] not in SCHEMAS:
                 raise Denied("database_schema_unsupported")
             version = str(versions[0])
+            if neon_binding is not None and version != "20261008_0009":
+                raise Denied("neon_direct_inventory_schema_mismatch")
             # A candidate cannot silently adopt a newer database revision.
             if SCHEMA_ORDER.index(version) > SCHEMA_ORDER.index(inventory.candidate_schema):
                 raise Denied("database_schema_unsupported")
@@ -735,7 +759,7 @@ def observe(
             elif CANDIDATE_TABLES.intersection(table_oids):
                 raise Denied("database_schema_shape_mismatch")
             _extension_shape(connection, int(schema_oid), version)
-            sessions, session_contract = _native_session_ids(connection, database_oid)
+            sessions, session_contract = _native_session_ids(connection, database_oid, neon_binding=neon_binding)
             role_rows = connection.execute(
                 text(
                     "SELECT oid, rolname, rolcanlogin, rolsuper, rolcreaterole, rolcreatedb, rolreplication, rolbypassrls FROM pg_catalog.pg_roles ORDER BY oid LIMIT 257"
