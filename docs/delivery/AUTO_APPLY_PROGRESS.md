@@ -14,41 +14,100 @@ Production pairing and portal-use permission remain open.
 
 ## Current checkpoint board — 10 October 2026
 
-Published documentation head `01f88fd4a515e29a76f82cd920278633e4a81ace` passes all five jobs in
-[CI run 38067151227](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38067151227).
-Its runtime implementation remains the preceding a162 source. This CI result does not
-cover the newer scanner lifecycle, policy-pin or search amendments described below.
-The last independently joined full native backend build remains a162; known production
-routes still serve the quiesced `b306f13` compatibility release.
+Verified scanner/search runtime checkpoint `eeb53d6ad982b629c07bd4f526477d0966e3669c`, tree
+`353300538d2b86b17269ac1514e38ed79d3cbd5e`, passes all five CI lanes in
+[run 38070998618, attempt 2](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38070998618).
+The original four successful jobs carry forward unchanged; only the backend is rerun
+once after an immutable Debian acquisition receives HTTP 429 before its tests start.
+The retry passes 3,433 backend cases with zero skips, native AMD64 document and TeX
+checks, Ruff/Mypy, migration round-trip 0014/0001/0014 and actual OpenAPI drift checks.
+Frontend units 353, responsive cases 215, the normal build and connected no-AI browser
+journey pass in the original same-source jobs. The original failed acquisition remains
+preserved. This closes current-source CI, including the earlier locally skipped database
+checks; it does not establish production runtime or customer activation.
 
-The newer synchronous-do scanner source is independently reviewed and locally integrated:
-service SHA256 `040710f23e83ce61a8401338b52defb613b51e4344bf1bb2a4a063ce39962d11`
-and policy SHA256 `e7d6680ee78da0cda5a8e4d9abfaf178ce5684b8b55ebcc5c168b69e3ece8e34`.
-Root's source replay passes 143 cases. The original broader replay retains 49 stale-policy
-failures; two exact policy literals in the renderer and disabled configuration are repaired
-after 56 configuration checks plus two independent custody controls. The post-pin affected
-replay passes 376 with zero failures and 44 disposable-PostgreSQL cases skipped. Those
-44 cases and the amended committed source still require fresh full CI. The staged EDC
-scanner image retains its original `425fd4…` policy; it does not contain this amendment.
+The current synchronous-do service has SHA256
+`040710f23e83ce61a8401338b52defb613b51e4344bf1bb2a4a063ce39962d11`, and its
+canonical policy has SHA256
+`e7d6680ee78da0cda5a8e4d9abfaf178ce5684b8b55ebcc5c168b69e3ece8e34`.
+Native seven-input build `8be5a680-60d2-47a4-84bb-ec5dec182009` succeeds. Its exact GCS
+source generation/archive/config and committed source join the immutable scanner image
+`us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz-document-inspector@sha256:1fd697ba1ad7870c75068876aff5b9d151e151e8943418bb86072975f762ef98`.
+The pulled registry image is actually Linux/AMD64 with USER `65534:65534`, all seven
+source labels and six runtime file bytes verified. All eight genuine local corpus cases
+pass with ClamAV 1.4.3 and definitions 28149 issued 10 October 2026 at 06:24:04 UTC.
+Root's original UID-only metadata assertion is preserved; read-only reconciliation checks
+the complete shipping UID:GID without pulling or building again. The private local driver
+changes one Docker executable path to the installed CLI; all 26 offline controls pass.
 
-Actual synthetic execution `rp5hg` succeeds with the fixed `sandbox do` echo marker only
-(exit 0, stdout 25 bytes, stderr 0). It establishes neither document scanning, sandbox
-isolation nor deletion/retirement. The new full native acceptance proposal passes 51
-offline checks, but needs a new immutable image/source join and actual execution.
-The earlier split-lifecycle Job failures and private HTTP holds remain preserved.
+This local image proof is separate from actual synchronous sandbox execution. Earlier
+`rp5hg` succeeds only with its fixed echo marker. The strict startup/live-clock repair
+is independently clear after 72 unique controls with zero skips; the startup budget
+begins before launching, and the one-second live budget begins only after the complete
+fixed child marker arrives strictly before startup expiry. The original fixtures,
+540-second overall alarm and cleanup bounds remain unchanged.
 
-The search V2 source is also independently reviewed and locally integrated: 39 existing/
-combined cases plus five independent controls pass, followed by 54 root unfiltered cases
-with no skips. It prefers unseen qualifying canonical openings before free saved matches.
-A legacy paid identity is accepted only from the same owner's exact saved search snapshot;
-missing or ambiguous history refuses a new paid reservation with
-`legacy_delivery_identity_unavailable`. Requested-count limits, accepted quotes, owner
-locking and credit rates stay unchanged. Large unbounded legacy-history lookup cost and
-latency, current-source PostgreSQL concurrency, the 1,000-candidate cap, honest view-all
-and broader recall remain open. This improves indexed-result progression and does not
-establish worldwide coverage. The [source-only checkpoint](evidence/2026-10-10-scanner-search-source-checkpoint.json) records these scopes;
-new source CI, backend/scanner images, native full scanner/HTTP acceptance and customer
-activation remain separate pending checkpoints.
+Root performs seven fresh native identity/IAM GETs and verifies the same keyless scanner
+identity with no application grants and empty private-service IAM. One create-only
+request acknowledges synthetic Job `hirewiz-document-synchronous-do-acceptance`, UID
+`9e3fcf95-2fb7-4f1f-9cde-7a176e02db60`; its Ready readback verifies immutable image1fd,
+source eeb, sandboxLauncher, one task/parallelism one, no retries, 600 seconds, two CPUs
+and 4 GiB. The first execution runner stops at a local missing helper import before any
+native execution request; that source/refusal and seal are retained. The corrected
+runner makes one native execution request, with no overrides or SDK retries, and receives
+execution `hirewiz-document-synchronous-do-acceptance-r724t`, UID
+`716bc888-ffc7-4d76-a494-9e9a4ee85cb3`. The same execution is reconciled to terminal
+`NonZeroExitCode`: one failed task, zero successful tasks. Fixed synthetic JSON confirms
+runtime source bytes and the host metadata/DNS/egress controls, then refuses at
+`isolation_do`; the child-isolation, document-corpus and timeout phases are not reached.
+The original bounded CLI log read times out; a separate 30-row SDK read with zero retries
+and a tight timestamp window retrieves all 16 rows and the fixed phases without a next
+page. Child `do` versus finally `delete` failure remains unclassified because raw SDK
+stderr is discarded and cleanup can replace the first error. No execution is restarted
+and no sandbox absence or cleanup success is inferred from the failure.
+Full Cloud Run corpus/isolation/deadline/cleanup and positive private HTTP acceptance
+remain open. The staged Ready service still uses its preceding EDC image and policy.
+
+Search V2 is committed and covered by the current CI. It prefers unseen qualifying
+canonical openings before free saved matches, and accepts a legacy paid identity only
+from the owner's exact saved search snapshot. Missing or ambiguous history refuses a new
+paid reservation with `legacy_delivery_identity_unavailable`. Counts, quotes, owner locks
+and prices remain unchanged. Root's 54 no-skip search cases and independent 39+5 source
+controls remain recorded. Bounded legacy-history performance, the 1,000-candidate cap,
+honest view-all and broader recall are still open. A private compatibility check finds
+that proposed history/body caps would refuse valid existing results; no such cap or schema
+change is integrated. Indexed progression does not demonstrate worldwide coverage.
+
+Exact native Git backend build `9392c249-40ac-46bc-8e12-0b0553d580db` succeeds for
+eeb53d6 with the committed build/push-only configuration. Independent native source,
+configuration, registry and current-CI metadata review joins immutable backend image
+`us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz@sha256:eb6369c7c33826f222dc7ce0f95a80c10323968d5a0233d7c134ca74db3b6cbb`.
+Root verifies all 17 retained review artifacts. Backend platform/runtime and mutable
+build-dependency reproducibility remain unproved; no application promotion follows.
+Known production routes retain
+the quiesced `b306f13` compatibility release, schema suffix 0009, closed checkout and
+paused analysis dispatch. Protected browser integration, provider/consumer fencing,
+monetary migration and customer activation remain held.
+
+
+The ordinary resume-link fidelity repair is integrated locally after exact six-input/
+31-artifact custody and source review. DOCX edits preserve each existing linked text node;
+PDF saved-round-trip checks keep the exact text covered by each original clickable
+rectangle. Safe surrounding edits remain available, and attributed unsafe proposals can
+be removed while retaining other useful edits. The three original native-document
+counterexamples remain unchanged. Root's composed checks pass 110 unique cases with zero
+skips, including actual restricted local TeX compilation; configured Ruff/Mypy pass.
+The initial missing local compiler prerequisite is retained and corrected by an actual
+source-attested ARM64 image, without changing test bodies. These checks do not establish
+arbitrary resume-format compatibility, Word-compatible DOCX pagination, native customer
+rendering/custody or production acceptance. Fresh committed-source CI remains required
+for this newly changed layout source; eeb CI and its backend image remain the preceding
+scanner/search checkpoint.
+
+The [current CI and scanner-image checkpoint](evidence/2026-10-10-current-source-ci-and-scanner-image.json)
+records the new scoped evidence. The [earlier source-only checkpoint](evidence/2026-10-10-scanner-search-source-checkpoint.json)
+preserves its original local replay and skipped-test scopes. Native full scanner/HTTP,
+backend image promotion and all customer release gates remain separate requirements.
 
 The preceding fully verified runtime source is `a162890ff50a606f9c23493ea11266d32ad416d6`.
 Its exact CI run [38057690476](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38057690476)
@@ -200,11 +259,12 @@ completion claim or a percentage of the full goal.
 
 | Checkpoint | Development / verification | Production deployment |
 | --- | --- | --- |
-| Direct-upload publication and current-head correction | [x] a162 all five exact CI jobs pass: 3,389 backend cases, migrations and OpenAPI; original e353 four failures remain preserved. [x] Four-literal correction independently clear; 51 actual PostgreSQL cases pass | [ ] Application promotion remains required |
+| Direct-upload publication and current-head correction | [x] Current eeb all five exact CI jobs pass: 3,433 backend cases, zero skips, migrations and OpenAPI; original ECR429 and preceding e353 failures retained | [ ] Application promotion remains required |
 | Native scanner configuration and runtime acceptance | [x] Seven source/image inputs joined; native config independently clear; Workflow V4 compiles and later post-retirement 403 denial passes one case. [ ] r8nc7 SDK exec1/stdout0 and c9zll smoke failure remain HOLD; c9zll missing-sandbox hint is false. Positive private HTTP remains open; original 403/503 failures retained | [x] Private Ready revision 00001-xcf. [ ] Runtime/customer acceptance and activation remain disabled |
-| Latest published documentation and prior runtime checkpoint | [x] 01f all five CI jobs pass; runtime source remains a162. [x] Prior a162 full CI/native Git backend image join. [ ] New scanner/search source still needs exact committed CI and images | [ ] Built a162 backend image unpromoted; native `b306f13` compatibility release serves known routes |
-| Synchronous-do scanner source and native marker | [x] Root143; exact two policy pins independently clear56+2; post-pin376 passes/44 PG skips. [x] Actual rp5hg fixed echo marker only; reviewed51-case offline full acceptance proposal | [ ] New immutable scanner/source join, full native corpus/isolation/deadline/deletion and positive private HTTP acceptance required; customer wiring disabled |
-| Indexed search progression and conservative paid legacy identity | [x] Search V2 independently clear39+5; root54 passes/no skips. Requested count and price/quote contracts unchanged | [ ] New-source CI/PG concurrency and deployment; unbounded legacy-history performance, 1,000-candidate cap, view-all and worldwide recall remain open |
+| Latest committed runtime and native backend image | [x] Current eeb exact CI and native Git backend build/source/registry join, digest eb6369; 17 review artifacts verified | [ ] Built backend image unpromoted; known routes retain the compatibility release |
+| Synchronous-do scanner source and native acceptance | [x] Current-source CI, exact seven-input native build/image1fd and eight actual local AMD64 cases. [x] Strict startup/live-clock repair independently clear72/0skip | [x] One synthetic Job Ready with verified configuration. [ ] Full r724t execution fails at isolation_do; runtime/host controls pass only. Child corpus/cleanup/private HTTP and customer acceptance remain open |
+| Indexed search progression and conservative paid legacy identity | [x] Search V2 independently clear39+5; root54/0skip and current eeb full CI including PostgreSQL pass. Requested count and prices unchanged | [ ] Deployment, bounded legacy-history performance, 1,000-candidate cap, view-all and worldwide recall remain open |
+| PDF/DOCX link-label and clickable-region fidelity | [x] Exact two-path repair/source review; root110 unique related checks, zero skips, Ruff/Mypy. Three original failures preserved | [ ] Fresh-source CI/backend image and deployment; DOCX native pagination and broader fidelity acceptance remain open |
 | Known-route generation and checkout quiescence | [x] One reviewed native execution plus independent before/after verification | [x] API/analysis-worker traffic and existing tags remapped; analysis queue dispatch PAUSED. [ ] Global old-consumer/provider fence remains open |
 | PDF/DOCX upload inspection outside the API | [x] V3 bound refusal/unavailability integrated after independent 190-check review. [x] Preceding a162 CI/native AMD64 and local ARM64 engine cases. [x] Canonical policy and BFF timeout checks | [x] Private scanner staged. [ ] Actual Cloud Run isolation/HTTP acceptance, direct GCS release, native projects, retained files and application artifacts remain open |
 | Validated inspection receipts and fresh definition acquisition | [x] Independent 110-case receipt and 20-case acquisition reviews; fresh ARM64 eight-case scanner acceptance. [x] Preceding a162 CI and exact scanner source/image/policy join | [ ] Operational definition refresh, runtime acceptance and customer promotion pending |

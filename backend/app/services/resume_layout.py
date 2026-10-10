@@ -870,6 +870,7 @@ def _verify_pdf(
                 closing(original[page_index]) as source_page,
                 closing(document[page_index]) as saved_page,
             ):
+                _verify_pdf_link_text(source_page, saved_page, snapshots.get(page_index))
                 if _page_structure(source_page, original) != _page_structure(saved_page, document):
                     raise ResumeLayoutError(
                         "The PDF page geometry or link targets changed during editing."
@@ -888,6 +889,50 @@ def _verify_pdf(
                     raise ResumeLayoutError(
                         "An untouched PDF page changed visually during editing."
                     )
+
+
+def _pdf_link_text(page: Any) -> tuple[tuple[int, tuple[float, ...], str], ...]:
+    """Bind the visible text within each original clickable rectangle."""
+    links = []
+    with closing(page.get_textpage()) as textpage:
+        for index in range(raw.FPDFPage_GetAnnotCount(page)):
+            annotation = raw.FPDFPage_GetAnnot(page, index)
+            if not annotation:
+                raise ResumeLayoutError("The original PDF annotations cannot be verified.")
+            try:
+                if raw.FPDFAnnot_GetSubtype(annotation) != raw.FPDF_ANNOT_LINK:
+                    continue
+                rect = raw.FS_RECTF()
+                if not raw.FPDFAnnot_GetRect(annotation, ctypes.byref(rect)):
+                    raise ResumeLayoutError("The PDF annotation bounds cannot be verified.")
+                bounds = (rect.left, rect.bottom, rect.right, rect.top)
+                if not all(math.isfinite(value) for value in bounds):
+                    raise ResumeLayoutError("The PDF annotation bounds cannot be verified.")
+                links.append((index, bounds, textpage.get_text_bounded(*bounds)))
+            finally:
+                raw.FPDFPage_CloseAnnot(annotation)
+    return tuple(links)
+
+
+def _verify_pdf_link_text(source_page: Any, saved_page: Any, snapshot: dict | None) -> None:
+    original = _pdf_link_text(source_page)
+    saved = _pdf_link_text(saved_page)
+    if original == saved:
+        return
+    current = {index: (bounds, text) for index, bounds, text in saved}
+    affected = set()
+    if snapshot is not None:
+        for index, bounds, text in original:
+            if current.get(index) == (bounds, text):
+                continue
+            for object_index, unit_id in snapshot["unit_ids"].items():
+                if _intersection(snapshot["texts"][object_index][1], bounds) is not None:
+                    affected.add(unit_id)
+    raise ResumeLayoutError(
+        "The replacement changes text covered by an original PDF link.",
+        unit_id=next(iter(affected)) if len(affected) == 1 else None,
+        repair_hint="Keep existing linked text inside its original clickable rectangle. Edit another passage or use the original/custom resume.",
+    )
 
 
 def _page_structure(page: Any, document: Any) -> tuple[Any, ...]:
@@ -1093,6 +1138,16 @@ def _apply_docx(source_bytes: bytes, edits: list[dict]) -> bytes:
             paragraph = paragraphs[unit["paragraph_index"]]
             nodes = _paragraph_nodes(paragraph)
             values = _distribute_text(nodes, unit["text"], replacement)
+            if any(
+                value != (node.text or "")
+                and any(parent.tag == f"{_W}hyperlink" for parent in node.iterancestors())
+                for node, value in zip(nodes, values, strict=True)
+            ):
+                raise ResumeLayoutError(
+                    "The replacement changes an original DOCX hyperlink label.",
+                    unit_id=unit["unit_id"],
+                    repair_hint="Keep existing hyperlink labels exactly. Edit only surrounding unlinked wording, choose another passage or use the original/custom resume.",
+                )
             for node, value in zip(nodes, values, strict=True):
                 if value != (node.text or ""):
                     node.text = value
