@@ -2,13 +2,47 @@
 
 Review date: 10 October 2026 (Asia/Kolkata). This register distinguishes the promoted discovery and admission foundation from full development against `docs/requirements/JOB_SEARCH_AND_APPLICATION.md`. It does not close the full requirements checklist. The [current checkpoint board](AUTO_APPLY_PROGRESS.md) supersedes the historical chronology below.
 
-Latest fully verified published source `ab5cb5d9` passes all five exact CI jobs and 3,149 backend tests.
-Later published `e353e83d` has four successful jobs and a backend result of 3,385 passes/four
-stale current-head assertion failures. The reviewed four-literal correction passes 51
-affected actual PostgreSQL tests; corrected-source full CI remains required. The scanner
-is now a private Ready Cloud Run service with independently checked native configuration,
-but its first actual isolation Job fails. Private HTTP Workflow compilation also found
-an invalid map expression; runtime acceptance and customer activation remain open.
+Latest fully verified published source `a162890ff50a606f9c23493ea11266d32ad416d6`
+passes [all five exact CI jobs](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38057690476),
+including 3,389 backend cases with zero skips, migrations, OpenAPI drift checks,
+353 frontend units, 215 responsive cases, the normal production build and connected
+cold-browser journey. External providers remain synthetic; that journey has zero AI
+calls and no employer submission. Native repository-root build
+`46109105-22e2-4800-975a-a86fbd4abf30` succeeds and independently joins the exact
+source/tree and backend image digest
+`3d4d7f7a9ada1873949998d91c89b1a0109f4997e89300ecd5398232ec4d3052`.
+The built application image is unpromoted. Earlier ab5 success and e353's 3,385 passes/
+four stale-head failures remain historical; the reviewed correction's 51 actual
+PostgreSQL cases and the later a162 full CI close the current-source test gate.
+
+The scanner is a private Ready service with independently checked configuration,
+using a separate seven-input image. Actual runtime acceptance remains HOLD: r8nc7
+fails at sandbox SDK exec with exit 1, zero stdout and no exec timeout, before child
+isolation/corpus/timeout acceptance. Later c9zll synthetic smoke also fails: create/delete
+return0, but echo/Python/post-delete exec each return1 with stdout0/stderr78 and an
+unclassified reason. Its missing-sandbox hint is false; cause and native absence remain
+unproved. Workflow V4 compiles, but actual private HTTP
+and the first final-denial execution fail at status_0; native request logs record 403 and 503.
+A later deliberate post-retirement execution passes one actual 403 denial with fresh
+empty-IAM/source/UID joins. That negative case proves current denied invocation;
+positive inspection, all nine cases and scanner isolation remain unproved.
+
+Private storage is partially staged. Root has acknowledged/read back the quarantine
+policy with the exact two conditional object bindings plus selected-human metadata
+administration; provider row ordering caused a retained first-wrapper assertion failure,
+and no PUT was repeated. Both temporary quarantine-only project leases were removed
+with fresh policy/readbacks; both owned removals and the later exact policy closure are
+independently verified. Four selected-human metadata permissions are recorded after the
+second lease expired, with a fresh project readback confirming no owned lease. Clean
+create/settings steps 20–21 now have native ACK/raw birth/settings readbacks. The raw
+UTC timestamp successor passes 93 independent offline checks while retaining exact
+birth/current string equality. The clean continuation now records a fresh-etag CAS ACK
+and exact native readback of its three permanent bindings, preserving birth/settings;
+its four selected-human metadata permission GETs succeed. Effective application actors,
+signed-object/native browser CORS, coordinator wiring and customer activation remain
+open. Original step 22 is unexecuted and existing-API signing steps 23–24 stay held. The
+[durable sanitized storage checkpoint](evidence/2026-10-10-native-storage-checkpoint.json)
+retains exact source/receipt hashes and the failed runtime evidence scopes.
 The [current native checkpoint](SOURCE_CI_AND_NATIVE_SCANNER_2026-10-10.md) supersedes older
 statements below that the scanner has not been staged.
 The production API and analysis-worker known routes/tags now serve reviewed `b306f13`
@@ -32,7 +66,8 @@ distinct cases and a real five-width local browser/API/SQL journey with syntheti
 providers. Published `ab5cb5d9` now passes genuine AMD64 scanner and connected-browser
 replay, with the artifact source hashes matched to that commit. Later local validated
 receipt and fresh-definition changes pass independent 110-case and 20-case reviews and
-all eight fresh real ARM64 scanner cases, but require their own hosted CI.
+all eight fresh real ARM64 scanner cases. The later a162 hosted CI now covers this
+source; actual Cloud Run isolation remains unproved.
 [Local evidence](evidence/2026-10-10-document-admission-local.json) preserves scopes and
 original failures. Durable GCS quarantine/release, legacy/native-project admission, safe
 later rendering and native Cloud Run isolation remain open. Full 5 MiB uploads and
@@ -45,7 +80,9 @@ after57 independent checks, including8 actual PostgreSQL cases. The separate sou
 access consistency repair passes77 root and18 independent checks, preserving the two
 original retained-binding failures. The eight-path large-download frontend/CSP now
 passes72 independent checks and the author's five-width synthetic browser fixture
-verifies exact5MiB bytes. Root's joined frontend passes353 tests across27 files, with full lint and TypeScript checks passing; the separate normal build is still live and unclaimed. Native storage/browser CORS, scheduling, grants/schema0014,
+verifies exact 5 MiB bytes. Root's joined frontend passes 353 tests across 27 files,
+with full lint and TypeScript checks; current a162 hosted CI also passes the normal
+production build. Native storage/browser CORS, scheduling, grants/schema 0014,
 operating expense and full retention acceptance remain open.
 
 Earlier frontend `7c59578` passed exact CI and hosted homepage checks at 320/390/1440 px;
@@ -188,7 +225,7 @@ The [candidate website integration](CANDIDATE_WEB_ROOT_INTEGRATION_2026-10-09.md
 | P0 | Local disabled foundation; full restore unproved | SE05, DP05; G05C, G06D | Durable artifact cleanup and SQL account deletion are present. Local independently retained lifetime/tombstone and bounded closure tests do not establish production permissions or a restore procedure preventing account, file and approval resurrection. Complete per-subject availability and full recovery; publish separate retention periods for resumes, artifacts, commands, logs and employer copies. |
 | P0 | Promoted foundation; full gate unproved | BI06, NF01–02, FR07; G05D–E | Promoted `7cc49c2` adds durable candidate/day/rolling/pending allowances, immutable price/policy quotes, exact atomic batches, and verified requisition or conservative provider identity. Exact-commit CI includes 26 actual PostgreSQL cases covering admission races, locked balances and creation/deletion ordering. Production schema/health and controlled rollout are recorded. Fleet fairness, off-platform attempts, policy waiting periods, canonical remapping and independent recovery remain open. See [the foundation evidence](EMPLOYER_ADMISSION_FOUNDATION.md). |
 | P0 | Unproved; external prerequisite | CN02–04, EX01, FR06; G05A | Public read access does not authorize writing. Before enabling a tenant, record the exact employer/provider permit, credential scope, origin, expiry and supported actions; validate every conditional question, consent, file constraint and complete-application receipt in an authorized sandbox. HTTP success or candidate creation is insufficient. No production test applications are permitted. |
-| P0 | Locally implemented; production unproved | SD03, SE02–04; G03B, G06D | Private antivirus/parser worker, validated receipts and durable direct-GCS quarantine/release/cleanup are integrated with direct uploads disabled. Actual local and published-source AMD64 scanner cases pass; later source requires new hosted CI. Native bucket/IAM/CORS, scan/cleanup scheduling, restricted grants/schema0014, document-worker isolation/egress/secret exclusion and retention/failure drills remain unproved. |
+| P0 | Locally implemented; partially staged; acceptance unproved | SD03, SE02–04; G03B, G06D | Private antivirus/parser worker, validated receipts and durable direct-GCS quarantine/release/cleanup are integrated with direct uploads disabled. Current a162 full CI and native backend source/image build pass; the separate private scanner service is Ready but actual SDK isolation/private HTTP probes remain HOLD. Quarantine policy/lease closure is independently verified; four selected-human metadata permissions are recorded after second lease expiry and clean steps 20–21 raw birth/settings are verified. Reviewed clean V3 exact policy ACK/readback and human metadata4 are verified. Effective application actors, signed-object/browser CORS, scan/cleanup scheduling, restricted grants/schema 0014, document-worker isolation/egress and retention/failure drills remain unproved. |
 | P1 | Local fixture foundation; production missing | EX02, EX04–05, FR06, SE03; G04A–D | A disabled Manifest V3 package with zero host grants passes 56 protocol and 14 actual Chromium tests against a synthetic localhost portal. It reviews exact answers before any autosave, preserves unknown checkpoints across restart and never uploads or submits. Authenticated production pairing, independent current action authority, tenant-specific permitted adapters, permission revocation and real portal validation remain required. See [the companion evidence](BROWSER_COMPANION.md). |
 | P1 | Missing / unproved | CV01–05, CN01; G00A, G02C, G06A–B | Seven adapter families and four reviewed tenants do not establish coverage. The local audit harness is integrated, but a genuinely independent stratified employer/posting/query reference, including unsupported eligible portals and holdouts, remains to be collected. Measure misses, original-date uncertainty, query recall and top-K usefulness separately. Claims require a clustered-sampling 95% confidence-interval lower bound above 95% for each claimed scope. |
 | P1 | Missing / partial | FR01–04, AI02–03, CV05; G01A–B, G02D | Basic extraction and fit use deterministic taxonomy rules. Versioned country/language/salary-currency/employment/sponsorship preferences are independently reviewed and integrated locally, with unknown data retained and 313 backend/218 frontend checks. Full live structured metadata, schema12/13 preflight, writer drain, historical refresh and billing/browser deployment remain open. Evidence is not uniformly claim-level. Strict role-token matching and a 1,000-candidate ranking cap need independent recall evaluation, aliases and an honest view-all path. |
