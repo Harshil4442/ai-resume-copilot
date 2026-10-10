@@ -1,0 +1,55 @@
+{
+  "checkpoint": "reviewed_database_observers_and_retained_native_inventory",
+  "prior_exact_source": {
+    "commit": "7fac1c4d76b8a5de4396b3f010c50941d61827db",
+    "tree": "b3a41ca9b65c3d03a640118c671e34ee9ce6f49d",
+    "ci_run_id": 37998984107,
+    "ci_url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37998984107",
+    "all_five_jobs": "success",
+    "backend_passed": 2529,
+    "frontend_units_passed": 240,
+    "responsive_passed": 215,
+    "companion_passed": 136,
+    "cold_harness_passed": 14,
+    "skipped_reported": 0,
+    "build_id": "735b7fcc-9188-4ea6-8cdd-d86954b93781",
+    "image_digest": "sha256:fc0f69ff8052d011df0084238ee3510e014140f3572908f417c02922d15869f9",
+    "production_deployment": false
+  },
+  "new_bounded_components": {
+    "deleted_database_role_review_cases": 138,
+    "native_postgres_session_review_cases": 44,
+    "retained_inventory_review_cases": 122,
+    "case_counts_are_separate_scoped_reviews": true,
+    "skipped_cases": 0,
+    "root_combined_ruff": "pass",
+    "root_combined_mypy": "pass",
+    "new_published_source_ci": "pending",
+    "new_native_image": "pending"
+  },
+  "actual_retained_inventory_observation": {
+    "status": "refused",
+    "reason": "native_parent_binding_unavailable",
+    "source_sha256": "e56f9dc3cfa77ba78f52ca54c442e32138f13fce25b7ed04345935947684c637",
+    "started_at": "2026-10-10T00:26:38.072328+00:00",
+    "observed_at": "2026-10-10T00:26:56.164068+00:00",
+    "native_get_calls": 11,
+    "mutations": 0,
+    "model_calls": 0,
+    "database_connections": 0,
+    "cutover_ready": false
+  },
+  "remaining": [
+    "Native retained parent/resource binding unresolved after strict refusal",
+    "Other consumers and issuer restoration/minting authority unverified",
+    "Credential sharing unanswered",
+    "Distinct restricted DB identities and old writer/provider retirement pending",
+    "Global native fence verifier deliberately missing",
+    "Fenced backup/restore and schema0010-0013 migration pending",
+    "New finite packs and search1/apply20 not activated",
+    "Protected pairing/lifecycle integration stopped after automatic approval review rejection",
+    "Wider coverage/performance/recovery acceptance open"
+  ],
+  "real_model_payment_employer_smoke_calls": 0,
+  "goal_complete": false
+}

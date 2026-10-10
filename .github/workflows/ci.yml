@@ -110,6 +110,7 @@ jobs:
           app/services/model_cost_policy.py app/services/generation_budget.py app/services/llm_client.py app/services/result_commit.py
           app/services/generation_gate.py tests/test_generation_gate.py
           tests/test_monetary_cutover_preflight_postgres.py
+          tests/test_monetary_cutover_deleted_role_postgres.py tests/test_monetary_cutover_session_ids_postgres.py
           app/routers/candidate_accounts.py app/routers/sensitive_auth.py app/routers/candidate_ingress.py
           tests/test_sensitive_auth_http.py tests/test_legacy_password_compatibility.py
           tests/test_candidate_account_lifecycle.py tests/test_candidate_legacy_auth_guards.py
@@ -129,7 +130,7 @@ jobs:
           tests/fixtures/cold_browser_app.py tests/test_cold_browser_runner.py
           ../infra/gcp/release_preflight.py ../infra/gcp/monetary_release.py ../tests/test_release_preflight.py
           tests/test_monetary_release_entrypoint.py tests/test_monetary_schema_step_postgres.py
-          tests/test_model_key_revocation_observer.py
+          tests/test_model_key_revocation_observer.py tests/test_legacy_credential_inventory.py
           tests/test_ci_registry_cache.py
       - name: Check modified legacy authentication imports
         working-directory: backend
@@ -145,7 +146,7 @@ jobs:
           app/billing/cost_policy.py
           app/routers/candidate_accounts.py app/routers/sensitive_auth.py app/routers/candidate_ingress.py
           ../infra/gcp/release_preflight.py ../infra/gcp/monetary_release.py scripts/monetary_schema_step.py
-          scripts/model_key_revocation_observer.py
+          scripts/model_key_revocation_observer.py scripts/legacy_credential_inventory.py
           scripts/ci_registry_cache.py
       - name: Compile backend
         run: backend/.venv/bin/python -m compileall -q backend/app

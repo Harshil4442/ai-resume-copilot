@@ -121,6 +121,20 @@ preloaded bytes; it does not claim faster first rendering or identical historica
 fonts. Final published composition needs a fresh five-lane CI and native Git image;
 local proof cannot substitute for either or close the monetary/provider fence.
 
+The subsequent exact `7fac1c4` source now passes all five CI jobs and an independently
+verified native Git image build. [Checkpoint evidence](evidence/2026-10-10-preflight-checkpoint.json)
+records 2,529 backend, 240 frontend unit and 215 responsive passes, plus companion
+and connected no-AI journey verification. This closes the previous font/build source
+check for that commit; new database/inventory changes require their own CI and image.
+
+- [x] Integrate independently reviewed deleted-role and native PG17 session observers
+  (138 and 44 scoped review cases respectively); no production role was changed.
+- [x] Integrate the independently reviewed retained credential collector: 122 checks,
+  zero skips, with original diagnostic-leak failures preserved. Combined Ruff/Mypy pass.
+- [x] Perform one bounded actual read-only collector attempt: 11 native GETs over
+  18.09 seconds; no model, database or mutation calls. It refused
+  `native_parent_binding_unavailable`, so retained inventory completeness is still open.
+
 - [ ] Establish whether old credentials are shared with other applications.
 - [ ] Complete native provider/issuer and database writer retirement, with new
   restricted identities and exact secret versions.

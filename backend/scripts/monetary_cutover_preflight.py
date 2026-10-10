@@ -13,9 +13,11 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
 
+from psycopg import Connection as PsycopgConnection
+from psycopg import ConnectionInfo
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 from sqlalchemy import create_engine, text
-from sqlalchemy.engine import Engine
+from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.pool import NullPool
 
 MAX_INPUT_BYTES = 131072
@@ -64,20 +66,20 @@ USAGE_PROVENANCE = {
 # conservatively even when its presently reachable target appears read-only.
 ROLE_CAPABILITIES = f"""
  SELECT r.oid, r.rolname, r.rolcanlogin,
-  (SELECT count(*) FROM pg_class c
+  (SELECT count(*) FROM pg_catalog.pg_class c
    WHERE c.relnamespace = :namespace AND c.relkind IN {RELATIONS}
-    AND EXISTS (SELECT 1 FROM pg_roles target
-      WHERE (target.oid = r.oid OR pg_has_role(r.oid,target.oid,'SET'))
+    AND EXISTS (SELECT 1 FROM pg_catalog.pg_roles target
+      WHERE (target.oid = r.oid OR pg_catalog.pg_has_role(r.oid,target.oid,'SET'))
        AND (has_table_privilege(target.oid,c.oid,:privileges)
         OR has_any_column_privilege(target.oid,c.oid,:column_privileges)))) AS writes,
-  EXISTS (SELECT 1 FROM pg_roles target
-   WHERE (target.oid = r.oid OR pg_has_role(r.oid,target.oid,'SET'))
+  EXISTS (SELECT 1 FROM pg_catalog.pg_roles target
+   WHERE (target.oid = r.oid OR pg_catalog.pg_has_role(r.oid,target.oid,'SET'))
     AND has_schema_privilege(target.oid,:namespace,'CREATE')) AS schema_create,
-  EXISTS (SELECT 1 FROM pg_auth_members membership
+  EXISTS (SELECT 1 FROM pg_catalog.pg_auth_members membership
    WHERE membership.admin_option
-    AND (membership.member = r.oid OR pg_has_role(r.oid,membership.member,'MEMBER')))
+    AND (membership.member = r.oid OR pg_catalog.pg_has_role(r.oid,membership.member,'MEMBER')))
     AS membership_administration
- FROM pg_roles r
+ FROM pg_catalog.pg_roles r
 """
 
 
@@ -119,6 +121,9 @@ class Inventory(Strict):
     database_namespace: str = Field(pattern=r"^[a-z][a-z0-9_]{0,62}$")
     # Explicit aliases resolve role names in process, never into the report.
     role_env: dict[Literal["retired", "replacement_runtime", "replacement_migration"], str]
+    # Expected identity only. Native issuer/legacy-DSN binding remains separate.
+    retired_role_mode: Literal["disabled", "deleted"] = "disabled"
+    retired_role_oid: int | None = Field(default=None, gt=0, le=4294967295)
     database_operator_role_env: list[str] = Field(max_length=16)
     consumers: list[Consumer] = Field(min_length=4, max_length=128)
 
@@ -132,6 +137,12 @@ class Inventory(Strict):
         ):
             raise ValueError("Only distinct dedicated environment aliases are supported")
         return value
+
+    @model_validator(mode="after")
+    def retired_role_identity(self) -> Inventory:
+        if self.retired_role_mode == "deleted" and self.retired_role_oid is None:
+            raise ValueError("Deleted role mode requires its pinned old OID")
+        return self
 
 
 class LiabilityQuote(Strict):
@@ -367,16 +378,16 @@ def _definer_capabilities(
 ) -> tuple[dict[int, dict[str, int]], dict[str, Any]]:
     # Cross-namespace routines may write application tables. Inspect catalog
     # identity/authority only, never parse a routine body to certify no writes.
-    total = _count(connection, "SELECT count(*) FROM pg_proc WHERE prosecdef")
+    total = _count(connection, "SELECT count(*) FROM pg_catalog.pg_proc WHERE prosecdef")
     if total > MAX_ROWS:
         raise Denied("database_function_inventory_bound")
     routines = (
         connection.execute(
             text(
                 "SELECT p.oid, p.proowner, p.prokind, n.oid AS namespace_oid, "
-                "l.lanname, l.lanpltrusted FROM pg_proc p "
-                "LEFT JOIN pg_namespace n ON n.oid = p.pronamespace "
-                "LEFT JOIN pg_language l ON l.oid = p.prolang "
+                "l.lanname, l.lanpltrusted FROM pg_catalog.pg_proc p "
+                "LEFT JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace "
+                "LEFT JOIN pg_catalog.pg_language l ON l.oid = p.prolang "
                 "WHERE p.prosecdef ORDER BY p.oid LIMIT 257"
             )
         )
@@ -415,9 +426,9 @@ def _definer_capabilities(
             text(
                 "SELECT r.oid, count(*) AS executable_count, "
                 "count(*) FILTER (WHERE p.proowner = ANY(CAST(:owner_writers AS oid[]))) "
-                "AS known_writer_owner_count FROM pg_roles r CROSS JOIN pg_proc p "
-                "WHERE p.prosecdef AND EXISTS (SELECT 1 FROM pg_roles target "
-                "WHERE (target.oid = r.oid OR pg_has_role(r.oid,target.oid,'SET')) "
+                "AS known_writer_owner_count FROM pg_catalog.pg_roles r CROSS JOIN pg_catalog.pg_proc p "
+                "WHERE p.prosecdef AND EXISTS (SELECT 1 FROM pg_catalog.pg_roles target "
+                "WHERE (target.oid = r.oid OR pg_catalog.pg_has_role(r.oid,target.oid,'SET')) "
                 "AND has_function_privilege(target.oid,p.oid,'EXECUTE')) "
                 "GROUP BY r.oid ORDER BY r.oid LIMIT 257"
             ),
@@ -503,6 +514,148 @@ def _extension_shape(connection: Any, namespace_oid: int, version: str) -> None:
         raise Denied("database_extension_shape_mismatch")
 
 
+# PostgreSQL17 native contracts: REL_17_11 pg_proc.dat and system_views.sql.
+# Session identifiers precede HAS_PGSTAT_PERMISSIONS in pgstatfuncs.c.
+PG17_ACTIVITY_NAMES = (
+    "pid", "datid", "pid", "usesysid", "application_name", "state", "query",
+    "wait_event_type", "wait_event", "xact_start", "query_start", "backend_start",
+    "state_change", "client_addr", "client_hostname", "client_port", "backend_xid",
+    "backend_xmin", "backend_type", "ssl", "sslversion", "sslcipher", "sslbits",
+    "ssl_client_dn", "ssl_client_serial", "ssl_issuer_dn", "gss_auth", "gss_princ",
+    "gss_enc", "gss_delegation", "leader_pid", "query_id",
+)
+PG17_ACTIVITY_TYPES = (
+    23, 26, 23, 26, 25, 25, 25, 25, 25, 1184, 1184, 1184, 1184, 869, 25,
+    23, 28, 28, 25, 16, 25, 25, 23, 25, 1700, 25, 16, 25, 16, 16, 23, 20,
+)
+PG17_ACTIVITY_VIEW_COLUMNS = (
+    ("datid", 26), ("datname", 19), ("pid", 23), ("leader_pid", 23),
+    ("usesysid", 26), ("usename", 19), ("application_name", 25),
+    ("client_addr", 869), ("client_hostname", 25), ("client_port", 23),
+    ("backend_start", 1184), ("xact_start", 1184), ("query_start", 1184),
+    ("state_change", 1184), ("wait_event_type", 25), ("wait_event", 25),
+    ("state", 25), ("backend_xid", 28), ("backend_xmin", 28),
+    ("query_id", 20), ("query", 25), ("backend_type", 25),
+)
+PG17_ACTIVITY_VIEW = f"""
+ SELECT s.datid, d.datname, s.pid, s.leader_pid, s.usesysid,
+ u.rolname AS usename, s.application_name, s.client_addr, s.client_hostname,
+ s.client_port, s.backend_start, s.xact_start, s.query_start, s.state_change,
+ s.wait_event_type, s.wait_event, s.state, s.backend_xid, s.backend_xmin,
+ s.query_id, s.query, s.backend_type
+ FROM pg_stat_get_activity(NULL::integer) s({", ".join(PG17_ACTIVITY_NAMES[1:])})
+ LEFT JOIN pg_database d ON s.datid = d.oid
+ LEFT JOIN pg_authid u ON s.usesysid = u.oid;
+"""
+
+
+def _activity_view_tokens(definition: str) -> str:
+    # PG deparser only changes whitespace/grouping parentheses here. Quoted
+    # identifiers, extra predicates, expressions and dependencies remain distinct.
+    return re.sub(r"[\s()]+", "", definition).lower()
+
+
+def _native_session_ids(
+    connection: Connection, database_oid: int,
+) -> tuple[list[tuple[int, int | None, int | None]], dict[str, Any]]:
+    # PQuser identifies the actual connection startup login. SQL session_user can
+    # be changed by a privileged login; engine URL usernames can be overridden.
+    # Read only these documented Connection.info fields, never DSN/password.
+    try:
+        driver = connection.connection.driver_connection
+        if not isinstance(driver, PsycopgConnection):
+            raise TypeError
+        info = driver.info
+        if not isinstance(info, ConnectionInfo):
+            raise TypeError
+        authenticated_user, protocol_pid, protocol_version = (
+            info.user, info.backend_pid, info.server_version,
+        )
+    except Exception:
+        raise Denied("database_observer_protocol_identity_unavailable") from None
+    if (type(authenticated_user) is not str or not authenticated_user
+        or len(authenticated_user) > 63 or "\x00" in authenticated_user
+        or type(protocol_pid) is not int or protocol_pid <= 0
+        or type(protocol_version) is not int or protocol_version <= 0):
+        raise Denied("database_observer_protocol_identity_unavailable")
+    version = str(connection.exec_driver_sql("SHOW server_version_num").scalar_one())
+    if not re.fullmatch(r"17\d{4}", version):
+        raise Denied("database_public_session_ids_version_unsupported")
+    if protocol_version != int(version):
+        raise Denied("database_observer_protocol_identity_mismatch")
+    sql_user, sql_session_user = connection.execute(text("SELECT current_user,session_user")).one()
+    if sql_user != sql_session_user:
+        raise Denied("database_observer_authenticated_role_mismatch")
+    if sql_user != authenticated_user:
+        raise Denied("database_observer_protocol_identity_mismatch")
+    functions = connection.execute(text(
+        "SELECT p.oid,p.proname,p.pronamespace,p.proowner,p.prolang,p.prokind,"
+        "p.prosecdef,p.proretset,p.proisstrict,p.provolatile,p.proparallel,"
+        "p.prorettype,p.proargtypes::text,p.proallargtypes,p.proargmodes,"
+        "p.proargnames,p.prosrc,p.probin,p.proconfig "
+        "FROM pg_catalog.pg_proc p WHERE p.pronamespace=11 AND "
+        "p.proname IN ('pg_stat_get_activity','pg_backend_pid') ORDER BY p.oid LIMIT 3"
+    )).all()
+    expected = [
+        (2022, "pg_stat_get_activity", 11, 10, 12, "f", False, True, False, "s", "r",
+         2249, "23", list(PG17_ACTIVITY_TYPES), ["i"] + ["o"] * 31,
+         list(PG17_ACTIVITY_NAMES), "pg_stat_get_activity", None, None),
+        (2026, "pg_backend_pid", 11, 10, 12, "f", False, False, True, "s", "r",
+         23, "", None, None, None, "pg_backend_pid", None, None),
+    ]
+    if [tuple(row) for row in functions] != expected:
+        raise Denied("database_native_session_function_identity_mismatch")
+    view = connection.execute(text(
+        "SELECT c.oid,c.relnamespace,c.relowner,c.relkind,c.relpersistence,"
+        "c.relrowsecurity,c.relforcerowsecurity,c.reloptions,c.relhasrules,"
+        "pg_catalog.pg_get_viewdef(c.oid,false) "
+        "FROM pg_catalog.pg_class c WHERE c.relnamespace=11 "
+        "AND c.relname='pg_stat_activity' LIMIT 2"
+    )).all()
+    if (len(view) != 1 or not 0 < int(view[0][0]) < 16384
+        or tuple(view[0][1:9]) != (11, 10, "v", "p", False, False, None, True)
+        or not isinstance(view[0][9], str) or len(view[0][9]) > 4096
+        or _activity_view_tokens(view[0][9]) != _activity_view_tokens(PG17_ACTIVITY_VIEW)):
+        raise Denied("database_native_session_view_identity_mismatch")
+    columns = connection.execute(text(
+        "SELECT a.attname,a.atttypid FROM pg_catalog.pg_attribute a "
+        "WHERE a.attrelid=:view AND a.attnum>0 AND NOT a.attisdropped "
+        "ORDER BY a.attnum LIMIT 23"
+    ), {"view": int(view[0][0])}).all()
+    if tuple(tuple(row) for row in columns) != PG17_ACTIVITY_VIEW_COLUMNS:
+        raise Denied("database_native_session_view_shape_mismatch")
+    own = connection.execute(text(
+        "SELECT pg_catalog.pg_backend_pid(),r.oid "
+        "FROM pg_catalog.pg_roles r WHERE r.rolname=:authenticated_user"
+    ), {"authenticated_user": authenticated_user}).one()
+    if own[0] != protocol_pid:
+        raise Denied("database_observer_protocol_identity_mismatch")
+    rows = connection.execute(text(
+        "SELECT pid,usesysid,datid FROM pg_catalog.pg_stat_activity ORDER BY pid LIMIT 257"
+    )).all()
+    if len(rows) > MAX_ROWS:
+        raise Denied("database_session_or_writer_inventory_bound")
+    sessions: list[tuple[int, int | None, int | None]] = []
+    seen: set[int] = set()
+    for pid, role_oid, db_oid in rows:
+        if (type(pid) is not int or pid <= 0 or pid in seen
+            or any(value is not None and (type(value) is not int or not 0 < value <= 4294967295)
+                   for value in (role_oid, db_oid))):
+            raise Denied("database_native_session_identifier_shape_mismatch")
+        seen.add(pid)
+        sessions.append((pid, role_oid, db_oid))
+    if [row for row in sessions if row[0] == own[0]] != [(own[0], own[1], database_oid)]:
+        raise Denied("database_observer_authenticated_session_mismatch")
+    return [row for row in sessions if row[0] != own[0]], {
+        "contract": "pg17_native_public_pid_role_database_ids",
+        "server_version_num": int(version), "native_function_oid": 2022,
+        "native_view_oid": int(view[0][0]), "authenticated_login_bound": True,
+        "protocol_identity_bound": True,
+        "requires_all_session_activity_details": False,
+    }
+
+
+
 def observe(
     engine: Engine,
     inventory: Inventory,
@@ -524,27 +677,33 @@ def observe(
     with engine.connect() as connection:
         with connection.begin():
             connection.exec_driver_sql("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+            connection.exec_driver_sql("SET LOCAL search_path = pg_catalog")
             connection.exec_driver_sql("SET LOCAL statement_timeout = '1000ms'")
             connection.exec_driver_sql("SET LOCAL lock_timeout = '1000ms'")
             connection.exec_driver_sql("SET LOCAL idle_in_transaction_session_timeout = '10000ms'")
             identifier = connection.execute(
-                text("SELECT system_identifier::text FROM pg_control_system()")
+                text("SELECT system_identifier::text FROM pg_catalog.pg_control_system()")
             ).scalar_one()
             identifier_hash = hashlib.sha256(str(identifier).encode()).hexdigest()
             database_oid = _count(
-                connection, "SELECT oid FROM pg_database WHERE datname = current_database()"
+                connection, "SELECT oid FROM pg_catalog.pg_database WHERE datname = current_database()"
             )
+            if inventory.retired_role_mode == "deleted" and (
+                identifier_hash != inventory.expected_system_identifier_sha256
+                or database_oid != inventory.expected_database_oid
+            ):
+                raise Denied("deleted_role_database_identity_mismatch")
             namespace = inventory.database_namespace
             # Bind both namespace and cluster/database identity; no search_path trust.
             schema_oid = connection.execute(
-                text("SELECT oid FROM pg_namespace WHERE nspname = :namespace"),
+                text("SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = :namespace"),
                 {"namespace": namespace},
             ).scalar_one_or_none()
             if schema_oid is None:
                 raise Denied("database_namespace_missing")
             table_rows = connection.execute(
                 text(
-                    f"SELECT relname, oid FROM pg_class WHERE relnamespace = :namespace AND relkind IN {RELATIONS} ORDER BY oid LIMIT 257"
+                    f"SELECT relname, oid FROM pg_catalog.pg_class WHERE relnamespace = :namespace AND relkind IN {RELATIONS} ORDER BY oid LIMIT 257"
                 ),
                 {"namespace": schema_oid},
             ).all()
@@ -576,26 +735,36 @@ def observe(
             elif CANDIDATE_TABLES.intersection(table_oids):
                 raise Denied("database_schema_shape_mismatch")
             _extension_shape(connection, int(schema_oid), version)
-            # Visibility is required: otherwise another role's sessions may have NULL
-            # activity fields. Counts alone cannot prove old executors absent.
-            visibility = bool(
-                connection.execute(
-                    text(
-                        "SELECT r.rolsuper OR pg_has_role(current_user, 'pg_read_all_stats', 'USAGE') FROM pg_roles r WHERE rolname = current_user"
-                    )
-                ).scalar_one()
-            )
-            if not visibility:
-                raise Denied("database_session_inventory_visibility_missing")
+            sessions, session_contract = _native_session_ids(connection, database_oid)
             role_rows = connection.execute(
                 text(
-                    "SELECT oid, rolname, rolcanlogin, rolsuper, rolcreaterole, rolcreatedb, rolreplication, rolbypassrls FROM pg_roles ORDER BY oid LIMIT 257"
+                    "SELECT oid, rolname, rolcanlogin, rolsuper, rolcreaterole, rolcreatedb, rolreplication, rolbypassrls FROM pg_catalog.pg_roles ORDER BY oid LIMIT 257"
                 )
             ).all()
             if len(role_rows) > MAX_ROWS:
                 raise Denied("database_role_inventory_bound")
             role_by_name = {str(row[1]): row for row in role_rows}
-            if not set((*roles.values(), *operator_roles)).issubset(role_by_name):
+            required_names = {*roles.values(), *operator_roles}
+            if inventory.retired_role_mode == "deleted":
+                replacement_names = {
+                    roles["replacement_runtime"], roles["replacement_migration"], *operator_roles
+                }
+                if roles["retired"] in replacement_names or any(
+                    name in role_by_name and int(role_by_name[name][0]) == inventory.retired_role_oid
+                    for name in replacement_names
+                ):
+                    raise Denied("retired_role_identity_class_overlap")
+                if roles["retired"] in role_by_name or any(
+                    int(row[0]) == inventory.retired_role_oid for row in role_rows
+                ):
+                    raise Denied("deleted_role_name_or_oid_present")
+                required_names.remove(roles["retired"])
+            elif inventory.retired_role_oid is not None and (
+                roles["retired"] not in role_by_name
+                or int(role_by_name[roles["retired"]][0]) != inventory.retired_role_oid
+            ):
+                raise Denied("retired_role_oid_mismatch")
+            if not required_names.issubset(role_by_name):
                 raise Denied("database_expected_role_missing")
 
             parameters = {
@@ -618,20 +787,26 @@ def observe(
             )
             observed_roles: dict[str, Any] = {}
             for alias, name in roles.items():
+                if alias == "retired" and inventory.retired_role_mode == "deleted":
+                    observed_roles[alias] = {
+                        "state": "absent",
+                        "bound_oid": inventory.retired_role_oid,
+                        "active_session_count": sum(
+                            1 for _, role_oid, _ in sessions
+                            if role_oid == inventory.retired_role_oid
+                        ),
+                    }
+                    continue
                 row = role_by_name[name]
                 capability = capabilities[int(row[0])]
-                role_sessions = _count(
-                    connection,
-                    "SELECT count(*) FROM pg_stat_activity WHERE usesysid = :role AND pid <> pg_backend_pid()",
-                    {"role": row[0]},
-                )
+                role_sessions = sum(1 for _, role_oid, _ in sessions if role_oid == int(row[0]))
                 observed_roles[alias] = {
                     "login_enabled": bool(row[2]),
                     "elevated": any(bool(item) for item in row[3:]),
                     "elevated_role_membership": bool(
                         connection.execute(
                             text(
-                                "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE (rolsuper OR rolcreaterole OR rolcreatedb OR rolreplication OR rolbypassrls) AND pg_has_role(:role,oid,'MEMBER'))"
+                                "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE (rolsuper OR rolcreaterole OR rolcreatedb OR rolreplication OR rolbypassrls) AND pg_catalog.pg_has_role(:role,oid,'MEMBER'))"
                             ),
                             {"role": name},
                         ).scalar_one()
@@ -660,7 +835,7 @@ def observe(
             ]
             known = {roles["replacement_runtime"], roles["replacement_migration"], *operator_roles}
             current_oid = _count(
-                connection, "SELECT oid FROM pg_roles WHERE rolname = current_user"
+                connection, "SELECT oid FROM pg_catalog.pg_roles WHERE rolname = current_user"
             )
             current = capabilities[current_oid]
             unexpected_writers = sum(1 for row in writers if str(row["rolname"]) not in known)
@@ -674,21 +849,17 @@ def observe(
                 or current["membership_administration"]
                 or definer_counts[current_oid]["executable_count"]
             )
-            sessions = connection.execute(
-                text(
-                    "SELECT usesysid, datid FROM pg_stat_activity WHERE pid <> pg_backend_pid() AND usesysid IS NOT NULL ORDER BY pid LIMIT 257"
-                )
-            ).all()
-            if len(sessions) > MAX_ROWS or len(writers) > MAX_ROWS:
+            if len(writers) > MAX_ROWS:
                 raise Denied("database_session_or_writer_inventory_bound")
             unrelated_sessions = sum(
                 1
-                for row in sessions
-                if int(row[0]) not in {int(role_by_name[name][0]) for name in known}
+                for _, role_oid, _ in sessions
+                if role_oid is not None
+                and role_oid not in {int(role_by_name[name][0]) for name in known}
             )
             prepared_transactions = _count(
                 connection,
-                "SELECT count(*) FROM pg_prepared_xacts WHERE database = current_database()",
+                "SELECT count(*) FROM pg_catalog.pg_prepared_xacts WHERE database = current_database()",
             )
             legacy_events = _count(connection, f"SELECT count(*) FROM {quoted}.model_call_events")
             attempted_events = _count(
@@ -732,6 +903,7 @@ def observe(
                 liability_summary = _liabilities(connection, quoted)
             return {
                 "observation": "single_read_only_repeatable_read_snapshot",
+                "session_inventory": session_contract,
                 "system_identifier_sha256": identifier_hash,
                 "database_oid": database_oid,
                 "schema": version,
@@ -793,18 +965,31 @@ def evaluate(
     ):
         reasons.append("candidate_consumer_release_mismatch")
     retired = observed["roles"]["retired"]
-    if (
-        retired["login_enabled"]
-        or retired["elevated"]
-        or retired["elevated_role_membership"]
-        or retired["writable_table_count"]
-        or retired["schema_create"]
-        or retired["membership_administration"]
-        or retired["executable_security_definer_count"]
-    ):
-        reasons.append("retired_database_role_not_fenced")
-    if retired["active_session_count"]:
-        reasons.append("retired_database_sessions_present")
+    if inventory.retired_role_mode == "deleted":
+        if (
+            set(retired) != {"state", "bound_oid", "active_session_count"}
+            or retired.get("state") != "absent"
+            or type(retired.get("bound_oid")) is not int
+            or retired.get("bound_oid") != inventory.retired_role_oid
+            or type(retired.get("active_session_count")) is not int
+            or retired.get("active_session_count", -1) < 0
+        ):
+            reasons.append("retired_database_role_not_fenced")
+        elif retired["active_session_count"]:
+            reasons.append("retired_database_sessions_present")
+    else:
+        if (
+            retired["login_enabled"]
+            or retired["elevated"]
+            or retired["elevated_role_membership"]
+            or retired["writable_table_count"]
+            or retired["schema_create"]
+            or retired["membership_administration"]
+            or retired["executable_security_definer_count"]
+        ):
+            reasons.append("retired_database_role_not_fenced")
+        if retired["active_session_count"]:
+            reasons.append("retired_database_sessions_present")
     runtime = observed["roles"]["replacement_runtime"]
     if (
         runtime["elevated"]

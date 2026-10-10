@@ -186,3 +186,53 @@ scoped CLEAR and this subsequent HOLD remain preserved. V4 adds whole-database
 definer authority inventory, actual function/procedure/PUBLIC/inherited/SET writes,
 and missing/unsupported/overbound inventory refusals. No routine body is used to
 certify absence of writes; known nonwriter owners still receive conservative treatment.
+
+## Optional observation of a deleted legacy role
+
+The existing format1 inventory defaults `retired_role_mode` to `disabled`; the original
+present-role/NOLOGIN/capability checks stay intact. `deleted` additionally requires a strict
+positive `retired_role_oid`. Existing cluster/database pins and the retired name resolved
+through `role_env` remain mandatory. A bounded complete SQL catalog must contain neither
+that name nor OID; replacement/operator names and actual OIDs cannot reuse the old identity.
+The report explicitly says `state: absent` with its bound OID and actual session count,
+without invented zero-capability fields. Old-OID/unclassified sessions, prepared work,
+other writers, observing authority, runtime privileges, obligations and consumer gates still
+refuse as before. A supplied OID in disabled mode must match the actual present role.
+
+These fields are identity expectations, **not a native deletion or permission certificate**.
+A later native fence must bind them to the retained immutable legacy DATABASE_URL username,
+pre-retirement SQL role/cluster identity and authenticated Neon production branch/endpoints,
+and establish issuer/recreation/replacement isolation. `NativeBoundary.verify_fences` remains
+refused until that complete native composition exists. This observer still always reports
+`cutover_ready: false`; old ledger/settlement data is not deleted by the observation.
+
+
+## PostgreSQL17 public session identifiers
+
+The observer now verifies the authenticated PostgreSQL17 native activity view and
+built-in function identity/shape before taking one bounded PID/role-OID/database-OID
+projection. All session counts derive from that same snapshot. These identifiers are
+public before PostgreSQL's detailed-statistics permission guard; no query text or private
+activity fields are needed, so `pg_read_all_stats` is no longer required for this
+contract. Other major versions and altered native definitions refuse. Catalog/session
+queries are schema-qualified and the transaction search path is `pg_catalog`.
+
+The supported psycopg driver's actual `Connection.info.user`, `backend_pid` and
+`server_version` must match SQL current/session identity, native PID/role/database
+IDs and PG17 version before exclusion. Unsupported or missing driver information
+refuses. No URL username, DSN/password field or supplied identity is substituted;
+no login name or credential value is added to the report. This closes role/session
+masking at startup or after connection, while preserving the effective-role check.
+NULL/foreign
+database IDs never hide a non-NULL old-role session; genuine NULL-user background
+rows stay intrinsic background observations. Writer/SET/admin/definer, old orphan
+sessions, bounded catalogs, prepared work, all monetary obligations, consumer gates
+and the unchanged global native-fence refusal remain separate requirements. Activity
+statistics are a transaction-cached instant, not proof that admission cannot reopen.
+
+Primary contract: [PG17 monitoring documentation](https://www.postgresql.org/docs/17/monitoring-stats.html),
+[REL_17_11 pgstatfuncs.c](https://github.com/postgres/postgres/blob/REL_17_11/src/backend/utils/adt/pgstatfuncs.c),
+[pg_proc.dat](https://github.com/postgres/postgres/blob/REL_17_11/src/include/catalog/pg_proc.dat),
+and [native views](https://github.com/postgres/postgres/blob/REL_17_11/src/backend/catalog/system_views.sql).
+Protocol identity: [psycopg ConnectionInfo](https://www.psycopg.org/psycopg3/docs/api/objects.html#connection-information)
+and [PG17 libpq connection status](https://www.postgresql.org/docs/17/libpq-status.html).
