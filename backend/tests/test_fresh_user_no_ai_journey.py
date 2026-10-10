@@ -72,7 +72,7 @@ def _sign(payload):
 
 
 @pytest.fixture
-def journey(tmp_path, monkeypatch):
+def journey(tmp_path, monkeypatch, synthetic_document_inspector):
     # conftest intentionally supplies synthetic pricing for other tests. This
     # journey removes it and any keys before application construction.
     for name in (

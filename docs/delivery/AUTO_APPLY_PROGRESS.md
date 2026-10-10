@@ -14,10 +14,41 @@ Production pairing and portal-use permission remain open.
 
 ## Current checkpoint board — 10 October 2026
 
-The latest [finite rollout preparation](MONETARY_ROLLOUT_PREPARATION_2026-10-10.md)
-records explicit checkout closure, the corrected regional build observation and a
-native current-key check. The current credential remains active; global monetary
-activation remains HOLD. This does not change the separate protected browser gates.
+The latest published source is `963c3e04fa7f1221f9c2670c6ff448f807350431`:
+[all five exact CI jobs pass](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38025547657),
+including 2,953 backend tests, migrations, native AMD64 compiler checks and the cold
+browser journey. No native paid image of that source has been built or promoted.
+
+On 10 October, bounded compatibility quiescence completed: the API now routes 100%
+and all three existing tags to `ai-resume-parser-b306-checkout-ai-off-20261010`;
+the analysis worker routes 100% and its existing tag to `hirewiz-analysis-worker-00022-qut`.
+Both use the reviewed `b306f13` immutable image with optional generation and automatic
+database migration disabled. Checkout remains closed. The `hirewiz-analysis` queue is
+PAUSED without deleting tasks; new tasks can still be queued. Native controller completion,
+private/public health, unchanged IAM and schema `0009` were verified. These observations
+close known-route quiescence only, not unknown consumers, provider retirement, global
+fencing, monetary migration or paid activation. The current credential remains active.
+
+Private PDF/DOCX admission is now integrated outside the credential-bearing API.
+The V3 outcome repair distinguishes bound document refusals (422) from scanner,
+launcher, stale-definition and cleanup unavailability (503). Independent source review
+passes 179 existing plus 11 distinct controls with zero skips. Root's affected upload,
+source and no-AI replay passes 276 checks; exact CI Ruff and Mypy pass on 129 source
+files. A genuine local ARM64 image passes all eight real clean/refusal/antivirus cases,
+with runtime bytes and restricted container metadata verified. The canonical
+[inspection policy](../../infra/document-processing/policy.json) records the required
+source, limits and native isolation controls; it is not deployment evidence.
+
+The exact-upload BFF allows 120 seconds for POST `/resume/parse`, retains 65 seconds
+elsewhere and declares 150 seconds for the Vercel function. Its 51 focused checks
+and all 248 frontend units pass. The preceding V2 source also passed a fresh local
+production-build browser/API/PostgreSQL journey at all five widths with zero model
+calls and successful owned cleanup; its external transports were synthetic. The V2
+full regression and scoped replays cover 3,089 distinct passing cases, with original
+setup failures retained. Those preceding-source results do not replace current-source
+hosted CI and cold-browser replay. [Local evidence](evidence/2026-10-10-document-admission-local.json)
+records each scope separately. AMD64 CI, Cloud Run isolation/configuration, direct GCS
+quarantine/release, broader formats and protected browser integration remain open.
 
 Progress updates show a checked item only after its stated verification passes. A local
 component, independent review, integrated release and production deployment are separate
@@ -27,6 +58,9 @@ completion claim or a percentage of the full goal.
 
 | Checkpoint | Development / verification | Production deployment |
 | --- | --- | --- |
+| Latest exact published source | [x] `963c3e04`: all five CI lanes, 2,953 backend passes, zero reported skips | [ ] Paid source not built/promoted; native `b306f13` compatibility release serves known routes |
+| Known-route generation and checkout quiescence | [x] One reviewed native execution plus independent before/after verification | [x] API/analysis-worker traffic and existing tags remapped; analysis queue dispatch PAUSED. [ ] Global old-consumer/provider fence remains open |
+| PDF/DOCX upload inspection outside the API | [x] V3 bound refusal/unavailability integrated after independent 190-check review. [x] Root 276 affected checks, full CI Ruff/Mypy129 and eight genuine ARM64 engine cases pass. [x] Canonical policy recorded; upload timeout repair passes 51 BFF cases | [ ] Current exact CI/AMD64, Cloud Run isolation and deployment pending; direct GCS quarantine, native projects, retained files and application artifacts remain open |
 | Employer-origin search pilot, requested result count and separate search/application pricing | [x] Implemented and verified for the disclosed pilot | [x] Pilot backend `e7d8f2b`, schema `0009` |
 | Original/custom resume choice and exact package approval | [x] Connected browser/API/database proof; external transports are synthetic | [x] Preparation/manual handoff; automatic application remains unavailable |
 | Credit purchase links and responsive mobile navigation | [x] Five-width staged/live checks and exact CI | [x] Pilot frontend `06cc112`; narrow offer-retirement frontend `67a51f2` now serves both HireWiz domains |

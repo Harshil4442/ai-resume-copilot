@@ -258,11 +258,11 @@ def test_commit_uncertainty_never_returns_success_or_retries_or_auto_deletes(pre
         nonlocal calls
         calls+=1
         raise RuntimeError('synthetic-private-commit-error')
-    monkeypatch.setattr(Transaction,'commit',unknown)
-    with pytest.raises(preparation.PreparationDenied,match='transaction_outcome_unknown') as error:
-        preparation.prepare(context.actor,context.manifest)
-    assert calls==1 and 'synthetic-private' not in str(error.value)
-    monkeypatch.undo()
+    with monkeypatch.context() as scoped:
+        scoped.setattr(Transaction,'commit',unknown)
+        with pytest.raises(preparation.PreparationDenied,match='transaction_outcome_unknown') as error:
+            preparation.prepare(context.actor,context.manifest)
+        assert calls==1 and 'synthetic-private' not in str(error.value)
     assert role_count(context)==0
 
 

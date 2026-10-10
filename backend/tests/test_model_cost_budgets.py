@@ -420,7 +420,7 @@ def _upload_request():
     return request, upload, original
 
 
-def test_optional_upload_without_policy_returns_one_saved_original_and_no_charge(context, monkeypatch):
+def test_optional_upload_without_policy_returns_one_saved_original_and_no_charge(context, monkeypatch, synthetic_document_inspector):
     import asyncio
 
     from backend.app.routers.resume import parse_resume
@@ -441,7 +441,7 @@ def test_optional_upload_without_policy_returns_one_saved_original_and_no_charge
         assert db.get(models.User, 1).ai_credits == 100
 
 
-def test_unrelated_upload_503_is_not_swallowed_as_policy_unavailability(context, monkeypatch):
+def test_unrelated_upload_503_is_not_swallowed_as_policy_unavailability(context, monkeypatch, synthetic_document_inspector):
     import asyncio
     from contextlib import contextmanager
 

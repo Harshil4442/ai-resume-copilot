@@ -21,6 +21,22 @@ def expense_cost_test_policy(monkeypatch):
 
 
 @pytest.fixture
+def synthetic_document_inspector(monkeypatch):
+    """Explicit transport fixture for billing tests, never malware/isolation proof.
+
+    These tests retain the real deterministic parser on synthetic documents;
+    worker admission and transport failures have their own dedicated tests.
+    """
+    from backend.app.routers import resume
+    from backend.app.services.parsing import parse_resume_file
+
+    def inspect(source, *, source_format):
+        return parse_resume_file(source, filename=f"synthetic.{source_format}", use_llm=False)
+
+    monkeypatch.setattr(resume, "inspect_resume_document", inspect)
+
+
+@pytest.fixture
 def persisted_model_budget():
     from backend.tests.test_ai_efficiency import _database
 

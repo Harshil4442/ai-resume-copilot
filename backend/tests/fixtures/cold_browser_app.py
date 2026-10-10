@@ -6,6 +6,8 @@ No fixture routes or dependency overrides are added to the shipping API.
 from __future__ import annotations
 
 import atexit
+import base64
+import hashlib
 import json
 import os
 import socket
@@ -41,6 +43,28 @@ def forbidden(*_args, **_kwargs):
 
 def transport(request: httpx.Request) -> httpx.Response:
     count("synthetic_external_requests")
+    if request.url.host == "document-fixture.run.app" and request.url.path == "/inspect":
+        # This finite transport fixture supplies deterministic extraction only;
+        # it is explicitly not native malware-scanner or sandbox proof.
+        from backend.app.services.parsing import parse_resume_file
+
+        assert request.method == "POST"
+        payload = json.loads(request.content)
+        source = base64.b64decode(payload["content_base64"], validate=True)
+        assert hashlib.sha256(source).hexdigest() == payload["sha256"]
+        assert payload["source_format"] == "docx"
+        assert request.headers["x-hirewiz-document-policy"] == "b" * 64
+        raw, sections, skills, years, contact = parse_resume_file(source, "synthetic.docx", use_llm=False)
+        count("synthetic_document_inspections")
+        assert COUNTS["synthetic_document_inspections"] <= 2
+        return httpx.Response(200, json={
+            "version": 1, "sha256": payload["sha256"], "size_bytes": len(source),
+            "source_format": "docx", "worker_image": os.environ["DOCUMENT_WORKER_IMAGE_DIGEST"],
+            "policy_sha256": "b" * 64,
+            "scan": {"engine": "ClamAV", "version": "synthetic-fixture", "definitions": "synthetic-fixture"},
+            "parsed": {"raw_text": raw, "sections": sections, "skills": skills,
+                       "experience_years": years, "contact_info": contact},
+        })
     if request.url.host == "boards-api.greenhouse.io":
         assert request.method == "GET", "Employer writes are forbidden"
         assert "authorization" not in request.headers and "cookie" not in request.headers
@@ -96,6 +120,23 @@ def client_init(client, *args, **kwargs):
 
 
 httpx.Client.__init__ = client_init
+_original_async_init = httpx.AsyncClient.__init__
+
+
+def document_transport(request):
+    response = transport(request)
+    # Preserve an unread wire stream for the adapter's raw-byte output bound.
+    return httpx.Response(response.status_code, headers=response.headers,
+                          stream=httpx.ByteStream(response.content))
+
+
+def async_client_init(client, *args, **kwargs):
+    assert kwargs.get("transport") is None, "Unexpected custom application transport"
+    kwargs["transport"] = httpx.MockTransport(document_transport)
+    _original_async_init(client, *args, **kwargs)
+
+
+httpx.AsyncClient.__init__ = async_client_init
 _original_connect = socket.socket.connect
 
 
@@ -108,9 +149,22 @@ def restricted_connect(sock, address):
 
 
 socket.socket.connect = restricted_connect  # type: ignore[method-assign]
-from backend.app.services import llm_client  # noqa: E402
+from backend.app.services import document_ingestion, llm_client  # noqa: E402
 from backend.app.services.generation_budget import GenerationBudget  # noqa: E402
 from google import genai  # noqa: E402
+
+os.environ["DOCUMENT_WORKER_URL"] = "https://document-fixture.run.app/inspect"
+os.environ["DOCUMENT_WORKER_IMAGE_DIGEST"] = "test-docker.pkg.dev/test/workers/document@sha256:" + "a" * 64
+os.environ["DOCUMENT_WORKER_POLICY_SHA256"] = "b" * 64
+
+
+def synthetic_document_identity(audience):
+    assert audience == "https://document-fixture.run.app"
+    count("synthetic_document_identity_requests")
+    return "synthetic-document-identity"
+
+
+document_ingestion._identity_token = synthetic_document_identity
 
 for _name in (
     "_chat", "_chat_with_budget", "chat_json", "rewrite_bullets", "generate_interview_questions",

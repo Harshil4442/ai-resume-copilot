@@ -13,6 +13,7 @@ from .. import models, schemas
 from ..database import get_db
 from ..rate_limiter import limiter
 from ..security import get_current_user
+from ..services.document_ingestion import DocumentInspectionError, inspect_resume_document
 from ..services.parsing import enrich_resume_skills, parse_resume_file
 
 router = APIRouter(prefix="/resume", tags=["resume"])
@@ -150,11 +151,17 @@ MAX_DOCX_UNCOMPRESSED_BYTES = 20 * 1024 * 1024
 MAX_DOCX_ENTRIES = 500
 
 
-def _validated_resume_upload(filename: str, content_type: str, data: bytes) -> tuple[str, str]:
+def _resume_upload_kind(filename: str, content_type: str) -> tuple[str, str]:
     safe_name = Path(filename.replace("\\", "/")).name.strip()[:255]
     suffix = Path(safe_name).suffix.lower()
     if suffix not in {".pdf", ".docx", ".tex", ".zip"} or content_type not in ALLOWED_TYPES:
         raise HTTPException(status_code=400, detail="Upload PDF, DOCX, a UTF-8 TeX file or a supported multi-file TeX ZIP project.")
+    return safe_name, {".pdf": "pdf", ".docx": "docx", ".tex": "tex", ".zip": "texzip"}[suffix]
+
+
+def _validated_resume_upload(filename: str, content_type: str, data: bytes) -> tuple[str, str]:
+    safe_name, kind = _resume_upload_kind(filename, content_type)
+    suffix = Path(safe_name).suffix.lower()
 
     if suffix in {".tex", ".zip"}:
         from ..services.native_tex import read_project
@@ -216,12 +223,24 @@ async def parse_resume(
             status_code=413,
             detail=f"File is larger than {MAX_UPLOAD_BYTES // (1024 * 1024)}MB limit.",
         )
-    filename, source_format = _validated_resume_upload(filename, content_type, file_bytes)
+    # Determine only metadata in the API process. ZIP/XML/PDF inspection and
+    # deterministic extraction for PDF/DOCX belong to the private scan worker.
+    filename, source_format = _resume_upload_kind(filename, content_type)
     from ..services.resume_layout import ResumeLayoutError
     try:
-        raw_text, sections, skills, exp_years, contact_info = await run_in_threadpool(
-            parse_resume_file, file_bytes, filename=filename, use_llm=False
-        )
+        if source_format in {"pdf", "docx"}:
+            raw_text, sections, skills, exp_years, contact_info = await run_in_threadpool(
+                inspect_resume_document, file_bytes, source_format=source_format
+            )
+        else:
+            # Native projects retain their separate compiler path. Their full
+            # quarantine/scan and post-compile isolation gate remains open.
+            _validated_resume_upload(filename, content_type, file_bytes)
+            raw_text, sections, skills, exp_years, contact_info = await run_in_threadpool(
+                parse_resume_file, file_bytes, filename=filename, use_llm=False
+            )
+    except DocumentInspectionError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from None
     except ResumeLayoutError as exc:
         raise HTTPException(422, str(exc)) from exc
 

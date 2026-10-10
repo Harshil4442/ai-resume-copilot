@@ -72,6 +72,10 @@ async function forward(
   const hasBody = !["GET", "HEAD"].includes(request.method);
   const body = hasBody ? await request.arrayBuffer() : undefined;
   const backendStarted = isCatalog ? performance.now() : 0;
+  // Private document inspection has a 75-second HTTP budget before the
+  // parse response is saved. Leave headroom only for this exact upload route.
+  const upstreamTimeoutMs = request.method === "POST" && path.length === 2
+    && path[0] === "resume" && path[1] === "parse" ? 120_000 : 65_000;
   try {
     const response = await fetch(target, {
       method: request.method,
@@ -79,7 +83,7 @@ async function forward(
       headers,
       body,
       cache: "no-store",
-      signal: AbortSignal.timeout(65_000),
+      signal: AbortSignal.timeout(upstreamTimeoutMs),
     });
     const responseHeaders = new Headers({
       "Cache-Control": "private, no-store, max-age=0",
@@ -113,6 +117,7 @@ async function forward(
 }
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 150;
 
 export const GET = forward;
 export const POST = forward;

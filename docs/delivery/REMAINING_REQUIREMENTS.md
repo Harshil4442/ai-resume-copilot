@@ -1,6 +1,32 @@
 # Remaining requirements after the discovery pilot
 
-Review date: 9 October 2026 (Asia/Kolkata). This register distinguishes the promoted discovery and admission foundation from full development against `docs/requirements/JOB_SEARCH_AND_APPLICATION.md`. It does not close the full requirements checklist. Exact release IDs, whole-suite results and live checks belong in [the current component release report](CATALOG_SNAPSHOT_RELEASE_2026-10-09.md).
+Review date: 10 October 2026 (Asia/Kolkata). This register distinguishes the promoted discovery and admission foundation from full development against `docs/requirements/JOB_SEARCH_AND_APPLICATION.md`. It does not close the full requirements checklist. The [current checkpoint board](AUTO_APPLY_PROGRESS.md) supersedes the historical chronology below.
+
+Current published source `963c3e04` passes all five exact CI jobs and 2,953 backend tests.
+The production API and analysis-worker known routes/tags now serve reviewed `b306f13`
+compatibility revisions with optional generation disabled; checkout is closed and analysis
+queue dispatch is PAUSED. Schema remains `0009`; finite paid plans, global consumer/provider
+fencing, protected browser pairing and the full monetary rollout remain unactivated.
+Older statements below about zero candidate traffic or an unpaused queue describe earlier
+checkpoints and are retained as historical evidence.
+
+PDF/DOCX upload inspection is now integrated through a separate private scan/parser
+worker, before source persistence and optional AI charges. Its V3 typed-result repair
+passes independent review (179 existing plus 11 distinct checks), root's 276 affected
+checks and the exact CI Ruff/Mypy selection (129 source files). Genuine local ARM64
+acceptance passes all eight corpus cases, including actual EICAR detection, bound
+refusal and missing-definition unavailability. The canonical inspection policy binds
+source and required limits/isolation; no native Cloud Run control is inferred from it.
+The BFF timeout repair passes 51 checks and all 248 frontend units pass.
+
+The preceding V2 source has composed local full-regression/replay evidence for 3,089
+distinct cases and a real five-width local browser/API/SQL journey with synthetic external
+providers. Current exact-source CI/AMD64 and connected-browser replay are still required.
+[Local evidence](evidence/2026-10-10-document-admission-local.json) preserves scopes and
+original failures. Durable GCS quarantine/release, legacy/native-project admission, safe
+later rendering and native Cloud Run isolation remain open. Full 5 MiB uploads and
+large preview/downloads need direct storage because the Vercel function body ceiling
+is 4.5 MB; direct-upload domain implementation is underway outside managed source.
 
 Earlier frontend `7c59578` passed exact CI and hosted homepage checks at 320/390/1440 px;
 its GCP API/workers were `ec52279`. That release is superseded by `e7d8f2b` below. The

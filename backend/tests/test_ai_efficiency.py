@@ -250,7 +250,7 @@ def test_enhanced_mode_preserves_generation_and_records_actual_model_and_tokens(
 
 
 @pytest.mark.parametrize('outcome,expected_units,expected_state', [('success', 1, 'completed'), ('same', 0, 'unchanged'), ('failure', 0, 'failed')])
-def test_optional_upload_enrichment_is_explicit_refundable_and_preserves_original(monkeypatch, outcome, expected_units, expected_state):
+def test_optional_upload_enrichment_is_explicit_refundable_and_preserves_original(monkeypatch, outcome, expected_units, expected_state, synthetic_document_inspector):
     import asyncio
     import json
 

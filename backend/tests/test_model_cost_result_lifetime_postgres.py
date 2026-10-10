@@ -141,7 +141,7 @@ def test_actual_upload_enrichment_route_acquires_guard_before_resume_flush(facto
     with factory() as db:
         db.execute(text("SELECT setval(pg_get_serial_sequence('resumes','id'), (SELECT MAX(id) FROM resumes), true)"))
         db.commit()
-    monkeypatch.setattr(resume_routes, "parse_resume_file", lambda *a, **k: (
+    monkeypatch.setattr(resume_routes, "inspect_resume_document", lambda *a, **k: (
         "Synthetic Python and SQL", {"experience": "Synthetic Python and SQL"}, ["Python"], 1.0, {},
     ))
     roles, ready, release = _gate(monkeypatch, order=order)

@@ -1,0 +1,334 @@
+{
+  "baseline_commit": "963c3e04fa7f1221f9c2670c6ff448f807350431",
+  "changed_source_sha256": {
+    ".github/workflows/ci.yml": "503fa8b539ae77ab09efea83b817ef8ec341acb5a0bb22486f9e18b18bf8af22",
+    "backend/app/routers/resume.py": "1ce1fb90ec708e9800c964e68c3d8761cf46da1dc9a5f0fc5c8fd6d31e4f814d",
+    "backend/app/services/document_ingestion.py": "cc24ed70cf58e4adb3f15be11846508a439c0f60bdf18652354b9818e4455985",
+    "backend/scripts/document_test_image.py": "ba42f2a759a08c4a185211523aa9fb41f7c38cb0ee0ea2282b177f2104863c31",
+    "backend/scripts/nologin_role_preparation.py": "aa837a9a662b88c527f4b94b40814ac85b051896dbf944ed1003cd83ecea17c3",
+    "backend/tests/test_nologin_role_preparation_postgres.py": "a451b6cca5ced5f91936079e91a33bf493dbfc84c12cb1a60504961865d094a7",
+    "frontend/app/api/backend/[...path]/route.test.ts": "7481d5fb54b73bed9b5eb6341c7b3ac6dd2d52ab5e319b4cb6f0811af5308186",
+    "frontend/app/api/backend/[...path]/route.ts": "49022a7b3a08d5c3c19a22517f2f2ae5715e5a3dee1ff6fa961447e309210b50",
+    "infra/gcp/monetary_release.py": "727c08d35520ca9ed84ff250686306e7d15bf4fb7673121d18009a9abe8993d2"
+  },
+  "current_connected_journey": {
+    "browser": {
+      "axe_violations": 0,
+      "cross_owner_denied": true,
+      "custom_bytes_exact": true,
+      "final_status": "manual_handoff",
+      "no_bff_interception": true,
+      "page_errors": 0,
+      "real_nextauth": true,
+      "reviewed_widths": [
+        320,
+        390,
+        768,
+        1024,
+        1440
+      ],
+      "server_errors": 0,
+      "source_bytes_exact": true,
+      "stale_approval_rejected": true
+    },
+    "cleanup": {
+      "errors": [],
+      "group_verification": [
+        {
+          "group_id": 18121,
+          "verification": "unreaped owned leader; no live group members",
+          "verified_stopped": true
+        },
+        {
+          "group_id": 18120,
+          "verification": "unreaped owned leader; no live group members",
+          "verified_stopped": true
+        }
+      ],
+      "own_schema_removed": true,
+      "owned_browser_cache_link_removed": true,
+      "owned_processes_stopped": true,
+      "owned_tls_private_key_removed": true,
+      "post_exit_owned_group_members": []
+    },
+    "compiled_bff_max_duration": 150,
+    "later_delta": "V3 typed-outcome client changes followed this V2 cold journey; exact hosted current-source cold replay remains required.",
+    "production_build_passed": true,
+    "production_proof": false,
+    "report_sha256": "2f79fdf4706f2d3483d924414c992fcb878af110151dc64994e0a235175fb6bb",
+    "sql": {
+      "analysis_runs": 0,
+      "analysis_unit_operation_debits": 0,
+      "analysis_units_after_purchase": 52,
+      "application_attempts": 0,
+      "application_fee": 0,
+      "approval_records": 2,
+      "bundle_analysis_units_granted": 2,
+      "current_exact_custom_artifact": true,
+      "employer_apply_outbox": 0,
+      "employer_receipt": null,
+      "final_submit_grants": 0,
+      "migration": "20261009_0013",
+      "model_calls": 0,
+      "owned_docx_sources": 2,
+      "posting_index": 4,
+      "revoked_approvals": 1,
+      "search_charged": 4,
+      "search_released": 2,
+      "search_reserved": 6,
+      "service_balance": 96,
+      "service_credit_grants": 1
+    },
+    "synthetic_transports": {
+      "dispatch_errors": 0,
+      "forbidden_model_calls": 0,
+      "synthetic_checkout_orders": 1,
+      "synthetic_document_identity_requests": 2,
+      "synthetic_document_inspections": 2,
+      "synthetic_feed_gets": 1,
+      "unexpected_external_requests": 0,
+      "unexpected_socket_egress": 0
+    }
+  },
+  "date": "2026-10-10",
+  "focused_backend_passes": 312,
+  "focused_bff_passes": 51,
+  "frontend_unit_passes": 248,
+  "goal_complete": false,
+  "local_backend_regression": {
+    "causes": [
+      "Unchanged scoped fixture only permits three older loopback emulator ports; verified allowed port58880 used for the71replay without changing tests.",
+      "Transport-only release source changed its byte identity; one exact hash pin was rebound after root and independent AST verification.",
+      "Synthetic failed-commit patch was scoped to restore the native commit method on an unexpected earlier failure."
+    ],
+    "distinct_case_union_passed": 3089,
+    "distinct_case_union_skipped": 0,
+    "evidence_sha256": {
+      "emulator_replay": "7bb3255ddf90a647bdb7e148ddb1a15ed0d849c0a8ff5d8dfd3f8f824cc6ef0e",
+      "full": "ec2241c6a59b16565beccf43b768f99632abc80853380ff02e7731eea042bf55",
+      "preparation_replay": "3e13659c7a5e6df208793265252063fa7e09e5842405ee85bec86716911a2414"
+    },
+    "full_run_passed": 3006,
+    "hosted_exact_source_ci_verified": false,
+    "original_errors": 72,
+    "original_errors_include_one_teardown_on_an_already_failed_case": true,
+    "original_failures": 12,
+    "replays": {
+      "emulator_replay": {
+        "errors": 0,
+        "failed": 0,
+        "passed": 71,
+        "skipped": 0
+      },
+      "preparation_replay": {
+        "errors": 0,
+        "failed": 0,
+        "passed": 34,
+        "skipped": 0
+      }
+    },
+    "single_green_full_run": false,
+    "source_scope": "Preceding V2 source; current V3 has affected replay and requires exact hosted whole-suite CI"
+  },
+  "native_document_engine": {
+    "cloud_run_isolation_proven": false,
+    "corpus": [
+      {
+        "case": "clean_pdf",
+        "outcome": "clean",
+        "passed": true,
+        "scan": {
+          "definitions": "28149/2026-10-10T06:24:04+00:00",
+          "engine": "ClamAV",
+          "version": "1.4.3"
+        }
+      },
+      {
+        "case": "clean_docx",
+        "outcome": "clean",
+        "passed": true,
+        "scan": {
+          "definitions": "28149/2026-10-10T06:24:04+00:00",
+          "engine": "ClamAV",
+          "version": "1.4.3"
+        }
+      },
+      {
+        "case": "page_counter",
+        "outcome": "clean",
+        "passed": true,
+        "scan": {
+          "definitions": "28149/2026-10-10T06:24:04+00:00",
+          "engine": "ClamAV",
+          "version": "1.4.3"
+        }
+      },
+      {
+        "case": "active_pdf",
+        "outcome": "refused",
+        "passed": true
+      },
+      {
+        "case": "includetext",
+        "outcome": "refused",
+        "passed": true
+      },
+      {
+        "case": "eicar_exact_file",
+        "outcome": "detected",
+        "passed": true
+      },
+      {
+        "case": "eicar_zip_member",
+        "outcome": "detected",
+        "passed": true
+      },
+      {
+        "case": "missing_definitions",
+        "outcome": "missing",
+        "passed": true
+      }
+    ],
+    "image_id": "sha256:e4b1caa30b40f794be1c6ce6fcbbc2486732d1b6ded1181498b1928e9ed4a531",
+    "platform": "linux/arm64",
+    "restricted_container_metadata_verified": true,
+    "runtime_source_bytes_verified": true,
+    "scope": "local_native_docker_only",
+    "source_sha256": {
+      "backend/app/services/market/security.py": "a440f4ea26a5fb5982690da8399c75983e9133a23501d12e1973a985487200f6",
+      "backend/app/services/market/skill_extractor.py": "765824e77d2e9e0bfc88c910134a5009dd3ded52eccc958407d8173039746f54",
+      "backend/app/services/market/skill_taxonomy.py": "e210d0c2b97567fae690d4710ffffb1a5a93bb5bb732badcff47cc2839296366",
+      "backend/app/services/parsing.py": "c2533930bbeff9eb226abfb4b71720b6eb29dfaf805f6c2939e57c73226442a8",
+      "infra/document-processing/Dockerfile": "eed6740c58d41a505f6c20d4d67f3fb87d189429173d1fdadcf8b4f2a78d5101",
+      "infra/document-processing/processor.py": "d20a5bb0b211cf13e3e4aed326d12260cbfd02ab454f070cb89495ebcdff37f0",
+      "infra/document-processing/service.py": "931d6afe7799c072d2ca9976a71f72dce95df75fb42e18b9d09c1c17547fad1d"
+    },
+    "source_version": "historical_integrated_V2"
+  },
+  "native_document_proof_sha256": "8bf1899166f5e14ed0cfba46e7118974d85c2dfa91f7b53a1543e766828c2320",
+  "open_gates": [
+    "AMD64 hosted native scanner image and complete current-source CI",
+    "Cloud Run sandbox isolation, private IAM/ingress, native resource controls and production configuration",
+    "Durable private GCS quarantine/release and direct upload for advertised5MiB limit",
+    "Legacy/newnative-project and application artifact scan admission, safe rendering, wider hostile-file and format-fidelity corpus",
+    "Daily immutable fresh-definition rebuild/acceptance/promotion automation",
+    "Full permitted browser flow, provider/consumer retirement, monetary rollout and complete worldwide requirements"
+  ],
+  "release_fence": {
+    "native_execute_still_unconditionally_refuses": true,
+    "native_external_consumer_and_provider_fence_verifier": "missing",
+    "paid_activation": false,
+    "protected_pairing_join_integrated": false
+  },
+  "scope": "Integrated private PDF/DOCX V3 typed admission with local source/native verification; production deployment and full acceptance remain open",
+  "static_ci_selection": {
+    "mypy": "PASS",
+    "mypy_source_files": 129,
+    "ruff": "PASS"
+  },
+  "typed_outcome_v3": {
+    "author_patch_sha256": "bf3a808a381d1d949969e9852e7a183f643214bdcfab50033413cf12b953f547",
+    "hosted_exact_current_source_ci_proven": false,
+    "independent_distinct_controls_passed": 11,
+    "independent_existing_passes": 179,
+    "independent_verdict_sha256": "179cc627cea9d372cad73d6a5e3deb2c1d27ac3f944ef8c4b07b81947f21bbd2",
+    "infrastructure_or_cleanup_http": 503,
+    "native_engine": {
+      "cloud_run_isolation_proven": false,
+      "corpus": [
+        {
+          "case": "clean_pdf",
+          "outcome": "clean",
+          "passed": true,
+          "scan": {
+            "definitions": "28149/2026-10-10T06:24:04+00:00",
+            "engine": "ClamAV",
+            "version": "1.4.3"
+          }
+        },
+        {
+          "case": "clean_docx",
+          "outcome": "clean",
+          "passed": true,
+          "scan": {
+            "definitions": "28149/2026-10-10T06:24:04+00:00",
+            "engine": "ClamAV",
+            "version": "1.4.3"
+          }
+        },
+        {
+          "case": "page_counter",
+          "outcome": "clean",
+          "passed": true,
+          "scan": {
+            "definitions": "28149/2026-10-10T06:24:04+00:00",
+            "engine": "ClamAV",
+            "version": "1.4.3"
+          }
+        },
+        {
+          "case": "active_pdf",
+          "outcome": "refused",
+          "passed": true
+        },
+        {
+          "case": "includetext",
+          "outcome": "refused",
+          "passed": true
+        },
+        {
+          "case": "eicar_exact_file",
+          "outcome": "detected",
+          "passed": true
+        },
+        {
+          "case": "eicar_zip_member",
+          "outcome": "detected",
+          "passed": true
+        },
+        {
+          "case": "missing_definitions",
+          "outcome": "missing",
+          "passed": true
+        }
+      ],
+      "image_id": "sha256:afa53be35f7f256a1440434944dcd8a9009380546261df2287643458e1c0d09b",
+      "platform": "linux/arm64",
+      "restricted_container_metadata_verified": true,
+      "runtime_source_bytes_verified": true,
+      "scope": "local_native_docker_only",
+      "source_sha256": {
+        "backend/app/services/market/security.py": "a440f4ea26a5fb5982690da8399c75983e9133a23501d12e1973a985487200f6",
+        "backend/app/services/market/skill_extractor.py": "765824e77d2e9e0bfc88c910134a5009dd3ded52eccc958407d8173039746f54",
+        "backend/app/services/market/skill_taxonomy.py": "e210d0c2b97567fae690d4710ffffb1a5a93bb5bb732badcff47cc2839296366",
+        "backend/app/services/parsing.py": "c2533930bbeff9eb226abfb4b71720b6eb29dfaf805f6c2939e57c73226442a8",
+        "infra/document-processing/Dockerfile": "eed6740c58d41a505f6c20d4d67f3fb87d189429173d1fdadcf8b4f2a78d5101",
+        "infra/document-processing/processor.py": "fdf4a00fdf92b09f0dd22bf3a8b17d3987cc505bd5b55d313dbfa44f537272a8",
+        "infra/document-processing/service.py": "fd65733bfb959cfa6af9283d92170a22debe4765a662be5430a2486a6b2b43c2"
+      }
+    },
+    "native_proof_sha256": "0affd0518ce7acc6753c59ffe6edd5f327d20129510b4e431d0447922626c7f1",
+    "permanent_bound_refusal_http": 422,
+    "policy_sha256": "45c020e5134eeae2159cef5e1fa423249b8f76a4214e6dd7ed3b48b7bb332b33",
+    "production_proven": false,
+    "root_affected_junit_sha256": "b23502bd4a2ab8c8f23f2cc385382bcdac4b5de2c81f0ec423294ac69d855d74",
+    "root_affected_passed": 276,
+    "root_affected_skipped": 0,
+    "source_integration": "independent_CLEAR_and_root_postimages_verified",
+    "test_import_whitespace_ci_cwd_amendment_ast_unchanged": true
+  },
+  "typing_followup": {
+    "actual_postgres_replay_pending": false,
+    "exact_new_pin_monetary_test_result": {
+      "errors": 0,
+      "failed": 0,
+      "junit_sha256": "8198c91903ad7a2b7a7f3024e32710c065e6a4a2a78f28ac310fda03eab67100",
+      "passed": 134,
+      "skipped": 0
+    },
+    "locked_yaml_typing_dependency": "types-pyyaml==6.0.12.20260906",
+    "original_full_mypy_failure": "One unused import-untyped ignore on yaml; YAML is covered by the existing ignore_missing_imports configuration.",
+    "repair": "Lock development-only YAML stubs and remove the unnecessary import-untyped comment; identical runtime AST and one exact release-source pin.",
+    "source_pin_sha256": "727c08d35520ca9ed84ff250686306e7d15bf4fb7673121d18009a9abe8993d2"
+  }
+}

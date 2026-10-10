@@ -201,7 +201,7 @@ def test_direct_match_answer_and_plain_parser_do_not_need_generation(monkeypatch
     assert "Python" in parsing.parse_resume_file(output.getvalue(), "synthetic.docx")[2]
 
 
-def test_requested_enrichment_keeps_parsed_resume_without_hold(factory, monkeypatch):
+def test_requested_enrichment_keeps_parsed_resume_without_hold(factory, monkeypatch, synthetic_document_inspector):
     monkeypatch.setenv("OPTIONAL_AI_GENERATION_ENABLED", "false")
     monkeypatch.setattr(llm_client, "_chat_with_budget", forbidden)
     document = Document()

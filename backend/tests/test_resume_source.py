@@ -90,12 +90,12 @@ def test_upload_retains_exact_source_and_exposes_private_metadata(monkeypatch, s
         else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     )
 
-    def parse(data, *, filename, use_llm):
+    def parse(data, *, source_format):
         assert data == original
-        assert filename == f"résumé.{source_format}"
+        assert source_format in {"pdf", "docx"}
         return "Original text", {"experience": "Original experience"}, ["Python"], 2.0, {}
 
-    monkeypatch.setattr(resume_router, "parse_resume_file", parse)
+    monkeypatch.setattr(resume_router, "inspect_resume_document", parse)
     engine, factory, client = _client()
     try:
         uploaded = client.post(

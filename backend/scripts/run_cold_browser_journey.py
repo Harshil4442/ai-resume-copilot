@@ -362,6 +362,7 @@ def run_journey(evidence: Path):
         "frontend/lib/candidateAuthServer.ts", "frontend/lib/auth.ts", "frontend/app/register/page.tsx",
         "frontend/lib/authOptions.ts", "frontend/package-lock.json", "backend/app/main.py",
         "backend/app/database.py", "backend/app/security.py", "backend/app/domains/employer/service.py",
+        "backend/app/routers/resume.py", "backend/app/services/document_ingestion.py",
         "backend/app/domains/employer/credits.py", "backend/app/billing/service.py",
         "backend/scripts/run_cold_browser_journey.py", "backend/tests/fixtures/cold_browser_app.py",
         "backend/tests/test_fresh_user_no_ai_journey.py", "backend/tests/test_cold_browser_runner.py",
@@ -446,8 +447,10 @@ def run_journey(evidence: Path):
         for name in ("forbidden_model_calls", "unexpected_external_requests", "unexpected_socket_egress", "dispatch_errors"):
             assert provider.get(name, 0) == 0
         assert provider["synthetic_checkout_orders"] == provider["synthetic_feed_gets"] == 1
+        assert provider["synthetic_document_inspections"] == provider["synthetic_document_identity_requests"] == 2
         summary.update({"status": "passed", "scope": "Local production Next + Chromium + actual FastAPI/auth/SQL; finite synthetic external providers only",
                    "production_proof": False, "real_payment": False, "real_employer_contact": False,
+                   "native_document_scan_and_sandbox_proof": False,
                    "cold_sql_and_processes": True, "redis_used": False, "sql": proof,
                    "browser": json.loads((evidence / "browser.json").read_text()), "provider_counts": provider})
     except BaseException as exc:

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const { getToken } = vi.hoisted(() => ({ getToken: vi.fn() }));
 vi.mock("next-auth/jwt", () => ({ getToken }));
 
-import { DELETE, GET, PATCH, POST, PUT } from "./route";
+import { DELETE, GET, PATCH, POST, PUT, maxDuration } from "./route";
 
 const site = "https://www.hirewizhq.com";
 const fetchBackend = vi.fn();
@@ -188,5 +188,95 @@ describe("generic proxy cannot reach credential or private native operations", (
   it("never follows a backend redirect into another authority path",async()=>{
     await GET(request("GET"),context(["v1","resumes"]));
     expect(fetchBackend.mock.calls[0][1].redirect).toBe("error");
+  });
+});
+
+describe("resume upload deadline", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    // Node's native AbortSignal timer is outside Vitest's clock. Keep its
+    // cancellation contract while advancing the upstream response synthetically.
+    vi.spyOn(AbortSignal, "timeout").mockImplementation((milliseconds) => {
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(new DOMException("PRIVATE_TIMEOUT", "TimeoutError")), milliseconds);
+      return controller.signal;
+    });
+    fetchBackend.mockImplementation((_target: URL, options: RequestInit) => new Promise<Response>((resolve, reject) => {
+      const timer = setTimeout(() => resolve(new Response('{"resume_id":3}', {
+        headers: { "content-type": "application/json" },
+      })), 70_000);
+      options.signal!.addEventListener("abort", () => {
+        clearTimeout(timer);
+        reject(options.signal!.reason);
+      }, { once: true });
+    }));
+  });
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it("returns a multipart parse result after 70 seconds without retrying", async () => {
+    const form = new FormData();
+    form.append("file", new File(["synthetic PDF"], "resume.pdf", { type: "application/pdf" }));
+    const incoming = new NextRequest(`${site}/api/backend/resume/parse`, {
+      method: "POST", headers: { origin: site, "sec-fetch-site": "same-origin" }, body: form,
+    });
+    // Serialize the real multipart stream before advancing fake time so its
+    // asynchronous file read does not move the start of the upstream deadline.
+    const serialized = await incoming.arrayBuffer();
+    vi.spyOn(incoming, "arrayBuffer").mockResolvedValue(serialized);
+    const result = POST(incoming, context(["resume", "parse"]));
+    await vi.advanceTimersByTimeAsync(70_000);
+    const response = await result;
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ resume_id: 3 });
+    expect(fetchBackend).toHaveBeenCalledTimes(1);
+    const [target, options] = fetchBackend.mock.calls[0];
+    expect(String(target)).toBe("https://backend.example.test/api/resume/parse");
+    expect(options.headers.get("authorization")).toBe("Bearer fixture-backend-token");
+    expect(options.headers.get("content-type")).toMatch(/^multipart\/form-data; boundary=/);
+    expect(new TextDecoder().decode(options.body)).toContain("synthetic PDF");
+    expect(options.redirect).toBe("error");
+    expect(response.headers.get("cache-control")).toBe("private, no-store, max-age=0");
+  });
+
+  it.each([
+    ["GET", GET, ["resume", "parse"]],
+    ["POST", POST, ["resume", "parse", "extra"]],
+    ["POST", POST, ["Resume", "parse"]],
+    ["POST", POST, ["billing", "orders"]],
+    ["PATCH", PATCH, ["resume", "parse"]],
+  ] as const)("retains the 65-second limit outside the exact POST parse route (%s)", async (method, handler, path) => {
+    const result = handler(request(method, { origin: site }), context([...path]));
+    await vi.advanceTimersByTimeAsync(64_999);
+    expect(fetchBackend.mock.calls[0][1].signal.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    const response = await result;
+    expect(response.status).toBe(504);
+    expect(await response.json()).toEqual({ detail: "The backend request timed out" });
+    expect(fetchBackend).toHaveBeenCalledTimes(1);
+  });
+
+  it("aborts a stalled parse after 120 seconds with a fixed error and no retry", async () => {
+    fetchBackend.mockImplementation((_target: URL, options: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      options.signal!.addEventListener("abort", () => reject(options.signal!.reason), { once: true });
+    }));
+    const result = POST(request("POST", { origin: site }), context(["resume", "parse"]));
+    await vi.advanceTimersByTimeAsync(119_999);
+    expect(fetchBackend.mock.calls[0][1].signal.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    const response = await result;
+    expect(response.status).toBe(504);
+    const body = await response.text();
+    expect(JSON.parse(body)).toEqual({ detail: "The backend request timed out" });
+    expect(body).not.toContain("PRIVATE");
+    expect(fetchBackend).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves time for the parse response within the configured function duration", () => {
+    expect(maxDuration).toBe(150);
   });
 });

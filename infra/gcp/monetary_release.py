@@ -210,10 +210,46 @@ class NativeBoundary:
         self._owned_backup: dict[str, Any] | None = None
 
     def _command(self, executable: str, *args: str) -> bytes:
+        import certifi
+
+        # Keep existing authentication inputs, but do not inherit transport
+        # redirects, HTTP/body logging or alternate trust configuration. SDK
+        # environment properties override persisted configuration without edits.
+        environment = {
+            key: value for key, value in os.environ.items()
+            if not key.upper().startswith(("GIT_", "CLOUDSDK_API_ENDPOINT_OVERRIDES_",
+                                           "CLOUDSDK_PROXY_", "CLOUDSDK_CORE_LOG_HTTP"))
+            and key.upper() not in {
+                "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "GRPC_PROXY",
+                "NO_GRPC_PROXY", "SSLKEYLOGFILE",
+                "SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE",
+                "GRPC_TRACE", "GRPC_VERBOSITY", "GH_DEBUG", "PYTHONINSPECT", "PYTHONVERBOSE",
+                "CLOUDSDK_CORE_VERBOSITY", "CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE",
+                "CLOUDSDK_CORE_DISABLE_SSL_VALIDATION", "GOOGLE_API_USE_MTLS_ENDPOINT",
+                "GOOGLE_API_USE_CLIENT_CERTIFICATE",
+            }
+        }
+        ca_bundle = certifi.where()
+        environment.update({
+            "GH_HOST": "github.com", "CLOUDSDK_CORE_LOG_HTTP": "false",
+            "CLOUDSDK_CORE_VERBOSITY": "error",
+            "CLOUDSDK_CORE_DISABLE_SSL_VALIDATION": "false",
+            "CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE": ca_bundle,
+            "SSL_CERT_FILE": ca_bundle, "REQUESTS_CA_BUNDLE": ca_bundle,
+            "CURL_CA_BUNDLE": ca_bundle, "GOOGLE_API_USE_MTLS_ENDPOINT": "never",
+            "GOOGLE_API_USE_CLIENT_CERTIFICATE": "false",
+            "NO_PROXY": "*", "NO_GRPC_PROXY": "*",
+            # With no configured proxy type these are unset-equivalent. A
+            # persisted type now has incomplete settings and fails closed.
+            "CLOUDSDK_PROXY_ADDRESS": "", "CLOUDSDK_PROXY_PORT": "0",
+        })
+        for api in ("run", "secretmanager", "cloudbuild", "iam", "iamcredentials",
+                    "cloudtasks", "cloudscheduler", "cloudresourcemanager", "storage"):
+            environment["CLOUDSDK_API_ENDPOINT_OVERRIDES_" + api.upper()] = f"https://{api}.googleapis.com/"
         try:
             result = subprocess.run([executable, *args], cwd=self.root, check=True,
                                     stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                                    timeout=600, env={**{k: v for k, v in os.environ.items() if not k.startswith("GIT_")}, "GH_HOST": "github.com"})
+                                    timeout=600, env=environment)
             if len(result.stdout) > MAX_JSON:
                 raise ReleaseDenied("observation_size_bound")
             return result.stdout
@@ -610,8 +646,11 @@ class NativeBoundary:
         self._verify_http_health(plan, service, revision)
 
     def _verify_http_health(self, plan: Plan, service: str, revision: str) -> None:
+        import ssl
         import urllib.request
         from urllib.parse import urlsplit
+
+        import certifi
         observed = self._cloud("run", "services", "describe", service, "--region", REGION)
         tagged = [item for item in observed.get("status", {}).get("traffic", [])
                   if item.get("tag") == "monetary-candidate" and item.get("revisionName") == revision]
@@ -630,18 +669,31 @@ class NativeBoundary:
                 or audience_parts.password or audience_parts.port not in {None, 443}
                 or audience_parts.path not in {"", "/"} or audience_parts.query or audience_parts.fragment):
             raise ReleaseDenied("exact_candidate_health_audience_invalid")
-        # Cloud Run requires the service URL audience even for traffic-tag URLs.
-        token = self._command("gcloud", "auth", "print-identity-token",
-                              "--impersonate-service-account", f"hirewiz-tasks@{PROJECT}.iam.gserviceaccount.com",
-                              "--audiences", audience, "--quiet").decode().strip()
-        request = urllib.request.Request(url.rstrip("/") + "/api/health",
-                                         headers={"Authorization": "Bearer " + token})
         # Redirects are refused: a token cannot escape to an unobserved host.
         class NoRedirect(urllib.request.HTTPRedirectHandler):
             def redirect_request(self, req, fp, code, msg, headers, newurl):
                 return None
-        with urllib.request.build_opener(NoRedirect()).open(request, timeout=10) as response:
-            health = _json(response.read(MAX_JSON + 1))
+        try:
+            # create_default_context can honor SSLKEYLOGFILE before it can be
+            # disabled. Only this explicit CA bundle may establish server trust.
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+            context.load_verify_locations(cafile=certifi.where())
+            opener = urllib.request.build_opener(
+                urllib.request.ProxyHandler({}), NoRedirect(),
+                urllib.request.HTTPSHandler(context=context),
+            )
+            # Cloud Run requires the service URL audience even for traffic-tag URLs.
+            token = self._command("gcloud", "auth", "print-identity-token",
+                                  "--impersonate-service-account", f"hirewiz-tasks@{PROJECT}.iam.gserviceaccount.com",
+                                  "--audiences", audience, "--quiet").decode().strip()
+            request = urllib.request.Request(url.rstrip("/") + "/api/health",
+                                             headers={"Authorization": "Bearer " + token})
+            with opener.open(request, timeout=10) as response:
+                health = _json(response.read(MAX_JSON + 1))
+        except ReleaseDenied:
+            raise
+        except Exception:  # noqa: BLE001 - transport errors can contain URLs or tokens.
+            raise ReleaseDenied("exact_candidate_http_health_unavailable") from None
         if (health.get("ok") is not True or health.get("release") != plan.release
                 or (service == SERVICES[0] and health.get("revision") != revision)
                 or (service != SERVICES[0] and health.get("role") != ("analysis-worker" if service == SERVICES[1] else "employer-worker"))):
@@ -659,7 +711,7 @@ class NativeBoundary:
 
 
 def verify_ci_checkout_contract(root: Path) -> None:
-    import yaml  # type: ignore[import-untyped]
+    import yaml
     workflow = yaml.safe_load((root / ".github/workflows/ci.yml").read_bytes())
     jobs = workflow.get("jobs", {})
     if set(jobs) != CI_JOBS:

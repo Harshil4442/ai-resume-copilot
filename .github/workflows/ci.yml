@@ -68,6 +68,18 @@ jobs:
           backend/.venv/bin/python backend/scripts/native_tex_test_image.py
           --platform linux/amd64 --github-env "$GITHUB_ENV"
           --output "$RUNNER_TEMP/native-tex-test-image.json"
+      - name: Build and verify genuine native document engines
+        timeout-minutes: 20
+        run: >-
+          backend/.venv/bin/python backend/scripts/document_test_image.py
+          --platform linux/amd64
+          --output "$RUNNER_TEMP/document-engine-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.json"
+      - name: Save sanitized native document engine proof
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, verified official ref
+        with:
+          name: native-document-engine-proof-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 7
+          path: ${{ runner.temp }}/document-engine-${{ github.run_id }}-${{ github.run_attempt }}.json
       - name: Provision disposable admission test database
         working-directory: backend
         run: |
@@ -132,6 +144,8 @@ jobs:
           tests/test_monetary_release_entrypoint.py tests/test_monetary_schema_step_postgres.py
           tests/test_model_key_revocation_observer.py tests/test_legacy_credential_inventory.py
           tests/test_ci_registry_cache.py
+          app/services/document_ingestion.py ../infra/document-processing
+          tests/test_document_ingestion.py tests/test_document_processor.py tests/test_monetary_release_transport.py
       - name: Check modified legacy authentication imports
         working-directory: backend
         run: .venv/bin/ruff check --select I,F app/routers/auth.py app/security.py app/schemas.py
@@ -148,6 +162,8 @@ jobs:
           ../infra/gcp/release_preflight.py ../infra/gcp/monetary_release.py scripts/monetary_schema_step.py
           scripts/model_key_revocation_observer.py scripts/legacy_credential_inventory.py
           scripts/ci_registry_cache.py
+          app/services/document_ingestion.py scripts/document_test_image.py
+          ../infra/document-processing/processor.py ../infra/document-processing/service.py
       - name: Compile backend
         run: backend/.venv/bin/python -m compileall -q backend/app
       - name: Validate PostgreSQL migrations
