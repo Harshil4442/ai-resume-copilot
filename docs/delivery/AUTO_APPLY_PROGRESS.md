@@ -1,5 +1,79 @@
 # Employer search and application delivery
 
+## Agreed major completion checklist — 11 October 2026
+
+The user has fixed the following six checkpoints. Internal fixes and passing component
+checks are evidence within these checkpoints, not additional completed checkpoints.
+Mark an item complete only after its whole scope is verified. On each completion,
+report the unchanged original estimate and the recorded actual duration.
+
+| Fixed checkpoint | Original estimate of additional active agent work | Status | Actual whole-checkpoint duration |
+|---|---|---|---|
+| Full CI/regressions | 1–3 hours | in progress | Not available; checkpoint not complete |
+| Resume worker output + PDF/DOCX/LaTeX fidelity | 4–8 hours | pending | Not available; checkpoint not complete |
+| Candidate-reviewed browser integration | 2–6 hours after the approval blocker is resolved | blocked | Not available; checkpoint not complete |
+| Billing costs/failure recovery/load | 2–5 hours | pending | Not available; checkpoint not complete |
+| Mobile/performance/SEO verification | 1–3 hours | pending | Not available; checkpoint not complete |
+| GCP/Vercel env deployment/monitor | 2–4 hours | pending | Not available; checkpoint not complete |
+
+The rough subtotal is 12–30 additional active agent hours, excluding the unresolved
+approval wait. It is not a guaranteed full-goal completion deadline. Worldwide job
+coverage remains unverified, and the complete goal has no defensible ETA yet.
+Historical checkpoint start times were not recorded. Future timing must distinguish
+measured remaining work from the unavailable whole-checkpoint duration; no past time
+is to be invented. Keep these same six items in subsequent user progress updates.
+
+Source `68b824254187690d23b80bfe94a54aae6ffd3bdf` has terminal
+[CI run 38141212783](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38141212783):
+four jobs pass, while backend reports 32 failures, 3,520 passes and 455 warnings.
+The actual exporter is skipped. The CI attempt takes 14 minutes 57 seconds; this
+is not the complete checkpoint duration. The local runtime and test corrections
+below still require new exact-source CI, so checkpoint 1 remains open.
+
+
+## Funded search runtime regression correction — 11 October 2026
+
+The full backend run finds an optional catalogue-clock initialization failure in
+source refresh and test expectations from the former zero-hold admission path.
+Retention now returns without pruning when that optional clock is absent; it
+neither creates authority nor prevents the earlier abandonment refund. Two exact
+shipping controls fail with NoResultFound on the preimage and pass the correction.
+
+The affected tests now enforce finite requested-count funding, unused refunds,
+original-price history resumption, failed-request audit/replay and public hiding of
+staged results. Nineteen selected shipping-function controls pass against actual
+isolated SQL/credit bodies. The first 11 assertion failures are retained. Configured
+six-file Ruff and three-source model-aware Mypy pass. Actual HTTP fixtures, the
+whole runtime suite and exporter still require CI; no provider or deployment call
+is performed. See [regression evidence](evidence/2026-10-11-funded-search-regressions.json).
+
+Within agreed checkpoint 4, a separate synthetic actual-reserve review finds a
+case that needs correction/review before activation: legacy-funded positive-count
+search currently retains 30 minor units with a 25-unit variable estimate, while
+its separately configured 50-unit preparation estimate with contingency is 60.
+These are synthetic policy values, not invoices or a production profit claim.
+Preparation-cost coverage and the broader cost/load review remain open.
+
+## Resume worker stream-transport investigation — 11 October 2026
+
+The same terminal child-directory experiment still has no expected exported file;
+no native mutation or repeated Create/Run is performed. A private pipe-transfer
+alternative passes 16 controls using real local synthetic child processes, including
+exact 7 MiB input, concurrent input/output backpressure, EOF, error outcomes,
+absolute exchange timeout and output overflow. Configured Ruff passes. The earlier
+13-control preimage and the initial unavailable interpreter path are retained.
+
+The helper is not deployed or selected by the runtime. Cloud Run stdin forwarding,
+process-creation deadline, native child isolation/deletion/absence, private HTTP,
+and PDF/DOCX/LaTeX formatting remain unproved. This is evidence within agreed
+checkpoint 2, which remains open. A next native experiment must be finite, synthetic,
+and bound to an exact image/source/identity; it may not reuse consumed operations or
+alter the protected browser/pairing integration.
+
+Primary contract context: [Cloud Run sandbox CLI](https://docs.cloud.google.com/run/docs/reference/sandbox-cli)
+and [code execution](https://docs.cloud.google.com/run/docs/code-execution).
+They document archive persistence, not a guarantee that this pipe alternative works.
+
 ## Funded search type correction — 11 October 2026
 
 Source `2056e0aa53879c3dabf93efec88a664345b11937` reaches a terminal backend failure

@@ -5,12 +5,13 @@ from collections.abc import Iterator
 from copy import deepcopy
 
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+
 from backend.app import models as core
 from backend.app.database import Base
 from backend.app.domains.common import payload_fingerprint, utcnow
 from backend.app.domains.employer import admissions, models, schemas, service
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
 
 
 @pytest.fixture
@@ -88,7 +89,7 @@ def test_fresh_result_then_free_saved_fill_preserve_requested_bound_and_quote(in
     assert second["scope"]["price_quote"]["maximum_credits"] == 4
     exhausted = search(db, "mixed-results-exhausted")
     assert exhausted["items"][0]["posting"]["id"] == "job_1"
-    assert exhausted["charged_credits"] == 0 and exhausted["reserved_credits"] == 0
+    assert (exhausted["reserved_credits"], exhausted["charged_credits"], exhausted["refunded_credits"]) == (2, 0, 2)
     assert db.get(core.User, 1).job_service_credits == 46
 
 
@@ -149,7 +150,7 @@ def test_empty_index_preserves_requested_count_and_zero_charge(indexed_search, c
     db.commit()
     result = search(db, "empty-results", count=count)
     assert result["desired_count"] == count and result["items"] == []
-    assert (result["delivered_count"], result["reserved_credits"], result["charged_credits"], result["refunded_credits"]) == (0, 0, 0, 0)
+    assert (result["delivered_count"], result["reserved_credits"], result["charged_credits"], result["refunded_credits"]) == (0, count * 2, 0, count * 2)
     assert result["scope"]["price_quote"]["maximum_credits"] == count * 2
     assert db.get(core.User, 1).job_service_credits == 50
     assert db.query(models.EmployerJobDelivery).count() == 0
@@ -260,14 +261,23 @@ def test_uncertain_legacy_snapshot_refuses_new_charge_without_guessing_identity(
     db.rollback()
     assert db.get(core.User, 1).job_service_credits == 48
     assert db.query(models.EmployerJobDelivery).filter_by(user_id=1).count() == 1
-    assert db.query(models.ServiceCreditEvent).filter_by(user_id=1).count() == before_events
-    preparation = db.query(models.ServiceCreditReservation).filter_by(user_id=1, state="reserved").one()
-    assert preparation.reserved_amount == 0
-    assert preparation.cost_policy_snapshot["search_preparation"] is True
-    assert not db.query(models.EmployerSearch).filter_by(user_id=1, idempotency_key="uncertain-legacy-progress").first()
+    # Durable admission precedes history work. Refusal returns the whole hold
+    # while keeping the failed request and its reserve/commit/release audit.
+    assert db.query(models.ServiceCreditEvent).filter_by(user_id=1).count() == before_events + 3
+    failed = db.query(models.EmployerSearch).filter_by(user_id=1, idempotency_key="uncertain-legacy-progress").one()
+    assert failed.status == "failed" and failed.items == [] and failed.charged_credits == 0
+    preparation = db.query(models.ServiceCreditReservation).filter_by(user_id=1, source_id=failed.id).one()
+    assert (preparation.state, preparation.reserved_amount, preparation.committed_amount, preparation.released_amount) == ("settled", 4, 0, 4)
+    assert preparation.cost_policy_snapshot["history_search_fingerprint"] == failed.input_fingerprint
+    assert preparation.cost_policy_snapshot["history_desired_count"] == 2
+    replay = search(db, "uncertain-legacy-progress", count=2)
+    assert replay["id"] == failed.id and replay["status"] == "failed" and replay["items"] == []
+    assert db.query(models.ServiceCreditEvent).filter_by(user_id=1).count() == before_events + 3
 
 
 def test_uncertain_legacy_history_preserves_physical_saved_free_and_empty_searches(indexed_search):
+    from fastapi import HTTPException
+
     db = indexed_search
     original = search(db, "all-physical-first", count=2)
     row = db.get(models.EmployerSearch, original["id"])
@@ -275,15 +285,22 @@ def test_uncertain_legacy_history_preserves_physical_saved_free_and_empty_search
     db.query(models.EmployerJobDelivery).filter_by(user_id=1).update({models.EmployerJobDelivery.opening_key: None})
     db.get(core.User, 1).job_service_credits = 0
     db.commit()
+    with pytest.raises(HTTPException) as insufficient:
+        search(db, "all-physical-saved-unfunded", count=2)
+    assert insufficient.value.status_code == 402 and insufficient.value.detail["required"] == 4
+    db.rollback()
+    db.get(core.User, 1).job_service_credits = 4
+    db.commit()
     saved = search(db, "all-physical-saved", count=2)
     assert [item["posting"]["id"] for item in saved["items"]] == ["job_1", "job_2"]
     assert [item["charged_credits"] for item in saved["items"]] == [0, 0]
-    assert (saved["reserved_credits"], saved["charged_credits"], saved["refunded_credits"]) == (0, 0, 0)
+    assert (saved["reserved_credits"], saved["charged_credits"], saved["refunded_credits"]) == (4, 0, 4)
     db.query(models.EmployerPosting).update({models.EmployerPosting.is_open: False})
     db.commit()
     empty = search(db, "uncertain-empty")
     assert empty["items"] == [] and empty["charged_credits"] == 0
-    assert db.get(core.User, 1).job_service_credits == 0
+    assert (empty["reserved_credits"], empty["refunded_credits"]) == (2, 2)
+    assert db.get(core.User, 1).job_service_credits == 4
 
 
 def test_legacy_alias_uses_finite_requested_funding_and_free_saved_result(indexed_search):
@@ -302,7 +319,14 @@ def test_legacy_alias_uses_finite_requested_funding_and_free_saved_result(indexe
     result = search(db, "finite-single")
     assert result["items"][0]["posting"]["id"] == "job_2"
     assert result["charged_credits"] == 2 and db.get(core.User, 1).job_service_credits == 0
+    with pytest.raises(HTTPException) as insufficient_saved:
+        search(db, "finite-saved-unfunded", count=2)
+    assert insufficient_saved.value.status_code == 402 and insufficient_saved.value.detail["required"] == 4
+    db.rollback()
+    db.get(core.User, 1).job_service_credits = 4
+    db.commit()
     saved = search(db, "finite-saved", count=2)
     assert [item["posting"]["id"] for item in saved["items"]] == ["job_0_alias", "job_2"]
-    assert saved["charged_credits"] == 0 and saved["reserved_credits"] == 0
+    assert (saved["reserved_credits"], saved["charged_credits"], saved["refunded_credits"]) == (4, 0, 4)
+    assert db.get(core.User, 1).job_service_credits == 4
     assert search(db, "finite-single") == result

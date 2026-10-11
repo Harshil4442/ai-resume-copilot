@@ -13,17 +13,18 @@ from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from backend.app import models as core
-from backend.app import security
-from backend.app.database import Base
-from backend.app.domains.employer import credits, models, search_pages, service
-from backend.app.routers.v1 import employer as api
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.encoders import jsonable_encoder
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event, select, text
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
+
+from backend.app import models as core
+from backend.app import security
+from backend.app.database import Base
+from backend.app.domains.employer import credits, models, search_pages, service
+from backend.app.routers.v1 import employer as api
 
 NOW = datetime(2026, 10, 11, 12, 1, 2, 123456, tzinfo=UTC)
 
@@ -344,11 +345,18 @@ def test_changed_saved_snapshot_is_409_and_first_page_can_be_reloaded(stored, cl
     before = money_and_applications(stored)
     response = client.get("/api/v1/employer-jobs/searches/search_saved/results", params={"cursor": first.next_cursor}, headers=auth())
     assert response.status_code == 409
-    assert response.json()["detail"]["code"] == "saved_search_snapshot_changed"
+    assert response.json()["detail"]["code"] == ("search_not_completed" if edit == "status" else "saved_search_snapshot_changed")
     assert response.headers["cache-control"] == "private, no-store"
     assert "Edited original" not in response.text
-    reload = search_pages.saved_results(stored, 1, "search_saved")
-    assert reload.snapshot_version != first.snapshot_version and reload.start_index == 0
+    if edit == "status":
+        from fastapi import HTTPException
+
+        with pytest.raises(HTTPException) as unfinished:
+            search_pages.saved_results(stored, 1, "search_saved")
+        assert unfinished.value.status_code == 409 and unfinished.value.detail["code"] == "search_not_completed"
+    else:
+        reload = search_pages.saved_results(stored, 1, "search_saved")
+        assert reload.snapshot_version != first.snapshot_version and reload.start_index == 0
     assert money_and_applications(stored) == before
 
 

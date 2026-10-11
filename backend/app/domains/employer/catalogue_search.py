@@ -1170,7 +1170,14 @@ def maintenance_step(db):
 def prune_revisions(db):
     """One clock-gated batch; active as-of pins and durable FK proofs survive."""
     statement_budget(db)
-    clock = db.query(models.EmployerCatalogueClock).filter_by(id=1).populate_existing().with_for_update(nowait=True).one()
+    clock = db.query(models.EmployerCatalogueClock).filter_by(id=1).populate_existing().with_for_update(nowait=True).one_or_none()
+    if clock is None:
+        # Cleanup also runs when the optional catalogue is inactive. An absent
+        # clock grants no retention authority; preserve revisions and let the
+        # independent source refresh continue. Abandoned holds were settled by
+        # maintenance_step before this optional garbage-collection phase.
+        db.rollback()
+        return
     watermark = db.query(func.min(models.EmployerSearchPreparation.watermark)).filter(
         models.EmployerSearchPreparation.state.in_(("accepting", *ACTIVE_STATES))).scalar()
     watermark = clock.watermark if watermark is None else watermark

@@ -2,12 +2,13 @@ import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
 from backend.app.billing.cost_policy import CostPolicyUnavailable, assert_model_funding
 from backend.app.database import Base
 from backend.app.models import ModelCostLiability
 from backend.tests.expense_policy_fixtures import synthetic_expense_policy
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 
 
 def _liability(*, state="reserved", held=70, settled=None, days=0, pool="prepaid"):
@@ -638,9 +639,10 @@ def test_pre_purchase_ai_release_cannot_invent_paid_units(cost_db):
     ],
 )
 def test_client_cannot_forge_paid_allocation(cost_db, key):
+    from fastapi import HTTPException
+
     from backend.app.domains.analysis import schemas, service
     from backend.app.models import AnalysisRun
-    from fastapi import HTTPException
 
     with pytest.raises(HTTPException) as error:
         service.create_run(
@@ -654,11 +656,12 @@ def test_client_cannot_forge_paid_allocation(cost_db, key):
 
 
 def test_repeated_empty_paid_search_restores_credits_but_not_preparation_cash(cost_db, monkeypatch):
+    from fastapi import HTTPException
+
     from backend.app.billing.cost_policy import current_service_funding
     from backend.app.domains.employer import credits
     from backend.app.models import User
     from backend.tests.expense_policy_fixtures import estimated_expense_policy
-    from fastapi import HTTPException
 
     policy = estimated_expense_policy() | {
         "review_status": "approved",
@@ -758,22 +761,32 @@ def test_settled_paid_provider_result_still_holds_risk_until_usage_commit(cost_d
 
 
 def test_actual_empty_search_admits_preparation_before_index_scan_and_replays_free(monkeypatch):
-    from backend.app.domains.employer.models import ServiceCreditReservation
-    from backend.tests.test_employer_services import context
     from sqlalchemy import event
 
+    from backend.app.domains.employer.models import ServiceCreditReservation
+    from backend.app.models import User
+    from backend.tests.test_employer_services import context
+
     factory, client, _ = context.__wrapped__(monkeypatch)
-    policy = synthetic_expense_policy() | {"monthly_legacy_service_budget_minor": 4}
-    monkeypatch.setenv("HIREWIZ_EXPENSE_POLICY_JSON", json.dumps(policy))
+    policy = synthetic_expense_policy()
     payload = {
         "resume_id": 10,
         "role": "Zebra Unmatched",
         "desired_count": 100,
         "idempotency_key": "empty-workflow-0",
     }
+    # Two fully funded requests exhaust their retained legacy cash allowance,
+    # even though no result is delivered and all customer credits are returned.
+    per_request_hold = (payload["desired_count"] * policy["search_cost_minor"] * (10_000 + policy["contingency_bps"]) + 9999) // 10_000
+    policy["monthly_legacy_service_budget_minor"] = per_request_hold * 2
+    monkeypatch.setenv("HIREWIZ_EXPENSE_POLICY_JSON", json.dumps(policy))
+    with factory() as db:
+        db.get(User, 1).job_service_credits = payload["desired_count"]
+        db.commit()
     first = client.post("/api/v1/employer-jobs/searches", json=payload)
     assert first.status_code == 201, first.text
     assert first.json()["charged_credits"] == first.json()["delivered_count"] == 0
+    assert (first.json()["reserved_credits"], first.json()["refunded_credits"]) == (100, 100)
     payload["idempotency_key"] = "empty-workflow-1"
     second = client.post("/api/v1/employer-jobs/searches", json=payload)
     assert second.status_code == 201, second.text
@@ -781,9 +794,11 @@ def test_actual_empty_search_admits_preparation_before_index_scan_and_replays_fr
         rows = db.query(ServiceCreditReservation).all()
         assert len(rows) == 2
         assert all(
-            row.requested_count == 0 and row.cost_policy_snapshot["failed_service_hold_minor"] == 2
+            row.requested_count == 100 and row.reserved_amount == row.released_amount == 100
+            and row.committed_amount == 0 and row.cost_policy_snapshot["legacy_service_hold_minor"] == per_request_hold
             for row in rows
         )
+        assert db.get(User, 1).job_service_credits == 100
 
     def reject_scan(connection, cursor, statement, parameters, context, executemany):
         if "from employer_postings" in statement.lower():

@@ -4,11 +4,13 @@ import json
 from copy import deepcopy
 
 import pytest
-from backend.app import models as core
-from backend.app.domains.employer import admissions, delivery_history, models
+from fastapi import HTTPException
 from sqlalchemy import event
 from test_employer_search_new_results import indexed_search as _indexed_search
 from test_employer_search_new_results import search
+
+from backend.app import models as core
+from backend.app.domains.employer import admissions, delivery_history, models
 
 indexed_search = _indexed_search
 
@@ -186,24 +188,29 @@ def test_pending_or_unresolved_history_keeps_paid_physical_and_empty_free(
         db.get(models.EmployerPosting, "job_1").is_open = False
     db.get(core.User, 1).job_service_credits = 0
     db.commit()
+    with pytest.raises(HTTPException) as insufficient:
+        search(db, "pending-free-unfunded", count=1)
+    assert insufficient.value.status_code == 402 and insufficient.value.detail["required"] == 2
+    db.rollback()
+    db.get(core.User, 1).job_service_credits = 2
+    db.commit()
     result = search(db, "pending-free", count=1)
-    assert result["charged_credits"] == result["reserved_credits"] == 0
+    assert (result["reserved_credits"], result["charged_credits"], result["refunded_credits"]) == (2, 0, 2)
+    assert db.get(core.User, 1).job_service_credits == 2
     assert len(result["items"]) == (0 if empty else 1)
     assert db.query(models.EmployerPaidHistoryProgress).one().state == "backfilling"
     assert db.query(models.EmployerPaidOpeningRegistry).count() == 0
 
 
-def test_zero_preparation_resumes_same_quote_after_history_wait(indexed, monkeypatch):
-    from fastapi import HTTPException
-
+def test_funded_preparation_resumes_same_quote_after_history_wait(indexed, monkeypatch):
     db = indexed
     historical(db, description="large " * 10000)
-    with pytest.raises(HTTPException) as waiting:
-        search(db, "history-resumable")
-    assert waiting.value.detail["code"] == "paid_delivery_history_preparing"
-    db.rollback()
+    waiting = search(db, "history-resumable")
+    assert waiting["status"] == "preparing" and waiting["items"] == []
+    assert (waiting["reserved_credits"], waiting["charged_credits"], waiting["refunded_credits"]) == (2, 0, 0)
     prep = db.query(models.ServiceCreditReservation).filter_by(state="reserved").one()
-    assert prep.reserved_amount == 0 and prep.unit_price == 2
+    assert prep.reserved_amount == 2 and prep.unit_price == 2
+    assert db.get(core.User, 1).job_service_credits == 48
     monkeypatch.setenv("EMPLOYER_SEARCH_CREDITS_PER_JOB", "9")
     complete_history(db)
     result = search(db, "history-resumable")
@@ -225,17 +232,18 @@ def test_dual_write_failure_rolls_back_money_and_result(indexed, monkeypatch):
         search(db, "atomic-history-failure")
     db.rollback()
     assert db.get(core.User, 1).job_service_credits == 50
-    assert (
-        db.query(models.EmployerSearch).count()
-        == db.query(models.EmployerJobDelivery).count()
-        == 0
-    )
+    failed = db.query(models.EmployerSearch).one()
+    assert failed.status == "failed" and failed.charged_credits == 0
+    public = search(db, "atomic-history-failure")
+    assert public["id"] == failed.id and public["items"] == []
+    assert db.query(models.EmployerJobDelivery).count() == 0
     assert (
         db.query(models.EmployerPaidDeliveryHistory).count()
         == db.query(models.EmployerPaidOpeningRegistry).count()
         == 0
     )
-    assert db.query(models.ServiceCreditReservation).one().reserved_amount == 0
+    reservation = db.query(models.ServiceCreditReservation).one()
+    assert (reservation.state, reservation.reserved_amount, reservation.committed_amount, reservation.released_amount) == ("settled", 2, 0, 2)
 
 
 def test_missing_key_is_explicit_review_not_empty_ready(indexed):

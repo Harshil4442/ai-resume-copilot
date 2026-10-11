@@ -3,9 +3,12 @@
 Ready projections and resume facts isolate ranking and settlement. The clock
 is controlled only in the deadline test; no provider transport is invoked.
 """
+from datetime import timedelta
 from types import SimpleNamespace
 
 import pytest
+from sqlalchemy import event
+
 from backend.app import models as core
 from backend.app.domains.common import payload_fingerprint, utcnow
 from backend.app.domains.employer import catalogue_search as catalogue
@@ -13,9 +16,39 @@ from backend.app.domains.employer import credits, models, schemas, service
 from backend.tests.test_employer_search_new_results import (
     indexed_search as indexed_search,
 )
-from sqlalchemy import event
 
 TOKEN = "catalogue-ci-worker"
+
+
+def test_inactive_catalogue_maintenance_without_clock_preserves_existing_state(indexed_search, monkeypatch):
+    db = indexed_search
+    monkeypatch.setenv("EMPLOYER_FULL_CATALOGUE_SEARCH_ENABLED", "false")
+    assert db.query(models.EmployerCatalogueClock).count() == 0
+    before = {row.id: (row.is_open, row.content_sha256) for row in db.query(models.EmployerPosting).all()}
+    balance = db.get(core.User, 1).job_service_credits
+    catalogue.maintenance_step(db)
+    assert db.query(models.EmployerCatalogueClock).count() == 0
+    assert {row.id: (row.is_open, row.content_sha256) for row in db.query(models.EmployerPosting).all()} == before
+    assert db.get(core.User, 1).job_service_credits == balance
+    assert db.query(models.ServiceCreditReservation).count() == 0
+
+
+def test_missing_clock_does_not_prevent_abandoned_search_hold_refund(catalogue_db, monkeypatch):
+    db = catalogue_db
+    identity = _plan(db, "missing-clock-abandoned", count=2)
+    preparation = db.get(models.EmployerSearchPreparation, identity)
+    preparation.updated_at = utcnow() - timedelta(hours=1)
+    db.query(models.EmployerCatalogueClock).delete(synchronize_session=False)
+    db.commit()
+    monkeypatch.setenv("EMPLOYER_FULL_CATALOGUE_SEARCH_ENABLED", "false")
+    catalogue.maintenance_step(db)
+    db.expire_all()
+    reservation = db.query(models.ServiceCreditReservation).filter_by(source_id=identity).one()
+    assert (reservation.state, reservation.reserved_amount, reservation.committed_amount, reservation.released_amount) == ("settled", 4, 0, 4)
+    assert db.get(models.EmployerSearchPreparation, identity).state == "failed"
+    assert db.get(core.User, 1).job_service_credits == 50
+    assert db.query(models.EmployerJobDelivery).count() == 0
+    assert db.query(models.EmployerCatalogueClock).count() == 0
 
 
 @pytest.fixture
