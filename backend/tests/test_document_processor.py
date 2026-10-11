@@ -10,7 +10,6 @@ import json
 import socket
 import subprocess
 import sys
-import tarfile
 import threading
 import time
 from datetime import UTC, datetime, timedelta
@@ -269,33 +268,30 @@ def result_for(content):
                    "contact_info": {"name": None, "email": None, "phone": None, "linkedin": None, "github": None}}}
 
 
-def test_sandbox_exact_import_lifecycle_and_cleanup_before_result(service, monkeypatch):
-    content = pdf()
+def test_sandbox_exact_stdin_lifecycle_and_cleanup_before_result(service, monkeypatch):
+    content = b"fixed-synthetic-source"
     original = payload(content)
     calls = []
-    tar_paths = []
     monkeypatch.setattr(service.os.path, "isfile", lambda _: True)
     monkeypatch.setattr(service.os, "access", lambda *_: True)
     def run(args, **options):
-        calls.append(args)
+        calls.append((args, options))
         if args[1] == "do":
-            path = Path(next(a.split("=", 1)[1] for a in args if a.startswith("--import-tar=")))
-            tar_paths.append(path)
-            assert path.stat().st_mode & 0o777 == 0o600
-            with tarfile.open(path) as archive:
-                assert len(archive.getmembers()) == 1
-                entry = archive.getmembers()[0]
-                assert entry.name == "tmp/request.json" and entry.isreg() and entry.mode == 0o444
-                assert archive.extractfile(entry).read() == original
+            assert args[3:] == ["--write", "--", "/usr/local/bin/python3", "-I",
+                "/opt/document/processor.py", "--stdin"]
+            assert options == {"timeout": 55, "limit": service.MAX_OUTPUT,
+                "allow_outcome": True, "input_bytes": original}
             return 0, json.dumps(result_for(content)).encode()
+        assert args == [service.SANDBOX, "delete", calls[0][0][2].split("=", 1)[1], "--force"]
+        assert options == {"timeout": 5, "limit": 65536, "cleanup": True}
         return 0, b""
     monkeypatch.setattr(service, "_run", run)
     result = service.inspect_in_sandbox(original)
-    assert [args[1] for args in calls] == ["do", "delete"]
-    assert calls[0][2] == "--sandbox-name=" + calls[1][2]
-    assert all(args[0] == service.SANDBOX for args in calls)
-    assert not any(a.startswith(("--allow-egress", "--env", "--mount", "--export", "--sync")) for args in calls for a in args)
-    assert all(not path.exists() for path in tar_paths)
+    assert [args[1] for args, _ in calls] == ["do", "delete"]
+    assert calls[0][0][2] == "--sandbox-name=" + calls[1][0][2]
+    assert all(args[0] == service.SANDBOX for args, _ in calls)
+    assert not any(a.startswith(("--import-tar", "--allow-egress", "--env", "--mount",
+        "--export", "--sync")) for args, _ in calls for a in args)
     assert result["worker_image"].endswith("@sha256:" + "a" * 64)
     assert result["policy_sha256"] == "b" * 64
 
@@ -881,3 +877,103 @@ def test_exec_duplicate_keys_never_release_a_controlled_result(service, monkeypa
     with pytest.raises(service.InspectionDenied):
         service.inspect_in_sandbox(payload(content))
     assert calls == ["do", "delete"]
+
+
+
+def run_fixed_processor_cli(processor, monkeypatch, capsys, argv, raw, inspect):
+    """Exercise only the fixed protocol adapter; inspection is always a fake."""
+    import builtins
+
+    reads = []
+    opened = []
+    class Reader(io.BytesIO):
+        def read(self, size=-1):
+            reads.append(size)
+            assert size == processor.MAX_REQUEST + 1
+            return super().read(size)
+    reader = Reader(raw)
+    class Input:
+        buffer = reader
+    def open_request(*args, **kwargs):
+        opened.append((args, kwargs))
+        assert args == ("/tmp/request.json", "rb") and kwargs == {}
+        return reader
+    code = 0
+    with monkeypatch.context() as isolated:
+        isolated.setattr(processor.sys, "argv", ["processor.py", *argv])
+        isolated.setattr(processor.sys, "path", list(processor.sys.path))
+        isolated.setattr(processor.sys, "stdin", Input())
+        isolated.setattr(processor.resource, "setrlimit", lambda *a: None)
+        isolated.setattr(processor.os, "umask", lambda *a: None)
+        isolated.setattr(processor.logging, "disable", lambda *a: None)
+        isolated.setattr(processor.warnings, "simplefilter", lambda *a: None)
+        isolated.setattr(builtins, "open", open_request)
+        isolated.setattr(processor, "inspect", inspect)
+        try:
+            processor.main()
+        except SystemExit as failure:
+            code = failure.code
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    return code, json.loads(captured.out), reads, opened
+
+
+@pytest.mark.parametrize("argv", [["--stdin"], ["/tmp/request.json"]])
+@pytest.mark.parametrize("kind", ["pdf", "docx"])
+@pytest.mark.parametrize("outcome", ["clean", "refused", "unavailable", "unexpected"])
+def test_fixed_file_and_stdin_cli_bounded_reads_and_coherent_outcomes(
+    processor, monkeypatch, capsys, argv, kind, outcome
+):
+    content = b"fixed-synthetic-source"
+    raw = payload(content, kind)
+    result = result_for(content)
+    result["source_format"] = kind
+    calls = []
+    def inspect(observed):
+        calls.append(observed)
+        if outcome == "refused":
+            raise processor.InspectionDenied()
+        if outcome == "unavailable":
+            raise processor.InspectionUnavailable()
+        if outcome == "unexpected":
+            raise RuntimeError("private-candidate-marker")
+        return result
+    code, observed, reads, opened = run_fixed_processor_cli(
+        processor, monkeypatch, capsys, argv, raw, inspect
+    )
+    assert reads == [processor.MAX_REQUEST + 1] and calls == [raw]
+    assert opened == ([(("/tmp/request.json", "rb"), {})] if argv == ["/tmp/request.json"] else [])
+    expected_code = 0 if outcome == "clean" else 1 if outcome == "refused" else 2
+    assert code == expected_code
+    if code == 0:
+        assert observed == result
+    else:
+        assert observed == {"version": 1, "sha256": hashlib.sha256(content).hexdigest(),
+            "size_bytes": len(content), "source_format": kind,
+            "error": processor.ERROR if code == 1 else processor.UNAVAILABLE}
+    assert "private-candidate-marker" not in json.dumps(observed)
+
+
+@pytest.mark.parametrize("argv", [["--stdin"], ["/tmp/request.json"]])
+@pytest.mark.parametrize("variant", ["empty", "oversize", "malformed", "duplicate"])
+def test_fixed_file_and_stdin_cli_reject_bad_envelopes_before_fake_inspection(
+    processor, monkeypatch, capsys, argv, variant
+):
+    raw = {"empty": b"", "oversize": b"x" * (processor.MAX_REQUEST + 2),
+        "malformed": b"{}", "duplicate": b'{"version":1,"version":1}'}[variant]
+    code, observed, reads, opened = run_fixed_processor_cli(processor, monkeypatch, capsys,
+        argv, raw, lambda _: pytest.fail("inspection reached"))
+    assert reads == [processor.MAX_REQUEST + 1]
+    assert opened == ([(("/tmp/request.json", "rb"), {})] if argv == ["/tmp/request.json"] else [])
+    assert code == 2 and observed == {"version": 1, "error": processor.UNAVAILABLE}
+
+
+@pytest.mark.parametrize("argv", [[], ["-"], ["/tmp/unapproved.json"],
+    ["--stdin", "/tmp/request.json"], ["/tmp/request.json", "--stdin"]])
+def test_fixed_cli_rejects_unapproved_or_combined_modes_without_reading(
+    processor, monkeypatch, capsys, argv
+):
+    code, observed, reads, opened = run_fixed_processor_cli(processor, monkeypatch, capsys,
+        argv, payload(b"fixed-synthetic-source"), lambda _: pytest.fail("inspection reached"))
+    assert reads == [] and opened == []
+    assert code == 2 and observed == {"version": 1, "error": processor.UNAVAILABLE}

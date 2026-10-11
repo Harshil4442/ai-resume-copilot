@@ -1,0 +1,52 @@
+{
+  "schema": 1,
+  "scope": "Checkpoint 2 bounded-stdin worker transport correction; other checkpoint work retained",
+  "base_commit": "a16b6042d5c89fd61f1a1fbb8414d38b59f04ad0",
+  "local_python312_controls": {
+    "passed": 28,
+    "failures": 0,
+    "elapsed_seconds": 1.474
+  },
+  "changes": [
+    "Bounded simultaneous stdin/stdout replaces request tar transfer",
+    "Signal-free worker owns pipe and child creation; bootstrap cannot execute launcher before request ownership",
+    "Late or unknown constructor quarantines admission; owned group reap and descriptor cleanup",
+    "Original document scanner, binding, parsing, HTTP admission and outcome checks retained"
+  ],
+  "verified_native_prototype": {
+    "scope": "Fixed synthetic 7 MiB stdin count/hash receipt on predecessor immutable image",
+    "exact_bytes": 7340032,
+    "count_and_digest_match": true,
+    "cleanup_code": 0,
+    "runtime_acceptance": false
+  },
+  "root_faults": {
+    "delayed_pipe_preimage_leaked_descriptors": 2,
+    "corrected_delayed_pipe_no_child_or_external_cleanup": true,
+    "late_constructor_corrected_child_reaped_and_pipes_closed": true
+  },
+  "source_sha256": {
+    "infra/document-processing/service.py": "fc6e18d159b2c68cbf33b1bb066e0757c300002792d20018f39b4e7405e5b9db",
+    "infra/document-processing/processor.py": "8a2191b33503ac647a2ed3bbc50bd1230536c7cdb474b39c49f9f567f6e6a6d8",
+    "infra/document-processing/policy.json": "96d2991927b3ffec6d24310ef8e9a4555bd38ccfb3479d44a795d2e43c9d38a0"
+  },
+  "native_scanner_isolation_private_http_verified_for_this_source": false,
+  "pdf_docx_latex_fidelity_checkpoint_complete": false,
+  "production_changed": false,
+  "checkpoint_complete": false,
+  "recorded_at_utc": "2026-10-11T17:03:40.632921+00:00",
+  "root_typing_amendment": "Explicit creation-state TypedDict and missing-input-stream guard; Ruff/Mypy pass after heterogeneous state inference errors",
+  "adopted_source_controls": {
+    "isolated_document_regressions_passed": 178,
+    "warnings": 1,
+    "elapsed_seconds": 8.8,
+    "standalone_current_runtime_controls_passed": 28,
+    "standalone_elapsed_seconds": 1.336,
+    "ruff_passed": true,
+    "mypy_passed": true,
+    "full_exact_source_ci": "pending",
+    "global_conftest_imported": false,
+    "aggregate_app_packages_imported": false
+  },
+  "updated_at_utc": "2026-10-11T17:08:23.711380+00:00"
+}

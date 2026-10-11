@@ -351,10 +351,15 @@ def main():
     sys.path.insert(0, "/opt/document")
     binding = {}
     try:
-        if sys.argv[1:] != ["/tmp/request.json"]:
+        if sys.argv[1:] == ["--stdin"]:
+            # The launcher owns the absolute input deadline. Read at most the
+            # fixed envelope cap plus one byte; oversize/empty input fails closed.
+            payload = sys.stdin.buffer.read(MAX_REQUEST + 1)
+        elif sys.argv[1:] == ["/tmp/request.json"]:
+            with open("/tmp/request.json", "rb") as stream:
+                payload = stream.read(MAX_REQUEST + 1)
+        else:
             raise InspectionUnavailable()
-        with open("/tmp/request.json", "rb") as stream:
-            payload = stream.read(MAX_REQUEST + 1)
         kind, content, sha256 = decode_request(payload)
         binding = {"sha256": sha256, "size_bytes": len(content), "source_format": kind}
         result = inspect(payload)

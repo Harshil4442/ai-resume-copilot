@@ -1,6 +1,6 @@
 # Private PDF/DOCX inspection worker
 
-Reviewed 10 October 2026. This private proposal adds synchronous sandbox execution to the V3 worker and the current
+Reviewed 11 October 2026. This private proposal adds bounded stdin transport to the synchronous V3 worker and the current
 `backend/app/services/document_ingestion.py` contract. It is a proposed deployment
 and acceptance procedure. No cloud resource, IAM permission or production upload
 capability is created by this document.
@@ -78,7 +78,7 @@ container metadata. The preceding published `ab5cb5d9` passes all five hosted CI
 those published proofs do not certify the later receipt/definition changes. At that earlier checkpoint, exact-source hosted CI and native Cloud Run isolation remained required. Published `a162890ff50a606f9c23493ea11266d32ad416d6` later passed all five hosted CI jobs; see the delivery checkpoint. That does not certify this new private synchronous-call proposal or close native isolation acceptance.
 
 [`policy.json`](policy.json) is canonical sorted compact UTF-8 JSON with a terminal
-newline. This synchronous-call version 2 proposal has SHA-256 `e7d6680ee78da0cda5a8e4d9abfaf178ce5684b8b55ebcc5c168b69e3ece8e34`. Its service SHA-256 is `040710f23e83ce61a8401338b52defb613b51e4344bf1bb2a4a063ce39962d11`; the processor and other six build-source hashes remain unchanged. The integrated predecessor policy was `425fd4b326554d8fee8d2686f423c8e2b499eaaa1bd7858eb69f7759ac526bdf`.
+newline. The bounded-stdin version 2 policy has SHA-256 `96d2991927b3ffec6d24310ef8e9a4555bd38ccfb3479d44a795d2e43c9d38a0`. Its service SHA-256 is `fc6e18d159b2c68cbf33b1bb066e0757c300002792d20018f39b4e7405e5b9db` and processor SHA-256 is `8a2191b33503ac647a2ed3bbc50bd1230536c7cdb474b39c49f9f567f6e6a6d8`; the other five build-source hashes remain unchanged. The previous archive-transport policy was `e7d6680ee78da0cda5a8e4d9abfaf178ce5684b8b55ebcc5c168b69e3ece8e34`; its native prototype evidence does not certify this source change.
 It binds the seven build sources, supported PDF/DOCX limits, outcomes and required native
 isolation controls. Before activation, independently match actual source, image bytes,
 revision configuration and acceptance evidence to this artifact. Its requirements and
@@ -130,12 +130,13 @@ native configuration, rather than inferring enablement from an environment value
 [Google sandbox configuration](https://docs.cloud.google.com/run/docs/configuring/services/sandboxes)
 
 The proposed controller requires `/usr/local/gcp/bin/sandbox` and makes one synchronous
-`do --sandbox-name=<uniqueName> --write --import-tar=<privateTar> -- /usr/local/bin/python3 -I /opt/document/processor.py /tmp/request.json` call, followed by explicit named `delete --force` in `finally`. Google documents that `do` creates a sandbox, runs the command and automatically destroys it on exit. The explicit cleanup must still return zero before any result is released; an absent-name heuristic never counts as cleanup success. Verify that behavior on the deployed launcher, because absent-sandbox forced-delete semantics and controlled child-exit propagation are native acceptance gates. The current marker-only native `do` success establishes command viability, not scanner, isolation or retirement acceptance. Earlier split `run`/`exec` failures remain retained with their cause unproved.
+`do --sandbox-name=<uniqueName> --write -- /usr/local/bin/python3 -I /opt/document/processor.py --stdin` call, followed by explicit named `delete --force` in `finally`. Google documents that `do` creates a sandbox, runs the command and automatically destroys it on exit. The explicit cleanup must still return zero before any result is released; an absent-name heuristic never counts as cleanup success. Verify that behavior on the deployed launcher, because absent-sandbox forced-delete semantics and controlled child-exit propagation are native acceptance gates. The current marker-only native `do` success establishes command viability, not scanner, isolation or retirement acceptance. Earlier split `run`/`exec` failures remain retained with their cause unproved.
 [Google sandbox CLI](https://docs.cloud.google.com/run/docs/reference/sandbox-cli)
 
-It imports only one internally constructed regular JSON file into a writable ephemeral overlay. It requests no
-outbound networking, environment passthrough, bind mount, export or persisted
-snapshot. Google documents default network, environment and metadata isolation;
+It streams the bounded JSON request through stdin into a writable ephemeral overlay,
+retaining the write allowance needed for the scanner temporary target. It requests no
+archive import, outbound networking, environment passthrough, bind mount, export or
+persisted snapshot. Google documents default network, environment and metadata isolation;
 these are properties to verify in the actual deployment with harmless probes,
 not conclusions established by the worker's image/policy echoes. Sandboxes can
 read the host root filesystem, so the host must contain no candidate-independent
@@ -178,7 +179,7 @@ These initial service settings are proposals to measure, not accepted capacity:
 | Cloud Run request timeout | Initially 90 seconds; verify handler/phase budgets fit the 75-second client window |
 | API network deadline | 75 seconds total for the inspection HTTP transaction; identity requests have separate 5-second request timeouts |
 | Worker header/body deadline | 10 seconds total from handler setup; deadline is cancelled before scanning |
-| Launcher phases | Synchronous `do` 55 seconds (the prior create 10 + inspection 45 allowance); explicit delete 5 seconds; combined launcher allowance remains 60 seconds |
+| Launcher phases | Synchronous `do` work deadline 55 seconds; explicit delete work deadline 5 seconds. Each owned launcher may additionally need up to 2 seconds for reap. A late constructor stays quarantined until acknowledged cleanup; the 60-second sum is not a total cleanup deadline |
 | Processor limits | CPU 40 seconds; address space 2 GiB; regular file size 32 MiB; 64 open descriptors; core dumps disabled |
 | Original / request / response | Original ≤5 MiB; JSON request ≤7 MiB; response ≤1 MiB |
 | PDF structure | 1–20 pages, no encryption/active actions/embedded content; bounded reachable-object walk |
@@ -252,9 +253,11 @@ through native deployment evidence.
 
 ## Privacy, cleanup and errors
 
-The controller creates a private request tar and imports one JSON file. The
-sandbox also has the documented read-only view of the host filesystem; keep that
-view free of secrets and unrelated candidate artifacts. Candidate contents are transient in the
+The controller keeps the bounded request in memory and streams it through stdin;
+it creates no request archive on the host. Input and output are exchanged concurrently
+with nonblocking pipes, capped at 7 MiB and 1 MiB respectively. The sandbox also has the
+documented read-only view of the host filesystem; keep that view free of secrets and
+unrelated candidate artifacts. Candidate contents are transient in the
 controller and sandbox. Use no-store responses. Do not log original text, files,
 parser/scanner stdout or stderr, headers, tokens, client filenames or response
 bodies. Record only bounded operational counts, latency, refusal categories and
@@ -262,8 +265,16 @@ scanner age/version under the application's retention policy. Verify Cloud
 Logging/access-log configuration separately; application logging suppression is
 not a platform logging audit.
 
-Host temporary-directory cleanup runs on exit; a named sandbox is force-deleted
-before a result can return. Failed synchronous execution or deletion refuses release.
+A signal-free worker owns gate allocation and child construction. The fixed bootstrap
+waits for authorization before executing the launcher; candidate bytes enter only its
+stdin, after the request thread owns the child. Cancellation closes the gate. A late
+constructor retains responsibility for its child and descriptors; subsequent launches
+remain quarantined until acknowledged cleanup. Unknown ownership or failed cleanup
+keeps admission closed. The exact owned sandbox name is force-deleted before a result
+can return whenever authorization may have occurred. A proved pre-authorization
+refusal skips sandbox deletion because the launcher was never allowed to execute;
+that does not claim immediate absence of a still-pending host bootstrap. Failed
+synchronous execution or required deletion refuses release.
 Native timeout, disconnect, worker crash, restart and forced deletion drills must
 prove no cross-request source/file retention and owned process cleanup. A cleanup
 exception alone does not prove that residual native resources are gone.

@@ -9,7 +9,7 @@ report the unchanged original estimate and the recorded actual duration.
 
 | Fixed checkpoint | Original estimate of additional active agent work | Status | Actual whole-checkpoint duration |
 |---|---|---|---|
-| Full CI/regressions | 1–3 hours | in progress | Not available; checkpoint not complete |
+| Full CI/regressions | 1–3 hours | CI renewal pending for the stdin worker change; exact `a16b604` passed | Recorded remaining-work window: 3 hours 4 minutes for `a16b604`; whole historical duration unavailable |
 | Resume worker output + PDF/DOCX/LaTeX fidelity | 4–8 hours | in progress | Not available; checkpoint not complete |
 | Candidate-reviewed browser integration | 2–6 hours after the approval blocker is resolved | blocked | Not available; checkpoint not complete |
 | Billing costs/failure recovery/load | 2–5 hours | in progress | Not available; checkpoint not complete |
@@ -49,6 +49,48 @@ Full PostgreSQL, HTTP and dispatch-recovery verification requires new exact-sour
 Runtime behavior and database constraints are unchanged. See
 [fixture correction evidence](evidence/2026-10-11-ci-fixture-correction.json).
 
+
+## Latest completion and resume transport update — 11 October 2026
+
+Checkpoint 1 completed for exact source `a16b6042d5c89fd61f1a1fbb8414d38b59f04ad0`:
+[CI run 38151919443](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38151919443)
+passes all five jobs, including 3,597 backend tests and 245 responsive frontend cases.
+The unchanged estimate was 1–3 active hours. The recorded remaining-work window was
+12:58:31.789388Z–16:02:06Z, or 3 hours 3 minutes 34 seconds, reported as 3 hours
+4 minutes; it includes CI waiting. The whole historical checkpoint start is unavailable.
+The stdin worker change below requires renewed exact-source CI under the same checkpoint.
+
+Within checkpoint 2, a fresh synthetic native predecessor-image test confirms exactly
+7 MiB reaches stdin with matching count/hash and acknowledged cleanup. This proves
+that narrow transport prototype, not scanner, writable temporary storage, private HTTP
+custody, isolation or format fidelity. The runtime now uses capped, concurrent stdin
+and stdout instead of a host request archive. A signal-free constructor worker owns
+its pipe descriptors and child, and a fixed bootstrap waits for authorization before
+executing the launcher. Unknown or pending construction closes admission; late owned
+cleanup is acknowledged before new launches. Main-thread work deadlines retain
+55 seconds for `do` and 5 for delete, with an additional bounded owned-child reap
+allowance of up to 2 seconds per phase. These are not a claimed 60-second total bound.
+
+Root review reproduces a preimage pipe-allocation timeout that leaves two descriptors
+open; the corrected worker closes both after cancellation and never launches the target.
+A delayed constructor likewise refuses promptly and later reaps its ungated child.
+All 28 isolated Python 3.12 controls pass. After the typed-state amendment, the
+178 focused document regressions also pass (8.80 seconds, one deliberate duplicate-ZIP
+warning), with Ruff and Mypy clear. Original scanner/parser/binding and HTTP
+admission functions remain unchanged. No checkpoint 2 completion or deployment is
+claimed. See [stream correction evidence](evidence/2026-10-11-document-stream-adoption.json).
+
+Within checkpoint 4, four actual local PostgreSQL concurrent legacy-cash cases pass,
+including a 32-owner burst, rollback, idempotent refund and cross-month unknown-cost
+holds. The owned test database is removed and its absence independently verified.
+These finite checks do not complete operational recovery, sustained load or release.
+
+Within checkpoints 5 and 6, GitHub reports the exact `a16b604` preview successful.
+Anonymous access redirects to Vercel authentication; connected preview access returns
+403. Local rendered SEO and five-width checks remain valid, while authenticated preview
+acceptance and field metrics remain unverified. Source contains consent-gated LCP, INP
+and CLS collection through Next.js Web Vitals and GA; production configuration and
+sufficient field samples are still required. Production remains unchanged.
 
 ## Funded search runtime regression correction — 11 October 2026
 
