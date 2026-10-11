@@ -106,6 +106,7 @@ def render(image: str, release: str) -> dict[str, Any]:
         "name": RESOURCE, "launchStage": "BETA", "ingress": "INGRESS_TRAFFIC_INTERNAL_ONLY",
         "invokerIamDisabled": False, "defaultUriDisabled": False,
         "traffic": [{"type": "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST", "percent": 100}],
+        "scaling": {"maxInstanceCount": 2},
         "template": {
             "labels": {"hirewiz-source": release}, "serviceAccount": SERVICE_ACCOUNT,
             "executionEnvironment": "EXECUTION_ENVIRONMENT_GEN2",
@@ -159,6 +160,29 @@ def _configuration(actual: dict[str, Any], expected: dict[str, Any]) -> None:
         _deny()
 
 
+def _service_scaling(actual: Any, expected: dict[str, Any]) -> None:
+    # The v2 default is AUTOMATIC; an omitted zero minimum remains scale-to-zero.
+    # Only these explicit defaults may accompany the declared service-wide cap.
+    if type(actual) is not dict or not _same(
+            {"minInstanceCount": 0, "scalingMode": "AUTOMATIC", **actual},
+            {"minInstanceCount": 0, "scalingMode": "AUTOMATIC", **expected}):
+        _deny()
+
+
+def _traffic_statuses(statuses: Any, ready: str) -> None:
+    # `ready` is already bound to this exact service. Preserve either API spelling;
+    # an arbitrary resource prefix or another revision's basename is never stripped.
+    if (type(statuses) is not list or len(statuses) != 1 or type(statuses[0]) is not dict):
+        _deny()
+    row = statuses[0]
+    if (set(row) - {"type", "revision", "percent", "tag", "uri"}
+            or row.get("type") != "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST"
+            or row.get("revision") not in (ready, ready.rsplit("/", 1)[-1])
+            or type(row.get("percent")) is not int or row["percent"] != 100
+            or not _same(row.get("tag", ""), "")):
+        _deny()
+
+
 def _bindings(policy: dict[str, Any]) -> list[dict[str, Any]]:
     if (not isinstance(policy, dict) or type(policy.get("version", 1)) is not int
             or policy.get("version", 1) not in (1, 3)):
@@ -201,9 +225,10 @@ def check_snapshot(snapshot: dict[str, Any], image: str, release: str, *, api_ph
             default = False if field in {"invokerIamDisabled", "defaultUriDisabled"} else None
             if not _same(service.get(field, default), desired[field]):
                 _deny()
-        if any(service.get(field) for field in ("iapEnabled", "multiRegionSettings", "scaling", "sshEnabled",
+        if any(service.get(field) for field in ("iapEnabled", "multiRegionSettings", "sshEnabled",
                                                 "customAudiences", "buildConfig")):
             _deny()
+        _service_scaling(service.get("scaling"), desired["scaling"])
         _configuration(service["template"], desired["template"])
         ready = service.get("latestReadyRevision")
         if (not isinstance(ready, str) or not re.fullmatch(
@@ -218,11 +243,8 @@ def check_snapshot(snapshot: dict[str, Any], image: str, release: str, *, api_ph
         if not _same(service.get("traffic"), desired["traffic"]):
             _deny()
         statuses = service.get("trafficStatuses")
-        if statuses is not None and (not isinstance(statuses, list) or len(statuses) != 1
-                or statuses[0].get("revision") != ready
-                or type(statuses[0].get("percent")) is not int or statuses[0]["percent"] != 100
-                or statuses[0].get("tag")):
-            _deny()
+        if statuses is not None:
+            _traffic_statuses(statuses, ready)
         _configuration(revision, desired["template"])
         phase = "after_isolation_service_iam" if api_phase else "initial_service_iam"
         if _bindings(snapshot["service_iam"]) != expected[phase]["bindings"]:

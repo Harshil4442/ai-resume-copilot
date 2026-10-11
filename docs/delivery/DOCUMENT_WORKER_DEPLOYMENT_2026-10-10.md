@@ -28,12 +28,22 @@ caller-provided digest is an expected identity, not authenticated build evidence
 | Authentication | IAM invoker check enabled; no service-level bindings initially |
 | Intended invoker after isolation review | Only `hirewiz-api@ai-resume-parser-482412.iam.gserviceaccount.com` |
 | Sandbox | `sandboxLauncher: true`, second generation, `BETA` preview |
-| Capacity | Concurrency 1; minimum 0, maximum 2 instances; 2 CPU, 4 GiB |
+| Capacity | Concurrency 1; revision minimum 0/max 2 and service-wide max 2; 2 CPU, 4 GiB |
 | Request timeout | 90 seconds; application phases remain bounded independently |
 | Startup probe | TCP port 8080, 1-second timeout, 10-second period, 24 failures |
 | Configured environment | Only immutable worker image and policy hashes |
 | Volumes/sidecars/connectors | None |
 | Entrypoint | `/usr/local/bin/python3 -I /opt/document/service.py` |
+
+The service-wide cap complements the revision cap: Cloud Run uses the lower limit
+when both are configured. This reduces scaling cost exposure across revisions; it
+is not a hard billing ceiling, because Google documents brief maximum-instance
+overshoot during traffic spikes or replacement. At the cap, availability is limited
+by the two instances. Service scaling accepts only the declared max 2 and the
+documented omitted/explicit automatic mode and zero minimum defaults; manual
+scaling, manual counts, higher caps, unknown fields and type substitutes are refused.
+[Maximum instances](https://docs.cloud.google.com/run/docs/configuring/max-instances),
+[v2 service scaling](https://docs.cloud.google.com/run/docs/reference/rest/v2/projects.locations.services#ServiceScaling).
 
 Google documents the launcher field and second-generation requirement. Its
 sandboxes share the host's CPU and memory, so the proposed 4 GiB includes the host,
@@ -60,15 +70,15 @@ secrets or privileged application grants, not absence of a platform identity.
 
 ## Existing child boundary and required actual checks
 
-The existing worker uses the injected `/usr/local/gcp/bin/sandbox`, imports one
-owned regular-file request tar, runs the scanner/parser inside it and explicitly
+The existing worker uses the injected `/usr/local/gcp/bin/sandbox`, passes one
+bounded stdin request, runs the scanner/parser inside it and explicitly
 deletes the owned sandbox before releasing the response. It passes no `--env`,
 `--allow-egress`, persistent bind mount, snapshot export or sync flags. Launcher
 subprocesses receive only fixed PATH/HOME/LANG/TZ. The child defaults are not an
 empty-environment claim: Google says host environment, secrets and metadata access
 are withheld, and outbound access is blocked unless requested. Children can read
-the host image filesystem, which must therefore contain only the reviewed seven
-source files, dependencies and official definitions, never application credentials.
+the host image filesystem, which must therefore contain only the source files named by the reviewed policy,
+dependencies and official definitions, never application credentials.
 [Code execution](https://docs.cloud.google.com/run/docs/code-execution),
 [sandbox CLI](https://docs.cloud.google.com/run/docs/reference/sandbox-cli).
 
@@ -110,9 +120,10 @@ These commands perform zero cloud calls or mutations. `check` accepts at most
 one configured latest target, allowed env, proposed service IAM, known public/worker project
 grants, and account/key metadata. Missing/unknown credentials, mounts, sidecars,
 conditional bindings or incompatible configuration fail with a fixed reason.
-It accepts only documented/default false and zero omissions, preserving strict
-types. Supplied output traffic status must point only to the matching latest ready
-revision; missing output status is explicitly `traffic_status_checked: false` and
+It accepts only the documented/default false, automatic-mode and zero omissions,
+preserving strict types. Supplied output traffic status must be one 100-percent
+LATEST target with no tag and point to the exact fully qualified latest ready
+revision or its exact basename within the already verified service; missing output status is explicitly `traffic_status_checked: false` and
 cannot establish routing. The result always says `untrusted_offline_snapshot`, effective IAM false,
 runtime isolation false and API wiring false. It does not inspect image contents,
 authenticate the capture, enumerate IAM ancestors or enable a release. Files are

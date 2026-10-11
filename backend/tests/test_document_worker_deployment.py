@@ -301,3 +301,73 @@ def test_symlinked_policy_or_disabled_proposal_is_not_trusted(config, tmp_path, 
     with pytest.raises(config.ConfigurationDenied) as error:
         config.plan()
     assert str(error.value) == "document_worker_configuration_unverified"
+
+
+@pytest.mark.parametrize("scaling", [
+    {"maxInstanceCount": 2},
+    {"maxInstanceCount": 2, "minInstanceCount": 0},
+    {"maxInstanceCount": 2, "scalingMode": "AUTOMATIC"},
+    {"maxInstanceCount": 2, "minInstanceCount": 0, "scalingMode": "AUTOMATIC"},
+])
+def test_service_cap_and_documented_auto_zero_defaults(config, scaling):
+    value = snapshots(config)
+    assert value["service"]["scaling"] == {"maxInstanceCount": 2}
+    value["service"]["scaling"] = scaling
+    assert config.check_snapshot(value, IMAGE, RELEASE)["configuration_matches"] is True
+
+
+@pytest.mark.parametrize("scaling", [
+    None, {}, {"maxInstanceCount": 10}, {"maxInstanceCount": 1},
+    {"maxInstanceCount": True}, {"maxInstanceCount": 2.0}, {"maxInstanceCount": "2"},
+    {"maxInstanceCount": 2, "minInstanceCount": 1},
+    {"maxInstanceCount": 2, "minInstanceCount": False},
+    {"maxInstanceCount": 2, "scalingMode": "MANUAL"},
+    {"maxInstanceCount": 2, "scalingMode": "SCALING_MODE_UNSPECIFIED"},
+    {"maxInstanceCount": 2, "scalingMode": True},
+    {"maxInstanceCount": 2, "manualInstanceCount": 0},
+    {"maxInstanceCount": 2, "unknown": "synthetic-marker-never-output"},
+])
+def test_service_scaling_wrong_cap_manual_unknown_and_types_refused(config, scaling):
+    value = snapshots(config)
+    value["service"]["scaling"] = scaling
+    with pytest.raises(config.ConfigurationDenied) as error:
+        config.check_snapshot(value, IMAGE, RELEASE)
+    assert str(error.value) == "document_worker_configuration_unverified"
+
+
+def test_status_ready_basename_is_bound_to_verified_service(config):
+    value = snapshots(config)
+    ready = value["service"]["latestReadyRevision"]
+    value["service"]["trafficStatuses"][0]["revision"] = ready.rsplit("/", 1)[-1]
+    report = config.check_snapshot(value, IMAGE, RELEASE)
+    assert report["configuration_matches"] is True and report["traffic_status_checked"] is True
+
+
+@pytest.mark.parametrize("change", [
+    lambda value: value["service"]["trafficStatuses"][0].update(revision="projects/foreign/locations/us-central1/services/hirewiz-document-inspector/revisions/hirewiz-document-inspector-00001-synthetic"),
+    lambda value: value["service"]["trafficStatuses"][0].update(revision="hirewiz-document-inspector-00002-other"),
+    lambda value: value["service"]["trafficStatuses"][0].update(revision="revisions/hirewiz-document-inspector-00001-synthetic"),
+    lambda value: value["service"]["trafficStatuses"][0].pop("type"),
+    lambda value: value["service"]["trafficStatuses"][0].update(type="TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION"),
+    lambda value: value["service"]["trafficStatuses"][0].update(percent=True),
+    lambda value: value["service"]["trafficStatuses"][0].update(percent=100.0),
+    lambda value: value["service"]["trafficStatuses"][0].update(percent="100"),
+    lambda value: value["service"]["trafficStatuses"][0].update(tag="unsafe"),
+    lambda value: value["service"]["trafficStatuses"][0].update(tag=False),
+    lambda value: value["service"]["trafficStatuses"][0].update(extra="synthetic-marker-never-output"),
+])
+def test_traffic_basename_support_preserves_exact_latest_no_tag_guards(config, change):
+    value = snapshots(config)
+    change(value)
+    with pytest.raises(config.ConfigurationDenied) as error:
+        config.check_snapshot(value, IMAGE, RELEASE)
+    assert str(error.value) == "document_worker_configuration_unverified"
+
+
+def test_missing_output_traffic_remains_unverified_offline_provenance(config):
+    value = snapshots(config)
+    value["service"].pop("trafficStatuses")
+    report = config.check_snapshot(value, IMAGE, RELEASE)
+    assert report["traffic_status_checked"] is False
+    assert report["input_authority"] == "untrusted_offline_snapshot"
+    assert report["runtime_isolation_proven"] is False
