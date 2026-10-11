@@ -13,7 +13,7 @@ report the unchanged original estimate and the recorded actual duration.
 | Resume worker output + PDF/DOCX/LaTeX fidelity | 4–8 hours | in progress | Not available; checkpoint not complete |
 | Candidate-reviewed browser integration | 2–6 hours after the approval blocker is resolved | blocked | Not available; checkpoint not complete |
 | Billing costs/failure recovery/load | 2–5 hours | in progress | Not available; checkpoint not complete |
-| Mobile/performance/SEO verification | 1–3 hours | pending | Not available; checkpoint not complete |
+| Mobile/performance/SEO verification | 1–3 hours | in progress | Not available; checkpoint not complete |
 | GCP/Vercel env deployment/monitor | 2–4 hours | pending | Not available; checkpoint not complete |
 
 The rough subtotal is 12–30 additional active agent hours, excluding the unresolved
@@ -127,6 +127,24 @@ See [synthetic native transport evidence](evidence/2026-10-11-document-stdin-nat
 Primary contract context: [Cloud Run sandbox CLI](https://docs.cloud.google.com/run/docs/reference/sandbox-cli)
 and [code execution](https://docs.cloud.google.com/run/docs/code-execution).
 They document archive persistence, not a guarantee that this pipe alternative works.
+
+## Public homepage SEO verification — 11 October 2026
+
+Within agreed checkpoint 5, a read of the deployed homepage finds no canonical tag;
+current source has no inherited canonical either. The homepage now supplies its own
+canonical metadata, preserving independent canonical URLs on other public routes.
+The production build, targeted ESLint and full frontend typecheck pass. Seven actual
+local production-build HTTP controls verify home/pricing/about canonical tags,
+25 unique canonical public sitemap URLs, the robots sitemap link and noindex/no-store
+headers on unauthenticated workspace/employer-job redirects. Existing public-shell
+checks pass all 15 cases across 320, 390, 768, 1024 and 1440 pixels. The owned local
+server is stopped and its port independently unavailable afterward.
+
+These are local rendered/public-flow checks. No production alias is changed, and
+configured field metric collection, sufficient segmented p75 evidence, authenticated
+launch flows and full loading/bundle acceptance remain open. Neither the local
+8.45-second browser run nor these component results complete the fixed checkpoint.
+See [SEO verification evidence](evidence/2026-10-11-homepage-seo-verification.json).
 
 ## Funded search type correction — 11 October 2026
 

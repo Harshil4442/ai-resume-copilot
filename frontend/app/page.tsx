@@ -11,12 +11,17 @@ import {
   ShieldCheck,
   Target,
 } from "lucide-react";
+import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 
 import FadeIn from "../components/ui/FadeIn";
 import { SITE } from "../lib/site";
 import styles from "./home.module.css";
+
+export const metadata: Metadata = {
+  alternates: { canonical: "/" },
+};
 
 const benefits = [
   {

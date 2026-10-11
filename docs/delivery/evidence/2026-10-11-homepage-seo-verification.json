@@ -1,0 +1,316 @@
+{
+  "created_at_utc": "2026-10-11T15:25:17.029740+00:00",
+  "agreed_checkpoint": "Mobile/performance/SEO verification",
+  "original_estimate": "1\u20133 additional active hours",
+  "checkpoint_complete": false,
+  "source_base": "274dd7706051b7532b889990a51462db8868a4db",
+  "source_file": "frontend/app/page.tsx",
+  "source_sha256": "d1a0754e853375d0118449bd91bfd6fa8ce67c08d70603f89fb65e7f370ca17f",
+  "change": "Add homepage-only canonical metadata; inherit existing title and descriptions without changing unrelated page canonicals.",
+  "before": {
+    "status": 200,
+    "bytes": 70420,
+    "canonical_count": 0,
+    "og_url": "https://www.hirewizhq.com"
+  },
+  "local_production_build": {
+    "exit_code": 0,
+    "completed_at_utc": "2026-10-11T15:20:48.182570+00:00",
+    "provider_mutations": 0
+  },
+  "rendered_http_controls": {
+    "scope": "Actual local production-build HTTP responses for public canonical/robots/sitemap and private unauthenticated workflow headers",
+    "controls": 7,
+    "passed": 7,
+    "failed": 0,
+    "duration_seconds": 0.246,
+    "results": [
+      {
+        "route": "/",
+        "status": 200,
+        "canonical": "https://www.hirewizhq.com",
+        "canonical_count": 1
+      },
+      {
+        "route": "/pricing",
+        "status": 200,
+        "canonical": "https://www.hirewizhq.com/pricing",
+        "canonical_count": 1
+      },
+      {
+        "route": "/about",
+        "status": 200,
+        "canonical": "https://www.hirewizhq.com/about",
+        "canonical_count": 1
+      },
+      {
+        "route": "/sitemap.xml",
+        "status": 200,
+        "canonical_public_urls": 25,
+        "private_workflows_absent": true
+      },
+      {
+        "route": "/robots.txt",
+        "status": 200,
+        "canonical_sitemap_link": true
+      },
+      {
+        "route": "/workspace",
+        "status": 307,
+        "x_robots_tag": "noindex, nofollow, noarchive",
+        "cache_control": "private, no-store, max-age=0",
+        "unauthenticated_redirect": true
+      },
+      {
+        "route": "/employer-jobs",
+        "status": 307,
+        "x_robots_tag": "noindex, nofollow, noarchive",
+        "cache_control": "private, no-store, max-age=0",
+        "unauthenticated_redirect": true
+      }
+    ],
+    "observed_at_utc": "2026-10-11T15:23:32.622184+00:00",
+    "field_performance_verified": false,
+    "whole_checkpoint_complete": false,
+    "production_changed": false
+  },
+  "existing_public_shell_browser": {
+    "scope": "existing public-shell tests on owned local production-build server",
+    "base_url": "http://127.0.0.1:3984",
+    "started_at": "2026-10-11T15:23:25.097641+00:00",
+    "finished_at": "2026-10-11T15:23:33.547652+00:00",
+    "elapsed_seconds": 8.45,
+    "exit_code": 0,
+    "retries": 0,
+    "workers": 2,
+    "raw_bytes": 20844,
+    "raw_sha256": "06efa049190b6c06358712888f8c6bc1fe6286d84d9aed443d48a88cd23b40c5",
+    "field_performance_proven": false,
+    "sources_edited": false,
+    "stats": {
+      "startTime": "2026-10-11T15:23:25.837Z",
+      "duration": 7696.502,
+      "expected": 15,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "case_count": 15,
+    "cases": [
+      {
+        "title": "homepage presents the product without horizontal overflow",
+        "project": "mobile-320",
+        "status": "expected",
+        "attempts": 1,
+        "results": [
+          {
+            "status": "passed",
+            "duration_ms": 786,
+            "retry": 0
+          }
+        ]
+      },
+      {
+        "title": "public homepage has no automatically detectable accessibility violations",
+        "project": "mobile-320",
+        "status": "expected",
+        "attempts": 1,
+        "results": [
+          {
+            "status": "passed",
+            "duration_ms": 1184,
+            "retry": 0
+          }
+        ]
+      },
+      {
+        "title": "publishes the AdSense ownership metadata and authorized seller record",
+        "project": "mobile-320",
+        "status": "expected",
+        "attempts": 1,
+        "results": [
+          {
+            "status": "passed",
+            "duration_ms": 324,
+            "retry": 0
+          }
+        ]
+      },
+      {
+        "title": "homepage presents the product without horizontal overflow",
+        "project": "mobile-390",
+        "status": "expected",
+        "attempts": 1,
+        "results": [
+          {
+            "status": "passed",
+            "duration_ms": 377,
+            "retry": 0
+          }
+        ]
+      },
+      {
+        "title": "public homepage has no automatically detectable accessibility violations",
+        "project": "mobile-390",
+        "status": "expected",
+        "attempts": 1,
+        "results": [
+          {
+            "status": "passed",
+            "duration_ms": 949,
+            "retry": 0
+          }
+        ]
+      },
+      {
+        "title": "publishes the AdSense ownership metadata and authorized seller record",
+        "project": "mobile-390",
+        "status": "expected",
+        "attempts": 1,
+        "results": [
+          {
+            "status": "passed",
+            "duration_ms": 343,
+            "retry": 0
+          }
+        ]
+      },
+      {
+        "title": "homepage presents the product without horizontal overflow",
+        "project": "tablet-768",
+        "status": "expected",
+        "attempts": 1,
+        "results": [
+          {
+            "status": "passed",
+            "duration_ms": 301,
+            "retry": 0
+          }
+        ]
+      },
+      {
+        "title": "public homepage has no automatically detectable accessibility violations",
+        "project": "tablet-768",
+        "status": "expected",
+        "attempts": 1,
+        "results": [
+          {
+            "status": "passed",
+            "duration_ms": 870,
+            "retry": 0
+          }
+        ]
+      },
+      {
+        "title": "publishes the AdSense ownership metadata and authorized seller record",
+        "project": "tablet-768",
+        "status": "expected",
+        "attempts": 1,
+        "results": [
+          {
+            "status": "passed",
+            "duration_ms": 301,
+            "retry": 0
+          }
+        ]
+      },
+      {
+        "title": "homepage presents the product without horizontal overflow",
+        "project": "laptop-1024",
+        "status": "expected",
+        "attempts": 1,
+        "results": [
+          {
+            "status": "passed",
+            "duration_ms": 288,
+            "retry": 0
+          }
+        ]
+      },
+      {
+        "title": "public homepage has no automatically detectable accessibility violations",
+        "project": "laptop-1024",
+        "status": "expected",
+        "attempts": 1,
+        "results": [
+          {
+            "status": "passed",
+            "duration_ms": 846,
+            "retry": 0
+          }
+        ]
+      },
+      {
+        "title": "publishes the AdSense ownership metadata and authorized seller record",
+        "project": "laptop-1024",
+        "status": "expected",
+        "attempts": 1,
+        "results": [
+          {
+            "status": "passed",
+            "duration_ms": 227,
+            "retry": 0
+          }
+        ]
+      },
+      {
+        "title": "homepage presents the product without horizontal overflow",
+        "project": "desktop-1440",
+        "status": "expected",
+        "attempts": 1,
+        "results": [
+          {
+            "status": "passed",
+            "duration_ms": 385,
+            "retry": 0
+          }
+        ]
+      },
+      {
+        "title": "public homepage has no automatically detectable accessibility violations",
+        "project": "desktop-1440",
+        "status": "expected",
+        "attempts": 1,
+        "results": [
+          {
+            "status": "passed",
+            "duration_ms": 1019,
+            "retry": 0
+          }
+        ]
+      },
+      {
+        "title": "publishes the AdSense ownership metadata and authorized seller record",
+        "project": "desktop-1440",
+        "status": "expected",
+        "attempts": 1,
+        "results": [
+          {
+            "status": "passed",
+            "duration_ms": 256,
+            "retry": 0
+          }
+        ]
+      }
+    ],
+    "global_error_count": 0,
+    "stderr_bytes": 0,
+    "stderr_excerpt": ""
+  },
+  "targeted_eslint_passed": true,
+  "full_frontend_typecheck_passed": true,
+  "owned_local_server_stopped": {
+    "pid": 75864,
+    "returncode": 143,
+    "stopped_at_utc": "2026-10-11T15:23:55.937174+00:00"
+  },
+  "owned_port_independently_unavailable": true,
+  "provider_mutations": 0,
+  "production_deployed": false,
+  "remaining": [
+    "Actual configured privacy-safe field metric collection and sufficient p75 samples by device/connection.",
+    "Current authenticated launch flows, loading/bundle behavior and broader mobile acceptance.",
+    "Exact-source CI and production alias verification after release."
+  ],
+  "timing_note": "The recorded local browser and HTTP durations are component checks, not completion time for the whole agreed checkpoint."
+}
