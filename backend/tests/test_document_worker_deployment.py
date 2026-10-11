@@ -225,3 +225,79 @@ def test_native_default_omissions_and_bound_short_service_are_supported(config):
         instance["containers"][0]["resources"].pop("startupCpuBoost")
     value["revision"]["service"] = config.SERVICE
     assert config.check_snapshot(value, IMAGE, RELEASE)["configuration_matches"] is True
+
+
+# Bind the offline proposal to the reviewed stdin contract; no cloud transport.
+def test_reviewed_stdin_policy_and_disabled_pins_agree(config):
+    import hashlib
+
+    raw = (config.ROOT / "infra/document-processing/policy.json").read_bytes()
+    policy = config.decode(raw)
+    draft = config.decode((config.ROOT / "infra/gcp/document-worker.disabled.json").read_bytes())
+    assert hashlib.sha256(raw).hexdigest() == config.POLICY_SHA256 == "96d2991927b3ffec6d24310ef8e9a4555bd38ccfb3479d44a795d2e43c9d38a0"
+    assert draft["policy_sha256"] == config.POLICY_SHA256
+    assert policy["deployment_proven"] is False
+    assert policy["scope"]["host_parser_fallback"] is False
+    assert policy["transport"]["max_source_bytes"] == 5 * 1024 * 1024
+    assert policy["transport"]["max_request_bytes"] == 7 * 1024 * 1024
+    assert policy["transport"]["max_success_response_bytes"] == 1024 * 1024
+    controls = policy["required_native_deployment_controls"]
+    assert controls["request_stdin_max_bytes"] == policy["transport"]["max_request_bytes"]
+    assert controls["launcher_stdout_max_bytes"] == policy["transport"]["max_success_response_bytes"]
+    for key in ("request_only_bounded_stdin", "concurrent_nonblocking_input_output",
+                "constructor_signal_free_owned_worker", "launcher_authorization_gate_before_payload",
+                "pending_or_unknown_constructor_quarantines_admission", "forced_owned_sandbox_delete_before_release"):
+        assert controls[key] is True
+    for key in ("candidate_bytes_in_logs", "credential_or_secret_mounts", "host_contains_credentials",
+                "sandbox_egress", "sandbox_environment_passthrough", "sandbox_export_or_persisted_snapshot"):
+        assert controls[key] is False
+    assert config.plan()["api_wiring_enabled"] is False
+    assert config.render(IMAGE, RELEASE)["runtime_isolation_proven"] is False
+
+
+def _private_policy_proposal(config, tmp_path, monkeypatch):
+    for relative in ("infra/document-processing/policy.json", "infra/gcp/document-worker.disabled.json"):
+        destination = tmp_path / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes((config.ROOT / relative).read_bytes())
+    monkeypatch.setattr(config, "ROOT", tmp_path)
+    return tmp_path / "infra/document-processing/policy.json", tmp_path / "infra/gcp/document-worker.disabled.json"
+
+
+@pytest.mark.parametrize("mutation", ["policy_byte", "policy_missing", "policy_oversized", "stale_draft_pin",
+                                         "wiring_enabled", "deployment_proven", "draft_image", "draft_secret"])
+def test_policy_or_disabled_proposal_drift_refuses_without_echo(config, tmp_path, monkeypatch, mutation):
+    policy_path, draft_path = _private_policy_proposal(config, tmp_path, monkeypatch)
+    if mutation == "policy_byte":
+        policy_path.write_bytes(policy_path.read_bytes() + b" ")
+    elif mutation == "policy_missing":
+        policy_path.unlink()
+    elif mutation == "policy_oversized":
+        policy_path.write_bytes(b" " * (config.MAX_INPUT_BYTES + 1))
+    else:
+        draft = json.loads(draft_path.read_bytes())
+        key, value = {
+            "stale_draft_pin": ("policy_sha256", "e7d6680ee78da0cda5a8e4d9abfaf178ce5684b8b55ebcc5c168b69e3ece8e34"),
+            "wiring_enabled": ("api_wiring_enabled", True),
+            "deployment_proven": ("deployment_proven", True),
+            "draft_image": ("image", IMAGE),
+            "draft_secret": ("DATABASE_URL", "synthetic-secret-never-output"),
+        }[mutation]
+        draft[key] = value
+        draft_path.write_text(json.dumps(draft))
+    with pytest.raises(config.ConfigurationDenied) as error:
+        config.render(IMAGE, RELEASE)
+    assert str(error.value) == "document_worker_configuration_unverified"
+    assert "synthetic-secret-never-output" not in str(error.value)
+
+
+@pytest.mark.parametrize("relative", ["infra/document-processing/policy.json", "infra/gcp/document-worker.disabled.json"])
+def test_symlinked_policy_or_disabled_proposal_is_not_trusted(config, tmp_path, monkeypatch, relative):
+    _private_policy_proposal(config, tmp_path, monkeypatch)
+    path = tmp_path / relative
+    target = path.with_name(path.name + ".synthetic-target")
+    path.rename(target)
+    path.symlink_to(target)
+    with pytest.raises(config.ConfigurationDenied) as error:
+        config.plan()
+    assert str(error.value) == "document_worker_configuration_unverified"

@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "recorded_at_utc": "2026-10-11T17:50:13.189387+00:00",
+  "scope": "ordinary_document_worker_deployment_policy_pin_correction",
+  "base_source": "15fc5137a1375ff1dfcb4e6a9c04bc319ea248e0",
+  "failed_ci": {
+    "run_id": 38158494871,
+    "attempt": 2,
+    "failed": 49,
+    "passed": 3583,
+    "warnings": 455,
+    "runtime_seconds": 928.56,
+    "failed_module": "backend/tests/test_document_worker_deployment.py",
+    "openapi_verified": false
+  },
+  "change": {
+    "runtime": "POLICY_SHA256 literal only",
+    "disabled_proposal": "policy_sha256 literal only",
+    "new_policy_sha256": "96d2991927b3ffec6d24310ef8e9a4555bd38ccfb3479d44a795d2e43c9d38a0",
+    "service_processor_policy_bytes_changed": false
+  },
+  "verification": {
+    "focused_passed": 67,
+    "focused_pytest_seconds": 0.15,
+    "ruff": "pass",
+    "targeted_mypy": "pass",
+    "baseline_failed": 49,
+    "baseline_passed": 7,
+    "global_conftest_or_aggregate_imports": false
+  },
+  "native_calls": 0,
+  "deployment_or_IAM_changes": 0,
+  "production_activation": false,
+  "full_ci_required": true,
+  "checkpoint_completed": false,
+  "fixed_checkpoint_count": 6
+}

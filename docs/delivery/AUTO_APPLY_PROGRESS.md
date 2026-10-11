@@ -9,7 +9,7 @@ report the unchanged original estimate and the recorded actual duration.
 
 | Fixed checkpoint | Original estimate of additional active agent work | Status | Actual whole-checkpoint duration |
 |---|---|---|---|
-| Full CI/regressions | 1–3 hours | CI renewal pending for the stdin worker change; exact `a16b604` passed | Recorded remaining-work window: 3 hours 4 minutes for `a16b604`; whole historical duration unavailable |
+| Full CI/regressions | 1–3 hours | `15fc5137` renewal found 49 deployment-policy pin failures; corrected pins pass 67 focused checks; renewed CI pending. Exact `a16b604` completion retained | Recorded remaining-work window: 3 hours 4 minutes for `a16b604`; whole historical duration unavailable |
 | Resume worker output + PDF/DOCX/LaTeX fidelity | 4–8 hours | in progress | Not available; checkpoint not complete |
 | Candidate-reviewed browser integration | 2–6 hours after the approval blocker is resolved | blocked | Not available; checkpoint not complete |
 | Billing costs/failure recovery/load | 2–5 hours | in progress | Not available; checkpoint not complete |
@@ -49,6 +49,35 @@ Full PostgreSQL, HTTP and dispatch-recovery verification requires new exact-sour
 Runtime behavior and database constraints are unchanged. See
 [fixture correction evidence](evidence/2026-10-11-ci-fixture-correction.json).
 
+
+
+## Document deployment policy pin correction — 11 October 2026
+
+Within the same checkpoint 1, exact source `15fc5137a1375ff1dfcb4e6a9c04bc319ea248e0`
+reaches a terminal [CI run 38158494871](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38158494871):
+four jobs pass; backend reports 49 failures, 3,583 passes and 455 warnings in
+928.56 seconds. Every failure is in the document deployment configuration module,
+which still pins the preceding policy hash. The actual OpenAPI check is skipped.
+The two deployment literals now bind the reviewed stdin policy; runtime logic,
+service, processor and policy bytes remain unchanged. The original 49 failures
+reproduce privately, and all 67 focused checks pass after correction, including
+11 policy drift, cap and refusal controls. Configured Ruff and targeted Mypy pass.
+Full renewed exact-source CI remains required; this does not create or complete a
+new checkpoint. See [policy pin evidence](evidence/2026-10-11-document-worker-policy-pins.json).
+
+The updated document image builds successfully from the reviewed seven-file
+`15fc5137` source set in 73.476 seconds. This is an image build, with no service or
+IAM change. A synthetic DOCX native LibreOffice/Poppler comparison also passes:
+one page before and after, 179 untouched characters with identical geometry and
+styles, and zero pixels changed outside the edited paragraph. Font substitution
+is consistent; Microsoft Word, native link clickability and the application
+upload/download boundary remain unverified. Neither result completes checkpoint 2.
+
+Read-only checks confirm exact `15fc5137` Vercel preview readiness, homepage
+HTTP 200 with the expected canonical/OG URL and preview noindex, and anonymous
+dashboard HTTP 307 to login with private indexing headers. Only sanitized
+metadata is retained. Authenticated launch flows, field metrics, native worker
+acceptance and full deployment remain open under the existing six checkpoints.
 
 ## Latest completion and resume transport update — 11 October 2026
 
