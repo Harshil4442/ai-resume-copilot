@@ -5,6 +5,7 @@ from datetime import timedelta
 import pytest
 from backend.app import models as core
 from backend.app.domains.common import utcnow
+from backend.app.domains.dispatch.models import DispatchOutbox
 from backend.app.domains.employer import catalogue_search as catalogue
 from backend.app.domains.employer import config, credits, models, privacy, schemas, service
 from backend.tests.test_employer_catalogue_search import (
@@ -18,7 +19,7 @@ from backend.tests.test_employer_catalogue_search import (
 from backend.tests.test_employer_catalogue_search import (
     catalogue_db as catalogue_db,
 )
-from backend.app.domains.dispatch.models import DispatchOutbox
+from backend.tests.test_employer_search_new_results import indexed_search as indexed_search
 from pydantic import ValidationError
 from sqlalchemy import event
 

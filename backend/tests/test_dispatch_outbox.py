@@ -497,15 +497,18 @@ def _catalogue_intent(factory):
         db.add(models.User(id=1, email="catalogue@example.invalid", job_service_credits=50))
         db.add(models.Resume(id=10, user_id=1, original_filename="synthetic.pdf", skills=["Python"]))
         db.add(employer_models.ServiceCreditReservation(
-            id="catalogue_reservation", user_id=1, operation="employer.search", source_id="catalogue_plan",
-            unit_price=7, requested_count=3, reserved_amount=0, committed_amount=0,
+            id="catalogue_reservation", user_id=1, operation="job_search", source_id="catalogue_plan",
+            unit_price=7, requested_count=0, reserved_amount=0, committed_amount=0,
             released_amount=0, state="reserved", pricing_version="original-fixture-v1",
+            cost_policy_snapshot={"search_preparation": True, "history_search_fingerprint": "0" * 64,
+                                  "history_desired_count": 3},
         ))
         db.add(employer_models.EmployerSearchPreparation(
             id="catalogue_plan", user_id=1, resume_id=10, reservation_id="catalogue_reservation",
             idempotency_key="catalogue-key", input_fingerprint="0" * 64, query={}, worker_query={},
             projection_version=catalogue_search.PROJECTION_VERSION,
-            accepted_quote={"unit_price": 7, "pricing_version": "original-fixture-v1"},
+            accepted_quote={"unit_price": 7, "pricing_version": "original-fixture-v1", "requested_count": 3,
+                            "maximum_credits": 21, "search_input_fingerprint": "0" * 64},
             resume_fingerprint="1" * 64, resume_source_revision=1, resume_skills=["Python"],
             as_of=now, watermark=0, max_source_age_hours=24, desired_count=3, state="scanning",
         ))

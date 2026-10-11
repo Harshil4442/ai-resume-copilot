@@ -7,6 +7,7 @@ from backend.app.domains.common import payload_fingerprint, utcnow
 from backend.app.domains.dispatch.models import DispatchOutbox
 from backend.app.domains.employer import config, credits, models, schemas, search_pages, service
 from backend.tests.test_employer_catalogue_search import catalogue_db as catalogue_db
+from backend.tests.test_employer_search_new_results import indexed_search as indexed_search
 from fastapi import HTTPException
 from sqlalchemy import event
 

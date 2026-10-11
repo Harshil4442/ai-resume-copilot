@@ -1,0 +1,225 @@
+{
+  "created_at_utc": "2026-10-11T15:10:37.425945+00:00",
+  "agreed_checkpoint": "Full CI/regressions",
+  "original_estimate": "1\u20133 additional active hours",
+  "checkpoint_complete": false,
+  "source_base": "a11950efdb425fc22343bd2c6c687b145d026a43",
+  "terminal_source_ci": {
+    "run_id": 38146144742,
+    "head_sha": "a11950efdb425fc22343bd2c6c687b145d026a43",
+    "status": "completed",
+    "conclusion": "failure",
+    "started_at": "2026-10-11T14:11:01+00:00",
+    "completed_at": "2026-10-11T14:28:21+00:00",
+    "elapsed_seconds": 1040,
+    "backend_failed": 5,
+    "backend_passed": 3563,
+    "backend_setup_errors": 29,
+    "backend_warnings": 455,
+    "actual_exporter": "skipped",
+    "jobs": [
+      {
+        "name": "frontend",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "backend",
+        "status": "completed",
+        "conclusion": "failure"
+      },
+      {
+        "name": "security-and-container",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "browser-companion",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "cold-browser-journey",
+        "status": "completed",
+        "conclusion": "success"
+      }
+    ],
+    "checkpoint_completed": false
+  },
+  "failure_causes": {
+    "setup_errors": 29,
+    "setup_error": "Two consuming modules imported catalogue_db without its indexed_search dependency registered as a fixture.",
+    "postgres_failures": 4,
+    "postgres_failure": "New financial fixture rows were flushed with their User parent without explicit parent flush; actual PostgreSQL foreign keys rejected them.",
+    "dispatch_failures": 1,
+    "dispatch_failure": "The legacy zero-hold catalogue intent fixture still used the former employer.search operation and omitted accepted authority/count/quote fields."
+  },
+  "correction": "Register the indexed_search fixture in both consumers, flush each User before dependent financial rows, and make the legacy zero-count dispatch fixture use a valid accepted job_search snapshot. Production runtime and financial constraints are unchanged.",
+  "source_files": [
+    {
+      "path": "backend/tests/test_employer_bounded_credit_admission.py",
+      "sha256": "fe461f67bce02115274abb4134df9c9241b1c88649f324c02f246fa6d9aff4fa"
+    },
+    {
+      "path": "backend/tests/test_employer_catalogue_credit_admission.py",
+      "sha256": "160f924c1f3b9c73411e6a5a476cbff000f3182580e257b3512f5fd3e5835d00"
+    },
+    {
+      "path": "backend/tests/test_expense_budget.py",
+      "sha256": "a19b2b220483b402900a56e34df093326154e1b2a592c5b630badeab9241c5b1"
+    },
+    {
+      "path": "backend/tests/test_dispatch_outbox.py",
+      "sha256": "b0263990f96c64c94f82039cddec75bfed43f69fccbd9d96001565758e586c90"
+    }
+  ],
+  "selected_shipping_cash_sqlite": {
+    "mode": "candidate",
+    "scope": "exact selected shipping functions; actual pinned ordinary models/credit/cost bodies; isolated SQLite only",
+    "tests": 11,
+    "passed": 11,
+    "failed": 0,
+    "skipped": 0,
+    "duration_seconds": 0.26,
+    "source_sha256": "1508178f5be874829a94920bd8b58d55156238c6461e09c63d3cf14b5472bcbd",
+    "results": [
+      {
+        "test": "test_completed_paid_search_does_not_acquire_a_new_failure_expense",
+        "parameters": {},
+        "outcome": "passed"
+      },
+      {
+        "test": "test_legacy_search_covers_larger_failed_or_successful_cash_exposure",
+        "parameters": {
+          "count": 1,
+          "variable": 30,
+          "preparation": 30
+        },
+        "outcome": "passed"
+      },
+      {
+        "test": "test_legacy_search_covers_larger_failed_or_successful_cash_exposure",
+        "parameters": {
+          "count": 2,
+          "variable": 60,
+          "preparation": 0
+        },
+        "outcome": "passed"
+      },
+      {
+        "test": "test_legacy_search_covers_larger_failed_or_successful_cash_exposure",
+        "parameters": {
+          "count": 100,
+          "variable": 3000,
+          "preparation": 0
+        },
+        "outcome": "passed"
+      },
+      {
+        "test": "test_old_legacy_search_keeps_accepted_preparation_floor_without_repricing",
+        "parameters": {
+          "state": "reserved",
+          "old_preparation": 50,
+          "accepted_cash": 60
+        },
+        "outcome": "passed"
+      },
+      {
+        "test": "test_old_legacy_search_keeps_accepted_preparation_floor_without_repricing",
+        "parameters": {
+          "state": "settled",
+          "old_preparation": 50,
+          "accepted_cash": 60
+        },
+        "outcome": "passed"
+      },
+      {
+        "test": "test_old_legacy_search_keeps_accepted_preparation_floor_without_repricing",
+        "parameters": {
+          "state": "settled",
+          "old_preparation": 51,
+          "accepted_cash": 62
+        },
+        "outcome": "passed"
+      },
+      {
+        "test": "test_old_zero_count_pending_search_keeps_preparation_exposure_across_months",
+        "parameters": {},
+        "outcome": "passed"
+      },
+      {
+        "test": "test_partial_paid_search_upward_rounds_small_preparation_hold",
+        "parameters": {},
+        "outcome": "passed"
+      },
+      {
+        "test": "test_repeated_empty_paid_search_restores_credits_but_not_preparation_cash",
+        "parameters": {},
+        "outcome": "passed"
+      },
+      {
+        "test": "test_repeated_refunded_legacy_searches_exhaust_cash_without_charging_candidate",
+        "parameters": {},
+        "outcome": "passed"
+      }
+    ],
+    "provider_calls": 0,
+    "production_mutations": 0,
+    "full_checkpoint_complete": false
+  },
+  "legacy_cancellation_sqlite": {
+    "scope": "exact shipping legacy dispatch fixture with actual ordinary catalogue cancellation and financial models; isolated SQLite only",
+    "controls": 1,
+    "passed": 1,
+    "source_sha256": "b0263990f96c64c94f82039cddec75bfed43f69fccbd9d96001565758e586c90",
+    "provider_calls": 0,
+    "production_mutations": 0,
+    "dispatch_publication_recovery_verified": false,
+    "full_checkpoint_complete": false
+  },
+  "fixture_registration_metadata": {
+    "scope": "source registration metadata only; actual pytest suite requires CI",
+    "files": [
+      {
+        "path": "backend/tests/test_employer_bounded_credit_admission.py",
+        "dependent_imported_fixtures": [
+          "catalogue_db",
+          "indexed_search"
+        ],
+        "dependency_registered_explicitly": true
+      },
+      {
+        "path": "backend/tests/test_employer_catalogue_credit_admission.py",
+        "dependent_imported_fixtures": [
+          "catalogue_db",
+          "indexed_search"
+        ],
+        "dependency_registered_explicitly": true
+      }
+    ],
+    "actual_pytest_runtime_verified": false,
+    "catalogue_db_dependencies": [
+      "indexed_search",
+      "monkeypatch"
+    ],
+    "builtin_fixture_dependencies": [
+      "monkeypatch"
+    ]
+  },
+  "foreign_keys_enabled_for_cash_controls": true,
+  "actual_postgres_after_correction_verified": false,
+  "actual_dispatch_publication_recovery_after_correction_verified": false,
+  "full_suite_after_correction_verified": false,
+  "provider_calls_for_fixture_controls": 0,
+  "production_mutations": 0,
+  "limitations": [
+    "Only exact-source CI can verify the full HTTP fixture and PostgreSQL paths.",
+    "The 17 minute 20 second failed CI attempt is not a completed checkpoint duration.",
+    "Protected browser integration remains stopped."
+  ],
+  "static_checks": {
+    "ruff": "Four changed ordinary test files pass from backend working directory",
+    "unchanged_assertion_count": 296,
+    "independent_source_review": "No defect found; source review only"
+  }
+}

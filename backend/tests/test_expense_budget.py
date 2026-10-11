@@ -126,6 +126,7 @@ def test_old_legacy_search_keeps_accepted_preparation_floor_without_repricing(
         "failed_service_hold_minor": 0,
     }
     cost_db.add(User(id=1, email="old-preparation@example.test", job_service_credits=100))
+    cost_db.flush()
     old = ServiceCreditReservation(
         id="old-preparation", user_id=1, operation="job_search", source_id="old-preparation",
         unit_price=1, requested_count=1, reserved_amount=1, committed_amount=0,
@@ -162,6 +163,7 @@ def test_old_zero_count_pending_search_keeps_preparation_exposure_across_months(
 
     _legacy_search_policy(monkeypatch, monthly_legacy_service_budget_minor=119)
     cost_db.add(User(id=1, email="old-pending@example.test", job_service_credits=100))
+    cost_db.flush()
     old = ServiceCreditReservation(
         id="old-zero", user_id=1, operation="job_search", source_id="old-zero",
         unit_price=1, requested_count=0, reserved_amount=0, committed_amount=0, released_amount=0,
@@ -185,6 +187,7 @@ def test_completed_paid_search_does_not_acquire_a_new_failure_expense(cost_db, m
 
     _legacy_search_policy(monkeypatch, monthly_legacy_service_budget_minor=60)
     cost_db.add(User(id=1, email="paid-completed@example.test", job_service_credits=100))
+    cost_db.flush()
     cost_db.add(ServiceCreditReservation(
         id="paid-completed", user_id=1, operation="job_search", source_id="paid-completed",
         unit_price=1, requested_count=1, reserved_amount=1, committed_amount=1, released_amount=0,

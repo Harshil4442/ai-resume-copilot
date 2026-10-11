@@ -10,7 +10,7 @@ report the unchanged original estimate and the recorded actual duration.
 | Fixed checkpoint | Original estimate of additional active agent work | Status | Actual whole-checkpoint duration |
 |---|---|---|---|
 | Full CI/regressions | 1–3 hours | in progress | Not available; checkpoint not complete |
-| Resume worker output + PDF/DOCX/LaTeX fidelity | 4–8 hours | pending | Not available; checkpoint not complete |
+| Resume worker output + PDF/DOCX/LaTeX fidelity | 4–8 hours | in progress | Not available; checkpoint not complete |
 | Candidate-reviewed browser integration | 2–6 hours after the approval blocker is resolved | blocked | Not available; checkpoint not complete |
 | Billing costs/failure recovery/load | 2–5 hours | in progress | Not available; checkpoint not complete |
 | Mobile/performance/SEO verification | 1–3 hours | pending | Not available; checkpoint not complete |
@@ -35,6 +35,19 @@ four jobs pass, while backend stops on four import-formatting errors in the
 expense-budget tests. Backend runtime tests and the exporter are skipped. This
 attempt takes 8 minutes 16 seconds; it does not complete the checkpoint. The
 formatting correction uses the same backend working directory as CI.
+
+
+Source `a11950efdb425fc22343bd2c6c687b145d026a43` has terminal
+[CI run 38146144742](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38146144742):
+four jobs pass; backend reports 3,563 passes, five failures, 29 fixture setup errors
+and 455 warnings. The actual exporter is skipped. Its 17 minute 20 second attempt
+is not a completed checkpoint duration. The corrections register the missing imported
+fixture dependency, flush parent users before PostgreSQL-dependent rows and restore a
+valid legacy zero-count cancellation fixture. Eleven selected financial controls pass
+with SQLite foreign keys enforced, and the focused legacy cancellation control passes.
+Full PostgreSQL, HTTP and dispatch-recovery verification requires new exact-source CI.
+Runtime behavior and database constraints are unchanged. See
+[fixture correction evidence](evidence/2026-10-11-ci-fixture-correction.json).
 
 
 ## Funded search runtime regression correction — 11 October 2026
@@ -96,12 +109,20 @@ exact 7 MiB input, concurrent input/output backpressure, EOF, error outcomes,
 absolute exchange timeout and output overflow. Configured Ruff passes. The earlier
 13-control preimage and the initial unavailable interpreter path are retained.
 
-The helper is not deployed or selected by the runtime. Cloud Run stdin forwarding,
-process-creation deadline, native child isolation/deletion/absence, private HTTP,
-and PDF/DOCX/LaTeX formatting remain unproved. This is evidence within agreed
-checkpoint 2, which remains open. A next native experiment must be finite, synthetic,
-and bound to an exact image/source/identity; it may not reuse consumed operations or
-alter the protected browser/pairing integration.
+The helper is not deployed or selected by the runtime. A fresh fixed 18-byte
+synthetic native experiment now has one successful execution with zero task retries.
+Its exact source/image/Job/Execution identities are joined. The pinned probe exits zero
+only on matching input count/digest and a successful child cleanup command. The first
+wrapper refused before Run due to a stale timeout guard; a read proved zero executions
+before a separately reviewed guard correction allowed the one actual Run. Original
+refusals and seals remain retained.
+
+The bounded result observer returns inconclusive, so an explicit stdout result is not
+validated. No repeated Run or blind result retry occurs. This narrow native task success
+does not prove independently observed sandbox absence, scanner acceptance, isolation,
+private HTTP custody or PDF/DOCX/LaTeX formatting. These remain open within the same
+checkpoint 2. No production activation or protected integration change is performed.
+See [synthetic native transport evidence](evidence/2026-10-11-document-stdin-native.json).
 
 Primary contract context: [Cloud Run sandbox CLI](https://docs.cloud.google.com/run/docs/reference/sandbox-cli)
 and [code execution](https://docs.cloud.google.com/run/docs/code-execution).
