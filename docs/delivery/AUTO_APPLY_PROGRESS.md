@@ -1,5 +1,40 @@
 # Employer search and application delivery
 
+## Verified CI base and funded-search correction — 11 October 2026
+
+Source `c1936ec932e924e45708991f69e48c138b7fe2ed` passes all five jobs in
+[CI run 38098385720](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38098385720).
+Backend reports 3,551 passes and 455 warnings. The historical PostgreSQL test,
+full-history secret scan, production container build and actual OpenAPI drift gate pass.
+Root independently verifies terminal job and step metadata. Zero skips are not
+independently established. Earlier failed runs remain recorded below.
+See [exact-source CI evidence](evidence/2026-10-11-c1936ec-ci-success.json).
+
+The funded BI02 correction is now integrated into the managed worktree, pending new
+exact-source CI and deployment. Both search paths reserve requested count times the
+accepted price before matching/history work and commit the hold, pending work and outbox
+atomically. Completion settles that same hold; safe failure, cancellation, expiry and
+account erasure release unused search credits. Unknown application holds remain retained.
+Request normalization is bounded before financial locks; staged unpaid results stay hidden.
+
+Verification passes 43 isolated actual-finance SQLite controls, 34 exact shipping test
+function controls, 54 synthetic native PostgreSQL component controls and 46 focused
+frontend tests. Native owner/settlement races and real timeout rollback pass; the one
+fault-injector exception-wrapper error is retained. The owned database and its credential
+files are removed, with independent absence verified. Model metadata does not establish
+production migration triggers, full HTTP/BFF/browser behavior, field costs or profit.
+Frontend shows held/returned credits and owner-scoped pending search recovery/cancellation.
+See [funded-search component evidence](evidence/2026-10-11-funded-search-components.json).
+The earlier CI result above applies to c1936ec before this correction. Deployment,
+document custody/isolation, protected integration and worldwide coverage remain open.
+
+The subsequent fixed-child-directory GCP API experiment is also terminal. Its exact
+Job/Execution/source join is verified; the bounded count read again reports three
+archive headers and no expected 18-byte target. This does not establish archive transfer,
+a unique cause, scanner/isolation/private HTTP acceptance or independent sandbox absence.
+The Job is retained for reconciliation. No repeated Create/Run or production activation
+occurs. See [child-directory API evidence](evidence/2026-10-11-document-child-export.json).
+
 ## Backend test corrections — 11 October 2026
 
 [CI run 38096543842](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38096543842)
@@ -76,7 +111,7 @@ Production pairing and portal-use permission remain open.
 
 ## Current checkpoint board — 11 October 2026
 
-Most recently fully verified source `d5c51846e8ac8ff2224d4cca6a99c32b00aa5f53`, tree
+Earlier verified source `d5c51846e8ac8ff2224d4cca6a99c32b00aa5f53`, tree
 `805bacf6264b0285ad2a64cb93dc8868ba5592ce`, passes all five jobs in
 [CI run 38091538381](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38091538381).
 Backend reports 3,545 passes and 455 warnings; responsive browser checks report

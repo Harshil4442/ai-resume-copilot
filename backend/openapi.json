@@ -4606,6 +4606,7 @@
           },
           "excluded_employers": {
             "items": {
+              "maxLength": 200,
               "type": "string"
             },
             "maxItems": 100,

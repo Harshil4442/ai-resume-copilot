@@ -78,6 +78,8 @@ export type EmployerSearchPreparation = {
   charged_credits: number;
   completed_search_id: string | null;
   failure_reason: string | null;
+  reserved_credits?: number;
+  refunded_credits?: number;
 };
 export type EmployerSearchCreateResult = EmployerSearch | EmployerSearchPreparation;
 

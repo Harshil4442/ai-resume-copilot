@@ -11,7 +11,7 @@ vi.mock("next/dynamic", () => ({ default: () => ({ id }: { id: string }) => <div
 
 import EmployerJobsPage from "./page";
 import SessionProviderWrapper from "../../components/SessionProviderWrapper";
-import type { EmployerSearchSummary, SearchResult } from "../../lib/employerJobs";
+import type { EmployerSearchPreparation, EmployerSearchSummary, SearchResult } from "../../lib/employerJobs";
 
 let client: QueryClient;
 function summary(owner = state.owner): EmployerSearchSummary {
@@ -29,6 +29,9 @@ function read(url: string) {
   if (url.includes("/results?")) return Promise.resolve({ search: summary(owner), items: [item(owner)], total_items: 1, start_index: 0, next_cursor: null, snapshot_version: "v1-exact-snapshot" });
   throw new Error(`Unexpected GET in local control: ${url}`);
 }
+function pendingSearch(): EmployerSearchPreparation {
+  return { id: "search_pending", kind: "search_preparation", status: "pending", as_of: "2026-10-11T00:00:00Z", desired_count: 3, accepted_quote: { unit_price: 2, pricing_version: "accepted-price", requested_count: 3, maximum_credits: 6, search_input_fingerprint: "accepted-input" }, candidates_examined: 0, charged_credits: 0, reserved_credits: 6, refunded_credits: 0, completed_search_id: null, failure_reason: null };
+}
 function withClient() {
   return function TestQueryProvider({ children }: { children: React.ReactNode }) { return <QueryClientProvider client={client}>{children}</QueryClientProvider>; };
 }
@@ -41,6 +44,42 @@ beforeEach(() => {
 afterEach(() => { cleanup(); client.clear(); });
 
 describe("employer page saved-search composition", () => {
+  it("shows the funded pending quote and cancels without applying or charging again", async () => {
+    state.post.mockImplementation((url: string) => Promise.resolve(url.endsWith("/cancel") ? { ...pendingSearch(), status: "cancelled", reserved_credits: 0, refunded_credits: 6 } : pendingSearch()));
+    render(<EmployerJobsPage />, { wrapper: withClient() });
+    await screen.findByText("Python Engineer one");
+    fireEvent.click(screen.getByRole("button", { name: /Python Engineer one/ }));
+    await screen.findByRole("heading", { name: "Saved job for one" });
+    fireEvent.click(screen.getByRole("button", { name: "Find jobs" }));
+    await screen.findByRole("heading", { name: "Preparing your search" });
+    expect(screen.getByText(/6 service credits held · 0 returned/)).toBeInTheDocument();
+    expect(screen.getByText("No service credits charged")).toBeInTheDocument();
+    expect(screen.getByText(/Accepted quote: 2 per new job · up to 6 service credits/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Finding employer jobs…" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel search" }));
+    await screen.findByText(/0 service credits held · 6 returned/);
+    expect(state.post.mock.calls.map(([url]) => url)).toEqual(["/v1/employer-jobs/searches", "/v1/employer-jobs/search-preparations/search_pending/cancel"]);
+    expect(screen.queryByRole("button", { name: "Prepare application" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the latest completed selection when an older free progress read finishes late", async () => {
+    const pending = { ...summary(), id: "search_pending", status: "preparing", delivered_count: 0, charged_credits: 0, refunded_credits: 0, query: { ...summary().query, role: "Pending search role" } };
+    let resolveProgress!: (value: EmployerSearchPreparation) => void;
+    state.get.mockImplementation((url: string) => url.includes("search-summaries?")
+      ? Promise.resolve({ items: [pending, summary()], next_cursor: null })
+      : url.endsWith("/search-preparations/search_pending") ? new Promise<EmployerSearchPreparation>((resolve) => { resolveProgress = resolve; }) : read(url));
+    render(<EmployerJobsPage />, { wrapper: withClient() });
+    await screen.findByText("Pending search role");
+    fireEvent.click(screen.getByRole("button", { name: /Pending search role/ }));
+    await screen.findByRole("status", { name: "Opening search progress" });
+    fireEvent.click(screen.getByRole("button", { name: /Python Engineer one/ }));
+    await screen.findByRole("heading", { name: "Saved job for one" });
+    await act(async () => { resolveProgress(pendingSearch()); });
+    expect(screen.getByRole("heading", { name: "Saved job for one" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Preparing your search" })).not.toBeInTheDocument();
+    expect(state.post).not.toHaveBeenCalled();
+  });
+
   it("loads summaries, restores the selected query, and shows its original quote despite current price changes", async () => {
     render(<EmployerJobsPage />, { wrapper: withClient() });
     await screen.findByText("Python Engineer one");

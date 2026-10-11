@@ -1,5 +1,40 @@
 # Full catalogue search — inactive integration, 11 October 2026
 
+## Verified CI base and funded-search correction — 11 October 2026
+
+Source `c1936ec932e924e45708991f69e48c138b7fe2ed` passes all five jobs in
+[CI run 38098385720](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38098385720).
+Backend reports 3,551 passes and 455 warnings. The historical PostgreSQL test,
+full-history secret scan, production container build and actual OpenAPI drift gate pass.
+Root independently verifies terminal job and step metadata. Zero skips are not
+independently established. Earlier failed runs remain recorded below.
+See [exact-source CI evidence](evidence/2026-10-11-c1936ec-ci-success.json).
+
+The funded BI02 correction is now integrated into the managed worktree, pending new
+exact-source CI and deployment. Both search paths reserve requested count times the
+accepted price before matching/history work and commit the hold, pending work and outbox
+atomically. Completion settles that same hold; safe failure, cancellation, expiry and
+account erasure release unused search credits. Unknown application holds remain retained.
+Request normalization is bounded before financial locks; staged unpaid results stay hidden.
+
+Verification passes 43 isolated actual-finance SQLite controls, 34 exact shipping test
+function controls, 54 synthetic native PostgreSQL component controls and 46 focused
+frontend tests. Native owner/settlement races and real timeout rollback pass; the one
+fault-injector exception-wrapper error is retained. The owned database and its credential
+files are removed, with independent absence verified. Model metadata does not establish
+production migration triggers, full HTTP/BFF/browser behavior, field costs or profit.
+Frontend shows held/returned credits and owner-scoped pending search recovery/cancellation.
+See [funded-search component evidence](evidence/2026-10-11-funded-search-components.json).
+The earlier CI result above applies to c1936ec before this correction. Deployment,
+document custody/isolation, protected integration and worldwide coverage remain open.
+
+The subsequent fixed-child-directory GCP API experiment is also terminal. Its exact
+Job/Execution/source join is verified; the bounded count read again reports three
+archive headers and no expected 18-byte target. This does not establish archive transfer,
+a unique cause, scanner/isolation/private HTTP acceptance or independent sandbox absence.
+The Job is retained for reconciliation. No repeated Create/Run or production activation
+occurs. See [child-directory API evidence](evidence/2026-10-11-document-child-export.json).
+
 ## Backend test corrections — 11 October 2026
 
 [CI run 38096543842](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38096543842)
@@ -24,8 +59,10 @@ canonical ranking before unseen-first result selection. This expands traversal o
 own catalogue; it does not establish worldwide discovery coverage or 95% recall.
 
 Preparation runs in persisted bounded chunks through the existing outbox. The candidate
-can poll status or cancel without a charge. A preparation holds a zero reservation;
-Search, Delivery and financial writes occur only after complete scan and proof checks.
+can poll status or cancel without a charge. This published inactive implementation
+uses a zero reservation during preparation and defers the credit hold until completion.
+That published c1936ec behavior does not meet BI02; the worktree correction above fixes admission and awaits new-source CI.
+Search and Delivery writes occur only after complete scan and proof checks.
 Current source/posting, resume/history revisions, freshness and the accepted quote are
 checked through settlement. Saved results retain exact item bodies and their digests;
 free paging uses item rows. The original accepted terms remain unchanged.
@@ -113,10 +150,12 @@ hypothesis and has not been run. The earlier failed diagnostics remain preserved
 - [x] Complete the one-shot native API count diagnostic and preserve its terminal failure.
 - [x] Review the two ordinary backend test fixes without relaxing production safeguards.
 - [x] Pass four isolated release controls and configured lint on both corrected tests.
-- [ ] Pass full-history scanning with only exact reviewed historical exclusions.
-- [ ] Pass new corrected-source CI, including shipping tests, scanner and actual exporter.
+- [x] Pass full-history scanning with only exact reviewed historical exclusions.
+- [x] Pass new corrected-source CI, including shipping tests, scanner and actual exporter.
 - [x] Verify the structurally revised full-chain migration on source `1ea40fb` in CI.
-- [ ] Verify the historical PostgreSQL round trip and actual exporter drift on corrected-source CI.
+- [x] Verify the historical PostgreSQL round trip and actual exporter drift on corrected-source CI.
+- [x] Integrate BI02 upfront funding and verify synthetic native refund, recovery and concurrency controls.
+- [ ] Pass new funded-source full CI and verify production migration-trigger/HTTP/browser financial behavior.
 - [ ] Prove native source/resume/history concurrency and financial outcomes end to end.
 - [ ] Measure cold/warm catalogue work, conversion/allocation cost and pack margins.
 - [ ] Establish shared-content retention/cleanup and compatible reader rollout/rollback.

@@ -35,6 +35,7 @@ export default function EmployerJobsPage() {
   const [recoverableQuery, setRecoverableQuery] = useState<string | null>(null);
   const [activeSearch, setActiveSearch] = useState<EmployerSearchSummary | null>(null);
   const [preparation, setPreparation] = useState<EmployerSearchPreparation | null>(null);
+  const preparationSelection = useRef<string | null>(null);
   const [preparationError, setPreparationError] = useState<string | null>(null);
   const [preparationRetry, setPreparationRetry] = useState(0);
   const [applicationId, setApplicationId] = useState<string | null>(null);
@@ -66,11 +67,16 @@ export default function EmployerJobsPage() {
     },
     onSuccess: (result) => {
       setPreparationError(null);
-      if (isSearchPreparation(result)) { setPreparation(result); setRecoverableQuery(null); return; }
+      if (isSearchPreparation(result)) { preparationSelection.current = result.id; setPreparation(result); setRecoverableQuery(null); void client.invalidateQueries({ queryKey: ["employer-jobs", "search-summaries"] }); refreshBalances(); return; }
+      preparationSelection.current = null;
       setPreparation(null); setActiveSearch(searchSummary(result)); intent.current = null; setRecoverableQuery(null);
       void client.invalidateQueries({ queryKey: ["employer-jobs", "search-summaries"] }); refreshBalances();
     },
     onError: () => { setRecoverableQuery(intent.current?.fingerprint ?? null); refreshBalances(); },
+  });
+  const reviewPreparation = useMutation({
+    mutationFn: (identity: string) => apiGet<EmployerSearchPreparation>(`${employerJobsBase}/search-preparations/${encodeURIComponent(identity)}`),
+    onSuccess: (current, identity) => { if (preparationSelection.current !== identity) return; setPreparation(current); setPreparationError(null); refreshBalances(); },
   });
   const preparationId = preparation?.id;
   const preparationTerminal = preparation?.status === "failed" || preparation?.status === "cancelled";
@@ -157,16 +163,19 @@ export default function EmployerJobsPage() {
           </div>
         </form>
         <section className="border-y border-border py-5"><h2 className="text-sm font-semibold">Current source coverage</h2><p className="mt-2 text-xs leading-5 text-muted-foreground">{catalog.data?.sources.length ?? 0} configured employer sources. Coverage is limited to these sources; results are not a census of all jobs.</p><ul className="mt-3 grid gap-2">{catalog.data?.sources.map((source) => <li key={source.id} className="text-xs"><span className="font-semibold">{source.employer}</span><span className="text-muted-foreground"> · {source.status === "healthy" ? `Checked ${source.last_success_at ? dateLabel(source.last_success_at) : "date unknown"}` : source.status.replaceAll("_", " ")}</span></li>)}</ul></section>
-        <EmployerSearchHistory selectedId={activeSearch?.id} onSelect={(item) => { const savedQuery = readSavedSearchQuery(item.query); setActiveSearch(item); setResumeId(savedQuery ? String(savedQuery.resume_id) : ""); setRole(savedQuery?.role ?? ""); setLocation(savedQuery?.location ?? ""); setRemote(savedQuery?.remote_only ?? false); setDays(savedQuery?.published_within_days ? String(savedQuery.published_within_days) : ""); setCount(savedQuery ? String(savedQuery.desired_count ?? item.desired_count) : ""); setPreferences(preferenceDraft(savedQuery?.preferences)); setExcludedEmployers(savedQuery?.excluded_employers ?? []); }} />
+        <EmployerSearchHistory selectedId={activeSearch?.id} onSelect={(item) => { const savedQuery = readSavedSearchQuery(item.query); setPreparation(null); setPreparationError(null); preparationSelection.current = item.status !== "completed" ? item.id : null; if (item.status !== "completed") { setActiveSearch(null); reviewPreparation.mutate(item.id); } else setActiveSearch(item); setResumeId(savedQuery ? String(savedQuery.resume_id) : ""); setRole(savedQuery?.role ?? ""); setLocation(savedQuery?.location ?? ""); setRemote(savedQuery?.remote_only ?? false); setDays(savedQuery?.published_within_days ? String(savedQuery.published_within_days) : ""); setCount(savedQuery ? String(savedQuery.desired_count ?? item.desired_count) : ""); setPreferences(preferenceDraft(savedQuery?.preferences)); setExcludedEmployers(savedQuery?.excluded_employers ?? []); }} />
       </aside>
       <div className="min-w-0 space-y-8">
         {search.isError ? <div role="alert" className="rounded-lg border border-coral/30 bg-coral/5 p-4 text-sm leading-6 text-coral">{search.error.message} If the request was interrupted, retry the same search to check its existing result before starting a different paid search.</div> : null}
+        {reviewPreparation.isError ? <p role="alert" className="text-sm text-coral">Could not open search progress. Select the search again to retry; its reserved credits and results are unchanged.</p> : null}
+        {reviewPreparation.isPending ? <div role="status" aria-label="Opening search progress"><LoadingBlock rows={2} /></div> : null}
         {prepare.isError ? <p role="alert" className="text-sm text-coral">{prepare.error.message}</p> : null}
         {search.isPending ? <section aria-live="polite"><p className="mb-4 text-sm text-muted-foreground">Checking employer postings and comparing the skills in your resume.</p><LoadingBlock rows={3} /></section> : preparation ? <section className="surface p-5 sm:p-6" aria-live="polite" aria-labelledby="search-progress-heading">
           <p className="eyebrow">Employer search</p><h2 id="search-progress-heading" className="font-display mt-2 text-2xl">{preparation.status === "completed" ? "Opening your saved results" : searchPreparing ? "Preparing your search" : "Search did not complete"}</h2>
-          <p className="mt-3 text-sm leading-6 text-muted-foreground">{searchPreparing && preparation.status !== "completed" ? "Comparing all eligible indexed postings. This may take a little longer for a large catalogue." : preparation.status === "completed" ? "Your search completed. Reading its first saved result page." : "You can start another search or return to your saved results."}</p>
-          <p className="mt-2 text-xs leading-5 text-muted-foreground">Catalogue as of {new Date(preparation.as_of).toLocaleString("en-IN")} · {preparation.candidates_examined} candidates examined.</p>
+          <p className="mt-3 text-sm leading-6 text-muted-foreground">{searchPreparing && preparation.status !== "completed" ? "Comparing eligible employer postings with your resume and choices. Only newly delivered jobs will be charged." : preparation.status === "completed" ? "Your search completed. Reading its first saved result page." : "You can start another search or return to your saved results."}</p>
+          <p className="mt-2 text-xs leading-5 text-muted-foreground">Search accepted {new Date(preparation.as_of).toLocaleString("en-IN")} · {preparation.candidates_examined} candidates examined.</p>
           <p className="mt-2 text-sm font-semibold">{preparation.status === "completed" ? `${preparation.charged_credits} service credits charged` : "No service credits charged"}</p>
+          {preparation.reserved_credits !== undefined ? <p className="mt-2 text-xs leading-5 text-muted-foreground">{preparation.reserved_credits} service credits held · {preparation.refunded_credits ?? 0} returned. Unused credits return when the search completes or is cancelled.</p> : null}
           <p className="mt-2 text-xs leading-5 text-muted-foreground">Accepted quote: {preparation.accepted_quote.unit_price} per new job · up to {preparation.accepted_quote.maximum_credits} service credits. Checking progress and opening saved results are free.</p>
           {preparationError ? <div role="alert" className="mt-4 text-sm leading-6"><p>{preparationError}</p><Button type="button" variant="secondary" className="mt-3 min-h-11" onClick={() => { setPreparationError(null); setPreparationRetry((value) => value + 1); }}>Retry search status</Button></div> : searchPreparing ? <div className="mt-4" role="status" aria-label="Search preparation in progress"><LoaderCircle size={20} className="animate-spin" /></div> : <Button type="button" variant="secondary" className="mt-4 min-h-11" onClick={() => { setPreparation(null); setPreparationError(null); }}>Return to saved results</Button>}
           {searchPreparing && preparation.status !== "completed" ? <Button type="button" variant="secondary" className="mt-4 min-h-11" disabled={cancelSearch.isPending} onClick={() => cancelSearch.mutate()}>{cancelSearch.isPending ? "Cancelling search…" : "Cancel search"}</Button> : null}

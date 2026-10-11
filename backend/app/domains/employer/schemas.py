@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -19,7 +19,7 @@ class SearchCreate(StrictModel):
     desired_count: int = Field(default=10, ge=1, le=100)
     remote_only: bool = False
     published_within_days: int | None = Field(default=None, ge=1, le=365)
-    excluded_employers: list[str] = Field(default_factory=list, max_length=100)
+    excluded_employers: list[Annotated[str, Field(max_length=200)]] = Field(default_factory=list, max_length=100)
     preferences: SearchPreferencesV1 | None = None
     idempotency_key: str = Field(min_length=8, max_length=160, pattern=r"^[A-Za-z0-9_.:-]+$")
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import os
 import re
 from datetime import UTC, datetime, timedelta
@@ -9,8 +10,8 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
 from fastapi import HTTPException
-from sqlalchemy import and_, func, literal_column, or_, text, true
-from sqlalchemy.orm import Session, aliased
+from sqlalchemy import and_, func, literal_column, or_, select, text, true
+from sqlalchemy.orm import Session, aliased, load_only
 
 from ... import models as core
 from ...catalog_timing import catalog_span, current_catalog_timing
@@ -164,76 +165,192 @@ def _search_input(payload: schemas.SearchCreate) -> dict:
     return payload.model_dump(mode="json", exclude=excluded)
 
 
-def create_search(db: Session, user_id: int, payload: schemas.SearchCreate):
-    if config.catalogue_search_enabled():
-        from . import catalogue_search
-        return catalogue_search.accept(db, user_id, payload)
-    from ..entitlements import lock_entitlement_owner
-    _require_enabled()
-    history_mode = config.paid_history_mode()
-    if history_mode == "indexed":
-        from . import delivery_history
-        # Replays retain their exact accepted result, independent of rollout.
-        with db.no_autoflush:
-            replay = db.query(models.EmployerSearch).filter_by(user_id=user_id, idempotency_key=payload.idempotency_key).first()
-        if replay is not None:
-            if replay.input_fingerprint != payload_fingerprint(_search_input(payload)):
-                raise HTTPException(409, "This request key was already used with different search settings")
-            return replay
-        if db.new or db.dirty or db.deleted:
-            raise ValueError("History preparation requires a clean request transaction")
-        delivery_history.advance_owner(db, user_id)
-        db.commit()  # Bounded legacy parsing holds no financial owner lock.
-    # Serialize balance and per-user delivery/idempotency checks in one short transaction.
-    lock_entitlement_owner(db, user_id)
+BOUNDED_SEARCH_PROTOCOL = "funded-bounded-search-v1"
+_BOUNDED_LEASE = timedelta(minutes=5)
+_BOUNDED_ABANDONMENT = timedelta(minutes=30)
+_BOUNDED_QUERY_MAX_BYTES = 32_768
+_BOUNDED_SEARCH_FIELDS = ("id", "user_id", "resume_id", "idempotency_key", "input_fingerprint", "status",
+    "desired_count", "delivered_count", "reserved_credits", "charged_credits", "refunded_credits",
+    "created_at", "scope", "history_revision", "_legacy_query", "native_snapshot_id")
+_BOUNDED_POSTING_BODY = ("id", "source_id", "external_id", "requisition_id", "title", "employer", "location",
+    "description", "canonical_url", "apply_url", "publication_at", "first_seen_at", "last_checked_at",
+    "remote", "is_open", "content_sha256", "preference_metadata")
+_BOUNDED_SOURCE_BODY = ("id", "enabled", "platform", "region", "board_token", "employer_key", "submission_enabled",
+    "form_parity_verified", "submission_grant", "receipt_contract", "credential_env")
+_BOUNDED_POSTING_SCALARS = tuple(name for name in _BOUNDED_POSTING_BODY if name not in
+    {"description", "preference_metadata"})
+_BOUNDED_SOURCE_SCALARS = tuple(name for name in _BOUNDED_SOURCE_BODY if name != "receipt_contract")
+
+
+def _bounded_row(db, user_id, search_id, *, lock=False):
+    query = db.query(models.EmployerSearch).options(load_only(*(getattr(models.EmployerSearch, name)
+        for name in _BOUNDED_SEARCH_FIELDS))).filter_by(id=search_id, user_id=user_id).populate_existing()
+    return (query.with_for_update(nowait=True) if lock else query).first()
+
+
+def _bounded_resume_revision(db, user_id, resume_id, *, fence=False):
+    query = db.query(core.Resume.id).filter_by(id=resume_id, user_id=user_id)
+    if fence:
+        query = query.with_for_update(read=True, nowait=True)
+    if query.first() is None:
+        raise HTTPException(404, "Not found")
+    if db.get_bind().dialect.name == "postgresql":
+        from sqlalchemy.dialects.postgresql import insert
+    else:
+        from sqlalchemy.dialects.sqlite import insert
+    binding = models.EmployerCatalogueResumeBinding
+    db.execute(insert(binding).values(resume_id=resume_id, revision=1).on_conflict_do_nothing(index_elements=[binding.resume_id]))
+    return db.query(binding.revision).filter_by(resume_id=resume_id).scalar()
+
+
+def _bounded_reservation(db, row, *, lock=False):
+    query = db.query(models.ServiceCreditReservation).filter_by(user_id=row.user_id, source_id=row.id,
+        operation="job_search").populate_existing()
+    reservation = (query.with_for_update(nowait=True) if lock else query).first()
+    authority = (reservation.cost_policy_snapshot or {}) if reservation is not None else {}
+    quote = row.scope.get("price_quote", {})
+    if (reservation is None or reservation.state != "reserved"
+            or reservation.requested_count != row.desired_count
+            or reservation.unit_price != quote.get("unit_price")
+            or reservation.pricing_version != quote.get("pricing_version")
+            or reservation.reserved_amount != row.desired_count * reservation.unit_price
+            or reservation.reserved_amount != quote.get("maximum_credits")
+            or reservation.committed_amount != 0 or reservation.released_amount != 0
+            or authority.get("history_search_fingerprint") != row.input_fingerprint
+            or authority.get("history_desired_count") != row.desired_count):
+        raise HTTPException(409, {"code": "search_reservation_requires_review",
+            "message": "This search has no unchanged funded reservation. Start a new search after review."})
+    return reservation
+
+
+def _admit_bounded_search(db, user_id, payload):
+    from ...billing.cost_policy import CostPolicyUnavailable
+    from ..dispatch.service import enqueue
+    from . import catalogue_search, delivery_history
     search_input = _search_input(payload)
     fingerprint = payload_fingerprint(search_input)
-    existing = db.query(models.EmployerSearch).filter_by(user_id=user_id, idempotency_key=payload.idempotency_key).first()
-    if existing:
-        if existing.input_fingerprint != fingerprint:
-            raise HTTPException(409, "This request key was already used with different search settings")
-        return existing
-    from ...billing.cost_policy import CostPolicyUnavailable
+    canonical_query = json.dumps(search_input, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    if len(canonical_query) > _BOUNDED_QUERY_MAX_BYTES:
+        raise HTTPException(422, {"code": "search_query_too_large",
+            "message": "These search choices exceed the supported request size. Reduce the employer exclusions."})
     search_id = "search_" + payload_fingerprint({"owner": user_id, "key": payload.idempotency_key})[:48]
-    preparation = db.query(models.ServiceCreditReservation).filter_by(user_id=user_id, source_id=search_id,
-        operation="job_search").first()
-    if preparation is not None:
-        authority = preparation.cost_policy_snapshot or {}
-        if (history_mode != "indexed" or preparation.state != "reserved" or preparation.reserved_amount != 0
-                or authority.get("history_search_fingerprint") != fingerprint
-                or authority.get("history_desired_count") != payload.desired_count
-                or not authority.get("search_preparation")):
-            raise HTTPException(409, "This search preparation is already in progress or needs review; use its saved result when available")
-        # Resumable history waits retain this server-owned accepted price/version.
-        prices = {"search_credits_per_job": preparation.unit_price,
-                  "pricing_version": preparation.pricing_version,
-                  "max_search_jobs": authority["history_accepted_max_jobs"]}
-    else:
-        try:
-            prices = config.prices()
-        except CostPolicyUnavailable as exc:
-            raise HTTPException(503, detail=str(exc)) from None
-    if payload.desired_count > int(prices["max_search_jobs"]):
-        raise HTTPException(422, "Requested job count exceeds the current service limit")
-    resume = _owned(db, core.Resume, payload.resume_id, user_id)
-    if preparation is None:
-        preparation = credits.reserve(db, user_id=user_id, operation="job_search", source_id=search_id,
-                                      unit_price=int(prices["search_credits_per_job"]), count=0,
-                                      pricing_version=str(prices["pricing_version"]), record_event=False)
-        if history_mode == "indexed":
-            preparation.cost_policy_snapshot = dict(preparation.cost_policy_snapshot) | {
-                "history_search_fingerprint": fingerprint, "history_desired_count": payload.desired_count,
-                "history_accepted_max_jobs": int(prices["max_search_jobs"])}
-    preparation.cost_policy_snapshot = dict(preparation.cost_policy_snapshot) | {"search_preparation": True}
-    db.commit()
-    # Keep the original owner-serialized delivery/idempotency semantics.
-    lock_entitlement_owner(db, user_id)
-    existing = db.query(models.EmployerSearch).filter_by(user_id=user_id, idempotency_key=payload.idempotency_key).first()
+    # Shared resume/FK prerequisites precede the NOWAIT financial owner fence.
+    revision = _bounded_resume_revision(db, user_id, payload.resume_id, fence=True)
+    catalogue_search.lock_owner_nowait(db, user_id)
+    existing = _bounded_row(db, user_id, search_id, lock=True)
     if existing is not None:
         if existing.input_fingerprint != fingerprint:
             raise HTTPException(409, "This request key was already used with different search settings")
+        db.commit()
         return existing
-    resume = _owned(db, core.Resume, payload.resume_id, user_id)
+    old = db.query(models.ServiceCreditReservation).filter_by(user_id=user_id, source_id=search_id,
+        operation="job_search").populate_existing().with_for_update(nowait=True).first()
+    if old is not None:
+        # Legacy zero-preparation markers are not authority to perform paid work.
+        if old.state == "reserved" and old.reserved_amount == 0:
+            credits.settle(db, old, completed_count=0, reason="Legacy unfunded search requires renewed admission")
+            db.commit()
+        raise HTTPException(409, {"code": "search_reservation_requires_review",
+            "message": "This earlier search preparation needs review. Start a new search request."})
+    try:
+        prices = config.prices()
+    except CostPolicyUnavailable as exc:
+        raise HTTPException(503, detail=str(exc)) from None
+    if payload.desired_count > int(prices["max_search_jobs"]):
+        raise HTTPException(422, "Requested job count exceeds the current service limit")
+    reservation = credits.reserve(db, user_id=user_id, operation="job_search", source_id=search_id,
+        unit_price=int(prices["search_credits_per_job"]), count=payload.desired_count,
+        pricing_version=str(prices["pricing_version"]))
+    reservation.cost_policy_snapshot = dict(reservation.cost_policy_snapshot or {}) | {
+        "history_search_fingerprint": fingerprint, "history_desired_count": payload.desired_count,
+        "history_accepted_max_jobs": int(prices["max_search_jobs"])}
+    quote = {"unit_price": reservation.unit_price, "pricing_version": reservation.pricing_version,
+        "requested_count": payload.desired_count, "maximum_credits": reservation.reserved_amount,
+        "search_input_fingerprint": fingerprint}
+    row = models.EmployerSearch(id=search_id, user_id=user_id, resume_id=payload.resume_id,
+        idempotency_key=payload.idempotency_key, input_fingerprint=fingerprint, query=search_input, items=[],
+        status="preparing", desired_count=payload.desired_count, delivered_count=0,
+        reserved_credits=reservation.reserved_amount, charged_credits=0, refunded_credits=0,
+        scope={"bounded_protocol": BOUNDED_SEARCH_PROTOCOL, "resume_source_revision": revision,
+            "paid_history_mode": config.paid_history_mode(), "price_quote": quote,
+            "max_source_age_hours": config.positive_int("EMPLOYER_MAX_SOURCE_AGE_HOURS", 24, 168),
+            "worldwide_recall_verified": False})
+    db.add(row)
+    delivery_history._progress(db, user_id)  # Existing scalar invalidation clock, even in legacy-reader mode.
+    enqueue(db, topic="employer.search", aggregate_id=search_id, payload={"search_id": search_id},
+        key="employer-search:" + search_id)
+    db.commit()  # Funds, immutable admission and recovery intent become durable together.
+    return row
+
+
+def create_search(db: Session, user_id: int, payload: schemas.SearchCreate):
+    _require_enabled()
+    search_id = "search_" + payload_fingerprint({"owner": user_id, "key": payload.idempotency_key})[:48]
+    existing = _bounded_row(db, user_id, search_id)
+    if existing is not None:
+        if existing.input_fingerprint != payload_fingerprint(_search_input(payload)):
+            raise HTTPException(409, "This request key was already used with different search settings")
+        if existing.status != "preparing":
+            return existing
+        if existing.scope.get("bounded_protocol") != BOUNDED_SEARCH_PROTOCOL:
+            raise HTTPException(409, "This unfinished search needs review")
+        db.commit()
+        return resume_bounded_search(db, user_id, search_id)
+    accepted = db.query(models.EmployerSearchPreparation).options(load_only(
+        models.EmployerSearchPreparation.id, models.EmployerSearchPreparation.user_id,
+        models.EmployerSearchPreparation.input_fingerprint, models.EmployerSearchPreparation.state)).filter_by(
+        id=search_id, user_id=user_id).first()
+    if accepted is not None:
+        if accepted.input_fingerprint != payload_fingerprint(_search_input(payload)):
+            raise HTTPException(409, "This request key was already used with different search settings")
+        return accepted
+    if config.catalogue_search_enabled():
+        from . import catalogue_search
+        return catalogue_search.accept(db, user_id, payload)
+    row = _admit_bounded_search(db, user_id, payload)
+    return resume_bounded_search(db, user_id, row.id) if row.status == "preparing" else row
+
+
+def _claim_bounded_search(db, user_id, identity):
+    from . import catalogue_search
+    catalogue_search.lock_owner_nowait(db, user_id)
+    row = _bounded_row(db, user_id, identity, lock=True)
+    if row is None:
+        raise HTTPException(404, "Search preparation not found")
+    if row.status != "preparing":
+        db.commit()
+        return row, None
+    if row.scope.get("bounded_protocol") != BOUNDED_SEARCH_PROTOCOL:
+        raise HTTPException(409, "This unfinished search needs review")
+    _bounded_reservation(db, row, lock=True)
+    now = utcnow()
+    lease_until = row.scope.get("lease_until")
+    if lease_until and _utc(datetime.fromisoformat(lease_until)) > now:
+        db.commit()
+        return row, None
+    token = public_id("bsearch")
+    row.scope = dict(row.scope) | {"lease_token": token, "lease_until": (now + _BOUNDED_LEASE).isoformat()}
+    db.commit()
+    return row, token
+
+
+def _prepare_bounded_search(db, row, payload):
+    from . import delivery_history
+    history_mode = row.scope["paid_history_mode"]
+    if history_mode == "indexed":
+        delivery_history.advance_owner(db, row.user_id)
+        db.commit()
+    resume_row = db.query(core.Resume.id, core.Resume.skills,
+        models.EmployerCatalogueResumeBinding.revision).join(models.EmployerCatalogueResumeBinding,
+        models.EmployerCatalogueResumeBinding.resume_id == core.Resume.id).filter(core.Resume.id == row.resume_id,
+        core.Resume.user_id == row.user_id).first()
+    if resume_row is None or resume_row[2] != row.scope["resume_source_revision"]:
+        raise HTTPException(409, {"code": "resume_changed", "message": "The resume changed during preparation. Start a new search."})
+    resume = SimpleNamespace(id=resume_row[0], skills=resume_row[1])
+    progress = db.query(models.EmployerPaidHistoryProgress.generation, models.EmployerPaidHistoryProgress.state).filter_by(user_id=row.user_id).one()
+    history_generation, progress_state = progress
+    user_id = row.user_id
+    stale_before = utcnow() - timedelta(hours=row.scope["max_source_age_hours"])
     stale_before = utcnow() - timedelta(hours=config.positive_int("EMPLOYER_MAX_SOURCE_AGE_HOURS", 24, 168))
     query = db.query(models.EmployerPosting, models.EmployerSource).join(models.EmployerSource, models.EmployerSource.id == models.EmployerPosting.source_id).filter(
         models.EmployerPosting.is_open.is_(True), models.EmployerSource.enabled.is_(True),
@@ -267,7 +384,19 @@ def create_search(db: Session, user_id: int, payload: schemas.SearchCreate):
         query = query.filter(models.EmployerPosting.publication_at >= utcnow() - timedelta(days=payload.published_within_days))
     if payload.excluded_employers:
         query = query.filter(func.lower(models.EmployerPosting.employer).notin_([name.lower() for name in payload.excluded_employers]))
-    candidates = query.order_by(models.EmployerPosting.last_checked_at.desc(), models.EmployerPosting.id).limit(1001).all()
+    source_revision = select(models.EmployerCatalogueSourceRevision.valid_from).where(
+        models.EmployerCatalogueSourceRevision.source_id == models.EmployerSource.id,
+        models.EmployerCatalogueSourceRevision.valid_to.is_(None)).scalar_subquery()
+    posting_revision = select(models.EmployerCataloguePostingRevision.valid_from).where(
+        models.EmployerCataloguePostingRevision.posting_id == models.EmployerPosting.id,
+        models.EmployerCataloguePostingRevision.valid_to.is_(None)).scalar_subquery()
+    rows = query.add_columns(source_revision, posting_revision).order_by(models.EmployerPosting.last_checked_at.desc(), models.EmployerPosting.id).limit(1001).all()
+    # Copy complete public records once outside financial locks. ORM entities
+    # must not become dirty just because canonical identity is calculated.
+    candidates = [(SimpleNamespace(**{name: getattr(posting, name) for name in _BOUNDED_POSTING_BODY}),
+                   SimpleNamespace(**{name: getattr(source, name) for name in _BOUNDED_SOURCE_BODY}))
+                  for posting, source, _, _ in rows]
+    stamps = {posting.id: (source_mark, posting_mark) for posting, _, source_mark, posting_mark in rows}
     truncated = len(candidates) > 1000
     evaluations = {posting.id: evaluate(payload.preferences, posting.preference_metadata, provider=source.platform) for posting, source in candidates[:1000]}
     ranked = [(posting, source, basic_match(resume.skills or [], posting.description, posting.title)) for posting, source in candidates[:1000] if evaluations[posting.id]["eligible"]]
@@ -315,53 +444,237 @@ def create_search(db: Session, user_id: int, payload: schemas.SearchCreate):
         raise HTTPException(409, {"code": "paid_delivery_history_preparing" if pending else "legacy_delivery_identity_unavailable",
             "message": "Saved delivery history is being prepared. Retry this request to resume it." if pending
                        else "Saved delivery history needs review before charging for more openings."})
-    reservation = credits.reserve(db, user_id=user_id, operation="job_search", source_id=search_id,
-                                  unit_price=int(prices["search_credits_per_job"]), count=payload.desired_count if new_count else 0,
-                                  pricing_version=str(prices["pricing_version"]), preparation=preparation)
-    items, deliveries = [], []
-    for posting, source, fit in selected:
-        amount = 0 if posting.opening_key in previous or posting.id in legacy else reservation.unit_price
-        items.append({"posting": _json_posting(posting, source), "fit": fit, "charged_credits": amount,
-                      "preference_evaluation": evaluations[posting.id]})
-        if amount:
-            deliveries.append(models.EmployerJobDelivery(id=public_id("delivery"), user_id=user_id, posting_id=posting.id,
-                opening_key=posting.opening_key, search_id=search_id, charged_credits=amount))
-    search = models.EmployerSearch(
-        id=search_id, user_id=user_id, resume_id=resume.id, idempotency_key=payload.idempotency_key,
-        input_fingerprint=fingerprint, query=search_input,
-        desired_count=payload.desired_count, delivered_count=len(items), items=items,
-        reserved_credits=reservation.reserved_amount, charged_credits=new_count * reservation.unit_price,
-        refunded_credits=reservation.reserved_amount - new_count * reservation.unit_price,
-        scope={"kind": "verified_employer_index", "candidate_limit": 1000, "candidate_limit_reached": truncated,
-               "max_source_age_hours": config.positive_int("EMPLOYER_MAX_SOURCE_AGE_HOURS", 24, 168),
-               "worldwide_recall_verified": False, "unknown_publication_dates_excluded": bool(payload.published_within_days),
-               "role_alias_policy": role_aliases.VERSION, "role_variants": role_variants,
-               "preference_policy": POLICY_VERSION, "unknown_preference_metadata": "include",
-               "candidates_before_preferences": len(evaluations),
-               "known_preference_conflicts": sum(not value["eligible"] for value in evaluations.values()),
-               "candidates_with_unknown_preferences": sum("unknown" in value["states"].values() for value in evaluations.values()),
-               "search_input_fingerprint": fingerprint,
-               "price_quote": {"unit_price": reservation.unit_price, "pricing_version": reservation.pricing_version,
-                               "requested_count": payload.desired_count, "maximum_credits": payload.desired_count * reservation.unit_price,
-                               "search_input_fingerprint": fingerprint}},
-    )
-    db.add(search)
-    db.flush([search])
-    db.add_all(deliveries)
-    if history_mode != "off":
-        from . import delivery_history
-        db.flush(deliveries)
-        delivery_history.write_completed(db, search, deliveries, selected,
-            restore_ready=history_mode == "indexed" and history_state == "ready")
-    credits.settle(db, reservation, completed_count=new_count, reason="Unique useful employer jobs delivered")
+    items = [{"posting": _json_posting(posting, source), "fit": fit,
+        "charged_credits": 0 if posting.opening_key in previous or posting.id in legacy else row.scope["price_quote"]["unit_price"],
+        "preference_evaluation": evaluations[posting.id]} for posting, source, fit in selected]
+    body_fingerprint = payload_fingerprint(items)
+    scope_facts = {"kind": "verified_employer_index", "candidate_limit": 1000,
+        "candidate_limit_reached": truncated, "unknown_publication_dates_excluded": bool(payload.published_within_days),
+        "role_alias_policy": role_aliases.VERSION, "role_variants": role_variants,
+        "preference_policy": POLICY_VERSION, "unknown_preference_metadata": "include",
+        "candidates_before_preferences": len(evaluations),
+        "known_preference_conflicts": sum(not value["eligible"] for value in evaluations.values()),
+        "candidates_with_unknown_preferences": sum("unknown" in value["states"].values() for value in evaluations.values()),
+        "search_input_fingerprint": row.input_fingerprint}
+    return SimpleNamespace(items=items, body_fingerprint=body_fingerprint, scope_facts=scope_facts,
+        selected=selected, stamps=stamps, evaluations=evaluations,
+        role_variants=role_variants, truncated=truncated, history_generation=history_generation,
+        progress_state=progress_state, history_state=history_state if history_mode == "indexed" else None,
+        new_count=new_count, history_mode=history_mode)
+
+
+def _stage_bounded_search(db, user_id, identity, token, prepared):
+    # JSON serialization and history-source parsing are outside the User money
+    # lock. The scalar history clock excludes overlapping evidence edits here.
+    progress = db.query(models.EmployerPaidHistoryProgress).filter_by(user_id=user_id).populate_existing().with_for_update(nowait=True).one()
+    if progress.generation != prepared.history_generation:
+        raise HTTPException(409, {"code": "paid_history_changed", "message": "Paid job history changed during preparation. Start a new search."})
+    row = _bounded_row(db, user_id, identity, lock=True)
+    if row is None or row.status != "preparing" or row.scope.get("lease_token") != token:
+        db.rollback()
+        return None
+    row.items = prepared.items
+    row.scope = dict(row.scope) | {"staged_body_fingerprint": prepared.body_fingerprint}
+    db.flush([row])
+    db.refresh(progress, attribute_names=["generation", "state"])
+    # Only this unfinished, undelivered row changed while the clock was fenced.
+    progress.state = prepared.progress_state
+    prepared.history_generation = progress.generation
+    prepared.search_revision = db.query(models.EmployerSearch.history_revision).filter_by(id=identity, user_id=user_id).scalar()
     db.commit()
-    return search
+    return identity
+
+
+def _fence_bounded_results(db, row, prepared):
+    source_ids = sorted({source.id for _, source, _ in prepared.selected})
+    posting_ids = sorted(posting.id for posting, _, _ in prepared.selected)
+    source_mark = select(models.EmployerCatalogueSourceRevision.valid_from).where(
+        models.EmployerCatalogueSourceRevision.source_id == models.EmployerSource.id,
+        models.EmployerCatalogueSourceRevision.valid_to.is_(None)).scalar_subquery()
+    posting_mark = select(models.EmployerCataloguePostingRevision.valid_from).where(
+        models.EmployerCataloguePostingRevision.posting_id == models.EmployerPosting.id,
+        models.EmployerCataloguePostingRevision.valid_to.is_(None)).scalar_subquery()
+    sources = {record[0]: record for record in db.query(*(getattr(models.EmployerSource, name) for name in
+        _BOUNDED_SOURCE_SCALARS), source_mark).filter(models.EmployerSource.id.in_(source_ids)).order_by(models.EmployerSource.id)
+        .with_for_update(read=True, nowait=True, of=models.EmployerSource).all()}
+    postings = {record[0]: record for record in db.query(*(getattr(models.EmployerPosting, name) for name in
+        _BOUNDED_POSTING_SCALARS), posting_mark).filter(models.EmployerPosting.id.in_(posting_ids)).order_by(models.EmployerPosting.id)
+        .with_for_update(read=True, nowait=True, of=models.EmployerPosting).all()}
+    cutoff = utcnow() - timedelta(hours=row.scope["max_source_age_hours"])
+    for posting, source, _ in prepared.selected:
+        current_source, current_posting = sources.get(source.id), postings.get(posting.id)
+        if (current_source is None or current_posting is None
+                or tuple(current_source[:-1]) != tuple(getattr(source, name) for name in _BOUNDED_SOURCE_SCALARS)
+                or tuple(current_posting[:-1]) != tuple(getattr(posting, name) for name in _BOUNDED_POSTING_SCALARS)
+                or (current_source[-1], current_posting[-1]) != prepared.stamps[posting.id]
+                or not source.enabled or not posting.is_open or _utc(posting.last_checked_at) < cutoff):
+            raise HTTPException(409, {"code": "job_changed", "message": "A selected employer or job changed during preparation. Start a new search."})
+    if _bounded_resume_revision(db, row.user_id, row.resume_id, fence=True) != row.scope["resume_source_revision"]:
+        raise HTTPException(409, {"code": "resume_changed", "message": "The resume changed during preparation. Start a new search."})
+
+
+def _finish_bounded_search(db, user_id, identity, token, prepared):
+    from . import catalogue_search, delivery_history
+    row = _bounded_row(db, user_id, identity, lock=True)
+    if row is None or row.status != "preparing" or row.scope.get("lease_token") != token:
+        db.rollback()
+        return _bounded_row(db, user_id, identity)
+    # Source/resume prerequisites, then scalar progress, then NOWAIT owner. No
+    # public body is projected or ranked after the financial owner fence.
+    if _utc(row.created_at) < utcnow() - _BOUNDED_ABANDONMENT:
+        raise HTTPException(409, {"code": "search_preparation_expired", "message": "This search preparation expired without completion."})
+    _fence_bounded_results(db, row, prepared)
+    progress = db.query(models.EmployerPaidHistoryProgress).filter_by(user_id=user_id).populate_existing().with_for_update(nowait=True).one()
+    catalogue_search.lock_owner_nowait(db, user_id)
+    if (progress.generation != prepared.history_generation or row.history_revision != prepared.search_revision
+            or row.scope.get("staged_body_fingerprint") != prepared.body_fingerprint):
+        raise HTTPException(409, {"code": "paid_history_changed", "message": "Paid job history changed during preparation. Start a new search."})
+    reservation = _bounded_reservation(db, row, lock=True)
+    if prepared.history_mode == "indexed":
+        previous, physical, state = delivery_history.membership(db, user_id,
+            [posting.opening_key for posting, _, _ in prepared.selected], [posting.id for posting, _, _ in prepared.selected])
+    else:
+        previous = {record[0] for record in db.query(models.EmployerJobDelivery.opening_key).filter_by(user_id=user_id).filter(
+            models.EmployerJobDelivery.opening_key.in_([posting.opening_key for posting, _, _ in prepared.selected])).all()}
+        physical = {record[0] for record in db.query(models.EmployerJobDelivery.posting_id).filter_by(user_id=user_id).filter(
+            models.EmployerJobDelivery.posting_id.in_([posting.id for posting, _, _ in prepared.selected])).all()}
+        state = None
+    # The history clock covers native insertion/source changes. This bounded
+    # reread also protects independent-session physical/canonical paid replays.
+    for item in prepared.items:
+        already_paid = item["posting"]["opening_key"] in previous or item["posting"]["id"] in physical
+        if item["charged_credits"] > 0 and already_paid:
+            raise HTTPException(409, {"code": "paid_history_changed", "message": "A job was already delivered during preparation. Start a new search."})
+    if prepared.new_count and prepared.history_mode == "indexed" and state != "ready":
+        raise HTTPException(409, {"code": "paid_history_changed", "message": "Paid job history needs review before charging."})
+    deliveries = [models.EmployerJobDelivery(id=public_id("delivery"), user_id=user_id, posting_id=item["posting"]["id"],
+        opening_key=item["posting"]["opening_key"], search_id=identity, charged_credits=item["charged_credits"])
+        for item in prepared.items if item["charged_credits"]]
+    row.status, row.delivered_count = "completed", len(prepared.items)
+    row.charged_credits = prepared.new_count * reservation.unit_price
+    row.refunded_credits = reservation.reserved_amount - row.charged_credits
+    row.scope = dict(row.scope) | prepared.scope_facts | {"lease_token": None, "lease_until": None}
+    db.add_all(deliveries)
+    db.flush(deliveries)
+    if prepared.history_mode != "off":
+        # Use the exact already-staged body as proof; never decode it under the
+        # owner lock. The scalar revision and private digest bind that body.
+        proof_search = SimpleNamespace(id=row.id, user_id=user_id, history_revision=row.history_revision, items=prepared.items)
+        delivery_history.write_completed(db, proof_search, deliveries, prepared.selected,
+            restore_ready=prepared.history_mode == "indexed" and state == "ready")
+    credits.settle(db, reservation, completed_count=prepared.new_count, reason="Unique useful employer jobs delivered")
+    db.commit()
+    return row
+
+
+def cancel_bounded_search(db, user_id, identity, *, reason="cancelled_by_owner"):
+    from ..dispatch.models import DispatchOutbox
+    from . import catalogue_search
+    owner = db.query(models.EmployerSearch.user_id).filter_by(id=identity).scalar()
+    if owner is None or (user_id is not None and owner != user_id):
+        raise HTTPException(404, "Search preparation not found")
+    db.commit()
+    catalogue_search.lock_owner_nowait(db, owner)
+    row = _bounded_row(db, owner, identity, lock=True)
+    if row is None or row.scope.get("bounded_protocol") != BOUNDED_SEARCH_PROTOCOL:
+        raise HTTPException(404, "Search preparation not found")
+    if row.status == "preparing":
+        reservation = _bounded_reservation(db, row, lock=True)
+        credits.settle(db, reservation, completed_count=0, reason="Bounded search ended before useful delivery")
+        row.status, row.charged_credits, row.delivered_count = "cancelled" if reason == "cancelled_by_owner" else "failed", 0, 0
+        row.refunded_credits = reservation.released_amount
+        row.scope = dict(row.scope) | {"failure_reason": reason, "lease_token": None, "lease_until": None}
+    db.query(DispatchOutbox).filter_by(topic="employer.search", aggregate_id=identity).filter(
+        ~DispatchOutbox.status.in_(("completed", "failed"))).update({"status": "completed", "completed_at": utcnow(),
+            "lease_token": None, "lease_until": None, "last_error": "bounded_search_ended"}, synchronize_session=False)
+    db.commit()
+    return row
+
+
+def bounded_search_status(db, user_id, identity):
+    row = _bounded_row(db, user_id, identity)
+    if row is None or row.scope.get("bounded_protocol") != BOUNDED_SEARCH_PROTOCOL:
+        raise HTTPException(404, "Search preparation not found")
+    hold = db.query(models.ServiceCreditReservation.state, models.ServiceCreditReservation.reserved_amount,
+        models.ServiceCreditReservation.released_amount).filter_by(user_id=user_id, source_id=identity, operation="job_search").first()
+    return {"id": row.id, "kind": "search_preparation", "status": "pending" if row.status == "preparing" else row.status,
+        "as_of": row.created_at, "desired_count": row.desired_count, "accepted_quote": row.scope["price_quote"],
+        "candidates_examined": row.scope.get("candidates_before_preferences", 0), "charged_credits": row.charged_credits,
+        "completed_search_id": row.id if row.status == "completed" else None, "failure_reason": row.scope.get("failure_reason"),
+        "reserved_credits": hold[1] if hold is not None and hold[0] == "reserved" else 0,
+        "refunded_credits": hold[2] if hold is not None else row.refunded_credits}
+
+
+def bounded_search_maintenance(db):
+    row = db.query(models.EmployerSearch.id, models.EmployerSearch.user_id).filter(
+        models.EmployerSearch.status == "preparing", models.EmployerSearch.created_at < utcnow() - _BOUNDED_ABANDONMENT,
+        models.EmployerSearch.scope["bounded_protocol"].as_string() == BOUNDED_SEARCH_PROTOCOL).order_by(
+        models.EmployerSearch.created_at, models.EmployerSearch.id).limit(1).first()
+    db.commit()
+    if row is not None:
+        cancel_bounded_search(db, row.user_id, row.id, reason="abandoned_without_completion")
+
+
+def search_preparation_status(db, user_id, identity):
+    bounded = db.query(models.EmployerSearch.id).filter_by(id=identity, user_id=user_id).filter(
+        models.EmployerSearch.scope["bounded_protocol"].as_string() == BOUNDED_SEARCH_PROTOCOL).first()
+    if bounded is not None:
+        return bounded_search_status(db, user_id, identity)
+    from . import catalogue_search
+    return catalogue_search.status(db, user_id, identity)
+
+
+def cancel_search_preparation(db, user_id, identity, *, reason="cancelled_by_owner"):
+    bounded = db.query(models.EmployerSearch.id).filter_by(id=identity, user_id=user_id).filter(
+        models.EmployerSearch.scope["bounded_protocol"].as_string() == BOUNDED_SEARCH_PROTOCOL).first()
+    if bounded is not None:
+        cancel_bounded_search(db, user_id, identity, reason=reason)
+        return bounded_search_status(db, user_id, identity)
+    from . import catalogue_search
+    return catalogue_search.cancel(db, user_id, identity, reason=reason)
+
+
+def resume_bounded_search(db, user_id, identity):
+    row, token = _claim_bounded_search(db, user_id, identity)
+    if token is None:
+        return row
+    try:
+        if not config.discovery_enabled():
+            return cancel_bounded_search(db, user_id, identity, reason="discovery_disabled_before_delivery")
+        if _utc(row.created_at) < utcnow() - _BOUNDED_ABANDONMENT:
+            return cancel_bounded_search(db, user_id, identity, reason="abandoned_without_completion")
+        payload = schemas.SearchCreate.model_validate(dict(row.query) | {"idempotency_key": row.idempotency_key})
+        if payload_fingerprint(_search_input(payload)) != row.input_fingerprint:
+            raise ValueError("Accepted bounded search query changed")
+        prepared = _prepare_bounded_search(db, row, payload)
+        if _stage_bounded_search(db, user_id, identity, token, prepared) is None:
+            return _bounded_row(db, user_id, identity)
+        return _finish_bounded_search(db, user_id, identity, token, prepared)
+    except HTTPException as exc:
+        db.rollback()
+        if isinstance(exc.detail, dict) and exc.detail.get("code") == "paid_delivery_history_preparing":
+            from . import catalogue_search
+            catalogue_search.lock_owner_nowait(db, user_id)
+            pending = _bounded_row(db, user_id, identity, lock=True)
+            if pending is not None and pending.status == "preparing" and pending.scope.get("lease_token") == token:
+                pending.scope = dict(pending.scope) | {"lease_token": None, "lease_until": None}
+            db.commit()
+            return pending
+        cancel_bounded_search(db, user_id, identity, reason=exc.detail.get("code", "preparation_failed")
+            if isinstance(exc.detail, dict) else "preparation_failed")
+        raise
+    except Exception:
+        db.rollback()
+        cancel_bounded_search(db, user_id, identity, reason="preparation_failed")
+        raise
 
 
 def search_response(row):
-    return {key: getattr(row, key) for key in (
-        "id", "status", "desired_count", "delivered_count", "reserved_credits", "charged_credits", "refunded_credits", "created_at", "query", "items", "scope",
+    result = {key: getattr(row, key) for key in (
+        "id", "status", "desired_count", "delivered_count", "reserved_credits", "charged_credits", "refunded_credits", "created_at", "query", "scope",
     )}
+    result["items"] = row.items if row.status == "completed" else []
+    return result
 
 
 def finish_catalogue_preparation(db, identity, token):

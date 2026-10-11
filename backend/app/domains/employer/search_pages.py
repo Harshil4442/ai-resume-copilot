@@ -268,6 +268,8 @@ def saved_results(db: Session, owner_id: int, identity: str, *, limit: int = 10,
             raise _unavailable() from None
     if native is None:
         raise _error(404, "saved_search_not_found", "Saved search not found.")
+    if native._mapping["status"] != "completed":
+        raise _error(409, "search_not_completed", "This search has no completed paid result yet. Check its preparation status.")
     if native._mapping["native_snapshot_id"] is not None:
         return _native_results(db, owner_id, identity, native, limit=limit, offset=offset,
                                expected_version=expected_version, has_cursor=cursor is not None)

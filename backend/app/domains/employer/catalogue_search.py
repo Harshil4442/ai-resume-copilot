@@ -1,4 +1,4 @@
-"""A pinned catalogue scan with durable canonical winners and zero-charge waits.
+"""A pinned catalogue scan with durable winners and up-front search credit holds.
 
 Raw bodies remain native immutable content. Work reads fixed character slices;
 PostgreSQL TOAST/hash/full-text execution itself is not a byte-budget guarantee.
@@ -201,15 +201,17 @@ def resume_step(db, plan_id, token):
     owned = db.query(service.core.Resume.id).filter_by(id=plan.resume_id, user_id=plan.user_id).with_for_update(read=True, nowait=True).one_or_none()
     revision = db.query(models.EmployerCatalogueResumeBinding.revision).filter_by(resume_id=plan.resume_id).scalar()
     if owned is None or revision != plan.resume_source_revision:
-        plan.state, plan.failure_reason = "failed", "resume_changed"
-        db.commit()
+        db.rollback()  # Never acquire owner money locks while holding a plan lock.
+        cancel(db, None, plan_id, reason="resume_changed")
         return False
     piece = db.query(func.substr(cast(service.core.Resume.skills, Text), plan.resume_offset + 1, SLICE_CHARS)).filter(service.core.Resume.id == plan.resume_id).scalar()
     piece = "null" if piece is None and plan.resume_offset == 0 else piece or ""
     final = len(piece) < SLICE_CHARS
     cp = advance_resume(copy.deepcopy(plan.resume_checkpoint) or resume_checkpoint(), piece, final=final)
     if cp["invalid"]:
-        plan.state, plan.failure_reason = "failed", "resume_skills_require_review"
+        db.rollback()
+        cancel(db, None, plan_id, reason="resume_skills_require_review")
+        return False
     elif final:
         plan.resume_skills, plan.resume_ready, plan.resume_checkpoint = cp["skills"], True, None
     else:
@@ -606,14 +608,19 @@ def classify_step(db, plan_id, token):
 
 def status(db, user_id, plan_id):
     plan = db.query(models.EmployerSearchPreparation).options(load_only(*(getattr(models.EmployerSearchPreparation, name) for name in (
-        "id", "user_id", "state", "as_of", "desired_count", "accepted_quote", "candidates_before_preferences", "failure_reason")))).filter_by(
+        "id", "user_id", "state", "as_of", "desired_count", "accepted_quote", "candidates_before_preferences", "failure_reason", "reservation_id")))).filter_by(
         id=plan_id, user_id=user_id).first()
     if plan is None:
         raise HTTPException(404, "Search preparation not found")
     charged = db.query(models.EmployerSearch.charged_credits).filter_by(id=plan.id, user_id=user_id).scalar() if plan.state == "completed" else 0
+    held = db.query(models.ServiceCreditReservation.state, models.ServiceCreditReservation.reserved_amount,
+        models.ServiceCreditReservation.released_amount).filter_by(id=plan.reservation_id, user_id=user_id,
+            operation="job_search", source_id=plan.id).one()
     return {"id": plan.id, "kind": "search_preparation", "status": plan.state, "as_of": plan.as_of,
             "desired_count": plan.desired_count, "accepted_quote": plan.accepted_quote,
             "candidates_examined": plan.candidates_before_preferences, "charged_credits": charged,
+            "reserved_credits": held.reserved_amount if held.state == "reserved" else 0,
+            "refunded_credits": held.released_amount,
             "completed_search_id": plan.id if plan.state == "completed" else None,
             "failure_reason": plan.failure_reason}
 
@@ -625,8 +632,24 @@ def lock_owner_nowait(db, user_id):
     return lock_entitlement_owner(db, user_id)
 
 
+def _bounded_worker_query(search_input):
+    """Build and bound request data before financial/catalogue locks."""
+    if any(len(name) > 200 for name in search_input.get("excluded_employers", [])):
+        raise HTTPException(422, "Excluded employer names must have at most 200 characters")
+    params = dict(search_input)
+    params["preferences"] = search_input.get("preferences")
+    params["excluded_employers"] = [raw.lower() for raw in search_input.get("excluded_employers", [])]
+    params["role_variants"] = role_aliases.variants(search_input["role"])
+    for value in (search_input, params):
+        encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
+        if len(encoded) > 32768:
+            raise HTTPException(422, "Search settings exceed the supported request size")
+    return params
+
+
 def accept(db, user_id, payload):
-    """Accept a fixed zero reservation, then atomically pin W with the clock."""
+    """Atomically hold the accepted maximum and pin W before preparation work."""
+    from ..dispatch.service import enqueue
     from . import credits, service
     service._require_enabled()
     if config.paid_history_mode() != "indexed":
@@ -639,6 +662,7 @@ def accept(db, user_id, payload):
         if existing.input_fingerprint != fingerprint:
             raise HTTPException(409, "This request key was already used with different search settings")
         return existing
+    params = _bounded_worker_query(search_input)
     lock_owner_nowait(db, user_id)
     existing = db.query(models.EmployerSearch).filter_by(user_id=user_id, idempotency_key=payload.idempotency_key).populate_existing().first()
     if existing is not None:
@@ -654,7 +678,7 @@ def accept(db, user_id, payload):
             raise HTTPException(409, "This request key was already used with different search settings")
         db.commit()
         if plan.state == "accepting":
-            _finish_acceptance(db, plan.id, user_id, search_input)
+            cancel(db, user_id, plan.id, reason="legacy_admission_requires_new_search")
         return plan
     reservation = db.query(models.ServiceCreditReservation).filter_by(user_id=user_id, source_id=search_id, operation="job_search").first()
     if reservation is None:
@@ -666,23 +690,25 @@ def accept(db, user_id, payload):
         if payload.desired_count > int(prices["max_search_jobs"]):
             raise HTTPException(422, "Requested job count exceeds the current service limit")
         reservation = credits.reserve(db, user_id=user_id, operation="job_search", source_id=search_id,
-            unit_price=int(prices["search_credits_per_job"]), count=0, pricing_version=str(prices["pricing_version"]), record_event=False)
+            unit_price=int(prices["search_credits_per_job"]), count=payload.desired_count, pricing_version=str(prices["pricing_version"]))
         reservation.cost_policy_snapshot = dict(reservation.cost_policy_snapshot or {}) | {
             "search_preparation": True, "history_search_fingerprint": fingerprint,
             "history_desired_count": payload.desired_count, "history_accepted_max_jobs": int(prices["max_search_jobs"])}
     else:
         authority = reservation.cost_policy_snapshot or {}
-        if (reservation.state != "reserved" or reservation.reserved_amount != 0 or not authority.get("search_preparation")
+        if (reservation.state != "reserved" or reservation.requested_count != payload.desired_count
+                or reservation.reserved_amount != payload.desired_count * reservation.unit_price
+                or reservation.committed_amount != 0 or reservation.released_amount != 0
+                or not authority.get("search_preparation")
                 or authority.get("history_search_fingerprint") != fingerprint or authority.get("history_desired_count") != payload.desired_count):
             raise HTTPException(409, "This search preparation is already in progress or needs review")
     owned_resume = db.query(service.core.Resume.id).filter_by(id=payload.resume_id, user_id=user_id).first()
     if owned_resume is None:
         raise HTTPException(404, "Not found")
     reservation_id, unit_price, pricing_version = reservation.id, reservation.unit_price, reservation.pricing_version
-    db.commit()
-    # A key-share preclaim avoids waiting on a User FK while holding catalogue W.
-    if db.get_bind().dialect.name == "postgresql":
-        db.execute(text("SELECT id FROM users WHERE id=:owner FOR KEY SHARE NOWAIT"), {"owner": user_id})
+    # The owner lock already covers FK key-share checks. The funded pending plan
+    # and outbox commit together, so interrupted HTTP responses remain recoverable.
+    # Resume/clock claims use NOWAIT; matching and resume body work run later.
     db.query(service.core.Resume.id).filter_by(id=payload.resume_id, user_id=user_id).with_for_update(read=True, nowait=True).one()
     _insert_absent(db, models.EmployerCatalogueResumeBinding, {"resume_id": payload.resume_id, "revision": 1}, ["resume_id"])
     resume_revision = db.query(models.EmployerCatalogueResumeBinding.revision).filter_by(resume_id=payload.resume_id).scalar()
@@ -694,7 +720,7 @@ def accept(db, user_id, payload):
     if plan is None:
         plan = models.EmployerSearchPreparation(id=search_id, user_id=user_id, resume_id=payload.resume_id,
             reservation_id=reservation_id, idempotency_key=payload.idempotency_key, input_fingerprint=fingerprint,
-            query={}, worker_query={}, projection_version=PROJECTION_VERSION, state="accepting",
+            query=search_input, worker_query=params, projection_version=PROJECTION_VERSION, state="pending",
             accepted_quote={"unit_price": unit_price, "pricing_version": pricing_version,
                 "requested_count": payload.desired_count, "maximum_credits": payload.desired_count * unit_price,
                 "search_input_fingerprint": fingerprint},
@@ -704,9 +730,37 @@ def accept(db, user_id, payload):
         db.add(plan)
     elif plan.user_id != user_id or plan.input_fingerprint != fingerprint:
         raise HTTPException(409, "This request key was already used with different search settings")
+    db.flush()
+    enqueue(db, topic="employer.search", aggregate_id=search_id,
+        payload={"search_id": search_id}, key=f"employer-search:{search_id}")
     db.commit()
-    _finish_acceptance(db, plan.id, user_id, search_input)
     return plan
+
+
+
+def _accepted_reservation(db, plan, *, allow_unfunded=False):
+    """Read the exact owner/quote hold; old zero preparations may only be ended.
+
+    Callers serialize money under the owner fence before settling. This read
+    also supports non-financial admission validation while holding a plan lock.
+    """
+    reservation = db.query(models.ServiceCreditReservation).filter_by(
+        id=plan.reservation_id, user_id=plan.user_id, operation="job_search", source_id=plan.id).populate_existing().one()
+    quote, authority = plan.accepted_quote, reservation.cost_policy_snapshot or {}
+    if (reservation.unit_price != quote["unit_price"] or reservation.pricing_version != quote["pricing_version"]
+            or quote["requested_count"] != plan.desired_count
+            or quote["maximum_credits"] != plan.desired_count * reservation.unit_price
+            or quote["search_input_fingerprint"] != plan.input_fingerprint
+            or not authority.get("search_preparation")
+            or authority.get("history_search_fingerprint") != plan.input_fingerprint
+            or authority.get("history_desired_count") != plan.desired_count):
+        raise ValueError("Accepted search quote changed")
+    funded = (reservation.requested_count == plan.desired_count
+        and reservation.reserved_amount == quote["maximum_credits"])
+    old_zero = reservation.requested_count == reservation.reserved_amount == 0
+    if not funded and not (allow_unfunded and old_zero):
+        raise ValueError("Search reservation does not fund the accepted maximum")
+    return reservation
 
 
 def _finish_acceptance(db, plan_id, user_id, search_input):
@@ -927,8 +981,8 @@ def finish(db, plan_id, token):
     resume = db.query(service.core.Resume.id).filter_by(id=plan.resume_id, user_id=owner).with_for_update(read=True, nowait=True).one_or_none()
     revision = db.query(models.EmployerCatalogueResumeBinding.revision).filter_by(resume_id=plan.resume_id).scalar()
     if resume is None or revision != plan.resume_source_revision or not plan.resume_ready:
-        plan.state, plan.failure_reason = "failed", "resume_changed"
-        db.commit()
+        db.rollback()
+        cancel(db, None, plan_id, reason="resume_changed")
         return "failed"
     if stale:
         for winner in stale:
@@ -954,23 +1008,18 @@ def finish(db, plan_id, token):
     new_count = sum(not item.seen for item in items)
     if new_count and history_state != "ready":
         if history_state == "unresolved":
-            plan.state, plan.failure_reason = "failed", "paid_history_requires_review"
-            db.commit()
+            db.rollback()
+            cancel(db, None, plan_id, reason="paid_history_requires_review")
             return "failed"
         plan.state, plan.classification_cursor = "classifying", None
         db.commit()
         return "pending"
-    preparation = db.query(models.ServiceCreditReservation).filter_by(id=plan.reservation_id, user_id=owner).populate_existing().one()
+    reservation = _accepted_reservation(db, plan)
     quote = plan.accepted_quote
-    if (preparation.unit_price != quote["unit_price"] or preparation.pricing_version != quote["pricing_version"]
-            or preparation.state != "reserved" or preparation.reserved_amount != 0
-            or (preparation.cost_policy_snapshot or {}).get("history_search_fingerprint") != plan.input_fingerprint):
-        raise ValueError("Accepted search quote changed")
+    if (reservation.state != "reserved" or reservation.committed_amount != 0 or reservation.released_amount != 0):
+        raise ValueError("Search hold is not pending settlement")
     scope_inputs = db.query(models.EmployerSearchPreparation.worker_query["role_variants"],
         models.EmployerSearchPreparation.worker_query["published_within_days"]).filter_by(id=plan.id).one()
-    reservation = credits.reserve(db, user_id=owner, operation="job_search", source_id=plan.id,
-        unit_price=quote["unit_price"], count=plan.desired_count if new_count else 0,
-        pricing_version=quote["pricing_version"], preparation=preparation)
     search = models.EmployerSearch(id=plan.id, user_id=owner, resume_id=plan.resume_id,
         idempotency_key=plan.idempotency_key, input_fingerprint=plan.input_fingerprint, query={}, items=[],
         desired_count=plan.desired_count, delivered_count=len(items), status="completed",
@@ -1003,7 +1052,7 @@ def finish(db, plan_id, token):
 
 
 def cancel(db, user_id, plan_id, *, reason="cancelled_by_owner"):
-    """Explicit terminal policy; an unfinished plan has only a zero reserve."""
+    """Release an unfinished owner-fenced hold once; retain expense liabilities."""
     from ..dispatch.models import DispatchOutbox
     from . import credits
     owner = db.query(models.EmployerSearchPreparation.user_id).filter_by(id=plan_id).scalar()
@@ -1012,20 +1061,23 @@ def cancel(db, user_id, plan_id, *, reason="cancelled_by_owner"):
     db.commit()
     lock_owner_nowait(db, owner)
     plan = db.query(models.EmployerSearchPreparation).options(load_only(*(getattr(models.EmployerSearchPreparation, name) for name in (
-        "id", "user_id", "state", "reservation_id", "failure_reason", "lease_token", "lease_until", "updated_at")))).filter_by(
+        "id", "user_id", "state", "reservation_id", "failure_reason", "lease_token", "lease_until", "updated_at",
+        "accepted_quote", "desired_count", "input_fingerprint")))).filter_by(
         id=plan_id, user_id=owner).populate_existing().with_for_update(nowait=True).one()
     if plan.state == "completed":
         db.commit()
         return status(db, owner, plan.id)
-    reservation = db.query(models.ServiceCreditReservation).filter_by(id=plan.reservation_id, user_id=owner).populate_existing().one()
-    if reservation.reserved_amount != 0 or reservation.committed_amount != 0:
-        raise ValueError("Incomplete catalogue plan has a financial effect")
+    reservation = _accepted_reservation(db, plan, allow_unfunded=True)
+    if (reservation.committed_amount != 0 or reservation.state not in {"reserved", "settled"}
+            or (reservation.state == "reserved" and reservation.released_amount != 0)
+            or (reservation.state == "settled" and reservation.released_amount != reservation.reserved_amount)):
+        raise ValueError("Incomplete catalogue hold needs financial review")
     if reservation.state == "reserved":
         credits.settle(db, reservation, completed_count=0, reason="Search preparation ended before delivery")
     if plan.state not in {"failed", "cancelled"}:
         plan.state = "cancelled" if reason == "cancelled_by_owner" else "failed"
-        plan.failure_reason, plan.lease_token, plan.lease_until = reason, None, None
-        plan.updated_at = utcnow()
+        plan.failure_reason = reason
+    plan.lease_token, plan.lease_until, plan.updated_at = None, None, utcnow()
     db.query(DispatchOutbox).filter_by(topic="employer.search", aggregate_id=plan_id).filter(
         ~DispatchOutbox.status.in_(("completed", "failed"))).update({"status": "completed", "completed_at": utcnow(),
             "lease_token": None, "lease_until": None, "last_error": "search_preparation_ended"}, synchronize_session=False)
@@ -1053,6 +1105,11 @@ def erase_owner_state(db, owner_id, *, resume_id=None):
         raise ValueError("Erase completed searches/deliveries before catalogue preparation state")
     if plan.state not in {"failed", "cancelled", "completed"}:
         raise ValueError("Cancel active preparation before lifecycle erasure")
+    reservation_state = db.query(models.ServiceCreditReservation.state).join(
+        models.EmployerSearchPreparation, models.EmployerSearchPreparation.reservation_id == models.ServiceCreditReservation.id).filter(
+            models.EmployerSearchPreparation.id == plan.id, models.ServiceCreditReservation.user_id == owner_id).scalar()
+    if reservation_state != "settled":
+        raise ValueError("Settle the search hold before lifecycle erasure")
     keys = [row[0] for row in db.query(models.EmployerCatalogueWinner.opening_key).filter_by(
         preparation_id=plan.id).order_by(models.EmployerCatalogueWinner.opening_key).limit(CHUNK_ROWS).all()]
     if keys:
@@ -1092,10 +1149,10 @@ def maintenance_step(db):
     """Existing refresh workers perform one bounded retention/abandonment turn."""
     statement_budget(db)
     plan = models.EmployerSearchPreparation
-    # Progress updates refresh updated_at. Catalogue churn and total plan age
-    # never expire an actively advancing plan; only 30 days of inactivity do.
+    # Progress updates refresh updated_at. Refund abandoned holds after thirty
+    # minutes without progress; an old unpublished accepting row ends immediately.
     abandoned = db.query(plan.id, plan.user_id).filter(plan.state.in_(("accepting", *ACTIVE_STATES)),
-        plan.updated_at < utcnow() - timedelta(days=30),
+        or_(plan.state == "accepting", plan.updated_at < utcnow() - timedelta(minutes=30)),
         or_(plan.lease_until.is_(None), plan.lease_until < utcnow())).order_by(plan.updated_at, plan.id).limit(1).first()
     db.commit()
     if abandoned:
@@ -1149,7 +1206,8 @@ def execute_plan(db, plan_id):
         if db.get_bind().dialect.name == "postgresql":
             db.execute(text("SELECT id FROM users WHERE id=:owner FOR UPDATE NOWAIT"), {"owner": owner})
         plan = db.query(models.EmployerSearchPreparation).options(load_only(*(getattr(models.EmployerSearchPreparation, name) for name in (
-            "id", "user_id", "state", "lease_token", "lease_until", "work_generation", "updated_at", "projection_version")))).filter_by(
+            "id", "user_id", "state", "lease_token", "lease_until", "work_generation", "updated_at", "projection_version",
+            "reservation_id", "accepted_quote", "desired_count", "input_fingerprint")))).filter_by(
             id=plan_id).populate_existing().with_for_update(nowait=True).one_or_none()
         if plan is None:
             db.rollback()
@@ -1162,6 +1220,13 @@ def execute_plan(db, plan_id):
             db.rollback()
             cancel(db, None, plan_id, reason="projection_version_unavailable")
             return "failed"
+        reservation = _accepted_reservation(db, plan, allow_unfunded=True)
+        if reservation.reserved_amount == 0:
+            db.rollback()
+            cancel(db, None, plan_id, reason="search_reservation_requires_review")
+            return "failed"
+        if reservation.state != "reserved" or reservation.committed_amount != 0 or reservation.released_amount != 0:
+            raise ValueError("Search preparation has no pending hold")
         now = utcnow()
         if plan.lease_until is not None and _utc(plan.lease_until) > now:
             db.rollback()
@@ -1195,10 +1260,16 @@ def execute_plan(db, plan_id):
                 continue
             plan = db.query(models.EmployerSearchPreparation).filter_by(id=plan_id, lease_token=token).populate_existing().first()
             if plan is None:
+                current = db.query(models.EmployerSearchPreparation.state).filter_by(id=plan_id).scalar()
+                db.commit()
+                result = current if current in {"completed", "failed", "cancelled"} else "pending"
                 break
             state = plan.state
             resume_ready = plan.resume_ready
             db.commit()
+            if state not in ACTIVE_STATES:
+                result = state
+                break
             if not resume_ready:
                 resume_step(db, plan_id, token)
             elif state in ("pending", "scanning"):

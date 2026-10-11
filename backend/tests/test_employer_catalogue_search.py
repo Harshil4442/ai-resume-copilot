@@ -209,7 +209,7 @@ def test_final_settlement_dml_deadline_rolls_back_balance_ledger_search_and_deli
     assert not db.query(models.EmployerJobDelivery).filter_by(search_id=identity).first()
     assert not db.query(models.EmployerPaidDeliveryHistory).filter_by(search_id=identity).first()
     reservation = db.get(models.ServiceCreditReservation, plan.reservation_id)
-    assert (reservation.reserved_amount, reservation.committed_amount, reservation.released_amount, reservation.state) == (0, 0, 0, "reserved")
+    assert (reservation.reserved_amount, reservation.committed_amount, reservation.released_amount, reservation.state) == (2, 0, 0, "reserved")
     plan = db.get(models.EmployerSearchPreparation, identity)
     assert (plan.state, plan.lease_token, plan.lease_until) == ("selecting", None, None)
     assert catalogue._TURN_DEADLINE_KEY not in db.info

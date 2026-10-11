@@ -15,7 +15,6 @@ from ...database import get_db
 from ...domains.employer import (
     artifacts,
     batches,
-    catalogue_search,
     models,
     schemas,
     search_pages,
@@ -62,8 +61,8 @@ def get_catalog(db: Session = Depends(get_db), token: str = Depends(oauth2_schem
 })
 def create_search(payload: schemas.SearchCreate, db: Session = Depends(get_db), user: core.User = Depends(get_current_user)):
     result = service.create_search(db, user.id, payload)
-    if isinstance(result, models.EmployerSearchPreparation):
-        return JSONResponse(status_code=202, content=jsonable_encoder(catalogue_search.status(db, user.id, result.id)),
+    if isinstance(result, models.EmployerSearchPreparation) or result.status == "preparing":
+        return JSONResponse(status_code=202, content=jsonable_encoder(service.search_preparation_status(db, user.id, result.id)),
                             headers={"Cache-Control": "private, no-store"})
     return service.search_response(result)
 
@@ -85,14 +84,14 @@ def list_search_summaries(response: Response, limit: int = Query(10, ge=1, le=20
 def get_search_preparation(response: Response, identity: str = Path(min_length=1, max_length=64),
                            db: Session = Depends(get_db), user: core.User = Depends(get_current_user)):
     response.headers["Cache-Control"] = "private, no-store"
-    return catalogue_search.status(db, user.id, identity)
+    return service.search_preparation_status(db, user.id, identity)
 
 
 @_saved_search_reads.post("/search-preparations/{identity}/cancel")
 def cancel_search_preparation(response: Response, identity: str = Path(min_length=1, max_length=64),
                               db: Session = Depends(get_db), user: core.User = Depends(get_current_user)):
     response.headers["Cache-Control"] = "private, no-store"
-    return catalogue_search.cancel(db, user.id, identity)
+    return service.cancel_search_preparation(db, user.id, identity)
 
 
 @_saved_search_reads.get("/searches/{identity}/results", response_model=schemas.SavedSearchResultsPage,

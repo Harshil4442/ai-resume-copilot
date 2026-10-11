@@ -128,6 +128,24 @@ def delete_account_data(db: Session, user_id: int) -> None:
         if application.reservation_id and application.status not in {"submitting", "unknown", "confirmed"}:
             reservation = db.query(models.ServiceCreditReservation).filter_by(id=application.reservation_id).with_for_update().one()
             credits.settle(db, reservation, completed_count=0, reason="Account deleted before application launch")
+    # Search preparation never sends an application. Under the same owner
+    # fence, both plan-backed and bounded pending searches can return their hold.
+    search_holds = db.query(models.ServiceCreditReservation).filter_by(
+        user_id=user_id, operation="job_search", state="reserved").order_by(
+            models.ServiceCreditReservation.id).with_for_update().all()
+    for reservation in search_holds:
+        staged = db.query(models.EmployerSearch.status, models.EmployerSearch.charged_credits,
+            models.EmployerSearch.desired_count, models.EmployerSearch.reserved_credits).filter_by(
+                id=reservation.source_id, user_id=user_id).first()
+        delivered = db.query(models.EmployerJobDelivery.id).filter_by(
+            search_id=reservation.source_id, user_id=user_id).first()
+        if (reservation.unit_price <= 0 or reservation.requested_count < 0
+                or reservation.reserved_amount != reservation.unit_price * reservation.requested_count
+                or reservation.committed_amount != 0 or reservation.released_amount != 0 or delivered is not None
+                or (staged is not None and (staged.status != "preparing" or staged.charged_credits != 0
+                    or staged.desired_count != reservation.requested_count or staged.reserved_credits != reservation.reserved_amount))):
+            raise ValueError("Pending search hold needs financial review")
+        credits.settle(db, reservation, completed_count=0, reason="Account deleted before search delivery")
     db.flush()
     for artifact in db.query(models.SealedApplicationArtifact).filter_by(user_id=user_id).all():
         if artifact.gcs_object:
@@ -155,18 +173,10 @@ def delete_account_data(db: Session, user_id: int) -> None:
     db.query(models.EmployerPaidHistoryProgress).filter_by(user_id=user_id).delete(synchronize_session=False)
     db.query(models.EmployerJobDelivery).filter_by(user_id=user_id).delete(synchronize_session=False)
     db.query(models.EmployerSearch).filter_by(user_id=user_id).delete(synchronize_session=False)
-    # The existing User fence also excludes final catalogue settlement. Private
-    # snapshots may be erased after published Search/Delivery ownership ends.
-    from sqlalchemy import or_
-
+    # Search holds are released above before saved results are removed. The
+    # same owner fence excludes both catalogue and bounded final settlement.
     from ..dispatch.models import DispatchOutbox
     preparation = models.EmployerSearchPreparation
-    reservation = models.ServiceCreditReservation
-    invalid = db.query(preparation.id).join(reservation, preparation.reservation_id == reservation.id).filter(
-        preparation.user_id == user_id, preparation.state != "completed",
-        or_(reservation.reserved_amount != 0, reservation.committed_amount != 0)).limit(1).first()
-    if invalid is not None:
-        raise ValueError("Incomplete catalogue preparation has a financial effect")
     plan_ids = db.query(preparation.id).filter_by(user_id=user_id)
     db.query(DispatchOutbox).filter(DispatchOutbox.topic == "employer.search",
         DispatchOutbox.aggregate_id.in_(plan_ids), ~DispatchOutbox.status.in_(("completed", "failed"))).update(

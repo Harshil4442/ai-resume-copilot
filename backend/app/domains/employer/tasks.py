@@ -24,6 +24,12 @@ log = logging.getLogger("hirewiz.artifact_cleanup")
 def execute_search(search_id: str) -> str | EmployerSearchContinuation:
     with SessionLocal() as db:
         state = db.query(models.EmployerSearch.status).filter_by(id=search_id).scalar()
+        if state == "preparing":
+            owner = db.query(models.EmployerSearch.user_id).filter_by(id=search_id).scalar()
+            result = service.resume_bounded_search(db, owner, search_id)
+            if result is None:
+                return "missing"
+            return "pending" if result.status == "preparing" else result.status
         if state is not None:
             return state
         if not config.catalogue_search_enabled():
@@ -33,12 +39,27 @@ def execute_search(search_id: str) -> str | EmployerSearchContinuation:
         preparation = db.query(models.EmployerSearchPreparation.id).filter_by(id=search_id).first()
         if preparation:
             from . import catalogue_search
+            if not config.catalogue_search_enabled():
+                ended = catalogue_search.cancel(db, None, search_id, reason="catalogue_disabled_before_delivery")
+                return ended["status"]
             return catalogue_search.execute_plan(db, search_id)
         return "missing"
 
 
 def refresh_source(source_id: str) -> str:
     with SessionLocal() as db:
+        from sqlalchemy.exc import DBAPIError
+        try:
+            service.bounded_search_maintenance(db)
+            from sqlalchemy import inspect
+
+            from . import catalogue_search
+
+            if inspect(db.connection()).has_table("employer_search_preparations"):
+                catalogue_search.maintenance_step(db)
+        except DBAPIError:
+            db.rollback()
+            log.warning("Bounded search expiration deferred")
         source = db.query(models.EmployerSource).filter_by(id=source_id).with_for_update().first()
         if not source:
             return "missing"
@@ -258,7 +279,11 @@ def fail_dispatched_work(topic: str, identity: str) -> None:
             from sqlalchemy import inspect
 
             from . import catalogue_search
-            if inspect(db.connection()).has_table("employer_search_preparations"):
+            bounded = db.query(models.EmployerSearch.id).filter_by(id=identity).filter(
+                models.EmployerSearch.scope["bounded_protocol"].as_string() == service.BOUNDED_SEARCH_PROTOCOL).first()
+            if bounded is not None:
+                service.cancel_bounded_search(db, None, identity, reason="dispatch_attempts_exhausted")
+            elif inspect(db.connection()).has_table("employer_search_preparations"):
                 catalogue_search.cancel(db, None, identity, reason="dispatch_attempts_exhausted")
         elif topic == "employer.refresh":
             source = db.query(models.EmployerSource).filter_by(id=identity).with_for_update().first()
