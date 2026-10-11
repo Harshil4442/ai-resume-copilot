@@ -1,5 +1,23 @@
 # Full catalogue search — inactive integration, 11 October 2026
 
+## Backend test corrections — 11 October 2026
+
+[CI run 38096543842](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38096543842)
+is terminal failure on `1ea40fb`: backend reports 3,549 passes, two failures and
+455 warnings. Actual migration validation, Redis/Firestore provisioning and cleanup pass.
+Frontend, companion and cold-browser jobs pass; the actual OpenAPI exporter is skipped.
+
+The historical 0012 test now uses its fresh schema at that revision and seeds only
+reflected historical columns. All six original assertions remain; the final missing-column
+error must name `preference_metadata`. The release test verifies the historical chain
+on a finite pre-catalogue copy and verifies that both legacy parser entrypoints refuse
+the actual extended source. Production guards and the schema0009 allowance are unchanged.
+Independent review and configured two-test lint pass. Four isolated release controls pass
+with zero skips, including controls that detect relaxed safeguards. The actual PostgreSQL
+round trip and whole-application exporter still require corrected-source CI.
+See [retained failure and test correction evidence](evidence/2026-10-11-catalogue-test-correction.json).
+No production promotion or flag activation is performed by this correction.
+
 The reviewed source removes the arbitrary 1,000-candidate prefix from the new optional
 search path. All eligible indexed postings at the accepted watermark participate in
 canonical ranking before unseen-first result selection. This expands traversal of our
@@ -93,10 +111,12 @@ hypothesis and has not been run. The earlier failed diagnostics remain preserved
 - [x] Identify both CI failures and retain their evidence.
 - [x] Verify actual Redis provisioning on corrected-source CI.
 - [x] Complete the one-shot native API count diagnostic and preserve its terminal failure.
+- [x] Review the two ordinary backend test fixes without relaxing production safeguards.
+- [x] Pass four isolated release controls and configured lint on both corrected tests.
 - [ ] Pass full-history scanning with only exact reviewed historical exclusions.
 - [ ] Pass new corrected-source CI, including shipping tests, scanner and actual exporter.
-- [ ] Verify the structurally revised migration on the new source.
-- [ ] Verify actual full-chain migration and exporter drift in CI.
+- [x] Verify the structurally revised full-chain migration on source `1ea40fb` in CI.
+- [ ] Verify the historical PostgreSQL round trip and actual exporter drift on corrected-source CI.
 - [ ] Prove native source/resume/history concurrency and financial outcomes end to end.
 - [ ] Measure cold/warm catalogue work, conversion/allocation cost and pack margins.
 - [ ] Establish shared-content retention/cleanup and compatible reader rollout/rollback.

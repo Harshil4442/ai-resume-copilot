@@ -216,15 +216,26 @@ def test_raw_input_duplicate_keys_cannot_replace_a_pinned_reference():
         release._json(b'{"runtime_secret":"one:1","runtime_secret":"two:2"}')
 
 
-def test_legacy_release_still_refuses_the_current_extended_chain():
+def test_legacy_release_still_refuses_the_current_extended_chain(tmp_path):
     tracked = {path.relative_to(ROOT).as_posix() for path in (ROOT / 'backend/alembic/versions').glob('*.py')}
-    # Upload and paid-history migrations extend the source chain; they do not expand either
-    # release authority's reviewed production migration allowance.
-    chain = release.source_guard.migration_chain(ROOT, tracked)
+    catalogue = 'backend/alembic/versions/20261011_0016_employer_catalogue_search.py'
+    assert catalogue in tracked
+    # Preserve the historical chain check in a finite copy before the catalogue
+    # migration, whose module-level SQL constants fail the legacy parser closed.
+    prefix = tmp_path / 'pre_catalogue'
+    (prefix / 'backend/alembic/versions').mkdir(parents=True)
+    (prefix / 'backend/alembic.ini').write_bytes((ROOT / 'backend/alembic.ini').read_bytes())
+    prefix_tracked = tracked - {catalogue}
+    for path in sorted(prefix_tracked):
+        (prefix / path).write_bytes((ROOT / path).read_bytes())
+    chain = release.source_guard.migration_chain(prefix, prefix_tracked)
     assert chain[:len(release.CHAIN)] == release.CHAIN
-    assert chain[len(release.CHAIN):len(release.CHAIN) + 3] == ('20261010_0014', '20261011_0015', '20261011_0016')
+    assert chain[len(release.CHAIN):len(release.CHAIN) + 2] == ('20261010_0014', '20261011_0015')
     with pytest.raises(release.source_guard.PreflightDenied, match="only the reviewed schema0009 chain"):
-        release.source_guard.migration_head(ROOT, tracked)
+        release.source_guard.migration_head(prefix, prefix_tracked)
+    for operation in (release.source_guard.migration_chain, release.source_guard.migration_head):
+        with pytest.raises(release.source_guard.PreflightDenied, match="Unsupported module-level migration assignment"):
+            operation(ROOT, tracked)
 
 
 def native_identity(plan, monkeypatch, *, policy_update=None, ci_update=None, build_update=None):

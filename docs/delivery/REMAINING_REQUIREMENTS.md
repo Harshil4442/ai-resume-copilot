@@ -1,5 +1,23 @@
 # Remaining requirements after the discovery pilot
 
+## Backend test corrections — 11 October 2026
+
+[CI run 38096543842](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38096543842)
+is terminal failure on `1ea40fb`: backend reports 3,549 passes, two failures and
+455 warnings. Actual migration validation, Redis/Firestore provisioning and cleanup pass.
+Frontend, companion and cold-browser jobs pass; the actual OpenAPI exporter is skipped.
+
+The historical 0012 test now uses its fresh schema at that revision and seeds only
+reflected historical columns. All six original assertions remain; the final missing-column
+error must name `preference_metadata`. The release test verifies the historical chain
+on a finite pre-catalogue copy and verifies that both legacy parser entrypoints refuse
+the actual extended source. Production guards and the schema0009 allowance are unchanged.
+Independent review and configured two-test lint pass. Four isolated release controls pass
+with zero skips, including controls that detect relaxed safeguards. The actual PostgreSQL
+round trip and whole-application exporter still require corrected-source CI.
+See [retained failure and test correction evidence](evidence/2026-10-11-catalogue-test-correction.json).
+No production promotion or flag activation is performed by this correction.
+
 ## History scan and document API diagnostic — 11 October 2026
 
 Corrected source `1ea40fb` starts [CI run 38096543842](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38096543842).
