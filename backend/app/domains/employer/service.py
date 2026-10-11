@@ -401,7 +401,7 @@ def _prepare_bounded_search(db, row, payload):
     evaluations = {posting.id: evaluate(payload.preferences, posting.preference_metadata, provider=source.platform) for posting, source in candidates[:1000]}
     ranked = [(posting, source, basic_match(resume.skills or [], posting.description, posting.title)) for posting, source in candidates[:1000] if evaluations[posting.id]["eligible"]]
     ranked.sort(key=lambda item: (-item[2]["score"], -int(payload.role.lower() in item[0].title.lower()), item[0].id))
-    unique: dict[str, tuple[models.EmployerPosting, models.EmployerSource, dict]] = {}
+    unique: dict[str, tuple[SimpleNamespace, SimpleNamespace, dict]] = {}
     for item in ranked:
         item[0].opening_key = admissions.opening_identity(item[0], item[1])
         unique.setdefault(item[0].opening_key, item)

@@ -1,5 +1,21 @@
 # Employer search and application delivery
 
+## Funded search type correction — 11 October 2026
+
+Source `2056e0aa53879c3dabf93efec88a664345b11937` reaches a terminal backend failure
+in [CI run 38140110016](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38140110016):
+one Mypy annotation error stops the runtime suite and actual OpenAPI exporter.
+Security/container, browser-companion and cold-browser jobs pass; responsive frontend
+smoke verification is still running at this observation. The broader run is not marked complete.
+
+The bounded preparation copies public job/source rows into detached `SimpleNamespace`
+snapshots before ranking. Its unique-result map incorrectly retained the earlier ORM type.
+The correction changes only that local annotation. Complete runtime bytecode/constants
+and the remaining AST are identical. A three-file model-aware Mypy check reproduces the
+original failure with the exact preimage and passes the correction; configured Ruff passes.
+The one-file check alone did not expose the imported-model error. New-source full CI,
+actual exporter and deployment remain required. See [type correction evidence](evidence/2026-10-11-funded-search-type-correction.json).
+
 ## Verified CI base and funded-search correction — 11 October 2026
 
 Source `c1936ec932e924e45708991f69e48c138b7fe2ed` passes all five jobs in
