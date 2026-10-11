@@ -508,7 +508,7 @@ def service_expense_holds(
     does not erase that month's potential preparation/failure expense. Old
     unsettled holds continue across month boundaries until reconciled.
     """
-    from sqlalchemy import Integer, and_, case, cast, func, or_, text
+    from sqlalchemy import BigInteger, Integer, and_, case, cast, func, or_, text
 
     from ..domains.employer.models import ServiceCreditReservation
 
@@ -540,6 +540,14 @@ def service_expense_holds(
         else 0
     )
     failed_hold = ceil(Fraction(failed_cost * (10_000 + policy.contingency_bps), 10_000))
+    if operation == "job_search" and paid_count == 0:
+        # A refunded legacy search can cost more to prepare than its requested
+        # result count costs to serve. Hold the larger exposure, without adding
+        # both alternative outcomes or changing the candidate's credit quote.
+        preparation_hold = ceil(
+            Fraction(policy.service_preparation_cost_minor * (10_000 + policy.contingency_bps), 10_000)
+        )
+        failed_hold = max(failed_hold, preparation_hold - hold)
     month = datetime.now(UTC).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     amount = cast(
         ServiceCreditReservation.cost_policy_snapshot["legacy_service_hold_minor"].as_string(),
@@ -579,6 +587,43 @@ def service_expense_holds(
         Integer,
     )
     retained = func.coalesce(amount, historical_hold) + func.coalesce(failed, 0)
+    # Older snapshots may omit the preparation top-up. Read their accepted
+    # policy where available; preserve the exposure of failed/unsettled work
+    # without rewriting its snapshot, quote or customer wallet.
+    accepted_preparation = func.coalesce(
+        cast(
+            ServiceCreditReservation.cost_policy_snapshot["policy"][
+                "service_preparation_cost_minor"
+            ].as_string(),
+            BigInteger,
+        ),
+        policy.service_preparation_cost_minor,
+    )
+    accepted_contingency = func.coalesce(
+        cast(
+            ServiceCreditReservation.cost_policy_snapshot["policy"]["contingency_bps"].as_string(),
+            BigInteger,
+        ),
+        policy.contingency_bps,
+    )
+    preparation_floor = (accepted_preparation * (10_000 + accepted_contingency) + 9999).op(
+        "/", precedence=8
+    )(10_000)
+    needs_preparation_floor = and_(
+        ServiceCreditReservation.operation == "job_search",
+        func.coalesce(
+            cast(ServiceCreditReservation.cost_policy_snapshot["paid_service_cost_count"].as_string(), Integer),
+            0,
+        ) == 0,
+        or_(
+            ServiceCreditReservation.state == "reserved",
+            ServiceCreditReservation.committed_amount == 0,
+        ),
+    )
+    retained = case(
+        (and_(needs_preparation_floor, retained < preparation_floor), preparation_floor),
+        else_=retained,
+    )
     usage = db.query(func.coalesce(func.sum(retained), 0)).filter(
         or_(
             ServiceCreditReservation.state == "reserved",

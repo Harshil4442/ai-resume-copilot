@@ -12,7 +12,7 @@ report the unchanged original estimate and the recorded actual duration.
 | Full CI/regressions | 1–3 hours | in progress | Not available; checkpoint not complete |
 | Resume worker output + PDF/DOCX/LaTeX fidelity | 4–8 hours | pending | Not available; checkpoint not complete |
 | Candidate-reviewed browser integration | 2–6 hours after the approval blocker is resolved | blocked | Not available; checkpoint not complete |
-| Billing costs/failure recovery/load | 2–5 hours | pending | Not available; checkpoint not complete |
+| Billing costs/failure recovery/load | 2–5 hours | in progress | Not available; checkpoint not complete |
 | Mobile/performance/SEO verification | 1–3 hours | pending | Not available; checkpoint not complete |
 | GCP/Vercel env deployment/monitor | 2–4 hours | pending | Not available; checkpoint not complete |
 
@@ -28,7 +28,13 @@ Source `68b824254187690d23b80bfe94a54aae6ffd3bdf` has terminal
 four jobs pass, while backend reports 32 failures, 3,520 passes and 455 warnings.
 The actual exporter is skipped. The CI attempt takes 14 minutes 57 seconds; this
 is not the complete checkpoint duration. The local runtime and test corrections
-below still require new exact-source CI, so checkpoint 1 remains open.
+below require passing exact-source CI, so checkpoint 1 remains open. Source
+`dbf2dd3ca650b38b3c7c0c0b3e8396d855a992f2` has terminal
+[CI run 38144220504](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38144220504):
+four jobs pass, while backend stops on four import-formatting errors in the
+expense-budget tests. Backend runtime tests and the exporter are skipped. This
+attempt takes 8 minutes 16 seconds; it does not complete the checkpoint. The
+formatting correction uses the same backend working directory as CI.
 
 
 ## Funded search runtime regression correction — 11 October 2026
@@ -53,6 +59,33 @@ search currently retains 30 minor units with a 25-unit variable estimate, while
 its separately configured 50-unit preparation estimate with contingency is 60.
 These are synthetic policy values, not invoices or a production profit claim.
 Preparation-cost coverage and the broader cost/load review remain open.
+
+## Preparation cash coverage correction — 11 October 2026
+
+Within the same billing checkpoint, a legacy-funded search now retains the larger
+of its variable-service estimate and its unsuccessful preparation estimate. In
+the reviewed synthetic one-result case, the original 30 minor units of variable
+cash receive a 30-unit preparation top-up, covering the 60-unit preparation bound.
+A two-result 60-unit variable hold and a 100-result 3,000-unit hold already cover
+that bound. Paid/mixed funding keeps its existing preparation guard. Customer
+credit prices and unused-credit refunds remain unchanged.
+
+Admission also reads an accepted preparation floor for older failed or unsettled
+legacy searches whose stored cash omitted the top-up. It uses their captured
+policy where available, with the current policy as a conservative fallback for
+pre-cutover snapshots. It does not rewrite old quotes, snapshots or wallets;
+unknown work still consumes funding across month boundaries. Completed paid work
+does not gain a new failure expense.
+
+Eleven selected shipping-function controls pass against actual ordinary model,
+credit and cost bodies in isolated SQLite; seven fail against the preimage.
+Five PostgreSQL controls are added for CI and have not yet been verified.
+Targeted Ruff and three-source Mypy pass. Fixture-import preparation errors and
+the first four assertion failures from incorrect SQL operator grouping are
+retained privately; the corrected grouping passes the accepted-policy rounding
+cases. Full CI, native concurrency/load, actual-cost reconciliation and release
+gates remain open. No checkpoint is marked complete and no production activation
+is performed. See [cash coverage evidence](evidence/2026-10-11-preparation-cash-coverage.json).
 
 ## Resume worker stream-transport investigation — 11 October 2026
 

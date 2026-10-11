@@ -13,18 +13,17 @@ from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from backend.app import models as core
+from backend.app import security
+from backend.app.database import Base
+from backend.app.domains.employer import credits, models, search_pages, service
+from backend.app.routers.v1 import employer as api
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.encoders import jsonable_encoder
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event, select, text
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
-
-from backend.app import models as core
-from backend.app import security
-from backend.app.database import Base
-from backend.app.domains.employer import credits, models, search_pages, service
-from backend.app.routers.v1 import employer as api
 
 NOW = datetime(2026, 10, 11, 12, 1, 2, 123456, tzinfo=UTC)
 

@@ -168,4 +168,15 @@ permits resubmitting an uncertain application or silently increasing an accepted
 
 The overhead refinement retains the [first arithmetic snapshot](evidence/2026-10-09-estimated-credit-pack-proposal-initial.json). It now reserves ₹0.50 for every permitted provider attempt, including failed or unknown calls whose analysis units may be restored. The ₹2,000 shared allowance is split into ₹1,000 promotional/failed AI, ₹500 remaining legacy Premium AI and ₹500 legacy-service and unsuccessful-service exposure. Each fresh search first reserves up to ₹0.60 of that pool before reading/scoring postings; empty or failed work retains its cash exposure, while a completed idempotent replay adds none. These are finite planning allocations, not measured bills or retroactive prices. Refunds and old quotes do not erase their expense exposure. Under the refined assumptions, an all-Growth mix requires 33 packs per month to cover buffered fixed expenses; an all-Scale mix requires 19.
 
+The 11 October correction covers positive-count searches funded by legacy or
+unproven credits. Their pooled cash hold covers the larger of the estimated
+variable-service expense and unsuccessful preparation expense. A one-result
+legacy search therefore holds ₹0.30 of variable cash plus a ₹0.30 preparation
+top-up; a two-result ₹0.60 variable hold already covers preparation. Larger legacy
+requests retain their full variable bound. Paid/mixed searches retain the existing
+preparation guard. Admission reads accepted preparation costs for older failed or
+unsettled legacy snapshots without repricing them, using current estimates only
+when historical policy is absent. This is a conservative admission bound, not an
+invoice or proof of profitable production operation. See [coverage evidence](evidence/2026-10-11-preparation-cash-coverage.json).
+
 The [finite-pack integration evidence](evidence/2026-10-09-finite-pack-root-integration.json) records the exact independent review and preimage-checked source composition. Source clearance is separate from deployment and actual profitability.

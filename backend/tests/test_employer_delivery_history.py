@@ -4,13 +4,12 @@ import json
 from copy import deepcopy
 
 import pytest
+from backend.app import models as core
+from backend.app.domains.employer import admissions, delivery_history, models
 from fastapi import HTTPException
 from sqlalchemy import event
 from test_employer_search_new_results import indexed_search as _indexed_search
 from test_employer_search_new_results import search
-
-from backend.app import models as core
-from backend.app.domains.employer import admissions, delivery_history, models
 
 indexed_search = _indexed_search
 

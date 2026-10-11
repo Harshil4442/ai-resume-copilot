@@ -7,8 +7,6 @@ from datetime import timedelta
 from types import SimpleNamespace
 
 import pytest
-from sqlalchemy import event
-
 from backend.app import models as core
 from backend.app.domains.common import payload_fingerprint, utcnow
 from backend.app.domains.employer import catalogue_search as catalogue
@@ -16,6 +14,7 @@ from backend.app.domains.employer import credits, models, schemas, service
 from backend.tests.test_employer_search_new_results import (
     indexed_search as indexed_search,
 )
+from sqlalchemy import event
 
 TOKEN = "catalogue-ci-worker"
 

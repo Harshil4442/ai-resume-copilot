@@ -1,0 +1,234 @@
+{
+  "created_at_utc": "2026-10-11T14:10:20.278170+00:00",
+  "agreed_checkpoint": "Billing costs/failure recovery/load",
+  "original_estimate": "2\u20135 additional active hours",
+  "checkpoint_complete": false,
+  "source_base": "dbf2dd3ca650b38b3c7c0c0b3e8396d855a992f2",
+  "candidate_cost_policy_sha256": "1508178f5be874829a94920bd8b58d55156238c6461e09c63d3cf14b5472bcbd",
+  "preimage_cost_policy_sha256": "fd8b14de7f4bb89708e3d0b34a6c5f8da92063b6bd01825da17fbba21bf94059",
+  "behavior": "Legacy-funded searches retain the larger of variable work and unsuccessful preparation. Historical failed/unsettled legacy rows retain their accepted policy floor. Quotes/snapshots and unused-credit refunds are preserved. Existing paid/mixed preparation guards remain.",
+  "selected_shipping_sqlite": {
+    "tests": 11,
+    "passed": 11,
+    "failed": 0,
+    "skipped": 0,
+    "duration_seconds": 0.315,
+    "results": [
+      {
+        "test": "test_completed_paid_search_does_not_acquire_a_new_failure_expense",
+        "parameters": {},
+        "outcome": "passed"
+      },
+      {
+        "test": "test_legacy_search_covers_larger_failed_or_successful_cash_exposure",
+        "parameters": {
+          "count": 1,
+          "variable": 30,
+          "preparation": 30
+        },
+        "outcome": "passed"
+      },
+      {
+        "test": "test_legacy_search_covers_larger_failed_or_successful_cash_exposure",
+        "parameters": {
+          "count": 2,
+          "variable": 60,
+          "preparation": 0
+        },
+        "outcome": "passed"
+      },
+      {
+        "test": "test_legacy_search_covers_larger_failed_or_successful_cash_exposure",
+        "parameters": {
+          "count": 100,
+          "variable": 3000,
+          "preparation": 0
+        },
+        "outcome": "passed"
+      },
+      {
+        "test": "test_old_legacy_search_keeps_accepted_preparation_floor_without_repricing",
+        "parameters": {
+          "state": "reserved",
+          "old_preparation": 50,
+          "accepted_cash": 60
+        },
+        "outcome": "passed"
+      },
+      {
+        "test": "test_old_legacy_search_keeps_accepted_preparation_floor_without_repricing",
+        "parameters": {
+          "state": "settled",
+          "old_preparation": 50,
+          "accepted_cash": 60
+        },
+        "outcome": "passed"
+      },
+      {
+        "test": "test_old_legacy_search_keeps_accepted_preparation_floor_without_repricing",
+        "parameters": {
+          "state": "settled",
+          "old_preparation": 51,
+          "accepted_cash": 62
+        },
+        "outcome": "passed"
+      },
+      {
+        "test": "test_old_zero_count_pending_search_keeps_preparation_exposure_across_months",
+        "parameters": {},
+        "outcome": "passed"
+      },
+      {
+        "test": "test_partial_paid_search_upward_rounds_small_preparation_hold",
+        "parameters": {},
+        "outcome": "passed"
+      },
+      {
+        "test": "test_repeated_empty_paid_search_restores_credits_but_not_preparation_cash",
+        "parameters": {},
+        "outcome": "passed"
+      },
+      {
+        "test": "test_repeated_refunded_legacy_searches_exhaust_cash_without_charging_candidate",
+        "parameters": {},
+        "outcome": "passed"
+      }
+    ]
+  },
+  "preimage_counterexamples": {
+    "tests": 11,
+    "passed": 4,
+    "failed": 7,
+    "skipped": 0,
+    "results": [
+      {
+        "test": "test_completed_paid_search_does_not_acquire_a_new_failure_expense",
+        "parameters": {},
+        "outcome": "failed",
+        "exception_type": "AssertionError",
+        "exception": ""
+      },
+      {
+        "test": "test_legacy_search_covers_larger_failed_or_successful_cash_exposure",
+        "parameters": {
+          "count": 1,
+          "variable": 30,
+          "preparation": 30
+        },
+        "outcome": "failed",
+        "exception_type": "AssertionError",
+        "exception": ""
+      },
+      {
+        "test": "test_legacy_search_covers_larger_failed_or_successful_cash_exposure",
+        "parameters": {
+          "count": 2,
+          "variable": 60,
+          "preparation": 0
+        },
+        "outcome": "passed"
+      },
+      {
+        "test": "test_legacy_search_covers_larger_failed_or_successful_cash_exposure",
+        "parameters": {
+          "count": 100,
+          "variable": 3000,
+          "preparation": 0
+        },
+        "outcome": "passed"
+      },
+      {
+        "test": "test_old_legacy_search_keeps_accepted_preparation_floor_without_repricing",
+        "parameters": {
+          "state": "reserved",
+          "old_preparation": 50,
+          "accepted_cash": 60
+        },
+        "outcome": "failed",
+        "exception_type": "Failed",
+        "exception": "DID NOT RAISE HTTPException"
+      },
+      {
+        "test": "test_old_legacy_search_keeps_accepted_preparation_floor_without_repricing",
+        "parameters": {
+          "state": "settled",
+          "old_preparation": 50,
+          "accepted_cash": 60
+        },
+        "outcome": "failed",
+        "exception_type": "Failed",
+        "exception": "DID NOT RAISE HTTPException"
+      },
+      {
+        "test": "test_old_legacy_search_keeps_accepted_preparation_floor_without_repricing",
+        "parameters": {
+          "state": "settled",
+          "old_preparation": 51,
+          "accepted_cash": 62
+        },
+        "outcome": "failed",
+        "exception_type": "Failed",
+        "exception": "DID NOT RAISE HTTPException"
+      },
+      {
+        "test": "test_old_zero_count_pending_search_keeps_preparation_exposure_across_months",
+        "parameters": {},
+        "outcome": "failed",
+        "exception_type": "Failed",
+        "exception": "DID NOT RAISE HTTPException"
+      },
+      {
+        "test": "test_partial_paid_search_upward_rounds_small_preparation_hold",
+        "parameters": {},
+        "outcome": "passed"
+      },
+      {
+        "test": "test_repeated_empty_paid_search_restores_credits_but_not_preparation_cash",
+        "parameters": {},
+        "outcome": "passed"
+      },
+      {
+        "test": "test_repeated_refunded_legacy_searches_exhaust_cash_without_charging_candidate",
+        "parameters": {},
+        "outcome": "failed",
+        "exception_type": "Failed",
+        "exception": "DID NOT RAISE HTTPException"
+      }
+    ]
+  },
+  "bounded_financial_sqlite": {
+    "scope": "actual pinned ordinary bounded search financial controls with candidate cost-policy body; isolated SQLite only",
+    "tests": 19,
+    "failures": 0,
+    "errors": 0,
+    "skips": 0,
+    "duration_seconds": 0.774,
+    "source_sha256": "1508178f5be874829a94920bd8b58d55156238c6461e09c63d3cf14b5472bcbd",
+    "failed_test_names": [],
+    "provider_calls": 0,
+    "production_mutations": 0,
+    "full_checkpoint_complete": false
+  },
+  "postgres_tests_added": 5,
+  "postgres_tests_run_locally": false,
+  "static_checks": {
+    "ruff": "8 named ordinary files pass from backend working directory",
+    "mypy": "3 source files pass; follow-imports=skip"
+  },
+  "attempt_history": {
+    "run_id": 38144220504,
+    "head_sha": "dbf2dd3ca650b38b3c7c0c0b3e8396d855a992f2",
+    "conclusion": "failure",
+    "elapsed_seconds": 496,
+    "backend_runtime_tests": "skipped",
+    "failure": "Four test-expense-budget import sorting errors; corrected from CI working directory"
+  },
+  "limitations": [
+    "Actual PostgreSQL/HTTP/full runtime require exact-source CI",
+    "Native concurrency/load, actual-cost reconciliation and activation remain open",
+    "Synthetic policy values are not invoices or proof of production profit",
+    "Fixture-preparation errors and four SQL-grouping assertion failures retained privately",
+    "Protected integration remains stopped",
+    "No production activation or cloud deployment performed"
+  ]
+}

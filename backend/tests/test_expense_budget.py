@@ -2,13 +2,12 @@ import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-
 from backend.app.billing.cost_policy import CostPolicyUnavailable, assert_model_funding
 from backend.app.database import Base
 from backend.app.models import ModelCostLiability
 from backend.tests.expense_policy_fixtures import synthetic_expense_policy
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 
 def _liability(*, state="reserved", held=70, settled=None, days=0, pool="prepaid"):
@@ -46,6 +45,157 @@ def _policy(monkeypatch, *, daily=100, monthly=100, risk=100):
         "monthly_legacy_premium_model_budget_micros": 0,
     }
     monkeypatch.setenv("HIREWIZ_EXPENSE_POLICY_JSON", json.dumps(policy))
+
+
+def _legacy_search_policy(monkeypatch, **overrides):
+    from backend.tests.expense_policy_fixtures import estimated_expense_policy
+
+    policy = estimated_expense_policy() | {
+        "review_status": "approved",
+        "reviewed_by": "local-test-review",
+    } | overrides
+    monkeypatch.setenv("HIREWIZ_EXPENSE_POLICY_JSON", json.dumps(policy))
+    return policy
+
+
+@pytest.mark.parametrize("count,variable,preparation", [(1, 30, 30), (2, 60, 0), (100, 3000, 0)])
+def test_legacy_search_covers_larger_failed_or_successful_cash_exposure(
+    cost_db, monkeypatch, count, variable, preparation
+):
+    from backend.app.domains.employer import credits
+    from backend.app.models import User
+
+    _legacy_search_policy(monkeypatch)
+    cost_db.add(User(id=1, email="legacy-search@example.test", job_service_credits=200))
+    cost_db.commit()
+    row = credits.reserve(
+        cost_db, user_id=1, operation="job_search", source_id="legacy-search", unit_price=1, count=count
+    )
+    assert (row.unit_price, row.reserved_amount) == (1, count)
+    assert row.cost_policy_snapshot["legacy_service_hold_minor"] == variable
+    assert row.cost_policy_snapshot["failed_service_hold_minor"] == preparation
+    credits.settle(cost_db, row, completed_count=0, reason="No useful new jobs")
+    cost_db.commit()
+    assert cost_db.get(User, 1).job_service_credits == 200
+    assert row.cost_policy_snapshot["legacy_service_hold_minor"] == variable
+    assert row.cost_policy_snapshot["failed_service_hold_minor"] == preparation
+
+
+def test_repeated_refunded_legacy_searches_exhaust_cash_without_charging_candidate(cost_db, monkeypatch):
+    from backend.app.domains.employer import credits
+    from backend.app.domains.employer.models import ServiceCreditEvent, ServiceCreditReservation
+    from backend.app.models import User
+    from fastapi import HTTPException
+
+    _legacy_search_policy(monkeypatch, monthly_legacy_service_budget_minor=120)
+    cost_db.add(User(id=1, email="refunded-legacy@example.test", job_service_credits=100))
+    cost_db.commit()
+    for identity in ("legacy-empty-one", "legacy-empty-two"):
+        row = credits.reserve(
+            cost_db, user_id=1, operation="job_search", source_id=identity, unit_price=1, count=1
+        )
+        credits.settle(cost_db, row, completed_count=0, reason="No useful new jobs")
+        cost_db.commit()
+        events = cost_db.query(ServiceCreditEvent).count()
+        credits.settle(cost_db, row, completed_count=0, reason="Idempotent replay")
+        cost_db.commit()
+        assert cost_db.query(ServiceCreditEvent).count() == events
+    with pytest.raises(HTTPException) as exc:
+        credits.reserve(
+            cost_db, user_id=1, operation="job_search", source_id="legacy-empty-three", unit_price=1, count=1
+        )
+    assert exc.value.status_code == 503
+    cost_db.rollback()
+    assert cost_db.query(ServiceCreditReservation).count() == 2
+    assert cost_db.get(User, 1).job_service_credits == 100
+
+
+@pytest.mark.parametrize("state,old_preparation,accepted_cash", [("reserved", 50, 60), ("settled", 50, 60), ("settled", 51, 62)])
+def test_old_legacy_search_keeps_accepted_preparation_floor_without_repricing(
+    cost_db, monkeypatch, state, old_preparation, accepted_cash
+):
+    from backend.app.domains.employer import credits
+    from backend.app.domains.employer.models import ServiceCreditReservation
+    from backend.app.models import User
+    from fastapi import HTTPException
+
+    snapshot = {
+        "version": "older-accepted-policy",
+        "policy": {"service_preparation_cost_minor": old_preparation, "contingency_bps": 2000},
+        "legacy_service_hold_minor": 30,
+        "failed_service_hold_minor": 0,
+    }
+    cost_db.add(User(id=1, email="old-preparation@example.test", job_service_credits=100))
+    old = ServiceCreditReservation(
+        id="old-preparation", user_id=1, operation="job_search", source_id="old-preparation",
+        unit_price=1, requested_count=1, reserved_amount=1, committed_amount=0,
+        released_amount=1 if state == "settled" else 0, state=state, pricing_version="old-price",
+        cost_policy_snapshot=snapshot,
+        created_at=datetime.now(UTC) - timedelta(days=80 if state == "reserved" else 0),
+    )
+    cost_db.add(old)
+    cost_db.commit()
+    _legacy_search_policy(
+        monkeypatch, version="new-preparation-v2", service_preparation_cost_minor=100,
+        monthly_legacy_service_budget_minor=accepted_cash + 119,
+    )
+    with pytest.raises(HTTPException) as exc:
+        credits.reserve(cost_db, user_id=1, operation="job_search", source_id="new-preparation", unit_price=1, count=1)
+    assert exc.value.status_code == 503
+    cost_db.rollback()
+    assert old.cost_policy_snapshot == snapshot
+    assert (old.unit_price, old.reserved_amount, old.committed_amount) == (1, 1, 0)
+    _legacy_search_policy(
+        monkeypatch, version="new-preparation-v3", service_preparation_cost_minor=100,
+        monthly_legacy_service_budget_minor=accepted_cash + 120,
+    )
+    new = credits.reserve(cost_db, user_id=1, operation="job_search", source_id="new-preparation", unit_price=1, count=1)
+    assert new.cost_policy_snapshot["legacy_service_hold_minor"] + new.cost_policy_snapshot["failed_service_hold_minor"] == 120
+    assert old.cost_policy_snapshot == snapshot
+
+
+def test_old_zero_count_pending_search_keeps_preparation_exposure_across_months(cost_db, monkeypatch):
+    from backend.app.domains.employer import credits
+    from backend.app.domains.employer.models import ServiceCreditReservation
+    from backend.app.models import User
+    from fastapi import HTTPException
+
+    _legacy_search_policy(monkeypatch, monthly_legacy_service_budget_minor=119)
+    cost_db.add(User(id=1, email="old-pending@example.test", job_service_credits=100))
+    old = ServiceCreditReservation(
+        id="old-zero", user_id=1, operation="job_search", source_id="old-zero",
+        unit_price=1, requested_count=0, reserved_amount=0, committed_amount=0, released_amount=0,
+        state="reserved", pricing_version="old-price", cost_policy_snapshot=None,
+        created_at=datetime.now(UTC) - timedelta(days=80),
+    )
+    cost_db.add(old)
+    cost_db.commit()
+    with pytest.raises(HTTPException) as exc:
+        credits.reserve(cost_db, user_id=1, operation="job_search", source_id="new-after-zero", unit_price=1, count=1)
+    assert exc.value.status_code == 503
+    cost_db.rollback()
+    assert old.cost_policy_snapshot is None and old.reserved_amount == 0
+    assert cost_db.get(User, 1).job_service_credits == 100
+
+
+def test_completed_paid_search_does_not_acquire_a_new_failure_expense(cost_db, monkeypatch):
+    from backend.app.domains.employer import credits
+    from backend.app.domains.employer.models import ServiceCreditReservation
+    from backend.app.models import User
+
+    _legacy_search_policy(monkeypatch, monthly_legacy_service_budget_minor=60)
+    cost_db.add(User(id=1, email="paid-completed@example.test", job_service_credits=100))
+    cost_db.add(ServiceCreditReservation(
+        id="paid-completed", user_id=1, operation="job_search", source_id="paid-completed",
+        unit_price=1, requested_count=1, reserved_amount=1, committed_amount=1, released_amount=0,
+        state="settled", pricing_version="accepted-price", cost_policy_snapshot={
+            "version": "accepted-policy", "paid_service_cost_count": 1,
+            "legacy_service_hold_minor": 0, "failed_service_hold_minor": 0,
+        },
+    ))
+    cost_db.commit()
+    new = credits.reserve(cost_db, user_id=1, operation="job_search", source_id="new-after-paid", unit_price=1, count=1)
+    assert new.cost_policy_snapshot["legacy_service_hold_minor"] + new.cost_policy_snapshot["failed_service_hold_minor"] == 60
 
 
 def test_old_unknown_liability_still_blocks_a_new_month(cost_db, monkeypatch):
@@ -639,10 +789,9 @@ def test_pre_purchase_ai_release_cannot_invent_paid_units(cost_db):
     ],
 )
 def test_client_cannot_forge_paid_allocation(cost_db, key):
-    from fastapi import HTTPException
-
     from backend.app.domains.analysis import schemas, service
     from backend.app.models import AnalysisRun
+    from fastapi import HTTPException
 
     with pytest.raises(HTTPException) as error:
         service.create_run(
@@ -656,12 +805,11 @@ def test_client_cannot_forge_paid_allocation(cost_db, key):
 
 
 def test_repeated_empty_paid_search_restores_credits_but_not_preparation_cash(cost_db, monkeypatch):
-    from fastapi import HTTPException
-
     from backend.app.billing.cost_policy import current_service_funding
     from backend.app.domains.employer import credits
     from backend.app.models import User
     from backend.tests.expense_policy_fixtures import estimated_expense_policy
+    from fastapi import HTTPException
 
     policy = estimated_expense_policy() | {
         "review_status": "approved",
@@ -761,11 +909,10 @@ def test_settled_paid_provider_result_still_holds_risk_until_usage_commit(cost_d
 
 
 def test_actual_empty_search_admits_preparation_before_index_scan_and_replays_free(monkeypatch):
-    from sqlalchemy import event
-
     from backend.app.domains.employer.models import ServiceCreditReservation
     from backend.app.models import User
     from backend.tests.test_employer_services import context
+    from sqlalchemy import event
 
     factory, client, _ = context.__wrapped__(monkeypatch)
     policy = synthetic_expense_policy()

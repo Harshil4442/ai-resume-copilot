@@ -5,13 +5,12 @@ from collections.abc import Iterator
 from copy import deepcopy
 
 import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
-
 from backend.app import models as core
 from backend.app.database import Base
 from backend.app.domains.common import payload_fingerprint, utcnow
 from backend.app.domains.employer import admissions, models, schemas, service
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 
 
 @pytest.fixture

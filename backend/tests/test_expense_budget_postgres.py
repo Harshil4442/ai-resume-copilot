@@ -25,6 +25,39 @@ def pg_engine():
     yield from owned_pg_engine.__wrapped__()
 
 
+def test_refunded_legacy_searches_keep_preparation_cash_on_postgres(pg_engine, monkeypatch):
+    from backend.tests.test_expense_budget import (
+        test_repeated_refunded_legacy_searches_exhaust_cash_without_charging_candidate as check,
+    )
+
+    Base.metadata.create_all(pg_engine)
+    with sessionmaker(bind=pg_engine)() as db:
+        check(db, monkeypatch)
+
+
+@pytest.mark.parametrize("state,old_preparation,accepted_cash", [("reserved", 50, 60), ("settled", 50, 60), ("settled", 51, 62)])
+def test_accepted_legacy_preparation_floor_on_postgres(
+    pg_engine, monkeypatch, state, old_preparation, accepted_cash
+):
+    from backend.tests.test_expense_budget import (
+        test_old_legacy_search_keeps_accepted_preparation_floor_without_repricing as check,
+    )
+
+    Base.metadata.create_all(pg_engine)
+    with sessionmaker(bind=pg_engine)() as db:
+        check(db, monkeypatch, state, old_preparation, accepted_cash)
+
+
+def test_completed_paid_search_has_no_new_failure_expense_on_postgres(pg_engine, monkeypatch):
+    from backend.tests.test_expense_budget import (
+        test_completed_paid_search_does_not_acquire_a_new_failure_expense as check,
+    )
+
+    Base.metadata.create_all(pg_engine)
+    with sessionmaker(bind=pg_engine)() as db:
+        check(db, monkeypatch)
+
+
 def test_different_owners_share_one_atomic_funded_model_limit(pg_engine, monkeypatch):
     Base.metadata.create_all(pg_engine)
     factory = sessionmaker(bind=pg_engine)
