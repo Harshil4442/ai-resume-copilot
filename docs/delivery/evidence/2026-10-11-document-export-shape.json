@@ -1,0 +1,67 @@
+{
+  "SDK_responses_materialized_before_serialized_size_guard": true,
+  "actual_unknown_names_or_payloads_returned": false,
+  "archive_counts": {
+    "device_count": 0,
+    "direct_target_count": 0,
+    "link_count": 0,
+    "member_count": 3,
+    "prefixed_regular_18_byte_count": 0,
+    "prefixed_target_count": 0,
+    "regular_18_byte_count": 0,
+    "request_leaf_elsewhere_count": 0,
+    "unsafe_path_count": 0
+  },
+  "cause_uniquely_proven": false,
+  "completed_at": "2026-10-10T23:53:27.756407Z",
+  "count_receipt_verified": true,
+  "created_at": "2026-10-10T23:52:21.818784Z",
+  "customer_release": false,
+  "diagnostic_Job_retained_for_reconciliation": true,
+  "execution_name": "hirewiz-doc-export-shape-6588c5f4cb27-mhvjt",
+  "execution_reason": "NonZeroExitCode",
+  "execution_status": "terminal_failed",
+  "execution_uid": "4a821508-d4c7-4f9b-8629-a2d38cbbaf71",
+  "isolation_acceptance": false,
+  "job_name": "hirewiz-doc-export-shape-6588c5f4cb27",
+  "job_uid": "794f5889-22f6-4e01-8e77-b78568ad56c6",
+  "logging_pagination": false,
+  "logging_rows": 1,
+  "native_import_attempted": false,
+  "native_sandbox_absence_independently_verified": false,
+  "new_diagnostic_attempt_authorized_or_run_by_this_receipt": false,
+  "next_diagnostic_cause_is_hypothesis": true,
+  "next_diagnostic_proposal": "separately_review_fixed_private_child_directory_matching_documented_example",
+  "one_Create_and_one_Run_acknowledged": true,
+  "primary_references": [
+    "https://docs.cloud.google.com/run/docs/reference/sandbox-cli",
+    "https://docs.cloud.google.com/run/docs/code-execution"
+  ],
+  "private_HTTP_acceptance": false,
+  "production_services_changed": false,
+  "receipt_pins": [
+    {
+      "sha256": "97c935664114638f47d46196abb733d0f53fc91235809d733fbe4bcc377c35ab",
+      "stage": "create"
+    },
+    {
+      "sha256": "022621d3c6836486637e2bc6db99951db02f21aa452d73c2549aef26e6df8a6e",
+      "stage": "execution"
+    },
+    {
+      "sha256": "0f3acb79b17d4f7cb44339871653f352984b47758d5148ac4af765a539d84b09",
+      "stage": "terminal"
+    },
+    {
+      "sha256": "3a1863f9f1196e4bff30b824bc7237a26c563637ec8623ff3fb1abf28984787e",
+      "stage": "count_result"
+    }
+  ],
+  "retained_original_refusal": true,
+  "same_execution_template_join_verified": true,
+  "scanner_acceptance": false,
+  "schema": 1,
+  "scope": "fixed_synthetic_document_export_shape_diagnostic",
+  "started_at": "2026-10-10T23:52:32.019459Z",
+  "zero_task_retries": true
+}

@@ -1,0 +1,4 @@
+# Reviewed historical catalogue false positives; exact commit/path/rule/line only.
+91bf10b0bd9a095fb499d9eced5b508cb311dbfc:backend/alembic/versions/20261011_0016_employer_catalogue_search.py:generic-api-key:449
+91bf10b0bd9a095fb499d9eced5b508cb311dbfc:docs/delivery/evidence/2026-10-11-full-catalogue-integration.json:generic-api-key:81
+91bf10b0bd9a095fb499d9eced5b508cb311dbfc:docs/delivery/evidence/2026-10-11-full-catalogue-integration.json:generic-api-key:85

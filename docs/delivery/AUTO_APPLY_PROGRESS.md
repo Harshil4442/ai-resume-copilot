@@ -1,5 +1,33 @@
 # Employer search and application delivery
 
+## History scan and document API diagnostic — 11 October 2026
+
+Corrected source `1ea40fb` starts [CI run 38096543842](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38096543842).
+The Redis cache correction passes actual provisioning. Its security job still detects
+three findings in the retained `91bf10b` history, while the reviewed current-file scan
+has zero findings. Full-history detection remains enabled. The next correction uses
+only three exact commit/path/rule/line fingerprints in a dedicated explicitly loaded
+file; preexisting exclusion metadata is unchanged. A separate synthetic finding in a
+different commit on the same path/line remains detected in the final exact-command control.
+Only the dedicated-file control establishes this proposal; earlier failed combined-file
+controls remain preserved. See [history correction evidence](evidence/2026-10-11-catalogue-history-scan.json). Runtime/exporter and new
+exact-source full CI remain gates until their terminal metadata is recorded.
+
+The native document diagnostic is performed through authenticated GCP APIs: seven fresh
+read-only preflight checks, one exact synthetic Job Create and one Run, followed by
+same-execution/template/timestamp verification. The execution is terminal failed with
+zero retries; its strict bounded stdout read succeeds. The exported archive has three
+headers and no direct, prefixed, elsewhere or regular 18-byte synthetic target. No unknown
+member names or payloads are returned, and no import occurs. This narrows the failure
+without establishing a unique cause, archive parity, scanner/isolation/HTTP acceptance
+or independent sandbox absence. The diagnostic Job remains available for reconciliation;
+production is unchanged. See [native count evidence](evidence/2026-10-11-document-export-shape.json).
+
+Google documents exporting a newly created child directory under `/tmp`. A separately
+reviewed fixed-child-directory derivative is a proposed next diagnostic; it is a
+hypothesis and has not been run. The earlier failed diagnostics remain preserved.
+
+
 ## Full catalogue source integration — 11 October 2026
 
 The reviewed Stage D source was published as `91bf10b0bd9a095fb499d9eced5b508cb311dbfc`.
