@@ -22,6 +22,7 @@ import time
 import uuid
 from contextvars import ContextVar
 from pathlib import Path
+from typing import NamedTuple
 from zipfile import ZIP_DEFLATED, ZipFile
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -49,6 +50,27 @@ _FAILURE_CASES = frozenset({
     "styled_multipage_fit", "rendered_reflow_refusal",
 })
 _FAILURE: ContextVar[dict | None] = ContextVar("document_image_failure", default=None)
+# Finite processor refusal protocol, synchronized with the source-pinned core.
+# Never load app packages or copy a native response into diagnostic storage.
+_DOCX_REASONS = frozenset({
+    "document_safety", "renderer_identity", "document_size", "document_package", "package_changed", "edit_binding",
+    "hyperlink_changed", "no_changed_paragraphs", "undeclared_native_change", "pdf_active_content", "pdf_link",
+    "unsupported_graphics", "pdf_complexity", "unsupported_paint", "pdf_size", "pdf_pages", "pdf_geometry",
+    "font_mapping", "pdf_text", "outside_region_pixels", "page_geometry_changed", "nontext_changed",
+    "ambiguous_rendered_span", "text_or_reading_order_changed", "paragraph_page_changed", "line_wrap_changed",
+    "font_changed", "retained_style_changed", "paragraph_overflow", "unsupported_graphics_overlap",
+    "protected_text_changed", "protected_geometry_changed",
+})
+_DOCX_BINDING_KEYS = frozenset({"version", "operation", "sha256", "size_bytes", "source_format", "candidate_sha256",
+                                "candidate_size_bytes", "edits_sha256"})
+
+
+class _DocxRefusal(NamedTuple):
+    case: str
+    error: str
+    reason: str
+
+
 EICAR = (b"X5O!P%@AP[4" + bytes([92]) + b"PZX54(P^)7CC)7}$"
          + b"EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*")
 # Runtime hashes attest every copied Python source; the Dockerfile remains
@@ -94,23 +116,60 @@ class DocumentImageError(RuntimeError):
 def _progress(stage: str, *, case: str | None = None, exit_code: int | None = None,
               completed_cases: int | None = None) -> None:
     diagnostic = _FAILURE.get()
-    if diagnostic is not None:
+    if type(diagnostic) is dict:
+        diagnostic.pop("docx_refusal", None)
         diagnostic.update(stage=stage, case=case, exit_code=exit_code)
         if completed_cases is not None:
             diagnostic["completed_cases"] = completed_cases
 
 
+def _note_docx_refusal(result: object, binding: dict, code: int, *, case: str) -> None:
+    """Keep only a typed finite projection of the exact bound exit1 refusal."""
+    diagnostic = _FAILURE.get()
+    if type(diagnostic) is not dict:
+        return
+    diagnostic.pop("docx_refusal", None)
+    if (type(diagnostic.get("stage")) is not str or diagnostic["stage"] != "case_validation"
+            or type(diagnostic.get("case")) is not str or type(case) is not str or diagnostic["case"] != case
+            or type(diagnostic.get("exit_code")) is not int or diagnostic["exit_code"] != 1
+            or case != "styled_multipage_fit" or type(code) is not int or code != 1
+            or type(binding) is not dict or any(type(key) is not str for key in binding)
+            or set(binding) != _DOCX_BINDING_KEYS
+            or type(binding["version"]) is not int or binding["version"] != 1
+            or type(binding["operation"]) is not str or binding["operation"] != "docx_layout"
+            or type(binding["source_format"]) is not str or binding["source_format"] != "docx"
+            or any(type(binding[key]) is not str or not re.fullmatch(r"[a-f0-9]{64}", binding[key])
+                   for key in ("sha256", "candidate_sha256", "edits_sha256"))
+            or any(type(binding[key]) is not int or not 0 < binding[key] <= 5242880
+                   for key in ("size_bytes", "candidate_size_bytes"))
+            or type(result) is not dict or any(type(key) is not str for key in result)
+            or set(result) != _DOCX_BINDING_KEYS | {"error", "reason", "unit_id"}
+            or any(type(result.get(key)) is not type(value) or result.get(key) != value for key, value in binding.items())
+            or type(result["error"]) is not str or result["error"] != "docx_layout_refused"
+            or type(result["reason"]) is not str or result["reason"] not in _DOCX_REASONS):
+        return
+    diagnostic["docx_refusal"] = _DocxRefusal(case, result["error"], result["reason"])
+
+
 def _failure_report() -> dict:
-    # Project only finite local progress. Native output and exception text are
-    # never diagnostic inputs, even when JSON decoding or cleanup refuses.
-    diagnostic = _FAILURE.get() or {}
+    # Arbitrary context/native text cannot escape. A bound refusal contributes
+    # only the independently allowlisted typed projection, never its body/unit.
+    stored = _FAILURE.get()
+    diagnostic = stored if type(stored) is dict else {}
     stage, case = diagnostic.get("stage"), diagnostic.get("case")
     code, completed = diagnostic.get("exit_code"), diagnostic.get("completed_cases")
-    return {"error": ERROR,
+    result = {"error": ERROR,
             "stage": stage if type(stage) is str and stage in _FAILURE_STAGES else "setup",
             "case": case if type(case) is str and case in _FAILURE_CASES else None,
             "exit_code": code if type(code) is int and 0 <= code <= 255 else None,
             "completed_cases": completed if type(completed) is int and 0 <= completed <= len(_FAILURE_CASES) else 0}
+    refusal = diagnostic.get("docx_refusal")
+    if (result["stage"] == "case_validation" and result["case"] == "styled_multipage_fit" and result["exit_code"] == 1
+            and type(refusal) is _DocxRefusal and type(refusal.case) is str and refusal.case == result["case"]
+            and type(refusal.error) is str and refusal.error == "docx_layout_refused"
+            and type(refusal.reason) is str and refusal.reason in _DOCX_REASONS):
+        result.update(processor_error=refusal.error, processor_reason=refusal.reason)
+    return result
 
 
 def command(args: list[str], *, timeout: int = 20, limit: int = 1024 * 1024) -> tuple[int, bytes]:
@@ -444,6 +503,7 @@ def check(platform: str, *, image: str | None = None) -> dict:
                 if (code or receipt.get("validator") != "hirewiz-docx-layout-v1" or receipt.get("pages") != 2
                         or receipt.get("unchanged_links") != 1 or receipt.get("outside_changed_regions_pixel_delta") != 0
                         or result.get("scan", {}).get("engine") != "ClamAV" or result.get("candidate_scan") != result.get("scan")):
+                    _note_docx_refusal(result, binding, code, case=name)
                     raise DocumentImageError()
                 layout_observations.append({"case": name, "passed": True, "layout": receipt, "scan": result["scan"]})
             elif (code != 1 or result.get("error") != "docx_layout_refused" or result.get("reason") not in {
