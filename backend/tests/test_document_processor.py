@@ -7,6 +7,7 @@ import http.client
 import importlib.util
 import io
 import json
+import re
 import socket
 import subprocess
 import sys
@@ -343,6 +344,31 @@ def test_parser_only_image_has_no_config_clients_or_source_tree():
     assert "freshclam" in text and "USER 65534:65534" in text
 
 
+def _assert_admission_failure_event(output, *private_values):
+    assert 0 < len(output.encode("utf-8")) <= 1024
+    assert output.endswith("\n") and len(output.splitlines()) == 1
+    event = json.loads(output)
+    assert set(event) == {
+        "event", "version", "diagnostic_id", "phase", "validation", "processor",
+        "launcher", "launcher_code", "launcher_elapsed_ms", "cleanup", "cleanup_code",
+        "cleanup_elapsed_ms", "elapsed_ms",
+    }
+    assert type(event["version"]) is int and event["version"] == 1
+    assert type(event["diagnostic_id"]) is str
+    assert re.fullmatch(r"[a-f0-9]{12}4[a-f0-9]{3}[89ab][a-f0-9]{15}", event["diagnostic_id"])
+    assert type(event["elapsed_ms"]) is int and 0 <= event["elapsed_ms"] <= 120000
+    assert {key: value for key, value in event.items()
+            if key not in {"diagnostic_id", "elapsed_ms"}} == {
+        "event": "document_inspection_failure", "version": 1, "phase": "admission",
+        "validation": "not_started", "processor": "not_validated", "launcher": "not_started",
+        "launcher_code": None, "launcher_elapsed_ms": None, "cleanup": "not_required",
+        "cleanup_code": None, "cleanup_elapsed_ms": None,
+    }
+    for value in (*private_values, "private-marker", "synthetic-result", "InspectionDenied",
+                  "Traceback", "Authorization", "Bearer", "Cookie", "document_inspection_refused"):
+        assert value not in output
+
+
 @pytest.mark.parametrize("kind", ["good", "wrong-policy", "duplicate-policy", "duplicate-length", "wrong-path", "compressed"])
 def test_actual_http_adapter_fixed_boundary(service, monkeypatch, kind, capsys):
     calls = []
@@ -381,7 +407,13 @@ def test_actual_http_adapter_fixed_boundary(service, monkeypatch, kind, capsys):
         server.server_close()
         thread.join(timeout=2)
     captured = capsys.readouterr()
-    assert captured.out == captured.err == ""
+    assert captured.out == ""
+    if kind == "good":
+        assert captured.err == ""
+    else:
+        request = json.loads(original)
+        _assert_admission_failure_event(captured.err, original.decode(), request["sha256"],
+                                        request["content_base64"], "b" * 64)
 
 
 @pytest.mark.parametrize("instruction", ['INCLUDETEXT "https://fixture.invalid/candidate.docx"',
@@ -455,7 +487,11 @@ def test_http_absolute_read_deadline_closes_dripping_request(service, monkeypatc
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
-    assert capsys.readouterr() == ("", "")
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    # Incomplete headers can terminate before BaseHTTPRequestHandler enters do_POST.
+    if stage == "body" or captured.err:
+        _assert_admission_failure_event(captured.err, prefix.decode(), "b" * 64)
 
 
 def test_http_read_timer_cancelled_before_processing_and_on_finish(service, monkeypatch, capsys):
