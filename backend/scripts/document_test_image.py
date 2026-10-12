@@ -53,6 +53,10 @@ _FAILURE_CASES = frozenset({
     "clamd_encrypted_pdf", "clamd_encrypted_zip", "clamd_max_filesize", "clamd_max_scansize",
     "clamd_max_files", "clamd_max_recursion", "clamd_resident_parser",
 })
+CLAMD_FAILURE_LINES = {'_command': (99, 102, 108, 111, 114), '_native_file': (201, 205, 213, 216), '_installed_clamd': (226, 230, 234), '_clamd_definition': (256, 260, 262), '_remaining': (291, 294), '_diagnostics': (328, 331, 335, 337, 344, 357, 359), '_drain': (372,), '_socket': (380, 388, 394), '_exchange': (402, 408, 415, 419), '_start': (430, 433, 440, 442, 445, 447, 449, 454, 458, 481, 485, 490, 498), 'scan': (503, 508, 515, 517, 526, 534, 535, 537, 539), 'close': (549, 563, 569, 572)}
+CLAMD_FAILURE_PHASES = frozenset(('setup', 'request', 'source_scan', 'resident_parser', 'candidate_scan', 'owner_cleanup', 'ownership', 'memory', 'writer_version', 'report'))
+CLAMD_FAILURE_CLASSES = frozenset(('InspectionDenied', 'InspectionUnavailable', 'MemoryError', 'TimeoutExpired', 'FileNotFoundError', 'PermissionError', 'TimeoutError', 'UnicodeError', 'OSError', 'ValueError', 'TypeError', 'KeyError', 'StopIteration', 'RuntimeError', 'SystemExit', 'KeyboardInterrupt', 'Unexpected'))
+
 _FAILURE: ContextVar[dict | None] = ContextVar("document_image_failure", default=None)
 # Finite processor refusal protocol, synchronized with the source-pinned core.
 # Never load app packages or copy a native response into diagnostic storage.
@@ -126,7 +130,7 @@ expected={"version":1,"sha256":sha256,"size_bytes":len(content),"source_format":
 refused=p.returncode==1 and len(p.stdout)<=4096 and json.loads(p.stdout)==expected and not p.stderr
 print(json.dumps({"eicar_detected":found,"processor_refused":refused}))
 '''
-CLAMD_NATIVE_PROGRAM = '"""Future Linux-image proof program; preparation must never execute this file."""\nimport base64\nimport hashlib\nimport json\nimport os\nfrom pathlib import Path\nimport resource\nimport sys\nimport tempfile\nimport time\n\nsys.path.insert(0, "/opt/document")\nimport processor\n\n\ndef require(value):\n    if not value:\n        raise ValueError("native_clamd_proof_unavailable")\n\n\ndef memory_value(name):\n    with open("/sys/fs/cgroup/" + name, "rb") as stream:\n        raw = stream.read(33)\n    require(0 < len(raw) <= 32 and raw.strip().isdigit())\n    return int(raw)\n\n\ndef main():\n    os.umask(0o077)\n    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))\n    resource.setrlimit(resource.RLIMIT_CPU, (40, 40))\n    resource.setrlimit(resource.RLIMIT_AS, (2 * 1024**3, 2 * 1024**3))\n    resource.setrlimit(resource.RLIMIT_FSIZE, (32 * 1024**2, 32 * 1024**2))\n    resource.setrlimit(resource.RLIMIT_NOFILE, (64, 64))\n    deadline = time.monotonic() + 50\n    with open("/tmp/request.json", "rb") as stream:\n        raw = stream.read(processor.MAX_REQUEST + 1)\n    require(0 < len(raw) <= processor.MAX_REQUEST)\n    request = json.loads(raw, object_pairs_hook=processor._pairs)\n    require(set(request) == {"case", "source", "candidate", "expected", "resident_parser",\n                            "candidate_sha256", "candidate_size_bytes", "edits"})\n    require(request["expected"] in {"clean", "source_refused", "candidate_refused", "candidate_nonclean"})\n    require(type(request["resident_parser"]) is bool)\n    source = base64.b64decode(request["source"], validate=True)\n    candidate = base64.b64decode(request["candidate"], validate=True)\n    require(0 < len(source) <= processor.MAX_FILE and 0 < len(candidate) <= processor.MAX_FILE)\n    require(type(request["candidate_size_bytes"]) is int and len(candidate) == request["candidate_size_bytes"]\n            and hashlib.sha256(candidate).hexdigest() == request["candidate_sha256"])\n    outcome = "clean"\n    generated = False\n    with tempfile.TemporaryDirectory(prefix="clamd-proof-", dir="/tmp") as temporary:\n        directory = Path(temporary)\n        directory.chmod(0o700)\n        original = directory / "original.docx"\n        target = directory / "candidate.docx"\n        original.write_bytes(source)\n        original.chmod(0o600)\n        owner = processor.OwnedClamd(directory, deadline)\n        source_metadata = candidate_metadata = None\n        resident_current = None\n        with owner:\n            try:\n                source_metadata = owner.scan(original, source)\n            except processor.InspectionDenied:\n                outcome = "source_refused"\n            if outcome == "clean":\n                if request["resident_parser"]:\n                    # Actual source parsing and candidate regeneration while the\n                    # genuine engine remains resident, never synthetic telemetry.\n                    processor.validate_docx(source)\n                    from app.services.resume_layout import _apply_docx\n                    require(type(request["edits"]) is list and len(request["edits"]) == 1)\n                    candidate = _apply_docx(source, request["edits"])\n                    require(len(candidate) == request["candidate_size_bytes"]\n                            and hashlib.sha256(candidate).hexdigest() == request["candidate_sha256"])\n                    processor.validate_docx(candidate)\n                    generated = True\n                    resident_current = memory_value("memory.current")\n                target.write_bytes(candidate)\n                target.chmod(0o600)\n                try:\n                    candidate_metadata = owner.scan(target, candidate)\n                except processor.InspectionDenied:\n                    outcome = "candidate_refused"\n                except processor.InspectionUnavailable:\n                    require(request["expected"] == "candidate_nonclean")\n                    outcome = "candidate_nonclean"\n            require(original.read_bytes() == source)\n            if target.exists():\n                require(target.read_bytes() == candidate)\n        require(owner.stopped and not owner.forced and owner.child is not None and owner.child.returncode == 0)\n        require(owner.peer is not None and owner.peer["pid"] == owner.child.pid)\n        require(owner.peer["uid"] == os.getuid() and owner.peer["gid"] == os.getgid())\n        require(len(owner.signatures) == 1 and owner.signatures[0] > 0)\n        require(not owner.log_path.exists())\n        require(time.monotonic() < deadline)\n        actual_expected = "candidate_refused" if request["expected"] == "candidate_nonclean" and outcome == "candidate_refused" else request["expected"]\n        require(outcome == actual_expected)\n        if request["expected"] == "clean":\n            require(source_metadata == candidate_metadata and len(owner.scan_bindings) == 2)\n        else:\n            require(outcome != "clean")\n        maximum, peak = memory_value("memory.max"), memory_value("memory.peak")\n        require(maximum == 2 * 1024**3 and 0 < peak <= maximum)\n        if request["resident_parser"]:\n            require(generated and type(resident_current) is int and 0 < resident_current <= maximum)\n        # A native Writer version operation starts only after the verified stop.\n        import docx_renderer\n        renderer_version = docx_renderer._version(deadline=deadline)\n        response = {"case": request["case"], "outcome": outcome, "native_installation": owner.manifest,\n                    "owned_peer": owner.peer, "loaded_signatures": owner.signatures[0],\n                    "scans": owner.scan_bindings, "daemon_returncode": owner.child.returncode,\n                    "daemon_stopped_before_writer": owner.stopped, "native_log_removed": not owner.log_path.exists(),\n                    "renderer_version_after_stop": renderer_version,\n                    "resident_parser_exercised": generated, "resident_parser_cgroup_current_bytes": resident_current,\n                    "cgroup_memory_max_bytes": maximum, "cgroup_memory_peak_bytes": peak,\n                    "performance_proven": False, "cloud_run_isolation_proven": False}\n        encoded = json.dumps(response, separators=(",", ":"), allow_nan=False).encode()\n        require(len(encoded) <= 16384)\n        sys.stdout.buffer.write(encoded + b"\\n")\n\n\nif __name__ == "__main__":\n    try:\n        main()\n    except BaseException:\n        print(\'{"status":"native_clamd_proof_unavailable"}\')\n        raise SystemExit(1) from None\n'
+CLAMD_NATIVE_PROGRAM = '"""Future Linux-image proof program; preparation must never execute this file."""\nimport base64\nimport hashlib\nimport json\nimport os\nfrom pathlib import Path\nimport resource\nimport sys\nimport tempfile\nimport time\n\nsys.path.insert(0, "/opt/document")\nimport processor\n\n\nCLAMD_FAILURE_LINES = {\'_command\': (99, 102, 108, 111, 114), \'_native_file\': (201, 205, 213, 216), \'_installed_clamd\': (226, 230, 234), \'_clamd_definition\': (256, 260, 262), \'_remaining\': (291, 294), \'_diagnostics\': (328, 331, 335, 337, 344, 357, 359), \'_drain\': (372,), \'_socket\': (380, 388, 394), \'_exchange\': (402, 408, 415, 419), \'_start\': (430, 433, 440, 442, 445, 447, 449, 454, 458, 481, 485, 490, 498), \'scan\': (503, 508, 515, 517, 526, 534, 535, 537, 539), \'close\': (549, 563, 569, 572)}\nCLAMD_FAILURE_PHASES = frozenset((\'setup\', \'request\', \'source_scan\', \'resident_parser\', \'candidate_scan\', \'owner_cleanup\', \'ownership\', \'memory\', \'writer_version\', \'report\'))\nCLAMD_FAILURE_CLASSES = frozenset((\'InspectionDenied\', \'InspectionUnavailable\', \'MemoryError\', \'TimeoutExpired\', \'FileNotFoundError\', \'PermissionError\', \'TimeoutError\', \'UnicodeError\', \'OSError\', \'ValueError\', \'TypeError\', \'KeyError\', \'StopIteration\', \'RuntimeError\', \'SystemExit\', \'KeyboardInterrupt\', \'Unexpected\'))\nCLAMD_PHASE = "setup"\n\n\ndef failure_receipt(error):\n    """Fixed classes and literal owned raise sites only; never format errors."""\n    classes = ((processor.InspectionDenied, "InspectionDenied"),\n        (processor.InspectionUnavailable, "InspectionUnavailable"),\n        (MemoryError, "MemoryError"), (processor.subprocess.TimeoutExpired, "TimeoutExpired"),\n        (FileNotFoundError, "FileNotFoundError"), (PermissionError, "PermissionError"),\n        (TimeoutError, "TimeoutError"), (UnicodeError, "UnicodeError"), (OSError, "OSError"),\n        (ValueError, "ValueError"), (TypeError, "TypeError"), (KeyError, "KeyError"),\n        (StopIteration, "StopIteration"), (RuntimeError, "RuntimeError"),\n        (SystemExit, "SystemExit"), (KeyboardInterrupt, "KeyboardInterrupt"))\n    chain, seen, truncated = [], set(), False\n    while error is not None:\n        if id(error) in seen or len(chain) == 8:\n            truncated = True\n            break\n        seen.add(id(error))\n        category = next((label for kind, label in classes if isinstance(error, kind)), "Unexpected")\n        frames, trace_seen, walked = [], set(), 0\n        trace = error.__traceback__\n        while trace is not None:\n            if id(trace) in trace_seen or walked == 64:\n                truncated = True\n                break\n            trace_seen.add(id(trace))\n            walked += 1\n            code, line = trace.tb_frame.f_code, trace.tb_lineno\n            if (code.co_filename == "/opt/document/processor.py"\n                    and line in CLAMD_FAILURE_LINES.get(code.co_name, ())):\n                if len(frames) == 8:\n                    truncated = True\n                    break\n                frames.append({"function": code.co_name, "line": line})\n            trace = trace.tb_next\n        chain.append({"class": category, "frames": frames})\n        error = error.__context__\n    return {"version": 1, "status": "native_clamd_proof_unavailable",\n            "phase": CLAMD_PHASE if CLAMD_PHASE in CLAMD_FAILURE_PHASES else "setup",\n            "chain": chain, "truncated": truncated}\n\n\ndef require(value):\n    if not value:\n        raise ValueError("native_clamd_proof_unavailable")\n\n\ndef memory_value(name):\n    with open("/sys/fs/cgroup/" + name, "rb") as stream:\n        raw = stream.read(33)\n    require(0 < len(raw) <= 32 and raw.strip().isdigit())\n    return int(raw)\n\n\ndef main():\n    global CLAMD_PHASE\n    os.umask(0o077)\n    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))\n    resource.setrlimit(resource.RLIMIT_CPU, (40, 40))\n    resource.setrlimit(resource.RLIMIT_AS, (2 * 1024**3, 2 * 1024**3))\n    resource.setrlimit(resource.RLIMIT_FSIZE, (32 * 1024**2, 32 * 1024**2))\n    resource.setrlimit(resource.RLIMIT_NOFILE, (64, 64))\n    deadline = time.monotonic() + 50\n    CLAMD_PHASE = "request"\n    with open("/tmp/request.json", "rb") as stream:\n        raw = stream.read(processor.MAX_REQUEST + 1)\n    require(0 < len(raw) <= processor.MAX_REQUEST)\n    request = json.loads(raw, object_pairs_hook=processor._pairs)\n    require(set(request) == {"case", "source", "candidate", "expected", "resident_parser",\n                            "candidate_sha256", "candidate_size_bytes", "edits"})\n    require(request["expected"] in {"clean", "source_refused", "candidate_refused", "candidate_nonclean"})\n    require(type(request["resident_parser"]) is bool)\n    source = base64.b64decode(request["source"], validate=True)\n    candidate = base64.b64decode(request["candidate"], validate=True)\n    require(0 < len(source) <= processor.MAX_FILE and 0 < len(candidate) <= processor.MAX_FILE)\n    require(type(request["candidate_size_bytes"]) is int and len(candidate) == request["candidate_size_bytes"]\n            and hashlib.sha256(candidate).hexdigest() == request["candidate_sha256"])\n    outcome = "clean"\n    generated = False\n    with tempfile.TemporaryDirectory(prefix="clamd-proof-", dir="/tmp") as temporary:\n        directory = Path(temporary)\n        directory.chmod(0o700)\n        original = directory / "original.docx"\n        target = directory / "candidate.docx"\n        original.write_bytes(source)\n        original.chmod(0o600)\n        owner = processor.OwnedClamd(directory, deadline)\n        source_metadata = candidate_metadata = None\n        resident_current = None\n        with owner:\n            try:\n                CLAMD_PHASE = "source_scan"\n                source_metadata = owner.scan(original, source)\n            except processor.InspectionDenied:\n                outcome = "source_refused"\n            if outcome == "clean":\n                if request["resident_parser"]:\n                    # Actual source parsing and candidate regeneration while the\n                    # genuine engine remains resident, never synthetic telemetry.\n                    CLAMD_PHASE = "resident_parser"\n                    processor.validate_docx(source)\n                    from app.services.resume_layout import _apply_docx\n                    require(type(request["edits"]) is list and len(request["edits"]) == 1)\n                    candidate = _apply_docx(source, request["edits"])\n                    require(len(candidate) == request["candidate_size_bytes"]\n                            and hashlib.sha256(candidate).hexdigest() == request["candidate_sha256"])\n                    processor.validate_docx(candidate)\n                    generated = True\n                    resident_current = memory_value("memory.current")\n                target.write_bytes(candidate)\n                target.chmod(0o600)\n                try:\n                    CLAMD_PHASE = "candidate_scan"\n                    candidate_metadata = owner.scan(target, candidate)\n                except processor.InspectionDenied:\n                    outcome = "candidate_refused"\n                except processor.InspectionUnavailable:\n                    require(request["expected"] == "candidate_nonclean")\n                    outcome = "candidate_nonclean"\n            require(original.read_bytes() == source)\n            if target.exists():\n                require(target.read_bytes() == candidate)\n            CLAMD_PHASE = "owner_cleanup"\n        CLAMD_PHASE = "ownership"\n        require(owner.stopped and not owner.forced and owner.child is not None and owner.child.returncode == 0)\n        require(owner.peer is not None and owner.peer["pid"] == owner.child.pid)\n        require(owner.peer["uid"] == os.getuid() and owner.peer["gid"] == os.getgid())\n        require(len(owner.signatures) == 1 and owner.signatures[0] > 0)\n        require(not owner.log_path.exists())\n        require(time.monotonic() < deadline)\n        actual_expected = "candidate_refused" if request["expected"] == "candidate_nonclean" and outcome == "candidate_refused" else request["expected"]\n        require(outcome == actual_expected)\n        if request["expected"] == "clean":\n            require(source_metadata == candidate_metadata and len(owner.scan_bindings) == 2)\n        else:\n            require(outcome != "clean")\n        CLAMD_PHASE = "memory"\n        maximum, peak = memory_value("memory.max"), memory_value("memory.peak")\n        require(maximum == 2 * 1024**3 and 0 < peak <= maximum)\n        if request["resident_parser"]:\n            require(generated and type(resident_current) is int and 0 < resident_current <= maximum)\n        # A native Writer version operation starts only after the verified stop.\n        CLAMD_PHASE = "writer_version"\n        import docx_renderer\n        renderer_version = docx_renderer._version(deadline=deadline)\n        response = {"case": request["case"], "outcome": outcome, "native_installation": owner.manifest,\n                    "owned_peer": owner.peer, "loaded_signatures": owner.signatures[0],\n                    "scans": owner.scan_bindings, "daemon_returncode": owner.child.returncode,\n                    "daemon_stopped_before_writer": owner.stopped, "native_log_removed": not owner.log_path.exists(),\n                    "renderer_version_after_stop": renderer_version,\n                    "resident_parser_exercised": generated, "resident_parser_cgroup_current_bytes": resident_current,\n                    "cgroup_memory_max_bytes": maximum, "cgroup_memory_peak_bytes": peak,\n                    "performance_proven": False, "cloud_run_isolation_proven": False}\n        CLAMD_PHASE = "report"\n        encoded = json.dumps(response, separators=(",", ":"), allow_nan=False).encode()\n        require(len(encoded) <= 16384)\n        sys.stdout.buffer.write(encoded + b"\\n")\n\n\nif __name__ == "__main__":\n    try:\n        main()\n    except BaseException as error:\n        print(json.dumps(failure_receipt(error), separators=(",", ":"), allow_nan=False))\n        raise SystemExit(1) from None\n'
 DOCX_LAYOUT_PROGRAM = '''import json,pathlib,subprocess,sys
 payload=pathlib.Path("/tmp/request.json").read_bytes()
 p=subprocess.run([sys.executable,"-I","/opt/document/processor.py","--docx-layout-stdin"],
@@ -280,10 +284,78 @@ class DocumentImageError(RuntimeError):
         super().__init__(ERROR)
 
 
+class _ClamdFailure(NamedTuple):
+    case: str
+    phase: str
+    chain: tuple
+    truncated: bool
+
+
+def _clamd_diagnostic_pairs(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise DocumentImageError()
+        result[key] = value
+    return result
+
+
+def _clamd_diagnostic_values(value):
+    if (type(value) is not dict or set(value) != {"version", "status", "phase", "chain", "truncated"}
+            or type(value["version"]) is not int or value["version"] != 1
+            or value["status"] != "native_clamd_proof_unavailable"
+            or type(value["phase"]) is not str or value["phase"] not in CLAMD_FAILURE_PHASES
+            or type(value["truncated"]) is not bool or type(value["chain"]) is not list
+            or not 1 <= len(value["chain"]) <= 8):
+        raise DocumentImageError()
+    chain = []
+    for row in value["chain"]:
+        if (type(row) is not dict or set(row) != {"class", "frames"}
+                or type(row["class"]) is not str or row["class"] not in CLAMD_FAILURE_CLASSES
+                or type(row["frames"]) is not list or len(row["frames"]) > 8):
+            raise DocumentImageError()
+        frames = []
+        for frame in row["frames"]:
+            if (type(frame) is not dict or set(frame) != {"function", "line"}
+                    or type(frame["function"]) is not str or frame["function"] not in CLAMD_FAILURE_LINES
+                    or type(frame["line"]) is not int
+                    or frame["line"] not in CLAMD_FAILURE_LINES[frame["function"]]):
+                raise DocumentImageError()
+            frames.append((frame["function"], frame["line"]))
+        chain.append((row["class"], tuple(frames)))
+    return value["phase"], tuple(chain), value["truncated"]
+
+
+def _clamd_diagnostic_object(phase, chain, truncated):
+    return {"version": 1, "status": "native_clamd_proof_unavailable", "phase": phase,
+            "chain": [{"class": category, "frames": [{"function": function, "line": line}
+                for function, line in frames]} for category, frames in chain], "truncated": truncated}
+
+
+def _note_clamd_failure(raw: bytes, code: int, *, case: str) -> None:
+    diagnostic = _FAILURE.get()
+    if type(diagnostic) is not dict:
+        return
+    diagnostic.pop("clamd_failure", None)
+    if (type(code) is not int or code != 1 or type(case) is not str
+            or case not in _FAILURE_CASES or not case.startswith("clamd_")
+            or type(raw) is not bytes or not 0 < len(raw) <= 8192 or not raw.endswith(b"\n")):
+        return
+    try:
+        value = json.loads(raw, object_pairs_hook=_clamd_diagnostic_pairs)
+        phase, chain, truncated = _clamd_diagnostic_values(value)
+        if raw != (json.dumps(value, separators=(",", ":"), allow_nan=False) + "\n").encode("ascii"):
+            return
+    except Exception:
+        return
+    diagnostic["clamd_failure"] = _ClamdFailure(case, phase, chain, truncated)
+
+
 def _progress(stage: str, *, case: str | None = None, exit_code: int | None = None,
               completed_cases: int | None = None) -> None:
     diagnostic = _FAILURE.get()
     if type(diagnostic) is dict:
+        diagnostic.pop("clamd_failure", None)
         diagnostic.pop("docx_refusal", None)
         diagnostic.pop("docx_fit_mismatch", None)
         diagnostic.pop("docx_link_observation", None)
@@ -401,6 +473,18 @@ def _failure_report() -> dict:
                 and all(type(n) is int and 0 <= n <= 100 for n in (values[i] for i in _LINK_COUNT_INDEXES))
                 and all(type(flag) is bool for flag in (values[i] for i in _LINK_BOOL_INDEXES))):
             result.update(link_diagnostic_status="observed", link_diagnostic=dict(zip(_LINK_FIELDS, values, strict=True)))
+    clamd = diagnostic.get("clamd_failure")
+    if (result["stage"] == "case_validation" and result["exit_code"] == 1
+            and type(clamd) is _ClamdFailure and clamd.case == result["case"]
+            and type(clamd.case) is str and clamd.case.startswith("clamd_")
+            and clamd.case in _FAILURE_CASES):
+        try:
+            value = _clamd_diagnostic_object(clamd.phase, clamd.chain, clamd.truncated)
+            _clamd_diagnostic_values(value)
+        except Exception:
+            pass
+        else:
+            result["clamd_failure"] = value
     return result
 
 
@@ -905,6 +989,7 @@ def check(platform: str, *, image: str | None = None) -> dict:
             code, raw = container(docker, image, platform, ["-c", CLAMD_NATIVE_PROGRAM], [(request, "/tmp/request.json")])
             _progress("case_validation", case=name, exit_code=code)
             if code:
+                _note_clamd_failure(raw, code, case=name)
                 raise DocumentImageError()
             value = json.loads(raw)
             validate_clamd_native(value, name, expected, resident, payload, platform)
