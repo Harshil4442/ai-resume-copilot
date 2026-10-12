@@ -241,6 +241,8 @@ jobs:
           HIREWIZ_AUTHORITY_EMULATOR_REQUIRED: "true"
         run: |
           .venv/bin/python scripts/run_prompt_evals.py
+          # Catch the native delivery/application contract before the full suite.
+          .venv/bin/pytest -q tests/test_analysis_runs.py::test_evidence_tailoring_creates_a_traceable_version_and_commits_once
           .venv/bin/pytest -q
       - name: Remove disposable Lever pacing Redis
         if: always()

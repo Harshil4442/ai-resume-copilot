@@ -1,16 +1,26 @@
 # ADR 002 Paid job service credits
 
-Status: Accepted for implementation on 8 October 2026
+Status: Accepted for implementation on 8 October 2026. Commercial terms updated by
+[the finite-pack decision](../delivery/FINITE_PACK_IMPLEMENTATION_2026-10-09.md)
+on 9 October 2026; the accounting decision below remains accepted.
 
 Job search and automatic applications use a dedicated prepaid service balance. Premium
 access and free signup analysis units do not waive these charges. The customer chooses
 the number of results and sees a separate application quote for each selected job.
 
-Initial configuration is one service credit per newly delivered qualifying posting and
-five per verified complete automatic application. The checkout catalog contains a
-500-credit INR 499 pack. These are introductory prices, not a claim of measured margins.
-Change future prices using a new pricing version after observing ingestion, execution,
-provider and support costs. Existing reservations retain their captured unit prices.
+Current reviewed source terms are one service credit per newly delivered qualifying
+posting and 20 per verified complete automatic application. New purchases offer three
+finite bundles: Starter INR 649 (100 service credits + 2 analysis units), Growth INR
+1,099 (300 + 6), and Scale INR 2,199 (700 + 15). See the
+[finite-pack decision](../delivery/FINITE_PACK_IMPLEMENTATION_2026-10-09.md) and
+[BI01–BI08 requirements](../requirements/JOB_SEARCH_AND_APPLICATION.md#paid-search-and-auto-apply)
+for expense assumptions, separate quotes and rollout evidence. Source implementation
+does not prove production activation or measured profitability.
+
+The original pilot's five-credit application price and 500-credit INR 499 pack are
+historical terms, not current offers. Already accepted orders, entitlements and
+reservations retain their exact purchased terms and captured unit prices. Change
+future prices only with a newly reviewed pricing version; do not reprice history.
 
 Reserve under the owner row lock, append a ledger event and create work within one SQL
 transaction. Release unused search reservations. A paid delivery uniqueness constraint

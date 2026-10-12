@@ -106,9 +106,17 @@ def configure_native_docx_worker(monkeypatch) -> list[dict]:
         if code not in {0, 1} or not 0 < len(raw) <= (32768 if code == 0 else 4096):
             raise AssertionError("The genuine native DOCX processor did not produce a bounded terminal response.")
         observed = json.loads(raw)
+        # The production HTTP handler adds these two verified deployment pins
+        # after native processing. The processor deliberately omits them.
+        if type(observed) is not dict or {"worker_image", "policy_sha256"} & set(observed):
+            raise AssertionError("The native processor returned an unexpected delivery envelope.")
+        observed.update(worker_image=worker_image, policy_sha256=runtime["policy"])
+        delivered = json.dumps(observed, allow_nan=False).encode()
+        if len(delivered) > (32768 if code == 0 else 4096):
+            raise AssertionError("The verified native delivery envelope exceeded its response cap.")
         calls.append({"exit_code": code, "reason": observed.get("reason"), "unit_id": observed.get("unit_id")})
         return httpx.Response(200 if code == 0 else 422,
-                              headers={"Content-Type": "application/json"}, stream=_Chunks(raw))
+                              headers={"Content-Type": "application/json"}, stream=_Chunks(delivered))
 
     def client(**kwargs):
         if kwargs.get("trust_env") is not False or kwargs.get("follow_redirects") is not False:
