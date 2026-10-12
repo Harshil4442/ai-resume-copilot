@@ -175,9 +175,11 @@ def test_actual_runtime_permissions_refuse_missing_new_table_and_sequence_grants
             release.verify_runtime_permissions(connection, namespace, runtime, operator)
 
 
-def test_owned_backup_exporter_holds_real_snapshot_and_scrubs_ambient_libpq(context, monkeypatch):
+@pytest.mark.parametrize("fault", [None, "context", "snapshot_body"])
+def test_owned_backup_exporter_holds_real_snapshot_and_scrubs_ambient_libpq(context, monkeypatch, fault):
     import os
     import sys
+    from contextlib import nullcontext
     from pathlib import Path
     from types import SimpleNamespace
     sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "infra/gcp"))
@@ -186,19 +188,61 @@ def test_owned_backup_exporter_holds_real_snapshot_and_scrubs_ambient_libpq(cont
     inventory = SimpleNamespace(expected_system_identifier_sha256=data["expected_system_identifier_sha256"],
                                 expected_database_oid=data["expected_database_oid"], database_namespace=data["database_namespace"])
     boundary = release.NativeBoundary(Path(__file__).resolve().parents[2])
-    monkeypatch.setattr(boundary, "_database_context", lambda *args: (None, (engine, inventory), {}, ()))
-    monkeypatch.setenv("PGHOSTADDR", "192.0.2.123")
-    monkeypatch.setenv("PGSERVICE", "synthetic-unreviewed-service")
-    with boundary._backup_snapshot(None) as (snapshot, _):
+    binding = object()
+    checks = []
+
+    # Neon transport has separate tests. These explicit boundary spies retain
+    # the current four-field contract and require a real read-only exporter;
+    # cluster/schema checks and the exported/imported snapshot remain native.
+    def verify_transport(connection, observed_binding):
+        assert observed_binding is binding
         assert "PGHOSTADDR" not in os.environ and "PGSERVICE" not in os.environ
-        with engine.begin() as writer:
-            writer.execute(text("INSERT INTO users(id,email,password_hash,ai_credits,job_service_credits) VALUES (321,'snapshot@example.invalid','synthetic',50,0)"))
-        with engine.connect() as importer:
-            importer.exec_driver_sql("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
-            importer.exec_driver_sql(f"SET TRANSACTION SNAPSHOT '{snapshot}'")
-            assert importer.execute(text("SELECT count(*) FROM users WHERE id=321")).scalar_one() == 0
-    assert os.environ["PGHOSTADDR"] == "192.0.2.123" and os.environ["PGSERVICE"] == "synthetic-unreviewed-service"
-    monkeypatch.delenv("PGHOSTADDR")
-    monkeypatch.delenv("PGSERVICE")
+        assert connection.exec_driver_sql("SHOW transaction_read_only").scalar_one() == "on"
+        assert connection.exec_driver_sql("SHOW transaction_isolation").scalar_one() == "repeatable read"
+        checks.append("transport")
+
+    def verify_native_target(connection, observed_binding, expected_oid):
+        assert observed_binding is binding
+        assert expected_oid == inventory.expected_database_oid
+        assert checks == ["transport"]
+        assert connection.execute(text("SELECT oid FROM pg_database WHERE datname=current_database()")).scalar_one() == expected_oid
+        checks.append("native_target")
+
+    observer = SimpleNamespace(neon_identity=SimpleNamespace(
+        verify_transport=verify_transport, verify_native_target=verify_native_target))
+
+    def database_context(plan, schema):
+        assert plan is None and schema == "20261008_0009"
+        if fault == "context":
+            raise release.ReleaseDenied("synthetic_snapshot_context_failure")
+        return observer, (engine, inventory, binding, None), {}, ()
+
+    ambient_before = {name: os.environ.get(name) for name in ("PGHOSTADDR", "PGSERVICE")}
+    # Scope poison to this test body, so it is undone before DB fixture teardown
+    # even if snapshot creation, a guard, or a client assertion raises.
+    with monkeypatch.context() as patch:
+        patch.setattr(boundary, "_database_context", database_context)
+        patch.setenv("PGHOSTADDR", "192.0.2.123")
+        patch.setenv("PGSERVICE", "synthetic-unreviewed-service")
+        failure = (pytest.raises(release.ReleaseDenied, match="^synthetic_snapshot_context_failure$")
+                   if fault == "context" else
+                   pytest.raises(RuntimeError, match="^synthetic_snapshot_client_failure$")
+                   if fault == "snapshot_body" else nullcontext())
+        with failure:
+            with boundary._backup_snapshot(None) as (snapshot, observed_inventory):
+                assert observed_inventory is inventory
+                assert "PGHOSTADDR" not in os.environ and "PGSERVICE" not in os.environ
+                assert checks == ["transport", "native_target"]
+                with engine.begin() as writer:
+                    writer.execute(text("INSERT INTO users(id,email,password_hash,ai_credits,job_service_credits) VALUES (321,'snapshot@example.invalid','synthetic',50,0)"))
+                with engine.connect() as importer:
+                    importer.exec_driver_sql("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+                    importer.exec_driver_sql(f"SET TRANSACTION SNAPSHOT '{snapshot}'")
+                    assert importer.execute(text("SELECT count(*) FROM users WHERE id=321")).scalar_one() == 0
+                if fault == "snapshot_body":
+                    raise RuntimeError("synthetic_snapshot_client_failure")
+        assert os.environ["PGHOSTADDR"] == "192.0.2.123" and os.environ["PGSERVICE"] == "synthetic-unreviewed-service"
+    assert {name: os.environ.get(name) for name in ambient_before} == ambient_before
+    assert checks == ([] if fault == "context" else ["transport", "native_target"])
     with engine.connect() as connection:
-        assert connection.execute(text("SELECT count(*) FROM users WHERE id=321")).scalar_one() == 1
+        assert connection.execute(text("SELECT count(*) FROM users WHERE id=321")).scalar_one() == (0 if fault == "context" else 1)
