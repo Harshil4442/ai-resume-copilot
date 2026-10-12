@@ -95,177 +95,6 @@ class _DocxLinkObservation(NamedTuple):
     values: tuple | None
 
 
-DOCX_MODEL_PROGRAM = '"""Fixed source-bound program copied into the existing CI diagnostic launcher."""\nimport hashlib\nimport json\nimport math\nimport pathlib\nimport re\nimport sys\nimport time\nimport uuid\n\nsys.path.insert(0, "/opt/document")\nimport docx_renderer\nimport processor\nfrom app.services import docx_layout_validation as core\n\nURI = "https://example.test/portfolio"\n\n\ndef main():\n    deadline = time.monotonic() + 55\n    with pathlib.Path("/tmp/request.json").open("rb") as stream:\n        payload = stream.read(processor.MAX_REQUEST + 1)\n    source, decoded = processor.decode_docx_request(payload)\n    with pathlib.Path("/tmp/model-binding.json").open("rb") as stream:\n        expected_raw = stream.read(16385)\n    if len(expected_raw) > 16384:\n        raise ValueError()\n    expected = json.loads(expected_raw)\n    if type(expected) is not dict or set(expected) != {"binding", "runtime", "helper_sha256"}:\n        raise ValueError()\n    binding = decoded["binding"]\n    if (type(expected["binding"]) is not dict or set(expected["binding"]) != set(binding)\n            or any(type(expected["binding"][key]) is not type(value) or expected["binding"][key] != value\n                   for key, value in binding.items())):\n        raise ValueError()\n    runtime = expected["runtime"]\n    if type(runtime) is not dict or len(runtime) != 10:\n        raise ValueError()\n    for path, digest in runtime.items():\n        if (type(path) is not str or not path.startswith("/opt/document/") or ".." in path\n                or type(digest) is not str or len(digest) != 64\n                or hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest() != digest):\n            raise ValueError()\n    helper = pathlib.Path("/opt/document/writer_model_export.py")\n    if helper.is_symlink() or hashlib.sha256(helper.read_bytes()).hexdigest() != expected["helper_sha256"]:\n        raise ValueError()\n    # Verify unchanged renderer/font identity after the bridge-only derivative.\n    docx_renderer.font_manifest(deadline=deadline)\n    directory = pathlib.Path("/tmp/docx-writer-model-" + uuid.uuid4().hex)\n    directory.mkdir(mode=0o700)\n    original = directory / "input.docx"\n    original.write_bytes(source)\n    original.chmod(0o600)\n    processor.scan_original(original)\n    processor.validate_docx(source)\n    if original.read_bytes() != source or time.monotonic() >= deadline:\n        raise ValueError()\n    observed_raw = docx_renderer._run([\n        "/usr/bin/python3", "-I", str(helper), "--render", str(directory), str(deadline),\n        hashlib.sha256(source).hexdigest(),\n    ], deadline=deadline, limit=4096)\n    observed = json.loads(observed_raw)\n    fields = {"modified_before", "modified_after_first", "modified_after_final", "model_url_unchanged",\n              "source_bytes_unchanged", "office_reaped"}\n    if (type(observed) is not dict or set(observed) != fields\n            or any(type(value) is not bool for value in observed.values())\n            or observed["source_bytes_unchanged"] is not True or observed["office_reaped"] is not True):\n        raise ValueError()\n    content = []\n    for filename in ("first.pdf", "final.pdf"):\n        path = directory / "pdf" / filename\n        if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= docx_renderer.MAX_PDF:\n            raise ValueError()\n        with path.open("rb") as stream:\n            pdf = stream.read(docx_renderer.MAX_PDF + 1)\n        if len(pdf) > docx_renderer.MAX_PDF:\n            raise ValueError()\n        content.append(pdf)\n    first, final = (core._view(pdf) for pdf in content)\n    if not 0 <= len(first[2]) <= 100 or not 0 <= len(final[2]) <= 100:\n        raise ValueError()\n    geometry = first[0] == final[0]\n    pixels = False\n    if first[1] == final[1]:\n        try:\n            core._compare_pixels(content[0], content[1], len(first[1]), [])\n            pixels = True\n        except core.DocxLayoutError:\n            pass\n    def label(view):\n        text = "".join(item["text"] for item in view[0])\n        matches = list(re.finditer("Portfolio", text))\n        occurrences = len(matches)\n        if not 0 <= occurrences <= 100:\n            raise ValueError()\n        # The fixed fixture has exactly one visible label, all glyphs bounded by\n        # the already strict native view. No label-to-annotation repair occurs.\n        in_page = True\n        for match in matches:\n            for item in view[0][match.start():match.end()]:\n                width, height = view[1][item["page"]]\n                x0, y0, x1, y1 = item["box"]\n                in_page = in_page and 0 <= x0 <= x1 <= width and 0 <= y0 <= y1 <= height\n        return occurrences, occurrences > 0 and in_page\n    first_labels, first_in_page = label(first)\n    final_labels, final_in_page = label(final)\n    if original.read_bytes() != source or time.monotonic() >= deadline:\n        raise ValueError()\n    result = {\n        "first_pdf_links": len(first[2]), "final_pdf_links": len(final[2]),\n        "first_uri_match": bool(first[2]) and all(link[1] == ("uri", URI) for link in first[2]),\n        "final_uri_match": bool(final[2]) and all(link[1] == ("uri", URI) for link in final[2]),\n        "first_pages": len(first[1]), "final_pages": len(final[1]),\n        "first_label_occurrences": first_labels, "final_label_occurrences": final_labels,\n        "first_label_in_page": first_in_page, "final_label_in_page": final_in_page,\n        "page_geometry_equal": first[1] == final[1], "glyph_geometry_equal": bool(geometry),\n        "paint_equal": first[3] == final[3], "pixels_equal": pixels,\n        "runtime_sources_verified": True, "renderer_identity_verified": True, "helper_source_verified": True,\n        "native_export_calls": 2, **observed,\n    }\n    if any(type(value) not in {int, bool} for value in result.values()) or not all(\n            math.isfinite(value) for value in result.values()):\n        raise ValueError()\n    print(json.dumps(result, separators=(",", ":"), allow_nan=False))\n\n\ntry:\n    main()\nexcept Exception:\n    print(\'{"status":"unavailable"}\')\n    raise SystemExit(1) from None\n'
-
-_MODEL_FIELDS = (
-    "first_pdf_links", "final_pdf_links", "first_uri_match", "final_uri_match", "first_pages", "final_pages",
-    "first_label_occurrences", "final_label_occurrences", "first_label_in_page", "final_label_in_page",
-    "page_geometry_equal", "glyph_geometry_equal", "paint_equal", "pixels_equal",
-    "runtime_sources_verified", "renderer_identity_verified", "helper_source_verified", "native_export_calls",
-    "modified_before", "modified_after_first", "modified_after_final", "model_url_unchanged",
-    "source_bytes_unchanged", "office_reaped",
-)
-_MODEL_COUNTS = {"first_pdf_links": 100, "final_pdf_links": 100, "first_pages": 20, "final_pages": 20,
-                 "first_label_occurrences": 100, "final_label_occurrences": 100, "native_export_calls": 2}
-_MODEL_HELPER = "infra/document-processing/writer_model_export.py"
-_MODEL_LABEL = "hirewiz.document-model-experiment."
-
-
-class _DocxModelObservation(NamedTuple):
-    build_calls: int
-    build_seconds: float
-    container_calls: int
-    container_seconds: float
-    values: tuple | None
-
-
-def _model_values(observed: object) -> tuple | None:
-    if (type(observed) is not dict or any(type(key) is not str for key in observed)
-            or set(observed) != set(_MODEL_FIELDS)):
-        return None
-    for field in _MODEL_FIELDS:
-        value = observed[field]
-        if field in _MODEL_COUNTS:
-            if type(value) is not int or not 0 <= value <= _MODEL_COUNTS[field]:
-                return None
-        elif type(value) is not bool:
-            return None
-    if observed["native_export_calls"] != 2:
-        return None
-    return tuple(observed[field] for field in _MODEL_FIELDS)
-
-
-def _model_projection(observation: object) -> dict:
-    if (type(observation) is not _DocxModelObservation
-            or type(observation.build_calls) is not int or observation.build_calls not in {0, 1}
-            or type(observation.container_calls) is not int or observation.container_calls not in {0, 1}
-            or any(type(value) is not float or not math.isfinite(value) or not 0 <= value <= cap for value, cap in
-                   ((observation.build_seconds, 400), (observation.container_seconds, 150)))):
-        return {}
-    result = {
-        "model_experiment_scope": "private_diagnostic_derivative_only",
-        "model_experiment_build_calls": observation.build_calls,
-        "model_experiment_build_seconds": observation.build_seconds,
-        "model_experiment_container_calls": observation.container_calls,
-        "model_experiment_container_seconds": observation.container_seconds,
-        "model_experiment_status": "unavailable",
-    }
-    if (observation.build_calls == observation.container_calls == 1 and type(observation.values) is tuple
-            and len(observation.values) == len(_MODEL_FIELDS)):
-        values = dict(zip(_MODEL_FIELDS, observation.values, strict=True))
-        if _model_values(values) is not None:
-            result.update(model_experiment_status="observed", model_experiment=values)
-    return result
-
-
-def _build_model_derivative(docker: list[str], parent: str, platform: str, hashes: dict[str, str],
-                            dispatched: list[bool]) -> tuple[str, str]:
-    image_metadata(docker, parent, platform, hashes)
-    parent_metadata = json.loads(successful(docker + ["image", "inspect", parent]))[0]
-    layers = parent_metadata.get("RootFS", {}).get("Layers")
-    if type(layers) is not list or not layers or any(type(layer) is not str for layer in layers):
-        raise DocumentImageError()
-    helper_path = ROOT / _MODEL_HELPER
-    if helper_path.is_symlink() or not helper_path.is_file() or not 0 < helper_path.stat().st_size <= 32768:
-        raise DocumentImageError()
-    helper = helper_path.read_bytes()
-    helper_hash = hashlib.sha256(helper).hexdigest()
-    # BuildKit cannot reliably use a bare local sha256 ID in FROM. This owned
-    # local alias is bound back to that ID and retained only on the disposable
-    # CI runner, as the original helper retains its native test images.
-    alias = "hirewiz-model-parent-" + uuid.uuid4().hex + ":owned"
-    successful(docker + ["image", "tag", parent, alias])
-    tagged = json.loads(successful(docker + ["image", "inspect", alias]))
-    if type(tagged) is not list or len(tagged) != 1 or tagged[0].get("Id") != parent or tagged[0].get("RootFS", {}).get("Layers") != layers:
-        raise DocumentImageError()
-    dockerfile = ("FROM " + alias + "\nUSER 0:0\n"
-        "RUN installed=\"$(dpkg-query -W -f='${Version}' libreoffice-core)\" "
-        "&& test -n \"$installed\" && apt-get update "
-        "&& apt-get install -y --no-install-recommends --no-upgrade \"python3-uno=$installed\" "
-        "&& rm -rf /var/lib/apt/lists/*\n"
-        "COPY writer_model_export.py /opt/document/writer_model_export.py\nUSER 65534:65534\n")
-    dockerfile_hash = hashlib.sha256(dockerfile.encode()).hexdigest()
-    with tempfile.TemporaryDirectory(prefix="hirewiz-model-derivative-") as temporary:
-        context = Path(temporary)
-        context.chmod(0o700)
-        (context / "Dockerfile").write_text(dockerfile)
-        (context / "writer_model_export.py").write_bytes(helper)
-        for path in context.iterdir():
-            path.chmod(0o644)
-        iid = context / "image.id"
-        dispatched[0] = True
-        successful(docker + ["build", "--pull=false", "--platform", platform, "--iidfile", str(iid),
-            "--file", str(context / "Dockerfile"), "--label", _MODEL_LABEL + "parent=" + parent,
-            "--label", _MODEL_LABEL + "helper_sha256=" + helper_hash,
-            "--label", _MODEL_LABEL + "dockerfile_sha256=" + dockerfile_hash,
-            "--label", _MODEL_LABEL + "diagnostic_only=true", str(context)], timeout=300)
-        image = iid.read_text().strip()
-    if not IMAGE_ID.fullmatch(image) or image == parent or helper_path.read_bytes() != helper or source_hashes() != hashes:
-        raise DocumentImageError()
-    image_metadata(docker, image, platform, hashes)
-    tagged_after = json.loads(successful(docker + ["image", "inspect", alias]))
-    if (type(tagged_after) is not list or len(tagged_after) != 1 or tagged_after[0].get("Id") != parent
-            or tagged_after[0].get("RootFS", {}).get("Layers") != layers):
-        raise DocumentImageError()
-    observed = json.loads(successful(docker + ["image", "inspect", image]))[0]
-    child_layers = observed.get("RootFS", {}).get("Layers")
-    labels = observed.get("Config", {}).get("Labels", {})
-    if (type(child_layers) is not list or len(child_layers) != len(layers) + 2 or child_layers[:len(layers)] != layers
-            or labels.get(_MODEL_LABEL + "parent") != parent
-            or labels.get(_MODEL_LABEL + "helper_sha256") != helper_hash
-            or labels.get(_MODEL_LABEL + "dockerfile_sha256") != dockerfile_hash
-            or labels.get(_MODEL_LABEL + "diagnostic_only") != "true"):
-        raise DocumentImageError()
-    return image, helper_hash
-
-
-def _diagnose_docx_same_model(docker: list[str], image: str, platform: str, request: Path) -> None:
-    report = _failure_report()
-    prior = report.get("link_diagnostic")
-    if (report.get("fit_pages") != 2 or report.get("fit_links") != 0
-            or report.get("fit_failed_checks") != ["unchanged_links"] or type(prior) is not dict
-            or tuple(prior.get(field) for field in _LINK_FIELDS)
-            != (1, 1, 0, True, True, False, True, True, 1, True, 1, True, True)):
-        return
-    diagnostic = _FAILURE.get()
-    if type(diagnostic) is not dict:
-        return
-    dispatched = [False]
-    build_calls = container_calls = 0
-    build_seconds = container_seconds = 0.0
-    values = None
-    phase = time.monotonic()
-    try:
-        hashes = source_hashes()
-        derivative, helper_hash = _build_model_derivative(docker, image, platform, hashes, dispatched)
-        build_calls = int(dispatched[0])
-        build_seconds = round(time.monotonic() - phase, 6)
-        bound = request.with_suffix(".model-binding.json")
-        # Binding comes from the already validated processor projection; never
-        # turn native output into a diagnostic request or rewrite the resume.
-        expected = json.loads(request.with_suffix(".diagnostic-binding.json").read_bytes())
-        payload = {"binding": expected, "runtime": {path: hashes[key] for key, path in RUNTIME.items()},
-                   "helper_sha256": helper_hash}
-        with bound.open("x", encoding="utf-8") as stream:
-            json.dump(payload, stream, allow_nan=False)
-        bound.chmod(0o444)
-        phase = time.monotonic()
-        container_calls = 1
-        code, raw = container(docker, derivative, platform, ["-c", DOCX_MODEL_PROGRAM],
-                             [(request, "/tmp/request.json"), (bound, "/tmp/model-binding.json")])
-        container_seconds = round(time.monotonic() - phase, 6)
-        if type(code) is int and code == 0 and len(raw) <= 4096:
-            values = _model_values(json.loads(raw))
-    except Exception:
-        build_calls = int(dispatched[0])
-        if container_calls:
-            container_seconds = round(time.monotonic() - phase, 6)
-        elif build_calls:
-            build_seconds = round(time.monotonic() - phase, 6)
-    diagnostic["docx_model_observation"] = _DocxModelObservation(
-        build_calls, build_seconds, container_calls, container_seconds, values)
-
-
 EICAR = (b"X5O!P%@AP[4" + bytes([92]) + b"PZX54(P^)7CC)7}$"
          + b"EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*")
 # Runtime hashes attest every copied Python source; the Dockerfile remains
@@ -454,7 +283,6 @@ def _progress(stage: str, *, case: str | None = None, exit_code: int | None = No
         diagnostic.pop("docx_refusal", None)
         diagnostic.pop("docx_fit_mismatch", None)
         diagnostic.pop("docx_link_observation", None)
-        diagnostic.pop("docx_model_observation", None)
         diagnostic.update(stage=stage, case=case, exit_code=exit_code)
         if completed_cases is not None:
             diagnostic["completed_cases"] = completed_cases
@@ -569,8 +397,6 @@ def _failure_report() -> dict:
                 and all(type(n) is int and 0 <= n <= 100 for n in (values[i] for i in _LINK_COUNT_INDEXES))
                 and all(type(flag) is bool for flag in (values[i] for i in _LINK_BOOL_INDEXES))):
             result.update(link_diagnostic_status="observed", link_diagnostic=dict(zip(_LINK_FIELDS, values, strict=True)))
-    if result.get("fit_pages") == 2 and result.get("fit_links") == 0:
-        result.update(_model_projection(diagnostic.get("docx_model_observation")))
     return result
 
 
@@ -938,11 +764,13 @@ def check(platform: str, *, image: str | None = None) -> dict:
                     _note_docx_refusal(result, binding, code, case=name)
                     _note_docx_fit_mismatch(result, binding, code, case=name)
                     _diagnose_docx_links(docker, image, platform, request, result, binding, code, case=name)
-                    _diagnose_docx_same_model(docker, image, platform, request)
                     raise DocumentImageError()
                 layout_observations.append({"case": name, "passed": True, "layout": receipt, "scan": result["scan"]})
+            # The core compares the complete link tuple before line bands.
+            # This overlong paragraph moves the following link and is refused.
             elif (code != 1 or result.get("error") != "docx_layout_refused" or result.get("reason") not in {
-                    "line_wrap_changed", "page_geometry_changed", "paragraph_page_changed", "paragraph_overflow"}):
+                    "line_wrap_changed", "page_geometry_changed", "paragraph_page_changed", "paragraph_overflow",
+                    "hyperlink_changed"}):
                 _note_docx_refusal(result, binding, code, case=name)
                 raise DocumentImageError()
             else:

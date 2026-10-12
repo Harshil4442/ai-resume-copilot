@@ -25,6 +25,8 @@ MAX_RESPONSE = 32 * 1024
 _HASH = re.compile(r"[a-f0-9]{64}\Z")
 _UNAVAILABLE = "The private DOCX renderer is unavailable or could not verify this edit. Your original file is preserved; use the original/custom resume or try a new version after the worker is verified."
 _REFUSED = "This DOCX edit could not retain its original rendered layout. Shorten the wording, choose another passage or use the original/custom resume."
+_LAYOUT_REFUSED = "Could not verify preservation of the original layout for this DOCX edit. Shorten the wording, choose another passage or use the original/custom resume."
+_LINK_REFUSED = "This DOCX edit would change an existing resume link or its placement. Keep linked text and the destination unchanged, shorten surrounding wording, or use the original/custom resume."
 
 
 def _sha(content: bytes) -> str:
@@ -106,7 +108,13 @@ async def _worker_http(config, payload: bytes, token: str, expected: dict, edits
                                 and edit.get("unit_id") == data["unit_id"] for edit in edits))):
                         raise ValueError
                     _check_binding(data, expected)
-                    raise ResumeLayoutError(_REFUSED, unit_id=data["unit_id"], repair_hint=_REFUSED)
+                    if data["reason"] == "hyperlink_changed":
+                        message = _LINK_REFUSED
+                    elif data["reason"] in LAYOUT_REASONS:
+                        message = _LAYOUT_REFUSED
+                    else:
+                        message = _REFUSED
+                    raise ResumeLayoutError(message, unit_id=data["unit_id"], repair_hint=message)
                 return bytes(output)
 
 

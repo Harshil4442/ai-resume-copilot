@@ -76,6 +76,8 @@ _MESSAGES: dict[str, str] = {
     "The PDF page count changed during source editing.": "source_layout_changed",
     "Saved PDF text or font differs from the accepted source edit.": "source_layout_changed",
     "The DOCX edit could not preserve the original document.": "source_layout_changed",
+    "Could not verify preservation of the original layout for this DOCX edit. Shorten the wording, choose another passage or use the original/custom resume.": "source_layout_changed",
+    "This DOCX edit would change an existing resume link or its placement. Keep linked text and the destination unchanged, shorten surrounding wording, or use the original/custom resume.": "source_links_protected",
     "The TeX edit changed pages, page geometry or links. Shorten the replacement or keep the original/custom resume.": "source_layout_changed",
     "The TeX edit changed unexpected text or reading order. Keep the original/custom resume or edit the source manually.": "source_layout_changed",
     "The TeX edit moved protected text or changed typography. Shorten the edit or keep the original/custom resume.": "source_layout_changed",

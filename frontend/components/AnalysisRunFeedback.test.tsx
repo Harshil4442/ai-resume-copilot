@@ -60,6 +60,18 @@ it.each([
   expect(screen.queryByText(/please try again/i)).toBeNull();
 });
 
+it("explains native link placement protection while preserving explicit resume choices", () => {
+  const snapshot = vi.fn();
+  render(<AnalysisRunFeedback run={{ ...base, failure_guidance: { reason_code: "source_links_protected", next_action: "keep_link_text" } }} onSaveSourceSnapshot={snapshot} />);
+  const alert = screen.getByRole("alert");
+  expect(alert).toHaveTextContent("Keep the linked text, destination and placement unchanged.");
+  expect(alert).toHaveTextContent("Shorten surrounding edits or choose the original/custom resume.");
+  expect(alert).toHaveTextContent("Your original resume is unchanged.");
+  expect(screen.queryByText(/please try again/i)).toBeNull();
+  expect(screen.getByRole("link", { name: "Choose original or custom resume" })).toHaveAttribute("href", "/resume");
+  expect(snapshot).not.toHaveBeenCalled();
+});
+
 it("does not claim released units while an expense hold is unresolved", () => {
   render(<AnalysisRunFeedback run={{ ...base, usage_state: "reserved" }} />);
   expect(screen.getByRole("alert")).not.toHaveTextContent("were released");

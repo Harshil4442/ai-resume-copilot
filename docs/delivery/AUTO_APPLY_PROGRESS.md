@@ -9,7 +9,7 @@ report the unchanged original estimate and the recorded actual duration.
 
 | Fixed checkpoint | Original estimate of additional active agent work | Status | Actual whole-checkpoint duration |
 |---|---|---|---|
-| Full CI/regressions | 1–3 hours | Reopened. Source `093cff7`: four jobs pass; backend fails native DOCX hyperlink preservation. Last full-green baseline remains `178d8e8`; current-source backend regressions and OpenAPI are not verified | Historical recorded disjoint windows: 6 hours 26 minutes 56 seconds. Renewal began 12 October at 04:15:39.234304 UTC and remains open; include waits, do not count either window twice |
+| Full CI/regressions | 1–3 hours | Reopened. Source `c18528c`: native styled-fit checks pass; backend stops on the conservative reflow refusal classification. Last full-green baseline remains `178d8e8`; current-source backend regressions and OpenAPI are not verified | Historical recorded disjoint windows: 6 hours 26 minutes 56 seconds. Renewal began 12 October at 04:15:39.234304 UTC and remains open; include waits, do not count either window twice |
 | Resume worker output + PDF/DOCX/LaTeX fidelity | 4–8 hours | in progress | Not available; checkpoint not complete |
 | Candidate-reviewed browser integration | 2–6 hours after the approval blocker is resolved | blocked | Not available; checkpoint not complete |
 | Billing costs/failure recovery/load | 2–5 hours | in progress | Not available; checkpoint not complete |
@@ -32,7 +32,7 @@ DOCX custody controls or a disposable PostgreSQL reporting check does not close 
 parent checkpoints; deployed document fidelity, joined application flows and release
 verification still require their own evidence.
 
-Current source `093cff76ced0f2b21262115e54ab581bf8405fd1` has terminal
+Earlier source `093cff76ced0f2b21262115e54ab581bf8405fd1` has terminal
 [CI run 38249963613](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38249963613):
 browser companion, frontend, security/container and cold-browser journey pass. Backend
 stops at native document acceptance; its runtime suite and OpenAPI are skipped. The
@@ -41,10 +41,22 @@ stops at native document acceptance; its runtime suite and OpenAPI are skipped. 
 The original DOCX fixture retains its visible link text but Writer 7.4 exports no
 clickable annotation. Two genuine exports from the same unchanged native model also
 produce zero links, with identical glyphs, paint and pixels and successful child cleanup.
-That disproves export warming as a remedy; do not repeat it or weaken the one-link
-acceptance check. A newer upstream importer changes unstyled-link handling, but a
-native remedy remains unproven. Original/sealed resume bytes, source layout and exact
-download/upload identity requirements remain in force.
+That disproves export warming as a remedy. Its unused CI experiment and helper are
+removed; the private experiment evidence is retained. The one-link acceptance check,
+original/sealed resume bytes, source layout and exact download/upload identity
+requirements remain in force.
+
+Current source `c18528cad088e93419e144cb6b719d3166995595` reaches the existing
+overlong-paragraph regression in [CI run 38254125572](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38254125572),
+job `114827651030`, after nine completed native cases. The upstream Writer engine
+passes the original styled-fit checks: two pages, one genuine clickable link, no
+pixels changed outside the approved paragraph, exact request binding and both scans.
+The overlong paragraph is still rejected with `docx_layout_refused` and
+`hyperlink_changed`: the complete link tuple is checked before paragraph line bands.
+The existing refusal regression now recognizes this observed conservative reason.
+The processor and every successful-fit check are unchanged. Exact-source full CI,
+customer document fidelity and deployment remain unverified; none of the six
+checkpoints is complete from this evidence.
 
 Within the existing billing/deployment checkpoints, source now binds an explicit Gemini
 model/base and numeric model-policy/key references for API and analysis workers; employer
