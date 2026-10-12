@@ -70,10 +70,11 @@ jobs:
           --output "$RUNNER_TEMP/native-tex-test-image.json"
       - name: Build and verify genuine native document engines
         timeout-minutes: 20
-        run: >-
-          backend/.venv/bin/python backend/scripts/document_test_image.py
-          --platform linux/amd64
-          --output "$RUNNER_TEMP/document-engine-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.json"
+        run: |
+          document_test_report_path="$RUNNER_TEMP/document-engine-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.json"
+          backend/.venv/bin/python backend/scripts/document_test_image.py \
+            --platform linux/amd64 --output "$document_test_report_path"
+          printf 'HIREWIZ_DOCUMENT_TEST_REPORT=%s\n' "$document_test_report_path" >> "$GITHUB_ENV"
       - name: Save sanitized native document engine proof
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, verified official ref
         with:
@@ -93,7 +94,7 @@ jobs:
         run: >-
           .venv/bin/ruff check app/domains app/services/guardrails.py app/services/resume_artifacts.py app/services/resume_layout.py app/services/pdf_streams.py app/routers/v1
           app/routers/worker.py app/worker_main.py app/observability.py app/catalog_timing.py app/feature_flags.py app/migrate.py scripts
-          tests/native_tex_ci_fixtures.py tests/test_native_tex_ci.py tests/test_native_tex.py
+          tests/native_tex_ci_fixtures.py tests/native_docx_ci_fixtures.py tests/test_native_tex_ci.py tests/test_native_tex.py
           tests/test_native_tex_r2.py tests/test_native_tex_application.py
           tests/test_analysis_runs.py tests/test_career_workspace.py tests/test_alembic_schema.py
           tests/test_usage_guardrails.py tests/test_feature_flags.py tests/test_operations_platform.py

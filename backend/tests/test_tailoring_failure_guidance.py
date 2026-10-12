@@ -15,6 +15,7 @@ from backend.app.models import AnalysisRun, Resume, ResumeVersion, UsageEvent, U
 from backend.app.security import get_current_user
 from backend.app.services import llm_client
 from backend.app.services.resume_layout import ResumeLayoutError, apply_source_edits
+from backend.tests.native_docx_ci_fixtures import configure_native_docx_worker
 from backend.tests.test_analysis_runs import (
     PDF_OVERFLOW_ORIGINAL,
     PDF_OVERFLOW_REPLACEMENT,
@@ -60,6 +61,8 @@ def _poll_client(factory, owner=1):
 
 @pytest.mark.parametrize("kind", ["docx", "pdf"])
 def test_real_rejected_layout_refunds_once_and_polling_has_actionable_guidance(monkeypatch, kind):
+    if kind == "docx":
+        configure_native_docx_worker(monkeypatch)
     engine, factory = _database()
     monkeypatch.setattr(tasks, "SessionLocal", factory)
     calls = []
@@ -79,6 +82,8 @@ def test_real_rejected_layout_refunds_once_and_polling_has_actionable_guidance(m
         return _source_edit_response(kwargs["source_units"], replacement=TAILORED_EXPERIENCE * 5)
 
     monkeypatch.setattr(llm_client, "tailor_resume_from_evidence", propose)
+    expected_reason = "source_layout_changed" if kind == "docx" else "replacement_does_not_fit"
+    expected_action = "keep_original_layout" if kind == "docx" else "shorten_wording"
     try:
         run_id = _create_tailoring_run(factory)
         assert tasks.process_analysis_run(run_id) == "failed"
@@ -87,7 +92,7 @@ def test_real_rejected_layout_refunds_once_and_polling_has_actionable_guidance(m
         with factory() as db:
             run = db.get(AnalysisRun, run_id)
             assert run.error_code == "TailoringOutputError"
-            assert run.error_message == "resume-tailoring-failure/v1:replacement_does_not_fit"
+            assert run.error_message == "resume-tailoring-failure/v1:" + expected_reason
             assert run.committed_units == 0 and run.usage_state == "released"
             assert run.attempt_count == 1 and run.result_payload is None
             assert db.get(User, 1).ai_credits == 50
@@ -99,7 +104,7 @@ def test_real_rejected_layout_refunds_once_and_polling_has_actionable_guidance(m
             response = client.get(f"/api/v1/analysis-runs/{run_id}")
             assert response.status_code == 200
             data = response.json()
-            assert data["failure_guidance"] == {"reason_code": "replacement_does_not_fit", "next_action": "shorten_wording"}
+            assert data["failure_guidance"] == {"reason_code": expected_reason, "next_action": expected_action}
             assert "error_message" not in data
             assert "unit_id" not in response.text and TAILORED_EXPERIENCE not in response.text
             assert client.get("/api/v1/analysis-runs").json()["items"][0]["failure_guidance"] == data["failure_guidance"]

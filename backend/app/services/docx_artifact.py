@@ -29,6 +29,12 @@ _LAYOUT_REFUSED = "Could not verify preservation of the original layout for this
 _LINK_REFUSED = "This DOCX edit would change an existing resume link or its placement. Keep linked text and the destination unchanged, shorten surrounding wording, or use the original/custom resume."
 
 
+class DocxRendererUnavailable(ResumeLayoutError):
+    """Private renderer/configuration could not be verified; wording is not a repair."""
+
+    content_repair_allowed = False
+
+
 def _sha(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()
 
@@ -157,7 +163,7 @@ def prepare_artifact(source: bytes, edits: list[dict]) -> dict | None:
     except ResumeLayoutError:
         raise
     except Exception:
-        raise ResumeLayoutError(_UNAVAILABLE) from None
+        raise DocxRendererUnavailable(_UNAVAILABLE) from None
 
 
 def sealed_bytes(seal: dict | None, source: bytes, edits: list[dict]) -> bytes:

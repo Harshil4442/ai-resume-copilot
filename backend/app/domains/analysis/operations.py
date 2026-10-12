@@ -52,6 +52,7 @@ _TAILORING_VALIDATION_REASONS = {
     "The original PDF text stream cannot be updated safely.": "unsupported_pdf_text_stream",
     "Saved PDF text or font differs from the accepted source edit.": "changed_pdf_text_or_style",
     "The replacement is too long for its original DOCX paragraph.": "docx_paragraph_overflow",
+    "Could not verify preservation of the original layout for this DOCX edit. Shorten the wording, choose another passage or use the original/custom resume.": "docx_rendered_layout_refused",
     "The PDF changed visually outside the accepted text slots.": "changed_pdf_layout",
 }
 _TAILORING_REASON_CODES = set(_TAILORING_VALIDATION_REASONS.values()) | {
@@ -627,6 +628,11 @@ def execute_resume_tailor(
                         if source_format in {"tex", "texzip"}:
                             from ...services.native_tex import prepare_artifact
                             candidate["sealed_native_artifact"] = prepare_artifact(source_bytes, source_format, candidate["source_edits"], evidence_payload)
+                        elif source_format == "docx":
+                            from ...services.docx_artifact import (
+                                prepare_artifact as prepare_docx_artifact,
+                            )
+                            candidate["sealed_native_artifact"] = prepare_docx_artifact(source_bytes, candidate["source_edits"])
                         else:
                             apply_source_edits(source_bytes, source_format, candidate["source_edits"])
                         break
@@ -685,6 +691,8 @@ def execute_resume_tailor(
                     len(source_units),
                     edit_count,
                 )
+                if getattr(exc, "content_repair_allowed", True) is False:
+                    break  # Infrastructure verification cannot be repaired by another model call.
                 repair_note = f"Source unit {unit_id}: {exc}" if unit_id else str(exc)
                 hint = getattr(exc, "repair_hint", None)
                 if isinstance(hint, str) and hint:

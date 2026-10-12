@@ -25,6 +25,7 @@ from backend.app.services.resume_layout import (
     apply_source_edits,
     extract_source_units,
 )
+from backend.tests.native_docx_ci_fixtures import configure_native_docx_worker
 from docx import Document as DocxDocument
 from fastapi import HTTPException
 from pypdf import PdfReader
@@ -417,7 +418,47 @@ def test_active_premium_run_is_audited_without_deduction():
         engine.dispose()
 
 
+def test_unavailable_docx_renderer_does_not_request_another_content_repair(monkeypatch):
+    from backend.app.services import document_ingestion
+
+    engine, factory = _database()
+    monkeypatch.setattr(tasks, "SessionLocal", factory)
+    monkeypatch.setenv("DOCUMENT_WORKER_URL", "https://unavailable-docx-test.run.app/inspect")
+    monkeypatch.setenv("DOCUMENT_WORKER_IMAGE_DIGEST", "local-test@sha256:" + "a" * 64)
+    monkeypatch.setenv("DOCUMENT_WORKER_POLICY_SHA256", "b" * 64)
+    monkeypatch.setenv("DOCUMENT_WORKER_DOCX_RENDERER_VERSION", "")
+    monkeypatch.setenv("DOCUMENT_WORKER_DOCX_FONT_MANIFEST_SHA256", "")
+
+    def identity_forbidden(*args):
+        pytest.fail("Missing renderer pins must stop before identity or HTTP")
+
+    monkeypatch.setattr(document_ingestion, "_identity_token", identity_forbidden)
+    calls = []
+
+    def propose(**kwargs):
+        calls.append(kwargs)
+        return _source_edit_response(kwargs["source_units"])
+
+    monkeypatch.setattr(llm_client, "tailor_resume_from_evidence", propose)
+    try:
+        run_id = _create_tailoring_run(factory)
+        assert tasks.process_analysis_run(run_id) == "failed"
+        assert tasks.process_analysis_run(run_id) == "failed"
+        assert len(calls) == 1
+        with factory() as db:
+            run = db.get(AnalysisRun, run_id)
+            assert run.committed_units == 0 and run.usage_state == "released"
+            assert run.result_payload is None and run.attempt_count == 1
+            assert db.query(ResumeVersion).count() == 0
+            assert db.get(User, 1).ai_credits == 50
+            events = db.query(UsageEvent).order_by(UsageEvent.created_at).all()
+            assert [(event.event_type, event.amount) for event in events] == [("reserve", -2), ("release", 2)]
+    finally:
+        engine.dispose()
+
+
 def test_evidence_tailoring_creates_a_traceable_version_and_commits_once(monkeypatch):
+    native_calls = configure_native_docx_worker(monkeypatch)
     engine, factory = _database()
     monkeypatch.setattr(tasks, "SessionLocal", factory)
     calls = []
@@ -452,6 +493,8 @@ def test_evidence_tailoring_creates_a_traceable_version_and_commits_once(monkeyp
             edited = DocxDocument(BytesIO(artifact.content))
             assert edited.paragraphs[-1].text == TAILORED_EXPERIENCE
             assert DocxDocument(BytesIO(resume.source_document)).paragraphs[-1].text == SOURCE_EXPERIENCE
+            assert version.structured_content["sealed_native_artifact"]["content_sha256"]
+            assert len(native_calls) == 1  # Duplicate delivery and download do not render again.
             events = db.query(UsageEvent).order_by(UsageEvent.created_at).all()
             assert [event.event_type for event in events] == ["reserve", "commit"]
             assert [event.amount for event in events] == [-2, 0]
@@ -715,6 +758,7 @@ def test_mixed_pdf_joining_edit_preserves_the_sentence_and_charges_only_once(mon
 
 
 def test_all_invalid_llm_edit_repair_hint_reaches_second_request_and_charges_once(monkeypatch):
+    configure_native_docx_worker(monkeypatch)
     engine, factory = _database()
     monkeypatch.setattr(tasks, "SessionLocal", factory)
     calls = []
@@ -763,6 +807,7 @@ def test_all_invalid_llm_edit_repair_hint_reaches_second_request_and_charges_onc
 
 
 def test_empty_tailoring_output_leaves_one_content_repair_and_charges_once(monkeypatch):
+    configure_native_docx_worker(monkeypatch)
     engine, factory = _database()
     monkeypatch.setattr(tasks, "SessionLocal", factory)
     calls = []
@@ -890,6 +935,7 @@ def test_changed_tailoring_constraint_leaves_one_native_width_repair_and_charges
 
 @pytest.mark.parametrize("failure", ["malformed", "unsafe-layout"])
 def test_invalid_native_tailoring_fails_without_version_and_refunds_once(monkeypatch, failure):
+    configure_native_docx_worker(monkeypatch)
     engine, factory = _database()
     monkeypatch.setattr(tasks, "SessionLocal", factory)
     repair_notes = []
@@ -928,6 +974,7 @@ def test_invalid_native_tailoring_fails_without_version_and_refunds_once(monkeyp
 
 
 def test_native_tailoring_repairs_an_unsafe_edit_and_commits_one_charge(monkeypatch):
+    configure_native_docx_worker(monkeypatch)
     engine, factory = _database()
     monkeypatch.setattr(tasks, "SessionLocal", factory)
     repair_notes = []
@@ -961,6 +1008,7 @@ def test_native_tailoring_repairs_an_unsafe_edit_and_commits_one_charge(monkeypa
 
 
 def test_failed_tailoring_keeps_layout_diagnostics_and_cause_after_rollback(monkeypatch, caplog):
+    configure_native_docx_worker(monkeypatch)
     engine, factory = _database()
     monkeypatch.setattr(tasks, "SessionLocal", factory)
     repair_notes = []
@@ -1003,7 +1051,7 @@ def test_failed_tailoring_keeps_layout_diagnostics_and_cause_after_rollback(monk
         assert len(diagnostic_messages) == 2
         assert all(f"run_id={run_id}" in message for message in diagnostic_messages)
         assert all("type=ResumeLayoutError" in message for message in diagnostic_messages)
-        assert all("reason=docx_paragraph_overflow" in message for message in diagnostic_messages)
+        assert all("reason=docx_rendered_layout_refused" in message for message in diagnostic_messages)
         assert all(f"unit_id={unit_ids[0]}" in message for message in diagnostic_messages)
         assert all("source_units=1 edits=1" in message for message in diagnostic_messages)
         assert SOURCE_EXPERIENCE not in caplog.text
@@ -1012,7 +1060,7 @@ def test_failed_tailoring_keeps_layout_diagnostics_and_cause_after_rollback(monk
             run = db.get(AnalysisRun, run_id)
             assert run.usage_state == "released" and run.committed_units == 0
             assert run.error_code == "TailoringOutputError"
-            assert run.error_message == "resume-tailoring-failure/v1:replacement_does_not_fit"
+            assert run.error_message == "resume-tailoring-failure/v1:source_layout_changed"
             assert run.result_payload is None
             assert db.query(ResumeVersion).count() == 0
             assert db.query(ModelCallEvent).count() == 0

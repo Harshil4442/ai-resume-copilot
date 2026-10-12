@@ -55,8 +55,8 @@ def test_nonce_is_consumed_only_in_separate_definition_acquisition_stage():
             stages[-1].append((command, argument))
     assert len(stages) == 3
     dependencies, definitions, runtime = stages
-    assert dependencies[0] == ("FROM", "public.ecr.aws/docker/library/python:3.12-slim-bookworm@"
-                               "sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258"
+    assert dependencies[0] == ("FROM", "public.ecr.aws/docker/library/python:3.12-slim-trixie@"
+                               "sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1"
                                " AS dependencies")
     assert definitions[0] == ("FROM", "dependencies AS definitions")
     assert runtime[0] == ("FROM", "dependencies AS runtime")

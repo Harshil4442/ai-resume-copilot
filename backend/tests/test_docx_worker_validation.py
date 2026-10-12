@@ -217,8 +217,10 @@ class DocxWorkerValidationTests(unittest.TestCase):
                     DOCUMENT_WORKER_DOCX_RENDERER_VERSION="", DOCUMENT_WORKER_DOCX_FONT_MANIFEST_SHA256=""), \
                  patch.object(m.ingestion, "_identity_token", side_effect=AssertionError("identity reached")), \
                  patch.object(m.artifact, "_worker_http", side_effect=AssertionError("HTTP reached")):
-                with self.assertRaises(m.layout.ResumeLayoutError):
+                with self.assertRaises(m.artifact.DocxRendererUnavailable) as caught:
                     m.artifact.prepare_artifact(source, edits)
+                self.assertIs(caught.exception.content_repair_allowed, False)
+                self.assertIsInstance(caught.exception, m.layout.ResumeLayoutError)
 
     def test_distro_version_suffix_preserved_and_control_payload_refused(self):
         with modules() as m:

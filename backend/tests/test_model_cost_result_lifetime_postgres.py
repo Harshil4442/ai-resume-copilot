@@ -11,8 +11,9 @@ import pytest
 from backend.app import models
 from backend.app.domains.analysis import operations, schemas, service, tasks
 from backend.app.routers import resume as resume_routes
-from backend.app.services import guardrails, llm_client, result_commit, resume_layout
+from backend.app.services import docx_artifact, guardrails, llm_client, result_commit
 from backend.app.services.generation_budget import current_budget
+from backend.tests.native_docx_ci_fixtures import configure_native_docx_worker
 from backend.tests.test_analysis_runs import (
     SOURCE_EXPERIENCE,
     _native_source,
@@ -51,10 +52,10 @@ def _gate(monkeypatch, *, order):
     return roles, ready, release
 
 
-def _race(factory, worker, *, order, ready, release):
+def _race(factory, worker, *, order, ready, release, ready_timeout=8):
     with ThreadPoolExecutor(max_workers=2) as pool:
         result = pool.submit(worker)
-        assert ready.wait(8), "worker did not reach the post-network seam"
+        assert ready.wait(ready_timeout), "worker did not reach the post-network seam"
         deleted = pool.submit(erase, factory)
         if order == "write_first":
             with pytest.raises(TimeoutError):
@@ -80,6 +81,7 @@ def _retained_only(factory):
 
 @pytest.mark.parametrize("order", ["write_first", "delete_first"])
 def test_actual_tailoring_worker_result_and_unit_commit_serialize_after_render(factory, monkeypatch, order):
+    configure_native_docx_worker(monkeypatch)
     with factory() as db:
         resume = db.get(models.Resume, 1)
         resume.source_document, resume.source_format = _native_source(), "docx"
@@ -103,12 +105,12 @@ def test_actual_tailoring_worker_result_and_unit_commit_serialize_after_render(f
         budget.finish(record, latency_ms=1, response=usage())
         return _source_edit_response(kwargs["source_units"])
     monkeypatch.setattr(llm_client, "tailor_resume_from_evidence", generation)
-    native_render = resume_layout.apply_source_edits
+    native_render = docx_artifact.prepare_artifact
     def render(*args, **kwargs):
         assert not getattr(roles, "guarded", False), "render must precede result guard"
         rendered.append(True)
         return native_render(*args, **kwargs)
-    monkeypatch.setattr(resume_layout, "apply_source_edits", render)
+    monkeypatch.setattr(docx_artifact, "prepare_artifact", render)
     monkeypatch.setattr(tasks, "SessionLocal", factory)
     def observe(connection, cursor, statement, parameters, context, executemany):
         if getattr(roles, "worker", False) and statement.startswith("INSERT INTO resume_versions"):
@@ -122,7 +124,7 @@ def test_actual_tailoring_worker_result_and_unit_commit_serialize_after_render(f
         roles.worker = True
         return tasks.process_analysis_run(run_id)
     try:
-        outcome = _race(factory, worker, order=order, ready=ready, release=release)
+        outcome = _race(factory, worker, order=order, ready=ready, release=release, ready_timeout=75)
     finally:
         event.remove(factory.kw["bind"], "before_cursor_execute", observe)
     assert calls == ["one synthetic SDK response"] and rendered
