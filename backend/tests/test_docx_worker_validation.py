@@ -190,6 +190,14 @@ class DocxWorkerValidationTests(unittest.TestCase):
                 pdf = m.renderer._render(source, Path(temporary) / "supported", deadline=time.monotonic() + 10)
             self.assertTrue(pdf.startswith(b"%PDF-"))
             self.assertEqual(captured[0][0][:5], ["/usr/bin/soffice", "--headless", "--nologo", "--nodefault", "--norestore"])
+            export = captured[0][0][captured[0][0].index("--convert-to") + 1]
+            self.assertTrue(export.startswith("pdf:writer_pdf_Export:"))
+            self.assertEqual(json.loads(export.removeprefix("pdf:writer_pdf_Export:")), {
+                key: {"type": "boolean", "value": value} for key, value in {
+                    "ExportBookmarks": "true", "UseTaggedPDF": "false", "ExportFormFields": "false",
+                    "ExportNotes": "false", "ExportNotesPages": "false", "IsAddStream": "false",
+                }.items()
+            })
             self.assertTrue(captured[0][0][-1].endswith("/input.docx"))
             self.assertNotIn(m.fixtures.ORIGINAL, " ".join(captured[0][0]))
             def mutation(args, **options):

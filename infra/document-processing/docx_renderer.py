@@ -20,10 +20,13 @@ MANIFEST = Path("/opt/document/docx-font-manifest.json")
 SOFFICE = "/usr/bin/soffice"
 MAX_MANIFEST = 256 * 1024
 MAX_PDF = 10 * 1024 * 1024
+# Internal comparison PDFs need glyph/page/link pixels, not tagged attributes.
+# Avoid /StructElem /A metadata colliding with the strict active-action guard;
+# the downloaded artifact remains the exact sealed DOCX. No guard is relaxed.
 # Fixed documented PDF export options; no forms, notes or embedded native file.
 EXPORT = 'pdf:writer_pdf_Export:' + json.dumps({
     key: {"type": "boolean", "value": value} for key, value in {
-        "ExportBookmarks": "true", "UseTaggedPDF": "true", "ExportFormFields": "false",
+        "ExportBookmarks": "true", "UseTaggedPDF": "false", "ExportFormFields": "false",
         "ExportNotes": "false", "ExportNotesPages": "false", "IsAddStream": "false",
     }.items()
 }, separators=(",", ":"))

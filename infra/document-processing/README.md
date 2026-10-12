@@ -4,7 +4,7 @@
 
 The 12 October draft adds `POST /validate-docx` to this existing private worker;
 it does not create another service. Its version 3 policy SHA-256 is
-`7ab061c2c3097c4eea17cda45f4d69f22b42a611c418270853035905521eb71c`.
+`7b8618af66be182d1bd1e5412d8fd9a6870123ed3335bd3386d7bd0b975a8306`.
 The previously accepted image `8369f7…` and version 2 policy below exclude this
 operation and must not be deployed or described as render validation evidence.
 This draft keeps deployment proof and API wiring disabled pending a new native
@@ -406,3 +406,5 @@ restricted container checks through local Linux AMD64 execution on the ARM host.
 The original system-Python dependency refusal is preserved and only its interpreter
 was corrected for replay; no source or image was rebuilt. The predecessor registry/source join is recorded in the delivery checkpoint; native sandbox/IAM/network/cleanup acceptance remains open. This synchronous-call proposal requires a new immutable build and exact seven-input/runtime-byte join plus new image/policy pins. The earlier image and eight-case engine proof cannot certify the changed service. No new image or native acceptance is claimed by this proposal. No candidate resume was processed in this build.
 See [sanitized registry evidence](../../docs/delivery/evidence/2026-10-10-document-registry-image.json).
+
+Internal DOCX comparison PDFs use untagged Writer output so passive structure attributes are not interpreted as actions by the conservative comparison guard. The downloaded artifact remains the exact sealed DOCX; uploaded-PDF validation and all active-content checks remain unchanged. CI observed `pdf_active_content` with tagged output; the exact triggering Linux PDF object was not retained, and resolution still requires genuine CI and native acceptance.
