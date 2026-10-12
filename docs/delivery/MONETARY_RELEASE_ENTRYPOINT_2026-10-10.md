@@ -15,21 +15,29 @@ shares migration-chain parsing; its original refusal and checks remain. The sepa
 Run from a clean, reviewed checkout with the locked backend Python runtime:
 
 ```sh
-backend/.venv/bin/python infra/gcp/monetary_release.py /private/release-plan.json --plan-sha256 REVIEWED_SHA256 --observe
+PYTHONPATH=backend backend/.venv/bin/python infra/gcp/monetary_release.py /private/release-plan.json --plan-sha256 REVIEWED_SHA256 --observe
 ```
 
-The default is read-only observation. It reports fixed nonsecret gate reasons for
+The explicit backend import path resolves the standalone observer and its sibling
+adapter from the reviewed checkout. The default is read-only observation. It reports fixed nonsecret gate reasons for
 source/CI/image/policy, queue/scheduler/job admission, database writers and the missing
 external fence verifier. It does not issue a deployment certificate or mutate cloud
 resources. Source bytes/HEAD/links/untracked files are checked before cloud access.
 
 The strict plan contains only identity pins: release SHA, immutable image digest,
 native Cloud Build ID, CI run ID, exact numeric Secret Manager references for distinct
-runtime/migration credentials, reviewed expense policy and model-cost policy, both
+runtime/migration/observer credentials, an exact positive database-owner OID, reviewed expense policy and model-cost policy, both
 policy digests, selected Gemini primary/public base and numeric model-key reference, separate
 service accounts, a new protected backup URI, and private database-inventory path/hash.
-Credential values and database role aliases stay in the operator environment. `latest`,
-same runtime/migration credentials or accounts, duplicate input keys and unknown plan
+Database role aliases stay in the operator environment. The observer connection uses
+`observer_secret`, fetched transiently from its exact numeric native SecretVersion;
+`HIREWIZ_CUTOVER_DATABASE_URL` cannot supply the release observer credential. Native
+version identity, enabled state and etag must match before and after access. All three
+database credentials connect using verified TLS and startup read-only settings, then
+verify their prepared actor/OID, cluster, database, separately pinned
+`database_owner_oid` and exact schema for that step. Credential values stay transient
+and are never included in receipts. The legacy retained-capture route remains separate.
+`latest`, reused secret names, same runtime/migration accounts, duplicate input keys and unknown plan
 fields are refused. No provider-fence or consumer-completeness assertion is accepted.
 
 ## Exact native Git build shape
@@ -80,7 +88,7 @@ define the configuration.
    versions, an empty queue or caller JSON cannot substitute for credential revocation.
 4. Reuse the read-only PostgreSQL observer for cluster/database/schema, retired-role
    capabilities and sessions, unexpected writers, prepared transactions and retained
-   financial obligations. Authenticate the distinct numeric runtime/migration secret
+   financial obligations through the distinct numeric observer secret. Authenticate the distinct numeric runtime/migration secret
    credentials against those identities. Check runtime table SELECT/INSERT/UPDATE,
    DELETE on supported customer erasure tables, sequence USAGE and migration ownership.
    Repeat after each schema step; default grants must cover newly created tables.

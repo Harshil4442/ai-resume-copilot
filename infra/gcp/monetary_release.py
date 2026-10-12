@@ -96,6 +96,8 @@ class Plan:
     ci_run_id: int
     runtime_secret: str
     migration_secret: str
+    observer_secret: str
+    database_owner_oid: int
     expense_secret: str
     expense_sha256: str
     model_policy_secret: str
@@ -120,15 +122,16 @@ class Plan:
             or not re.fullmatch(r"[a-f0-9-]{36}", self.build_id)
             or type(self.ci_run_id) is not int or self.ci_run_id <= 0
             or any(not re.fullmatch(r"[a-z][a-z0-9-]{2,62}:[1-9][0-9]{0,8}", ref)
-                   for ref in (self.runtime_secret, self.migration_secret, self.expense_secret,
+                   for ref in (self.runtime_secret, self.migration_secret, self.observer_secret, self.expense_secret,
                                self.model_policy_secret, self.model_key_secret))
             or self.runtime_secret.split(":")[0] == self.migration_secret.split(":")[0]
             or not re.fullmatch(r"[a-f0-9]{64}", self.expense_sha256)
             or not re.fullmatch(r"[a-f0-9]{64}", self.model_policy_sha256)
             or not re.fullmatch(r"gemini-[A-Za-z0-9_.-]{1,113}", self.model_primary)
             or self.model_api_base != MODEL_API_BASE
-            or len({ref.split(":")[0] for ref in (self.runtime_secret, self.migration_secret,
-                        self.expense_secret, self.model_policy_secret, self.model_key_secret)}) != 5
+            or len({ref.split(":")[0] for ref in (self.runtime_secret, self.migration_secret, self.observer_secret,
+                        self.expense_secret, self.model_policy_secret, self.model_key_secret)}) != 6
+            or type(self.database_owner_oid) is not int or not 0 < self.database_owner_oid <= 4294967295
             or not re.fullmatch(r"[a-f0-9]{64}", self.inventory_sha256)
             or self.runtime_service_account == self.migration_service_account
             or any(not re.fullmatch(r"[a-z][a-z0-9-]{4,28}@" + PROJECT + r"\.iam\.gserviceaccount\.com", value)
@@ -343,6 +346,22 @@ class NativeBoundary:
         return self._command("gcloud", "secrets", "versions", "access", version, "--secret", name,
                              "--project", PROJECT, "--quiet").decode()
 
+    def describe_release_secret(self, reference: str) -> dict[str, Any]:
+        if not re.fullmatch(r"[a-z][a-z0-9-]{2,62}:[1-9][0-9]{0,8}", reference):
+            raise ReleaseDenied("release_database_secret_reference_invalid")
+        name, version = reference.split(":")
+        metadata = self._cloud("secrets", "versions", "describe", version, "--secret", name)
+        if type(metadata) is not dict:
+            raise ReleaseDenied("release_database_secret_metadata_invalid")
+        return metadata
+
+    def access_release_secret(self, reference: str) -> str:
+        if not re.fullmatch(r"[a-z][a-z0-9-]{2,62}:[1-9][0-9]{0,8}", reference):
+            raise ReleaseDenied("release_database_secret_reference_invalid")
+        name, version = reference.split(":")
+        return self._command("gcloud", "secrets", "versions", "access", version,
+                             "--secret", name, "--project", PROJECT, "--quiet").decode()
+
     def _verify_model_policy(self, plan: Plan, expense: dict[str, Any]) -> None:
         raw = self._secret(plan.model_policy_secret)
         if hashlib.sha256(raw.encode()).hexdigest() != plan.model_policy_sha256:
@@ -466,8 +485,6 @@ class NativeBoundary:
         raise ReleaseDenied("native_external_consumer_and_provider_fence_verifier_missing")
 
     def _database_context(self, plan: Plan, schema: str) -> tuple[Any, Any, dict[str, str], tuple[str, ...]]:
-        from sqlalchemy import create_engine
-        from sqlalchemy.pool import NullPool
         module = self._module("backend/scripts/monetary_cutover_preflight.py", "hirewiz_monetary_observer")
         inventory, _ = module.load_inventory(plan.inventory_path, plan.inventory_sha256, datetime.now(UTC))
         inventory = inventory.model_copy(update={"expected_database_schema": schema, "candidate_schema": CHAIN[-1]})
@@ -483,14 +500,19 @@ class NativeBoundary:
         operators = tuple(os.environ[name] for name in inventory.database_operator_role_env)
         if set(operators) & set(roles.values()):
             raise ReleaseDenied("operator_role_class_overlap")
-        engine = create_engine(os.environ["HIREWIZ_CUTOVER_DATABASE_URL"], poolclass=NullPool,
-                               hide_parameters=True, connect_args={"connect_timeout": 5})
-        return module, (engine, inventory), roles, operators
+        binding, target = module.neon_identity.collect_release_target(
+            self, plan.observer_secret, alias="observer",
+            database_owner_oid=plan.database_owner_oid, expected_schema=schema,
+        )
+        if any(roles.get(alias) != module.neon_identity.RELEASE_ACTORS[alias][0]
+               for alias in ("replacement_runtime", "replacement_migration")):
+            raise ReleaseDenied("replacement_role_prepared_identity_mismatch")
+        return module, (target.engine(), inventory, binding, target), roles, operators
 
     def verify_database(self, plan: Plan, schema: str) -> None:
-        module, (engine, inventory), roles, operators = self._database_context(plan, schema)
+        module, (engine, inventory, binding, _), roles, operators = self._database_context(plan, schema)
         try:
-            observed = module.observe(engine, inventory, roles, operators)
+            observed = module.observe(engine, inventory, roles, operators, neon_binding=binding)
             result = module.evaluate(inventory, plan.inventory_sha256, observed, datetime.now(UTC))
             # Its booleans are still unverified assertions. Only fresh observed
             # SQL values and the separate native fences authorize this sequence.
@@ -503,27 +525,28 @@ class NativeBoundary:
                     or migration["elevated"] or migration["elevated_role_membership"]
                     or migration["membership_administration"]):
                 raise ReleaseDenied("replacement_runtime_or_migration_privileges_unready")
-            from sqlalchemy import text
             with engine.connect() as connection:
                 connection.exec_driver_sql("SET TRANSACTION READ ONLY")
                 connection.exec_driver_sql("SET LOCAL statement_timeout = '1000ms'")
                 verify_runtime_permissions(connection, inventory.database_namespace, roles["replacement_runtime"], roles["replacement_migration"])
             # Pinned numeric secrets must actually connect as distinct observed
             # roles into this database; a DSN username is not credential proof.
-            from sqlalchemy import create_engine
-            from sqlalchemy.pool import NullPool
             for alias, ref in (("replacement_runtime", plan.runtime_secret), ("replacement_migration", plan.migration_secret)):
-                credential_engine = create_engine(self._secret(ref), poolclass=NullPool, hide_parameters=True,
-                                                  connect_args={"connect_timeout": 5})
+                secret_binding, secret_target = module.neon_identity.collect_release_target(
+                    self, ref, alias=alias, database_owner_oid=plan.database_owner_oid,
+                    expected_schema=schema,
+                )
+                credential_engine = secret_target.engine()
                 try:
                     with credential_engine.connect() as connection:
                         connection.exec_driver_sql("SET TRANSACTION READ ONLY")
                         connection.exec_driver_sql("SET LOCAL statement_timeout = '1000ms'")
-                        name = connection.execute(text("SELECT current_user")).scalar_one()
-                        identifier = connection.execute(text("SELECT system_identifier::text FROM pg_control_system()")).scalar_one()
-                        oid = connection.execute(text("SELECT oid FROM pg_database WHERE datname=current_database()")).scalar_one()
-                        if name != roles[alias] or hashlib.sha256(str(identifier).encode()).hexdigest() != observed["system_identifier_sha256"] or oid != observed["database_oid"]:
-                            raise ReleaseDenied("exact_secret_role_database_identity_mismatch")
+                        module.neon_identity.verify_transport(connection, secret_binding)
+                        module.neon_identity.verify_native_target(connection, secret_binding, inventory.expected_database_oid)
+                        # Preserve genuine native session/PID/cancellation-key
+                        # proof for these distinct authenticated role sources too.
+                        module._native_session_ids(connection, inventory.expected_database_oid,
+                                                   neon_binding=secret_binding)
                 finally:
                     credential_engine.dispose()
         finally:
@@ -539,11 +562,13 @@ class NativeBoundary:
             os.environ.pop(key)
         engine = None
         try:
-            _, (engine, inventory), _, _ = self._database_context(plan, "20261008_0009")
+            observer_module, (engine, inventory, binding, _target), _roles, _operators = self._database_context(plan, "20261008_0009")
             with engine.connect() as connection, connection.begin():
                 connection.exec_driver_sql("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
                 connection.exec_driver_sql("SET LOCAL statement_timeout = '1000ms'")
                 connection.exec_driver_sql("SET LOCAL idle_in_transaction_session_timeout = '610000ms'")
+                observer_module.neon_identity.verify_transport(connection, binding)
+                observer_module.neon_identity.verify_native_target(connection, binding, inventory.expected_database_oid)
                 identifier = connection.execute(text("SELECT system_identifier::text FROM pg_control_system()")).scalar_one()
                 oid = connection.execute(text("SELECT oid FROM pg_database WHERE datname=current_database()")).scalar_one()
                 quoted = connection.dialect.identifier_preparer.quote(inventory.database_namespace)
@@ -566,8 +591,7 @@ class NativeBoundary:
         # file and turn it into release permission.
         import tempfile
 
-        from sqlalchemy.engine import make_url
-        _, (engine, inventory), _, _ = self._database_context(plan, "20261008_0009")
+        _, (engine, inventory, _, dump_target), _, _ = self._database_context(plan, "20261008_0009")
         engine.dispose()
         self.verify_database(plan, "20261008_0009")
         fresh = _fresh_fence(self, plan, lambda: datetime.now(UTC))
@@ -582,15 +606,8 @@ class NativeBoundary:
         if any(member in {"allUsers", "allAuthenticatedUsers"}
                for binding in bucket_policy.get("bindings", []) for member in binding.get("members", [])):
             raise ReleaseDenied("protected_backup_bucket_is_public")
-        url = make_url(os.environ["HIREWIZ_CUTOVER_DATABASE_URL"])
-        if not url.host or not url.username or not url.database or set(url.query) - {"sslmode", "sslrootcert"}:
-            raise ReleaseDenied("backup_connection_parameters_unsupported")
-        environment = {**{k: v for k, v in os.environ.items() if not k.startswith("PG")}, "PGHOST": url.host, "PGPORT": str(url.port or 5432),
-                       "PGUSER": url.username, "PGPASSWORD": url.password or "",
-                       "PGDATABASE": url.database, "PGSSLMODE": str(url.query.get("sslmode", "require")),
-                       "PGCONNECT_TIMEOUT": "5", "PGAPPNAME": "hirewiz_post_fence_backup"}
-        if "sslrootcert" in url.query:
-            environment["PGSSLROOTCERT"] = str(url.query["sslrootcert"])
+        environment = {**{k: v for k, v in os.environ.items() if not k.startswith("PG")},
+                       **dump_target.dump_environment()}
         with tempfile.TemporaryDirectory(prefix="hirewiz-post-fence-backup-") as directory:
             archive = Path(directory) / "backup.dump"
             try:
@@ -658,7 +675,7 @@ class NativeBoundary:
             raise ReleaseDenied("backup_writer_cut_changed")
 
     def migrate(self, plan: Plan, expected: str, target: str) -> None:
-        _, (engine, inventory), roles, _ = self._database_context(plan, expected)
+        _, (engine, inventory, _binding, _target), roles, _ = self._database_context(plan, expected)
         engine.dispose()
         job = "hirewiz-monetary-" + plan.release[:12] + "-" + target[-4:]
         env = {**SAFE_ENV, "APP_RELEASE": plan.release, "SERVICE_ROLE": "migration",

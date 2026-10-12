@@ -16,7 +16,7 @@ import subprocess
 from dataclasses import dataclass
 from ipaddress import ip_address
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Protocol
 from weakref import WeakKeyDictionary
 
 from psycopg import Connection as PsycopgConnection
@@ -50,6 +50,30 @@ TIMEOUT_OPTIONS = (
     "-c statement_timeout=10000 -c lock_timeout=4000 -c idle_in_transaction_session_timeout=120000"
 )
 CAPTURE_OPTIONS = "-c default_transaction_read_only=on " + TIMEOUT_OPTIONS
+PROJECT_NUMBER = "157225724590"
+RELEASE_CONTROL_RECEIPT = Path(
+    "/Users/harshil/.codex/hirewiz-evidence/20261012/root/neon-controlplane-identity-ui-current.json"
+)
+RELEASE_CONTROL_RECEIPT_SHA = "875747de81988a2504b1d75b78813b96f274f2e338005bc1f69c7b4bb730ad0a"
+RELEASE_DIRECT_HOST = "ep-damp-rice-aosknaqp.c-2.ap-southeast-1.aws.neon.tech"
+RELEASE_POOLER_HOST = "ep-damp-rice-aosknaqp-pooler.c-2.ap-southeast-1.aws.neon.tech"
+RELEASE_SCHEMAS = frozenset({
+    "20261008_0009", "20261009_0010", "20261009_0011", "20261009_0012",
+    "20261009_0013", "20261010_0014", "20261011_0015", "20261011_0016",
+})
+RELEASE_ACTORS = {
+    "observer": ("hirewiz_observer_20261010_r1", 1884182),
+    "replacement_runtime": ("hirewiz_runtime_20261010_r1", 1884178),
+    "replacement_migration": ("hirewiz_migrator_20261010_r1", 1884180),
+}
+RELEASE_REFERENCE = re.compile(r"[a-z][a-z0-9-]{2,62}:[1-9][0-9]{0,8}")
+
+
+class NativeReleaseSecretReader(Protocol):
+    # Production uses NativeBoundary, under its reviewed normal native command
+    # route. No CLI/manifest callback or credential/provenance bool is accepted.
+    def describe_release_secret(self, reference: str) -> dict[str, Any]: ...
+    def access_release_secret(self, reference: str) -> str: ...
 
 
 class NeonIdentityDenied(RuntimeError):
@@ -61,7 +85,11 @@ class NeonDirectProxyBinding:
     host: str
     channel_binding: str
     options: str
-    purpose: Literal["capture", "preparation"]
+    purpose: Literal["capture", "preparation", "release_capture"]
+    actor: str = ACTOR
+    actor_oid: int = ACTOR_OID
+    database_owner_oid: int = ACTOR_OID
+    expected_schema: str = "20261008_0009"
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -112,18 +140,53 @@ class _TransientTarget:
         event.listen(engine, "do_connect", guarded_connect)
         return engine
 
+    def dump_environment(self) -> dict[str, str]:
+        _registered(self.binding)
+        # The caller passes this dictionary only to the owned pg_dump process.
+        # No ambient PG setting, alternate host or source query reaches libpq.
+        return {
+            "PGHOST": self.binding.host, "PGPORT": "5432",
+            "PGUSER": self.binding.actor, "PGPASSWORD": self._url.password or "",
+            "PGDATABASE": DATABASE, "PGSSLMODE": "verify-full",
+            "PGSSLCERTMODE": "disable", "PGSSLROOTCERT": ROOT_CERT,
+            "PGCHANNELBINDING": self.binding.channel_binding,
+            "PGCONNECT_TIMEOUT": "5", "PGAPPNAME": APPLICATION,
+            "PGOPTIONS": self.binding.options,
+        }
+
 
 _issued: WeakKeyDictionary[NeonDirectProxyBinding, tuple[str, str, str, str]] = WeakKeyDictionary()
 _guarded_drivers: WeakKeyDictionary[PsycopgConnection, NeonDirectProxyBinding] = WeakKeyDictionary()
 
 
 def _registered(binding: NeonDirectProxyBinding) -> None:
-    if type(binding) is not NeonDirectProxyBinding or _issued.get(binding) != (
-        PROJECT,
-        REGION,
-        REVISION,
-        IMAGE,
-    ):
+    if type(binding) is not NeonDirectProxyBinding:
+        raise NeonIdentityDenied("neon_direct_native_binding_unavailable")
+    provenance = _issued.get(binding)
+    legacy = (
+        binding.purpose in {"capture", "preparation"}
+        and provenance == (PROJECT, REGION, REVISION, IMAGE)
+        and (binding.actor, binding.actor_oid, binding.database_owner_oid, binding.expected_schema)
+        == (ACTOR, ACTOR_OID, ACTOR_OID, "20261008_0009")
+        and binding.options == (CAPTURE_OPTIONS if binding.purpose == "capture" else TIMEOUT_OPTIONS)
+    )
+    release = (
+        binding.purpose == "release_capture"
+        and type(provenance) is tuple and len(provenance) == 4
+        and provenance[0] == PROJECT and provenance[3] == RELEASE_CONTROL_RECEIPT_SHA
+        and type(provenance[1]) is str
+        and re.fullmatch(r"projects/" + PROJECT_NUMBER + r"/secrets/[a-z][a-z0-9-]{2,62}/versions/[1-9][0-9]{0,8}", provenance[1]) is not None
+        and type(provenance[2]) is str and 1 <= len(provenance[2]) <= 256
+        and (binding.actor, binding.actor_oid) in RELEASE_ACTORS.values()
+        and type(binding.actor_oid) is int
+        and type(binding.database_owner_oid) is int
+        and 0 < binding.database_owner_oid <= 4294967295
+        and binding.expected_schema in RELEASE_SCHEMAS
+        and binding.host == RELEASE_DIRECT_HOST
+        and binding.channel_binding in {"prefer", "require"}
+        and binding.options == CAPTURE_OPTIONS
+    )
+    if not legacy and not release:
         raise NeonIdentityDenied("neon_direct_native_binding_unavailable")
 
 
@@ -311,7 +374,7 @@ def _verify_driver_transport(driver: Any, binding: NeonDirectProxyBinding) -> No
         expected = {
             "host": binding.host,
             "dbname": DATABASE,
-            "user": ACTOR,
+            "user": binding.actor,
             "sslmode": "verify-full",
             "sslcertmode": "disable",
             "sslrootcert": ROOT_CERT,
@@ -350,7 +413,7 @@ def _verify_driver_transport(driver: Any, binding: NeonDirectProxyBinding) -> No
             or driver.info.host != binding.host
             or driver.info.port != 5432
             or driver.info.dbname != DATABASE
-            or driver.info.user != ACTOR
+            or driver.info.user != binding.actor
         ):
             raise NeonIdentityDenied("neon_direct_effective_transport_mismatch")
     except NeonIdentityDenied:
@@ -381,15 +444,120 @@ def verify_native_target(
         )
     ).one()
     if (
-        tuple(row[:6]) != (DATABASE_OID, ACTOR_OID, ACTOR_OID, ACTOR, ACTOR, NAMESPACE_OID)
+        tuple(row[:6]) != (DATABASE_OID, binding.database_owner_oid, binding.actor_oid,
+                           binding.actor, binding.actor, NAMESPACE_OID)
         or database_oid != DATABASE_OID
         or type(row[6]) is not str
         or hashlib.sha256(row[6].encode()).hexdigest() != CLUSTER
     ):
         raise NeonIdentityDenied("neon_direct_native_target_mismatch")
+    if binding.purpose == "release_capture":
+        verify_release_schema(connection, binding)
 
 
 def cancellation_key_shape(value: Any) -> bool:
     # libpq stores the proxy's first random four bytes as C signed int. No
     # positivity or compute-PID equality is inferred from this opaque key.
     return type(value) is int and -(2**31) <= value < 2**31
+
+
+
+def bound_schema(binding: NeonDirectProxyBinding) -> str:
+    _registered(binding)
+    return binding.expected_schema
+
+
+def _release_control_receipt() -> None:
+    raw = RELEASE_CONTROL_RECEIPT.read_bytes()
+    if (RELEASE_CONTROL_RECEIPT.is_symlink() or len(raw) > 131072
+            or hashlib.sha256(raw).hexdigest() != RELEASE_CONTROL_RECEIPT_SHA):
+        raise NeonIdentityDenied("neon_release_control_receipt_mismatch")
+    receipt = json.loads(raw)
+    expected = {
+        "organization_id_from_actual_billing_href": ORGANIZATION,
+        "project_id": NEON_PROJECT, "branch_id": BRANCH, "endpoint_id": ENDPOINT,
+        "direct_host": RELEASE_DIRECT_HOST, "pooler_host": RELEASE_POOLER_HOST,
+        "database_name": DATABASE, "postgres_major": 17,
+    }
+    if any(type(receipt.get(k)) is not type(v) or receipt[k] != v for k, v in expected.items()):
+        raise NeonIdentityDenied("neon_release_control_receipt_mismatch")
+    # This dated native provider target projection is NOT provider fencing or
+    # admin authority. Authentication/TLS/native SQL proof is still required.
+
+
+def collect_release_target(
+    reader: NativeReleaseSecretReader, reference: str, *, alias: str,
+    database_owner_oid: int, expected_schema: str,
+) -> tuple[NeonDirectProxyBinding, _TransientTarget]:
+    """Read exact native secret source; issue only a read-only transport target.
+
+    Production calls this internally with NativeBoundary. No input DSN or
+    manifest Boolean can substitute for native secret reads/real SQL identity.
+    This does not issue native fencing, backup, migration or release authority.
+    """
+    try:
+        if (type(reference) is not str or RELEASE_REFERENCE.fullmatch(reference) is None
+                or type(alias) is not str or alias not in RELEASE_ACTORS
+                or type(expected_schema) is not str or expected_schema not in RELEASE_SCHEMAS
+                or type(database_owner_oid) is not int
+                or not 0 < database_owner_oid <= 4294967295):
+            raise NeonIdentityDenied("neon_release_identity_input_invalid")
+        _release_control_receipt()
+        name, version = reference.split(":")
+        full = f"projects/{PROJECT_NUMBER}/secrets/{name}/versions/{version}"
+        before = reader.describe_release_secret(reference)
+        if (type(before) is not dict or before.get("name") != full
+                or before.get("state") != "ENABLED"
+                or type(before.get("etag")) is not str
+                or not 1 <= len(before["etag"]) <= 256
+                or any(c.isspace() for c in before["etag"])):
+            raise NeonIdentityDenied("neon_release_secret_source_mismatch")
+        value = reader.access_release_secret(reference)
+        if type(value) is not str or not 1 <= len(value.encode()) <= 8192 or "\x00" in value:
+            raise NeonIdentityDenied("neon_release_credential_shape_unavailable")
+        if reader.describe_release_secret(reference) != before:
+            raise NeonIdentityDenied("neon_release_secret_source_changed")
+        url = make_url(value.strip())
+        actor, actor_oid = RELEASE_ACTORS[alias]
+        if (url.drivername not in {"postgresql", "postgresql+psycopg"}
+                or url.port not in {None, 5432} or url.database != DATABASE
+                or url.username != actor
+                or url.host not in {RELEASE_DIRECT_HOST, RELEASE_POOLER_HOST}):
+            raise NeonIdentityDenied("neon_release_target_mismatch")
+        if (set(url.query) - {"sslmode", "channel_binding"}
+                or url.query.get("sslmode", "require") not in {"require", "verify-ca", "verify-full"}
+                or url.query.get("channel_binding", "prefer") not in {"prefer", "require"}):
+            raise NeonIdentityDenied("neon_release_connection_settings_unavailable")
+        if (type(url.password) is not str or not url.password or "\x00" in url.password
+                or len(url.password.encode()) > 8192):
+            raise NeonIdentityDenied("neon_release_credential_shape_unavailable")
+        channel = str(url.query.get("channel_binding", "prefer"))
+        binding = NeonDirectProxyBinding(
+            RELEASE_DIRECT_HOST, channel, CAPTURE_OPTIONS, "release_capture",
+            actor, actor_oid, database_owner_oid, expected_schema,
+        )
+        clean = URL.create(
+            "postgresql+psycopg", username=actor, password=url.password,
+            host=RELEASE_DIRECT_HOST, port=5432, database=DATABASE,
+            query={"sslmode": "verify-full", "sslcertmode": "disable",
+                   "sslrootcert": ROOT_CERT, "channel_binding": channel},
+        )
+        _issued[binding] = (PROJECT, full, before["etag"], RELEASE_CONTROL_RECEIPT_SHA)
+        _registered(binding)
+        return binding, _TransientTarget(binding, clean)
+    except NeonIdentityDenied:
+        raise
+    except Exception:
+        raise NeonIdentityDenied("neon_release_source_or_target_unavailable") from None
+
+
+
+def verify_release_schema(connection: Any, binding: NeonDirectProxyBinding) -> None:
+    _registered(binding)
+    if binding.purpose != "release_capture":
+        raise NeonIdentityDenied("neon_release_schema_route_unavailable")
+    versions = list(connection.execute(
+        text("SELECT version_num FROM public.alembic_version LIMIT 3")
+    ).scalars())
+    if len(versions) != 1 or type(versions[0]) is not str or versions[0] != binding.expected_schema:
+        raise NeonIdentityDenied("neon_release_exact_schema_mismatch")

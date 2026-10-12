@@ -27,6 +27,7 @@ def plan(tmp_path):
         release="a" * 40, image_digest="sha256:" + "b" * 64,
         build_id="11111111-1111-1111-1111-111111111111", ci_run_id=7,
         runtime_secret="hirewiz-runtime-db:2", migration_secret="hirewiz-migration-db:3",
+        observer_secret="hirewiz-observer-db:7", database_owner_oid=16387,
         expense_secret="hirewiz-expense-policy:4", expense_sha256="c" * 64,
         model_policy_secret="hirewiz-model-cost-policy:5", model_policy_sha256="e" * 64,
         model_key_secret="hirewiz-model-key:6", model_primary="gemini-3.6-flash",
@@ -439,7 +440,14 @@ def test_native_owned_backup_creation_and_exact_generation_verification(plan, mo
     since = datetime.now(UTC) - timedelta(minutes=5)
     fence = release.Fence(datetime.now(UTC), since, True, True, True)
     monkeypatch.setenv("HIREWIZ_CUTOVER_DATABASE_URL", URL.create("postgresql+psycopg", username="synthetic_observer", host="127.0.0.1", database="synthetic").render_as_string(hide_password=False))
-    monkeypatch.setattr(boundary, "_database_context", lambda *args: (None, (SimpleNamespace(dispose=lambda: None), SimpleNamespace(expected_system_identifier_sha256="f" * 64, expected_database_oid=7)), {}, ()))
+    target = SimpleNamespace(dump_environment=lambda: {
+        "PGDATABASE": "synthetic", "PGSSLMODE": "verify-full",
+        "PGOPTIONS": "-c default_transaction_read_only=on",
+    })
+    monkeypatch.setattr(boundary, "_database_context", lambda *args: (
+        None, (SimpleNamespace(dispose=lambda: None),
+               SimpleNamespace(expected_system_identifier_sha256="f" * 64, expected_database_oid=7),
+               None, target), {}, ()))
     from contextlib import contextmanager
     @contextmanager
     def snapshot_context(*args):
@@ -453,6 +461,8 @@ def test_native_owned_backup_creation_and_exact_generation_verification(plan, mo
         calls.append(tuple(arguments))
         assert arguments[0] == "pg_dump"
         assert kwargs["env"]["PGDATABASE"] == "synthetic"
+        assert kwargs["env"]["PGSSLMODE"] == "verify-full"
+        assert kwargs["env"]["PGOPTIONS"] == "-c default_transaction_read_only=on"
         Path(arguments[-1]).write_bytes(b"PGDMP" + b"synthetic-local-archive" * 20)
     def command(executable, *arguments):
         calls.append((executable, *arguments))

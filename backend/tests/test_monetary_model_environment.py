@@ -34,6 +34,7 @@ def plan():
         release="a" * 40, image_digest="sha256:" + "b" * 64,
         build_id="11111111-1111-1111-1111-111111111111", ci_run_id=7,
         runtime_secret="hirewiz-runtime-db:2", migration_secret="hirewiz-migration-db:3",
+        observer_secret="hirewiz-observer-db:7", database_owner_oid=16387,
         expense_secret="hirewiz-expense-policy:4", expense_sha256="c" * 64,
         model_policy_secret="hirewiz-model-cost-policy:5", model_policy_sha256="d" * 64,
         model_key_secret="hirewiz-model-key:6", model_primary="gemini-3.6-flash",

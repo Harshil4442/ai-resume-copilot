@@ -85,11 +85,22 @@ def decode_request(payload: bytes) -> tuple[str, bytes, str]:
         raise InspectionUnavailable() from None
 
 
-def _command(arguments: list[str], timeout: int, *, allow_detection: bool = False) -> tuple[int, str]:
+def _command(arguments: list[str], timeout: int, *, allow_detection: bool = False,
+             deadline: float | None = None) -> tuple[int, str]:
     try:
+        command_timeout: int | float = timeout
+        if deadline is not None:
+            if type(deadline) not in {int, float} or not math.isfinite(deadline):
+                raise InspectionUnavailable()
+            remaining = deadline - time.monotonic()
+            if not math.isfinite(remaining) or remaining <= 0:
+                raise InspectionUnavailable()
+            command_timeout = min(timeout, remaining)
         result = subprocess.run(arguments, stdin=subprocess.DEVNULL, capture_output=True,
-            timeout=timeout, check=False, env={"PATH": "/usr/bin:/bin", "LANG": "C", "TZ": "UTC",
+            timeout=command_timeout, check=False, env={"PATH": "/usr/bin:/bin", "LANG": "C", "TZ": "UTC",
                                              "HOME": "/nonexistent"})
+        if deadline is not None and time.monotonic() >= deadline:
+            raise InspectionUnavailable()
         if (len(result.stdout) > 65536 or result.stderr
                 or result.returncode not in ((0, 1) if allow_detection else (0,))):
             raise InspectionUnavailable()
@@ -98,14 +109,16 @@ def _command(arguments: list[str], timeout: int, *, allow_detection: bool = Fals
         raise InspectionUnavailable() from None
 
 
-def scan_original(path: Path, *, now: datetime | None = None) -> dict:
+def scan_original(path: Path, *, now: datetime | None = None, deadline: float | None = None) -> dict:
     """Require fresh definitions and a coherent exact-one-file scanner outcome.
 
     Genuine detection is a permanent document refusal. Any missing, stale,
     incomplete, inconsistent or errored scan remains service unavailability.
     Scanner names/output are private and never cross the processor protocol.
     """
-    _, version = _command(["/usr/bin/clamscan", "--database=" + DATABASE, "--version"], 5)
+    version_arguments = ["/usr/bin/clamscan", "--database=" + DATABASE, "--version"]
+    _, version = (_command(version_arguments, 5) if deadline is None
+                  else _command(version_arguments, 5, deadline=deadline))
     match = re.fullmatch(r"ClamAV ([0-9]+\.[0-9]+\.[0-9]+(?:[.-][A-Za-z0-9]+)?)/([0-9]{1,10})/([A-Za-z0-9 :]{24})", version.strip())
     if not match:
         raise InspectionUnavailable()
@@ -116,13 +129,15 @@ def scan_original(path: Path, *, now: datetime | None = None) -> dict:
             raise InspectionUnavailable()
     except Exception:
         raise InspectionUnavailable() from None
-    code, output = _command(["/usr/bin/clamscan", "--stdout", "--database=" + DATABASE,
+    scan_arguments = ["/usr/bin/clamscan", "--stdout", "--database=" + DATABASE,
         "--official-db-only=yes", "--fail-if-cvd-older-than=3", "--disable-cache",
         "--alert-encrypted=yes", "--alert-exceeds-max=yes", "--heuristic-alerts=yes",
         "--scan-archive=yes", "--scan-pdf=yes", "--scan-ole2=yes",
         "--max-filesize=6M", "--max-scansize=20M", "--max-files=500",
         "--max-recursion=16", "--max-scantime=20000", "--bytecode-timeout=1000",
-        "--tempdir=" + str(path.parent), "--", str(path)], 30, allow_detection=True)
+        "--tempdir=" + str(path.parent), "--", str(path)]
+    code, output = (_command(scan_arguments, 30, allow_detection=True) if deadline is None
+                    else _command(scan_arguments, 30, allow_detection=True, deadline=deadline))
     clean_lines = [line for line in output.splitlines() if line.endswith(": OK")]
     found_lines = [line for line in output.splitlines() if line.endswith(" FOUND")]
     def number(name: str) -> int:
@@ -390,7 +405,7 @@ def validate_docx_edit(payload: bytes) -> dict:
         original = directory / "original.docx"
         original.write_bytes(source)
         original.chmod(0o600)
-        scan = scan_original(original)
+        scan = scan_original(original, deadline=deadline)
         if original.read_bytes() != source:
             raise InspectionUnavailable()
         validate_docx(source)
@@ -407,7 +422,7 @@ def validate_docx_edit(payload: bytes) -> dict:
         target = directory / "candidate.docx"
         target.write_bytes(candidate)
         target.chmod(0o600)
-        candidate_scan = scan_original(target)
+        candidate_scan = scan_original(target, deadline=deadline)
         if target.read_bytes() != candidate or original.read_bytes() != source:
             raise InspectionUnavailable()
         from docx_renderer import validate_rendered_edit

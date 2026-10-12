@@ -89,13 +89,18 @@ class DocxWorkerValidationTests(unittest.TestCase):
         with modules() as m:
             source, candidate, _, expected, payload = request(m)
             scans = []
-            def scan(path):
+            scan_deadlines = []
+            def scan(path, *, deadline):
+                self.assertGreater(deadline, time.monotonic())
+                scan_deadlines.append(deadline)
                 scans.append(path.read_bytes())
                 return SCAN.copy()
             with patch.object(m.processor, "scan_original", scan), patch.object(m.renderer,
                     "validate_rendered_edit", render_adapter(m)):
                 result = m.processor.validate_docx_edit(payload)
             self.assertEqual(scans, [source, candidate])
+            self.assertEqual(len(scan_deadlines), 2)
+            self.assertEqual(scan_deadlines[0], scan_deadlines[1])
             self.assertEqual({key: result[key] for key in expected}, expected)
             self.assertEqual(result["layout"]["candidate_sha256"], expected["candidate_sha256"])
             self.assertNotIn(m.fixtures.ORIGINAL, json.dumps(result))
@@ -112,7 +117,8 @@ class DocxWorkerValidationTests(unittest.TestCase):
                 with patch.object(m.processor, "scan_original", return_value=SCAN):
                     with self.assertRaises(m.processor.InspectionUnavailable):
                         m.processor.validate_docx_edit(json.dumps(changed).encode())
-                def mutate(path):
+                def mutate(path, *, deadline):
+                    self.assertGreater(deadline, time.monotonic())
                     path.write_bytes(b"changed by synthetic scanner")
                     return SCAN.copy()
                 with patch.object(m.processor, "scan_original", mutate):

@@ -773,7 +773,7 @@ def observe(
             if len(versions) != 1 or versions[0] not in SCHEMAS:
                 raise Denied("database_schema_unsupported")
             version = str(versions[0])
-            if neon_binding is not None and version != "20261008_0009":
+            if neon_binding is not None and version != neon_identity.bound_schema(neon_binding):
                 raise Denied("neon_direct_inventory_schema_mismatch")
             # A candidate cannot silently adopt a newer database revision.
             if SCHEMA_ORDER.index(version) > SCHEMA_ORDER.index(inventory.candidate_schema):
