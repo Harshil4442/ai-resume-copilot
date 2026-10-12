@@ -81,6 +81,30 @@ class FailureDiagnosticsTests(unittest.TestCase):
         self.assertEqual(report["completed_cases"], 8)
         self.assert_redacted(report)
 
+    def test_both_docx_cases_report_only_exact_bound_finite_refusal(self):
+        refusal = {**self.refusal, "reason": "hyperlink_changed", "unit_id": None}
+        for case in ("styled_multipage_fit", "rendered_reflow_refusal"):
+            with self.subTest(case=case):
+                m._progress("case_validation", case=case, exit_code=1, completed_cases=9)
+                self.note(refusal, case=case)
+                report = m._failure_report()
+                self.assertEqual(set(report), BASE_KEYS | {"processor_error", "processor_reason"})
+                self.assertEqual(report["case"], case)
+                self.assertEqual(report["completed_cases"], 9)
+                self.assertEqual(report["processor_reason"], "hyperlink_changed")
+                self.assert_redacted(report)
+                for invalid in ({**refusal, "sha256": "d" * 64},
+                                {**refusal, "raw": "PRIVATE_NATIVE_BODY"},
+                                {**refusal, "reason": "PRIVATE_UNKNOWN_REASON"},
+                                {key: value for key, value in refusal.items() if key != "unit_id"}):
+                    self.note(refusal, case=case)
+                    self.note(invalid, case=case)
+                    self.assertEqual(set(m._failure_report()), BASE_KEYS)
+                    self.assert_redacted(m._failure_report())
+        m._progress("case_validation", case="rendered_reflow_refusal", exit_code=1)
+        self.note(refusal, case="styled_multipage_fit")
+        self.assertEqual(set(m._failure_report()), BASE_KEYS)
+
     def test_mismatched_or_nonprotocol_refusal_never_exports_reason(self):
         invalid = [
             ({**self.refusal, "sha256": "d" * 64}, self.binding, 1),
@@ -110,8 +134,8 @@ class FailureDiagnosticsTests(unittest.TestCase):
         self.assertNotIn("docx_refusal", m._FAILURE.get())
         self.note()
         self.assertEqual(set(m._failure_report()), BASE_KEYS)
-        m._progress("case_validation", case="rendered_reflow_refusal", exit_code=1)
-        self.note(case="rendered_reflow_refusal")
+        m._progress("case_validation", case="clean_pdf", exit_code=1)
+        self.note(case="clean_pdf")
         self.assertEqual(set(m._failure_report()), BASE_KEYS)
         m._progress("case_validation", case="styled_multipage_fit", exit_code=2)
         self.note()

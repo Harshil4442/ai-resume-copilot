@@ -469,7 +469,7 @@ def _note_docx_refusal(result: object, binding: dict, code: int, *, case: str) -
     if (type(diagnostic.get("stage")) is not str or diagnostic["stage"] != "case_validation"
             or type(diagnostic.get("case")) is not str or type(case) is not str or diagnostic["case"] != case
             or type(diagnostic.get("exit_code")) is not int or diagnostic["exit_code"] != 1
-            or case != "styled_multipage_fit" or type(code) is not int or code != 1
+            or case not in {"styled_multipage_fit", "rendered_reflow_refusal"} or type(code) is not int or code != 1
             or type(binding) is not dict or any(type(key) is not str for key in binding)
             or set(binding) != _DOCX_BINDING_KEYS
             or type(binding["version"]) is not int or binding["version"] != 1
@@ -540,7 +540,8 @@ def _failure_report() -> dict:
             "exit_code": code if type(code) is int and 0 <= code <= 255 else None,
             "completed_cases": completed if type(completed) is int and 0 <= completed <= len(_FAILURE_CASES) else 0}
     refusal = diagnostic.get("docx_refusal")
-    if (result["stage"] == "case_validation" and result["case"] == "styled_multipage_fit" and result["exit_code"] == 1
+    if (result["stage"] == "case_validation" and result["case"] in {"styled_multipage_fit", "rendered_reflow_refusal"}
+            and result["exit_code"] == 1
             and type(refusal) is _DocxRefusal and type(refusal.case) is str and refusal.case == result["case"]
             and type(refusal.error) is str and refusal.error == "docx_layout_refused"
             and type(refusal.reason) is str and refusal.reason in _DOCX_REASONS):
@@ -942,6 +943,7 @@ def check(platform: str, *, image: str | None = None) -> dict:
                 layout_observations.append({"case": name, "passed": True, "layout": receipt, "scan": result["scan"]})
             elif (code != 1 or result.get("error") != "docx_layout_refused" or result.get("reason") not in {
                     "line_wrap_changed", "page_geometry_changed", "paragraph_page_changed", "paragraph_overflow"}):
+                _note_docx_refusal(result, binding, code, case=name)
                 raise DocumentImageError()
             else:
                 layout_observations.append({"case": name, "passed": True, "reason": result["reason"]})
