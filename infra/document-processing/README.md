@@ -1,4 +1,57 @@
-# Private PDF/DOCX inspection worker
+# Private PDF/DOCX inspection and DOCX render validation worker
+
+## Current DOCX render draft
+
+The 12 October draft adds `POST /validate-docx` to this existing private worker;
+it does not create another service. Its version 3 policy SHA-256 is
+`7ab061c2c3097c4eea17cda45f4d69f22b42a611c418270853035905521eb71c`.
+The previously accepted image `8369f7…` and version 2 policy below exclude this
+operation and must not be deployed or described as render validation evidence.
+This draft keeps deployment proof and API wiring disabled pending a new native
+image, renderer, isolation and custody acceptance.
+
+The request carries one original DOCX, declared source edits and expected candidate
+hash/size. The processor regenerates that exact candidate with the same native
+run patch, scans both files, and directly renders each to PDF using Linux
+LibreOffice Writer in fresh private profiles. It reuses the existing owned
+signal-free constructor/process-group launcher and a shared 50-second processor
+work deadline within the unchanged 55-second sandbox phase. It has no host
+renderer, ODT conversion, repair, network or retry fallback. Writer output stays
+inside the sandbox; only a bound receipt of at most 32 KiB is returned, after
+successful force-delete acknowledgement. Failed cleanup always prevents release.
+
+Actual rendered comparison binds native parts/run allocation, pages, reading
+order, retained fonts/vertical bands, protected glyph geometry, links, vector
+paint and pixels outside changed paragraphs. It refuses ambiguous text, reflow,
+overflow, overlapping images and unsupported opacity/soft-mask/shading/pattern/
+Form/Type3 paint or clipping. Neutral graphics states and a bound initial
+page-edge clip are supported; the prior accepted synthetic Writer PDFs pass that
+narrow guard. This is supported-layout validation, not arbitrary DOCX or
+Microsoft Word equivalence. A pure receipt or renderer identity string does not
+attest that a render ran.
+
+The build records installed Linux font files, fontconfig rules/cache and Writer
+files/version in `/opt/document/docx-font-manifest.json`. Every operation verifies
+those bytes again. Before DOCX preparation, configure the API's
+`DOCUMENT_WORKER_DOCX_RENDERER_VERSION` and
+`DOCUMENT_WORKER_DOCX_FONT_MANIFEST_SHA256` from the actual accepted native image
+receipt, alongside the existing canonical URL/image/policy pins. No document
+operation can infer those expected pins from its own response.
+
+Version preparation must persist `docx_artifact.prepare_artifact`'s returned seal
+as the existing `sealed_native_artifact`, bound to source bytes and declared
+edits, before preview/review/approval. The artifact helper then verifies and
+downloads those exact DOCX bytes without HTTP or rerendering. Historical seals
+retain their preparation identity across later worker promotions. Original and
+unchanged snapshots remain byte-identical. The version-preparation caller's seal
+storage is a remaining integration step; helper tests do not certify that path.
+
+Standalone synthetic controls exercise actual PDF comparison and the transport/
+seal boundaries. They do not establish ClamAV or Writer execution. The native
+image helper now includes one styled two-page DOCX with a real hyperlink and one
+rendered reflow refusal, in addition to its existing inspector corpus. Actual
+Linux/native results, format guidance, application custody and controlled crash/
+retention evidence remain required; this draft does not close checkpoint 2.
 
 Reviewed 11 October 2026. This private proposal adds bounded stdin transport to the synchronous V3 worker and the current
 `backend/app/services/document_ingestion.py` contract. It is a proposed deployment
@@ -91,11 +144,11 @@ container metadata. The preceding published `ab5cb5d9` passes all five hosted CI
 those published proofs do not certify the later receipt/definition changes. At that earlier checkpoint, exact-source hosted CI and native Cloud Run isolation remained required. Published `a162890ff50a606f9c23493ea11266d32ad416d6` later passed all five hosted CI jobs; see the delivery checkpoint. That does not certify this new private synchronous-call proposal or close native isolation acceptance.
 
 [`policy.json`](policy.json) is canonical sorted compact UTF-8 JSON with a terminal
-newline. The bounded-stdin version 2 policy, renewed for the HTTP diagnostics source, has SHA-256 `fa87e5b68bf16b2c5e181f851377edfd0cd962624691f3e0ddfb52a3ab2f8e90`. Its service SHA-256 is `59152c644e39846211a4a59a40f0db77a3672c2f0c3a337f4e1ec6746e1fc963` and processor SHA-256 is `8a2191b33503ac647a2ed3bbc50bd1230536c7cdb474b39c49f9f567f6e6a6d8`; the other five build-source hashes remain unchanged. The previous archive-transport policy was `e7d6680ee78da0cda5a8e4d9abfaf178ce5684b8b55ebcc5c168b69e3ece8e34`; its native prototype evidence does not certify this source change.
-It binds the seven build sources, supported PDF/DOCX limits, outcomes and required native
+newline. The historical bounded-stdin version 2 policy, renewed for the HTTP diagnostics source, had SHA-256 `fa87e5b68bf16b2c5e181f851377edfd0cd962624691f3e0ddfb52a3ab2f8e90`. Its service SHA-256 is `59152c644e39846211a4a59a40f0db77a3672c2f0c3a337f4e1ec6746e1fc963` and processor SHA-256 is `8a2191b33503ac647a2ed3bbc50bd1230536c7cdb474b39c49f9f567f6e6a6d8`; the other five build-source hashes remain unchanged. The previous archive-transport policy was `e7d6680ee78da0cda5a8e4d9abfaf178ce5684b8b55ebcc5c168b69e3ece8e34`; its native prototype evidence does not certify this source change.
+That historical policy binds the seven inspection build sources, supported PDF/DOCX limits, outcomes and required native
 isolation controls. Before activation, independently match actual source, image bytes,
 revision configuration and acceptance evidence to this artifact. Its requirements and
-`deployment_proven:false` field do not certify the cloud. This policy excludes TeX/ZIP,
+`deployment_proven:false` field do not certify the cloud. The historical policy excludes TeX/ZIP,
 retained uninspected files, later tailoring/rendering and application artifacts; their
 broader admission requirements remain open. Daily fresh-definition build/promotion
 operational work is also still open.
@@ -112,6 +165,10 @@ retaining the paths expected by the Dockerfile:
 - `backend/app/services/market/skill_extractor.py`
 - `backend/app/services/market/skill_taxonomy.py`
 - `backend/app/services/market/security.py`
+- `infra/document-processing/docx_renderer.py`
+- `backend/app/services/resume_layout.py`
+- `backend/app/services/pdf_streams.py`
+- `backend/app/services/docx_layout_validation.py`
 
 Copy each file from the accepted release and record its SHA-256. Do not send the
 entire repository, environment files, credentials, resumes, test artifacts or a

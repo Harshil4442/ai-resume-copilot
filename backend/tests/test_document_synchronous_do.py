@@ -529,6 +529,9 @@ def test_canonical_policy_binds_exact_source_and_declares_work_and_reap_bounds()
     assert value["deployment_proven"] is False
     assert value["scope"]["host_parser_fallback"] is False
     assert value["required_native_deployment_controls"]["forced_owned_sandbox_delete_before_release"] is True
-    assert len(value["source_sha256"]) == 7
+    assert len(value["source_sha256"]) == 11
+    assert value["docx_layout"]["processor_mode"] == "--docx-layout-stdin"
+    assert value["docx_layout"]["max_success_response_bytes"] == 32768
+    assert value["docx_layout"]["release"]["download_rerender"] is False
     for name, expected in value["source_sha256"].items():
         assert hashlib.sha256((ROOT / name).read_bytes()).hexdigest() == expected

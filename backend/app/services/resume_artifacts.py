@@ -54,9 +54,14 @@ def render_resume_version(
         raise ResumeArtifactError(
             f"Download this resume as {resume.source_format.upper()} to retain its original formatting."
         )
-    rendered = apply_source_edits(
-        resume.source_document, resume.source_format, content["source_edits"],
-    )
+    if resume.source_format == "docx":
+        from .docx_artifact import sealed_bytes as sealed_docx_bytes
+        rendered = sealed_docx_bytes(content.get("sealed_native_artifact"),
+            resume.source_document, content["source_edits"])
+    else:
+        rendered = apply_source_edits(
+            resume.source_document, resume.source_format, content["source_edits"],
+        )
     stem = re.sub(r"[^A-Za-z0-9]+", "-", str(version.label or "")).strip("-").lower()[:72]
     return RenderedResumeArtifact(
         content=rendered,

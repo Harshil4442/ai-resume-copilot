@@ -627,13 +627,13 @@ def create_resume_version(
                 "skills": resume.skills or [],
                 "experience_years": resume.experience_years or 0,
             }
-    if resume.source_format in {"tex", "texzip"}:
+    if resume.source_format in {"docx", "tex", "texzip"}:
         from ...services.llm_client import TailoringOutputError
-        from ...services.native_tex import prepare_artifact
         from ...services.resume_layout import ResumeLayoutError
         if content.get("format_preservation") != "source" or content.get("source_format") != resume.source_format or not isinstance(content.get("source_edits"), list):
-            raise HTTPException(422, "Native TeX versions must preserve the uploaded source and identify exact source edits.")
+            raise HTTPException(422, "Native resume versions must preserve the uploaded source and identify exact source edits.")
         try:
+            allowed = {}
             if content["source_edits"]:
                 from ...services.llm_client import _validate_tailoring_edit
                 from ...services.resume_layout import extract_source_units
@@ -648,7 +648,16 @@ def create_resume_version(
                     validated.append(_validate_tailoring_edit(edit, units, allowed, seen))
                     seen.add(edit["unit_id"])
                 content = {**content, "source_edits": validated}
-            content = {**content, "sealed_native_artifact": prepare_artifact(resume.source_document, resume.source_format, content["source_edits"], [{"id": identity, **item} for identity, item in allowed.items()] if content["source_edits"] else [])}
+            if resume.source_format == "docx":
+                from ...services.docx_artifact import prepare_artifact as prepare_docx
+                seal = prepare_docx(resume.source_document, content["source_edits"])
+            else:
+                from ...services.native_tex import prepare_artifact as prepare_tex
+                seal = prepare_tex(resume.source_document, resume.source_format, content["source_edits"], [{"id": identity, **item} for identity, item in allowed.items()])
+            if resume.source_format == "docx" and seal is None:
+                content = {key: value for key, value in content.items() if key != "sealed_native_artifact"}
+            else:
+                content = {**content, "sealed_native_artifact": seal}
         except (ResumeLayoutError, TailoringOutputError) as exc:
             raise HTTPException(422, str(exc)) from exc
     version = models.ResumeVersion(
@@ -712,11 +721,11 @@ def update_resume_version_state(
     version = get_resume_version(db, user_id, version_id)
     if payload.approval_state == "approved":
         resume = _owned_resume(db, user_id, version.resume_id)
-        if resume.source_format in {"tex", "texzip"}:
+        if resume.source_format in {"docx", "tex", "texzip"}:
             from ...services.resume_artifacts import ResumeArtifactError, render_resume_version
             from ...services.resume_layout import ResumeLayoutError
             try:
-                render_resume_version(version, resume, "pdf")
+                render_resume_version(version, resume, "docx" if resume.source_format == "docx" else "pdf")
             except (ResumeArtifactError, ResumeLayoutError) as exc:
                 raise HTTPException(409, str(exc)) from exc
     version.approval_state = payload.approval_state

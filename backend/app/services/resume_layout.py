@@ -227,7 +227,9 @@ def apply_source_edits(source_bytes: bytes, source_format: str, edits: list[dict
                     "The PDF edit could not preserve the original layout."
                 ) from exc
     try:
-        return _apply_docx(source_bytes, edits)
+        from .docx_artifact import prepare_artifact, sealed_bytes
+        seal = prepare_artifact(source_bytes, edits)
+        return sealed_bytes(seal, source_bytes, edits)
     except ResumeLayoutError:
         raise
     except (BadZipFile, KeyError, etree.XMLSyntaxError, OSError) as exc:
@@ -1105,19 +1107,12 @@ def _distribute_text(nodes: list[Any], original: str, replacement: str) -> list[
     return output
 
 
-def _docx_fit(original: str, replacement: str) -> bool:
-    # DOCX is a flowing format, not a fixed PDF slot. Restrict new glyph advance
-    # conservatively and never add lines/tabs or grow a paragraph. Native Word
-    # fonts resolve new letters; PDF subset encoding constraints do not apply.
-    def advance(text: str) -> float:
-        return sum(
-            0.3 if char in " ilI.,'`:;!|" else 1.1 if char in "MW@%" else 0.65 for char in text
-        )
-
-    return len(replacement) <= len(original) and advance(replacement) <= advance(original)
-
-
 def _apply_docx(source_bytes: bytes, edits: list[dict]) -> bytes:
+    """Deterministic native patch only, never rendered-fit certification.
+
+    The public edit path requires the private actual-render receipt and seal.
+    The same patch runs inside that worker to verify exact candidate bytes.
+    """
     with ZipFile(BytesIO(source_bytes)) as archive:
         tree = _docx_tree(archive)
         units = _docx_units(tree, source_bytes)
@@ -1130,11 +1125,6 @@ def _apply_docx(source_bytes: bytes, edits: list[dict]) -> bytes:
             replacement = replacements.get(unit["unit_id"])
             if replacement is None:
                 continue
-            if not _docx_fit(unit["text"], replacement):
-                raise ResumeLayoutError(
-                    "The replacement is too long for its original DOCX paragraph.",
-                    unit_id=unit["unit_id"],
-                )
             paragraph = paragraphs[unit["paragraph_index"]]
             nodes = _paragraph_nodes(paragraph)
             values = _distribute_text(nodes, unit["text"], replacement)

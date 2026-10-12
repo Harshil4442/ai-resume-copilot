@@ -4,6 +4,7 @@
 # Cloud Run sandbox launcher is injected only when explicitly enabled there.
 FROM public.ecr.aws/docker/library/python:3.12-slim-bookworm@sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258 AS dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends clamav clamav-freshclam \
+       libreoffice-writer fontconfig fonts-liberation2 fonts-crosextra-carlito fonts-crosextra-caladea \
     && rm -rf /var/lib/apt/lists/* \
     && python -m pip install --no-cache-dir --no-deps \
        cffi==2.1.0 charset-normalizer==3.4.9 cryptography==50.0.0 lxml==6.1.1 \
@@ -25,7 +26,14 @@ COPY --from=definitions /var/lib/clamav /var/lib/clamav
 COPY backend/app/services/parsing.py /opt/document/app/services/parsing.py
 COPY backend/app/services/market/skill_extractor.py backend/app/services/market/skill_taxonomy.py \
      backend/app/services/market/security.py /opt/document/app/services/market/
-COPY infra/document-processing/processor.py infra/document-processing/service.py /opt/document/
+COPY backend/app/services/resume_layout.py backend/app/services/pdf_streams.py \
+     backend/app/services/docx_layout_validation.py /opt/document/app/services/
+COPY infra/document-processing/processor.py infra/document-processing/service.py \
+     infra/document-processing/docx_renderer.py /opt/document/
+# Generated from actual installed Linux files and version, verified again on
+# every render. Its hash/version must be observed and pinned by the API before
+# enabling DOCX preparation; a syntax-valid declaration alone proves no render.
+RUN /usr/local/bin/python3 -I /opt/document/docx_renderer.py --write-font-manifest
 # Immutable image rebuilds must refresh official definitions at least every
 # three days. No freshclam/network updater runs while processing candidate data.
 # The runtime scanner independently checks database-header age and rejects stale

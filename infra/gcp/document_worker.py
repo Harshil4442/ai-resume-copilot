@@ -19,7 +19,7 @@ SERVICE = "hirewiz-document-inspector"
 SERVICE_ACCOUNT = f"{SERVICE}@{PROJECT}.iam.gserviceaccount.com"
 API_INVOKER = f"hirewiz-api@{PROJECT}.iam.gserviceaccount.com"
 RESOURCE = f"projects/{PROJECT}/locations/{REGION}/services/{SERVICE}"
-POLICY_SHA256 = "fa87e5b68bf16b2c5e181f851377edfd0cd962624691f3e0ddfb52a3ab2f8e90"
+POLICY_SHA256 = "7ab061c2c3097c4eea17cda45f4d69f22b42a611c418270853035905521eb71c"
 ROOT = Path(__file__).resolve().parents[2]
 MAX_INPUT_BYTES = 256 * 1024
 _IMAGE = re.compile(re.escape(f"{REGION}-docker.pkg.dev/{PROJECT}/cloud-run-source-deploy/{SERVICE}")
@@ -73,7 +73,7 @@ def _proposal() -> dict[str, Any]:
         if len(raw) > MAX_INPUT_BYTES or hashlib.sha256(raw).hexdigest() != POLICY_SHA256:
             _deny()
         policy = decode(raw)
-        if policy.get("version") != 2 or policy.get("deployment_proven") is not False:
+        if policy.get("version") != 3 or policy.get("deployment_proven") is not False:
             _deny()
         proposal = decode(draft.read_bytes())
         if not _same(proposal, {

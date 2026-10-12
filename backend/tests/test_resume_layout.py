@@ -12,6 +12,7 @@ import pytest
 import reportlab
 from backend.app.services.resume_layout import (
     ResumeLayoutError,
+    _apply_docx,
     apply_source_edits,
     extract_source_units,
 )
@@ -511,8 +512,9 @@ def _without_text(xml: bytes) -> bytes:
 
 
 def test_docx_edit_retains_runs_bold_hyperlinks_tables_headers_footers_and_zip_parts():
+    # Native patch invariants are separate from actual private render validation.
     source = _docx()
-    result = apply_source_edits(source, "docx", [_edit(_first_unit(source, "docx"))])
+    result = _apply_docx(source, [_edit(_first_unit(source, "docx"))])
     with ZipFile(BytesIO(source)) as before, ZipFile(BytesIO(result)) as after:
         assert before.namelist() == after.namelist()
         for name in before.namelist():
@@ -533,21 +535,24 @@ def test_docx_edit_retains_runs_bold_hyperlinks_tables_headers_footers_and_zip_p
         assert hyperlink.find(f"{W}r/{W}t").text == "SQL"
 
 
-def test_docx_rejects_growth_and_protects_nonbody_parts():
+def test_docx_native_patch_cannot_certify_render_fit_or_edit_nonbody_parts(monkeypatch):
     source = _docx()
     units = extract_source_units(source, "docx")
     assert all("header" not in unit["text"] and "footer" not in unit["text"] for unit in units)
-    with pytest.raises(ResumeLayoutError, match="too long"):
-        apply_source_edits(
-            source, "docx", [_edit(_first_unit(source, "docx"), ORIGINAL + " with API monitoring")]
-        )
+    edit = _edit(_first_unit(source, "docx"), ORIGINAL + " with API monitoring")
+    assert _apply_docx(source, [edit]) != source
+    # A syntactically valid native patch is not a fit receipt. With no configured
+    # renderer, the public path must refuse before any identity/provider call.
+    monkeypatch.setenv("DOCUMENT_WORKER_URL", "")
+    with pytest.raises(ResumeLayoutError, match="private DOCX renderer"):
+        apply_source_edits(source, "docx", [edit])
 
 
 def test_docx_native_font_allows_new_ascii_letters_without_changing_styles():
     source = _docx()
     replacement = "Built robust systems with Python and SQL."
     assert "r" in replacement and "r" not in ORIGINAL
-    result = apply_source_edits(source, "docx", [_edit(_first_unit(source, "docx"), replacement)])
+    result = _apply_docx(source, [_edit(_first_unit(source, "docx"), replacement)])
     with ZipFile(BytesIO(result)) as archive:
         tree = etree.fromstring(archive.read("word/document.xml"))
         paragraph = list(tree.find(f"{W}body").iter(f"{W}p"))[3]
@@ -694,7 +699,7 @@ def test_docx_surrounding_body_edits_preserve_exact_link_nodes_and_relationships
     external, split_label
 ):
     source = _docx_hyperlink_source(external=external, split_label=split_label)
-    result = apply_source_edits(source, "docx", [_edit(_first_unit(source, "docx"))])
+    result = _apply_docx(source, [_edit(_first_unit(source, "docx"))])
     with ZipFile(BytesIO(source)) as before, ZipFile(BytesIO(result)) as after:
         assert before.namelist() == after.namelist()
         for name in before.namelist():
@@ -721,7 +726,7 @@ def test_docx_link_refusal_is_atomic_and_attributed_for_retaining_another_safe_e
     assert refused.value.unit_id == linked["unit_id"]
     assert extract_source_units(source, "docx") == units
     retained = [edit for edit in edits if edit["unit_id"] != refused.value.unit_id]
-    result = apply_source_edits(source, "docx", retained)
+    result = _apply_docx(source, retained)
     assert [unit["text"] for unit in extract_source_units(result, "docx")] == [
         ORIGINAL, "Developed quality checks for reliable releases."
     ]

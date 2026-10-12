@@ -1,6 +1,6 @@
 # Employer search and application delivery
 
-## Agreed major completion checklist — 11 October 2026
+## Agreed major completion checklist — 12 October 2026
 
 The user has fixed the following six checkpoints. Internal fixes and passing component
 checks are evidence within these checkpoints, not additional completed checkpoints.
@@ -9,7 +9,7 @@ report the unchanged original estimate and the recorded actual duration.
 
 | Fixed checkpoint | Original estimate of additional active agent work | Status | Actual whole-checkpoint duration |
 |---|---|---|---|
-| Full CI/regressions | 1–3 hours | `15fc5137` renewal found 49 deployment-policy pin failures; corrected pins pass 67 focused checks; renewed CI pending. Exact `a16b604` completion retained | Recorded remaining-work window: 3 hours 4 minutes for `a16b604`; whole historical duration unavailable |
+| Full CI/regressions | 1–3 hours | Last verified baseline `178d8e8`: all five jobs and OpenAPI pass. The DOCX/billing source changes require renewed CI under this same checkpoint | Recorded disjoint elapsed windows: 6 hours 26 minutes 56 seconds, including fixes and CI waits; active time and whole historical duration unavailable |
 | Resume worker output + PDF/DOCX/LaTeX fidelity | 4–8 hours | in progress | Not available; checkpoint not complete |
 | Candidate-reviewed browser integration | 2–6 hours after the approval blocker is resolved | blocked | Not available; checkpoint not complete |
 | Billing costs/failure recovery/load | 2–5 hours | in progress | Not available; checkpoint not complete |
@@ -22,6 +22,14 @@ coverage remains unverified, and the complete goal has no defensible ETA yet.
 Historical checkpoint start times were not recorded. Future timing must distinguish
 measured remaining work from the unavailable whole-checkpoint duration; no past time
 is to be invented. Keep these same six items in subsequent user progress updates.
+
+The last verified baseline is [CI run 38198442355](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38198442355)
+for `178d8e86c16758a04d341da9eb74969f2c2afc03`, completed at 03:21:36 UTC on
+12 October. Its 15 minute 15 second run is already inside the measured timing windows
+and is not counted twice. The other five original checkpoints remain open. Passing
+DOCX custody controls or a disposable PostgreSQL reporting check does not close their
+parent checkpoints; deployed document fidelity, joined application flows and release
+verification still require their own evidence.
 
 Source `68b824254187690d23b80bfe94a54aae6ffd3bdf` has terminal
 [CI run 38141212783](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38141212783):

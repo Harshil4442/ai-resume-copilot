@@ -17,6 +17,7 @@ import resource
 import subprocess
 import sys
 import tempfile
+import time
 import warnings
 from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
@@ -29,6 +30,8 @@ MAX_OUTPUT = 1024 * 1024
 DATABASE = "/var/lib/clamav"
 ERROR = "document_inspection_refused"
 UNAVAILABLE = "document_inspection_unavailable"
+DOCX_ERROR = "docx_layout_refused"
+DOCX_UNAVAILABLE = "docx_layout_unavailable"
 
 
 class InspectionDenied(ValueError):
@@ -39,6 +42,13 @@ class InspectionDenied(ValueError):
 class InspectionUnavailable(ValueError):
     def __init__(self):
         super().__init__(UNAVAILABLE)
+
+
+class DocxLayoutDenied(ValueError):
+    def __init__(self, reason: str, unit_id: str | None = None):
+        self.reason = reason
+        self.unit_id = unit_id
+        super().__init__(DOCX_ERROR)
 
 
 def _pairs(items):
@@ -338,6 +348,81 @@ def inspect(payload: bytes) -> dict:
             raise InspectionUnavailable() from None
 
 
+def decode_docx_request(payload: bytes) -> tuple[bytes, dict]:
+    """One source only: the worker regenerates the exact expected candidate."""
+    try:
+        if not 0 < len(payload) <= MAX_REQUEST:
+            raise InspectionUnavailable()
+        value = json.loads(payload, object_pairs_hook=_pairs,
+            parse_constant=lambda _: (_ for _ in ()).throw(InspectionUnavailable()))
+        if (type(value) is not dict or set(value) != {"version", "source_format", "sha256", "content_base64",
+                "edits", "candidate_sha256", "candidate_size_bytes", "worker_image", "policy_sha256"}
+                or value["source_format"] != "docx" or type(value["version"]) is not int or value["version"] != 1
+                or type(value["content_base64"]) is not str or type(value["edits"]) is not list
+                or not 0 < len(value["edits"]) <= 100
+                or len(json.dumps(value["edits"], ensure_ascii=True, allow_nan=False).encode()) > 256 * 1024
+                or type(value["candidate_size_bytes"]) is not int or not 0 < value["candidate_size_bytes"] <= MAX_FILE
+                or any(type(value[key]) is not str or not re.fullmatch(r"[a-f0-9]{64}", value[key])
+                       for key in ("sha256", "candidate_sha256", "policy_sha256"))
+                or type(value["worker_image"]) is not str or len(value["worker_image"]) > 512
+                or not re.fullmatch(r"[A-Za-z0-9._/:-]+@sha256:[a-f0-9]{64}", value["worker_image"])):
+            raise InspectionUnavailable()
+        content = base64.b64decode(value["content_base64"], validate=True)
+        if not 0 < len(content) <= MAX_FILE or hashlib.sha256(content).hexdigest() != value["sha256"]:
+            raise InspectionUnavailable()
+        binding = {"version": 1, "operation": "docx_layout", "sha256": value["sha256"],
+            "size_bytes": len(content), "source_format": "docx", "candidate_sha256": value["candidate_sha256"],
+            "candidate_size_bytes": value["candidate_size_bytes"],
+            "edits_sha256": hashlib.sha256(json.dumps(value["edits"], sort_keys=True,
+                separators=(",", ":"), ensure_ascii=True, allow_nan=False).encode()).hexdigest()}
+        return content, {"request": value, "binding": binding}
+    except Exception:
+        raise InspectionUnavailable() from None
+
+
+def validate_docx_edit(payload: bytes) -> dict:
+    deadline = time.monotonic() + 50
+    source, decoded = decode_docx_request(payload)
+    request, binding = decoded["request"], decoded["binding"]
+    with tempfile.TemporaryDirectory(prefix="docx-layout-", dir="/tmp") as temporary:
+        directory = Path(temporary)
+        directory.chmod(0o700)
+        original = directory / "original.docx"
+        original.write_bytes(source)
+        original.chmod(0o600)
+        scan = scan_original(original)
+        if original.read_bytes() != source:
+            raise InspectionUnavailable()
+        validate_docx(source)
+        from app.services.docx_layout_validation import LAYOUT_REASONS, DocxLayoutError
+        from app.services.resume_layout import ResumeLayoutError, _apply_docx
+        try:
+            candidate = _apply_docx(source, request["edits"])
+        except ResumeLayoutError as error:
+            raise DocxLayoutDenied("edit_binding", error.unit_id) from None
+        if (len(candidate) != binding["candidate_size_bytes"]
+                or hashlib.sha256(candidate).hexdigest() != binding["candidate_sha256"]):
+            raise InspectionUnavailable()
+        validate_docx(candidate)
+        target = directory / "candidate.docx"
+        target.write_bytes(candidate)
+        target.chmod(0o600)
+        candidate_scan = scan_original(target)
+        if target.read_bytes() != candidate or original.read_bytes() != source:
+            raise InspectionUnavailable()
+        from docx_renderer import validate_rendered_edit
+        try:
+            layout = validate_rendered_edit(source, candidate, request["edits"],
+                image=request["worker_image"], policy=request["policy_sha256"], deadline=deadline)
+        except DocxLayoutError as error:
+            if error.reason not in LAYOUT_REASONS or error.reason == "malformed_input":
+                raise InspectionUnavailable() from None
+            raise DocxLayoutDenied(error.reason, error.unit_id) from None
+        if original.read_bytes() != source or target.read_bytes() != candidate or time.monotonic() >= deadline:
+            raise InspectionUnavailable()
+        return {**binding, "scan": scan, "candidate_scan": candidate_scan, "layout": layout}
+
+
 def main():
     logging.disable(logging.CRITICAL)
     warnings.simplefilter("ignore")
@@ -350,8 +435,9 @@ def main():
     # Explicit fixed parser-only package path; -I ignores caller Python settings.
     sys.path.insert(0, "/opt/document")
     binding = {}
+    layout_mode = sys.argv[1:] == ["--docx-layout-stdin"]
     try:
-        if sys.argv[1:] == ["--stdin"]:
+        if sys.argv[1:] == ["--stdin"] or layout_mode:
             # The launcher owns the absolute input deadline. Read at most the
             # fixed envelope cap plus one byte; oversize/empty input fails closed.
             payload = sys.stdin.buffer.read(MAX_REQUEST + 1)
@@ -360,15 +446,28 @@ def main():
                 payload = stream.read(MAX_REQUEST + 1)
         else:
             raise InspectionUnavailable()
-        kind, content, sha256 = decode_request(payload)
-        binding = {"sha256": sha256, "size_bytes": len(content), "source_format": kind}
-        result = inspect(payload)
+        if layout_mode:
+            _, decoded = decode_docx_request(payload)
+            binding = decoded["binding"]
+            result = validate_docx_edit(payload)
+        else:
+            kind, content, sha256 = decode_request(payload)
+            binding = {"sha256": sha256, "size_bytes": len(content), "source_format": kind}
+            result = inspect(payload)
+        if len(json.dumps(result, allow_nan=False).encode()) > (32768 if layout_mode else MAX_OUTPUT):
+            raise InspectionUnavailable()
         print(json.dumps(result, allow_nan=False))
+    except DocxLayoutDenied as error:
+        print(json.dumps({**binding, "error": DOCX_ERROR, "reason": error.reason, "unit_id": error.unit_id}))
+        raise SystemExit(1) from None
     except InspectionDenied:
-        print(json.dumps({"version": 1, **binding, "error": ERROR}))
+        result = {"version": 1, **binding, "error": DOCX_ERROR if layout_mode else ERROR}
+        if layout_mode:
+            result.update(reason="document_safety", unit_id=None)
+        print(json.dumps(result))
         raise SystemExit(1) from None
     except Exception:
-        print(json.dumps({"version": 1, **binding, "error": UNAVAILABLE}))
+        print(json.dumps({"version": 1, **binding, "error": DOCX_UNAVAILABLE if layout_mode else UNAVAILABLE}))
         raise SystemExit(2) from None
 
 

@@ -57,60 +57,106 @@ def forecasts(policy: ExpensePolicy) -> list[dict]:
     return rows
 
 
-def ledger_report(db) -> dict:
-    from sqlalchemy import case, func, or_, text
+def ledger_report(db, *, now: datetime | None = None) -> dict:
+    """UTC cash-period aggregates from a fresh session, without candidate bodies.
 
-    from app.models import ModelCostLiability, PaymentOrder
+    Capture and refund dates are independent. Reserved service credits include
+    pending and possible-sent unknown work; this report cannot classify either
+    as a completed application or release them. Frozen reservations remain held
+    until settlement before the cutoff. Model figures retain their
+    attempt-created-month/current-snapshot basis.
+    """
+    from sqlalchemy import DateTime, bindparam, text
 
-    now = datetime.now(UTC)
-    start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    if db.get_bind().dialect.name == "postgresql":
-        db.execute(text("SET TRANSACTION READ ONLY"))
-    receipts = (
-        db.query(
-            func.coalesce(func.sum(PaymentOrder.gross_amount_minor), 0),
-            func.coalesce(func.sum(PaymentOrder.refunded_amount_minor), 0),
-            func.coalesce(func.sum(PaymentOrder.provider_fee_amount_minor), 0),
-            func.coalesce(
-                func.sum(case((PaymentOrder.provider_fee_amount_minor.is_(None), 1), else_=0)), 0
-            ),
-            func.coalesce(
-                func.sum(case((PaymentOrder.customer_tax_amount_minor.is_(None), 1), else_=0)), 0
-            ),
-        )
-        .filter(PaymentOrder.paid_at >= start)
-        .one()
-    )
-    unresolved = ModelCostLiability.cost_state.notin_(["settled", "overrun"])
-    held = func.coalesce(ModelCostLiability.reserved_cost_micros, 0)
-    settled = func.coalesce(ModelCostLiability.settled_cost_micros, 0)
-    maximum = (
-        func.max(held, settled)
-        if db.get_bind().dialect.name == "sqlite"
-        else func.greatest(held, settled)
-    )
-    costs = (
-        db.query(
-            func.coalesce(func.sum(case((unresolved, 0), else_=settled)), 0),
-            func.coalesce(func.sum(case((unresolved, maximum), else_=0)), 0),
-            func.coalesce(
-                func.sum(case((ModelCostLiability.cost_state == "overrun", 1), else_=0)), 0
-            ),
-        )
-        .filter(or_(ModelCostLiability.created_at >= start, unresolved))
-        .one()
-    )
+    stamp = now or datetime.now(UTC)
+    if stamp.tzinfo is None or stamp.utcoffset() is None:
+        raise ValueError("Ledger report requires an aware UTC cutoff")
+    stamp = stamp.astimezone(UTC)
+    start = stamp.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    if db.in_transaction():
+        raise ValueError("Ledger report requires a fresh read-only session")
+    dialect = db.get_bind().dialect.name
+    if dialect not in {"postgresql", "sqlite"}:
+        raise ValueError("Ledger report supports PostgreSQL or SQLite")
+    if dialect == "postgresql":
+        db.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"))
+        db.execute(text("SET LOCAL TIME ZONE 'UTC'"))
+        db.execute(text("SET LOCAL statement_timeout = '5000ms'"))
+    bounds = {"start": start, "cutoff": stamp, "currency": "INR"}
+    def query(sql):
+        return db.execute(text(sql).bindparams(
+            bindparam("start", type_=DateTime(timezone=True)),
+            bindparam("cutoff", type_=DateTime(timezone=True)),
+        ), bounds)
+    receipts = query(
+        "SELECT coalesce(sum(gross_amount_minor),0), "
+        "coalesce(sum(provider_fee_amount_minor),0), "
+        "coalesce(sum(CASE WHEN provider_fee_amount_minor IS NULL THEN 1 ELSE 0 END),0), "
+        "coalesce(sum(CASE WHEN customer_tax_amount_minor IS NULL THEN 1 ELSE 0 END),0) "
+        "FROM payment_orders WHERE paid_at >= :start AND paid_at < :cutoff AND currency=:currency"
+    ).one()
+    refunds = query(
+        "SELECT coalesce(sum(amount_minor),0),count(*) FROM payment_refunds "
+        "WHERE status='processed' AND processed_at >= :start AND processed_at < :cutoff "
+        "AND currency=:currency"
+    ).one()
+    exceptions = query(
+        "SELECT "
+        "(SELECT count(*) FROM payment_refunds WHERE status='processed' AND processed_at IS NULL), "
+        "(SELECT count(*) FROM payment_orders WHERE paid_at >= :start AND paid_at < :cutoff AND currency<>:currency), "
+        "(SELECT count(*) FROM payment_refunds WHERE status='processed' AND processed_at >= :start AND processed_at < :cutoff AND currency<>:currency)"
+    ).one()
+    maximum = "max" if dialect == "sqlite" else "greatest"
+    costs = query(
+        "SELECT coalesce(sum(CASE WHEN cost_state IN ('settled','overrun') "
+        "THEN coalesce(settled_cost_micros,0) ELSE 0 END),0), "
+        "coalesce(sum(CASE WHEN cost_state NOT IN ('settled','overrun') THEN "
+        + maximum + "(coalesce(reserved_cost_micros,0),coalesce(settled_cost_micros,0)) ELSE 0 END),0), "
+        "coalesce(sum(CASE WHEN cost_state='overrun' THEN 1 ELSE 0 END),0) "
+        "FROM model_cost_liabilities WHERE created_at < :cutoff "
+        "AND (created_at >= :start OR cost_state NOT IN ('settled','overrun'))"
+    ).one()
+    services = query(
+        "SELECT operation, "
+        "coalesce(sum(CASE WHEN state='settled' AND settled_at >= :start AND settled_at < :cutoff THEN committed_amount ELSE 0 END),0), "
+        "coalesce(sum(CASE WHEN state='settled' AND settled_at >= :start AND settled_at < :cutoff THEN released_amount ELSE 0 END),0), "
+        "coalesce(sum(CASE WHEN state='reserved' OR (state='settled' AND settled_at >= :cutoff) THEN reserved_amount ELSE 0 END),0), "
+        "coalesce(sum(CASE WHEN state='reserved' OR (state='settled' AND settled_at >= :cutoff) THEN 1 ELSE 0 END),0), "
+        "coalesce(sum(CASE WHEN state='settled' AND settled_at >= :start AND settled_at < :cutoff THEN 1 ELSE 0 END),0), "
+        "coalesce(sum(CASE WHEN state='settled' AND settled_at >= :start AND settled_at < :cutoff AND unit_price > 0 "
+        "THEN committed_amount / unit_price ELSE 0 END),0) "
+        "FROM service_credit_reservations WHERE created_at < :cutoff "
+        "AND operation IN ('job_search','job_application') "
+        "AND (state='reserved' OR (state='settled' AND settled_at >= :start)) GROUP BY operation"
+    ).all()
+    usage = {operation: {"settled_credits": 0, "released_credits": 0,
+                        "pending_or_unknown_held_credits": 0, "held_operation_count": 0,
+                        "settled_operation_count": 0, "charged_quantity": 0}
+             for operation in ("job_search", "job_application")}
+    for operation, *amounts in services:
+        usage[operation] = dict(zip(usage[operation], map(int, amounts), strict=True))
     return {
         "period_start": start.isoformat(),
+        "as_of": stamp.isoformat(),
+        "calendar_basis": "UTC; inclusive month start, exclusive as-of cutoff",
+        "currency": "INR",
         "captured_gross_minor": int(receipts[0]),
-        "refunded_minor": int(receipts[1]),
-        "provider_fee_known_minor": int(receipts[2]),
-        "orders_with_unknown_provider_fee": int(receipts[3]),
-        "orders_with_unknown_customer_tax": int(receipts[4]),
+        "refunded_minor": int(refunds[0]),
+        "processed_refund_count": int(refunds[1]),
+        "refund_basis": "processed refund ledger, independent of capture month",
+        "processed_refunds_without_timestamp": int(exceptions[0]),
+        "excluded_other_currency_capture_count": int(exceptions[1]),
+        "excluded_other_currency_refund_count": int(exceptions[2]),
+        "provider_fee_known_minor": int(receipts[1]),
+        "orders_with_unknown_provider_fee": int(receipts[2]),
+        "orders_with_unknown_customer_tax": int(receipts[3]),
         "actual_fixed_expenses_minor": None,
         "model_known_settled_micros": int(costs[0]),
         "model_unresolved_held_micros": int(costs[1]),
         "model_overrun_count": int(costs[2]),
+        "model_cost_basis": "attempt-created month/current snapshot estimates and all prior unresolved holds; not historical as-of costs or invoices",
+        "service_usage": usage,
+        "service_usage_basis": "settlement-month credits/quantities at stored unit prices; pre-cutoff frozen reservations held until settlement before cutoff",
         "reconciliation_required": True,
         "profitability": "not determined; provider usage estimates and incomplete account expenses are not invoices",
     }
@@ -147,7 +193,7 @@ def main():
                 db.rollback()
         except SQLAlchemyError:
             raise SystemExit(
-                "Ledger reconciliation unavailable; no account configuration or data was changed."
+                "Ledger reconciliation unavailable; current payment/refund, model-liability and service-reservation tables are required. No account configuration or data was changed."
             ) from None
         finally:
             engine.dispose()

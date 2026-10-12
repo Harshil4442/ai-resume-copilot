@@ -29,8 +29,11 @@ from typing import IO, TypedDict
 SANDBOX = "/usr/local/gcp/bin/sandbox"
 MAX_REQUEST = 7 * 1024 * 1024
 MAX_OUTPUT = 1024 * 1024
+MAX_LAYOUT_OUTPUT = 32 * 1024
 ERROR = "document_inspection_refused"
 UNAVAILABLE = "document_inspection_unavailable"
+DOCX_ERROR = "docx_layout_refused"
+DOCX_UNAVAILABLE = "docx_layout_unavailable"
 LOCK = threading.Lock()
 READ_SECONDS = 10
 
@@ -470,12 +473,56 @@ def _request_identity(payload: bytes) -> tuple[str, int, str]:
         raise InspectionDenied() from None
 
 
-def inspect_in_sandbox(payload: bytes) -> dict:
+def _docx_binding(payload: bytes, image: str, policy: str) -> tuple[dict, dict]:
+    # Protocol-only decoding: no scanner/document parser executes in the host.
+    if "/opt/document" not in sys.path:
+        sys.path.insert(0, "/opt/document")
+    from processor import decode_docx_request
+    _, decoded = decode_docx_request(payload)
+    request = decoded["request"]
+    if request["worker_image"] != image or request["policy_sha256"] != policy:
+        raise InspectionDenied()
+    return decoded["binding"], request
+
+
+def _docx_result(result: dict, binding: dict, request: dict, code: int, image: str, policy: str) -> None:
+    from app.services.docx_layout_validation import LAYOUT_REASONS, check_layout_receipt
+    if any(type(result.get(key)) is not type(value) or result.get(key) != value for key, value in binding.items()):
+        raise InspectionDenied()
+    if code == 1:
+        if (set(result) != set(binding) | {"error", "reason", "unit_id"} or result["error"] != DOCX_ERROR
+                or result["reason"] not in LAYOUT_REASONS | {"document_safety"}
+                or (result["unit_id"] is not None and (type(result["unit_id"]) is not str
+                    or not re.fullmatch(r"docx:[a-f0-9]{16}:p[0-9]{1,6}:[a-f0-9]{12}", result["unit_id"])
+                    or not any(type(edit) is dict and edit.get("unit_id") == result["unit_id"] for edit in request["edits"])))):
+            raise InspectionDenied()
+    elif code == 2:
+        if set(result) != set(binding) | {"error"} or result["error"] != DOCX_UNAVAILABLE:
+            raise InspectionDenied()
+    else:
+        if code != 0 or set(result) != set(binding) | {"scan", "candidate_scan", "layout"}:
+            raise InspectionDenied()
+        for key in ("scan", "candidate_scan"):
+            scan = result[key]
+            if (type(scan) is not dict or set(scan) != {"engine", "version", "definitions"}
+                    or scan["engine"] != "ClamAV" or any(type(scan[k]) is not str or not 0 < len(scan[k]) <= 128
+                        or any(ord(c) < 32 or ord(c) > 126 for c in scan[k]) for k in ("version", "definitions"))):
+                raise InspectionDenied()
+        check_layout_receipt(result["layout"], source_sha256=binding["sha256"], source_size_bytes=binding["size_bytes"],
+            candidate_sha256=binding["candidate_sha256"], candidate_size_bytes=binding["candidate_size_bytes"],
+            edits_sha256=binding["edits_sha256"], image=image, policy=policy)
+
+
+def inspect_in_sandbox(payload: bytes, *, docx_layout: bool = False) -> dict:
     diagnostic = _REQUEST_DIAGNOSTIC.get()
     image, policy = configuration()
-    if not os.path.isfile(SANDBOX) or not os.access(SANDBOX, os.X_OK) or not 0 < len(payload) <= MAX_REQUEST:
+    if type(docx_layout) is not bool or not os.path.isfile(SANDBOX) or not os.access(SANDBOX, os.X_OK) or not 0 < len(payload) <= MAX_REQUEST:
         raise InspectionDenied()
-    sha256, size, kind = _request_identity(payload)
+    if docx_layout:
+        binding, request = _docx_binding(payload, image, policy)
+        sha256, size, kind = binding["sha256"], binding["size_bytes"], "docx"
+    else:
+        sha256, size, kind = _request_identity(payload)
     # Retain the existing write allowance for the scanner's temporary target.
     # No imported/exported file, bind, environment inheritance or egress permission.
     # The immutable processor receives request bytes only on stdin.
@@ -485,8 +532,9 @@ def inspect_in_sandbox(payload: bytes) -> dict:
         if diagnostic is not None:
             diagnostic.begin_run()
         code, output = _run([SANDBOX, "do", "--sandbox-name=" + name, "--write", "--",
-            "/usr/local/bin/python3", "-I", "/opt/document/processor.py", "--stdin"],
-            timeout=55, limit=MAX_OUTPUT, allow_outcome=True, input_bytes=payload)
+            "/usr/local/bin/python3", "-I", "/opt/document/processor.py",
+            "--docx-layout-stdin" if docx_layout else "--stdin"],
+            timeout=55, limit=MAX_LAYOUT_OUTPUT if docx_layout else MAX_OUTPUT, allow_outcome=True, input_bytes=payload)
         if diagnostic is not None:
             diagnostic.end_run(code)
             diagnostic.phase = "validation"
@@ -500,7 +548,9 @@ def inspect_in_sandbox(payload: bytes) -> dict:
             raise InspectionDenied()
         if diagnostic is not None:
             diagnostic.validation = "outcome"
-        if code in {1, 2}:
+        if docx_layout:
+            _docx_result(result, binding, request, code, image, policy)
+        elif code in {1, 2}:
             if (set(result) != {"version", "sha256", "size_bytes", "source_format", "error"}
                     or result["error"] != (ERROR if code == 1 else UNAVAILABLE)):
                 raise InspectionDenied()
@@ -513,7 +563,7 @@ def inspect_in_sandbox(payload: bytes) -> dict:
                 or set(result["parsed"]) != {"raw_text", "sections", "skills", "experience_years", "contact_info"}):
             raise InspectionDenied()
         result.update(worker_image=image, policy_sha256=policy)
-        if len(json.dumps(result, allow_nan=False).encode()) > MAX_OUTPUT:
+        if len(json.dumps(result, allow_nan=False).encode()) > (MAX_LAYOUT_OUTPUT if docx_layout else MAX_OUTPUT):
             raise InspectionDenied()
         if diagnostic is not None:
             diagnostic.validation = "complete"
@@ -612,7 +662,7 @@ class Handler(BaseHTTPRequestHandler):
             _, policy = configuration()
             lengths = self.headers.get_all("Content-Length", [])
             policies = self.headers.get_all("X-HireWiz-Document-Policy", [])
-            if (self.path != "/inspect" or self.headers.get("Content-Type") != "application/json"
+            if (self.path not in {"/inspect", "/validate-docx"} or self.headers.get("Content-Type") != "application/json"
                     or self.headers.get("Transfer-Encoding") or self.headers.get("Content-Encoding")
                     or len(lengths) != 1 or not re.fullmatch(r"[0-9]{1,8}", lengths[0])
                     or not 0 < int(lengths[0]) <= MAX_REQUEST or len(policies) != 1
@@ -625,8 +675,8 @@ class Handler(BaseHTTPRequestHandler):
             if len(payload) != int(lengths[0]):
                 raise InspectionDenied()
             self._finish_request_read(admit=True)
-            result = inspect_in_sandbox(payload)
-            status = 422 if result.get("error") == ERROR else 503 if result.get("error") == UNAVAILABLE else 200
+            result = inspect_in_sandbox(payload, docx_layout=True) if self.path == "/validate-docx" else inspect_in_sandbox(payload)
+            status = 422 if result.get("error") in {ERROR, DOCX_ERROR} else 503 if result.get("error") in {UNAVAILABLE, DOCX_UNAVAILABLE} else 200
             diagnostic.phase = "response"
             self._reply(status, result)
         except Exception:

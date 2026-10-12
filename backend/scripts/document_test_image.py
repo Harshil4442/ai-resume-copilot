@@ -1,4 +1,4 @@
-"""Build a seven-file document image and check genuine engines in local Docker.
+"""Build the source-pinned document image and check genuine engines locally.
 
 This is local native scanner/parser evidence, never Cloud Run sandbox proof.
 Run with --platform linux/amd64 (CI) or linux/arm64 (a native ARM machine).
@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import base64
 import hashlib
+import importlib.util
 import io
 import json
 import os
@@ -15,6 +16,7 @@ import re
 import selectors
 import signal
 import subprocess
+import sys
 import tempfile
 import time
 import uuid
@@ -27,6 +29,8 @@ SOURCES = (
     "infra/document-processing/service.py", "backend/app/services/parsing.py",
     "backend/app/services/market/skill_extractor.py", "backend/app/services/market/skill_taxonomy.py",
     "backend/app/services/market/security.py",
+    "infra/document-processing/docx_renderer.py", "backend/app/services/resume_layout.py",
+    "backend/app/services/pdf_streams.py", "backend/app/services/docx_layout_validation.py",
 )
 IMAGE_ID = re.compile(r"sha256:[0-9a-f]{64}\Z")
 LABEL = "hirewiz.document-test.source."
@@ -35,8 +39,8 @@ TMPFS = "rw,noexec,nosuid,nodev,size=64m,mode=1777"
 ERROR = "document_engine_check_refused"
 EICAR = (b"X5O!P%@AP[4" + bytes([92]) + b"PZX54(P^)7CC)7}$"
          + b"EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*")
-# Runtime hashes attest all six copied Python sources; the seventh Dockerfile
-# remains bound to build input by its source label, like the native TeX helper.
+# Runtime hashes attest every copied Python source; the Dockerfile remains
+# bound to build input by its source label, like the native TeX helper.
 RUNTIME = {
     path: "/opt/document/" + (path.rsplit("/", 1)[1] if path.startswith("infra/")
                             else path.removeprefix("backend/"))
@@ -60,6 +64,13 @@ p=subprocess.run([sys.executable,"-I","/opt/document/processor.py","/tmp/request
 expected={"version":1,"sha256":sha256,"size_bytes":len(content),"source_format":kind,"error":"document_inspection_refused"}
 refused=p.returncode==1 and len(p.stdout)<=4096 and json.loads(p.stdout)==expected and not p.stderr
 print(json.dumps({"eicar_detected":found,"processor_refused":refused}))
+'''
+DOCX_LAYOUT_PROGRAM = '''import json,pathlib,subprocess,sys
+payload=pathlib.Path("/tmp/request.json").read_bytes()
+p=subprocess.run([sys.executable,"-I","/opt/document/processor.py","--docx-layout-stdin"],
+ input=payload,capture_output=True,timeout=55)
+if len(p.stdout)>32768 or p.stderr: raise SystemExit(3)
+sys.stdout.buffer.write(p.stdout);raise SystemExit(p.returncode)
 '''
 
 
@@ -268,6 +279,68 @@ def corpus() -> list[tuple[str, str, bytes, str]]:
             ("missing_definitions", "pdf", pdf(), "missing")]
 
 
+def docx_layout_corpus(image: str) -> list[tuple[str, bytes, dict]]:
+    """One genuine styled two-page fit and one genuine reflow refusal.
+
+    The fixture is synthetic; the expected candidate is the exact source-pinned
+    native patch, not a template or a purported Word render produced on the host.
+    """
+    from docx import Document
+    from docx.opc.constants import RELATIONSHIP_TYPE
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    from docx.shared import Pt
+    spec = importlib.util.spec_from_file_location("document_native_docx_patch", ROOT / "backend/app/services/resume_layout.py")
+    if spec is None or spec.loader is None:
+        raise DocumentImageError()
+    layout = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = layout
+    spec.loader.exec_module(layout)
+    original = "Built scalable systems with Python and SQL."
+    document = Document()
+    document.styles["Normal"].font.name = "Cambria"
+    document.styles["Normal"].font.size = Pt(11)
+    document.add_paragraph("Taylor Example")
+    paragraph = document.add_paragraph()
+    paragraph.add_run("Built scalable systems with ")
+    paragraph.add_run("Python").bold = True
+    paragraph.add_run(" and ")
+    paragraph.add_run("SQL").italic = True
+    paragraph.add_run(".")
+    document.add_paragraph("Reduced API latency by 40% through focused profiling.")
+    link_paragraph = document.add_paragraph()
+    link = OxmlElement("w:hyperlink")
+    link.set(qn("r:id"), document.part.relate_to("https://example.test/portfolio", RELATIONSHIP_TYPE.HYPERLINK, is_external=True))
+    run = OxmlElement("w:r")
+    text = OxmlElement("w:t")
+    text.text = "Portfolio"
+    run.append(text)
+    link.append(run)
+    link_paragraph._p.append(link)
+    document.add_page_break()
+    document.add_paragraph("Original education and second-page running content.")
+    stream = io.BytesIO()
+    document.save(stream)
+    source = stream.getvalue()
+    unit = next(unit for unit in layout.extract_source_units(source, "docx") if unit["text"] == original)
+    policy = hashlib.sha256((ROOT / "infra/document-processing/policy.json").read_bytes()).hexdigest()
+    rows = []
+    for name, replacement in (("styled_multipage_fit", "Built systems with Python and SQL."),
+                              ("rendered_reflow_refusal", original + " reusable systems" * 40)):
+        edits = [{"unit_id": unit["unit_id"], "original_text": original, "replacement_text": replacement}]
+        candidate = layout._apply_docx(source, edits)
+        expected = {"version": 1, "operation": "docx_layout", "sha256": hashlib.sha256(source).hexdigest(),
+            "size_bytes": len(source), "source_format": "docx", "candidate_sha256": hashlib.sha256(candidate).hexdigest(),
+            "candidate_size_bytes": len(candidate), "edits_sha256": hashlib.sha256(json.dumps(edits, sort_keys=True,
+                separators=(",", ":"), ensure_ascii=True).encode()).hexdigest()}
+        request = {"version": 1, "source_format": "docx", "sha256": expected["sha256"],
+            "content_base64": base64.b64encode(source).decode(), "edits": edits,
+            "candidate_sha256": expected["candidate_sha256"], "candidate_size_bytes": len(candidate),
+            "worker_image": "local-document-image@" + image, "policy_sha256": policy}
+        rows.append((name, json.dumps(request).encode(), expected))
+    return rows
+
+
 def check(platform: str, *, image: str | None = None) -> dict:
     docker = docker_command()
     hashes = source_hashes()
@@ -277,6 +350,7 @@ def check(platform: str, *, image: str | None = None) -> dict:
     if code or json.loads(raw) != {path: hashes[path] for path in RUNTIME}:
         raise DocumentImageError()
     observations = []
+    layout_observations = []
     with tempfile.TemporaryDirectory(prefix="hirewiz-document-corpus-") as temporary:
         directory = Path(temporary)
         directory.chmod(0o755)
@@ -308,12 +382,32 @@ def check(platform: str, *, image: str | None = None) -> dict:
                 raise DocumentImageError()
             observations.append({"case": name, "outcome": outcome, "passed": True,
                                  **({"scan": result["scan"]} if outcome == "clean" else {})})
+        for name, payload, binding in docx_layout_corpus(image):
+            request = directory / (name + ".json")
+            request.write_bytes(payload)
+            request.chmod(0o444)
+            code, raw = container(docker, image, platform, ["-c", DOCX_LAYOUT_PROGRAM], [(request, "/tmp/request.json")])
+            result = json.loads(raw)
+            if any(type(result.get(key)) is not type(value) or result.get(key) != value for key, value in binding.items()):
+                raise DocumentImageError()
+            if name == "styled_multipage_fit":
+                receipt = result.get("layout", {})
+                if (code or receipt.get("validator") != "hirewiz-docx-layout-v1" or receipt.get("pages") != 2
+                        or receipt.get("unchanged_links") != 1 or receipt.get("outside_changed_regions_pixel_delta") != 0
+                        or result.get("scan", {}).get("engine") != "ClamAV" or result.get("candidate_scan") != result.get("scan")):
+                    raise DocumentImageError()
+                layout_observations.append({"case": name, "passed": True, "layout": receipt, "scan": result["scan"]})
+            elif (code != 1 or result.get("error") != "docx_layout_refused" or result.get("reason") not in {
+                    "line_wrap_changed", "page_geometry_changed", "paragraph_page_changed", "paragraph_overflow"}):
+                raise DocumentImageError()
+            else:
+                layout_observations.append({"case": name, "passed": True, "reason": result["reason"]})
     if source_hashes() != hashes:
         raise DocumentImageError()
     return {"scope": "local_native_docker_only", "cloud_run_isolation_proven": False,
             "image_id": image, "platform": platform, "source_sha256": hashes,
             "runtime_source_bytes_verified": True, "restricted_container_metadata_verified": True,
-            "corpus": observations}
+            "corpus": observations, "docx_layout_corpus": layout_observations}
 
 
 def main() -> None:

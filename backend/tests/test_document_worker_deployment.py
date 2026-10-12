@@ -234,13 +234,17 @@ def test_reviewed_stdin_policy_and_disabled_pins_agree(config):
     raw = (config.ROOT / "infra/document-processing/policy.json").read_bytes()
     policy = config.decode(raw)
     draft = config.decode((config.ROOT / "infra/gcp/document-worker.disabled.json").read_bytes())
-    assert hashlib.sha256(raw).hexdigest() == config.POLICY_SHA256 == "fa87e5b68bf16b2c5e181f851377edfd0cd962624691f3e0ddfb52a3ab2f8e90"
+    assert hashlib.sha256(raw).hexdigest() == config.POLICY_SHA256 == "7ab061c2c3097c4eea17cda45f4d69f22b42a611c418270853035905521eb71c"
     assert draft["policy_sha256"] == config.POLICY_SHA256
     assert policy["deployment_proven"] is False
+    assert policy["version"] == 3
     assert policy["scope"]["host_parser_fallback"] is False
     assert policy["transport"]["max_source_bytes"] == 5 * 1024 * 1024
     assert policy["transport"]["max_request_bytes"] == 7 * 1024 * 1024
     assert policy["transport"]["max_success_response_bytes"] == 1024 * 1024
+    assert policy["docx_layout"]["max_success_response_bytes"] == 32768
+    assert policy["docx_layout"]["renderer"]["host_fallback"] is False
+    assert policy["docx_layout"]["release"]["trusted_exact_render_executor_required"] is True
     controls = policy["required_native_deployment_controls"]
     assert controls["request_stdin_max_bytes"] == policy["transport"]["max_request_bytes"]
     assert controls["launcher_stdout_max_bytes"] == policy["transport"]["max_success_response_bytes"]
