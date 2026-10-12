@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 def load_helper():
@@ -180,6 +182,42 @@ class FailureDiagnosticsTests(unittest.TestCase):
         m._FAILURE.get()["docx_fit_mismatch"] = m._DocxFitMismatch("styled_multipage_fit", ("pages",), False, hostile)
         self.assertEqual(set(m._failure_report()), BASE_KEYS | {"fit_failed_checks"})
         self.assert_redacted(m._failure_report())
+
+    def test_link_probe_is_failure_only_bounded_and_value_free(self):
+        compile(m.DOCX_LINK_PROGRAM, "fixed_link_diagnostic", "exec")
+        result = self.fit_result()
+        result["layout"].update(pages=2, unchanged_links=0)
+        observed = dict(zip(m._LINK_FIELDS, (1, 1, 0, True, True, False), strict=True))
+        for extra in ({}, {"URI": "PRIVATE_URI_AND_BODY"}):
+            with tempfile.TemporaryDirectory() as temporary:
+                request = Path(temporary) / "request.json"
+                request.write_text("synthetic; container mocked")
+                m._progress("case_validation", case="styled_multipage_fit", exit_code=0)
+                with patch.object(m, "container", return_value=(0, json.dumps({**observed, **extra}).encode())) as child:
+                    m._diagnose_docx_links(["docker"], "synthetic-image", "linux/amd64", request,
+                                          result, self.binding, 0, case="styled_multipage_fit")
+                self.assertEqual(child.call_count, 1)
+                self.assertEqual(child.call_args.args[3], ["-c", m.DOCX_LINK_PROGRAM])
+                mounts = child.call_args.args[4]
+                self.assertEqual(json.loads(mounts[1][0].read_bytes()), self.binding)
+                report = m._failure_report()
+                self.assertEqual(report["link_diagnostic_container_calls"], 1)
+                self.assertGreaterEqual(report["link_diagnostic_seconds"], 0)
+                self.assertLessEqual(report["link_diagnostic_seconds"], 150)
+                self.assertEqual(report["link_diagnostic_status"], "unavailable" if extra else "observed")
+                self.assertEqual(report.get("link_diagnostic"), None if extra else observed)
+                self.assert_redacted(report)
+                m._progress("source_recheck")
+                self.assertNotIn("docx_link_observation", m._FAILURE.get())
+        for pages, links in ((2, 1), (3, 0)):
+            result["layout"].update(pages=pages, unchanged_links=links)
+            with patch.object(m, "container", side_effect=AssertionError("outside scope reached container")) as child:
+                m._progress("case_validation", case="styled_multipage_fit", exit_code=0)
+                m._diagnose_docx_links([], "unused", "unused", Path("unused"), result,
+                                      self.binding, 0, case="styled_multipage_fit")
+                child.assert_not_called()
+                m._FAILURE.get()["docx_link_observation"] = m._DocxLinkObservation(1, 0.1, tuple(observed.values()))
+                self.assertNotIn("link_diagnostic", m._failure_report())
 
 
 if __name__ == "__main__":

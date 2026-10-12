@@ -11,6 +11,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import math
 import os
 import re
 import selectors
@@ -80,6 +81,16 @@ class _DocxFitMismatch(NamedTuple):
     links: int | None
 
 
+_LINK_FIELDS = ("native_hyperlinks", "imported_hyperlinks", "pdf_link_annotations",
+                "native_uri_match", "imported_uri_match", "pdf_uri_match")
+
+
+class _DocxLinkObservation(NamedTuple):
+    container_calls: int
+    elapsed: float
+    values: tuple | None
+
+
 EICAR = (b"X5O!P%@AP[4" + bytes([92]) + b"PZX54(P^)7CC)7}$"
          + b"EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*")
 # Runtime hashes attest every copied Python source; the Dockerfile remains
@@ -115,6 +126,77 @@ p=subprocess.run([sys.executable,"-I","/opt/document/processor.py","--docx-layou
 if len(p.stdout)>32768 or p.stderr: raise SystemExit(3)
 sys.stdout.buffer.write(p.stdout);raise SystemExit(p.returncode)
 '''
+DOCX_LINK_PROGRAM = '''import io,json,pathlib,sys,tempfile,time
+from zipfile import ZipFile
+sys.path.insert(0,"/opt/document")
+import processor,docx_renderer
+from lxml import etree
+from pypdf import PdfReader
+URI="https://example.test/portfolio"
+W="{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+R="{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
+T="{urn:oasis:names:tc:opendocument:xmlns:text:1.0}"
+X="{http://www.w3.org/1999/xlink}href"
+def xml(data):
+ if len(data)>10*1024**2: raise ValueError()
+ tree=etree.fromstring(data,etree.XMLParser(resolve_entities=False,no_network=True,load_dtd=False,huge_tree=False))
+ if tree.getroottree().docinfo.doctype: raise ValueError()
+ nodes=list(tree.iter())
+ if len(nodes)>100000 or any(len(list(n.iterancestors()))>64 for n in nodes): raise ValueError()
+ return tree
+def main():
+ deadline=time.monotonic()+55
+ with pathlib.Path("/tmp/request.json").open("rb") as stream: payload=stream.read(processor.MAX_REQUEST+1)
+ source,decoded=processor.decode_docx_request(payload)
+ with pathlib.Path("/tmp/diagnostic-binding.json").open("rb") as stream: expected_raw=stream.read(2049)
+ if len(expected_raw)>2048: raise ValueError()
+ expected=json.loads(expected_raw)
+ binding=decoded["binding"]
+ if type(expected) is not dict or set(expected)!=set(binding) or any(type(expected[k]) is not type(v) or expected[k]!=v for k,v in binding.items()): raise ValueError()
+ with tempfile.TemporaryDirectory(prefix="docx-link-observation-",dir="/tmp") as temporary:
+  directory=pathlib.Path(temporary);directory.chmod(0o700)
+  original=directory/"input.docx";original.write_bytes(source);original.chmod(0o600)
+  processor.scan_original(original);processor.validate_docx(source)
+  if original.read_bytes()!=source or time.monotonic()>=deadline: raise ValueError()
+  with ZipFile(io.BytesIO(source)) as archive:
+   native=list(xml(archive.read("word/document.xml")).iter(W+"hyperlink"))
+   relationships=list(xml(archive.read("word/_rels/document.xml.rels")))
+  native_match=len(native)==1
+  for link in native:
+   matches=[r for r in relationships if r.get("Id")==link.get(R+"id")]
+   native_match=native_match and len(matches)==1 and matches[0].get("Type")==R[1:-1]+"/hyperlink" and matches[0].get("TargetMode")=="External" and matches[0].get("Target")==URI
+  if not native_match: raise ValueError()
+  pdf=docx_renderer._render(source,directory/"pdf-render",deadline=min(deadline,time.monotonic()+10))
+  output=directory/"flat";output.mkdir(mode=0o700)
+  docx_renderer._run([docx_renderer.SOFFICE,"--headless","--nologo","--nodefault","--norestore",
+   "-env:UserInstallation="+(directory/"flat-profile").as_uri(),"--convert-to",
+   "fodt:OpenDocument Text Flat XML","--outdir",str(output),str(original)],deadline=min(deadline,time.monotonic()+10))
+  flat=output/"input.fodt"
+  if original.read_bytes()!=source or sorted(p.name for p in output.iterdir())!=["input.fodt"] or flat.is_symlink() or not flat.is_file() or not 0<flat.stat().st_size<=10*1024**2: raise ValueError()
+  with flat.open("rb") as stream: imported_tree=xml(stream.read(10*1024**2+1))
+  O="{urn:oasis:names:tc:opendocument:xmlns:office:1.0}"
+  if imported_tree.tag!=O+"document" or imported_tree.get(O+"mimetype")!="application/vnd.oasis.opendocument.text": raise ValueError()
+  imported=list(imported_tree.iter(T+"a"))
+  processor.validate_pdf(pdf)
+  reader=PdfReader(io.BytesIO(pdf),strict=True)
+  annotations=[]
+  for page in reader.pages:
+   for item in page.get("/Annots",[]):
+    item=item.get_object()
+    if item.get("/Subtype")=="/Link": annotations.append(item)
+  targets=[]
+  for item in annotations:
+   action=item.get("/A")
+   action=action.get_object() if action is not None else {}
+   targets.append(action.get("/S")=="/URI" and action.get("/URI")==URI)
+  counts=(len(native),len(imported),len(annotations))
+  if any(not 0<=n<=100 for n in counts) or time.monotonic()>=deadline: raise ValueError()
+  print(json.dumps(dict(zip(("native_hyperlinks","imported_hyperlinks","pdf_link_annotations","native_uri_match","imported_uri_match","pdf_uri_match"),
+   (*counts,native_match,bool(imported) and all(n.get(X)==URI for n in imported),bool(targets) and all(targets)),strict=True))))
+try: main()
+except Exception:
+ print(json.dumps({"status":"unavailable"}));raise SystemExit(1) from None
+'''
 
 
 class DocumentImageError(RuntimeError):
@@ -128,6 +210,7 @@ def _progress(stage: str, *, case: str | None = None, exit_code: int | None = No
     if type(diagnostic) is dict:
         diagnostic.pop("docx_refusal", None)
         diagnostic.pop("docx_fit_mismatch", None)
+        diagnostic.pop("docx_link_observation", None)
         diagnostic.update(stage=stage, case=case, exit_code=exit_code)
         if completed_cases is not None:
             diagnostic["completed_cases"] = completed_cases
@@ -229,7 +312,49 @@ def _failure_report() -> dict:
             result["fit_pages"] = fit.pages
         if type(fit.links) is int and 0 <= fit.links <= 100:
             result["fit_links"] = fit.links
+    observation = diagnostic.get("docx_link_observation")
+    if (result.get("fit_pages") == 2 and result.get("fit_links") == 0 and type(observation) is _DocxLinkObservation
+            and type(observation.container_calls) is int and observation.container_calls in {0, 1}
+            and type(observation.elapsed) is float and math.isfinite(observation.elapsed)
+            and 0 <= observation.elapsed <= 150):
+        result.update(link_diagnostic_container_calls=observation.container_calls, link_diagnostic_seconds=observation.elapsed,
+                      link_diagnostic_status="unavailable")
+        values = observation.values
+        if (observation.container_calls == 1 and type(values) is tuple and len(values) == 6
+                and all(type(n) is int and 0 <= n <= 100 for n in values[:3])
+                and all(type(flag) is bool for flag in values[3:])):
+            result.update(link_diagnostic_status="observed", link_diagnostic=dict(zip(_LINK_FIELDS, values, strict=True)))
     return result
+
+
+def _diagnose_docx_links(docker: list[str], image: str, platform: str, request: Path,
+                        result: object, binding: dict, code: int, *, case: str) -> None:
+    _note_docx_fit_mismatch(result, binding, code, case=case)
+    report = _failure_report()
+    if report.get("fit_pages") != 2 or report.get("fit_links") != 0 or "unchanged_links" not in report.get("fit_failed_checks", []):
+        return
+    started = time.monotonic()
+    container_calls = 0
+    values = None
+    try:
+        expected = request.with_suffix(".diagnostic-binding.json")
+        with expected.open("x", encoding="utf-8") as stream:
+            json.dump(binding, stream, allow_nan=False)
+        expected.chmod(0o444)
+        container_calls = 1
+        child_code, raw = container(docker, image, platform, ["-c", DOCX_LINK_PROGRAM],
+            [(request, "/tmp/request.json"), (expected, "/tmp/diagnostic-binding.json")])
+        observed = json.loads(raw)
+        if (type(child_code) is int and child_code == 0 and type(observed) is dict
+                and set(observed) == set(_LINK_FIELDS)
+                and all(type(observed[key]) is int and 0 <= observed[key] <= 100 for key in _LINK_FIELDS[:3])
+                and all(type(observed[key]) is bool for key in _LINK_FIELDS[3:])):
+            values = tuple(observed[key] for key in _LINK_FIELDS)
+    except Exception:
+        pass
+    diagnostic = _FAILURE.get()
+    if type(diagnostic) is dict:
+        diagnostic["docx_link_observation"] = _DocxLinkObservation(container_calls, round(time.monotonic() - started, 6), values)
 
 
 def command(args: list[str], *, timeout: int = 20, limit: int = 1024 * 1024) -> tuple[int, bytes]:
@@ -565,6 +690,7 @@ def check(platform: str, *, image: str | None = None) -> dict:
                         or result.get("scan", {}).get("engine") != "ClamAV" or result.get("candidate_scan") != result.get("scan")):
                     _note_docx_refusal(result, binding, code, case=name)
                     _note_docx_fit_mismatch(result, binding, code, case=name)
+                    _diagnose_docx_links(docker, image, platform, request, result, binding, code, case=name)
                     raise DocumentImageError()
                 layout_observations.append({"case": name, "passed": True, "layout": receipt, "scan": result["scan"]})
             elif (code != 1 or result.get("error") != "docx_layout_refused" or result.get("reason") not in {
