@@ -63,12 +63,21 @@ _DOCX_REASONS = frozenset({
 })
 _DOCX_BINDING_KEYS = frozenset({"version", "operation", "sha256", "size_bytes", "source_format", "candidate_sha256",
                                 "candidate_size_bytes", "edits_sha256"})
+_DOCX_FIT_CHECKS = ("validator", "pages", "unchanged_links", "outside_changed_regions_pixel_delta",
+                    "scan_engine", "candidate_scan")
 
 
 class _DocxRefusal(NamedTuple):
     case: str
     error: str
     reason: str
+
+
+class _DocxFitMismatch(NamedTuple):
+    case: str
+    failed_checks: tuple[str, ...]
+    pages: int | None
+    links: int | None
 
 
 EICAR = (b"X5O!P%@AP[4" + bytes([92]) + b"PZX54(P^)7CC)7}$"
@@ -118,6 +127,7 @@ def _progress(stage: str, *, case: str | None = None, exit_code: int | None = No
     diagnostic = _FAILURE.get()
     if type(diagnostic) is dict:
         diagnostic.pop("docx_refusal", None)
+        diagnostic.pop("docx_fit_mismatch", None)
         diagnostic.update(stage=stage, case=case, exit_code=exit_code)
         if completed_cases is not None:
             diagnostic["completed_cases"] = completed_cases
@@ -151,6 +161,45 @@ def _note_docx_refusal(result: object, binding: dict, code: int, *, case: str) -
     diagnostic["docx_refusal"] = _DocxRefusal(case, result["error"], result["reason"])
 
 
+def _note_docx_fit_mismatch(result: object, binding: dict, code: int, *, case: str) -> None:
+    """Project only existing failed fit-check names after an exact bound exit0."""
+    diagnostic = _FAILURE.get()
+    if type(diagnostic) is not dict:
+        return
+    diagnostic.pop("docx_fit_mismatch", None)
+    if (type(diagnostic.get("stage")) is not str or diagnostic["stage"] != "case_validation"
+            or type(diagnostic.get("case")) is not str or type(case) is not str or diagnostic["case"] != case
+            or type(diagnostic.get("exit_code")) is not int or diagnostic["exit_code"] != 0
+            or case != "styled_multipage_fit" or type(code) is not int or code != 0
+            or type(binding) is not dict or any(type(key) is not str for key in binding)
+            or set(binding) != _DOCX_BINDING_KEYS
+            or type(binding["version"]) is not int or binding["version"] != 1
+            or type(binding["operation"]) is not str or binding["operation"] != "docx_layout"
+            or type(binding["source_format"]) is not str or binding["source_format"] != "docx"
+            or any(type(binding[key]) is not str or not re.fullmatch(r"[a-f0-9]{64}", binding[key])
+                   for key in ("sha256", "candidate_sha256", "edits_sha256"))
+            or any(type(binding[key]) is not int or not 0 < binding[key] <= 5242880
+                   for key in ("size_bytes", "candidate_size_bytes"))
+            or type(result) is not dict or any(type(key) is not str for key in result)
+            or set(result) != _DOCX_BINDING_KEYS | {"layout", "scan", "candidate_scan"}
+            or any(type(result.get(key)) is not type(value) or result.get(key) != value for key, value in binding.items())
+            or type(result["layout"]) is not dict or type(result["scan"]) is not dict):
+        return
+    layout = result["layout"]
+    try:
+        failed = (layout.get("validator") != "hirewiz-docx-layout-v1", layout.get("pages") != 2,
+                  layout.get("unchanged_links") != 1, layout.get("outside_changed_regions_pixel_delta") != 0,
+                  result["scan"].get("engine") != "ClamAV", result["candidate_scan"] != result["scan"])
+        checks = tuple(name for name, mismatch in zip(_DOCX_FIT_CHECKS, failed, strict=True) if mismatch)
+    except Exception:
+        return
+    if checks:
+        pages, links = layout.get("pages"), layout.get("unchanged_links")
+        diagnostic["docx_fit_mismatch"] = _DocxFitMismatch(case, checks,
+            pages if type(pages) is int and 0 <= pages <= 20 else None,
+            links if type(links) is int and 0 <= links <= 100 else None)
+
+
 def _failure_report() -> dict:
     # Arbitrary context/native text cannot escape. A bound refusal contributes
     # only the independently allowlisted typed projection, never its body/unit.
@@ -169,6 +218,17 @@ def _failure_report() -> dict:
             and type(refusal.error) is str and refusal.error == "docx_layout_refused"
             and type(refusal.reason) is str and refusal.reason in _DOCX_REASONS):
         result.update(processor_error=refusal.error, processor_reason=refusal.reason)
+    fit = diagnostic.get("docx_fit_mismatch")
+    if (result["stage"] == "case_validation" and result["case"] == "styled_multipage_fit" and result["exit_code"] == 0
+            and type(fit) is _DocxFitMismatch and type(fit.case) is str and fit.case == result["case"]
+            and type(fit.failed_checks) is tuple and 0 < len(fit.failed_checks) <= len(_DOCX_FIT_CHECKS)
+            and all(type(name) is str and name in _DOCX_FIT_CHECKS for name in fit.failed_checks)
+            and len(set(fit.failed_checks)) == len(fit.failed_checks)):
+        result["fit_failed_checks"] = list(fit.failed_checks)
+        if type(fit.pages) is int and 0 <= fit.pages <= 20:
+            result["fit_pages"] = fit.pages
+        if type(fit.links) is int and 0 <= fit.links <= 100:
+            result["fit_links"] = fit.links
     return result
 
 
@@ -504,6 +564,7 @@ def check(platform: str, *, image: str | None = None) -> dict:
                         or receipt.get("unchanged_links") != 1 or receipt.get("outside_changed_regions_pixel_delta") != 0
                         or result.get("scan", {}).get("engine") != "ClamAV" or result.get("candidate_scan") != result.get("scan")):
                     _note_docx_refusal(result, binding, code, case=name)
+                    _note_docx_fit_mismatch(result, binding, code, case=name)
                     raise DocumentImageError()
                 layout_observations.append({"case": name, "passed": True, "layout": receipt, "scan": result["scan"]})
             elif (code != 1 or result.get("error") != "docx_layout_refused" or result.get("reason") not in {

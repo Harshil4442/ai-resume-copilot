@@ -130,6 +130,57 @@ class FailureDiagnosticsTests(unittest.TestCase):
             finally:
                 m._FAILURE.reset(token)
 
+    def fit_result(self):
+        scan = {"engine": "ClamAV", "version": "PRIVATE_SCANNER_VERSION", "definitions": "PRIVATE_DEFINITIONS"}
+        return {**self.binding, "scan": scan, "candidate_scan": scan.copy(), "layout": {
+            "validator": "hirewiz-docx-layout-v1", "pages": 3, "unchanged_links": 2,
+            "outside_changed_regions_pixel_delta": 0, "renderer": "PRIVATE_FONT_AND_VERSION",
+        }}
+
+    def test_bound_exit_zero_fit_failure_exports_only_check_names_and_counts(self):
+        result = self.fit_result()
+        m._progress("case_validation", case="styled_multipage_fit", exit_code=0)
+        m._note_docx_fit_mismatch(result, self.binding, 0, case="styled_multipage_fit")
+        self.assertNotIn("PRIVATE", repr(m._FAILURE.get()))
+        result["layout"].update(pages=20, unchanged_links=100)
+        report = m._failure_report()
+        self.assertEqual(set(report), BASE_KEYS | {"fit_failed_checks", "fit_pages", "fit_links"})
+        self.assertEqual(report["fit_failed_checks"], ["pages", "unchanged_links"])
+        self.assertEqual((report["fit_pages"], report["fit_links"]), (3, 2))
+        self.assert_redacted(report)
+        m._progress("source_recheck")
+        self.assertNotIn("docx_fit_mismatch", m._FAILURE.get())
+        m._progress("case_validation", case="styled_multipage_fit", exit_code=0)
+        result["layout"].update(pages=2, unchanged_links=1)
+        m._note_docx_fit_mismatch(result, self.binding, 0, case="styled_multipage_fit")
+        self.assertEqual(set(m._failure_report()), BASE_KEYS)
+
+    def test_fit_failure_names_and_counts_are_independently_redacted(self):
+        result = self.fit_result()
+        result["layout"].update(validator="PRIVATE_VALIDATOR", pages=True, unchanged_links=101,
+                                outside_changed_regions_pixel_delta=1)
+        result["scan"]["engine"] = "PRIVATE_ENGINE"
+        m._progress("case_validation", case="styled_multipage_fit", exit_code=0)
+        m._note_docx_fit_mismatch(result, self.binding, 0, case="styled_multipage_fit")
+        report = m._failure_report()
+        self.assertEqual(report["fit_failed_checks"], list(m._DOCX_FIT_CHECKS))
+        self.assertEqual(set(report), BASE_KEYS | {"fit_failed_checks"})
+        self.assert_redacted(report)
+        for bad_result, code in (({**result, "sha256": "d" * 64}, 0),
+                                 ({**result, "raw_body": "PRIVATE_BODY"}, 0), (result, False), (result, 1)):
+            m._note_docx_fit_mismatch(bad_result, self.binding, code, case="styled_multipage_fit")
+            self.assertEqual(set(m._failure_report()), BASE_KEYS)
+        hostile = Untrusted()
+        for fit in (m._DocxFitMismatch(hostile, ("pages",), 1, 1),
+                    m._DocxFitMismatch("styled_multipage_fit", (hostile,), 1, 1),
+                    m._DocxFitMismatch("styled_multipage_fit", ("PRIVATE_UNKNOWN",), 1, 1),
+                    m._DocxFitMismatch("styled_multipage_fit", ("pages", "pages"), 1, 1)):
+            m._FAILURE.get()["docx_fit_mismatch"] = fit
+            self.assertEqual(set(m._failure_report()), BASE_KEYS)
+        m._FAILURE.get()["docx_fit_mismatch"] = m._DocxFitMismatch("styled_multipage_fit", ("pages",), False, hostile)
+        self.assertEqual(set(m._failure_report()), BASE_KEYS | {"fit_failed_checks"})
+        self.assert_redacted(m._failure_report())
+
 
 if __name__ == "__main__":
     unittest.main()
