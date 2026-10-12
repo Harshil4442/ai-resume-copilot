@@ -58,8 +58,10 @@ observation, supported-method response summary and unknown facts.
 - [x] All five exact `29919c2` CI lanes; 2,341 backend tests pass without skips.
 - [x] Known fee/tax retention repair independently reviewed and integrated: 88 regressions and 22 actual PostgreSQL cases pass, zero skips; all five exact `44e0d92` CI lanes pass. [Review evidence](evidence/2026-10-10-payment-expense-observation-review.json). Production rollout remains pending.
 - [ ] Separate runtime/migration credentials, old-writer fencing and fresh backup.
-- [ ] Schema `0010`–`0013`, immutable joined rollout and production verification.
+- [ ] Schema `0010`–`0016`, immutable joined rollout and production verification. The [current forward-chain contract](MONETARY_CHAIN_0016_2026-10-12.md) supports these revisions in source; production remains at the recorded `0009` baseline, with no native migration acceptance.
 - [ ] Actual invoice reconciliation and ongoing expense review.
+
+Exact `6519de6` composed source/regression verification now passes: [all five CI jobs pass](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38312570609), including 3,859 backend tests. This does not activate billing or migrate production.
 
 Historical accepted prices and paid access terms remain intact. Policy approval is
 an offline financial checkpoint; it does not certify the monetary cutover or enable

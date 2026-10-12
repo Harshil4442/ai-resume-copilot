@@ -3,7 +3,7 @@
 # database, model clients, merchant credentials, source .env or submission code.
 # Cloud Run sandbox launcher is injected only when explicitly enabled there.
 FROM public.ecr.aws/docker/library/python:3.12-slim-trixie@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1 AS dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends clamav clamav-freshclam \
+RUN apt-get update && apt-get install -y --no-install-recommends clamav clamav-freshclam clamav-daemon \
        libreoffice-writer fontconfig fonts-liberation2 fonts-crosextra-carlito fonts-crosextra-caladea \
     && rm -rf /var/lib/apt/lists/* \
     && python -m pip install --no-cache-dir --no-deps \
@@ -34,6 +34,9 @@ COPY infra/document-processing/processor.py infra/document-processing/service.py
 # every render. Its hash/version must be observed and pinned by the API before
 # enabling DOCX preparation; a syntax-valid declaration alone proves no render.
 RUN /usr/local/bin/python3 -I /opt/document/docx_renderer.py --write-font-manifest
+# Record actual installed daemon, scanner and libclamav ELF bytes. Runtime
+# verifies this read-only manifest and the live owned daemon executable/library.
+RUN /usr/local/bin/python3 -I -c 'import sys; sys.path.insert(0, "/opt/document"); import processor; processor.write_clamd_native_manifest()'
 # Immutable image rebuilds must refresh official definitions at least every
 # three days. No freshclam/network updater runs while processing candidate data.
 # The runtime scanner independently checks database-header age and rejects stale

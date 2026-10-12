@@ -1,8 +1,10 @@
 # Expense-based pricing and margin protection
 
-Status: three finite packs and expense safeguards are integrated locally after independent
-financial source review. Composed verification, deployment and actual-account expense
-reconciliation remain open. This document does not activate new prices or
+Status: three finite packs and expense safeguards are integrated after independent
+financial source review. Composed source/regression verification passes on exact
+`6519de6`: [all five CI jobs pass](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38312570609), including
+3,859 backend tests. Production deployment, measured load acceptance and actual-account
+expense reconciliation remain open. This document does not activate new prices or
 claim that current plans are profitable. GCP and Vercel remain the deployment platforms.
 
 The owner subsequently authorized conservative estimated amounts and requested removal
@@ -100,8 +102,10 @@ sale tax reduce that amount. This is an arithmetic example, not a final service 
 - [x] Implement a strict versioned expense policy and deterministic price-floor calculator.
 - [x] Independently validate the candidate packs, bonus/promotion bounds, model ceilings and operation rates; production authority activation remains pending.
 - [x] Persist the applicable cost-policy version with new immutable quotes and payment orders.
-- [ ] Test rounding, expensive payment methods, adverse FX, full credit consumption, retries,
-  unknown costs, free/error work, low volume, changed policy and stale/invalid configuration.
+- [x] Test rounding, expensive payment methods, adverse FX, full credit consumption, retries,
+  unknown costs, free/error work, low volume, changed policy and stale/invalid configuration
+  in the exact `6519de6` composed CI. These are source/regression checks; they do not prove
+  live billing, production recovery or load capacity.
 - [x] Implement clear prospective rates and optional tailoring costs; preserve accepted old terms.
 - [ ] Configure bounded provider/document/fleet spending and restrict new work when budgets fail.
 - [ ] Reconcile actual invoices and net receipts; deploy only the validated catalog/policy version.

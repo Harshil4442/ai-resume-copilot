@@ -118,69 +118,132 @@ class SharedDeadlineTests(unittest.TestCase):
             ns['scan_original'](PATH, now=NOW + timedelta(days=4), deadline=150)
 
 
-    def test_layout_passes_same_work_deadline_to_both_scans(self):
+    def test_layout_keeps_one_owner_and_shared_work_deadline_until_cleanup(self):
         source = b'inert-source'
         candidate = b'inert-candidate'
-        scans = []
-        renders = []
+        owners = []
+        events = []
+        clock = [100.0]
         edits = []
-        clock = iter((100.0, 149.0))
         binding = {'candidate_size_bytes': len(candidate),
             'candidate_sha256': hashlib.sha256(candidate).hexdigest()}
         request = {'edits': edits, 'worker_image': 'inert-image', 'policy_sha256': 'inert-policy'}
 
-        def scan(path, *, deadline):
-            scans.append((path.name, deadline, path.read_bytes()))
-            return {'inert_scan': path.name}
+        class Owner:
+            def __init__(self, directory, deadline):
+                self.directory, self.deadline = directory, deadline
+                self.entered = self.stopped = False
+                owners.append(self)
+
+            def __enter__(self):
+                self.entered = True
+                events.append('enter')
+                return self
+
+            def scan(inner, path, content):
+                self.assertTrue(inner.entered and not inner.stopped)
+                self.assertEqual(path.parent, inner.directory)
+                self.assertEqual(path.read_bytes(), content)
+                expected = source if path.name == 'original.docx' else candidate
+                self.assertIs(content, expected)
+                events.append((path.name, inner.deadline, content))
+                clock[0] += 20 if path.name == 'original.docx' else 5
+                return {'inert_scan': path.name}
+
+            def __exit__(self, kind, error, traceback):
+                self.stopped = True
+                events.append('cleanup')
+                clock[0] += 1
+                return False
 
         def render(actual_source, actual_candidate, actual_edits, *, image, policy, deadline):
             self.assertIs(actual_source, source)
             self.assertIs(actual_candidate, candidate)
             self.assertIs(actual_edits, edits)
-            renders.append((image, policy, deadline))
+            self.assertEqual(len(owners), 1)
+            self.assertTrue(owners[0].stopped)
+            events.append(('render', image, policy, deadline))
             return {'inert_layout': True}
 
-        ns = self.layout_namespace(source, candidate, request, binding, scan, render,
-            lambda: next(clock))
+        ns = self.layout_namespace(source, candidate, request, binding, Owner, render,
+            lambda: clock[0])
         result = ns['validate_docx_edit'](b'inert-payload')
-        self.assertEqual(scans, [('original.docx', 150.0, source),
-            ('candidate.docx', 150.0, candidate)])
-        self.assertEqual(renders, [('inert-image', 'inert-policy', 150.0)])
+        self.assertEqual(len(owners), 1)
+        self.assertEqual(owners[0].deadline, 150.0)
+        self.assertEqual(events, ['enter', ('original.docx', 150.0, source),
+            ('candidate.docx', 150.0, candidate), 'cleanup',
+            ('render', 'inert-image', 'inert-policy', 150.0)])
         self.assertEqual(result['layout'], {'inert_layout': True})
+        # The actual callsite must keep both scans in this one context and load
+        # the renderer only after context exit. No product modules are imported.
+        layout = next(n for n in TREE.body if isinstance(n, ast.FunctionDef)
+            and n.name == 'validate_docx_edit')
+        contexts = [n for n in ast.walk(layout) if isinstance(n, ast.With)
+            and any(isinstance(item.context_expr, ast.Call)
+                and isinstance(item.context_expr.func, ast.Name)
+                and item.context_expr.func.id == 'OwnedClamd' for item in n.items)]
+        self.assertEqual(len(contexts), 1)
+        scans = [n for n in ast.walk(layout) if isinstance(n, ast.Call)
+            and isinstance(n.func, ast.Attribute) and n.func.attr == 'scan']
+        self.assertEqual(len(scans), 2)
+        self.assertTrue(all(contexts[0].lineno < n.lineno < contexts[0].end_lineno for n in scans))
+        renderer_import = next(n for n in ast.walk(layout) if isinstance(n, ast.ImportFrom)
+            and n.module == 'docx_renderer')
+        self.assertGreater(renderer_import.lineno, contexts[0].end_lineno)
 
-    def test_either_scan_refusal_prevents_rendering(self):
+    def test_either_scan_or_cleanup_refusal_prevents_rendering(self):
         source = b'inert-source'
         candidate = b'inert-candidate'
         binding = {'candidate_size_bytes': len(candidate),
             'candidate_sha256': hashlib.sha256(candidate).hexdigest()}
         request = {'edits': [], 'worker_image': 'inert-image', 'policy_sha256': 'inert-policy'}
-        for refusal_call in (1, 2):
+        for refusal_call in (1, 2, 'cleanup'):
             for refusal_name in ('InspectionDenied', 'InspectionUnavailable'):
                 with self.subTest(scan=refusal_call, refusal=refusal_name):
                     scans = []
                     renders = []
+                    owners = []
                     namespace = {}
+                    expected = 2 if refusal_call == 'cleanup' else refusal_call
 
-                    def scan(path, *, deadline, _refusal_call=refusal_call,
-                             _refusal_name=refusal_name, _scans=scans, _namespace=namespace):
-                        _scans.append(deadline)
-                        if len(_scans) == _refusal_call:
-                            raise _namespace[_refusal_name]()
-                        return {'inert_scan': True}
+                    class Owner:
+                        def __init__(self, directory, deadline, _owners=owners):
+                            self.directory, self.deadline = directory, deadline
+                            self.stopped = False
+                            _owners.append(self)
+
+                        def __enter__(self):
+                            return self
+
+                        def scan(self, path, content, _scans=scans, _refusal_call=refusal_call,
+                                 _namespace=namespace, _refusal_name=refusal_name):
+                            _scans.append(self.deadline)
+                            if len(_scans) == _refusal_call:
+                                raise _namespace[_refusal_name]()
+                            return {'inert_scan': True}
+
+                        def __exit__(self, kind, error, traceback, _refusal_call=refusal_call,
+                                     _namespace=namespace, _refusal_name=refusal_name):
+                            self.stopped = True
+                            if _refusal_call == 'cleanup':
+                                raise _namespace[_refusal_name]()
+                            return False
 
                     def render(*args, _renders=renders, **kwargs):
                         _renders.append(True)
                         raise AssertionError('refused input reached renderer')
 
                     namespace.update(self.layout_namespace(source, candidate, request,
-                        binding, scan, render, lambda: 100.0))
+                        binding, Owner, render, lambda: 100.0))
                     with self.assertRaises(namespace[refusal_name]):
                         namespace['validate_docx_edit'](b'inert-payload')
-                    self.assertEqual(scans, [150.0] * refusal_call)
+                    self.assertEqual(scans, [150.0] * expected)
+                    self.assertEqual(len(owners), 1)
+                    self.assertTrue(owners[0].stopped)
                     self.assertEqual(renders, [])
 
     @staticmethod
-    def layout_namespace(source, candidate, request, binding, scan, render, monotonic):
+    def layout_namespace(source, candidate, request, binding, owner, render, monotonic):
         scanner = source_namespace(lambda *args, **kwargs: None, [100.0])
         modules = {
             'app.services.docx_layout_validation': N(LAYOUT_REASONS=set(),
@@ -197,7 +260,7 @@ class SharedDeadlineTests(unittest.TestCase):
 
         ns = {'__builtins__': {**vars(builtins), '__import__': inert_import},
             'time': N(monotonic=monotonic), 'tempfile': tempfile, 'Path': Path,
-            'hashlib': hashlib, 'scan_original': scan, 'validate_docx': lambda content: None,
+            'hashlib': hashlib, 'OwnedClamd': owner, 'validate_docx': lambda content: None,
             'decode_docx_request': lambda payload: (source, {'request': request, 'binding': binding}),
             'InspectionDenied': scanner['InspectionDenied'],
             'InspectionUnavailable': scanner['InspectionUnavailable'],
