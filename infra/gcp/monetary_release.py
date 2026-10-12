@@ -8,6 +8,7 @@ bounded migration command are implemented; production execution remains unavaila
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
 import importlib.util
 import json
@@ -43,6 +44,10 @@ SAFE_ENV = {
     "EMPLOYER_SEARCH_CREDITS_PER_JOB": "1", "EMPLOYER_APPLY_CREDITS_PER_JOB": "20",
 }
 NATIVE_ENV = ("NATIVE_TEX_IMAGE", "NATIVE_TEX_COMPILER_URL", "NATIVE_TEX_IMAGE_DIGEST", "NATIVE_TEX_ISOLATION_POLICY_SHA256")
+MODEL_API_BASE = "https://generativelanguage.googleapis.com"
+MODEL_ENV = ("LLM_MODEL", "LLM_API_BASE", "LLM_MODEL_COST_POLICY_JSON", "LLM_API_KEY")
+# Retire legacy/vendor selectors without touching project, task or payment settings.
+MODEL_ALIASES = ("GEMINI_API_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL", "GOOGLE_GENAI_USE_VERTEXAI")
 MAX_JSON = 131072
 ERASABLE_TABLES = {
     "users", "user_profiles", "resumes", "job_matches", "skill_coverage",
@@ -93,6 +98,11 @@ class Plan:
     migration_secret: str
     expense_secret: str
     expense_sha256: str
+    model_policy_secret: str
+    model_policy_sha256: str
+    model_key_secret: str
+    model_primary: str
+    model_api_base: str
     runtime_service_account: str
     migration_service_account: str
     backup_uri: str
@@ -110,9 +120,15 @@ class Plan:
             or not re.fullmatch(r"[a-f0-9-]{36}", self.build_id)
             or type(self.ci_run_id) is not int or self.ci_run_id <= 0
             or any(not re.fullmatch(r"[a-z][a-z0-9-]{2,62}:[1-9][0-9]{0,8}", ref)
-                   for ref in (self.runtime_secret, self.migration_secret, self.expense_secret))
+                   for ref in (self.runtime_secret, self.migration_secret, self.expense_secret,
+                               self.model_policy_secret, self.model_key_secret))
             or self.runtime_secret.split(":")[0] == self.migration_secret.split(":")[0]
             or not re.fullmatch(r"[a-f0-9]{64}", self.expense_sha256)
+            or not re.fullmatch(r"[a-f0-9]{64}", self.model_policy_sha256)
+            or not re.fullmatch(r"gemini-[A-Za-z0-9_.-]{1,113}", self.model_primary)
+            or self.model_api_base != MODEL_API_BASE
+            or len({ref.split(":")[0] for ref in (self.runtime_secret, self.migration_secret,
+                        self.expense_secret, self.model_policy_secret, self.model_key_secret)}) != 5
             or not re.fullmatch(r"[a-f0-9]{64}", self.inventory_sha256)
             or self.runtime_service_account == self.migration_service_account
             or any(not re.fullmatch(r"[a-z][a-z0-9-]{4,28}@" + PROJECT + r"\.iam\.gserviceaccount\.com", value)
@@ -120,6 +136,42 @@ class Plan:
             or not re.fullmatch(r"gs://" + PROJECT + r"-hirewiz-application-artifacts/releases/[a-zA-Z0-9_.-]+\.dump", self.backup_uri)
         ):
             raise ReleaseDenied("release_plan_identity_invalid")
+
+
+def runtime_environment(plan: Plan, service: str) -> tuple[dict[str, str], dict[str, str], tuple[str, ...]]:
+    """One service-scoped contract for staging and exact native readback."""
+    if service not in SERVICES:
+        raise ReleaseDenied("joined_service_identity_invalid")
+    env = {**SAFE_ENV, "APP_RELEASE": plan.release,
+           "SERVICE_ROLE": "api" if service == SERVICES[0] else "worker"}
+    secrets = {"DATABASE_URL": plan.runtime_secret, "HIREWIZ_EXPENSE_POLICY_JSON": plan.expense_secret}
+    removed = (*NATIVE_ENV, *MODEL_ALIASES)
+    if service != SERVICES[0]:
+        env["WORKER_LABEL"] = "analysis-worker" if service == SERVICES[1] else "employer-worker"
+        env["WORKER_ALLOWED_TOPICS"] = ("analysis.run" if service == SERVICES[1]
+                                       else "employer.search,employer.refresh,employer.apply,employer.artifact-delete")
+    if service in SERVICES[:2]:
+        env.update(LLM_MODEL=plan.model_primary, LLM_API_BASE=plan.model_api_base)
+        secrets.update(LLM_MODEL_COST_POLICY_JSON=plan.model_policy_secret, LLM_API_KEY=plan.model_key_secret)
+    else:
+        removed = (*removed, *MODEL_ENV)
+    return env, secrets, removed
+
+
+def _gemini_fallbacks(root: Path) -> tuple[str, ...]:
+    """Read the committed literal without initializing the provider/app modules."""
+    tree = ast.parse((root / "backend/app/services/llm_client.py").read_bytes())
+    assignments = [node for node in tree.body if isinstance(node, ast.Assign)
+                   and any(isinstance(target, ast.Name) and target.id == "GEMINI_FALLBACK_MODELS"
+                           for target in node.targets)]
+    if len(assignments) != 1:
+        raise ReleaseDenied("model_fallback_source_contract_invalid")
+    models = ast.literal_eval(assignments[0].value)
+    if (not isinstance(models, tuple) or not 1 <= len(models) <= 100
+            or any(not isinstance(model, str) or not re.fullmatch(r"gemini-[A-Za-z0-9_.-]{1,113}", model)
+                   for model in models) or len(models) != len(set(models))):
+        raise ReleaseDenied("model_fallback_source_contract_invalid")
+    return models
 
 
 @dataclass(frozen=True)
@@ -279,13 +331,45 @@ class NativeBoundary:
         spec.loader.exec_module(module)
         return module
 
-    def _secret(self, reference: str) -> str:
+    def _verify_secret_version(self, reference: str) -> None:
         name, version = reference.split(":")
         metadata = self._cloud("secrets", "versions", "describe", version, "--secret", name)
         if metadata.get("state") != "ENABLED" or metadata.get("name", "").split("/")[-1] != version:
             raise ReleaseDenied("exact_secret_version_not_enabled")
+
+    def _secret(self, reference: str) -> str:
+        self._verify_secret_version(reference)
+        name, version = reference.split(":")
         return self._command("gcloud", "secrets", "versions", "access", version, "--secret", name,
                              "--project", PROJECT, "--quiet").decode()
+
+    def _verify_model_policy(self, plan: Plan, expense: dict[str, Any]) -> None:
+        raw = self._secret(plan.model_policy_secret)
+        if hashlib.sha256(raw.encode()).hexdigest() != plan.model_policy_sha256:
+            raise ReleaseDenied("model_policy_secret_hash_mismatch")
+        authority = self._module("backend/app/services/model_cost_policy.py", "hirewiz_release_model_policy")
+        try:
+            policy = authority.ModelCostPolicy.model_validate(_json(raw.encode()))
+            if (policy.expense_funding is not None or policy.expense_policy_version is not None
+                    or policy.expense_paid_units is not None):
+                raise ReleaseDenied("model_policy_runtime_funding_not_configuration")
+            limits = expense["operation_model_ceilings_micros"]
+            if any(limit > limits.get(operation, 0) for operation, limit in policy.operation_limits_micros.items()):
+                raise ReleaseDenied("model_policy_exceeds_funded_operation_ceiling")
+            models = tuple(dict.fromkeys((plan.model_primary, *_gemini_fallbacks(self.root))))
+            now = datetime.now(UTC)
+            for model in models:
+                quotes = [quote for quote in policy.pricing_quotes
+                          if (quote.provider, quote.model, quote.api_base) == ("google", model, plan.model_api_base)]
+                if len(quotes) != 1 or not quotes[0].valid_from <= now < quotes[0].expires_at:
+                    raise ReleaseDenied("exact_model_fallback_price_authority_unavailable")
+        except ReleaseDenied:
+            raise
+        except (ValueError, TypeError, KeyError):
+            raise ReleaseDenied("model_policy_invalid") from None
+        # Observe only the selected numeric key version's metadata. Never read or
+        # serialize its credential; provider retirement remains a separate gate.
+        self._verify_secret_version(plan.model_key_secret)
 
     def verify_identity_and_policy(self, plan: Plan) -> None:
         tracked = source_guard.checked_files(self.root, plan.release)
@@ -348,6 +432,7 @@ class NativeBoundary:
             rates = service_prices()
             if (rates["search_credits_per_job"], rates["apply_credits_per_job"]) != (1, 20):
                 raise ReleaseDenied("approved_policy_requires_search1_apply20")
+            self._verify_model_policy(plan, rates["cost_policy_snapshot"]["policy"])
         finally:
             for name, value in old.items():
                 if value is None:
@@ -597,18 +682,18 @@ class NativeBoundary:
             raise ReleaseDenied("migration_execution_not_confirmed_reconcile_only")
 
     def stage(self, plan: Plan, service: str) -> str:
-        env = {**SAFE_ENV, "APP_RELEASE": plan.release,
-               "SERVICE_ROLE": "api" if service == SERVICES[0] else "worker"}
-        if service != SERVICES[0]:
-            env["WORKER_LABEL"] = "analysis-worker" if service == SERVICES[1] else "employer-worker"
-            env["WORKER_ALLOWED_TOPICS"] = ("analysis.run" if service == SERVICES[1]
-                                           else "employer.search,employer.refresh,employer.apply,employer.artifact-delete")
+        env, secrets, removed = runtime_environment(plan, service)
+        # Literal key/policy remnants are removed before the secret-reference
+        # update. Secret selectors for literal model/base fields refuse safely
+        # in gcloud rather than silently changing an unsupported source kind.
+        literal_removals = (*removed, *secrets.keys())
         auth_args = () if service == SERVICES[0] else ("--no-allow-unauthenticated",)
         staged = self._cloud("run", "deploy", service, *auth_args, "--region", REGION, "--image", plan.image,
                              "--service-account", plan.runtime_service_account, "--no-traffic", "--tag", "monetary-candidate",
-                             "--command", "", "--args", "", "--remove-env-vars", ",".join(NATIVE_ENV),
+                             "--command", "", "--args", "", "--remove-env-vars", ",".join(literal_removals),
+                             "--remove-secrets", ",".join(removed),
                              "--update-env-vars", "^|^" + "|".join(f"{k}={v}" for k, v in env.items()),
-                             "--update-secrets", f"DATABASE_URL={plan.runtime_secret},HIREWIZ_EXPENSE_POLICY_JSON={plan.expense_secret}")
+                             "--update-secrets", ",".join(f"{name}={reference}" for name, reference in secrets.items()))
         revision = staged.get("status", {}).get("latestCreatedRevisionName", "")
         if not re.fullmatch(re.escape(service) + r"-[a-z0-9-]+", revision):
             raise ReleaseDenied("staged_revision_identity_missing")
@@ -622,20 +707,16 @@ class NativeBoundary:
         container = containers[0]
         environment = container.get("env", [])
         env = {item["name"]: item for item in environment}
-        expected_env = {**SAFE_ENV, "APP_RELEASE": plan.release,
-                        "SERVICE_ROLE": "api" if service == SERVICES[0] else "worker"}
-        if service != SERVICES[0]:
-            expected_env["WORKER_LABEL"] = "analysis-worker" if service == SERVICES[1] else "employer-worker"
-            expected_env["WORKER_ALLOWED_TOPICS"] = ("analysis.run" if service == SERVICES[1]
-                                                    else "employer.search,employer.refresh,employer.apply,employer.artifact-delete")
+        expected_env, expected_secrets, removed = runtime_environment(plan, service)
         if (observed.get("metadata", {}).get("labels", {}).get("serving.knative.dev/service") != service
                 or observed.get("status", {}).get("imageDigest") != plan.image
                 or observed.get("spec", {}).get("serviceAccountName") != plan.runtime_service_account
                 or len(env) != len(environment) or container.get("command") or container.get("args")
-                or any(env.get(name, {}).get("value") != value for name, value in expected_env.items())
-                or any(env.get(name) for name in NATIVE_ENV)
-                or env.get("DATABASE_URL", {}).get("valueFrom", {}).get("secretKeyRef") != dict(zip(("name", "key"), plan.runtime_secret.split(":"), strict=True))
-                or env.get("HIREWIZ_EXPENSE_POLICY_JSON", {}).get("valueFrom", {}).get("secretKeyRef") != dict(zip(("name", "key"), plan.expense_secret.split(":"), strict=True))
+                or any(env.get(name) != {"name": name, "value": value} for name, value in expected_env.items())
+                or any(name in env for name in removed)
+                or any(env.get(name) != {"name": name, "valueFrom": {"secretKeyRef": dict(zip(
+                    ("name", "key"), reference.split(":"), strict=True))}}
+                       for name, reference in expected_secrets.items())
                 or not any(condition.get("type") == "Ready" and condition.get("status") == "True" for condition in observed.get("status", {}).get("conditions", []))):
             raise ReleaseDenied("joined_revision_identity_or_safety_mismatch")
         if service != SERVICES[0]:

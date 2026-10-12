@@ -28,6 +28,9 @@ def plan(tmp_path):
         build_id="11111111-1111-1111-1111-111111111111", ci_run_id=7,
         runtime_secret="hirewiz-runtime-db:2", migration_secret="hirewiz-migration-db:3",
         expense_secret="hirewiz-expense-policy:4", expense_sha256="c" * 64,
+        model_policy_secret="hirewiz-model-cost-policy:5", model_policy_sha256="e" * 64,
+        model_key_secret="hirewiz-model-key:6", model_primary="gemini-3.6-flash",
+        model_api_base=release.MODEL_API_BASE,
         runtime_service_account=f"hirewiz-runtime@{release.PROJECT}.iam.gserviceaccount.com",
         migration_service_account=f"hirewiz-migration@{release.PROJECT}.iam.gserviceaccount.com",
         backup_uri=f"gs://{release.PROJECT}-hirewiz-application-artifacts/releases/reviewed.dump",
@@ -251,7 +254,13 @@ def native_identity(plan, monkeypatch, *, policy_update=None, ci_update=None, bu
     policy.update(review_status="approved", reviewed_by="independent-synthetic-review")
     policy.update(policy_update or {})
     raw = json.dumps(policy)
-    plan = replace(plan, expense_sha256=hashlib.sha256(raw.encode()).hexdigest())
+    model = json.loads((ROOT / "infra/gcp/model-cost-policy.candidate.json").read_bytes())
+    model["version"] = "synthetic-release-model-policy"
+    for quote in model["pricing_quotes"]:
+        quote.update(version="synthetic-price", valid_from="2020-01-01T00:00:00Z", expires_at="2099-01-01T00:00:00Z")
+    model_raw = json.dumps(model)
+    plan = replace(plan, expense_sha256=hashlib.sha256(raw.encode()).hexdigest(),
+                   model_policy_sha256=hashlib.sha256(model_raw.encode()).hexdigest())
     ci = {"headSha": plan.release, "workflowName": "CI", "status": "completed", "conclusion": "success",
           "jobs": [{"name": job, "status": "completed", "conclusion": "success"} for job in sorted(release.CI_JOBS)]}
     ci.update(ci_update or {})
@@ -274,12 +283,14 @@ def native_identity(plan, monkeypatch, *, policy_update=None, ci_update=None, bu
         calls.append(("cloud", *args))
         if args[:2] == ("builds", "describe"):
             return build
+        if args[:3] == ("secrets", "versions", "describe"):
+            return {"state": "ENABLED", "name": "synthetic/versions/" + args[3]}
         return {"email": args[3], "disabled": False}
     monkeypatch.setattr(release.source_guard, "checked_files", lambda *args: set())
     monkeypatch.setattr(release.source_guard, "migration_chain", lambda *args, **kwargs: release.CHAIN)
     monkeypatch.setattr(boundary, "_command", command)
     monkeypatch.setattr(boundary, "_cloud", cloud)
-    monkeypatch.setattr(boundary, "_secret", lambda *args: raw)
+    monkeypatch.setattr(boundary, "_secret", lambda reference: raw if reference == plan.expense_secret else model_raw)
     return plan, boundary, calls
 
 
@@ -371,8 +382,10 @@ def test_native_worker_refuses_unresolved_custom_project_role_public_principal(p
     service = release.SERVICES[1]
     environment = {**release.SAFE_ENV, "APP_RELEASE": plan.release, "SERVICE_ROLE": "worker",
                    "WORKER_LABEL": "analysis-worker", "WORKER_ALLOWED_TOPICS": "analysis.run"}
+    environment.update(LLM_MODEL=plan.model_primary, LLM_API_BASE=plan.model_api_base)
     env = [{"name": name, "value": value} for name, value in environment.items()]
-    for name, secret in (("DATABASE_URL", plan.runtime_secret), ("HIREWIZ_EXPENSE_POLICY_JSON", plan.expense_secret)):
+    for name, secret in (("DATABASE_URL", plan.runtime_secret), ("HIREWIZ_EXPENSE_POLICY_JSON", plan.expense_secret),
+                         ("LLM_MODEL_COST_POLICY_JSON", plan.model_policy_secret), ("LLM_API_KEY", plan.model_key_secret)):
         secret_name, key = secret.split(':')
         env.append({"name": name, "valueFrom": {"secretKeyRef": {"name": secret_name, "key": key}}})
     revision = {"metadata": {"labels": {"serving.knative.dev/service": service}},
@@ -548,7 +561,8 @@ def test_native_stage_overrides_inherited_open_checkout_and_preserves_payment_ca
         removals = args[args.index("--remove-env-vars") + 1].split(",")
         assert not set(removals) & (set(inherited) | set(existing_payment_refs))
         secret_updates = args[args.index("--update-secrets") + 1]
-        assert secret_updates == f"DATABASE_URL={plan.runtime_secret},HIREWIZ_EXPENSE_POLICY_JSON={plan.expense_secret}"
+        assert secret_updates == (f"DATABASE_URL={plan.runtime_secret},HIREWIZ_EXPENSE_POLICY_JSON={plan.expense_secret},"
+                                  f"LLM_MODEL_COST_POLICY_JSON={plan.model_policy_secret},LLM_API_KEY={plan.model_key_secret}")
         return {"status": {"latestCreatedRevisionName": service + "-00042-test"}}
     monkeypatch.setattr(boundary, "_cloud", cloud)
     assert boundary.stage(plan, service) == service + "-00042-test"
@@ -568,8 +582,10 @@ def test_native_revision_requires_explicit_closed_checkout_without_disabling_pay
         environment.pop("RAZORPAY_CHECKOUT_ENABLED", None)
     else:
         environment["RAZORPAY_CHECKOUT_ENABLED"] = checkout
+    environment.update(LLM_MODEL=plan.model_primary, LLM_API_BASE=plan.model_api_base)
     env = [{"name": name, "value": value} for name, value in environment.items()]
     for name, secret in (("DATABASE_URL", plan.runtime_secret), ("HIREWIZ_EXPENSE_POLICY_JSON", plan.expense_secret),
+                         ("LLM_MODEL_COST_POLICY_JSON", plan.model_policy_secret), ("LLM_API_KEY", plan.model_key_secret),
                          ("RAZORPAY_WEBHOOK_SECRET", "hirewiz-payment-webhook:7")):
         secret_name, key = secret.split(":")
         env.append({"name": name, "valueFrom": {"secretKeyRef": {"name": secret_name, "key": key}}})

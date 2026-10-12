@@ -70,3 +70,22 @@ independent evaluation before increasing limits or changing fallback order.
    retains `0010` and pauses generation; it must not restore old unbounded writers.
 
 The candidate JSON is preparation, not proof that any of these cutover steps occurred.
+
+## Explicit release-environment preparation — 12 October 2026
+
+The monetary entrypoint now requires hashed numeric model-policy and model-key
+references plus an explicit Gemini primary/public base. It uses the existing
+`ModelCostPolicy` authority, checks every committed fallback's active exact quote,
+and joins operation ceilings to the reviewed expense policy. Only model-key
+version metadata is inspected; no credential value or model request is read/sent.
+API and analysis staging/readback share one expected mapping. Employer staging
+removes model environment and legacy vendor selectors, while preserving task,
+project and payment configuration. This proves container-environment absence only;
+the shared runtime principal does not establish employer Secret Manager isolation.
+
+This is source preparation inside the existing billing and deployment checkpoints.
+Checkout, optional generation, employer submission, lifecycle and queue admission
+remain closed. The unconditional missing external consumer/provider fence refusal
+is unchanged, so this development does not authorize a production cutover. The
+owner-authorized estimate still expires on 16 October and model quotes on 8 November;
+actual staging must recheck their validity and may not silently extend them.

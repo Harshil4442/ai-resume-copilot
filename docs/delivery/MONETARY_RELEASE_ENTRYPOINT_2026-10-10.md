@@ -25,7 +25,8 @@ resources. Source bytes/HEAD/links/untracked files are checked before cloud acce
 
 The strict plan contains only identity pins: release SHA, immutable image digest,
 native Cloud Build ID, CI run ID, exact numeric Secret Manager references for distinct
-runtime/migration credentials and reviewed expense policy, policy digest, separate
+runtime/migration credentials, reviewed expense policy and model-cost policy, both
+policy digests, selected Gemini primary/public base and numeric model-key reference, separate
 service accounts, a new protected backup URI, and private database-inventory path/hash.
 Credential values and database role aliases stay in the operator environment. `latest`,
 same runtime/migration credentials or accounts, duplicate input keys and unknown plan
@@ -66,7 +67,12 @@ define the configuration.
    and SHA, the root Dockerfile build/push sequence and returned registry digest.
    Uploaded source archives or image labels alone are unsupported. Validate the existing
    authoritative financial guard against the pinned numeric policy secret. Owner-authorized
-   estimates can be reviewed; no new human-only approval barrier is introduced. Require
+   estimates can be reviewed; no new human-only approval barrier is introduced. The existing
+   `ModelCostPolicy` validator checks the hashed model policy, exact selected model and all
+   committed fallback quotes, current validity and operation ceilings within the expense
+   authority. Injected runtime-funding fields are refused. Model-key checks observe only
+   its enabled numeric version metadata; they do not read its credential or prove provider
+   retirement. Require
    three finite packs and search1/apply20, preserving accepted historical terms.
 3. Observe four paused, empty task queues, paused schedulers and terminal visible job
    executions. Require a fresh authenticated external-consumer/provider/writer fence.
@@ -97,7 +103,14 @@ define the configuration.
    the chain. Larger tables need a separately reviewed index plan. Later steps add the
    private upload, paid-history and catalogue schema; they do not backfill or charge jobs.
 7. Stage the same immutable release for API, analysis and employer workers with no traffic.
-   Verify explicit service/worker roles, labels, topic scopes, numeric runtime/policy
+   One deterministic service mapping drives staging and exact revision readback. Bind
+   `LLM_MODEL`, native public `LLM_API_BASE`, and numeric model-policy/key references on
+   API and analysis only. Remove obsolete vendor key/base selectors; employer revisions
+   must contain no model/key environment. Both literal and secret remnants are removed.
+   The common runtime principal still needs separate least-privilege verification;
+   environment absence does not prove that principal cannot read a secret. Existing
+   payment callbacks and project/task settings remain intact. Verify explicit service/worker
+   roles, labels, topic scopes, numeric runtime/policy
    references, source/image identity, Ready condition and exact tagged HTTP health.
    The existing worker health lacks a revision field; its exact native revision/tag URL
    plus release/worker label establishes this bounded check. Keep worker IAM checks on,
