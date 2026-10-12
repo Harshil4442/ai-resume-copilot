@@ -698,6 +698,7 @@ def docx_layout_corpus(image: str) -> list[tuple[str, bytes, dict]]:
 
 def clamd_corpus() -> list[tuple[str, bytes, str, bool]]:
     """New genuine daemon controls; ordinary clamscan corpus stays unchanged."""
+    from docx import Document
     from pypdf import PdfWriter
     fixtures = {name: content for name, _, content, _ in corpus()}
     clean, docx = fixtures["clean_pdf"], fixtures["clean_docx"]
@@ -707,9 +708,18 @@ def clamd_corpus() -> list[tuple[str, bytes, str, bool]]:
     layout = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = layout
     spec.loader.exec_module(layout)
-    unit = next(value for value in layout.extract_source_units(docx, "docx") if value["text"] == "Candidate Example")
-    resident_edits = [{"unit_id": unit["unit_id"], "original_text": unit["text"], "replacement_text": "Candidate Sample"}]
-    resident_candidate = layout._apply_docx(docx, resident_edits)
+    resident_text = "Developed Python automation tools for reliable test workflows."
+    document = Document()
+    document.add_paragraph("Candidate Example")
+    document.add_paragraph(resident_text)
+    resident_stream = io.BytesIO()
+    document.save(resident_stream)
+    resident_docx = resident_stream.getvalue()
+    unit = next(value for value in layout.extract_source_units(resident_docx, "docx")
+                if value["text"] == resident_text)
+    resident_edits = [{"unit_id": unit["unit_id"], "original_text": unit["text"],
+                       "replacement_text": "Built Python automation tools for reliable test workflows."}]
+    resident_candidate = layout._apply_docx(resident_docx, resident_edits)
     def archive(rows):
         stream = io.BytesIO()
         with ZipFile(stream, "w", ZIP_DEFLATED) as zipped:
@@ -744,7 +754,7 @@ def clamd_corpus() -> list[tuple[str, bytes, str, bool]]:
         ("clamd_max_scansize", clean, total, "candidate_nonclean", False),
         ("clamd_max_files", clean, files, "candidate_nonclean", False),
         ("clamd_max_recursion", clean, nested, "candidate_nonclean", False),
-        ("clamd_resident_parser", docx, resident_candidate, "clean", True)]
+        ("clamd_resident_parser", resident_docx, resident_candidate, "clean", True)]
     result = []
     for name, original, candidate, expected, resident in rows:
         if not 0 < len(original) <= 5 * 1024**2 or not 0 < len(candidate) <= 5 * 1024**2:
