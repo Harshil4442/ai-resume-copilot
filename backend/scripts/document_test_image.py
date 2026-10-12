@@ -20,6 +20,7 @@ import sys
 import tempfile
 import time
 import uuid
+from contextvars import ContextVar
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 
@@ -37,6 +38,17 @@ LABEL = "hirewiz.document-test.source."
 MEMORY = 2 * 1024**3
 TMPFS = "rw,noexec,nosuid,nodev,size=64m,mode=1777"
 ERROR = "document_engine_check_refused"
+_FAILURE_STAGES = frozenset({
+    "setup", "daemon", "source_hashes", "build", "image_metadata", "runtime_sources",
+    "corpus", "case_request", "case_execution", "case_validation", "layout_corpus",
+    "source_recheck", "report_write",
+})
+_FAILURE_CASES = frozenset({
+    "clean_pdf", "clean_docx", "page_counter", "active_pdf", "includetext",
+    "eicar_exact_file", "eicar_zip_member", "missing_definitions",
+    "styled_multipage_fit", "rendered_reflow_refusal",
+})
+_FAILURE: ContextVar[dict | None] = ContextVar("document_image_failure", default=None)
 EICAR = (b"X5O!P%@AP[4" + bytes([92]) + b"PZX54(P^)7CC)7}$"
          + b"EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*")
 # Runtime hashes attest every copied Python source; the Dockerfile remains
@@ -77,6 +89,28 @@ sys.stdout.buffer.write(p.stdout);raise SystemExit(p.returncode)
 class DocumentImageError(RuntimeError):
     def __init__(self):
         super().__init__(ERROR)
+
+
+def _progress(stage: str, *, case: str | None = None, exit_code: int | None = None,
+              completed_cases: int | None = None) -> None:
+    diagnostic = _FAILURE.get()
+    if diagnostic is not None:
+        diagnostic.update(stage=stage, case=case, exit_code=exit_code)
+        if completed_cases is not None:
+            diagnostic["completed_cases"] = completed_cases
+
+
+def _failure_report() -> dict:
+    # Project only finite local progress. Native output and exception text are
+    # never diagnostic inputs, even when JSON decoding or cleanup refuses.
+    diagnostic = _FAILURE.get() or {}
+    stage, case = diagnostic.get("stage"), diagnostic.get("case")
+    code, completed = diagnostic.get("exit_code"), diagnostic.get("completed_cases")
+    return {"error": ERROR,
+            "stage": stage if type(stage) is str and stage in _FAILURE_STAGES else "setup",
+            "case": case if type(case) is str and case in _FAILURE_CASES else None,
+            "exit_code": code if type(code) is int and 0 <= code <= 255 else None,
+            "completed_cases": completed if type(completed) is int and 0 <= completed <= len(_FAILURE_CASES) else 0}
 
 
 def command(args: list[str], *, timeout: int = 20, limit: int = 1024 * 1024) -> tuple[int, bytes]:
@@ -342,21 +376,29 @@ def docx_layout_corpus(image: str) -> list[tuple[str, bytes, dict]]:
 
 
 def check(platform: str, *, image: str | None = None) -> dict:
+    _progress("daemon", completed_cases=0)
     docker = docker_command()
+    _progress("source_hashes")
     hashes = source_hashes()
+    _progress("build")
     image = image or build(docker, platform, hashes)
+    _progress("image_metadata")
     image_metadata(docker, image, platform, hashes)
+    _progress("runtime_sources")
     code, raw = container(docker, image, platform, ["-c", HASH_PROGRAM], [])
+    _progress("runtime_sources", exit_code=code)
     if code or json.loads(raw) != {path: hashes[path] for path in RUNTIME}:
         raise DocumentImageError()
     observations = []
     layout_observations = []
+    _progress("corpus")
     with tempfile.TemporaryDirectory(prefix="hirewiz-document-corpus-") as temporary:
         directory = Path(temporary)
         directory.chmod(0o755)
         empty = directory / "empty-definitions"
         empty.mkdir(mode=0o755)
         for name, kind, content, outcome in corpus():
+            _progress("case_request", case=name)
             envelope = {"version": 1, "source_format": kind, "content_base64": base64.b64encode(content).decode(),
                         "sha256": hashlib.sha256(content).hexdigest()}
             request = directory / (name + ".json")
@@ -366,7 +408,9 @@ def check(platform: str, *, image: str | None = None) -> dict:
             if outcome == "missing":
                 mounts.append((empty, "/var/lib/clamav"))
             arguments = ["-c", DETECTION_PROGRAM] if outcome == "detected" else ["/opt/document/processor.py", "/tmp/request.json"]
+            _progress("case_execution", case=name)
             code, raw = container(docker, image, platform, arguments, mounts)
+            _progress("case_validation", case=name, exit_code=code)
             result = json.loads(raw)
             if outcome == "detected":
                 if code or result != {"eicar_detected": True, "processor_refused": True}:
@@ -382,11 +426,16 @@ def check(platform: str, *, image: str | None = None) -> dict:
                 raise DocumentImageError()
             observations.append({"case": name, "outcome": outcome, "passed": True,
                                  **({"scan": result["scan"]} if outcome == "clean" else {})})
+            _progress("case_validation", case=name, exit_code=code, completed_cases=len(observations))
+        _progress("layout_corpus")
         for name, payload, binding in docx_layout_corpus(image):
+            _progress("case_request", case=name)
             request = directory / (name + ".json")
             request.write_bytes(payload)
             request.chmod(0o444)
+            _progress("case_execution", case=name)
             code, raw = container(docker, image, platform, ["-c", DOCX_LAYOUT_PROGRAM], [(request, "/tmp/request.json")])
+            _progress("case_validation", case=name, exit_code=code)
             result = json.loads(raw)
             if any(type(result.get(key)) is not type(value) or result.get(key) != value for key, value in binding.items()):
                 raise DocumentImageError()
@@ -402,6 +451,9 @@ def check(platform: str, *, image: str | None = None) -> dict:
                 raise DocumentImageError()
             else:
                 layout_observations.append({"case": name, "passed": True, "reason": result["reason"]})
+            _progress("case_validation", case=name, exit_code=code,
+                      completed_cases=len(observations) + len(layout_observations))
+    _progress("source_recheck")
     if source_hashes() != hashes:
         raise DocumentImageError()
     return {"scope": "local_native_docker_only", "cloud_run_isolation_proven": False,
@@ -417,15 +469,19 @@ def main() -> None:
     parser.add_argument("--image-id", help="Reuse only an immutable ID with exact current source labels/bytes.")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
+    token = _FAILURE.set({"stage": "setup", "completed_cases": 0})
     try:
         report = json.dumps(check(args.platform, image=args.image_id), sort_keys=True, indent=2) + "\n"
+        _progress("report_write")
         if args.output:
             with args.output.open("x", encoding="utf-8") as stream:
                 stream.write(report)
         print(report, end="")
     except Exception:
-        print(json.dumps({"error": ERROR}))
+        print(json.dumps(_failure_report()))
         raise SystemExit(1) from None
+    finally:
+        _FAILURE.reset(token)
 
 
 if __name__ == "__main__":
