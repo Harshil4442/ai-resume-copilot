@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import contextlib
+import contextvars
 import hashlib
 import hmac
 import json
@@ -39,8 +40,109 @@ class InspectionDenied(ValueError):
         super().__init__(ERROR)
 
 
+class _RunDeadline(InspectionDenied):
+    pass
+
+
+_RUN_OUTCOMES = frozenset({"pending", "returned", "failed", "deadline", "unexpected_exit", "reap_failed"})
+_DIAGNOSTIC_PHASES = frozenset({"admission", "launcher", "validation", "processor", "cleanup", "response"})
+_VALIDATION_PHASES = frozenset({"not_started", "decode", "binding", "outcome", "complete"})
+_PROCESSOR_OUTCOMES = frozenset({"not_validated", "clean", "refused", "unavailable"})
+
+
+def _diagnostic_code(code: object) -> int | None:
+    return code if type(code) is int and -255 <= code <= 255 else None
+
+
+def _elapsed_ms(start: float) -> int:
+    return min(120000, max(0, int((time.monotonic() - start) * 1000)))
+
+
+class _RequestDiagnostic:
+    """HTTP-only operational fields; never copy input, output or exception text."""
+
+    def __init__(self) -> None:
+        self.identifier = uuid.uuid4().hex
+        self.started = time.monotonic()
+        self.phase = "admission"
+        self.failure_phase: str | None = None
+        self.validation = "not_started"
+        self.processor = "not_validated"
+        self.launcher = "not_started"
+        self.launcher_code: int | None = None
+        self.launcher_elapsed_ms: int | None = None
+        self.cleanup = "not_required"
+        self.cleanup_code: int | None = None
+        self.cleanup_elapsed_ms: int | None = None
+        self.run_started = self.started
+
+    def fail(self, phase: str, *, override: bool = False) -> None:
+        if self.failure_phase is None or override:
+            self.failure_phase = phase
+
+    def begin_run(self, *, cleanup: bool = False) -> None:
+        self.phase = "cleanup" if cleanup else "launcher"
+        self.run_started = time.monotonic()
+        if cleanup:
+            self.cleanup = "pending"
+        else:
+            self.launcher = "pending"
+
+    def end_run(self, code: object = None, error: BaseException | None = None, *, cleanup: bool = False) -> None:
+        outcome = "returned"
+        if error is not None:
+            outcome = "deadline" if isinstance(error, (_RunDeadline, subprocess.TimeoutExpired)) else "failed"
+            if isinstance(error, _LauncherRefused):
+                outcome, code = error.outcome, error.code
+            self.fail("cleanup" if cleanup else "launcher", override=cleanup)
+        if cleanup:
+            self.cleanup, self.cleanup_code = outcome, _diagnostic_code(code)
+            self.cleanup_elapsed_ms = _elapsed_ms(self.run_started)
+        else:
+            self.launcher, self.launcher_code = outcome, _diagnostic_code(code)
+            self.launcher_elapsed_ms = _elapsed_ms(self.run_started)
+
+    def emit(self) -> None:
+        if self.failure_phase is None:
+            return
+        try:
+            for value, allowed in (
+                (self.failure_phase, _DIAGNOSTIC_PHASES), (self.validation, _VALIDATION_PHASES),
+                (self.processor, _PROCESSOR_OUTCOMES), (self.launcher, _RUN_OUTCOMES | {"not_started"}),
+                (self.cleanup, _RUN_OUTCOMES | {"not_required"}),
+            ):
+                if type(value) is not str or value not in allowed:
+                    return
+            if type(self.identifier) is not str or re.fullmatch(r"[a-f0-9]{32}", self.identifier) is None:
+                return
+            for code in (self.launcher_code, self.cleanup_code):
+                if code is not None and _diagnostic_code(code) is None:
+                    return
+            for elapsed in (self.launcher_elapsed_ms, self.cleanup_elapsed_ms):
+                if elapsed is not None and (type(elapsed) is not int or not 0 <= elapsed <= 120000):
+                    return
+            event = {
+                "event": "document_inspection_failure", "version": 1,
+                "diagnostic_id": self.identifier, "phase": self.failure_phase,
+                "validation": self.validation, "processor": self.processor,
+                "launcher": self.launcher, "launcher_code": self.launcher_code,
+                "launcher_elapsed_ms": self.launcher_elapsed_ms,
+                "cleanup": self.cleanup, "cleanup_code": self.cleanup_code,
+                "cleanup_elapsed_ms": self.cleanup_elapsed_ms, "elapsed_ms": _elapsed_ms(self.started),
+            }
+            output = json.dumps(event, separators=(",", ":"), allow_nan=False) + "\n"
+            if len(output.encode("utf-8")) <= 1024:
+                sys.stderr.write(output)
+        except Exception:
+            # Observability cannot change admission or a release refusal.
+            pass
+
+
+_REQUEST_DIAGNOSTIC = contextvars.ContextVar[_RequestDiagnostic | None]("document_request_diagnostic", default=None)
+
+
 def _expire_run(*_):
-    raise InspectionDenied()
+    raise _RunDeadline()
 
 
 @contextlib.contextmanager
@@ -85,9 +187,11 @@ os.execv(sys.argv[2],sys.argv[2:])
 
 
 class _LauncherRefused(InspectionDenied):
-    def __init__(self, authorized: bool):
+    def __init__(self, authorized: bool, *, code: object = None, outcome: str = "failed") -> None:
         super().__init__()
         self.authorized = authorized
+        self.code = _diagnostic_code(code)
+        self.outcome = outcome if outcome in _RUN_OUTCOMES else "failed"
 
 
 class _CreationState(TypedDict):
@@ -150,6 +254,8 @@ def _run(arguments: list[str], *, timeout: int | float, limit: int,
             or timeout != 5 or limit != 65536):
         raise InspectionDenied()
     child = None
+    code = None
+    failure = "failed"
     authorized = False
     gate_write = None
     creator_started = False
@@ -294,14 +400,17 @@ def _run(arguments: list[str], *, timeout: int | float, limit: int,
                     raise InspectionDenied()
                 code = child.wait(timeout=remaining)
                 if code not in ((0, 1, 2) if allow_outcome else (0,)):
+                    failure = "unexpected_exit"
                     raise InspectionDenied()
             return code, bytes(output)
-    except BaseException:
+    except BaseException as exc:
         if reserved and not creator_started:
             with _CREATION_LOCK:
                 _CREATION_PENDING.clear()
                 _CREATION_FAILED.set()
-        raise _LauncherRefused(authorized) from None
+        if isinstance(exc, (_RunDeadline, subprocess.TimeoutExpired)):
+            failure = "deadline"
+        raise _LauncherRefused(authorized, code=code, outcome=failure) from None
     finally:
         with state_lock:
             state["cancelled"] = True
@@ -319,7 +428,7 @@ def _run(arguments: list[str], *, timeout: int | float, limit: int,
         if child is not None and not _cleanup_child(child, authorized=authorized):
             with _CREATION_LOCK:
                 _CREATION_FAILED.set()
-            raise _LauncherRefused(authorized) from None
+            raise _LauncherRefused(authorized, code=code, outcome="reap_failed") from None
         # A worker that never returns remains quarantined. Constructor time is
         # not unbounded on the request thread, and its gate never receives data.
 
@@ -362,6 +471,7 @@ def _request_identity(payload: bytes) -> tuple[str, int, str]:
 
 
 def inspect_in_sandbox(payload: bytes) -> dict:
+    diagnostic = _REQUEST_DIAGNOSTIC.get()
     image, policy = configuration()
     if not os.path.isfile(SANDBOX) or not os.access(SANDBOX, os.X_OK) or not 0 < len(payload) <= MAX_REQUEST:
         raise InspectionDenied()
@@ -372,14 +482,24 @@ def inspect_in_sandbox(payload: bytes) -> dict:
     name = "document-" + uuid.uuid4().hex
     cleanup_required = True
     try:
+        if diagnostic is not None:
+            diagnostic.begin_run()
         code, output = _run([SANDBOX, "do", "--sandbox-name=" + name, "--write", "--",
             "/usr/local/bin/python3", "-I", "/opt/document/processor.py", "--stdin"],
             timeout=55, limit=MAX_OUTPUT, allow_outcome=True, input_bytes=payload)
+        if diagnostic is not None:
+            diagnostic.end_run(code)
+            diagnostic.phase = "validation"
+            diagnostic.validation = "decode"
         result = json.loads(output, object_pairs_hook=_pairs)
+        if diagnostic is not None:
+            diagnostic.validation = "binding"
         if (type(result) is not dict or type(result.get("version")) is not int or result["version"] != 1
                 or result.get("sha256") != sha256 or result.get("source_format") != kind
                 or type(result.get("size_bytes")) is not int or result["size_bytes"] != size):
             raise InspectionDenied()
+        if diagnostic is not None:
+            diagnostic.validation = "outcome"
         if code in {1, 2}:
             if (set(result) != {"version", "sha256", "size_bytes", "source_format", "error"}
                     or result["error"] != (ERROR if code == 1 else UNAVAILABLE)):
@@ -395,17 +515,39 @@ def inspect_in_sandbox(payload: bytes) -> dict:
         result.update(worker_image=image, policy_sha256=policy)
         if len(json.dumps(result, allow_nan=False).encode()) > MAX_OUTPUT:
             raise InspectionDenied()
+        if diagnostic is not None:
+            diagnostic.validation = "complete"
+            diagnostic.processor = "refused" if code == 1 else "unavailable" if code == 2 else "clean"
+            if code != 0:
+                diagnostic.fail("processor")
         return result
     except _LauncherRefused as failure:
+        if diagnostic is not None:
+            diagnostic.end_run(error=failure)
         cleanup_required = failure.authorized
         raise InspectionDenied() from None
-    except Exception:
+    except Exception as exc:
+        if diagnostic is not None:
+            if diagnostic.phase == "launcher":
+                diagnostic.end_run(error=exc)
+            else:
+                diagnostic.fail("validation")
         raise InspectionDenied() from None
     finally:
         # Force cleanup after timeouts/nonzero do as well. Any failed
         # cleanup refuses release; no fallback or mutation retry.
         if cleanup_required:
-            _run([SANDBOX, "delete", name, "--force"], timeout=5, limit=65536, cleanup=True)
+            if diagnostic is not None:
+                diagnostic.begin_run(cleanup=True)
+            try:
+                cleanup_code, _ = _run([SANDBOX, "delete", name, "--force"], timeout=5, limit=65536, cleanup=True)
+            except BaseException as exc:
+                if diagnostic is not None:
+                    diagnostic.end_run(error=exc, cleanup=True)
+                raise
+            else:
+                if diagnostic is not None:
+                    diagnostic.end_run(cleanup_code, cleanup=True)
 
 
 
@@ -464,6 +606,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         locked = False
+        diagnostic = _RequestDiagnostic()
+        diagnostic_token = _REQUEST_DIAGNOSTIC.set(diagnostic)
         try:
             _, policy = configuration()
             lengths = self.headers.get_all("Content-Length", [])
@@ -483,13 +627,19 @@ class Handler(BaseHTTPRequestHandler):
             self._finish_request_read(admit=True)
             result = inspect_in_sandbox(payload)
             status = 422 if result.get("error") == ERROR else 503 if result.get("error") == UNAVAILABLE else 200
+            diagnostic.phase = "response"
             self._reply(status, result)
         except Exception:
+            diagnostic.fail(diagnostic.phase)
             self.close_connection = True
             self._reply(503, {"error": ERROR})
         finally:
-            if locked:
-                LOCK.release()
+            try:
+                if locked:
+                    LOCK.release()
+            finally:
+                _REQUEST_DIAGNOSTIC.reset(diagnostic_token)
+                diagnostic.emit()
 
     def do_GET(self):
         self._reply(404, {"error": ERROR})

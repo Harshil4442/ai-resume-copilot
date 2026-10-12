@@ -52,6 +52,19 @@ evidence, not AMD64 or Cloud Run isolation proof.
 The V3 policy digest was `45c020e5134eeae2159cef5e1fa423249b8f76a4214e6dd7ed3b48b7bb332b33`.
 The updated current policy is recorded below.
 
+## HTTP failure diagnostics
+
+The 12 October source revision emits one bounded `document_inspection_failure` JSON
+event on stderr for rejected or unavailable HTTP requests. Its independent random
+diagnostic ID, fixed phase/outcome enums, numeric launcher exits and phase durations
+distinguish processor unavailability, protocol validation and cleanup failures.
+Each event is at most 1,024 bytes. Resume text, source hashes, filenames, sandbox
+names, credentials, raw child output and exception messages are excluded. Native
+inspection outside the HTTP handler emits no new event. Public response bodies,
+deadlines and required cleanup remain unchanged; cleanup failure still prevents
+release. Source tests verify those boundaries; cloud diagnostics and image
+acceptance for this revision remain pending. The inspection route is `/inspect`.
+
 ## Validated receipts and fresh definition acquisition
 
 `inspect_resume_document_with_receipt` makes one authenticated inspection request and
@@ -78,7 +91,7 @@ container metadata. The preceding published `ab5cb5d9` passes all five hosted CI
 those published proofs do not certify the later receipt/definition changes. At that earlier checkpoint, exact-source hosted CI and native Cloud Run isolation remained required. Published `a162890ff50a606f9c23493ea11266d32ad416d6` later passed all five hosted CI jobs; see the delivery checkpoint. That does not certify this new private synchronous-call proposal or close native isolation acceptance.
 
 [`policy.json`](policy.json) is canonical sorted compact UTF-8 JSON with a terminal
-newline. The bounded-stdin version 2 policy has SHA-256 `96d2991927b3ffec6d24310ef8e9a4555bd38ccfb3479d44a795d2e43c9d38a0`. Its service SHA-256 is `fc6e18d159b2c68cbf33b1bb066e0757c300002792d20018f39b4e7405e5b9db` and processor SHA-256 is `8a2191b33503ac647a2ed3bbc50bd1230536c7cdb474b39c49f9f567f6e6a6d8`; the other five build-source hashes remain unchanged. The previous archive-transport policy was `e7d6680ee78da0cda5a8e4d9abfaf178ce5684b8b55ebcc5c168b69e3ece8e34`; its native prototype evidence does not certify this source change.
+newline. The bounded-stdin version 2 policy, renewed for the HTTP diagnostics source, has SHA-256 `fa87e5b68bf16b2c5e181f851377edfd0cd962624691f3e0ddfb52a3ab2f8e90`. Its service SHA-256 is `59152c644e39846211a4a59a40f0db77a3672c2f0c3a337f4e1ec6746e1fc963` and processor SHA-256 is `8a2191b33503ac647a2ed3bbc50bd1230536c7cdb474b39c49f9f567f6e6a6d8`; the other five build-source hashes remain unchanged. The previous archive-transport policy was `e7d6680ee78da0cda5a8e4d9abfaf178ce5684b8b55ebcc5c168b69e3ece8e34`; its native prototype evidence does not certify this source change.
 It binds the seven build sources, supported PDF/DOCX limits, outcomes and required native
 isolation controls. Before activation, independently match actual source, image bytes,
 revision configuration and acceptance evidence to this artifact. Its requirements and

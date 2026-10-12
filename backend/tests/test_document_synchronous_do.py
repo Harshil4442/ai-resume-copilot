@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import http.client
+import io
 import json
 import os
 import re
@@ -154,7 +155,8 @@ def test_clean_one_shot_result_must_bind_exact_stdin_bytes(
 @pytest.mark.parametrize("code,status", [(0, 200), (1, 422), (2, 503)])
 @pytest.mark.parametrize("delete_fails", [False, True])
 def test_http_release_requires_coherent_one_shot_outcome_and_cleanup(
-    service: Any, monkeypatch: pytest.MonkeyPatch, code: int, status: int, delete_fails: bool
+    service: Any, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    code: int, status: int, delete_fails: bool
 ) -> None:
     content = b"original synthetic source bytes"
     outcome = result_for(content) if code == 0 else private_outcome(content, code)
@@ -194,6 +196,164 @@ def test_http_release_requires_coherent_one_shot_outcome_and_cleanup(
         server.server_close()
         thread.join(timeout=3)
     assert not thread.is_alive()
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    if code == 0 and not delete_fails:
+        assert captured.err == ""
+    else:
+        event = _diagnostic_event(captured.err)
+        assert event["phase"] == ("cleanup" if delete_fails else "processor")
+        assert event["launcher"] == "returned" and event["launcher_code"] == code
+        assert event["processor"] == {0: "clean", 1: "refused", 2: "unavailable"}[code]
+        assert event["cleanup"] == ("failed" if delete_fails else "returned")
+        assert event["cleanup_code"] == (None if delete_fails else 0)
+        assert event["validation"] == "complete"
+        assert hashlib.sha256(content).hexdigest() not in captured.err
+        assert "registry.invalid" not in captured.err and "original synthetic" not in captured.err
+
+
+def _diagnostic_event(output: str) -> dict[str, Any]:
+    assert len(output.encode()) <= 1024 and len(output.splitlines()) == 1
+    event = json.loads(output)
+    assert set(event) == {
+        "event", "version", "diagnostic_id", "phase", "validation", "processor",
+        "launcher", "launcher_code", "launcher_elapsed_ms", "cleanup", "cleanup_code",
+        "cleanup_elapsed_ms", "elapsed_ms",
+    }
+    assert event["event"] == "document_inspection_failure" and event["version"] == 1
+    assert re.fullmatch(r"[a-f0-9]{32}", event["diagnostic_id"])
+    for field in ("launcher_code", "cleanup_code"):
+        assert event[field] is None or type(event[field]) is int and -255 <= event[field] <= 255
+    for field in ("launcher_elapsed_ms", "cleanup_elapsed_ms", "elapsed_ms"):
+        assert event[field] is None or type(event[field]) is int and 0 <= event[field] <= 120000
+    return event
+
+
+def _request_handler(service: Any, content: bytes) -> Any:
+    handler = service.Handler.__new__(service.Handler)
+    handler.path = "/inspect"
+    handler.headers = http.client.HTTPMessage()
+    request = payload(content)
+    for key, value in {
+        "Content-Type": "application/json", "Content-Length": str(len(request)),
+        "X-HireWiz-Document-Policy": "b" * 64,
+    }.items():
+        handler.headers[key] = value
+    handler.rfile = io.BytesIO(request)
+    handler._finish_request_read = lambda **_: None
+    return handler
+
+
+@pytest.mark.parametrize("failure,phase,validation", [
+    ("decode", "validation", "decode"), ("binding", "validation", "binding"),
+    ("outcome", "validation", "outcome"), ("unknown_launcher", "launcher", "not_started"),
+    ("deadline", "launcher", "not_started"),
+])
+def test_http_failure_diagnostic_never_copies_document_output_or_exception_details(
+    service: Any, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    failure: str, phase: str, validation: str,
+) -> None:
+    content = b"SECRET_DOCUMENT_TEXT email@example.invalid /private/source"
+    secret = "SECRET_OUTPUT_TOKEN /private/sandbox stderr-marker"
+    outcome = private_outcome(content, 1)
+    if failure == "binding":
+        outcome["sha256"] = "c" * 64
+    if failure == "outcome":
+        outcome["error"] = secret
+    calls: list[str] = []
+
+    def run(args: list[str], **options: Any) -> tuple[int, bytes]:
+        calls.append(args[1])
+        if args[1] == "delete":
+            return 0, b""
+        if failure == "unknown_launcher":
+            raise service._LauncherRefused(True)
+        if failure == "deadline":
+            raise subprocess.TimeoutExpired(secret, 55, output=content, stderr=secret.encode())
+        return 1, secret.encode() if failure == "decode" else json.dumps(outcome).encode()
+
+    monkeypatch.setattr(service, "_run", run)
+    handler = _request_handler(service, content)
+    replies: list[tuple[int, dict[str, Any]]] = []
+    handler._reply = lambda status, body: replies.append((status, body))
+    handler.do_POST()
+    assert replies == [(503, {"error": "document_inspection_refused"})]
+    assert calls == ["do", "delete"] and service._REQUEST_DIAGNOSTIC.get() is None
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    event = _diagnostic_event(captured.err)
+    assert event["phase"] == phase and event["validation"] == validation
+    assert event["processor"] == "not_validated" and event["cleanup"] == "returned"
+    assert event["launcher"] == ("deadline" if failure == "deadline" else "failed" if failure == "unknown_launcher" else "returned")
+    assert event["launcher_code"] == (None if phase == "launcher" else 1)
+    for forbidden in (secret, content.decode(), hashlib.sha256(content).hexdigest(), "email@", "/private/", "stderr-marker"):
+        assert forbidden not in captured.err
+
+
+@pytest.mark.parametrize("code", [0, 1, 2])
+def test_native_inspection_without_http_context_keeps_stdout_and_stderr_unchanged(
+    service: Any, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], code: int,
+) -> None:
+    content = b"original synthetic source bytes"
+    outcome = result_for(content) if code == 0 else private_outcome(content, code)
+    monkeypatch.setattr(service, "_run", lambda args, **_: (code, json.dumps(outcome).encode()) if args[1] == "do" else (0, b""))
+    assert service.inspect_in_sandbox(payload(content))["sha256"] == hashlib.sha256(content).hexdigest()
+    captured = capsys.readouterr()
+    assert captured.out == captured.err == ""
+
+
+def test_reply_failure_restores_enclosing_request_context_and_emits_one_safe_event(
+    service: Any, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    content = b"original synthetic source bytes"
+    handler = _request_handler(service, content)
+    monkeypatch.setattr(service, "inspect_in_sandbox", lambda _: result_for(content))
+    replies: list[tuple[int, dict[str, Any]]] = []
+
+    def reply(status: int, body: dict[str, Any]) -> None:
+        if status == 200:
+            raise OSError("SECRET_RESPONSE_TOKEN /private/path")
+        replies.append((status, body))
+
+    handler._reply = reply
+    enclosing = service._RequestDiagnostic()
+    token = service._REQUEST_DIAGNOSTIC.set(enclosing)
+    try:
+        handler.do_POST()
+        assert service._REQUEST_DIAGNOSTIC.get() is enclosing
+    finally:
+        service._REQUEST_DIAGNOSTIC.reset(token)
+    assert replies == [(503, {"error": "document_inspection_refused"})]
+    captured = capsys.readouterr()
+    assert captured.out == "" and "SECRET_RESPONSE_TOKEN" not in captured.err
+    event = _diagnostic_event(captured.err)
+    assert event["phase"] == "response" and event["diagnostic_id"] != enclosing.identifier
+
+
+@pytest.mark.parametrize("field,value", [
+    ("failure_phase", "SECRET_ENUM_TOKEN"), ("processor", "SECRET_ENUM_TOKEN"),
+    ("launcher_code", True), ("cleanup_elapsed_ms", "SECRET_ENUM_TOKEN"),
+])
+def test_diagnostic_emitter_refuses_unapproved_fields(
+    service: Any, capsys: pytest.CaptureFixture[str], field: str, value: Any,
+) -> None:
+    diagnostic = service._RequestDiagnostic()
+    diagnostic.fail("launcher")
+    setattr(diagnostic, field, value)
+    diagnostic.emit()
+    captured = capsys.readouterr()
+    assert captured.out == captured.err == ""
+
+
+def test_unexpected_launcher_exit_retains_only_safe_numeric_metadata(
+    service: Any, capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(service._LauncherRefused) as caught:
+        service._run([sys.executable, "-I", "-c", "print('SECRET_STDOUT');raise SystemExit(3)"], timeout=2, limit=100)
+    assert caught.value.code == 3 and caught.value.outcome == "unexpected_exit"
+    assert str(caught.value) == "document_inspection_refused" and caught.value.__cause__ is None
+    captured = capsys.readouterr()
+    assert captured.out == captured.err == ""
 
 
 def test_supervisor_still_uses_private_minimum_environment_and_owned_process_group(
