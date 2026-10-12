@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import ast
 import importlib.util
+import io
 import json
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+from zipfile import ZIP_DEFLATED, ZipFile
 
 
 def load_helper():
@@ -187,7 +190,7 @@ class FailureDiagnosticsTests(unittest.TestCase):
         compile(m.DOCX_LINK_PROGRAM, "fixed_link_diagnostic", "exec")
         result = self.fit_result()
         result["layout"].update(pages=2, unchanged_links=0)
-        observed = dict(zip(m._LINK_FIELDS, (1, 1, 0, True, True, False), strict=True))
+        observed = dict(zip(m._LINK_FIELDS, (1, 1, 0, True, True, False, True, True, 1, True, 1, True, True), strict=True))
         for extra in ({}, {"URI": "PRIVATE_URI_AND_BODY"}):
             with tempfile.TemporaryDirectory() as temporary:
                 request = Path(temporary) / "request.json"
@@ -218,6 +221,45 @@ class FailureDiagnosticsTests(unittest.TestCase):
                 child.assert_not_called()
                 m._FAILURE.get()["docx_link_observation"] = m._DocxLinkObservation(1, 0.1, tuple(observed.values()))
                 self.assertNotIn("link_diagnostic", m._failure_report())
+
+    def test_observational_style_copy_changes_only_two_fixed_fixture_parts(self):
+        from lxml import etree
+        native = ast.parse(m.DOCX_LINK_PROGRAM)
+        selected = [n for n in native.body if isinstance(n, ast.FunctionDef) and n.name in {"xml", "styled_copy"}]
+        namespace = {"io": io, "etree": etree, "ZipFile": ZipFile, "ZIP_DEFLATED": ZIP_DEFLATED,
+                     "W": "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}",
+                     "R": "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"}
+        exec(compile(ast.Module(body=selected, type_ignores=[]), "pure_style_copy", "exec"), namespace)
+        fixture = ast.parse(Path(m.__file__).read_text())
+        constructor = next(n for n in fixture.body if isinstance(n, ast.FunctionDef) and n.name == "docx_layout_corpus")
+        imports = [n for n in constructor.body if isinstance(n, ast.ImportFrom) and n.module.startswith("docx")]
+        start = next(i for i, n in enumerate(constructor.body) if isinstance(n, ast.Assign)
+                     and any(isinstance(t, ast.Name) and t.id == "original" for t in n.targets))
+        end = next(i for i, n in enumerate(constructor.body) if isinstance(n, ast.Assign)
+                   and any(isinstance(t, ast.Name) and t.id == "source" for t in n.targets))
+        exec(compile(ast.Module(body=imports + constructor.body[start:end + 1], type_ignores=[]),
+                     "pure_fixed_fixture", "exec"), namespace)
+        source = namespace["source"]
+        variant = namespace["styled_copy"](source)
+        with ZipFile(io.BytesIO(source)) as archive:
+            before = {n: archive.read(n) for n in archive.namelist()}
+        with ZipFile(io.BytesIO(variant)) as archive:
+            after = {n: archive.read(n) for n in archive.namelist()}
+        self.assertEqual(set(before), set(after))
+        self.assertEqual({n for n in before if before[n] != after[n]}, {"word/document.xml", "word/styles.xml"})
+        w = namespace["W"]
+        self.assertEqual([n.text for n in etree.fromstring(before["word/document.xml"]).iter(w + "t")],
+                         [n.text for n in etree.fromstring(after["word/document.xml"]).iter(w + "t")])
+        self.assertIsNotNone(etree.fromstring(after["word/document.xml"]).find(".//" + w + "rStyle[@" + w + "val='Hyperlink']"))
+        with self.assertRaises(ValueError):
+            namespace["styled_copy"](variant)
+        before["word/document.xml"] = before["word/document.xml"].replace(b"Portfolio", b"OtherText")
+        buffer = io.BytesIO()
+        with ZipFile(buffer, "w") as archive:
+            for name, data in before.items():
+                archive.writestr(name, data)
+        with self.assertRaises(ValueError):
+            namespace["styled_copy"](buffer.getvalue())
 
 
 if __name__ == "__main__":

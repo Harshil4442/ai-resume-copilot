@@ -82,7 +82,11 @@ class _DocxFitMismatch(NamedTuple):
 
 
 _LINK_FIELDS = ("native_hyperlinks", "imported_hyperlinks", "pdf_link_annotations",
-                "native_uri_match", "imported_uri_match", "pdf_uri_match")
+                "native_uri_match", "imported_uri_match", "pdf_uri_match", "imported_label_match",
+                "pdf_label_text_present", "pdf_label_glyph_occurrences", "pdf_label_in_page",
+                "styled_pdf_link_annotations", "styled_pdf_uri_match", "styled_fixed_label_present")
+_LINK_COUNT_INDEXES = (0, 1, 2, 8, 10)
+_LINK_BOOL_INDEXES = (3, 4, 5, 6, 7, 9, 11, 12)
 
 
 class _DocxLinkObservation(NamedTuple):
@@ -126,12 +130,13 @@ p=subprocess.run([sys.executable,"-I","/opt/document/processor.py","--docx-layou
 if len(p.stdout)>32768 or p.stderr: raise SystemExit(3)
 sys.stdout.buffer.write(p.stdout);raise SystemExit(p.returncode)
 '''
-DOCX_LINK_PROGRAM = '''import io,json,pathlib,sys,tempfile,time
-from zipfile import ZipFile
+DOCX_LINK_PROGRAM = '''import io,json,math,pathlib,re,sys,tempfile,time
+from zipfile import ZIP_DEFLATED,ZipFile
 sys.path.insert(0,"/opt/document")
 import processor,docx_renderer
 from lxml import etree
 from pypdf import PdfReader
+import pdfplumber
 URI="https://example.test/portfolio"
 W="{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 R="{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
@@ -144,6 +149,72 @@ def xml(data):
  nodes=list(tree.iter())
  if len(nodes)>100000 or any(len(list(n.iterancestors()))>64 for n in nodes): raise ValueError()
  return tree
+def pdf_observe(pdf):
+ processor.validate_pdf(pdf)
+ reader=PdfReader(io.BytesIO(pdf),strict=True)
+ annotations=[]
+ text_present=False
+ for page in reader.pages:
+  text_present=text_present or "Portfolio" in (page.extract_text() or "")
+  for item in page.get("/Annots",[]):
+   item=item.get_object()
+   if item.get("/Subtype")=="/Link": annotations.append(item)
+ targets=[]
+ for item in annotations:
+  action=item.get("/A")
+  action=action.get_object() if action is not None else {}
+  targets.append(action.get("/S")=="/URI" and action.get("/URI")==URI)
+ occurrences=0;in_page=True;total=0
+ with pdfplumber.open(io.BytesIO(pdf)) as document:
+  for page in document.pages:
+   chars=page.chars;total+=len(chars)
+   if total>200000: raise ValueError()
+   glyphs=[(letter,char) for char in chars for letter in char["text"]]
+   if len(glyphs)>200000: raise ValueError()
+   for match in re.finditer("Portfolio","".join(letter for letter,char in glyphs)):
+    occurrences+=1
+    for letter,char in glyphs[match.start():match.end()]:
+     box=tuple(float(char[k]) for k in ("x0","top","x1","bottom"))
+     in_page=in_page and all(math.isfinite(n) for n in box) and 0<=box[0]<=box[2]<=page.width and 0<=box[1]<=box[3]<=page.height
+ if not 0<=len(annotations)<=100 or not 0<=occurrences<=100: raise ValueError()
+ return len(annotations),bool(targets) and all(targets),text_present,occurrences,occurrences>0 and in_page
+
+def styled_copy(source):
+ with ZipFile(io.BytesIO(source)) as archive:
+  infos=archive.infolist();parts={entry.filename:archive.read(entry) for entry in infos}
+ expected_parts={"[Content_Types].xml","_rels/.rels","docProps/core.xml","docProps/app.xml","docProps/thumbnail.jpeg",
+  "word/document.xml","word/_rels/document.xml.rels","word/styles.xml","word/stylesWithEffects.xml","word/settings.xml",
+  "word/webSettings.xml","word/fontTable.xml","word/theme/theme1.xml","word/numbering.xml","customXml/item1.xml",
+  "customXml/_rels/item1.xml.rels","customXml/itemProps1.xml"}
+ if set(parts)!=expected_parts: raise ValueError()
+ document=xml(parts["word/document.xml"]);styles=xml(parts["word/styles.xml"])
+ body=document.find(W+"body")
+ if body is None or [n.tag for n in body]!=[W+"p"]*6+[W+"sectPr"]: raise ValueError()
+ paragraphs=list(body)[:6]
+ fixed=["Taylor Example","Built scalable systems with Python and SQL.","Reduced API latency by 40% through focused profiling.",
+  "Portfolio","","Original education and second-page running content."]
+ if ["".join(n.text or "" for n in p.iter(W+"t")) for p in paragraphs]!=fixed: raise ValueError()
+ if ["".join(n.text or "" for n in r.iter(W+"t")) for r in paragraphs[1]]!=["Built scalable systems with ","Python"," and ","SQL","."]: raise ValueError()
+ if paragraphs[1][1].find(W+"rPr/"+W+"b") is None or paragraphs[1][3].find(W+"rPr/"+W+"i") is None: raise ValueError()
+ link=paragraphs[3].find(W+"hyperlink")
+ if link is None or len(paragraphs[3])!=1 or set(link.attrib)!={R+"id"} or len(link)!=1 or link[0].tag!=W+"r" or list(link[0].attrib) or [n.tag for n in link[0]]!=[W+"t"] or link[0][0].text!="Portfolio": raise ValueError()
+ if len(list(document.iter(W+"hyperlink")))!=1 or paragraphs[4].find(W+"r/"+W+"br").get(W+"type")!="page": raise ValueError()
+ if styles.tag!=W+"styles" or any(n.get(W+"styleId")=="Hyperlink" for n in styles): raise ValueError()
+ default=[n for n in styles if n.get(W+"styleId")=="DefaultParagraphFont" and n.get(W+"type")=="character"]
+ normal=[n for n in styles if n.get(W+"styleId")=="Normal"]
+ if len(default)!=1 or len(normal)!=1 or normal[0].find(W+"rPr/"+W+"rFonts").get(W+"ascii")!="Cambria" or normal[0].find(W+"rPr/"+W+"sz").get(W+"val")!="22": raise ValueError()
+ style=etree.SubElement(styles,W+"style",{W+"type":"character",W+"styleId":"Hyperlink"})
+ etree.SubElement(style,W+"name",{W+"val":"Hyperlink"});etree.SubElement(style,W+"basedOn",{W+"val":"DefaultParagraphFont"})
+ properties=etree.Element(W+"rPr");etree.SubElement(properties,W+"rStyle",{W+"val":"Hyperlink"});link[0].insert(0,properties)
+ parts["word/document.xml"]=etree.tostring(document,xml_declaration=True,encoding="UTF-8",standalone=True)
+ parts["word/styles.xml"]=etree.tostring(styles,xml_declaration=True,encoding="UTF-8",standalone=True)
+ buffer=io.BytesIO()
+ with ZipFile(buffer,"w",compression=ZIP_DEFLATED) as archive:
+  for entry in infos:archive.writestr(entry,parts[entry.filename])
+ result=buffer.getvalue()
+ if not 0<len(result)<=5*1024**2: raise ValueError()
+ return result
+
 def main():
  deadline=time.monotonic()+55
  with pathlib.Path("/tmp/request.json").open("rb") as stream: payload=stream.read(processor.MAX_REQUEST+1)
@@ -177,22 +248,23 @@ def main():
   O="{urn:oasis:names:tc:opendocument:xmlns:office:1.0}"
   if imported_tree.tag!=O+"document" or imported_tree.get(O+"mimetype")!="application/vnd.oasis.opendocument.text": raise ValueError()
   imported=list(imported_tree.iter(T+"a"))
-  processor.validate_pdf(pdf)
-  reader=PdfReader(io.BytesIO(pdf),strict=True)
-  annotations=[]
-  for page in reader.pages:
-   for item in page.get("/Annots",[]):
-    item=item.get_object()
-    if item.get("/Subtype")=="/Link": annotations.append(item)
-  targets=[]
-  for item in annotations:
-   action=item.get("/A")
-   action=action.get_object() if action is not None else {}
-   targets.append(action.get("/S")=="/URI" and action.get("/URI")==URI)
-  counts=(len(native),len(imported),len(annotations))
-  if any(not 0<=n<=100 for n in counts) or time.monotonic()>=deadline: raise ValueError()
-  print(json.dumps(dict(zip(("native_hyperlinks","imported_hyperlinks","pdf_link_annotations","native_uri_match","imported_uri_match","pdf_uri_match"),
-   (*counts,native_match,bool(imported) and all(n.get(X)==URI for n in imported),bool(targets) and all(targets)),strict=True))))
+  link_count,uri_match,label_text,label_glyphs,label_in_page=pdf_observe(pdf)
+  counts=(len(native),len(imported),link_count)
+  if any(not 0<=n<=100 for n in counts): raise ValueError()
+  variant=styled_copy(source);processor.validate_docx(variant)
+  styled=directory/"styled.docx";styled.write_bytes(variant);styled.chmod(0o600)
+  if deadline-time.monotonic()<35: raise ValueError()
+  processor.scan_original(styled)
+  if styled.read_bytes()!=variant or original.read_bytes()!=source or time.monotonic()>=deadline: raise ValueError()
+  styled_pdf=docx_renderer._render(variant,directory/"styled-pdf-render",deadline=min(deadline,time.monotonic()+10))
+  styled_count,styled_uri,styled_text,styled_glyphs,styled_in_page=pdf_observe(styled_pdf)
+  if styled.read_bytes()!=variant or original.read_bytes()!=source or time.monotonic()>=deadline: raise ValueError()
+  print(json.dumps(dict(zip(("native_hyperlinks","imported_hyperlinks","pdf_link_annotations","native_uri_match","imported_uri_match","pdf_uri_match",
+   "imported_label_match","pdf_label_text_present","pdf_label_glyph_occurrences","pdf_label_in_page",
+   "styled_pdf_link_annotations","styled_pdf_uri_match","styled_fixed_label_present"),
+   (*counts,native_match,bool(imported) and all(n.get(X)==URI for n in imported),uri_match,
+    len(imported)==1 and "".join(imported[0].itertext())=="Portfolio",label_text,label_glyphs,label_in_page,
+    styled_count,styled_uri,styled_text and styled_glyphs>0 and styled_in_page),strict=True))))
 try: main()
 except Exception:
  print(json.dumps({"status":"unavailable"}));raise SystemExit(1) from None
@@ -320,9 +392,9 @@ def _failure_report() -> dict:
         result.update(link_diagnostic_container_calls=observation.container_calls, link_diagnostic_seconds=observation.elapsed,
                       link_diagnostic_status="unavailable")
         values = observation.values
-        if (observation.container_calls == 1 and type(values) is tuple and len(values) == 6
-                and all(type(n) is int and 0 <= n <= 100 for n in values[:3])
-                and all(type(flag) is bool for flag in values[3:])):
+        if (observation.container_calls == 1 and type(values) is tuple and len(values) == len(_LINK_FIELDS)
+                and all(type(n) is int and 0 <= n <= 100 for n in (values[i] for i in _LINK_COUNT_INDEXES))
+                and all(type(flag) is bool for flag in (values[i] for i in _LINK_BOOL_INDEXES))):
             result.update(link_diagnostic_status="observed", link_diagnostic=dict(zip(_LINK_FIELDS, values, strict=True)))
     return result
 
@@ -347,8 +419,8 @@ def _diagnose_docx_links(docker: list[str], image: str, platform: str, request: 
         observed = json.loads(raw)
         if (type(child_code) is int and child_code == 0 and type(observed) is dict
                 and set(observed) == set(_LINK_FIELDS)
-                and all(type(observed[key]) is int and 0 <= observed[key] <= 100 for key in _LINK_FIELDS[:3])
-                and all(type(observed[key]) is bool for key in _LINK_FIELDS[3:])):
+                and all(type(observed[key]) is int and 0 <= observed[key] <= 100 for key in (_LINK_FIELDS[i] for i in _LINK_COUNT_INDEXES))
+                and all(type(observed[key]) is bool for key in (_LINK_FIELDS[i] for i in _LINK_BOOL_INDEXES))):
             values = tuple(observed[key] for key in _LINK_FIELDS)
     except Exception:
         pass
