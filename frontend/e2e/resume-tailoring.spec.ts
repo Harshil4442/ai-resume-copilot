@@ -157,7 +157,7 @@ const failures: { code: string; usage: "released" | "waived"; heading: string; n
   { code: "ResumeLayoutError", usage: "released", heading: legacyHeading, nextStep: legacyNextStep },
   { code: "RuntimeError", usage: "released", heading: legacyHeading, nextStep: legacyNextStep, guidance: null },
   { code: "ResumeLayoutError", usage: "released", guidance: { reason_code: "replacement_does_not_fit", next_action: "shorten_wording" }, heading: "The proposed wording does not fit the original layout.", nextStep: "Use shorter wording in an editable source, or keep your original/custom resume. We will not shrink fonts or rebuild your layout to force this change." },
-  { code: "ResumeLayoutError", usage: "released", guidance: { reason_code: "source_links_protected", next_action: "keep_link_text" }, heading: "A proposed change would alter an existing resume link.", nextStep: "Keep the link label and clickable text unchanged when editing your source, or choose the original/custom resume." },
+  { code: "ResumeLayoutError", usage: "released", guidance: { reason_code: "source_links_protected", next_action: "keep_link_text" }, heading: "A proposed change would alter an existing resume link.", nextStep: "Keep the linked text, destination and placement unchanged. Shorten surrounding edits or choose the original/custom resume." },
   { code: "TailoringOutputError", usage: "waived", guidance: { reason_code: "no_supported_changes", next_action: "use_original_or_custom" }, heading: "No safe, useful changes were found for this role.", nextStep: "You can keep your original resume unchanged, save a source snapshot, or choose a custom file. Review your evidence before requesting new wording." },
 ];
 

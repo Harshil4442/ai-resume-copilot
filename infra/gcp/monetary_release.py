@@ -145,7 +145,7 @@ def runtime_environment(plan: Plan, service: str) -> tuple[dict[str, str], dict[
     env = {**SAFE_ENV, "APP_RELEASE": plan.release,
            "SERVICE_ROLE": "api" if service == SERVICES[0] else "worker"}
     secrets = {"DATABASE_URL": plan.runtime_secret, "HIREWIZ_EXPENSE_POLICY_JSON": plan.expense_secret}
-    removed = (*NATIVE_ENV, *MODEL_ALIASES)
+    removed: tuple[str, ...] = (*NATIVE_ENV, *MODEL_ALIASES)
     if service != SERVICES[0]:
         env["WORKER_LABEL"] = "analysis-worker" if service == SERVICES[1] else "employer-worker"
         env["WORKER_ALLOWED_TOPICS"] = ("analysis.run" if service == SERVICES[1]
