@@ -2,7 +2,7 @@
 # Only deterministic parser/skill/safety helpers are copied; no app config,
 # database, model clients, merchant credentials, source .env or submission code.
 # Cloud Run sandbox launcher is injected only when explicitly enabled there.
-FROM public.ecr.aws/docker/library/python:3.12-slim-bookworm@sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258 AS dependencies
+FROM public.ecr.aws/docker/library/python:3.12-slim-trixie@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1 AS dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends clamav clamav-freshclam \
        libreoffice-writer fontconfig fonts-liberation2 fonts-crosextra-carlito fonts-crosextra-caladea \
     && rm -rf /var/lib/apt/lists/* \

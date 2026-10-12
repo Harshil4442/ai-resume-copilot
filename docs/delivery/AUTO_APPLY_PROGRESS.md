@@ -9,15 +9,16 @@ report the unchanged original estimate and the recorded actual duration.
 
 | Fixed checkpoint | Original estimate of additional active agent work | Status | Actual whole-checkpoint duration |
 |---|---|---|---|
-| Full CI/regressions | 1–3 hours | Last verified baseline `178d8e8`: all five jobs and OpenAPI pass. The DOCX/billing source changes require renewed CI under this same checkpoint | Recorded disjoint elapsed windows: 6 hours 26 minutes 56 seconds, including fixes and CI waits; active time and whole historical duration unavailable |
+| Full CI/regressions | 1–3 hours | Reopened. Source `093cff7`: four jobs pass; backend fails native DOCX hyperlink preservation. Last full-green baseline remains `178d8e8`; current-source backend regressions and OpenAPI are not verified | Historical recorded disjoint windows: 6 hours 26 minutes 56 seconds. Renewal began 12 October at 04:15:39.234304 UTC and remains open; include waits, do not count either window twice |
 | Resume worker output + PDF/DOCX/LaTeX fidelity | 4–8 hours | in progress | Not available; checkpoint not complete |
 | Candidate-reviewed browser integration | 2–6 hours after the approval blocker is resolved | blocked | Not available; checkpoint not complete |
 | Billing costs/failure recovery/load | 2–5 hours | in progress | Not available; checkpoint not complete |
 | Mobile/performance/SEO verification | 1–3 hours | in progress | Not available; checkpoint not complete |
 | GCP/Vercel env deployment/monitor | 2–4 hours | pending | Not available; checkpoint not complete |
 
-The rough subtotal is 12–30 additional active agent hours, excluding the unresolved
-approval wait. It is not a guaranteed full-goal completion deadline. Worldwide job
+The original rough subtotal was 12–30 additional active agent hours, excluding the
+unresolved approval wait. Those estimates have not held and are not a current ETA.
+Worldwide job
 coverage remains unverified, and the complete goal has no defensible ETA yet.
 Historical checkpoint start times were not recorded. Future timing must distinguish
 measured remaining work from the unavailable whole-checkpoint duration; no past time
@@ -30,6 +31,29 @@ and is not counted twice. The other five original checkpoints remain open. Passi
 DOCX custody controls or a disposable PostgreSQL reporting check does not close their
 parent checkpoints; deployed document fidelity, joined application flows and release
 verification still require their own evidence.
+
+Current source `093cff76ced0f2b21262115e54ab581bf8405fd1` has terminal
+[CI run 38249963613](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38249963613):
+browser companion, frontend, security/container and cold-browser journey pass. Backend
+stops at native document acceptance; its runtime suite and OpenAPI are skipped. The
+11 minute 18 second run is a CI attempt, not whole-checkpoint completion time.
+
+The original DOCX fixture retains its visible link text but Writer 7.4 exports no
+clickable annotation. Two genuine exports from the same unchanged native model also
+produce zero links, with identical glyphs, paint and pixels and successful child cleanup.
+That disproves export warming as a remedy; do not repeat it or weaken the one-link
+acceptance check. A newer upstream importer changes unstyled-link handling, but a
+native remedy remains unproven. Original/sealed resume bytes, source layout and exact
+download/upload identity requirements remain in force.
+
+Within the existing billing/deployment checkpoints, source now binds an explicit Gemini
+model/base and numeric model-policy/key references for API and analysis workers; employer
+worker environment omits model material. Eleven focused configuration controls and 85
+release-sequencing regressions pass. This is source evidence only: monetary activation,
+migration, credential retirement and complete environment deployment have not occurred.
+The native external consumer/provider fence verifier remains unavailable, and protected
+browser pairing/lifecycle work remains stopped following automatic approval review.
+No additional whole checkpoint is complete.
 
 Source `68b824254187690d23b80bfe94a54aae6ffd3bdf` has terminal
 [CI run 38141212783](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38141212783):

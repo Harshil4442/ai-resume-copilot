@@ -4,7 +4,7 @@
 
 The 12 October draft adds `POST /validate-docx` to this existing private worker;
 it does not create another service. Its version 3 policy SHA-256 is
-`7b8618af66be182d1bd1e5412d8fd9a6870123ed3335bd3386d7bd0b975a8306`.
+`50aa007f1698326f1a2730ba1ca99e136e9ff16c96f10a3d13d19ba896b5759b`.
 The previously accepted image `8369f7…` and version 2 policy below exclude this
 operation and must not be deployed or described as render validation evidence.
 This draft keeps deployment proof and API wiring disabled pending a new native
@@ -52,6 +52,29 @@ image helper now includes one styled two-page DOCX with a real hyperlink and one
 rendered reflow refusal, in addition to its existing inspector corpus. Actual
 Linux/native results, format guidance, application custody and controlled crash/
 retention evidence remain required; this draft does not close checkpoint 2.
+
+### Upstream Writer hyperlink engine proposal
+
+The 12 October source proposal uses the verified public Python 3.12 slim-trixie
+base index `a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1`.
+It changes the distribution engine, retaining the existing Writer/font packages,
+renderer code, export flags, scanner acquisition, isolation and time limits.
+
+LibreOffice's upstream [tdf#142133 fix](https://github.com/LibreOffice/core/commit/b56678ae967bb1e09b52930a0b1d59a5e68bb7be)
+uses an imported hyperlink run's existing properties to create a named native
+character style, then applies it to the hyperlink. Its PDF regression asserts
+one genuine URI Link annotation. This addresses the older importer's unresolved
+`Default Style` linkage; the 25.2 source includes that importer change. It is
+upstream source evidence, not native acceptance of this worker or every DOCX.
+
+The actual 7.4 same-model experiment produced zero links in both exports while
+source bytes, model state and visible appearance stayed unchanged. Double export
+and custom style aliases are not added to production. The original two-page
+fixture, one-link expectation, rendered reflow refusal and all fidelity guards
+remain unchanged. A new genuine native build must establish its installed Writer
+version/font manifest, corpus results and cleanup before any promotion or API
+wiring. Existing images/policies and historical seals retain their earlier
+identity; the new proposal leaves deployment proof and customer wiring false.
 
 Reviewed 11 October 2026. This private proposal adds bounded stdin transport to the synchronous V3 worker and the current
 `backend/app/services/document_ingestion.py` contract. It is a proposed deployment
