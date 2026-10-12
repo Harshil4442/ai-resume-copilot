@@ -202,10 +202,17 @@ Authenticated replacement credentials, removal of creator ADMIN bridges, provide
 database retirement, the global fence and deployment remain unchecked. The published
 88d source CI/image does not certify the later private V5 bytes.
 
-- [ ] Establish whether old credentials are shared with other applications.
+On 12 October 2026, the owner stated that the database and model API credentials
+are dedicated to HireWiz. This answers the shared-application continuity question;
+it does not prove native credential binding, complete authority coverage,
+replacement isolation or retirement. It grants no approval for critical credential,
+IAM/database authority or production cutover actions.
+
+- [x] Obtain the owner continuity answer: database and model API credentials are dedicated to HireWiz.
 - [ ] Complete native provider/issuer and database writer retirement, with new
   restricted identities and exact secret versions.
-- [ ] Verify a fresh fenced backup and restoration, then migrate through schema 0013.
+- [ ] Verify a fresh fenced backup and restoration, then migrate through schema 0016
+  using the [current monetary chain](MONETARY_CHAIN_0016_2026-10-12.md).
 - [x] Verify exact 1c source CI and returned native image provenance.
 - [x] Verify published commit `88d410e` CI/image on the v6 amended composition; this does not certify later private tooling.
 - [ ] Stage and promote the joined API/workers with admission closed, then independently

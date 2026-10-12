@@ -158,8 +158,9 @@ native provider procedure. A failed ordinary request is not a substitute.
    pre/post checks must protect the release sequence from authority changes; a simple
    advisory lock does not fence noncooperating administrators.
 6. **Continue the existing staged release.** Only then create the post-fence protected
-   backup with exported verified snapshot, run guarded `0010` → `0013`, verify each
-   schema and replacement runtime permissions, and stage/promote exact reviewed images.
+   backup with exported verified snapshot, run guarded `0010` → `0016` using the
+   [current monetary chain](MONETARY_CHAIN_0016_2026-10-12.md), verify each schema
+   and replacement runtime permissions, and stage/promote exact reviewed images.
    Optional AI, native lifecycle and employer autosubmit stay disabled until their
    independent gates pass. Preserve ledgers/old accepted terms on repair or rollback;
    never downgrade liability history or reopen an old credential.
@@ -202,9 +203,12 @@ belongs to model-key retirement. [Webhook validation](https://razorpay.com/docs/
 - [ ] Provider-native deletion/revocation, DB role retirement/session termination and fresh verification.
 - [ ] Verified post-fence backup/restore and the existing guarded migration/deployment sequence.
 
-The owner's currently pending continuity answer should specify whether the legacy
-database/provider credentials serve other legitimate applications and which must remain
-available. Needed access information is nonsecret: which Google projects, Groq/OpenAI
+On 12 October 2026, the owner stated that the database and model API credentials
+are dedicated to HireWiz. The shared-application continuity question is answered.
+This owner statement does not prove native binding, complete authority coverage,
+replacement isolation or retirement, and grants no approval for critical credential,
+IAM/database authority or production cutover actions. All native requirements above
+remain required. Needed access information is nonsecret: which Google projects, Groq/OpenAI
 accounts and Neon organization/project contain those resources, and which existing
 authenticated administrative principal can observe them. Credentials should remain in
 the existing private secret handling; they are not requested in chat or this document.

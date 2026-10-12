@@ -3,6 +3,138 @@ import { createHash, createHmac } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { expect, test, request as requestFactory, type Route } from "@playwright/test";
 
+// Disposable CI lab measurements only. No production instrumentation or field-INP claim.
+type PublicLabState = {
+  supported: string[];
+  lcp: number | null;
+  shifts: { at: number; value: number }[];
+  events: { at: number; duration: number; interactionId: number; name: string }[];
+  truncated: boolean;
+  firstHiddenAt: number | null;
+  observers: PerformanceObserver[];
+};
+type PublicLabWindow = Window & { __hirewizPublicLab?: PublicLabState };
+
+async function measurePublicLab(browser: import("@playwright/test").Browser, baseURL: string, guardExternal: (route: Route) => Promise<void>) {
+  expect(new URL(baseURL).hostname).toBe("127.0.0.1");
+  expect(new URL(baseURL).protocol).toBe("https:");
+  const measurements = [];
+  for (const width of [390, 1440]) for (const path of ["/", "/pricing"]) {
+    const labContext = await browser.newContext({ ignoreHTTPSErrors: true }); // Owned CI loopback TLS only.
+    await labContext.route((url) => url.origin !== baseURL, guardExternal);
+    const labPage = await labContext.newPage();
+    try {
+      await labPage.setViewportSize({ width, height: 900 });
+      await labPage.addInitScript(() => {
+        const state: PublicLabState = { supported: [...PerformanceObserver.supportedEntryTypes],
+          lcp: null, shifts: [], events: [], truncated: false, firstHiddenAt: null, observers: [] };
+        (window as PublicLabWindow).__hirewizPublicLab = state;
+        document.addEventListener("visibilitychange", () => {
+          if (document.visibilityState === "hidden" && state.firstHiddenAt === null) state.firstHiddenAt = performance.now();
+        });
+        for (const type of ["largest-contentful-paint", "layout-shift", "event"]) {
+          if (!state.supported.includes(type)) continue;
+          const receive = (entries: PerformanceEntry[]) => {
+            for (const entry of entries) {
+              if (type === "largest-contentful-paint") state.lcp = entry.startTime;
+              if (type === "layout-shift") {
+                const shift = entry as PerformanceEntry & { hadRecentInput: boolean; value: number };
+                if (!shift.hadRecentInput) {
+                  if (state.shifts.length >= 1024) state.truncated = true;
+                  else state.shifts.push({ at: shift.startTime, value: shift.value });
+                }
+              }
+              if (type === "event") {
+                const event = entry as PerformanceEntry & { interactionId: number };
+                if (event.interactionId > 0) {
+                  if (state.events.length >= 256) state.truncated = true;
+                  else state.events.push({ at: event.startTime, duration: event.duration,
+                    interactionId: event.interactionId, name: event.name });
+                }
+              }
+            }
+          };
+          const observer = new PerformanceObserver((list) => receive(list.getEntries()));
+          observer.observe({ type, buffered: true, ...(type === "event" ? { durationThreshold: 16 } : {}) });
+          // Flush pending entries before reading the bounded result.
+          state.observers.push(observer);
+          Object.assign(observer, { flush: () => receive(observer.takeRecords()) });
+        }
+      });
+      const response = await labPage.goto(`${baseURL}${path}`, { waitUntil: "load" });
+      expect(response?.status()).toBe(200);
+      await expect(labPage.locator("h1")).toHaveCount(1);
+      await expect(labPage.locator("h1")).toBeVisible();
+      await labPage.evaluate(() => document.fonts.ready);
+      // Fixed observation window captures initial rendering/animation after load.
+      await labPage.waitForTimeout(5000);
+      const beforeInteraction = await labPage.evaluate(() => {
+        const state = (window as PublicLabWindow).__hirewizPublicLab!;
+        for (const observer of state.observers) (observer as PerformanceObserver & { flush: () => void }).flush();
+        return { at: performance.now(), lcp: state.lcp, shifts: [...state.shifts], firstHiddenAt: state.firstHiddenAt };
+      });
+      let interaction = "not_sampled_on_pricing";
+      if (path === "/") {
+        if (width === 390) {
+          await labPage.getByRole("button", { name: "Open navigation", exact: true }).click();
+          await expect(labPage.getByRole("navigation", { name: "Mobile navigation" })).toBeVisible();
+          interaction = "trusted_mobile_menu_click";
+        } else {
+          await labPage.getByRole("navigation", { name: "Primary navigation" }).getByRole("link", { name: "Benefits", exact: true }).click();
+          await expect(labPage).toHaveURL(/#benefits$/);
+          interaction = "trusted_benefits_link_click";
+        }
+        await labPage.waitForTimeout(250); // Allow Event Timing delivery after the next paint.
+      }
+      const metrics = await labPage.evaluate(({ beforeInteraction, interaction }) => {
+        const state = (window as PublicLabWindow).__hirewizPublicLab!;
+        for (const observer of state.observers) (observer as PerformanceObserver & { flush: () => void }).flush();
+        const navigation = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
+        let sessionStart = 0, lastShift = 0, sessionScore = 0, cls = 0;
+        for (const shift of beforeInteraction.shifts.sort((a, b) => a.at - b.at)) {
+          if (shift.at - lastShift >= 1000 || shift.at - sessionStart >= 5000) {
+            sessionStart = shift.at; sessionScore = 0;
+          }
+          sessionScore += shift.value; lastShift = shift.at; cls = Math.max(cls, sessionScore);
+        }
+        const sampled = state.events.filter((entry) => entry.at >= beforeInteraction.at);
+        const interactionDuration = sampled.length ? Math.max(...sampled.map((entry) => entry.duration)) : null;
+        for (const observer of state.observers) observer.disconnect();
+        return {
+          navigation: navigation ? { type: navigation.type, ttfb_ms: navigation.responseStart - navigation.startTime,
+            dom_content_loaded_ms: navigation.domContentLoadedEventEnd - navigation.startTime,
+            load_ms: navigation.loadEventEnd - navigation.startTime, response_end_ms: navigation.responseEnd - navigation.startTime } : null,
+          lcp_ms: beforeInteraction.lcp,
+          cls_initial_window: state.supported.includes("layout-shift") ? cls : null,
+          render_observation_end_ms: beforeInteraction.at, event_observation_end_ms: performance.now(), observation_after_load_ms: 5000,
+          first_hidden_at_ms: beforeInteraction.firstHiddenAt,
+          lcp_missing_reason: beforeInteraction.lcp === null ? (state.supported.includes("largest-contentful-paint") ? "no_lcp_entry_observed" : "entry_type_unsupported") : null,
+          cls_missing_reason: state.supported.includes("layout-shift") ? null : "entry_type_unsupported",
+          navigation_missing_reason: navigation ? null : "navigation_entry_not_reported",
+          visibility: document.visibilityState, supported_entry_types: state.supported,
+          interaction: { sample: interaction, event_duration_ms: interactionDuration, observed_event_entries: sampled.length,
+            observer_threshold_ms: 16, field_inp: null,
+            missing_reason: interactionDuration === null ? (interaction === "not_sampled_on_pricing" ? interaction : "no_entry_observed_at_16ms_threshold") : null },
+          truncated: state.truncated,
+        };
+      }, { beforeInteraction, interaction });
+      expect(metrics.visibility).toBe("visible");
+      expect(metrics.first_hidden_at_ms).toBeNull();
+      expect(metrics.truncated).toBe(false);
+      if (metrics.navigation) {
+        expect(metrics.navigation.type).toBe("navigate");
+        expect(metrics.navigation.ttfb_ms).toBeGreaterThanOrEqual(0);
+      }
+      if (metrics.lcp_ms !== null) expect(metrics.lcp_ms).toBeGreaterThan(0);
+      measurements.push({ path, width, height: 900, ...metrics });
+    } finally { await labContext.close(); }
+  }
+  return { scope: "Disposable CI production Next on loopback; unthrottled Chromium; fresh per-page browser cache; shared warmed server",
+    production_proof: false, field_vitals: false, field_inp: null,
+    limitations: ["Single sample per path/viewport, not percentile field evidence", "Initial bounded CLS window, not lifetime CLS",
+      "Sampled trusted click Event Timing is not INP", "Loopback excludes GCP/Vercel/network/mobile-CPU latency"], measurements };
+}
+
 test("fresh candidate: real Chromium → BFF → API → SQL, no AI and reviewed manual handoff", async ({ page, context, baseURL }) => {
   test.skip(!process.env.COLD_BROWSER_FRONTEND_URL, "Run only through the disposable Python orchestrator");
   const external: string[] = [];
@@ -211,6 +343,9 @@ test("fresh candidate: real Chromium → BFF → API → SQL, no AI and reviewed
   await outsider.close();
   expect(failures).toEqual([]); expect(backendFailures).toEqual([]);
   expect(external).toEqual(["synthetic_checkout_script"]);
+  // Measure only after the original cold journey and its assertions have completed.
+  const publicLab = await measurePublicLab(context.browser()!, baseURL!, guardExternal);
+  expect(external).toEqual(["synthetic_checkout_script"]);
   await writeFile(process.env.COLD_BROWSER_BROWSER_PROOF!, JSON.stringify({
     source_bytes_exact: true, custom_bytes_exact: true, original_sha256: createHash("sha256").update(original).digest("hex"),
     custom_sha256: createHash("sha256").update(custom).digest("hex"), cold_user_created_via_ui: true,
@@ -221,6 +356,7 @@ test("fresh candidate: real Chromium → BFF → API → SQL, no AI and reviewed
     stale_approval_rejected: true, cross_owner_denied: true, final_status: final.status,
     search: { desired: 3, delivered: 2, reserved: 6, charged: 4, released: 2 },
     automatic_application_charged: 0, employer_submit_receipt: null, external,
+    public_lab: publicLab,
     reviewed_widths: [320, 390, 768, 1024, 1440], axe_violations: 0,
     page_errors: failures.length, server_errors: backendFailures.length, bff_responses: responses,
   }, null, 2) + "\n");
