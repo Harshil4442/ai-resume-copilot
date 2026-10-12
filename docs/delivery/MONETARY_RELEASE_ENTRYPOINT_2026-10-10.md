@@ -57,7 +57,7 @@ define the configuration.
 
 ## Implemented forward sequence, currently gated
 
-1. Verify clean immutable source and the exact0009→0010→0011→0012→0013 chain. Verify
+1. Verify clean immutable source and the exact0009→0010→0011→0012→0013→0014→0015→0016 chain. Verify
    authenticated GitHub repository/workflow/event/run identity and five unique successful
    jobs. All future CI jobs explicitly check out the PR head SHA (or push SHA); the
    native command verifies that reviewed checkout contract rather than assuming a PR
@@ -93,7 +93,9 @@ define the configuration.
    verifies database/current-role/schema pins, takes a nonblocking advisory lock and
    applies only the next revision. Schema13's ordinary index creation is restricted to
    the drained window, at most256MiB observed indexed-table size, five-second lock timeout
-   and300-second statement timeout. Larger tables need a separately reviewed index plan.
+   and300-second statement timeout. This guard stays attached to0013 after extending
+   the chain. Larger tables need a separately reviewed index plan. Later steps add the
+   private upload, paid-history and catalogue schema; they do not backfill or charge jobs.
 7. Stage the same immutable release for API, analysis and employer workers with no traffic.
    Verify explicit service/worker roles, labels, topic scopes, numeric runtime/policy
    references, source/image identity, Ready condition and exact tagged HTTP health.
@@ -109,6 +111,14 @@ define the configuration.
    configuration is preserved; only admission for new checkout is closed.
    Compiler/authority configuration remains absent until its independent gates pass.
    Resume and end-to-end product/field monitoring remain separate required release work.
+
+The 12 October source correction extends the ordinary release contracts through0016.
+The monetary parser explicitly permits only the two bounded literal SQL-list constants
+used by the catalogue migration; the legacy0009 parser remains strict. The database
+observer checks the new tables and paid-search revision column using metadata only.
+Runtime verification also requires DELETE for the current history-erasure, snapshot/
+winner cleanup and catalogue-revision pruning paths. It does not require DELETE on
+retained financial ledgers. See [the bounded chain evidence](MONETARY_CHAIN_0016_2026-10-12.md).
 
 A lost mutation result is not retried by this command. Reconcile its native execution
 and observed schema first. There is no automatic downgrade, database restore, old

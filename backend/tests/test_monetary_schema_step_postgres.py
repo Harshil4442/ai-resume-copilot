@@ -24,13 +24,14 @@ def schema(context):
         return connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
 
 
-def test_actual_four_forward_steps_observe_each_revision_and_nullable_expense_history(context):
+def test_actual_seven_forward_steps_observe_each_revision_and_nullable_expense_history(context):
     for expected, target in zip(step.CHAIN[:-1], step.CHAIN[1:], strict=True):
         assert schema(context) == expected
         execute(context, expected, target)
         assert schema(context) == target
     with context[0].connect() as connection:
         assert connection.execute(text("SELECT count(*) FROM pg_indexes WHERE schemaname=current_schema() AND indexname IN ('ix_payment_orders_paid_at','ix_payment_refunds_processed_at','ix_model_liability_created','ix_model_liability_state_created','ix_service_reservations_state_created')")).scalar_one() == 5
+        assert connection.execute(text("SELECT count(*) FROM information_schema.tables WHERE table_schema=current_schema() AND table_name IN ('resume_uploads','employer_paid_delivery_history','employer_search_preparations')")).scalar_one() == 3
 
 
 @pytest.mark.parametrize("updates,reason", [
@@ -82,6 +83,66 @@ def test_schema13_uses_observed_table_size_and_refuses_a_larger_index_window(con
     assert schema(context) == "20261009_0012"
     with context[0].connect() as connection:
         assert connection.execute(text("SELECT count(*) FROM information_schema.columns WHERE table_schema=current_schema() AND column_name='cost_policy_snapshot'")).scalar_one() == 0
+
+
+def test_failed_later_step_requires_observed_current_schema_before_explicit_resume(context, monkeypatch):
+    for expected, target in zip(step.CHAIN[:4], step.CHAIN[1:5], strict=True):
+        execute(context, expected, target)
+    upgrade = step.command.upgrade
+    def fail(config, target):
+        config.attributes["connection"].execute(text("CREATE TABLE synthetic_partial_later (id integer)"))
+        raise RuntimeError("synthetic definite failure before commit")
+    with monkeypatch.context() as patch:
+        patch.setattr(step.command, "upgrade", fail)
+        with pytest.raises(RuntimeError, match="synthetic definite failure before commit"):
+            execute(context, "20261009_0013", "20261010_0014")
+    assert schema(context) == "20261009_0013"
+    with context[0].connect() as connection:
+        assert connection.execute(text("SELECT to_regclass('synthetic_partial_later')")).scalar_one() is None
+    assert step.command.upgrade == upgrade
+    execute(context, "20261009_0013", "20261010_0014")
+    with pytest.raises(step.StepDenied, match="migration_observed_schema_mismatch"):
+        execute(context, "20261009_0013", "20261010_0014")
+    for expected, target in zip(step.CHAIN[5:-1], step.CHAIN[6:], strict=True):
+        execute(context, expected, target)
+    assert schema(context) == "20261011_0016"
+
+
+def test_current_head_metadata_and_runtime_delete_paths_are_required(context):
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "infra/gcp"))
+    import monetary_release as release
+
+    from scripts import monetary_cutover_preflight as preflight
+    engine, roles, operator, inventory = context
+    runtime = roles["replacement_runtime"]
+    namespace = inventory["database_namespace"]
+    for expected, target in zip(step.CHAIN[:-1], step.CHAIN[1:], strict=True):
+        execute(context, expected, target)
+    with engine.begin() as connection:
+        namespace_oid = connection.execute(text("SELECT oid FROM pg_namespace WHERE nspname=:schema"), {"schema": namespace}).scalar_one()
+        preflight._extension_shape(connection, namespace_oid, "20261011_0016")
+        with pytest.raises(preflight.Denied, match="database_extension_shape_mismatch"):
+            preflight._extension_shape(connection, namespace_oid, "20261009_0013")
+        connection.execute(text("ALTER TABLE employer_search_preparations RENAME TO synthetic_missing_preparations"))
+        with pytest.raises(preflight.Denied, match="database_extension_shape_mismatch"):
+            preflight._extension_shape(connection, namespace_oid, "20261011_0016")
+        connection.execute(text("ALTER TABLE synthetic_missing_preparations RENAME TO employer_search_preparations"))
+        connection.execute(text(f'GRANT USAGE ON SCHEMA "{namespace}" TO "{runtime}"'))
+        connection.execute(text(f'GRANT SELECT,INSERT,UPDATE ON ALL TABLES IN SCHEMA "{namespace}" TO "{runtime}"'))
+        connection.execute(text(f'GRANT USAGE ON ALL SEQUENCES IN SCHEMA "{namespace}" TO "{runtime}"'))
+        tables = set(connection.execute(text("SELECT tablename FROM pg_tables WHERE schemaname=:schema"), {"schema": namespace}).scalars())
+        for table in sorted(tables & release.ERASABLE_TABLES):
+            connection.execute(text(f'GRANT DELETE ON "{table}" TO "{runtime}"'))
+        release.verify_runtime_permissions(connection, namespace, runtime, operator)
+        assert connection.execute(text("SELECT has_table_privilege(:runtime,'model_cost_liabilities','DELETE')"), {"runtime": runtime}).scalar_one() is False
+        for table in ("employer_paid_delivery_history", "employer_catalogue_winners", "employer_catalogue_posting_revisions"):
+            connection.execute(text(f'REVOKE DELETE ON "{table}" FROM "{runtime}"'))
+            with pytest.raises(release.ReleaseDenied, match="runtime_table_or_migration_ownership_permissions_missing"):
+                release.verify_runtime_permissions(connection, namespace, runtime, operator)
+            connection.execute(text(f'GRANT DELETE ON "{table}" TO "{runtime}"'))
+        release.verify_runtime_permissions(connection, namespace, runtime, operator)
 
 
 def test_actual_runtime_permissions_refuse_missing_new_table_and_sequence_grants(context):

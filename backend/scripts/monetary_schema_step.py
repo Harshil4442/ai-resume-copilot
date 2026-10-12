@@ -16,7 +16,10 @@ from sqlalchemy.pool import NullPool
 
 from alembic import command
 
-CHAIN = ("20261008_0009", "20261009_0010", "20261009_0011", "20261009_0012", "20261009_0013")
+CHAIN = (
+    "20261008_0009", "20261009_0010", "20261009_0011", "20261009_0012",
+    "20261009_0013", "20261010_0014", "20261011_0015", "20261011_0016",
+)
 LOCK_ID = 721_994_372
 MAX_INDEX_BYTES = 256 * 1024 * 1024
 INDEX_TABLES = (
@@ -61,7 +64,7 @@ def upgrade_step(
             versions = list(connection.execute(text(f"SELECT version_num FROM {quoted}.alembic_version LIMIT 3")).scalars())
             if versions != [expected]:
                 raise StepDenied("migration_observed_schema_mismatch")
-            if target == CHAIN[-1]:
+            if target == "20261009_0013":
                 # Ordinary CREATE INDEX blocks table writes. Only a bounded, drained
                 # maintenance window admits this reviewed migration, never a claim
                 # that concurrent traffic or a caller-provided table size is safe.

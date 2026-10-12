@@ -110,7 +110,7 @@ def test_observation_only_has_no_mutations(plan):
 def test_complete_sequence_keeps_all_enablement_gates_closed(plan):
     boundary = Boundary()
     result = run(plan, boundary)
-    assert result["schema"] == "20261009_0013"
+    assert result["schema"] == "20261011_0016"
     assert result["queue_admission"] == "closed" and result["goal_complete"] is False
     assert result["optional_generation"] is result["automatic_submission"] is result["native_lifecycle"] is False
     assert mutations(boundary) == [("backup-create",),
@@ -118,6 +118,9 @@ def test_complete_sequence_keeps_all_enablement_gates_closed(plan):
         ("migrate", "20261009_0010", "20261009_0011"),
         ("migrate", "20261009_0011", "20261009_0012"),
         ("migrate", "20261009_0012", "20261009_0013"),
+        ("migrate", "20261009_0013", "20261010_0014"),
+        ("migrate", "20261010_0014", "20261011_0015"),
+        ("migrate", "20261011_0015", "20261011_0016"),
         *(('stage', service) for service in release.SERVICES),
         *(('promote', service) for service in (*release.SERVICES[1:], release.SERVICES[0])),
     ]
@@ -155,6 +158,8 @@ def test_missing_or_stale_fence_never_authorizes_a_mutation(plan, changes):
 @pytest.mark.parametrize("failure", [
     ("migrate", "20261008_0009", "20261009_0010"),
     ("migrate", "20261009_0012", "20261009_0013"),
+    ("migrate", "20261010_0014", "20261011_0015"),
+    ("migrate", "20261011_0015", "20261011_0016"),
     *(('stage', service) for service in release.SERVICES),
     *(('promote', service) for service in release.SERVICES),
 ])
@@ -229,13 +234,13 @@ def test_legacy_release_still_refuses_the_current_extended_chain(tmp_path):
     for path in sorted(prefix_tracked):
         (prefix / path).write_bytes((ROOT / path).read_bytes())
     chain = release.source_guard.migration_chain(prefix, prefix_tracked)
-    assert chain[:len(release.CHAIN)] == release.CHAIN
-    assert chain[len(release.CHAIN):len(release.CHAIN) + 2] == ('20261010_0014', '20261011_0015')
+    assert chain == release.CHAIN[:-1]
     with pytest.raises(release.source_guard.PreflightDenied, match="only the reviewed schema0009 chain"):
         release.source_guard.migration_head(prefix, prefix_tracked)
     for operation in (release.source_guard.migration_chain, release.source_guard.migration_head):
         with pytest.raises(release.source_guard.PreflightDenied, match="Unsupported module-level migration assignment"):
             operation(ROOT, tracked)
+    assert release.source_guard.migration_chain(ROOT, tracked, allow_literal_sql=True) == release.CHAIN
 
 
 def native_identity(plan, monkeypatch, *, policy_update=None, ci_update=None, build_update=None):
@@ -271,7 +276,7 @@ def native_identity(plan, monkeypatch, *, policy_update=None, ci_update=None, bu
             return build
         return {"email": args[3], "disabled": False}
     monkeypatch.setattr(release.source_guard, "checked_files", lambda *args: set())
-    monkeypatch.setattr(release.source_guard, "migration_chain", lambda *args: release.CHAIN)
+    monkeypatch.setattr(release.source_guard, "migration_chain", lambda *args, **kwargs: release.CHAIN)
     monkeypatch.setattr(boundary, "_command", command)
     monkeypatch.setattr(boundary, "_cloud", cloud)
     monkeypatch.setattr(boundary, "_secret", lambda *args: raw)
@@ -392,7 +397,7 @@ def test_native_worker_refuses_unresolved_custom_project_role_public_principal(p
 def test_read_only_observation_is_useful_while_external_fence_verifier_is_unavailable(plan, monkeypatch):
     boundary = release.NativeBoundary(ROOT)
     monkeypatch.setattr(release.source_guard, "checked_files", lambda *args: set())
-    monkeypatch.setattr(release.source_guard, "migration_chain", lambda *args: release.CHAIN)
+    monkeypatch.setattr(release.source_guard, "migration_chain", lambda *args, **kwargs: release.CHAIN)
     monkeypatch.setattr(boundary, "verify_identity_and_policy", lambda *args: None)
     monkeypatch.setattr(boundary, "verify_admission_closed", lambda: (_ for _ in ()).throw(release.ReleaseDenied("queue_not_paused_and_drained")))
     monkeypatch.setattr(boundary, "verify_database", lambda *args: None)

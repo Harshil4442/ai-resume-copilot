@@ -1,4 +1,4 @@
-"""Schema0013 release sequence with live observations and no assertion override.
+"""Schema0016 release sequence with live observations and no assertion override.
 
 The native adapter currently refuses external consumer/provider fencing: no
 authenticated verifier for that scope exists in this project. Its sequencer and
@@ -30,7 +30,11 @@ REPOSITORY = "Harshil4442/ai-resume-copilot"
 SERVICES = ("ai-resume-parser", "hirewiz-analysis-worker", "hirewiz-employer-worker")
 QUEUES = ("hirewiz-analysis", "hirewiz-employer-search", "hirewiz-employer-ingestion", "hirewiz-employer-application")
 CI_JOBS = {"backend", "frontend", "security-and-container", "browser-companion", "cold-browser-journey"}
-CHAIN = (*source_guard.ALLOWED_CHAIN, "20261009_0010", "20261009_0011", "20261009_0012", "20261009_0013")
+CUTOVER_CHAIN = (
+    "20261008_0009", "20261009_0010", "20261009_0011", "20261009_0012",
+    "20261009_0013", "20261010_0014", "20261011_0015", "20261011_0016",
+)
+CHAIN = (*source_guard.ALLOWED_CHAIN[:-1], *CUTOVER_CHAIN)
 SAFE_ENV = {
     "APP_ENV": "production", "AUTO_DB_MIGRATE": "false",
     "OPTIONAL_AI_GENERATION_ENABLED": "false", "EMPLOYER_AUTO_SUBMIT_ENABLED": "false",
@@ -49,6 +53,13 @@ ERASABLE_TABLES = {
     "employer_application_attempts", "employer_applications", "employer_application_batches",
     "sealed_application_artifacts", "employer_job_deliveries", "employer_searches",
     "employer_artifact_uploads",
+    "employer_paid_delivery_history", "employer_paid_opening_registry",
+    "employer_paid_history_progress", "employer_search_history_progress",
+    "employer_search_history_seen", "employer_search_history_nodes",
+    "employer_search_preparations", "employer_catalogue_snapshots",
+    "employer_catalogue_snapshot_items", "employer_catalogue_winners",
+    # Ordinary revision pruning also needs DELETE; financial history does not.
+    "employer_catalogue_source_revisions", "employer_catalogue_posting_revisions",
 }
 
 
@@ -168,7 +179,7 @@ def run_release(
                 "sequence_admitted": False, "post_fence_backup_creation_required": True, "production_released": False}
     boundary.create_backup(plan, fence)
     boundary.verify_backup(plan, fence)
-    for expected, target in zip(CHAIN[-5:-1], CHAIN[-4:], strict=True):
+    for expected, target in zip(CUTOVER_CHAIN[:-1], CUTOVER_CHAIN[1:], strict=True):
         boundary.verify_identity_and_policy(plan)
         boundary.verify_admission_closed()
         _fresh_fence(boundary, plan, clock)
@@ -278,8 +289,8 @@ class NativeBoundary:
 
     def verify_identity_and_policy(self, plan: Plan) -> None:
         tracked = source_guard.checked_files(self.root, plan.release)
-        if source_guard.migration_chain(self.root, tracked) != CHAIN:
-            raise ReleaseDenied("reviewed_schema13_chain_required")
+        if source_guard.migration_chain(self.root, tracked, allow_literal_sql=True) != CHAIN:
+            raise ReleaseDenied("reviewed_schema16_chain_required")
         verify_ci_checkout_contract(self.root)
         ci = _json(self._command("gh", "run", "view", str(plan.ci_run_id), "--repo", REPOSITORY,
                                  "--json", "headSha,status,conclusion,jobs,workflowName"))
@@ -755,8 +766,8 @@ def observe_release(plan: Plan, boundary: NativeBoundary) -> dict[str, Any]:
     plan.validate()
     # Reject unknown local source before even observational cloud access.
     tracked = source_guard.checked_files(boundary.root, plan.release)
-    if source_guard.migration_chain(boundary.root, tracked) != CHAIN:
-        raise ReleaseDenied("reviewed_schema13_chain_required")
+    if source_guard.migration_chain(boundary.root, tracked, allow_literal_sql=True) != CHAIN:
+        raise ReleaseDenied("reviewed_schema16_chain_required")
     gates: dict[str, dict[str, Any]] = {}
     checks = (
         ("source_ci_image_policy", lambda: boundary.verify_identity_and_policy(plan)),
@@ -776,7 +787,7 @@ def observe_release(plan: Plan, boundary: NativeBoundary) -> dict[str, Any]:
             "production_released": False, "cutover_authorized": False,
             "native_fence_verifier_available": False,
             "post_fence_backup": "must_be_created_and_verified_in_the_authorized_execution",
-            "planned_schema_steps": list(CHAIN[-4:]),
+            "planned_schema_steps": list(CUTOVER_CHAIN[1:]),
             "joined_services": list(SERVICES), "queue_resume_is_separate": True}
 
 

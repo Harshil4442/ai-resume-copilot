@@ -17,6 +17,7 @@ ALLOWED_CHAIN = (
 )
 MIGRATIONS = "backend/alembic/versions/"
 DECLARATIONS = {"revision", "down_revision", "branch_labels", "depends_on"}
+LITERAL_SQL_CONSTANTS = {"POSTGRES_PUBLICATION_SQL", "POSTGRES_REMOVE_SQL"}
 
 
 class PreflightDenied(RuntimeError):
@@ -65,7 +66,9 @@ def checked_files(root: Path, release: str) -> set[str]:
     return tracked
 
 
-def migration_chain(root: Path, tracked: set[str]) -> tuple[str, ...]:
+def migration_chain(
+    root: Path, tracked: set[str], *, allow_literal_sql: bool = False,
+) -> tuple[str, ...]:
     configuration = configparser.ConfigParser(interpolation=None)
     configuration.read(root / "backend/alembic.ini")
     script_location = configuration.get("alembic", "script_location", fallback="")
@@ -81,6 +84,8 @@ def migration_chain(root: Path, tracked: set[str]) -> tuple[str, ...]:
     revisions: dict[str, str | None] = {}
     for path in paths:
         values: dict[str, object] = {}
+        sql_constants: set[str] = set()
+        protected_names = DECLARATIONS | (LITERAL_SQL_CONSTANTS if allow_literal_sql else set())
         # Parse declarations without importing migration/app code or running upgrade().
         for node in ast.parse(path.read_bytes()).body:
             expression: ast.expr | None
@@ -90,16 +95,29 @@ def migration_chain(root: Path, tracked: set[str]) -> tuple[str, ...]:
                 targets, expression = [node.target], node.value
             else:
                 if isinstance(node, (ast.Import, ast.ImportFrom)):
-                    if any((alias.asname or alias.name.split(".")[0]) in DECLARATIONS for alias in node.names):
+                    if any((alias.asname or alias.name.split(".")[0]) in protected_names for alias in node.names):
                         raise PreflightDenied("Migration imports shadow declarations.")
                 elif isinstance(node, ast.FunctionDef):
-                    if node.name in DECLARATIONS or node.decorator_list:
+                    if node.name in protected_names or node.decorator_list:
                         raise PreflightDenied("Unsupported migration function declaration.")
                 elif not (isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant)
                           and isinstance(node.value.value, str)):
                     raise PreflightDenied("Migration metadata has executable module-level control flow.")
                 continue
             for target in targets:
+                if allow_literal_sql and isinstance(target, ast.Name) and target.id in LITERAL_SQL_CONSTANTS:
+                    if target.id in sql_constants or expression is None:
+                        raise PreflightDenied("Migration SQL constants are ambiguous.")
+                    try:
+                        sql = ast.literal_eval(expression)
+                    except (ValueError, TypeError, SyntaxError):
+                        raise PreflightDenied("Unsupported literal migration SQL constant.") from None
+                    if (not isinstance(sql, list) or not 1 <= len(sql) <= 256
+                            or any(not isinstance(item, str) or not item for item in sql)
+                            or sum(len(item.encode("utf-8")) for item in sql) > 131072):
+                        raise PreflightDenied("Unsupported literal migration SQL constant.")
+                    sql_constants.add(target.id)
+                    continue
                 if not isinstance(target, ast.Name) or target.id not in DECLARATIONS:
                     raise PreflightDenied("Unsupported module-level migration assignment.")
                 if target.id in values or expression is None:

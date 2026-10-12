@@ -27,7 +27,10 @@ except ModuleNotFoundError:  # Direct standalone script invocation.
 
 MAX_INPUT_BYTES = 131072
 MAX_ROWS = 256
-SCHEMA_ORDER = ("20261008_0009", "20261009_0010", "20261009_0011", "20261009_0012", "20261009_0013")
+SCHEMA_ORDER = (
+    "20261008_0009", "20261009_0010", "20261009_0011", "20261009_0012",
+    "20261009_0013", "20261010_0014", "20261011_0015", "20261011_0016",
+)
 SCHEMAS = set(SCHEMA_ORDER)
 FINANCIAL_SCHEMAS = SCHEMAS - {"20261008_0009"}
 CANDIDATE_SCHEMAS = SCHEMAS - {"20261008_0009", "20261009_0010"}
@@ -36,6 +39,22 @@ EXTENSION_COLUMNS = {
     "20261009_0013": {
         ("payment_orders", "cost_policy_snapshot"): ("json", False),
         ("service_credit_reservations", "cost_policy_snapshot"): ("json", False),
+    },
+    "20261011_0015": {("employer_searches", "history_revision"): ("bigint", True)},
+}
+EXTENSION_TABLES = {
+    "20261010_0014": {"resume_uploads", "resume_upload_cleanups"},
+    "20261011_0015": {
+        "employer_paid_delivery_history", "employer_paid_opening_registry",
+        "employer_paid_history_progress", "employer_search_history_progress",
+        "employer_search_history_seen", "employer_search_history_nodes",
+    },
+    "20261011_0016": {
+        "employer_catalogue_clock", "employer_catalogue_source_revisions",
+        "employer_catalogue_contents", "employer_catalogue_projections",
+        "employer_catalogue_posting_revisions", "employer_catalogue_resume_bindings",
+        "employer_search_preparations", "employer_catalogue_snapshots",
+        "employer_catalogue_snapshot_items", "employer_catalogue_winners",
     },
 }
 CANDIDATE_TABLES = {"candidate_password_accounts", "candidate_lifetime_history"}
@@ -119,8 +138,8 @@ class Inventory(Strict):
     serving_commit: str = Field(pattern=r"^[a-f0-9]{40}$")
     candidate_commit: str = Field(pattern=r"^[a-f0-9]{40}$")
     candidate_image: str = Field(pattern=r"^sha256:[a-f0-9]{64}$")
-    expected_database_schema: Literal["20261008_0009", "20261009_0010", "20261009_0011", "20261009_0012", "20261009_0013"]
-    candidate_schema: Literal["20261009_0010", "20261009_0011", "20261009_0012", "20261009_0013"]
+    expected_database_schema: Literal["20261008_0009", "20261009_0010", "20261009_0011", "20261009_0012", "20261009_0013", "20261010_0014", "20261011_0015", "20261011_0016"]
+    candidate_schema: Literal["20261009_0010", "20261009_0011", "20261009_0012", "20261009_0013", "20261010_0014", "20261011_0015", "20261011_0016"]
     expected_system_identifier_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     expected_database_oid: int = Field(gt=0)
     database_namespace: str = Field(pattern=r"^[a-z][a-z0-9_]{0,62}$")
@@ -488,6 +507,17 @@ def _candidate_projection_shape(connection: Any, namespace_oid: int) -> None:
 
 def _extension_shape(connection: Any, namespace_oid: int, version: str) -> None:
     """Inspect only column metadata; never load employer, payment or candidate values."""
+    expected_tables = set().union(*(tables for introduced, tables in EXTENSION_TABLES.items()
+                                   if SCHEMA_ORDER.index(version) >= SCHEMA_ORDER.index(introduced)))
+    all_tables = set().union(*EXTENSION_TABLES.values())
+    tables = connection.execute(text(
+        "SELECT c.relname,c.relkind FROM pg_catalog.pg_class c "
+        "WHERE c.relnamespace=:namespace AND c.relname = ANY(CAST(:tables AS text[])) "
+        "ORDER BY c.oid LIMIT 257"
+    ), {"namespace": namespace_oid, "tables": sorted(all_tables)}).all()
+    if (len(tables) > MAX_ROWS or any(row[1] != "r" for row in tables)
+            or {str(row[0]) for row in tables} != expected_tables):
+        raise Denied("database_extension_shape_mismatch")
     expected: dict[tuple[str, str], tuple[str, bool]] = {}
     for introduced, columns in EXTENSION_COLUMNS.items():
         if SCHEMA_ORDER.index(version) >= SCHEMA_ORDER.index(introduced):
