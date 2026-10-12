@@ -362,7 +362,7 @@ def _failure_report() -> dict:
     diagnostic = stored if type(stored) is dict else {}
     stage, case = diagnostic.get("stage"), diagnostic.get("case")
     code, completed = diagnostic.get("exit_code"), diagnostic.get("completed_cases")
-    result = {"error": ERROR,
+    result: dict[str, object] = {"error": ERROR,
             "stage": stage if type(stage) is str and stage in _FAILURE_STAGES else "setup",
             "case": case if type(case) is str and case in _FAILURE_CASES else None,
             "exit_code": code if type(code) is int and 0 <= code <= 255 else None,
