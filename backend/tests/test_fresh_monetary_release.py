@@ -441,6 +441,7 @@ def test_real_transfer_adapter_does_not_require_destination_marker_before_copy(
             engine=forbidden,
             dump_environment=lambda: {
                 "PGCHANNELBINDING": "prefer",
+                "PGSSLROOTCERT": "/inert/ca.pem",
                 "PGPASSWORD": "inert-synthetic-password",
             },
         )

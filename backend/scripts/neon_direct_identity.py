@@ -25,6 +25,11 @@ from sqlalchemy import create_engine, event, text
 from sqlalchemy.engine import URL, Engine, make_url
 from sqlalchemy.pool import NullPool
 
+try:
+    from scripts.neon_execution_files import LinuxExecutionFiles
+except ModuleNotFoundError:  # Direct standalone script invocation.
+    from neon_execution_files import LinuxExecutionFiles
+
 PROJECT = "ai-resume-parser-482412"
 REGION = "us-central1"
 REVISION = "ai-resume-parser-e7-checkout-off-20261010"
@@ -110,6 +115,7 @@ class NeonDirectProxyBinding:
     actor_oid: int = ACTOR_OID
     database_owner_oid: int = ACTOR_OID
     expected_schema: str = "20261008_0009"
+    execution_files: LinuxExecutionFiles | None = None
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -168,7 +174,7 @@ class _TransientTarget:
             "PGHOST": self.binding.host, "PGPORT": "5432",
             "PGUSER": self.binding.actor, "PGPASSWORD": self._url.password or "",
             "PGDATABASE": DATABASE, "PGSSLMODE": "verify-full",
-            "PGSSLCERTMODE": "disable", "PGSSLROOTCERT": ROOT_CERT,
+            "PGSSLCERTMODE": "disable", "PGSSLROOTCERT": _root_certificate(self.binding),
             "PGCHANNELBINDING": self.binding.channel_binding,
             "PGCONNECT_TIMEOUT": "5", "PGAPPNAME": APPLICATION,
             "PGOPTIONS": self.binding.options,
@@ -182,6 +188,14 @@ _guarded_drivers: WeakKeyDictionary[PsycopgConnection, NeonDirectProxyBinding] =
 def _registered(binding: NeonDirectProxyBinding) -> None:
     if type(binding) is not NeonDirectProxyBinding:
         raise NeonIdentityDenied("neon_direct_native_binding_unavailable")
+    if binding.execution_files is not None:
+        if (type(binding.execution_files) is not LinuxExecutionFiles
+                or binding.purpose not in {"release_capture", "fresh_release_capture"}):
+            raise NeonIdentityDenied("neon_linux_execution_files_unavailable")
+        try:
+            binding.execution_files.validate()
+        except Exception:
+            raise NeonIdentityDenied("neon_linux_execution_files_unavailable") from None
     provenance = _issued.get(binding)
     legacy = (
         binding.purpose in {"capture", "preparation"}
@@ -222,6 +236,20 @@ def _registered(binding: NeonDirectProxyBinding) -> None:
     )
     if not legacy and not release and not fresh_release:
         raise NeonIdentityDenied("neon_direct_native_binding_unavailable")
+
+
+def _execution_files(reader: NativeReleaseSecretReader) -> LinuxExecutionFiles | None:
+    files = getattr(reader, "linux_execution_files", None)
+    if files is None:
+        return None
+    if type(files) is not LinuxExecutionFiles:
+        raise NeonIdentityDenied("neon_linux_execution_files_unavailable")
+    files.validate()
+    return files
+
+
+def _root_certificate(binding: NeonDirectProxyBinding) -> str:
+    return binding.execution_files.root_certificate if binding.execution_files is not None else ROOT_CERT
 
 
 def _control_receipt() -> None:
@@ -356,7 +384,7 @@ def collect_neon_direct_proxy(
             query={
                 "sslmode": "verify-full",
                 "sslcertmode": "disable",
-                "sslrootcert": ROOT_CERT,
+                "sslrootcert": _root_certificate(binding),
                 "channel_binding": channel,
             },
         )
@@ -411,7 +439,7 @@ def _verify_driver_transport(driver: Any, binding: NeonDirectProxyBinding) -> No
             "user": binding.actor,
             "sslmode": "verify-full",
             "sslcertmode": "disable",
-            "sslrootcert": ROOT_CERT,
+            "sslrootcert": _root_certificate(binding),
             "connect_timeout": "5",
             "application_name": APPLICATION,
             "options": binding.options,
@@ -504,9 +532,9 @@ def bound_schema(binding: NeonDirectProxyBinding) -> str:
     return binding.expected_schema
 
 
-def _release_control_receipt() -> None:
-    raw = RELEASE_CONTROL_RECEIPT.read_bytes()
-    if (RELEASE_CONTROL_RECEIPT.is_symlink() or len(raw) > 131072
+def _release_control_receipt(files: LinuxExecutionFiles | None = None) -> None:
+    raw = files.read("source") if files is not None else RELEASE_CONTROL_RECEIPT.read_bytes()
+    if ((files is None and RELEASE_CONTROL_RECEIPT.is_symlink()) or len(raw) > 131072
             or hashlib.sha256(raw).hexdigest() != RELEASE_CONTROL_RECEIPT_SHA):
         raise NeonIdentityDenied("neon_release_control_receipt_mismatch")
     receipt = json.loads(raw)
@@ -539,7 +567,8 @@ def collect_release_target(
                 or type(database_owner_oid) is not int
                 or not 0 < database_owner_oid <= 4294967295):
             raise NeonIdentityDenied("neon_release_identity_input_invalid")
-        _release_control_receipt()
+        files = _execution_files(reader)
+        _release_control_receipt(files)
         name, version = reference.split(":")
         full = f"projects/{PROJECT_NUMBER}/secrets/{name}/versions/{version}"
         before = reader.describe_release_secret(reference)
@@ -571,13 +600,13 @@ def collect_release_target(
         channel = str(url.query.get("channel_binding", "prefer"))
         binding = NeonDirectProxyBinding(
             RELEASE_DIRECT_HOST, channel, CAPTURE_OPTIONS, "release_capture",
-            actor, actor_oid, database_owner_oid, expected_schema,
+            actor, actor_oid, database_owner_oid, expected_schema, execution_files=files,
         )
         clean = URL.create(
             "postgresql+psycopg", username=actor, password=url.password,
             host=RELEASE_DIRECT_HOST, port=5432, database=DATABASE,
             query={"sslmode": "verify-full", "sslcertmode": "disable",
-                   "sslrootcert": ROOT_CERT, "channel_binding": channel},
+                   "sslrootcert": _root_certificate(binding), "channel_binding": channel},
         )
         _issued[binding] = (PROJECT, full, before["etag"], RELEASE_CONTROL_RECEIPT_SHA)
         _registered(binding)
@@ -610,10 +639,10 @@ def collect_source_release_target(
         database_owner_oid=database_owner_oid, expected_schema=expected_schema)
 
 
-def _fresh_control_receipt() -> None:
+def _fresh_control_receipt(files: LinuxExecutionFiles | None = None) -> None:
     # Historical native target provenance only, never fencing or release authority.
-    raw = FRESH_CONTROL_RECEIPT.read_bytes()
-    if (FRESH_CONTROL_RECEIPT.is_symlink() or len(raw) > 131072
+    raw = files.read("roles") if files is not None else FRESH_CONTROL_RECEIPT.read_bytes()
+    if ((files is None and FRESH_CONTROL_RECEIPT.is_symlink()) or len(raw) > 131072
             or hashlib.sha256(raw).hexdigest() != FRESH_CONTROL_RECEIPT_SHA):
         raise NeonIdentityDenied("neon_fresh_control_receipt_mismatch")
     receipt = json.loads(raw)
@@ -642,7 +671,10 @@ def collect_fresh_release_target(
                 or type(expected_schema) is not str or expected_schema not in RELEASE_SCHEMAS
                 or type(database_owner_oid) is not int or database_owner_oid != FRESH_DATABASE_OWNER_OID):
             raise NeonIdentityDenied("neon_fresh_identity_input_invalid")
-        _fresh_control_receipt()
+        files = _execution_files(reader)
+        _fresh_control_receipt(files)
+        if files is not None:
+            files.verify_fresh_reference(alias, reference)
         name, version = reference.split(":")
         full = f"projects/{PROJECT_NUMBER}/secrets/{name}/versions/{version}"
         before = reader.describe_release_secret(reference)
@@ -670,10 +702,11 @@ def collect_fresh_release_target(
             raise NeonIdentityDenied("neon_fresh_credential_shape_unavailable")
         channel = str(url.query.get("channel_binding", "prefer"))
         binding = NeonDirectProxyBinding(FRESH_DIRECT_HOST, channel, CAPTURE_OPTIONS,
-            "fresh_release_capture", actor, actor_oid, database_owner_oid, expected_schema)
+            "fresh_release_capture", actor, actor_oid, database_owner_oid, expected_schema,
+            execution_files=files)
         clean = URL.create("postgresql+psycopg", username=actor, password=url.password,
             host=FRESH_DIRECT_HOST, port=5432, database=DATABASE,
-            query={"sslmode": "verify-full", "sslcertmode": "disable", "sslrootcert": ROOT_CERT,
+            query={"sslmode": "verify-full", "sslcertmode": "disable", "sslrootcert": _root_certificate(binding),
                    "channel_binding": channel})
         _issued[binding] = (PROJECT, full, before["etag"], FRESH_CONTROL_RECEIPT_SHA)
         _registered(binding)

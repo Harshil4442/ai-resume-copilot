@@ -10,7 +10,7 @@ outcome; they are never separate checklist completions.
 | Major outcome | Status | Work remaining before completion |
 |---|---|---|
 | Official job search, ranking and user-selected job counts | In progress | Verify recent and closed jobs, matching quality, selected result counts and credit behavior across the complete user flow; measure coverage against a defined reference set |
-| Resume tailoring preserving PDF, DOCX and LaTeX formatting | In progress | Resolve the actual GCP document launcher failure, verify original layout and truthful edits, and complete original/custom/tailored resume selection and downloads |
+| Resume tailoring preserving PDF, DOCX and LaTeX formatting | In progress | Resolve the actual GCP document processor termination, verify original layout and truthful edits, and complete original/custom/tailored resume selection and downloads |
 | Candidate-reviewed direct company applications | Blocked | Complete the approved Razorpay/Greenhouse pilot, destination/file/answer review, form filling and reliable application outcome tracking; rejected pairing integration remains stopped |
 | Paid search/application credits, profitable finite packs and payment recovery | In progress | Verify separate charging, finite limits, settlement/refund recovery and representative failure/load behavior; release through the native monetary safeguards |
 | Fast responsive pages and SEO | In progress | Verify complete desktop, laptop and mobile journeys, loading performance and production SEO metadata |
@@ -27,22 +27,26 @@ Current development within these outcomes:
   seeding and complete search acceptance pending. Worldwide or 95% job coverage
   has not been established. See the [origin register](../delivery/EMPLOYER_ORIGIN_REGISTRY_2026-10-13.md).
 - Format preservation works in the native local verification path, but the actual
-  GCP layout path still fails at its launcher. The latest diagnostic returns an
-  unclassified launcher error; it does not establish the cause. The temporary
-  diagnostic Job and Execution have been removed. A small command/configuration
-  comparison is being prepared to isolate the failing boundary.
+  GCP layout path terminates at DOCX renderer startup after antivirus scanning,
+  document checks, edits and font checks return. The native diagnostic reports
+  exit status 137; memory counters are unavailable and the cause is not proved.
+  A separate Writer conversion will isolate that boundary. The temporary
+  diagnostic Job and Execution have been removed.
 - The fresh Neon target now has three genuinely authenticated restricted roles
   and three verified numeric Secret Manager versions. The separate source-to-target
-  release sequence is implemented in source. No customer data has been copied and no
-  production credential cutover has occurred. The [phase design](../delivery/FRESH_DATABASE_RELEASE_PHASES_2026-10-13.md)
+  release sequence, portable Linux profile and fresh-only native authority checks
+  are implemented in source. Replacement passwords must differ from every captured
+  old password and actually authenticate before restore. No customer data has
+  been copied and no production credential cutover has occurred. The [phase design](../delivery/FRESH_DATABASE_RELEASE_PHASES_2026-10-13.md)
   distinguishes migration from serving; the actual final writer fence and
   migration-role retirement still precede promotion.
 - Finite paid packs and separate search/application rates are implemented in
   source. Native financial continuity and production activation remain pending.
 - Public SEO source now includes explicit social metadata, a branded preview
   image and a sitemap without invented dates. The current Vercel preview is
-  built, but production metadata and complete responsive/performance acceptance
-  remain pending.
+  built and its mobile navigation, overflow and social metadata have been checked.
+  Complete user journeys, measured loading performance and production verification
+  remain pending. Its pricing page awaits the server-owned billing catalog.
 
 Automatic approval review rejected the browser-pairing/lifecycle integration as
 a possible cybersecurity risk. That work remains stopped; it is not bypassed by

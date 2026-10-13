@@ -17,6 +17,8 @@ from urllib.parse import urlsplit
 
 import monetary_release as release
 
+from scripts.neon_execution_files import LinuxExecutionFiles
+
 
 @dataclass(frozen=True)
 class TransferPlan:
@@ -302,6 +304,17 @@ def verify_financial_state(connection: Any, module: Any, schema: str) -> None:
 class FreshNativeBoundary(release.NativeBoundary):
     """Concrete destination actions; inherited native fence still refuses today."""
 
+    def __init__(self, root: Path, *, linux_execution_files: LinuxExecutionFiles | None = None):
+        super().__init__(root)
+        if linux_execution_files is not None:
+            if type(linux_execution_files) is not LinuxExecutionFiles:
+                raise release.ReleaseDenied("fresh_linux_execution_files_invalid")
+            try:
+                linux_execution_files.validate()
+            except Exception:
+                raise release.ReleaseDenied("fresh_linux_execution_files_invalid") from None
+        self.linux_execution_files = linux_execution_files
+
     def verify_database(self, plan: release.Plan, schema: str) -> None:
         if schema != release.CUTOVER_CHAIN[0]:
             raise release.ReleaseDenied("fresh_source_schema_must_remain_nine")
@@ -417,7 +430,7 @@ class FreshNativeBoundary(release.NativeBoundary):
                 oid,
                 identity_binding.actor,
                 identity_binding.actor_oid,
-                neon.ROOT_CERT,
+                env["PGSSLROOTCERT"],
             )
             database_class = FreshDestination if fresh else library.BoundDatabase
             return database_class(identity, env["PGPASSWORD"])
