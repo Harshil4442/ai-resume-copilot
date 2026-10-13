@@ -211,9 +211,13 @@ Runtime source hashes, renderer/font preflight and the four ordinary cases pass.
 Both layout cases still fail, now at output decoding with outer launcher code 1
 and unmatched bindings. This does not prove an inner exception or exit code.
 All six cleanup checks pass. Root deletes the exact temporary Job once and
-verifies its absence separately. A one-request finite diagnostic is being
-prepared to identify this new failure. Resume tailoring remains in progress;
-this image is not accepted for customer formatting or production deployment.
+verifies its absence separately. The separate one-request diagnostic completes
+at 17:50:36 UTC: the actual launcher returns code 1 and zero output bytes,
+with the exact current mount/environment path observed and cleanup confirmed.
+No processor witness arrives, so Python entry and its inner failure remain
+unobserved. The temporary Job and Execution are removed and their absence is
+verified. Diagnosis moves to the launcher boundary; resume tailoring remains
+in progress and this image is not accepted for customer formatting or deployment.
 
 
 Fresh-target identity now has a separate collector/profile for the native-bound
@@ -229,6 +233,22 @@ source-to-target transfer, per-step grants, explicit migration/serving transitio
 credential retirement and the complete fresh release orchestration remain
 unfinished. The existing production release route stays source-scoped and
 continues to require its native fencing safeguards.
+
+The explicit [source/target phase slice](FRESH_DATABASE_RELEASE_PHASES_2026-10-13.md)
+is now integrated. It separately verifies migration and serving identities,
+permissions and numeric secret versions; it never authenticates a retired
+migration credential during serving. Existing source backup, financial and
+native fencing methods stay intact. The stale whole-source authority pin is
+renewed to the exact reviewed release source, preserving drift refusal. The
+154 affected local cases and 33 subtests pass; actual fresh credentials,
+transfer, finalization and full release orchestration remain unfinished.
+
+Public-page SEO now has a branded 1200×630 social preview using existing local
+logo/fonts and explicit Open Graph/Twitter metadata. The sitemap omits invented
+modification dates. Targeted lint and the local production build pass using
+CI-only authentication configuration; actual generated homepage metadata and
+sitemap are inspected. These are ordinary source changes, not production
+metadata, complete responsive journeys or field-performance acceptance.
 
 ## Execution correction after the four-day review — 13 October 2026
 

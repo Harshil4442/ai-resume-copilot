@@ -141,6 +141,27 @@ class Plan:
             raise ReleaseDenied("release_plan_identity_invalid")
 
 
+
+@dataclass(frozen=True)
+class FreshTargetPlan:
+    """Separate numeric destination sources; never reinterpret the source plan."""
+    runtime_secret: str
+    migration_secret: str
+    observer_secret: str
+
+    def validate(self, source: Plan) -> None:
+        refs = (self.runtime_secret, self.migration_secret, self.observer_secret)
+        if any(type(ref) is not str or re.fullmatch(
+                r"[a-z][a-z0-9-]{2,62}:[1-9][0-9]{0,8}", ref) is None for ref in refs):
+            raise ReleaseDenied("fresh_target_secret_identity_invalid")
+        names = {ref.split(":")[0] for ref in refs}
+        old_names = {ref.split(":")[0] for ref in (
+            source.runtime_secret, source.migration_secret, source.observer_secret,
+            source.expense_secret, source.model_policy_secret, source.model_key_secret)}
+        if len(names) != 3 or names & old_names:
+            raise ReleaseDenied("source_and_fresh_secret_classes_overlap")
+
+
 def runtime_environment(plan: Plan, service: str) -> tuple[dict[str, str], dict[str, str], tuple[str, ...]]:
     """One service-scoped contract for staging and exact native readback."""
     if service not in SERVICES:
@@ -553,6 +574,88 @@ class NativeBoundary:
         finally:
             engine.dispose()
 
+    def verify_fresh_database_phase(
+        self, source: Plan, target: FreshTargetPlan, schema: str, *, phase: str,
+    ) -> None:
+        """Read-only native identity/privilege slice, not full release admission.
+
+        Source remains independently bound to schema9. Phase is explicit; schema16
+        alone cannot imply migrator retirement. Legacy backup/fence/financial gates
+        and run_release remain unchanged and cannot select this route implicitly.
+        """
+        if (type(target) is not FreshTargetPlan or type(phase) is not str
+                or phase not in {"migration", "serving"}):
+            raise ReleaseDenied("fresh_target_phase_invalid")
+        if type(schema) is not str or schema not in CUTOVER_CHAIN:
+            raise ReleaseDenied("fresh_target_schema_invalid")
+        source.validate()
+        target.validate(source)
+        module, (source_engine, inventory, source_binding, _), _, _ = self._database_context(
+            source, CUTOVER_CHAIN[0])
+        neon = module.neon_identity
+        observer_engine = None
+        try:
+            if (source_binding.purpose != "release_capture"
+                    or inventory.expected_database_oid != neon.DATABASE_OID
+                    or inventory.expected_system_identifier_sha256 != neon.CLUSTER
+                    or (neon.DATABASE_OID, neon.CLUSTER) == (neon.FRESH_DATABASE_OID, neon.FRESH_CLUSTER)):
+                raise ReleaseDenied("source_and_fresh_native_classes_overlap")
+            with source_engine.connect() as connection, connection.begin():
+                connection.exec_driver_sql("SET TRANSACTION READ ONLY")
+                connection.exec_driver_sql("SET LOCAL search_path = pg_catalog")
+                connection.exec_driver_sql("SET LOCAL statement_timeout = '1000ms'")
+                neon.verify_transport(connection, source_binding)
+                neon.verify_native_target(connection, source_binding, neon.DATABASE_OID)
+                module._native_session_ids(connection, neon.DATABASE_OID, neon_binding=source_binding)
+            binding, observed_target = neon.collect_fresh_release_target(
+                self, target.observer_secret, alias="observer",
+                database_owner_oid=neon.FRESH_DATABASE_OWNER_OID, expected_schema=schema)
+            observer_engine = observed_target.engine()
+            with observer_engine.connect() as connection, connection.begin():
+                connection.exec_driver_sql("SET TRANSACTION READ ONLY")
+                connection.exec_driver_sql("SET LOCAL search_path = pg_catalog")
+                connection.exec_driver_sql("SET LOCAL statement_timeout = '1000ms'")
+                neon.verify_transport(connection, binding)
+                neon.verify_native_target(connection, binding, neon.FRESH_DATABASE_OID)
+                sessions, _ = module._native_session_ids(
+                    connection, neon.FRESH_DATABASE_OID, neon_binding=binding)
+                verify_fresh_role_phase(connection, neon.FRESH_RELEASE_ACTORS, phase, sessions)
+                runtime = neon.FRESH_RELEASE_ACTORS["replacement_runtime"][0]
+                migration = neon.FRESH_RELEASE_ACTORS["replacement_migration"][0]
+                verify_runtime_permissions(connection, neon.NAMESPACE, runtime, migration)
+            # Authenticate serving identities separately; never authenticate the
+            # retired migration credential during the serving phase.
+            aliases = [("replacement_runtime", target.runtime_secret)]
+            if phase == "migration":
+                aliases.append(("replacement_migration", target.migration_secret))
+            else:
+                metadata = self.describe_release_secret(target.migration_secret)
+                name, version = target.migration_secret.split(":")
+                expected = f"projects/{neon.PROJECT_NUMBER}/secrets/{name}/versions/{version}"
+                if (type(metadata) is not dict or metadata.get("name") != expected
+                        or metadata.get("state") != "DISABLED"):
+                    raise ReleaseDenied("fresh_migration_numeric_version_not_disabled")
+            for alias, reference in aliases:
+                actor_binding, actor_target = neon.collect_fresh_release_target(
+                    self, reference, alias=alias,
+                    database_owner_oid=neon.FRESH_DATABASE_OWNER_OID, expected_schema=schema)
+                actor_engine = actor_target.engine()
+                try:
+                    with actor_engine.connect() as connection, connection.begin():
+                        connection.exec_driver_sql("SET TRANSACTION READ ONLY")
+                        connection.exec_driver_sql("SET LOCAL search_path = pg_catalog")
+                        connection.exec_driver_sql("SET LOCAL statement_timeout = '1000ms'")
+                        neon.verify_transport(connection, actor_binding)
+                        neon.verify_native_target(connection, actor_binding, neon.FRESH_DATABASE_OID)
+                        module._native_session_ids(
+                            connection, neon.FRESH_DATABASE_OID, neon_binding=actor_binding)
+                finally:
+                    actor_engine.dispose()
+        finally:
+            if observer_engine is not None:
+                observer_engine.dispose()
+            source_engine.dispose()
+
     @contextmanager
     def _backup_snapshot(self, plan: Plan) -> Iterator[tuple[str, Any]]:
         from sqlalchemy import text
@@ -830,6 +933,51 @@ def verify_ci_checkout_contract(root: Path) -> None:
         checkouts = [step for step in job.get("steps", []) if str(step.get("uses", "")).startswith("actions/checkout@")]
         if len(checkouts) != 1 or checkouts[0].get("with", {}).get("ref") != "${{ github.event.pull_request.head.sha || github.sha }}":
             raise ReleaseDenied("reviewed_ci_checkout_contract_mismatch")
+
+
+
+def verify_fresh_role_phase(
+    connection: Any, actors: dict[str, tuple[str, int]], phase: str,
+    sessions: list[tuple[int, int | None, int | None]],
+) -> None:
+    """Finite native role constraints; this is not the old source retirement gate."""
+    from sqlalchemy import text
+
+    if type(phase) is not str or phase not in {"migration", "serving"} or set(actors) != {
+            "observer", "replacement_runtime", "replacement_migration"}:
+        raise ReleaseDenied("fresh_target_phase_invalid")
+    names = [actors[key][0] for key in ("observer", "replacement_runtime", "replacement_migration")]
+    rows = connection.execute(text(
+        "SELECT r.oid,r.rolname,r.rolcanlogin,r.rolinherit,"
+        "(r.rolsuper OR r.rolcreatedb OR r.rolcreaterole OR r.rolreplication OR r.rolbypassrls) AS elevated,"
+        "has_schema_privilege(r.oid,'public','CREATE') AS schema_create,"
+        "EXISTS(SELECT 1 FROM pg_catalog.pg_roles a WHERE "
+        "(a.rolsuper OR a.rolcreatedb OR a.rolcreaterole OR a.rolreplication OR a.rolbypassrls) "
+        "AND (pg_has_role(r.oid,a.oid,'USAGE') OR pg_has_role(r.oid,a.oid,'SET'))) AS elevated_membership,"
+        "EXISTS(SELECT 1 FROM pg_catalog.pg_auth_members m WHERE m.member=r.oid AND m.admin_option) AS administration "
+        "FROM pg_catalog.pg_roles r WHERE r.rolname IN (:observer,:runtime,:migration) ORDER BY r.oid LIMIT 4"
+    ), {"observer": names[0], "runtime": names[1], "migration": names[2]}).mappings().all()
+    if len(rows) != 3:
+        raise ReleaseDenied("fresh_target_role_inventory_mismatch")
+    observed = {}
+    booleans = {"rolcanlogin", "rolinherit", "elevated", "schema_create", "elevated_membership", "administration"}
+    for row in rows:
+        if (set(row) != booleans | {"oid", "rolname"} or type(row["oid"]) is not int
+                or row["rolname"] not in names or row["rolname"] in observed
+                or any(type(row[key]) is not bool for key in booleans)
+                or row["rolinherit"] or row["elevated"] or row["elevated_membership"] or row["administration"]):
+            raise ReleaseDenied("fresh_target_role_authority_mismatch")
+        observed[row["rolname"]] = row
+    for alias, (name, oid) in actors.items():
+        row = observed[name]
+        if row["oid"] != oid:
+            raise ReleaseDenied("fresh_target_role_oid_mismatch")
+        migration = alias == "replacement_migration"
+        expected = migration and phase == "migration"
+        if row["schema_create"] != expected or row["rolcanlogin"] != (not migration or expected):
+            raise ReleaseDenied("fresh_target_role_phase_mismatch")
+    if phase == "serving" and any(role == actors["replacement_migration"][1] for _, role, _ in sessions):
+        raise ReleaseDenied("fresh_migration_session_remains")
 
 
 def verify_runtime_permissions(connection: Any, namespace: str, runtime: str, migration: str) -> None:

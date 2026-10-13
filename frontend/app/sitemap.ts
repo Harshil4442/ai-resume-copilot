@@ -23,7 +23,6 @@ const PUBLIC_ROUTES = [
 ];
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const lastModified = new Date("2026-07-11T00:00:00.000Z");
   const dynamicRoutes = [
     ...toolPages.map((tool) => `/tools/${tool.slug}`),
     ...blogPosts.map((post) => `/blog/${post.slug}`),
@@ -31,7 +30,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
 
   return [...PUBLIC_ROUTES, ...dynamicRoutes].map((route) => ({
     url: `${BASE_URL}${route}`,
-    lastModified,
     changeFrequency: route.startsWith("/blog") ? "weekly" : "monthly",
     priority: route === "" ? 1 : route.startsWith("/tools") ? 0.85 : route.startsWith("/blog") ? 0.8 : 0.7,
   }));

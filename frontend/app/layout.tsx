@@ -49,12 +49,14 @@ export const metadata: Metadata = {
     type: "website",
     url: "https://www.hirewizhq.com",
     siteName: "HireWiz",
+    images: [{ url: "/images/hirewiz-share.png", width: 1200, height: 630, alt: "HireWiz — Evidence-backed career workspace" }],
     title: "HireWiz | Evidence-backed career workspace",
     description:
       "A connected workspace for evidence-backed resumes, opportunity decisions, interview preparation, and application outcomes.",
   },
   twitter: {
     card: "summary_large_image",
+    images: ["/images/hirewiz-share.png"],
     title: "HireWiz | Evidence-backed career workspace",
     description:
       "Build stronger applications from approved career evidence and keep every opportunity connected.",

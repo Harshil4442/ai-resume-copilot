@@ -222,20 +222,30 @@ share the host container's CPU/memory allocation. Record the exact revision's
 native configuration, rather than inferring enablement from an environment value.
 [Google sandbox configuration](https://docs.cloud.google.com/run/docs/configuring/services/sandboxes)
 
-The proposed controller requires `/usr/local/gcp/bin/sandbox` and makes one synchronous
-`do --sandbox-name=<uniqueName> --write -- /usr/local/bin/python3 -I /opt/document/processor.py --stdin` call, followed by explicit named `delete --force` in `finally`. Google documents that `do` creates a sandbox, runs the command and automatically destroys it on exit. The explicit cleanup must still return zero before any result is released; an absent-name heuristic never counts as cleanup success. Verify that behavior on the deployed launcher, because absent-sandbox forced-delete semantics and controlled child-exit propagation are native acceptance gates. The current marker-only native `do` success establishes command viability, not scanner, isolation or retirement acceptance. Earlier split `run`/`exec` failures remain retained with their cause unproved.
+The controller requires `/usr/local/gcp/bin/sandbox` and makes one synchronous
+`do --sandbox-name=<uniqueName> --mount type=bind,source=/tmp/<uniqueName>,destination=/tmp --env DOCUMENT_CLAMD_MANIFEST_BINDING=<host-verified-digest> -- /usr/local/bin/python3 -I /opt/document/processor.py --stdin`
+call (`--docx-layout-stdin` for layout validation). The image root stays read-only;
+only a fresh empty request-owned temporary directory is mounted writable. The single
+explicit environment value binds the immutable scanner manifest and contains no secret.
+The payload stays on bounded stdin. Named `delete --force` must return zero before
+host temporary files are erased or any result is released. Unknown cleanup stops
+further admission. Google documents automatic deletion by `do`; actual forced-delete
+and child-exit behavior still require native verification.
 [Google sandbox CLI](https://docs.cloud.google.com/run/docs/reference/sandbox-cli)
 
-It streams the bounded JSON request through stdin into a writable ephemeral overlay,
-retaining the write allowance needed for the scanner temporary target. It requests no
-archive import, outbound networking, environment passthrough, bind mount, export or
-persisted snapshot. Google documents default network, environment and metadata isolation;
-these are properties to verify in the actual deployment with harmless probes,
-not conclusions established by the worker's image/policy echoes. Sandboxes can
-read the host root filesystem, so the host must contain no candidate-independent
-secrets or secret mounts. The documented sandbox nonroot user has sudo privileges;
-do not claim the Docker UID alone proves privilege or process isolation.
+The controller permits no archive import/export, persisted snapshot, outbound network,
+inherited environment or additional mount. Google's execution guide documents writable
+bind mounts alongside the default read-only root. Actual mount ownership, writable scope,
+network/metadata isolation and bounded process cleanup must be verified on GCP. The host
+image must contain no credentials or unrelated secrets because sandbox processes can
+read its root. Docker UID alone does not establish isolation.
 [Google sandbox execution model](https://docs.cloud.google.com/run/docs/code-execution)
+
+Current-image GCP checks pass the four ordinary inspection/antivirus cases but fail both
+layout cases at output decoding. The separate one-request diagnostic on 13 October
+observes zero launcher output bytes, outer code 1 and confirmed cleanup. Its processor
+witness is absent, so Python entry and the inner failure cause remain unobserved.
+The image is not accepted for customer layout preservation or production activation.
 
 Use a dedicated worker service identity with no database, Secret Manager, model,
 merchant, application-submission, artifact bucket or broad project permissions.
