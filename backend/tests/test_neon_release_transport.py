@@ -362,7 +362,7 @@ def test_all_context_consumers_have_updated_shape_without_native_execution():
             assert isinstance(unpack, ast.Tuple) and isinstance(unpack.elts[1], ast.Tuple)
             assert len(unpack.elts[1].elts) == 4
             observed += 1
-    assert observed == 4
+    assert observed == 5
 
 
 def test_target_receipt_drift_refuses_before_secret_metadata(inert_target_context):

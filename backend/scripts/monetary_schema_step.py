@@ -34,6 +34,7 @@ class StepDenied(RuntimeError):
 def upgrade_step(
     engine: Engine, *, expected: str, target: str, identifier_hash: str,
     database_oid: int, namespace: str, migration_role: str,
+    migration_role_oid: int | None = None,
 ) -> None:
     if (
         engine.dialect.name != "postgresql" or expected not in CHAIN[:-1]
@@ -42,16 +43,27 @@ def upgrade_step(
         or type(database_oid) is not int or database_oid <= 0
         or not re.fullmatch(r"[a-z][a-z0-9_]{0,62}", namespace)
         or not migration_role or len(migration_role) > 63 or "\x00" in migration_role
+        or migration_role_oid is not None and (type(migration_role_oid) is not int or not 0 < migration_role_oid < 2**32)
     ):
         raise StepDenied("migration_step_or_identity_invalid")
     locked = False
     with engine.connect() as connection:
         try:
+            if migration_role_oid is not None:
+                # Fresh migration admission is explicit before the first SELECT;
+                # neither role defaults nor credentials imply read-write mode.
+                connection.exec_driver_sql("SET TRANSACTION READ WRITE")
             connection.exec_driver_sql("SET statement_timeout = '300000ms'")
             connection.exec_driver_sql("SET lock_timeout = '5000ms'")
             connection.exec_driver_sql("SET idle_in_transaction_session_timeout = '10000ms'")
             if connection.execute(text("SELECT current_user")).scalar_one() != migration_role:
                 raise StepDenied("migration_role_mismatch")
+            if migration_role_oid is not None:
+                observed_oid = connection.execute(text(
+                    "SELECT oid FROM pg_catalog.pg_roles WHERE rolname=current_user"
+                )).scalar_one()
+                if type(observed_oid) is not int or observed_oid != migration_role_oid:
+                    raise StepDenied("migration_role_oid_mismatch")
             identifier = connection.execute(text("SELECT system_identifier::text FROM pg_control_system()")).scalar_one()
             oid = connection.execute(text("SELECT oid FROM pg_database WHERE datname = current_database()")).scalar_one()
             if hashlib.sha256(str(identifier).encode()).hexdigest() != identifier_hash or oid != database_oid:
@@ -106,7 +118,9 @@ def main() -> int:
                      identifier_hash=os.environ["HIREWIZ_CUTOVER_CLUSTER_SHA256"],
                      database_oid=int(os.environ["HIREWIZ_CUTOVER_DATABASE_OID"]),
                      namespace=os.environ["HIREWIZ_CUTOVER_NAMESPACE"],
-                     migration_role=os.environ["HIREWIZ_CUTOVER_MIGRATION_ROLE"])
+                     migration_role=os.environ["HIREWIZ_CUTOVER_MIGRATION_ROLE"],
+                     migration_role_oid=(int(os.environ["HIREWIZ_CUTOVER_MIGRATION_ROLE_OID"])
+                                         if "HIREWIZ_CUTOVER_MIGRATION_ROLE_OID" in os.environ else None))
     except StepDenied as error:
         print(f"Monetary migration refused: {error}", file=sys.stderr)
         return 65
