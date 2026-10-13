@@ -8,8 +8,8 @@ estimate and the measured whole-checkpoint duration only when its complete scope
 
 | Fixed checkpoint | Original estimate of additional active agent work | Current status | Recorded whole-checkpoint duration |
 |---|---|---|---|
-| Full CI/regressions | 1–3 hours | Reopened after the diagnostic update. Latest backend CI is `acaeabe`: `clamd_max_filesize` fails its expected-outcome requirement. All four other jobs pass. Full native acceptance remains unverified. Last full-green source is `6519de6` | Last completed cumulative duration: 20 hours 29 minutes 11 seconds, including waits. Current renewal began 12 October at 23:10:02.993537 UTC and remains open; do not count prior windows twice |
-| Resume worker output + PDF/DOCX/LaTeX fidelity | 4–8 hours | In progress. Request-local engine changes are committed; deployed document fidelity remains unverified | Unavailable; checkpoint incomplete |
+| Full CI/regressions | 1–3 hours | Reopened. Latest source `c86d061` passes all 21 native document cases and four other CI jobs; backend fails later on 22 type-check errors. Last full-green source is `6519de6` | Last completed cumulative duration: 20 hours 29 minutes 11 seconds, including waits. Current renewal began 12 October at 23:10:02.993537 UTC and remains open; do not count prior windows twice |
+| Resume worker output + PDF/DOCX/LaTeX fidelity | 4–8 hours | In progress. All 21 native image cases pass, including two DOCX layout cases. GCP runtime validation and customer resume fidelity remain unverified | Unavailable; checkpoint incomplete |
 | Candidate-reviewed browser integration | 2–6 hours after the approval blocker clears | Blocked by automatic approval review of the protected integration | Unavailable; checkpoint incomplete |
 | Billing costs/failure recovery/load | 2–5 hours | In progress. Pricing and credit regressions pass; native credential retirement, release verification and representative load checks remain | Unavailable; checkpoint incomplete |
 | Mobile/performance/SEO verification | 1–3 hours | In progress. Public-page responsive and metadata checks passed; complete application journeys and field metrics remain | Unavailable; checkpoint incomplete |
@@ -19,6 +19,40 @@ The original 12–30-hour subtotal excluded the unresolved approval wait. Those
 estimates have not held and are not a current ETA. Worldwide job coverage remains
 unverified. The complete goal has no defensible completion estimate yet. Preserve
 these same six checkpoints and distinguish active work from elapsed time including waits.
+
+## Execution correction after the four-day review — 13 October 2026
+
+The delay includes avoidable execution overhead. Repeated native worker failures
+were diagnosed and fixed one at a time, with frequent complete verification cycles.
+CI ran native image builds before static checks, so the latest run discovered
+22 type errors only after its 21 native document cases passed. The growing evidence
+and status chronology also took time away from completing release prerequisites.
+These are process failures as well as technical defects; the original estimates
+were not based on the observed delivery path.
+
+The existing Ruff, import-order, Mypy and compile steps now run after dependency
+installation and before native image builds. Every existing command, check,
+permission and concurrency setting is preserved. The narrow two-file type correction
+passes configured Linux Mypy and Ruff locally; its complete-source CI remains required.
+
+Keep execution focused on these same six checkpoints:
+
+- Run affected cheap checks before committing a consolidated correction; run complete
+  CI and genuine runtime checks when needed to verify the changed release.
+- Finish the current document correction, then validate its exact image on GCP.
+  Add diagnostics only when an observed failure prevents the next implementation action.
+- Stop expanding provider inventory without a specific implementation decision.
+  `NativeBoundary.verify_fences` still refuses unconditionally because its native
+  verifier is missing. Implement its evidence contract and prepare the exact credential
+  and database-role cutover; metadata alone cannot authorize paid activation.
+- Preserve candidate approval and payment safeguards. Prepare critical actions with
+  affected resources, impact and rollback before asking the user to approve them.
+- Treat the automatically rejected browser integration as a separate unresolved
+  restriction. Do not retry or bypass it, or let it consume unrelated delivery work.
+
+No new checkpoint, whole-checkpoint completion, production rollout or reliable
+completion ETA is claimed by these execution changes. Existing retained logins are
+sufficient for current authorized testing; no additional credentials are requested.
 
 The last complete source verification is [CI run 38312570609](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38312570609)
 for `6519de6aa3f9cbbbc0a9f215b3993e0e47340295`, completed on 12 October at
@@ -113,6 +147,25 @@ checked. All 195 focused local controls and configured lint on nine affected Pyt
 files pass. The original ordinary/native corpora and native acceptance predicates
 remain unchanged. Full current-source CI and actual image memory/fidelity are
 required; these local checks do not authorize the held image Build or deployment.
+
+[CI run 38337414901](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38337414901)
+for committed and pushed source `c86d0611eac7c2868b4c4e7b82f113fdfc5fe3b1`
+completed on 13 October at 02:44:18 UTC. The genuine native image step passed
+in 3 minutes 51 seconds, with its physical report retained and source hashes
+independently verified: eight ordinary document cases, eleven request-local
+antivirus cases and two DOCX layout cases. The oversized ZIP case has two completed
+antivirus OK replies but only one admitted clean result; the candidate is refused
+for actual expanded member bytes. The styled two-page DOCX retains its link, and
+the overlong replacement is refused when its hyperlink layout changes. These
+are Linux native-image checks; they do not establish GCP isolation or arbitrary
+customer resume fidelity.
+
+Frontend, browser companion, security/container and cold-browser journey jobs
+passed. Backend failed afterward at type checking: eighteen processor errors and
+four proof-driver errors. A narrow annotation, explicit type-guard and local-variable
+correction is in preparation. No acceptance criteria will be relaxed. The held
+Build must be refreshed against the next verified source; no production promotion
+or whole-checkpoint completion has occurred.
 
 The existing signed-in Vercel dashboard verifies the `acaeabe` preview is Ready
 (`dpl_97Ek3rUQ5rGfHo3ce1cK3HpEGzvy`, 27 seconds). It also verifies production

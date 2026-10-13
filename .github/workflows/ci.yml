@@ -45,50 +45,6 @@ jobs:
         run: |
           python -m pip install --disable-pip-version-check uv==0.11.32
           uv sync --project backend --frozen --all-groups
-      - name: Configure verified public cache without restarting PostgreSQL
-        timeout-minutes: 2
-        env:
-          CI_POSTGRES_CONTAINER_ID: ${{ job.services.postgres.id }}
-        run: |
-          [ "$(docker inspect --format '{{.State.Running}} {{.State.Health.Status}}' "$CI_POSTGRES_CONTAINER_ID")" = "true healthy" ]
-          postgres_before="$(docker inspect --format '{{.Id}} {{.State.Running}} {{.State.Pid}} {{.State.Health.Status}}' "$CI_POSTGRES_CONTAINER_ID")"
-          sudo --preserve-env=GITHUB_ACTIONS,RUNNER_OS python3 backend/scripts/ci_registry_cache.py
-          sudo dockerd --validate --config-file /etc/docker/daemon.json
-          daemon_pid="$(systemctl show --property=MainPID --value docker)"
-          [[ "$daemon_pid" =~ ^[1-9][0-9]*$ ]]
-          [ "$daemon_pid" -gt 1 ]
-          sudo kill -HUP "$daemon_pid"
-          timeout 15s python3 backend/scripts/ci_registry_cache.py --verify
-          postgres_after="$(docker inspect --format '{{.Id}} {{.State.Running}} {{.State.Pid}} {{.State.Health.Status}}' "$CI_POSTGRES_CONTAINER_ID")"
-          [ "$postgres_before" = "$postgres_after" ]
-          docker pull --platform linux/amd64 mirror.gcr.io/library/debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587
-      - name: Build and attest immutable native TeX test compiler
-        timeout-minutes: 12
-        run: >-
-          backend/.venv/bin/python backend/scripts/native_tex_test_image.py
-          --platform linux/amd64 --github-env "$GITHUB_ENV"
-          --output "$RUNNER_TEMP/native-tex-test-image.json"
-      - name: Build and verify genuine native document engines
-        timeout-minutes: 20
-        run: |
-          document_test_report_path="$RUNNER_TEMP/document-engine-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.json"
-          backend/.venv/bin/python backend/scripts/document_test_image.py \
-            --platform linux/amd64 --output "$document_test_report_path"
-          printf 'HIREWIZ_DOCUMENT_TEST_REPORT=%s\n' "$document_test_report_path" >> "$GITHUB_ENV"
-      - name: Save sanitized native document engine proof
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, verified official ref
-        with:
-          name: native-document-engine-proof-${{ github.run_id }}-${{ github.run_attempt }}
-          retention-days: 7
-          path: ${{ runner.temp }}/document-engine-${{ github.run_id }}-${{ github.run_attempt }}.json
-      - name: Provision disposable admission test database
-        working-directory: backend
-        run: |
-          .venv/bin/python - <<'PY'
-          import psycopg
-          with psycopg.connect("postgresql://hirewiz:hirewiz@127.0.0.1:55433/hirewiz_test", autocommit=True) as connection:
-              connection.execute("CREATE DATABASE hirewiz_admission_test")
-          PY
       - name: Ruff modernized modules
         working-directory: backend
         run: >-
@@ -174,6 +130,50 @@ jobs:
           app/resume_upload_worker.py app/services/resume_upload_coordinator.py
       - name: Compile backend
         run: backend/.venv/bin/python -m compileall -q backend/app
+      - name: Configure verified public cache without restarting PostgreSQL
+        timeout-minutes: 2
+        env:
+          CI_POSTGRES_CONTAINER_ID: ${{ job.services.postgres.id }}
+        run: |
+          [ "$(docker inspect --format '{{.State.Running}} {{.State.Health.Status}}' "$CI_POSTGRES_CONTAINER_ID")" = "true healthy" ]
+          postgres_before="$(docker inspect --format '{{.Id}} {{.State.Running}} {{.State.Pid}} {{.State.Health.Status}}' "$CI_POSTGRES_CONTAINER_ID")"
+          sudo --preserve-env=GITHUB_ACTIONS,RUNNER_OS python3 backend/scripts/ci_registry_cache.py
+          sudo dockerd --validate --config-file /etc/docker/daemon.json
+          daemon_pid="$(systemctl show --property=MainPID --value docker)"
+          [[ "$daemon_pid" =~ ^[1-9][0-9]*$ ]]
+          [ "$daemon_pid" -gt 1 ]
+          sudo kill -HUP "$daemon_pid"
+          timeout 15s python3 backend/scripts/ci_registry_cache.py --verify
+          postgres_after="$(docker inspect --format '{{.Id}} {{.State.Running}} {{.State.Pid}} {{.State.Health.Status}}' "$CI_POSTGRES_CONTAINER_ID")"
+          [ "$postgres_before" = "$postgres_after" ]
+          docker pull --platform linux/amd64 mirror.gcr.io/library/debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587
+      - name: Build and attest immutable native TeX test compiler
+        timeout-minutes: 12
+        run: >-
+          backend/.venv/bin/python backend/scripts/native_tex_test_image.py
+          --platform linux/amd64 --github-env "$GITHUB_ENV"
+          --output "$RUNNER_TEMP/native-tex-test-image.json"
+      - name: Build and verify genuine native document engines
+        timeout-minutes: 20
+        run: |
+          document_test_report_path="$RUNNER_TEMP/document-engine-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.json"
+          backend/.venv/bin/python backend/scripts/document_test_image.py \
+            --platform linux/amd64 --output "$document_test_report_path"
+          printf 'HIREWIZ_DOCUMENT_TEST_REPORT=%s\n' "$document_test_report_path" >> "$GITHUB_ENV"
+      - name: Save sanitized native document engine proof
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, verified official ref
+        with:
+          name: native-document-engine-proof-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 7
+          path: ${{ runner.temp }}/document-engine-${{ github.run_id }}-${{ github.run_attempt }}.json
+      - name: Provision disposable admission test database
+        working-directory: backend
+        run: |
+          .venv/bin/python - <<'PY'
+          import psycopg
+          with psycopg.connect("postgresql://hirewiz:hirewiz@127.0.0.1:55433/hirewiz_test", autocommit=True) as connection:
+              connection.execute("CREATE DATABASE hirewiz_admission_test")
+          PY
       - name: Validate PostgreSQL migrations
         working-directory: backend
         env:

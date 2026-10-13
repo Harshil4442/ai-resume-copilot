@@ -501,19 +501,19 @@ class OwnedClamd:
     """One foreground engine for exactly this request's two sequential scans."""
     def __init__(self, directory: Path, deadline: float):
         self.directory, self.deadline = directory, deadline
-        self.child = None
-        self.pipes = {}
-        self.signatures = []
-        self.scan_bindings = []
-        self.protocol_bindings = []
+        self.child: subprocess.Popen[bytes] | None = None
+        self.pipes: dict[str, dict] = {}
+        self.signatures: list[int] = []
+        self.scan_bindings: list[dict] = []
+        self.protocol_bindings: list[dict] = []
         self.instream_attempts = 0
-        self.zip_admission_failure = None
+        self.zip_admission_failure: dict | None = None
         self.stopped = False
         self.forced = False
-        self.manifest = None
-        self.peer = None
-        self.log_fd = None
-        self.log_identity = None
+        self.manifest: dict | None = None
+        self.peer: dict[str, int] | None = None
+        self.log_fd: int | None = None
+        self.log_identity: tuple[int, int] | None = None
         self.log_path = directory / "clamd.log"
         self.socket_path = directory / "clamd.sock"
         self.config_path = directory / "clamd.conf"
@@ -613,7 +613,7 @@ class OwnedClamd:
         metadata = self.socket_path.lstat()
         if (not stat.S_ISSOCK(metadata.st_mode) or stat.S_IMODE(metadata.st_mode) != 0o600
                 or metadata.st_uid != os.getuid() or metadata.st_gid != os.getgid()
-                or self.child.poll() is not None):
+                or self.child is None or self.child.poll() is not None):
             raise InspectionUnavailable()
         connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         try:
@@ -635,7 +635,7 @@ class OwnedClamd:
             index, offset, reply = 0, 0, bytearray()
             while True:
                 self._drain()
-                if self.child.poll() is not None:
+                if self.child is None or self.child.poll() is not None:
                     raise InspectionUnavailable()
                 readable, writable, _ = select.select([connection], [connection] if index < len(parts) else [], [],
                                                       min(0.05, self._remaining(deadline)))
