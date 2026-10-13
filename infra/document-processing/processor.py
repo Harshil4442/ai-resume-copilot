@@ -485,10 +485,7 @@ class OwnedClamd:
             raise InspectionUnavailable()
         descriptor = os.open("/proc/" + str(self.child.pid) + "/maps", os.O_RDONLY | os.O_NOFOLLOW)
         try:
-            raw = os.read(descriptor, 1048577)
-            if len(raw) > 1048576:
-                raise InspectionUnavailable()
-            maps = raw.decode("ascii", errors="strict")
+            maps = _read_clamd_maps(descriptor, deadline)
         finally:
             os.close(descriptor)
         self._remaining(deadline)
@@ -592,6 +589,21 @@ class OwnedClamd:
         if kind is None:
             self._remaining(self.deadline)
         return False
+
+
+def _read_clamd_maps(descriptor: int, deadline: float) -> str:
+    # A positive short procfs read does not prove EOF.
+    raw = bytearray()
+    while True:
+        OwnedClamd._remaining(deadline)
+        block = os.read(descriptor, min(65536, 1048577 - len(raw)))
+        if not block:
+            break
+        raw.extend(block)
+        if len(raw) > 1048576:
+            raise InspectionUnavailable()
+    OwnedClamd._remaining(deadline)
+    return raw.decode("ascii", errors="strict")
 
 
 def validate_pdf(content: bytes) -> None:

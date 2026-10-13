@@ -8,7 +8,7 @@ estimate and the measured whole-checkpoint duration only when its complete scope
 
 | Fixed checkpoint | Original estimate of additional active agent work | Current status | Recorded whole-checkpoint duration |
 |---|---|---|---|
-| Full CI/regressions | 1–3 hours | Reopened after the diagnostic update. Latest native CI is `211e149`: backend refuses the zero-log-limit startup record. The exact literal correction requires new CI. Last full-green source is `6519de6` | Last completed cumulative duration: 20 hours 29 minutes 11 seconds, including waits. Current renewal began 12 October at 23:10:02.993537 UTC and remains open; do not count prior windows twice |
+| Full CI/regressions | 1–3 hours | Reopened after the diagnostic update. Latest backend CI is `be1579e`: startup proceeds to the loaded-library equality refusal. The complete-EOF correction requires new CI. Last full-green source is `6519de6` | Last completed cumulative duration: 20 hours 29 minutes 11 seconds, including waits. Current renewal began 12 October at 23:10:02.993537 UTC and remains open; do not count prior windows twice |
 | Resume worker output + PDF/DOCX/LaTeX fidelity | 4–8 hours | In progress. Request-local engine changes are committed; deployed document fidelity remains unverified | Unavailable; checkpoint incomplete |
 | Candidate-reviewed browser integration | 2–6 hours after the approval blocker clears | Blocked by automatic approval review of the protected integration | Unavailable; checkpoint incomplete |
 | Billing costs/failure recovery/load | 2–5 hours | In progress. Pricing and credit regressions pass; native credential retirement, release verification and representative load checks remain | Unavailable; checkpoint incomplete |
@@ -47,13 +47,28 @@ for `211e14928994bb6d41ff85787e0e7a32a3718f9c` has a terminal backend failure.
 Its error-only observation identifies public ClamAV startup template 5, the log-size
 record. The 51-byte record hash agrees with the exact upstream 64-bit zero-size
 sentinel. ClamAV 1.4.3 maps configured size zero to INT64_MAX before logging it;
-our literal set expected only the disabled wording. The current correction adds
+our literal set expected only the disabled wording. The `be1579e` correction adds
 only that exact sentinel on the same source line. The 64 KiB same-inode admission,
 32 MiB file limit, daemon configuration, resources and every raise coordinate remain
 unchanged. All 167 focused tests and configured lint on affected files pass, including four
 new guard tests that continue rejecting other sizes, warnings, errors and unknown
 records. Native scan, antimalware and document acceptance need
 a new exact-source run. The held image Build remains unexecuted.
+
+[CI run 38329490279](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38329490279)
+for `be1579ecef9e8ab3e6ce7dae0f79cb08c9426376` passes startup far enough to reach
+the later loaded-library path-set guard, then refuses at `_start:498`. The event
+does not disclose that set or establish the native cause. Source review identifies
+a separate correctness gap: one positive read of procfs maps does not prove EOF.
+The current reader consumes the same descriptor through EOF, within the existing
+1 MiB cap and shared deadline, and retains strict ASCII, descriptor cleanup and
+the exact library-set equality. Seven focused controls demonstrate both premature
+refusal and false acceptance when later mappings are omitted. All 174 focused
+tests and configured lint on affected files pass. The diagnostic source-instruction
+tables and processor/policy consumers are refreshed; native main and functional
+acceptance criteria remain unchanged. This fixes stream completeness without
+claiming an atomic memory-map snapshot or a proven native remedy. Fresh native
+acceptance remains required before image Build refresh or deployment.
 
 The authenticated Neon API now confirms the current HireWiz project/branch/endpoint
 identity against the previously observed SQL/control-plane binding. The recovery-window

@@ -71,7 +71,7 @@ class DiagnosticTests(unittest.TestCase):
 
     def object(self):
         return {'version': 1, 'status': 'native_clamd_proof_unavailable', 'phase': 'source_scan',
-                'chain': [{'class': 'InspectionUnavailable', 'frames': [{'function': 'scan', 'line': 539}]}],
+                'chain': [{'class': 'InspectionUnavailable', 'frames': [{'function': 'scan', 'line': 536}]}],
                 'truncated': False}
 
     def encoded(self, value):
@@ -79,13 +79,13 @@ class DiagnosticTests(unittest.TestCase):
 
     def test_context_chain_preserves_cleanup_wrapper_and_original_owned_raise(self):
         original = self.exception_at('_diagnostics', 359)
-        wrapped = self.exception_at('scan', 539)
-        cleanup = self.exception_at('close', 572)
+        wrapped = self.exception_at('scan', 536)
+        cleanup = self.exception_at('close', 569)
         wrapped.__context__ = original
         cleanup.__context__ = wrapped
         receipt = self.native['failure_receipt'](cleanup)
         self.assertEqual([row['frames'][0] for row in receipt['chain']], [
-            {'function': 'close', 'line': 572}, {'function': 'scan', 'line': 539},
+            {'function': 'close', 'line': 569}, {'function': 'scan', 'line': 536},
             {'function': '_diagnostics', 'line': 359}])
         self.assertNotIn('unexported', json.dumps(receipt))
         self.assertNotIn('/opt/', json.dumps(receipt))
@@ -118,7 +118,7 @@ class DiagnosticTests(unittest.TestCase):
 
     def test_literal_raise_tables_match_pinned_processor_AST(self):
         tree = ast.parse(PROCESSOR.read_bytes())
-        selected = {'_command', '_native_file', '_installed_clamd', '_clamd_definition'}
+        selected = {'_command', '_native_file', '_installed_clamd', '_clamd_definition', '_read_clamd_maps'}
         functions = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in selected]
         owner = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == 'OwnedClamd')
         functions += [node for node in owner.body if isinstance(node, ast.FunctionDef)]
