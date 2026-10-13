@@ -18,6 +18,36 @@ import httpx
 from backend.scripts import document_test_image as engine
 
 
+def _complete_corpus(report: dict, contracts: list) -> tuple[list, list]:
+    """Validate all observed groups with the original per-case native validator."""
+    corpus = report.get("corpus")
+    layouts = report.get("docx_layout_corpus")
+    clamd = report.get("request_clamd_corpus")
+    ordinary_names = {"clean_pdf", "clean_docx", "page_counter", "active_pdf", "includetext",
+                      "eicar_exact_file", "eicar_zip_member", "missing_definitions"}
+    layout_names = {"styled_multipage_fit", "rendered_reflow_refusal"}
+    if (type(corpus) is not list or len(corpus) != 8
+            or type(layouts) is not list or len(layouts) != 2
+            or any(type(row) is not dict or type(row.get("case")) is not str or row.get("passed") is not True for row in corpus + layouts)
+            or {row.get("case") for row in corpus} != ordinary_names
+            or {row.get("case") for row in layouts} != layout_names
+            or type(clamd) is not list or len(clamd) != 11
+            or any(type(row) is not dict or type(row.get("case")) is not str for row in clamd)
+            or type(contracts) is not list or len(contracts) != 11
+            or any(type(row) is not tuple or len(row) != 4 or type(row[0]) is not str
+                   or type(row[1]) is not bytes or type(row[2]) is not str
+                   or type(row[3]) is not bool for row in contracts)):
+        raise AssertionError("The complete genuine native corpus must pass before runtime reuse.")
+    names = [name for name, _, _, _ in contracts]
+    if (len(set(names)) != 11 or {row.get("case") for row in clamd} != set(names)
+            or ordinary_names | layout_names | set(names) != set(engine._FAILURE_CASES)):
+        raise AssertionError("The complete genuine native corpus must pass before runtime reuse.")
+    by_name = {row["case"]: row for row in clamd}
+    for name, payload, expected, resident in contracts:
+        engine.validate_clamd_native(by_name[name], name, expected, resident, payload, report["platform"])
+    return corpus, layouts
+
+
 @lru_cache(maxsize=1)
 def _runtime(report_path: str) -> dict:
     if not report_path:
@@ -34,11 +64,7 @@ def _runtime(report_path: str) -> dict:
             or report.get("source_sha256") != engine.source_hashes()
             or not engine.IMAGE_ID.fullmatch(report.get("image_id", ""))):
         raise AssertionError("The native DOCX test report does not match this source/image.")
-    corpus, layouts = report.get("corpus", []), report.get("docx_layout_corpus", [])
-    if (len(corpus) != 8 or len(layouts) != 2
-            or any(type(row) is not dict or row.get("passed") is not True for row in corpus + layouts)
-            or {row.get("case") for row in corpus + layouts} != set(engine._FAILURE_CASES)):
-        raise AssertionError("The complete genuine native corpus must pass before runtime reuse.")
+    _, layouts = _complete_corpus(report, engine.clamd_corpus())
     fit = next(row for row in layouts if row["case"] == "styled_multipage_fit")
     identity = fit["layout"]["renderer"]
     image = report["image_id"]

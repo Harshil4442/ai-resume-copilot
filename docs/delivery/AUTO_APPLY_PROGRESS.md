@@ -8,12 +8,43 @@ estimate and the measured whole-checkpoint duration only when its complete scope
 
 | Fixed checkpoint | Original estimate of additional active agent work | Current status | Recorded whole-checkpoint duration |
 |---|---|---|---|
-| Full CI/regressions | 1–3 hours | Reopened. `e1c7cc0` passes the complete configured type checks before native builds, then fails scanner cleanup for encrypted PDF. A bounded graceful-shutdown correction is locally verified. `c86d061` remains the last native 21-case pass; last full-green source is `6519de6` | Last completed cumulative duration: 20 hours 29 minutes 11 seconds, including waits. Current renewal began 12 October at 23:10:02.993537 UTC and remains open; do not count prior windows twice |
+| Full CI/regressions | 1–3 hours | Reopened. `b8c569b` passes all 21 native cases and configured type checks, then fails a test-harness corpus-group assertion. The grouping and fixture-byte reproducibility correction is locally verified; complete new-source CI is pending. Last full-green source is `6519de6` | Last completed cumulative duration: 20 hours 29 minutes 11 seconds, including waits. Current renewal began 12 October at 23:10:02.993537 UTC and remains open; do not count prior windows twice |
 | Resume worker output + PDF/DOCX/LaTeX fidelity | 4–8 hours | In progress. All 21 native image cases pass, including two DOCX layout cases. GCP runtime validation and customer resume fidelity remain unverified | Unavailable; checkpoint incomplete |
 | Candidate-reviewed browser integration | 2–6 hours after the approval blocker clears | Blocked by automatic approval review of the protected integration | Unavailable; checkpoint incomplete |
 | Billing costs/failure recovery/load | 2–5 hours | In progress. Pricing and credit regressions pass; native credential retirement, release verification and representative load checks remain | Unavailable; checkpoint incomplete |
 | Mobile/performance/SEO verification | 1–3 hours | In progress. Public-page responsive and metadata checks passed; complete application journeys and field metrics remain | Unavailable; checkpoint incomplete |
 | GCP/Vercel env deployment/monitor | 2–4 hours | Pending. Preview builds succeed; production monetary deployment is not performed | Unavailable; checkpoint incomplete |
+
+On 13 October, the corrected scanner source `b8c569b80ffc7a19d24567e7ed0775985742cab8`
+passes all 21 genuine native cases in [CI run 38394316118](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38394316118).
+The uploaded physical report and all eleven source hashes are independently verified.
+Backend then fails the early tailoring test because its fixture compares eight ordinary
+plus two layout names to the newly expanded 21-name set. The correction requires the
+8/2/11 groups separately and sends every daemon row through the unchanged native
+validator with exact current fixture contracts. Synthetic ZIP timestamps are fixed
+so those payload hashes remain reproducible; all contents and security vectors stay
+intact. Seven affected controls, configured Ruff and Mypy pass. Root also generates
+the actual eleven public fixture payloads twice, across a 2.1-second timestamp change,
+and verifies exact byte equality. Product/runtime image sources remain unchanged.
+Complete new-source CI and the actual early tailoring flow remain required.
+
+The exact b8 GCP document image Build `53e0f559-3ce0-43d6-b7f4-35ce0428eab2`
+is independently reconciled as SUCCESS after its create acknowledgement was unavailable.
+No Create replay occurred. Native source generation and archive hash, all eleven labels,
+resolved provenance and published digest agree:
+`sha256:ba88e9aa2c6d3cd78ca173348e14c625abdd1eddb49d0738b8c002a997a8ea7b`.
+The owned temporary source generation is conditionally deleted and its absence verified.
+This is image Build proof, not GCP runtime isolation, customer resume fidelity or a
+production deployment. Original six-case GCP runtime acceptance is in preparation.
+
+The user authorizes a fresh database if historical resource blockers persist.
+Prepare a separate Neon project near the existing GCP backend, preserving the current
+HireWiz database and unrelated `bulk_action_platform`. The replacement is an isolated
+migration target; an empty database does not satisfy delivery. Retain all profiles,
+resumes/artifact references, credits, ledgers, accepted order snapshots and liabilities.
+Final consistent copy, old-writer cut, new-role/native-target validation, settlement
+continuity and reviewed production switch remain required. Historical resources are
+not declared deleted from empty inventories, and no existing database is overwritten.
 
 The original 12–30-hour subtotal excluded the unresolved approval wait. Those
 estimates have not held and are not a current ETA. Worldwide job coverage remains

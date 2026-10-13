@@ -943,11 +943,22 @@ def docx_layout_corpus(image: str) -> list[tuple[str, bytes, dict]]:
     return rows
 
 
+def _canonical_clamd_zip(content: bytes) -> bytes:
+    """Keep fixture ZIP contents/metadata, replacing only volatile timestamps."""
+    stream = io.BytesIO()
+    with ZipFile(io.BytesIO(content)) as original, ZipFile(stream, "w") as output:
+        for entry in original.infolist():
+            entry.date_time = (1980, 1, 1, 0, 0, 0)
+            output.writestr(entry, original.read(entry))
+    return stream.getvalue()
+
+
 def clamd_corpus() -> list[tuple[str, bytes, str, bool]]:
     """New genuine daemon controls; ordinary clamscan corpus stays unchanged."""
     from docx import Document
     from pypdf import PdfWriter
-    fixtures = {name: content for name, _, content, _ in corpus()}
+    fixtures = {name: _canonical_clamd_zip(content) if kind == "docx" else content
+                for name, kind, content, _ in corpus()}
     clean, docx = fixtures["clean_pdf"], fixtures["clean_docx"]
     spec = importlib.util.spec_from_file_location("document_native_clamd_patch", ROOT / "backend/app/services/resume_layout.py")
     if spec is None or spec.loader is None:
@@ -961,18 +972,18 @@ def clamd_corpus() -> list[tuple[str, bytes, str, bool]]:
     document.add_paragraph(resident_text)
     resident_stream = io.BytesIO()
     document.save(resident_stream)
-    resident_docx = resident_stream.getvalue()
+    resident_docx = _canonical_clamd_zip(resident_stream.getvalue())
     unit = next(value for value in layout.extract_source_units(resident_docx, "docx")
                 if value["text"] == resident_text)
     resident_edits = [{"unit_id": unit["unit_id"], "original_text": unit["text"],
                        "replacement_text": "Built Python automation tools for reliable test workflows."}]
-    resident_candidate = layout._apply_docx(resident_docx, resident_edits)
+    resident_candidate = _canonical_clamd_zip(layout._apply_docx(resident_docx, resident_edits))
     def archive(rows):
         stream = io.BytesIO()
         with ZipFile(stream, "w", ZIP_DEFLATED) as zipped:
             for name, content in rows:
                 zipped.writestr(name, content)
-        return stream.getvalue()
+        return _canonical_clamd_zip(stream.getvalue())
     writer = PdfWriter()
     writer.add_blank_page(200, 200)
     writer.encrypt("public-synthetic-fixture-password")
