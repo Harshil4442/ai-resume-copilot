@@ -173,6 +173,63 @@ estimates have not held and are not a current ETA. Worldwide job coverage remain
 unverified. The complete goal has no defensible completion estimate yet. Preserve
 these same six checkpoints and distinguish active work from elapsed time including waits.
 
+
+On 13 October, the reviewed discovery registry expands from four to twenty
+employer origins, preserving the original rows and adding sixteen official
+company-to-ATS joins. Their public feeds return HTTP 200 with 994 listed
+requisition observations, including 25 descriptive India-location matches.
+The [source register](EMPLOYER_ORIGIN_REGISTRY_2026-10-13.md) records links,
+observation times and exclusions. No AI calls, submission grants or production
+seeding are used. This supports the official-search outcome; recent/closed-job
+handling, ranking usefulness, saved result/count/credit behavior and broad
+coverage still require complete runtime acceptance. Worldwide recall and the
+requested 95% coverage remain unverified.
+
+Corrected source `11b55b0063f68118a3971c0d141d27dc13ef438c` produces a new actual
+GCP image on 13 October: Build `9f1583d5-2a81-494b-af76-8715533cae0f`, immutable
+digest `sha256:be4498f2eba638901d9f173f315c933ba2ff8f7cbae3481809b08f0698d1ed96`.
+The original Create acknowledgement is unavailable; read-only List/Get followed
+by exact Get reconciles SUCCESS with the native source generation, archive hash,
+eleven labels, request, resolved provenance and digest matching. No Create replay
+occurs. The owned uploaded source generation is deleted conditionally once and
+its native absence is verified. This is image proof, not GCP formatting acceptance
+or deployment. The original six-case test is prepared against this exact image.
+
+The complete run for that source reports 4,025 passed, 19 failed and 148 passing
+subtests in 1,153.67 seconds. All 21 genuine native document cases, their physical
+artifact digest and eleven current source hashes are independently verified.
+Failures identify three older mock/coordinate test modules that omit the new host
+manifest binding/read-only temporary mount contract or the new raise helper.
+The three test-only corrections preserve all original stdin, outcome, duplicate,
+refusal, limit and cleanup checks while supplying the new synthetic host binding
+and exact read-only mount/environment contract. The complete five affected files
+pass 241 tests and 27 subtests locally in 10.71 seconds, with configured Ruff.
+No CI result is counted as a completed delivery item.
+
+The current-image original six-case GCP execution finishes at 17:18:57 UTC.
+Runtime source hashes, renderer/font preflight and the four ordinary cases pass.
+Both layout cases still fail, now at output decoding with outer launcher code 1
+and unmatched bindings. This does not prove an inner exception or exit code.
+All six cleanup checks pass. Root deletes the exact temporary Job once and
+verifies its absence separately. A one-request finite diagnostic is being
+prepared to identify this new failure. Resume tailoring remains in progress;
+this image is not accepted for customer formatting or production deployment.
+
+
+Fresh-target identity now has a separate collector/profile for the native-bound
+new database and roles, preserving the legacy source collector, retirement
+scope and backup route. Root's actual read-only permission check at 17:23:43–49
+UTC observes default PUBLIC EXECUTE on the control-system function and EXECUTE
+for all four queried roles; the three new roles still have NOLOGIN/NOINHERIT
+and no monitor membership. No grant or other permission write occurs. This
+corrects the earlier source-only assumption that missing explicit grants implied
+missing EXECUTE. The identity preparation passes 87 focused tests, configured
+Ruff and Linux Mypy. Genuine role authentication/numeric secret versions,
+source-to-target transfer, per-step grants, explicit migration/serving transition,
+credential retirement and the complete fresh release orchestration remain
+unfinished. The existing production release route stays source-scoped and
+continues to require its native fencing safeguards.
+
 ## Execution correction after the four-day review — 13 October 2026
 
 The delay includes avoidable execution overhead. Repeated native worker failures

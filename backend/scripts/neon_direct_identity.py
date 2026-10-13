@@ -68,6 +68,26 @@ RELEASE_ACTORS = {
 }
 RELEASE_REFERENCE = re.compile(r"[a-z][a-z0-9-]{2,62}:[1-9][0-9]{0,8}")
 
+# Distinct fresh target. Never overwrite the retained source identity above.
+FRESH_NEON_PROJECT = "shiny-cell-70214683"
+FRESH_BRANCH = "br-square-mode-b4g6sxrz"
+FRESH_ENDPOINT = "ep-weathered-tooth-b43oa1n6"
+FRESH_DIRECT_HOST = "ep-weathered-tooth-b43oa1n6.c-6.us-east-2.aws.neon.tech"
+FRESH_DATABASE_OID = 16395
+FRESH_DATABASE_OWNER_OID = 16391
+FRESH_NAMESPACE_OWNER_OID = 6171
+FRESH_CLUSTER = "61273750d6782a6bc688488b47d274ce81589d8066d54f389e7773a834e7ccd7"
+FRESH_CONTROL_RECEIPT = Path(
+    "/Users/harshil/.codex/hirewiz-evidence/20261013/neon-normal-manager-metadata-route-private-g1xawwzt/"
+    "fresh-project/role-creation.terminal.json"
+)
+FRESH_CONTROL_RECEIPT_SHA = "44af0a94b0912c3649e4fc757e972c863dca2f03c423d9c1e9a14266c7c46c39"
+FRESH_RELEASE_ACTORS = {
+    "observer": ("hirewiz_observer_20261013_r1", 24580),
+    "replacement_runtime": ("hirewiz_runtime_20261013_r1", 24576),
+    "replacement_migration": ("hirewiz_migrator_20261013_r1", 24578),
+}
+
 
 class NativeReleaseSecretReader(Protocol):
     # Production uses NativeBoundary, under its reviewed normal native command
@@ -85,7 +105,7 @@ class NeonDirectProxyBinding:
     host: str
     channel_binding: str
     options: str
-    purpose: Literal["capture", "preparation", "release_capture"]
+    purpose: Literal["capture", "preparation", "release_capture", "fresh_release_capture"]
     actor: str = ACTOR
     actor_oid: int = ACTOR_OID
     database_owner_oid: int = ACTOR_OID
@@ -186,7 +206,21 @@ def _registered(binding: NeonDirectProxyBinding) -> None:
         and binding.channel_binding in {"prefer", "require"}
         and binding.options == CAPTURE_OPTIONS
     )
-    if not legacy and not release:
+    fresh_release = (
+        binding.purpose == "fresh_release_capture"
+        and type(provenance) is tuple and len(provenance) == 4
+        and provenance[0] == PROJECT and provenance[3] == FRESH_CONTROL_RECEIPT_SHA
+        and type(provenance[1]) is str
+        and re.fullmatch(r"projects/" + PROJECT_NUMBER + r"/secrets/[a-z][a-z0-9-]{2,62}/versions/[1-9][0-9]{0,8}", provenance[1]) is not None
+        and type(provenance[2]) is str and 1 <= len(provenance[2]) <= 256
+        and (binding.actor, binding.actor_oid) in FRESH_RELEASE_ACTORS.values()
+        and type(binding.actor_oid) is int and type(binding.database_owner_oid) is int
+        and binding.database_owner_oid == FRESH_DATABASE_OWNER_OID
+        and binding.expected_schema in RELEASE_SCHEMAS
+        and binding.host == FRESH_DIRECT_HOST and binding.channel_binding in {"prefer", "require"}
+        and binding.options == CAPTURE_OPTIONS
+    )
+    if not legacy and not release and not fresh_release:
         raise NeonIdentityDenied("neon_direct_native_binding_unavailable")
 
 
@@ -426,6 +460,9 @@ def verify_native_target(
     connection: Any, binding: NeonDirectProxyBinding, database_oid: int
 ) -> None:
     _registered(binding)
+    if binding.purpose == "fresh_release_capture":
+        _verify_fresh_native_target(connection, binding, database_oid)
+        return
     control = connection.execute(
         text(
             "SELECT p.oid,p.proowner,p.prosecdef,p.prosrc,l.lanname FROM pg_catalog.pg_proc p "
@@ -554,10 +591,121 @@ def collect_release_target(
 
 def verify_release_schema(connection: Any, binding: NeonDirectProxyBinding) -> None:
     _registered(binding)
-    if binding.purpose != "release_capture":
+    if binding.purpose not in {"release_capture", "fresh_release_capture"}:
         raise NeonIdentityDenied("neon_release_schema_route_unavailable")
     versions = list(connection.execute(
         text("SELECT version_num FROM public.alembic_version LIMIT 3")
     ).scalars())
     if len(versions) != 1 or type(versions[0]) is not str or versions[0] != binding.expected_schema:
         raise NeonIdentityDenied("neon_release_exact_schema_mismatch")
+
+
+
+def collect_source_release_target(
+    reader: NativeReleaseSecretReader, reference: str, *, alias: str,
+    database_owner_oid: int, expected_schema: str,
+) -> tuple[NeonDirectProxyBinding, _TransientTarget]:
+    """Explicit retained-source route; never select the fresh target implicitly."""
+    return collect_release_target(reader, reference, alias=alias,
+        database_owner_oid=database_owner_oid, expected_schema=expected_schema)
+
+
+def _fresh_control_receipt() -> None:
+    # Historical native target provenance only, never fencing or release authority.
+    raw = FRESH_CONTROL_RECEIPT.read_bytes()
+    if (FRESH_CONTROL_RECEIPT.is_symlink() or len(raw) > 131072
+            or hashlib.sha256(raw).hexdigest() != FRESH_CONTROL_RECEIPT_SHA):
+        raise NeonIdentityDenied("neon_fresh_control_receipt_mismatch")
+    receipt = json.loads(raw)
+    expected = {"status": "target_roles_created", "stage": "fresh_target_role_creation",
+        "org_id": ORGANIZATION, "project_id": FRESH_NEON_PROJECT, "branch_id": FRESH_BRANCH,
+        "endpoint_id": FRESH_ENDPOINT, "direct_host": FRESH_DIRECT_HOST, "database": DATABASE,
+        "commit_acknowledged": True, "production_switch": False, "global_provider_fence_proven": False}
+    if (type(receipt) is not dict
+            or any(type(receipt.get(k)) is not type(v) or receipt[k] != v for k, v in expected.items())
+            or receipt.get("summary", {}).get("role_oids") != {name: oid for name, oid in FRESH_RELEASE_ACTORS.values()}):
+        raise NeonIdentityDenied("neon_fresh_control_receipt_mismatch")
+
+
+def collect_fresh_release_target(
+    reader: NativeReleaseSecretReader, reference: str, *, alias: str,
+    database_owner_oid: int, expected_schema: str,
+) -> tuple[NeonDirectProxyBinding, _TransientTarget]:
+    """Genuine numeric-secret source and fixed fresh target; read-only identity only.
+
+    No transfer, old credential retirement, privilege finalization or promotion is
+    implied. Newly prepared NOLOGIN roles need separately approved credential work.
+    """
+    try:
+        if (type(reference) is not str or RELEASE_REFERENCE.fullmatch(reference) is None
+                or type(alias) is not str or alias not in FRESH_RELEASE_ACTORS
+                or type(expected_schema) is not str or expected_schema not in RELEASE_SCHEMAS
+                or type(database_owner_oid) is not int or database_owner_oid != FRESH_DATABASE_OWNER_OID):
+            raise NeonIdentityDenied("neon_fresh_identity_input_invalid")
+        _fresh_control_receipt()
+        name, version = reference.split(":")
+        full = f"projects/{PROJECT_NUMBER}/secrets/{name}/versions/{version}"
+        before = reader.describe_release_secret(reference)
+        if (type(before) is not dict or before.get("name") != full or before.get("state") != "ENABLED"
+                or type(before.get("etag")) is not str or not 1 <= len(before["etag"]) <= 256
+                or any(c.isspace() for c in before["etag"])):
+            raise NeonIdentityDenied("neon_fresh_secret_source_mismatch")
+        value = reader.access_release_secret(reference)
+        if type(value) is not str or not 1 <= len(value.encode()) <= 8192 or "\x00" in value:
+            raise NeonIdentityDenied("neon_fresh_credential_shape_unavailable")
+        if reader.describe_release_secret(reference) != before:
+            raise NeonIdentityDenied("neon_fresh_secret_source_changed")
+        url = make_url(value.strip())
+        actor, actor_oid = FRESH_RELEASE_ACTORS[alias]
+        if (url.drivername not in {"postgresql", "postgresql+psycopg"}
+                or url.port not in {None, 5432} or url.database != DATABASE
+                or url.username != actor or url.host != FRESH_DIRECT_HOST):
+            raise NeonIdentityDenied("neon_fresh_target_mismatch")
+        if (set(url.query) - {"sslmode", "channel_binding"}
+                or url.query.get("sslmode", "require") not in {"require", "verify-ca", "verify-full"}
+                or url.query.get("channel_binding", "prefer") not in {"prefer", "require"}):
+            raise NeonIdentityDenied("neon_fresh_connection_settings_unavailable")
+        if (type(url.password) is not str or not url.password or "\x00" in url.password
+                or len(url.password.encode()) > 8192):
+            raise NeonIdentityDenied("neon_fresh_credential_shape_unavailable")
+        channel = str(url.query.get("channel_binding", "prefer"))
+        binding = NeonDirectProxyBinding(FRESH_DIRECT_HOST, channel, CAPTURE_OPTIONS,
+            "fresh_release_capture", actor, actor_oid, database_owner_oid, expected_schema)
+        clean = URL.create("postgresql+psycopg", username=actor, password=url.password,
+            host=FRESH_DIRECT_HOST, port=5432, database=DATABASE,
+            query={"sslmode": "verify-full", "sslcertmode": "disable", "sslrootcert": ROOT_CERT,
+                   "channel_binding": channel})
+        _issued[binding] = (PROJECT, full, before["etag"], FRESH_CONTROL_RECEIPT_SHA)
+        _registered(binding)
+        return binding, _TransientTarget(binding, clean)
+    except NeonIdentityDenied:
+        raise
+    except Exception:
+        raise NeonIdentityDenied("neon_fresh_source_or_target_unavailable") from None
+
+
+def _verify_fresh_native_target(
+    connection: Any, binding: NeonDirectProxyBinding, database_oid: int,
+) -> None:
+    _registered(binding)
+    if binding.purpose != "fresh_release_capture":
+        raise NeonIdentityDenied("neon_fresh_native_binding_unavailable")
+    control = connection.execute(text(
+        "SELECT p.oid,p.proowner,p.prosecdef,p.prosrc,l.lanname FROM pg_catalog.pg_proc p "
+        "JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace JOIN pg_catalog.pg_language l ON l.oid=p.prolang "
+        "WHERE n.nspname='pg_catalog' AND p.proname='pg_control_system' AND p.pronargs=0 LIMIT 2"
+    )).all()
+    if [tuple(row) for row in control] != [(3441, 10, False, "pg_control_system", "internal")]:
+        raise NeonIdentityDenied("neon_fresh_native_control_mismatch")
+    row = connection.execute(text(
+        "SELECT d.oid,d.datdba,r.oid,current_user,session_user,n.oid,n.nspowner,"
+        "(SELECT system_identifier::text FROM pg_catalog.pg_control_system()) "
+        "FROM pg_catalog.pg_database d JOIN pg_catalog.pg_roles r ON r.rolname=current_user "
+        "JOIN pg_catalog.pg_namespace n ON n.nspname='public' WHERE d.datname=pg_catalog.current_database()"
+    )).one()
+    if (tuple(row[:7]) != (FRESH_DATABASE_OID, FRESH_DATABASE_OWNER_OID, binding.actor_oid,
+            binding.actor, binding.actor, NAMESPACE_OID, FRESH_NAMESPACE_OWNER_OID)
+            or type(database_oid) is not int or database_oid != FRESH_DATABASE_OID
+            or type(row[7]) is not str or hashlib.sha256(row[7].encode()).hexdigest() != FRESH_CLUSTER):
+        raise NeonIdentityDenied("neon_fresh_native_target_mismatch")
+    verify_release_schema(connection, binding)

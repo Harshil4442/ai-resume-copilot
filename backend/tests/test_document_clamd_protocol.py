@@ -212,7 +212,7 @@ class ProtocolTests(unittest.TestCase):
 
     def test_all_three_literal_raise_tables_match_actual_processor(self):
         tree = ast.parse(PROCESSOR.read_bytes())
-        names = {"_command", "_native_file", "_installed_clamd", "_clamd_definition", "_read_clamd_maps", "_zip_check", "_zip_admit"}
+        names = {"_command", "_native_file", "_installed_clamd", "_clamd_definition", "_read_clamd_maps", "_zip_check", "_zip_admit", "_read_clamd_manifest"}
         functions = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in names]
         functions += [n for n in next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "OwnedClamd").body
                       if isinstance(n, ast.FunctionDef)]

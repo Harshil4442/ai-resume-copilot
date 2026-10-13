@@ -44,6 +44,10 @@ def service(monkeypatch):
     module = load("service")
     monkeypatch.setenv("DOCUMENT_WORKER_IMAGE_DIGEST", "registry.invalid/document@sha256:" + "a" * 64)
     monkeypatch.setenv("DOCUMENT_WORKER_POLICY_SHA256", "b" * 64)
+    # Synthetic controller tests isolate the actual host-file guard; its strict
+    # metadata/content controls independently load the unmodified real helper.
+    monkeypatch.setattr(module, "_host_clamd_binding",
+        lambda: module.CLAMD_BINDING_MODE + ":" + "c" * 64)
     return module
 
 
@@ -278,10 +282,15 @@ def test_sandbox_exact_stdin_lifecycle_and_cleanup_before_result(service, monkey
     def run(args, **options):
         calls.append((args, options))
         if args[1] == "do":
-            assert args[3:] == ["--write", "--", "/usr/local/bin/python3", "-I",
-                "/opt/document/processor.py", "--stdin"]
-            assert options == {"timeout": 55, "limit": service.MAX_OUTPUT,
-                "allow_outcome": True, "input_bytes": original}
+            name = args[2].split("=", 1)[1]
+            assert re.fullmatch(r"document-[a-f0-9]{32}", name)
+            assert args[3:] == ["--mount", "type=bind,source=/tmp/" + name + ",destination=/tmp",
+                "--env", service.CLAMD_BINDING_ENV + "=" + service.CLAMD_BINDING_MODE + ":" + "c" * 64,
+                "--", "/usr/local/bin/python3", "-I", "/opt/document/processor.py", "--stdin"]
+            assert (Path("/tmp") / name).is_dir()
+            assert 0 < options["timeout"] <= 55
+            assert {key: value for key, value in options.items() if key != "timeout"} == {
+                "limit": service.MAX_OUTPUT, "allow_outcome": True, "input_bytes": original}
             return 0, json.dumps(result_for(content)).encode()
         assert args == [service.SANDBOX, "delete", calls[0][0][2].split("=", 1)[1], "--force"]
         assert options == {"timeout": 5, "limit": 65536, "cleanup": True}
@@ -291,8 +300,9 @@ def test_sandbox_exact_stdin_lifecycle_and_cleanup_before_result(service, monkey
     assert [args[1] for args, _ in calls] == ["do", "delete"]
     assert calls[0][0][2] == "--sandbox-name=" + calls[1][0][2]
     assert all(args[0] == service.SANDBOX for args, _ in calls)
-    assert not any(a.startswith(("--import-tar", "--allow-egress", "--env", "--mount",
+    assert not any(a.startswith(("--import-tar", "--allow-egress", "--write",
         "--export", "--sync")) for args, _ in calls for a in args)
+    assert not (Path("/tmp") / calls[1][0][2]).exists()
     assert result["worker_image"].endswith("@sha256:" + "a" * 64)
     assert result["policy_sha256"] == "b" * 64
 

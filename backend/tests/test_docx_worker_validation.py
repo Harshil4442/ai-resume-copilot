@@ -191,13 +191,22 @@ class DocxWorkerValidationTests(unittest.TestCase):
                 return (0, b"") if args[1] == "delete" else (0, json.dumps(result).encode())
             with patch.dict("os.environ", DOCUMENT_WORKER_IMAGE_DIGEST=IMAGE, DOCUMENT_WORKER_POLICY_SHA256=POLICY), \
                  patch.object(m.service.os.path, "isfile", return_value=True), \
-                 patch.object(m.service.os, "access", return_value=True), patch.object(m.service, "_run", run):
+                 patch.object(m.service.os, "access", return_value=True), \
+                 patch.object(m.service, "_host_clamd_binding", return_value=m.service.CLAMD_BINDING_MODE + ":" + "c" * 64), \
+                 patch.object(m.service, "_run", run):
                 admitted = m.service.inspect_in_sandbox(payload, docx_layout=True)
                 self.assertEqual(admitted["worker_image"], IMAGE)
                 self.assertEqual([row[0][1] for row in calls], ["do", "delete"])
-                self.assertEqual(calls[0][0][3:], ["--write", "--", "/usr/local/bin/python3", "-I",
-                                                  "/opt/document/processor.py", "--docx-layout-stdin"])
-                self.assertEqual(calls[0][1], {"timeout": 55, "limit": 32768, "allow_outcome": True, "input_bytes": payload})
+                name = calls[0][0][2].split("=", 1)[1]
+                self.assertRegex(name, r"^document-[a-f0-9]{32}$")
+                self.assertEqual(calls[0][0][3:], ["--mount", "type=bind,source=/tmp/" + name + ",destination=/tmp",
+                    "--env", m.service.CLAMD_BINDING_ENV + "=" + m.service.CLAMD_BINDING_MODE + ":" + "c" * 64,
+                    "--", "/usr/local/bin/python3", "-I", "/opt/document/processor.py", "--docx-layout-stdin"])
+                self.assertGreater(calls[0][1]["timeout"], 0)
+                self.assertLessEqual(calls[0][1]["timeout"], 55)
+                self.assertEqual({key: value for key, value in calls[0][1].items() if key != "timeout"},
+                    {"limit": 32768, "allow_outcome": True, "input_bytes": payload})
+                self.assertFalse((Path("/tmp") / name).exists())
                 self.assertEqual(calls[1][1], {"timeout": 5, "limit": 65536, "cleanup": True})
                 def failed_delete(args, **options):
                     if args[1] == "delete":

@@ -485,6 +485,7 @@ class NativeBoundary:
         raise ReleaseDenied("native_external_consumer_and_provider_fence_verifier_missing")
 
     def _database_context(self, plan: Plan, schema: str) -> tuple[Any, Any, dict[str, str], tuple[str, ...]]:
+        """Retained source context; fresh target/phase orchestration is separate."""
         module = self._module("backend/scripts/monetary_cutover_preflight.py", "hirewiz_monetary_observer")
         inventory, _ = module.load_inventory(plan.inventory_path, plan.inventory_sha256, datetime.now(UTC))
         inventory = inventory.model_copy(update={"expected_database_schema": schema, "candidate_schema": CHAIN[-1]})
@@ -500,7 +501,7 @@ class NativeBoundary:
         operators = tuple(os.environ[name] for name in inventory.database_operator_role_env)
         if set(operators) & set(roles.values()):
             raise ReleaseDenied("operator_role_class_overlap")
-        binding, target = module.neon_identity.collect_release_target(
+        binding, target = module.neon_identity.collect_source_release_target(
             self, plan.observer_secret, alias="observer",
             database_owner_oid=plan.database_owner_oid, expected_schema=schema,
         )
