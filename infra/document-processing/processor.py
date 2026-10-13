@@ -785,7 +785,7 @@ class OwnedClamd:
         if self.stopped:
             return
         stop_deadline = time.monotonic() + 2
-        grace_deadline = min(stop_deadline, self.deadline, time.monotonic() + 0.5)
+        grace_deadline = min(stop_deadline - 0.25, self.deadline)  # Reserve reap/EOF time.
         try:
             if self.child is not None:
                 if self.child.poll() is not None or os.getpgid(self.child.pid) != self.child.pid:

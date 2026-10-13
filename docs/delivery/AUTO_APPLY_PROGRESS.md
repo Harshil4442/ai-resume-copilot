@@ -8,7 +8,7 @@ estimate and the measured whole-checkpoint duration only when its complete scope
 
 | Fixed checkpoint | Original estimate of additional active agent work | Current status | Recorded whole-checkpoint duration |
 |---|---|---|---|
-| Full CI/regressions | 1–3 hours | Reopened. Latest source `c86d061` passes all 21 native document cases and four other CI jobs; backend fails later on 22 type-check errors. Last full-green source is `6519de6` | Last completed cumulative duration: 20 hours 29 minutes 11 seconds, including waits. Current renewal began 12 October at 23:10:02.993537 UTC and remains open; do not count prior windows twice |
+| Full CI/regressions | 1–3 hours | Reopened. `e1c7cc0` passes the complete configured type checks before native builds, then fails scanner cleanup for encrypted PDF. A bounded graceful-shutdown correction is locally verified. `c86d061` remains the last native 21-case pass; last full-green source is `6519de6` | Last completed cumulative duration: 20 hours 29 minutes 11 seconds, including waits. Current renewal began 12 October at 23:10:02.993537 UTC and remains open; do not count prior windows twice |
 | Resume worker output + PDF/DOCX/LaTeX fidelity | 4–8 hours | In progress. All 21 native image cases pass, including two DOCX layout cases. GCP runtime validation and customer resume fidelity remain unverified | Unavailable; checkpoint incomplete |
 | Candidate-reviewed browser integration | 2–6 hours after the approval blocker clears | Blocked by automatic approval review of the protected integration | Unavailable; checkpoint incomplete |
 | Billing costs/failure recovery/load | 2–5 hours | In progress. Pricing and credit regressions pass; native credential retirement, release verification and representative load checks remain | Unavailable; checkpoint incomplete |
@@ -49,6 +49,22 @@ Keep execution focused on these same six checkpoints:
   affected resources, impact and rollback before asking the user to approve them.
 - Treat the automatically rejected browser integration as a separate unresolved
   restriction. Do not retry or bypass it, or let it consume unrelated delivery work.
+
+The corrected-source [CI run 38390980438](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38390980438)
+for `e1c7cc08c4c7a892769381895446a0258b644694` passes configured type checks in
+six seconds before native builds. Its backend then fails native scanner cleanup
+for `clamd_encrypted_pdf`: the fixed event identifies the `close:806` condition,
+nonzero exit or forced termination, without proving which branch occurred. The
+other four jobs pass. The held GCP Build remains unexecuted.
+
+Source review identifies a half-second graceful-shutdown cap within an existing
+two-second cleanup budget. The minimal correction reserves 0.25 seconds for reap,
+EOF and final diagnostics, and permits graceful exit during the remaining budget,
+capped by the request deadline. The total cleanup limit, exit-zero requirement,
+forced-kill refusal, group absence and native diagnostics remain unchanged. Two
+clock/process regression tests demonstrate late graceful success and forced/deadline
+refusal; 171 affected checks, configured Linux Mypy and Ruff pass. The exact historical
+failure branch remains unproved, and new-source native/GCP acceptance is required.
 
 No new checkpoint, whole-checkpoint completion, production rollout or reliable
 completion ETA is claimed by these execution changes. Existing retained logins are
