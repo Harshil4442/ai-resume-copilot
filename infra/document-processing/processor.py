@@ -299,7 +299,7 @@ class OwnedClamd:
             "Received 0 file descriptor(s) from systemd.", "Not loading PUA signatures.",
             "Only loading official signatures.", 'Bytecode: Security mode set to "TrustSigned".',
             "Reading databases from " + DATABASE, "Self checking disabled.", "Socket file removed.",
-            "Log file size limit disabled.",
+            "Log file size limit disabled.", "Log file size limited to 9223372036854775807 bytes.",
             "LOCAL: Unix socket file " + str(self.socket_path),
             "LOCAL: Setting connection queue length to " + CLAMD_SETTINGS["MaxConnectionQueueLength"],
             "Alerting of encrypted archives _and_ documents enabled.",

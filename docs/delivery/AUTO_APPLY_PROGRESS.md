@@ -8,7 +8,7 @@ estimate and the measured whole-checkpoint duration only when its complete scope
 
 | Fixed checkpoint | Original estimate of additional active agent work | Current status | Recorded whole-checkpoint duration |
 |---|---|---|---|
-| Full CI/regressions | 1–3 hours | Reopened after the diagnostic update. Latest terminal CI is `d9ef43a`: four jobs pass; backend stops at the first new native daemon test, before runtime regressions and OpenAPI. Last full-green source is `6519de6` | Last completed cumulative duration: 20 hours 29 minutes 11 seconds, including waits. Current renewal began 12 October at 23:10:02.993537 UTC and remains open; do not count prior windows twice |
+| Full CI/regressions | 1–3 hours | Reopened after the diagnostic update. Latest native CI is `211e149`: backend refuses the zero-log-limit startup record. The exact literal correction requires new CI. Last full-green source is `6519de6` | Last completed cumulative duration: 20 hours 29 minutes 11 seconds, including waits. Current renewal began 12 October at 23:10:02.993537 UTC and remains open; do not count prior windows twice |
 | Resume worker output + PDF/DOCX/LaTeX fidelity | 4–8 hours | In progress. Request-local engine changes are committed; deployed document fidelity remains unverified | Unavailable; checkpoint incomplete |
 | Candidate-reviewed browser integration | 2–6 hours after the approval blocker clears | Blocked by automatic approval review of the protected integration | Unavailable; checkpoint incomplete |
 | Billing costs/failure recovery/load | 2–5 hours | In progress. Pricing and credit regressions pass; native credential retirement, release verification and representative load checks remain | Unavailable; checkpoint incomplete |
@@ -27,13 +27,13 @@ The 25-minute 17-second CI run is already included in the recorded duration abov
 Changes after that source require renewed verification; its success cannot certify
 current document-worker behavior or production deployment.
 
-The current error-only diagnostic update preserves the original native acceptance
+The error-only diagnostic update in `211e149` preserves the original native acceptance
 program and adds one separately bounded startup observation only after its exact
 unknown-record failure. It never converts that failure into acceptance. Its 163
 focused local tests and configured lint on affected files pass; new native CI is
-required. The product processor, policy, resources and held image Build are unchanged.
+required. That diagnostic update leaves the product processor, policy and resources unchanged.
 
-Current [CI run 38323982997](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38323982997)
+Previous [CI run 38323982997](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38323982997)
 for `d9ef43aa9b7421f50a99071ca1285eee26055ea0` is terminal failure. Frontend,
 browser companion, security/container and cold-browser journey pass. Eight ordinary
 native document cases completed; the first request-local daemon case failed. The
@@ -41,6 +41,19 @@ bounded native diagnostic identifies `OwnedClamd._diagnostics` rejecting an unkn
 startup record during the source scan. It does not identify the exact message or
 justify relaxing a validation rule. The 155 isolated local tests and configured Ruff
 pass; the full current-source backend suite and exporter remain unverified.
+
+Latest [CI run 38328290619](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38328290619)
+for `211e14928994bb6d41ff85787e0e7a32a3718f9c` has a terminal backend failure.
+Its error-only observation identifies public ClamAV startup template 5, the log-size
+record. The 51-byte record hash agrees with the exact upstream 64-bit zero-size
+sentinel. ClamAV 1.4.3 maps configured size zero to INT64_MAX before logging it;
+our literal set expected only the disabled wording. The current correction adds
+only that exact sentinel on the same source line. The 64 KiB same-inode admission,
+32 MiB file limit, daemon configuration, resources and every raise coordinate remain
+unchanged. All 167 focused tests and configured lint on affected files pass, including four
+new guard tests that continue rejecting other sizes, warnings, errors and unknown
+records. Native scan, antimalware and document acceptance need
+a new exact-source run. The held image Build remains unexecuted.
 
 The authenticated Neon API now confirms the current HireWiz project/branch/endpoint
 identity against the previously observed SQL/control-plane binding. The recovery-window
