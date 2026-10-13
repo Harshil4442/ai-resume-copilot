@@ -102,6 +102,18 @@ uses disposable databases, preserving the fresh production target for the final 
 The genuine final writer fence, absolute outer process owner, target role setup,
 protected final backup and reviewed production cutover remain prerequisites.
 
+The first genuine disposable PostgreSQL transfer execution passes in
+[run 38419274817](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38419274817)
+on source `aaa064109783889a35faee75547682f654be2a18`: all 11 native transfer cases
+run with the required PostgreSQL setting, and the full backend reports 4,007 passed
+with no skips. This validates the transfer on disposable databases; no customer
+copy or production switch has occurred. An absolute Linux process owner is now
+integrated, including single-thread admission, a persistent process-group anchor,
+owned command inheritance, a once marker and bounded cleanup with observed group
+absence. Its four genuine process controls require the next Linux execution;
+local macOS validation reports 28 passed and four platform skips. This remains
+supporting evidence within the deployment outcome.
+
 The scoped GCP return observation on 13 October at 14:29:30 UTC confirms that both
 failed layout cases return `docx_layout_unavailable` with every original/candidate/edit
 binding matching. The outer launcher reports 1; the inner process exit status is not
@@ -109,6 +121,14 @@ observed and must not be invented. This distinguishes worker unavailability from
 binding corruption, without establishing the underlying startup failure. All original
 six acceptance predicates remain unchanged; four cases pass, two fail. The temporary
 Job and Execution are removed once and their native absence is verified.
+
+The one-request GCP exception witness finishes on 13 October at 15:28:36 UTC.
+Its complete original exception chain identifies `OwnedClamd._start` line 667:
+the native manifest file type/owner/permissions/size guard rejects before scanning
+or rendering. The failed metadata field is not yet observed. The original source
+and synthetic fit request are unchanged, no raw errors or resume contents are
+retained, and all diagnostic acceptance flags remain false. Sandbox cleanup and
+the temporary Job/Execution absence are verified after one Delete.
 
 The original 12–30-hour subtotal excluded the unresolved approval wait. Those
 estimates have not held and are not a current ETA. Worldwide job coverage remains

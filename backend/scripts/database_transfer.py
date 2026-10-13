@@ -13,12 +13,15 @@ import hashlib
 import os
 import re
 import resource
+import select
 import signal
 import sqlite3
 import stat
 import struct
 import subprocess
+import sys
 import tempfile
+import threading
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -279,6 +282,9 @@ def _cut(
 def _command(args: list[str], env: dict[str, str], end: float, limits: Limits, *, output: Path | None = None) -> None:
     _deadline(end)
     timeout = min(limits.command_seconds, end - time.monotonic())
+    owned = _OWNED_PROCESS_GROUP is not None
+    if owned and (os.getpgrp() != _OWNED_PROCESS_GROUP or os.getsid(0) != _OWNED_PROCESS_GROUP):
+        raise TransferDenied("owned_transfer_group_refused")
     # Absolute reviewed binaries, no shell, ambient PG/service/hostaddr/options,
     # credential argv, stdout/vendor error body, operator retry or parallel jobs.
     safe = {key: os.environ[key] for key in ("LANG", "LC_ALL", "TZ") if key in os.environ}
@@ -289,7 +295,7 @@ def _command(args: list[str], env: dict[str, str], end: float, limits: Limits, *
         resource.setrlimit(resource.RLIMIT_FSIZE, (limits.archive_bytes, limits.archive_bytes))
     try:
         process = subprocess.Popen(args, env=safe, stdin=subprocess.DEVNULL, stdout=stream,
-                                   stderr=subprocess.DEVNULL, start_new_session=True,
+                                   stderr=subprocess.DEVNULL, start_new_session=not owned,
                                    preexec_fn=bound_output)
         process.wait(timeout=timeout)
         if process.returncode != 0:
@@ -300,7 +306,10 @@ def _command(args: list[str], env: dict[str, str], end: float, limits: Limits, *
     finally:
         if process is not None and process.poll() is None:
             try:
-                os.killpg(process.pid, signal.SIGKILL)
+                if owned:
+                    process.kill()
+                else:
+                    os.killpg(process.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
             finally:
@@ -725,3 +734,279 @@ def transfer(
         raise
     except Exception:
         raise TransferDenied("observation_or_execution_unavailable_reconcile_before_retry") from None
+
+
+# Child-only assignment after a verified anchor admission. No environment or
+# caller Boolean selects owned mode; ordinary transfer() retains its behavior.
+_OWNED_PROCESS_GROUP: int | None = None
+_OWNER_READY = struct.Struct("!QQ")
+_OWNER_RESULT = struct.Struct("!BHHQI??")
+_OWNER_REAP_SECONDS = 2
+_OWNER_PHASES = (
+    "complete", "transfer_refused", "final_native_cut_required",
+    "source_destination_alias", "attempt_already_started_reconcile_before_retry",
+    "owned_attempt_already_started_reconcile_before_retry",
+    "private_workdir_refused", "native_writer_cut_changed_or_stale",
+    "postgres_command_failed_reconcile_before_retry",
+    "postgres_command_timeout_reconcile_before_retry", "transfer_deadline",
+    "source_schema9_required", "destination_not_empty",
+    "source_sequence_changed_during_export", "source_sequence_changed_during_verification",
+    "restored_row_mismatch", "restored_catalog_mismatch", "restored_sequence_mismatch",
+    "restored_large_object_mismatch", "restored_object_ownership_mismatch",
+    "destination_database_collation_mismatch", "native_identity_mismatch",
+    "effective_role_session_mismatch", "effective_transport_refused",
+    "observation_or_execution_unavailable_reconcile_before_retry",
+)
+
+
+def _owner_worker(
+    source: BoundDatabase, target: BoundDatabase, tools: PostgresTools, workdir: Path,
+    purpose: Literal["rehearsal", "final"], limits: Limits,
+    native_cut: NativeCutBoundary | None, group: int, admission: int, output: int,
+) -> None:
+    global _OWNED_PROCESS_GROUP
+    started = False
+    try:
+        # Data, credentials and the trusted native boundary are inherited in RAM;
+        # no JSON/pickle/argv/env intake and no inherited vendor output escapes.
+        null = os.open(os.devnull, os.O_RDWR)
+        for descriptor in (0, 1, 2):
+            os.dup2(null, descriptor)
+        if null > 2:
+            os.close(null)
+        os.umask(0o077)
+        if os.read(admission, 2) != b"\x01" or os.getpgrp() != group or os.getsid(0) != group:
+            os._exit(1)
+        os.close(admission)
+        _OWNED_PROCESS_GROUP = group
+        metadata = workdir.lstat()
+        if not stat.S_ISDIR(metadata.st_mode) or metadata.st_uid != os.getuid() or stat.S_IMODE(metadata.st_mode) != 0o700:
+            raise TransferDenied("private_workdir_refused")
+        try:
+            marker = os.open(workdir / "transfer.owner.started", os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        except FileExistsError:
+            raise TransferDenied("owned_attempt_already_started_reconcile_before_retry") from None
+        try:
+            os.fsync(marker)
+        finally:
+            os.close(marker)
+        directory = os.open(workdir, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+        started = True
+        result = transfer(source, target, tools, workdir, purpose=purpose, limits=limits, native_cut=native_cut)
+        rows = result.get("table_rows")
+        sequences = result.get("sequence_count")
+        cut = result.get("native_cut_observed")
+        if (
+            type(result) is not dict or result.get("transfer") != "verified"
+            or result.get("purpose") != purpose or result.get("schema") != SCHEMA9
+            or result.get("production_released") is not False
+            or type(rows) is not dict or len(rows) > limits.objects
+            or any(type(value) is not int or not 0 <= value <= limits.rows for value in rows.values())
+            or sum(rows.values()) > limits.rows
+            or type(sequences) is not int or not 0 <= sequences <= limits.objects
+            or type(cut) is not bool or purpose == "final" and not cut
+        ):
+            raise TransferDenied("transfer_refused")
+        os.write(output, _OWNER_RESULT.pack(0, 0, len(rows), sum(rows.values()), sequences, cut, started))
+    except BaseException as error:
+        # An arbitrary boundary exception body is never serialized. Only a
+        # finite existing phase is preserved; all other bodies become one code.
+        phase = error.args[0] if type(error) is TransferDenied and len(error.args) == 1 and type(error.args[0]) is str else None
+        index = _OWNER_PHASES.index(phase) if phase in _OWNER_PHASES[1:] else 1
+        os.write(output, _OWNER_RESULT.pack(1, index, 0, 0, 0, False, started))
+    finally:
+        os.close(output)
+    os._exit(0)
+
+
+def _owner_anchor(
+    pipes: list[tuple[int, int]], source: BoundDatabase, target: BoundDatabase,
+    tools: PostgresTools, workdir: Path, purpose: Literal["rehearsal", "final"],
+    limits: Limits, native_cut: NativeCutBoundary | None,
+) -> None:
+    ready, admission, result, completion, lifeline = pipes
+    for descriptor in (ready[0], admission[1], result[0], completion[0], lifeline[1]):
+        os.close(descriptor)
+    try:
+        os.setsid()
+        group = os.getpid()
+        worker = os.fork()
+        if worker == 0:
+            for descriptor in (ready[1], completion[1], lifeline[0]):
+                os.close(descriptor)
+            _owner_worker(source, target, tools, workdir, purpose, limits, native_cut,
+                          group, admission[0], result[1])
+        os.close(admission[0])
+        os.close(result[1])
+        os.write(ready[1], _OWNER_READY.pack(group, worker))
+        os.close(ready[1])
+        finished = False
+        while True:
+            if not finished:
+                observed, status = os.waitpid(worker, os.WNOHANG)
+                if observed:
+                    os.write(completion[1], b"\x00" if os.WIFEXITED(status) and os.WEXITSTATUS(status) == 0 else b"\x01")
+                    os.close(completion[1])
+                    finished = True
+            if select.select([lifeline[0]], [], [], 0.05)[0]:
+                # EOF also kills the group when the parent itself disappears.
+                os.read(lifeline[0], 1)
+                os.killpg(group, signal.SIGKILL)
+    except BaseException:
+        # Before setsid/fork/admission no authority work can have started.
+        # Otherwise terminate the owned group without printing an exception.
+        if os.getpgrp() == os.getpid():
+            os.killpg(os.getpid(), signal.SIGKILL)
+    os._exit(1)
+
+
+def _owner_cleanup(anchor: int, end: float) -> str:
+    signalled = False
+    try:
+        os.killpg(anchor, signal.SIGKILL)
+        signalled = True
+    except ProcessLookupError:
+        pass
+    except OSError:
+        pass
+    # Anchor is our unreaped direct child, so its PID cannot be reused. This
+    # also covers cancellation before the child managed to create its session.
+    try:
+        os.kill(anchor, signal.SIGKILL)
+    except OSError:
+        pass
+    while time.monotonic() < end:
+        try:
+            observed, _status = os.waitpid(anchor, os.WNOHANG)
+        except ChildProcessError:
+            return "anchor_reap_unconfirmed"
+        if observed == anchor:
+            if not signalled:
+                return "anchor_reaped_group_unconfirmed"
+            # Observation only after reap: never send another terminating signal
+            # once the anchor PID could be reused. Remaining/reused groups and
+            # permission errors cannot produce an accepting cleanup result.
+            while time.monotonic() < end:
+                try:
+                    os.killpg(anchor, 0)
+                except ProcessLookupError:
+                    return "group_absent_anchor_reaped"
+                except OSError:
+                    return "anchor_reaped_group_unconfirmed"
+                time.sleep(min(0.01, max(0, end - time.monotonic())))
+            return "cleanup_deadline_unconfirmed"
+        time.sleep(min(0.01, max(0, end - time.monotonic())))
+    return "cleanup_deadline_unconfirmed"
+
+
+def owned_transfer(
+    source: BoundDatabase, target: BoundDatabase, tools: PostgresTools, workdir: Path, *,
+    purpose: Literal["rehearsal", "final"] = "rehearsal", limits: Limits = Limits(),
+    native_cut: NativeCutBoundary | None = None,
+) -> dict[str, Any]:
+    """Linux, single-threaded release owner: one invocation, no automatic replay.
+
+    The hard deadline bounds owned local processes, including blocking SQL/COPY
+    and cut-verifier work. No accepting native cut adapter is supplied here.
+    A timeout/cancellation never certifies remote rollback or restore outcome.
+    """
+    entered = time.monotonic()
+    limits.validate()
+    if type(purpose) is not str or purpose not in {"rehearsal", "final"}:
+        raise TransferDenied("owned_transfer_purpose_refused")
+    if (
+        sys.platform != "linux" or threading.active_count() != 1
+        or threading.current_thread() is not threading.main_thread()
+        or len(os.listdir("/proc/self/task")) != 1
+        or not all(hasattr(os, name) for name in ("fork", "pipe2", "waitid", "WNOWAIT"))
+        or limits.total_seconds <= _OWNER_REAP_SECONDS
+    ):
+        raise TransferDenied("owned_transfer_linux_single_thread_and_cleanup_budget_required")
+    end = entered + limits.total_seconds
+    work_end = end - _OWNER_REAP_SECONDS
+    pipes: list[tuple[int, int]] = []
+    anchor: int | None = None
+    status, phase = "refused", "owned_transfer_launch_refused"
+    summary = (0, 0, 0, False)
+    started: bool | None = False
+    cleanup = "not_launched"
+    admitted = False
+    try:
+        for _ in range(5):
+            pipes.append(os.pipe2(os.O_CLOEXEC))
+        anchor = os.fork()
+        if anchor == 0:
+            _owner_anchor(pipes, source, target, tools, workdir, purpose, limits, native_cut)
+        ready, admission, result, completion, lifeline = pipes
+        for descriptor in (ready[1], admission[0], result[1], completion[1], lifeline[0]):
+            os.close(descriptor)
+        owned = [ready[0], result[0], completion[0]]
+        buffers = {ready[0]: bytearray(), result[0]: bytearray(), completion[0]: bytearray()}
+        sizes = {ready[0]: _OWNER_READY.size, result[0]: _OWNER_RESULT.size, completion[0]: 1}
+        while time.monotonic() < work_end:
+            for descriptor in select.select(owned, [], [], min(0.05, max(0, work_end - time.monotonic())))[0]:
+                data = os.read(descriptor, sizes[descriptor] + 1 - len(buffers[descriptor]))
+                buffers[descriptor].extend(data)
+                if len(buffers[descriptor]) > sizes[descriptor]:
+                    raise TransferDenied("owned_transfer_result_refused")
+                if not data:
+                    owned.remove(descriptor)
+                    if len(buffers[descriptor]) != sizes[descriptor]:
+                        raise TransferDenied("owned_transfer_result_unavailable")
+            if not admitted and len(buffers[ready[0]]) == _OWNER_READY.size:
+                group, worker = _OWNER_READY.unpack(buffers[ready[0]])
+                if (
+                    group != anchor or worker <= 0
+                    or os.getpgid(anchor) != anchor or os.getsid(anchor) != anchor
+                    or os.getpgid(worker) != anchor or os.getsid(worker) != anchor
+                    or os.waitid(os.P_PID, anchor, os.WEXITED | os.WNOHANG | os.WNOWAIT) is not None
+                ):
+                    raise TransferDenied("owned_transfer_group_refused")
+                os.write(admission[1], b"\x01")
+                os.close(admission[1])
+                admitted, started = True, None
+            if admitted and len(buffers[result[0]]) == _OWNER_RESULT.size and len(buffers[completion[0]]) == 1:
+                outcome, phase_index, tables, rows, sequences, cut, started = _OWNER_RESULT.unpack(buffers[result[0]])
+                if (
+                    buffers[completion[0]] != b"\x00" or outcome not in {0, 1}
+                    or phase_index >= len(_OWNER_PHASES)
+                    or outcome == 0 and (phase_index != 0 or tables > limits.objects or rows > limits.rows or sequences > limits.objects or not started or purpose == "final" and not cut)
+                    or outcome == 1 and (phase_index == 0 or tables or rows or sequences or cut)
+                    or time.monotonic() >= work_end
+                ):
+                    raise TransferDenied("owned_transfer_result_refused")
+                status, phase = ("verified" if outcome == 0 else "refused"), _OWNER_PHASES[phase_index]
+                summary = (tables, rows, sequences, cut)
+                break
+        else:
+            status = "reconcile_required" if admitted else "refused"
+            phase = "owned_transfer_deadline_reconcile_before_retry"
+    except KeyboardInterrupt:
+        status, phase = "cancelled", "owned_transfer_cancelled_reconcile_before_retry"
+    except BaseException:
+        status = "reconcile_required" if admitted else "refused"
+        phase = "owned_transfer_observation_unavailable_reconcile_before_retry"
+    finally:
+        if anchor is not None:
+            cleanup = _owner_cleanup(anchor, end)
+        for pair in pipes:
+            for descriptor in pair:
+                try:
+                    os.close(descriptor)
+                except OSError:
+                    pass
+    if cleanup != "group_absent_anchor_reaped" or time.monotonic() >= end:
+        if anchor is not None:
+            status, phase = "reconcile_required", "owned_transfer_cleanup_unconfirmed"
+            summary = (0, 0, 0, False)
+    return {
+        "status": status, "phase": phase, "purpose": purpose, "schema": SCHEMA9,
+        "table_count": summary[0], "row_count": summary[1], "sequence_count": summary[2],
+        "native_cut_observed": summary[3], "attempt_started": started,
+        "cleanup": cleanup, "elapsed_seconds": round(time.monotonic() - entered, 3),
+        "production_released": False,
+    }

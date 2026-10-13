@@ -58,10 +58,9 @@ The fixed maximum is 512MiB for the custom archive, 512MiB of source content plu
 its destination comparison, 16MiB per row/large object, one million rows, 256
 relations/sequences/large objects, 600 seconds per owned PostgreSQL client process
 and a 1,800-second work deadline checked between work and COPY chunks. Native SQL
-statements have a 300-second timeout; the final production owner must additionally
-enforce its absolute whole-process deadline, including bounded cleanup. This
-library does not claim an implemented hard outer-process owner. A filesystem-size
-limit bounds child output. Exceeding
+statements have a 300-second timeout. The ordinary `transfer` path retains these
+cooperative bounds; `owned_transfer` adds the hard local process owner described
+below. A filesystem-size limit bounds child output. Exceeding
 a bound refuses explicitly. Custom column types, non-plpgsql extensions, user
 routines, event triggers and foreign tables/servers currently require a separately
 reviewed compatibility implementation; they are never omitted. Actual catalog
@@ -134,3 +133,46 @@ or delta-replication path.
 [PostgreSQL17 database locale metadata](https://www.postgresql.org/docs/17/catalog-pg-database.html),
 [collation metadata](https://www.postgresql.org/docs/17/catalog-pg-collation.html),
 [version and index safety](https://www.postgresql.org/docs/17/sql-altercollation.html).
+
+## Hard whole-operation owner
+
+`owned_transfer` supports a dedicated single-threaded Linux release process. It
+refuses other platforms, missing process primitives and a total budget too short
+to reserve cleanup. Its absolute deadline starts at function entry and includes
+the two-second cleanup reserve within the existing total limit. One persistent
+session/group anchor admits one worker only after the parent verifies the native
+PIDs/session/group. The worker inherits typed identities and transient credentials
+in RAM, suppresses all raw standard streams and fsyncs an exclusive
+`transfer.owner.started` marker before any transfer work. No credentials or native
+boundary objects are serialized. The marker prevents replay of the same attempt
+on success, refusal or uncertain execution. It supplements `transfer.started`;
+neither marker certifies the native destination state.
+
+PostgreSQL commands launched inside this owner inherit its process group. Plain
+`transfer` keeps its existing standalone command behavior. A blocked connect, SQL,
+COPY, tool or native-cut callback is terminated by the parent at the work cutoff;
+the parent signals the still-owned group, boundedly reaps its anchor and then
+requires a read-only process-group absence observation within the same deadline.
+It sends no further terminating signals after reap; remaining/reused groups,
+permission errors and cleanup timeout yield reconciliation rather than verified
+status. Caller cancellation uses the same cleanup. A parent disappearance is detected through
+the anchor lifeline. Terminal fields contain only fixed phases, purpose/schema,
+bounded aggregate counts, elapsed time, actual local cleanup category, observed
+attempt state and `production_released=false`. No table names, SQL, vendor errors,
+credential/URL, argv or environment values are emitted. No automatic retry runs.
+
+A timeout, cancellation, missing result or unconfirmed cleanup requires native
+reconciliation: the restore may have committed already. Local process signalling
+and anchor reap do not prove PostgreSQL rollback, remote work termination or
+writer-cut closure. Every production callback/client must remain in the inherited
+owned group; spawning a new session or an external daemon escapes this local
+boundary. CI's Docker client containers require their separate existing native
+label-based cleanup and are not covered by the host group. Final transfer still
+uses the original genuine `NativeCutBoundary` checks; this owner supplies no
+accepting adapter and leaves the missing monetary verifier unresolved.
+
+The pure suite includes actual Linux hanging-command/descendant timeout and
+caller-cancellation checks, final refusal before SQL, exclusive-attempt replay
+refusal and credential/vendor-output suppression. Linux-only controls skip on
+other platforms; skips are not native acceptance. The PostgreSQL transfer cases
+remain separate and must pass remotely before production execution.
