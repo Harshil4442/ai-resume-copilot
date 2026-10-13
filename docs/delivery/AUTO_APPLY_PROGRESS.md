@@ -8,12 +8,12 @@ estimate and the measured whole-checkpoint duration only when its complete scope
 
 | Fixed checkpoint | Original estimate of additional active agent work | Current status | Recorded whole-checkpoint duration |
 |---|---|---|---|
-| Full CI/regressions | 1–3 hours | Reopened. `b8c569b` passes all 21 native cases and configured type checks, then fails a test-harness corpus-group assertion. The grouping and fixture-byte reproducibility correction is locally verified; complete new-source CI is pending. Last full-green source is `6519de6` | Last completed cumulative duration: 20 hours 29 minutes 11 seconds, including waits. Current renewal began 12 October at 23:10:02.993537 UTC and remains open; do not count prior windows twice |
-| Resume worker output + PDF/DOCX/LaTeX fidelity | 4–8 hours | In progress. All 21 native image cases pass, including two DOCX layout cases. GCP runtime validation and customer resume fidelity remain unverified | Unavailable; checkpoint incomplete |
+| Full CI/regressions | 1–3 hours | Reopened. `990d3fb` passes all 21 native cases, static checks, early tailoring and four other CI jobs. Full backend reports 3,962 passed, six failed and three setup errors. Stale fixture repairs pass 26 focused tests and 15 subtests; complete corrected-source CI remains required. Last full-green source is `6519de6` | Last completed cumulative duration: 20 hours 29 minutes 11 seconds, including waits. Current renewal began 12 October at 23:10:02.993537 UTC and remains open; do not count prior windows twice |
+| Resume worker output + PDF/DOCX/LaTeX fidelity | 4–8 hours | In progress. All 21 native image cases pass. Actual GCP original-six execution passes four scanning/malware cases and fails two DOCX layout cases at outcome validation; its owned job and execution are deleted and absence verified. Customer resume fidelity remains unverified | Unavailable; checkpoint incomplete |
 | Candidate-reviewed browser integration | 2–6 hours after the approval blocker clears | Blocked by automatic approval review of the protected integration | Unavailable; checkpoint incomplete |
 | Billing costs/failure recovery/load | 2–5 hours | In progress. Pricing and credit regressions pass; native credential retirement, release verification and representative load checks remain | Unavailable; checkpoint incomplete |
 | Mobile/performance/SEO verification | 1–3 hours | In progress. Public-page responsive and metadata checks passed; complete application journeys and field metrics remain | Unavailable; checkpoint incomplete |
-| GCP/Vercel env deployment/monitor | 2–4 hours | Pending. Preview builds succeed; production monetary deployment is not performed | Unavailable; checkpoint incomplete |
+| GCP/Vercel env deployment/monitor | 2–4 hours | Pending. Fresh isolated Neon destination is created on the existing Free plan. Customer-data migration, new native bindings, staged revisions and production monetary deployment remain | Unavailable; checkpoint incomplete |
 
 On 13 October, the corrected scanner source `b8c569b80ffc7a19d24567e7ed0775985742cab8`
 passes all 21 genuine native cases in [CI run 38394316118](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38394316118).
@@ -26,7 +26,16 @@ so those payload hashes remain reproducible; all contents and security vectors s
 intact. Seven affected controls, configured Ruff and Mypy pass. Root also generates
 the actual eleven public fixture payloads twice, across a 2.1-second timestamp change,
 and verifies exact byte equality. Product/runtime image sources remain unchanged.
-Complete new-source CI and the actual early tailoring flow remain required.
+The subsequent `990d3fb` run passes all 21 genuine native cases and the early tailoring
+test (14.36 seconds). Full backend then reports 3,962 passing tests, six failures,
+three setup errors and 133 passing subtests in 1,133.82 seconds. The pure fixture
+AST now includes its canonical ZIP helper, the build contract checks both immutable
+manifest steps, and synthetic scanner mocks follow the request-owned daemon interface.
+Dual exact-byte scans and their shared deadline remain checked. Owner cleanup must
+finish before rendering; a failed close prevents rendering. The three corrected test
+files pass 26 focused tests and 15 subtests in 2.18 seconds, with configured Ruff
+passing. These are synthetic boundary checks, not replacement native/GCP proof.
+Whole CI remains open.
 
 The exact b8 GCP document image Build `53e0f559-3ce0-43d6-b7f4-35ce0428eab2`
 is independently reconciled as SUCCESS after its create acknowledgement was unavailable.
@@ -35,11 +44,19 @@ resolved provenance and published digest agree:
 `sha256:ba88e9aa2c6d3cd78ca173348e14c625abdd1eddb49d0738b8c002a997a8ea7b`.
 The owned temporary source generation is conditionally deleted and its absence verified.
 This is image Build proof, not GCP runtime isolation, customer resume fidelity or a
-production deployment. Original six-case GCP runtime acceptance is in preparation.
+production deployment. The original six-case GCP execution finishes on 13 October at
+13:07:54 UTC. Clean PDF, clean DOCX and both EICAR cases pass; styled multipage fit
+and reflow refusal fail at the service's outcome-validation stage. All six cleanup
+checks pass. This observation does not identify the inner processor failure branch.
+The owned Job is deleted once; independent Job and Execution absence checks pass.
 
 The user authorizes a fresh database if historical resource blockers persist.
-Prepare a separate Neon project near the existing GCP backend, preserving the current
-HireWiz database and unrelated `bulk_action_platform`. The replacement is an isolated
+The separate Neon project `shiny-cell-70214683`, named
+`hirewiz-production-isolated-20261013`, is created in Ohio on the existing Free plan
+with PostgreSQL 17 and fixed 0.25 CU, preserving the current HireWiz database and
+unrelated `bulk_action_platform`. Its native autosuspend value `0` means the plan
+default of five idle minutes; no resource patch or paid upgrade is performed.
+The replacement is an isolated
 migration target; an empty database does not satisfy delivery. Retain all profiles,
 resumes/artifact references, credits, ledgers, accepted order snapshots and liabilities.
 Final consistent copy, old-writer cut, new-role/native-target validation, settlement

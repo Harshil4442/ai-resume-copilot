@@ -22,10 +22,11 @@ class ClamdCorpusTests(unittest.TestCase):
     def setUpClass(cls):
         tree = ast.parse(SCRIPT.read_bytes())
         nodes = [node for node in tree.body if (
-            isinstance(node, ast.FunctionDef) and node.name in {'corpus', 'clamd_corpus'}) or (
+            isinstance(node, ast.FunctionDef) and node.name in {
+                'corpus', '_canonical_clamd_zip', 'clamd_corpus'}) or (
             isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == 'EICAR'
                                                  for target in node.targets))]
-        if len(nodes) != 3:
+        if len(nodes) != 4:
             raise AssertionError('unexpected owned fixture AST')
         cls.namespace = {'ROOT': ROOT, 'DocumentImageError': ValueError, 'base64': base64,
             'hashlib': hashlib, 'importlib': importlib, 'io': io, 'json': json, 'sys': sys,

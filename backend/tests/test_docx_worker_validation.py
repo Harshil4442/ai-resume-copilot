@@ -75,9 +75,43 @@ def request(m):
     return source, candidate, edits, expected, payload
 
 
-def render_adapter(m):
+@contextmanager
+def scan_owner(m, scanner, *, cleanup_error=False):
+    """Synthetic owner only; no daemon, socket, definitions or native proof."""
+    owners = []
+    class SyntheticOwner:
+        def __init__(self, directory, deadline):
+            self.directory, self.deadline, self.closed = directory, deadline, False
+            owners.append(self)
+
+        def __enter__(self):
+            return self
+
+        def scan(self, path, content):
+            assert self.closed is False and path.parent == self.directory
+            assert type(content) is bytes and path.read_bytes() == content
+            return scanner(path, deadline=self.deadline)
+
+        def __exit__(self, *_):
+            self.closed = True
+            if cleanup_error:
+                raise m.processor.InspectionUnavailable()
+            return False
+
+    with patch.object(m.processor, "OwnedClamd", SyntheticOwner):
+        yield owners
+
+
+def clean_scan(path, *, deadline):
+    assert deadline > time.monotonic()
+    return SCAN.copy()
+
+
+def render_adapter(m, owners=None):
     def render(source, candidate, edits, *, image, policy, deadline):
         assert deadline > time.monotonic()
+        if owners is not None:
+            assert len(owners) == 1 and owners[0].closed is True
         return m.core.validate_docx_layout(source_docx=source, candidate_docx=candidate, edits=edits,
             before_pdf=m.fixtures.pdf(), after_pdf=m.fixtures.pdf(m.fixtures.REPLACEMENT),
             renderer=m.core.RendererIdentity(image, policy, VERSION, FONT_HASH)).to_dict()
@@ -95,9 +129,11 @@ class DocxWorkerValidationTests(unittest.TestCase):
                 scan_deadlines.append(deadline)
                 scans.append(path.read_bytes())
                 return SCAN.copy()
-            with patch.object(m.processor, "scan_original", scan), patch.object(m.renderer,
-                    "validate_rendered_edit", render_adapter(m)):
+            with scan_owner(m, scan) as owners, patch.object(m.renderer,
+                    "validate_rendered_edit", render_adapter(m, owners)):
                 result = m.processor.validate_docx_edit(payload)
+            self.assertEqual(len(owners), 1)
+            self.assertIs(owners[0].closed, True)
             self.assertEqual(scans, [source, candidate])
             self.assertEqual(len(scan_deadlines), 2)
             self.assertEqual(scan_deadlines[0], scan_deadlines[1])
@@ -108,27 +144,45 @@ class DocxWorkerValidationTests(unittest.TestCase):
     def test_safety_candidate_mismatch_and_mutation_stop_before_renderer(self):
         with modules() as m:
             _, _, _, _, payload = request(m)
+            def denied_scan(path, *, deadline):
+                raise m.processor.InspectionDenied()
             with patch.object(m.renderer, "validate_rendered_edit", side_effect=AssertionError("renderer reached")):
-                with patch.object(m.processor, "scan_original", side_effect=m.processor.InspectionDenied()):
+                with scan_owner(m, denied_scan):
                     with self.assertRaises(m.processor.InspectionDenied):
                         m.processor.validate_docx_edit(payload)
                 changed = json.loads(payload)
                 changed["candidate_sha256"] = "d" * 64
-                with patch.object(m.processor, "scan_original", return_value=SCAN):
+                with scan_owner(m, clean_scan):
                     with self.assertRaises(m.processor.InspectionUnavailable):
                         m.processor.validate_docx_edit(json.dumps(changed).encode())
                 def mutate(path, *, deadline):
                     self.assertGreater(deadline, time.monotonic())
                     path.write_bytes(b"changed by synthetic scanner")
                     return SCAN.copy()
-                with patch.object(m.processor, "scan_original", mutate):
+                with scan_owner(m, mutate):
                     with self.assertRaises(m.processor.InspectionUnavailable):
                         m.processor.validate_docx_edit(payload)
+
+    def test_owned_scanner_cleanup_failure_stops_before_renderer(self):
+        with modules() as m:
+            source, candidate, _, _, payload = request(m)
+            scans = []
+            def scan(path, *, deadline):
+                self.assertGreater(deadline, time.monotonic())
+                scans.append(path.read_bytes())
+                return SCAN.copy()
+            with scan_owner(m, scan, cleanup_error=True) as owners, patch.object(m.renderer,
+                    "validate_rendered_edit", side_effect=AssertionError("renderer reached")):
+                with self.assertRaises(m.processor.InspectionUnavailable):
+                    m.processor.validate_docx_edit(payload)
+            self.assertEqual(scans, [source, candidate])
+            self.assertEqual(len(owners), 1)
+            self.assertIs(owners[0].closed, True)
 
     def test_sandbox_fixed_mode_binding_and_cleanup_failure_refuses_release(self):
         with modules() as m:
             _, _, _, _, payload = request(m)
-            with patch.object(m.processor, "scan_original", return_value=SCAN), patch.object(m.renderer,
+            with scan_owner(m, clean_scan), patch.object(m.renderer,
                     "validate_rendered_edit", render_adapter(m)):
                 result = m.processor.validate_docx_edit(payload)
             calls = []
@@ -155,7 +209,7 @@ class DocxWorkerValidationTests(unittest.TestCase):
     def test_prepare_once_seals_exact_bytes_download_is_offline_and_tamper_refuses(self):
         with modules() as m:
             source, candidate, edits, _, payload = request(m)
-            with patch.object(m.processor, "scan_original", return_value=SCAN), patch.object(m.renderer,
+            with scan_owner(m, clean_scan), patch.object(m.renderer,
                     "validate_rendered_edit", render_adapter(m)):
                 result = m.processor.validate_docx_edit(payload)
             result.update(worker_image=IMAGE, policy_sha256=POLICY)
@@ -241,7 +295,7 @@ class DocxWorkerValidationTests(unittest.TestCase):
     def test_valid_shape_with_wrong_receipt_identity_or_dirty_scan_is_refused(self):
         with modules() as m:
             _, _, _, expected, payload = request(m)
-            with patch.object(m.processor, "scan_original", return_value=SCAN), patch.object(m.renderer,
+            with scan_owner(m, clean_scan), patch.object(m.renderer,
                     "validate_rendered_edit", render_adapter(m)):
                 result = m.processor.validate_docx_edit(payload)
             result.update(worker_image=IMAGE, policy_sha256=POLICY)

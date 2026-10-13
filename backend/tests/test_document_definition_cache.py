@@ -68,10 +68,13 @@ def test_nonce_is_consumed_only_in_separate_definition_acquisition_stage():
     assert "freshclam --stdout --datadir=/var/lib/clamav" in definitions[2][1]
     assert ("COPY", "--from=definitions /var/lib/clamav /var/lib/clamav") in runtime
     assert all(command not in {"ARG", "ENV"} for command, _ in runtime)
-    # The only runtime build step records installed renderer/font bytes. It
-    # neither refreshes definitions nor passes a caller nonce/secret onward.
+    # Runtime build steps record installed renderer/font and antivirus bytes.
+    # Neither refreshes definitions nor passes a caller nonce/secret onward.
     assert [argument for command, argument in runtime if command == "RUN"] == [
-        "/usr/local/bin/python3 -I /opt/document/docx_renderer.py --write-font-manifest"]
+        "/usr/local/bin/python3 -I /opt/document/docx_renderer.py --write-font-manifest",
+        '/usr/local/bin/python3 -I -c \'import sys; sys.path.insert(0, "/opt/document"); '
+        "import processor; processor.write_clamd_native_manifest()'",
+    ]
     assert ("USER", "65534:65534") in runtime
     assert ("WORKDIR", "/opt/document") in runtime
     assert ("ENTRYPOINT", '["/usr/local/bin/python3", "-I", "/opt/document/service.py"]') in runtime
