@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: public.ecr.aws/docker/library/postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+        image: mirror.gcr.io/library/postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
         env:
           POSTGRES_USER: hirewiz
           POSTGRES_PASSWORD: hirewiz
@@ -234,6 +234,7 @@ jobs:
                   raise RuntimeError("Disposable localhost Firestore data emulator did not become ready")
           PY
       - name: Prepare cached native PG17 transfer clients
+        id: transfer_clients
         working-directory: backend
         timeout-minutes: 2
         env:
@@ -257,7 +258,7 @@ jobs:
           .venv/bin/pytest -q tests/test_analysis_runs.py::test_evidence_tailoring_creates_a_traceable_version_and_commits_once
           .venv/bin/pytest -q
       - name: Remove only owned transfer client containers
-        if: always()
+        if: ${{ always() && contains(fromJSON('["success","failure","cancelled"]'), steps.transfer_clients.outcome) }}
         working-directory: backend
         timeout-minutes: 1
         env:
@@ -408,7 +409,7 @@ jobs:
       contents: read
     services:
       postgres:
-        image: public.ecr.aws/docker/library/postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+        image: mirror.gcr.io/library/postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
         env:
           POSTGRES_USER: hirewiz
           POSTGRES_PASSWORD: hirewiz
