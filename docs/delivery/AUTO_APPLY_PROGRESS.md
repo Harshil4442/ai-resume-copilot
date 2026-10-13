@@ -27,11 +27,12 @@ Current development within these outcomes:
   seeding and complete search acceptance pending. Worldwide or 95% job coverage
   has not been established. See the [origin register](../delivery/EMPLOYER_ORIGIN_REGISTRY_2026-10-13.md).
 - Format preservation works in the native local verification path, but the actual
-  GCP layout path terminates at DOCX renderer startup after antivirus scanning,
-  document checks, edits and font checks return. The native diagnostic reports
-  exit status 137; memory counters are unavailable and the cause is not proved.
-  A separate Writer conversion will isolate that boundary. The temporary
-  diagnostic Job and Execution have been removed.
+  GCP layout path still terminates during DOCX rendering. A separate conversion
+  reproduces the failure without antivirus scanning. The latest trace reaches
+  child launch, gate authorization and selector waiting, then stops before
+  output completion or cleanup. Exit status 137 is observed; memory counters
+  and the termination cause remain unproved. Temporary diagnostic Jobs and
+  Executions have been removed.
 - The fresh Neon target now has three genuinely authenticated restricted roles
   and three verified numeric Secret Manager versions. The separate source-to-target
   release sequence, portable Linux profile and fresh-only native authority checks
@@ -40,6 +41,13 @@ Current development within these outcomes:
   been copied and no production credential cutover has occurred. The [phase design](../delivery/FRESH_DATABASE_RELEASE_PHASES_2026-10-13.md)
   distinguishes migration from serving; the actual final writer fence and
   migration-role retirement still precede promotion.
+- Google and password sign-in currently fail at the shared Redis rate limiter:
+  the configured Redis Cloud hostname no longer resolves, and the signed-in
+  Redis Cloud account has no databases. A user-authorized free Upstash resource
+  is now available through Vercel Marketplace (Cleveland, 500,000 monthly
+  commands, eviction disabled). Its production GCP connection is not switched
+  yet. Frontend failure messages and a narrowly scoped backend 503 response are
+  implemented locally; these changes do not themselves restore login.
 - Finite paid packs and separate search/application rates are implemented in
   source. Native financial continuity and production activation remain pending.
 - Public SEO source now includes explicit social metadata, a branded preview

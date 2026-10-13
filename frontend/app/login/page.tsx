@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 
 import { Button } from "../../components/ui/Button";
 import { trackEvent } from "../../lib/analytics";
+import { useLoginRedirectError } from "../../lib/useLoginRedirectError";
 import { prepareGoogleRegistrationConsent } from "../../lib/auth";
 import { candidateRegistration, postLoginPath } from "../../lib/candidateAuthClient";
 import { useHydrated } from "../../lib/useHydrated";
@@ -19,10 +20,12 @@ export default function LoginPage() {
   const ready = hydrated && sessionStatus !== "loading";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null | undefined>(undefined);
   const [loading, setLoading] = useState(false);
   const [googleAgreed, setGoogleAgreed] = useState(false);
   const [googleAvailable, setGoogleAvailable] = useState(false);
+  const redirectError = useLoginRedirectError();
+  const visibleError = error === undefined ? redirectError : error;
 
   useEffect(() => {
     getProviders()
@@ -127,7 +130,7 @@ export default function LoginPage() {
             </div>
           ) : null}
 
-          {error ? <div className="mt-5 flex gap-2 border border-coral/30 bg-coral/5 p-3 text-sm text-coral" role="alert"><ShieldCheck size={17} className="shrink-0" /> {error}</div> : null}
+          {visibleError ? <div className="mt-5 flex gap-2 border border-coral/30 bg-coral/5 p-3 text-sm text-coral" role="alert"><ShieldCheck size={17} className="shrink-0" /> {visibleError}</div> : null}
           <p className="mt-5 text-xs text-muted-foreground">Switching accounts? <Link href="/logout" className="text-primary underline">Sign out securely first</Link>.</p>
           <p className="mt-7 text-center text-sm text-muted-foreground">New to HireWiz? <Link href="/register" className="font-bold text-primary hover:underline">Create an account</Link></p>
         </section>

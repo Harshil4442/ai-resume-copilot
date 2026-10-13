@@ -90,6 +90,8 @@ export const authOptions: NextAuthOptions = {
         } catch {
           // No request cookie context means a new account must fail closed.
         }
+        let failureCategory: "backend_request" | "backend_response" | "backend_contract" = "backend_request";
+        let backendStatus: number | undefined;
         try {
           const res = await backendAuth("google-login", {
             method: "POST",
@@ -100,9 +102,12 @@ export const authOptions: NextAuthOptions = {
               policy_version: registrationConsent ? POLICY_VERSION : null,
             }),
           });
+          backendStatus = res.status;
+          failureCategory = "backend_response";
           if (!res.ok) {
             throw new Error("AUTH_UNAVAILABLE");
           }
+          failureCategory = "backend_contract";
           const data = res.data as BackendAuthToken;
           if (typeof data.access_token !== "string" || typeof data.user_id !== "number") {
             throw new Error("Backend did not return an access token.");
@@ -112,7 +117,10 @@ export const authOptions: NextAuthOptions = {
           delete token.browserPairingSession;
           delete token.candidateLogoutRequest;
         } catch {
-          console.error("Google backend sign-in is unavailable.");
+          console.error("Google backend sign-in is unavailable.", {
+            category: failureCategory,
+            ...(backendStatus === undefined ? {} : { status: backendStatus }),
+          });
           throw new Error("AUTH_UNAVAILABLE");
         }
       } else if (user?.accessToken && user.hirewizUserId) {
