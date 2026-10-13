@@ -234,7 +234,7 @@ def test_reviewed_stdin_policy_and_disabled_pins_agree(config):
     raw = (config.ROOT / "infra/document-processing/policy.json").read_bytes()
     policy = config.decode(raw)
     draft = config.decode((config.ROOT / "infra/gcp/document-worker.disabled.json").read_bytes())
-    assert hashlib.sha256(raw).hexdigest() == config.POLICY_SHA256 == "6c44207dc02093b980187e6d8f1dce6d44e9eafba61750a56b0dacf6c193459f"
+    assert hashlib.sha256(raw).hexdigest() == config.POLICY_SHA256 == "03b60f70221b70fe204b81f572184e6cf66227778533756c7ad2bc203103b239"
     assert draft["policy_sha256"] == config.POLICY_SHA256
     assert policy["deployment_proven"] is False
     assert policy["version"] == 3

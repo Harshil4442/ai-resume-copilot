@@ -8,7 +8,7 @@ estimate and the measured whole-checkpoint duration only when its complete scope
 
 | Fixed checkpoint | Original estimate of additional active agent work | Current status | Recorded whole-checkpoint duration |
 |---|---|---|---|
-| Full CI/regressions | 1–3 hours | Reopened after the diagnostic update. Latest backend CI is `e932276`: it advances to `clamd_max_filesize`, then fails an unknown ownership-phase requirement. Full native acceptance remains unverified. Last full-green source is `6519de6` | Last completed cumulative duration: 20 hours 29 minutes 11 seconds, including waits. Current renewal began 12 October at 23:10:02.993537 UTC and remains open; do not count prior windows twice |
+| Full CI/regressions | 1–3 hours | Reopened after the diagnostic update. Latest backend CI is `acaeabe`: `clamd_max_filesize` fails its expected-outcome requirement. All four other jobs pass. Full native acceptance remains unverified. Last full-green source is `6519de6` | Last completed cumulative duration: 20 hours 29 minutes 11 seconds, including waits. Current renewal began 12 October at 23:10:02.993537 UTC and remains open; do not count prior windows twice |
 | Resume worker output + PDF/DOCX/LaTeX fidelity | 4–8 hours | In progress. Request-local engine changes are committed; deployed document fidelity remains unverified | Unavailable; checkpoint incomplete |
 | Candidate-reviewed browser integration | 2–6 hours after the approval blocker clears | Blocked by automatic approval review of the protected integration | Unavailable; checkpoint incomplete |
 | Billing costs/failure recovery/load | 2–5 hours | In progress. Pricing and credit regressions pass; native credential retirement, release verification and representative load checks remain | Unavailable; checkpoint incomplete |
@@ -79,7 +79,7 @@ exact failed ownership predicate remains unknown. Keep the original acceptance
 conditions and identify its fixed native requirement site before changing behavior.
 The held image Build and production rollout remain unexecuted.
 
-The next proof-only update adds a fixed requirement label to genuine ownership-phase
+The proof-only update in `acaeabe` adds a fixed requirement label to genuine ownership-phase
 `ValueError` reports. It preserves native main, require, failure core, source call
 sites and all acceptance predicates. Labels require exact current-code traceback
 identity and a validated first `ValueError`; no arguments, locals, messages or raw
@@ -87,6 +87,40 @@ tracebacks are reported. Seven new controls and fourteen existing diagnostic/sta
 controls pass, with configured lint on all four affected Python files. This improves
 the next native failure report without asserting its cause, native success, a new
 checkpoint completion or permission for the held Build.
+
+[CI run 38333466291](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38333466291)
+for `acaeabe73e4f8bf9269de6e33524dee20e5fefa1` is terminal failure. The four
+other jobs pass. The genuine finite event identifies `case_outcome`, exactly the
+native `outcome == actual_expected` predicate, for the original oversized ZIP case.
+Its actual outcome value is not retained. Primary ClamAV 1.4.3 ZIP source shows a
+DEFLATE expansion path that truncates at MaxFileSize without adding a limit alert;
+that is a source-supported possible explanation, not a proven native result.
+Keep the original ZIP and its nonclean requirement. A bounded deterministic ZIP
+admission proposal is in preparation; no canary substitution, native acceptance,
+Build refresh or production rollout is claimed.
+
+The archive-admission change now rejects oversized or ambiguous ZIP content
+after the genuine exact-byte antivirus reply and before admitting clean bytes or
+parsing the document. It counts actual expanded bytes with capped DEFLATE calls,
+requires complete streams, CRC and header/range agreement, and shares fixed
+6 MiB/member, 20 MiB/aggregate, 500-entry and 16-level limits. Normal stored/deflated
+DOCX, streamed descriptors and bounded ZIP64 controls pass. Raw input remains
+5 MiB, request/scan/cleanup bounds remain 50/30/2 seconds, and no AI calls are added.
+Completed protocol replies are recorded separately from admitted clean results;
+a rejected ZIP is unavailable and never a fabricated virus or accepted clean file.
+The native source/candidate joins and maximum two scan attempts are independently
+checked. All 195 focused local controls and configured lint on nine affected Python
+files pass. The original ordinary/native corpora and native acceptance predicates
+remain unchanged. Full current-source CI and actual image memory/fidelity are
+required; these local checks do not authorize the held image Build or deployment.
+
+The existing signed-in Vercel dashboard verifies the `acaeabe` preview is Ready
+(`dpl_97Ek3rUQ5rGfHo3ce1cK3HpEGzvy`, 27 seconds). It also verifies production
+remains on `67a51f246fcca97b886d004e2ee742ae80741726`. The connector
+metadata reads returned 403, so its failure is retained separately; the existing
+browser login supplied current visible metadata without a new sign-in. Fresh GCP
+service metadata likewise shows the prior API/analysis/document/employer generations
+274/23/3/12. No production promotion or resource changes are performed.
 
 The authenticated Neon API now confirms the current HireWiz project/branch/endpoint
 identity against the previously observed SQL/control-plane binding. The recovery-window
@@ -104,6 +138,26 @@ cause was not retained and the fifth project-member read did not run. Preserve t
 partial collection statuses and once-only attempt. No credential, grant, database
 or provider resource changed; complete project authority and retirement remain
 unproven.
+
+The separately reviewed project-members owner stopped before launching any CLI
+request: its selected backend Python 3.12 lacks `os.waitid`, which the unchanged
+process-ownership preflight requires. The native tool stdout records zero new
+invocations, and no started/terminal owner markers were written. The earlier
+permissions request is not replayed and the ledger remains eleven. Public runtime
+pins and credential-file metadata still pass; credential bodies remain unread.
+A separate capable Python 3.14 runtime intake is being reviewed for the first
+actual members GET. It does not weaken the original guard or elevate the root
+tool-summary receipt into provider evidence.
+
+The capable interpreter passes the original metadata-only preflight. The first
+actual project-members GET then succeeds at 02:00:18–02:00:20 UTC with HTTP 200,
+one returned page and no next cursor. It reports the prior native owner member as
+organization admin, project admin and effective ADMIN; grant source is explicit.
+Unknown optional metadata stays unvalidated. The cumulative CLI ledger is now
+twelve, while the original unsuccessful permissions request remains unresolved
+and unreplayed. This is the vendor caller-visible membership result joined to the
+prior organization snapshot, not a fresh complete authority or key-holder census.
+No provider, credential or database changes occur.
 
 The billing release gap is executable code, not only an access or environment task:
 `NativeBoundary.verify_fences()` in `infra/gcp/monetary_release.py` currently refuses

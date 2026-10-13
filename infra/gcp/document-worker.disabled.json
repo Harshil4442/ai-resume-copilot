@@ -5,7 +5,7 @@
   "service": "hirewiz-document-inspector",
   "service_account": "hirewiz-document-inspector@ai-resume-parser-482412.iam.gserviceaccount.com",
   "api_invoker": "hirewiz-api@ai-resume-parser-482412.iam.gserviceaccount.com",
-  "policy_sha256": "6c44207dc02093b980187e6d8f1dce6d44e9eafba61750a56b0dacf6c193459f",
+  "policy_sha256": "03b60f70221b70fe204b81f572184e6cf66227778533756c7ad2bc203103b239",
   "image": null,
   "api_wiring_enabled": false,
   "deployment_proven": false

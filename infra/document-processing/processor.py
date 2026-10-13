@@ -24,6 +24,7 @@ import sys
 import tempfile
 import time
 import warnings
+import zlib
 from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlsplit
@@ -263,6 +264,239 @@ def _clamd_definition(deadline: float, now: datetime | None = None) -> tuple[dic
     return {"engine": "ClamAV", "version": match[1], "definitions": match[2] + "/" + issued.isoformat()}, version.strip()
 
 
+ZIP_MEMBER_LIMIT = 6 * 1024**2
+ZIP_TOTAL_LIMIT = 20 * 1024**2
+ZIP_MEMBER_COUNT = 500
+ZIP_DEPTH_LIMIT = 16
+ZIP_BLOCK = 65536
+ZIP_FAILURES = frozenset(('malformed', 'unsupported', 'encrypted', 'member_bytes',
+                          'total_bytes', 'members', 'depth', 'deadline'))
+
+
+class ZipAdmissionUnavailable(InspectionUnavailable):
+    def __init__(self, reason):
+        self.reason = reason if reason in ZIP_FAILURES else 'malformed'
+
+
+def _zip_check(condition, reason='malformed'):
+    if not condition:
+        raise ZipAdmissionUnavailable(reason)
+
+
+def _zip_clock(deadline):
+    _zip_check(type(deadline) in {int, float} and math.isfinite(deadline)
+               and time.monotonic() < deadline, 'deadline')
+
+
+def _zip_extra(data, deadline):
+    values, offset = {}, 0
+    while offset < len(data):
+        _zip_clock(deadline)
+        _zip_check(offset + 4 <= len(data))
+        kind, size = struct.unpack_from('<HH', data, offset)
+        offset += 4
+        _zip_check(offset + size <= len(data) and kind not in values)
+        values[kind] = data[offset:offset + size]
+        offset += size
+    return values
+
+
+def _zip_directory(data, deadline):
+    """Bound real central records before stdlib metadata allocation."""
+    _zip_clock(deadline)
+    ends = []
+    start = max(0, len(data) - 65557)
+    while True:
+        offset = data.find(b'PK\x05\x06', start)
+        if offset < 0:
+            break
+        start = offset + 1
+        _zip_clock(deadline)
+        if offset + 22 <= len(data):
+            values = struct.unpack_from('<4s4H2IH', data, offset)
+            if offset + 22 + values[7] == len(data):
+                ends.append((offset, values))
+                _zip_check(len(ends) <= 1)
+    if not ends:
+        _zip_check(not data.startswith((b'PK\x03\x04', b'PK\x01\x02', b'PK\x05\x06',
+                                           b'PK\x06\x06', b'PK\x06\x07', b'PK\x07\x08')))
+        return None
+    ending, values = ends[0]
+    _, disk, central_disk, disk_count, count, size, central, _ = values
+    _zip_check(disk == central_disk == 0, 'unsupported')
+    central_end = ending
+    if disk_count == 65535 or count == 65535 or size == 0xffffffff or central == 0xffffffff:
+        _zip_check(ending >= 20)
+        locator = struct.unpack_from('<4sIQI', data, ending - 20)
+        _zip_check(locator[0] == b'PK\x06\x07' and locator[1] == 0 and locator[3] == 1, 'unsupported')
+        record = locator[2]
+        _zip_check(record + 56 == ending - 20 and record + 56 <= len(data))
+        extended = struct.unpack_from('<4sQ2H2I4Q', data, record)
+        _zip_check(extended[0] == b'PK\x06\x06' and extended[1] == 44
+                   and extended[4] == extended[5] == 0 and extended[6] == extended[7], 'unsupported')
+        for declared, resolved, sentinel in ((disk_count, extended[6], 65535),
+                (count, extended[7], 65535), (size, extended[8], 0xffffffff),
+                (central, extended[9], 0xffffffff)):
+            _zip_check(declared in {sentinel, resolved})
+        count, size, central = extended[7:10]
+        central_end = record
+    else:
+        _zip_check(disk_count == count)
+    _zip_check(0 <= count <= ZIP_MEMBER_COUNT, 'members')
+    _zip_check(0 <= central <= central_end and central + size == central_end)
+    records, position = [], central
+    while position < central_end:
+        _zip_clock(deadline)
+        _zip_check(position + 46 <= central_end)
+        fields = struct.unpack_from('<4s6H3I5H2I', data, position)
+        _zip_check(fields[0] == b'PK\x01\x02')
+        end = position + 46 + fields[10] + fields[11] + fields[12]
+        _zip_check(end <= central_end)
+        records.append((fields, bytes(data[position + 46:position + 46 + fields[10]])))
+        _zip_check(len(records) <= ZIP_MEMBER_COUNT, 'members')
+        position = end
+    _zip_check(position == central_end and len(records) == count)
+    return central, records
+
+
+def _zip_member(data, entry, fields, raw_name, central, deadline):
+    _zip_clock(deadline)
+    _zip_check(not fields[3] & (1 | 0x40 | 0x2000), 'encrypted')
+    _zip_check(not fields[3] & ~0x080e and fields[4] in {ZIP_STORED, ZIP_DEFLATED}
+               and 10 <= fields[2] <= 45 and fields[13] == 0, 'unsupported')
+    _zip_check(0 < len(raw_name) <= 255 and b'\0' not in raw_name)
+    _zip_check(entry.file_size <= ZIP_MEMBER_LIMIT, 'member_bytes')
+    offset = entry.header_offset
+    _zip_check(0 <= offset and offset + 30 <= central and fields[16] in {offset, 0xffffffff})
+    local = struct.unpack_from('<4s5H3I2H', data, offset)
+    _zip_check(local[0] == b'PK\x03\x04' and local[1:6] == fields[2:7])
+    begin = offset + 30 + local[9] + local[10]
+    _zip_check(begin <= central and data[offset + 30:offset + 30 + local[9]] == raw_name)
+    extra = _zip_extra(data[offset + 30 + local[9]:begin], deadline)
+    local_compressed, local_expanded = local[7], local[8]
+    zip64 = local_compressed == 0xffffffff or local_expanded == 0xffffffff
+    if zip64:
+        _zip_check(1 in extra)
+        encoded, index = extra[1], 0
+        for wanted in ('expanded', 'compressed'):
+            declared = local_expanded if wanted == 'expanded' else local_compressed
+            if declared == 0xffffffff:
+                _zip_check(index + 8 <= len(encoded))
+                resolved = struct.unpack_from('<Q', encoded, index)[0]
+                index += 8
+                if wanted == 'expanded':
+                    local_expanded = resolved
+                else:
+                    local_compressed = resolved
+        _zip_check(index == len(encoded))
+    compressed, expanded, crc = entry.compress_size, entry.file_size, entry.CRC
+    _zip_check(0 <= compressed and begin + compressed <= central and 0 <= expanded)
+    end = begin + compressed
+    if local[2] & 8:
+        _zip_check(local[6] in {0, crc} and local_compressed in {0, compressed}
+                   and local_expanded in {0, expanded})
+        width = '<IQQ' if zip64 else '<III'
+        length = struct.calcsize(width)
+        variants = []
+        for signature in (0, 4):
+            if signature and data[end:end + 4] != b'PK\x07\x08':
+                continue
+            stop = end + signature + length
+            if stop <= central and struct.unpack_from(width, data, end + signature) == (crc, compressed, expanded):
+                variants.append(stop)
+        _zip_check(len(variants) == 1)
+        stop = variants[0]
+    else:
+        _zip_check((local[6], local_compressed, local_expanded) == (crc, compressed, expanded))
+        stop = end
+    _zip_check(entry.compress_type == local[3] and entry.flag_bits == local[2]
+               and entry.CRC == fields[7] and fields[8] in {compressed, 0xffffffff}
+               and fields[9] in {expanded, 0xffffffff})
+    return offset, stop, begin, end
+
+
+def _zip_inflate(data, begin, end, entry, budget, deadline):
+    output, crc = bytearray(), 0
+    inflater = zlib.decompressobj(-15) if entry.compress_type == ZIP_DEFLATED else None
+    pending, position = b'', begin
+    while True:
+        _zip_clock(deadline)
+        if not pending and position < end:
+            stop = min(end, position + ZIP_BLOCK)
+            pending = data[position:stop]
+            position = stop
+        if inflater is None:
+            chunk, pending = pending, b''
+            complete = position == end
+        else:
+            before = len(pending)
+            maximum = min(ZIP_BLOCK, ZIP_MEMBER_LIMIT - len(output) + 1,
+                          ZIP_TOTAL_LIMIT - budget['bytes'] + 1)
+            _zip_check(maximum > 0, 'total_bytes')
+            chunk = inflater.decompress(pending, maximum)
+            pending = inflater.unconsumed_tail
+            consumed = before - len(pending) - len(inflater.unused_data)
+            _zip_check(not inflater.unused_data)
+            complete = inflater.eof
+            _zip_check(not complete or (not pending and position == end))
+            _zip_check(complete or consumed > 0 or chunk or (not pending and position < end))
+        _zip_check(len(output) + len(chunk) <= ZIP_MEMBER_LIMIT, 'member_bytes')
+        _zip_check(budget['bytes'] + len(chunk) <= ZIP_TOTAL_LIMIT, 'total_bytes')
+        budget['bytes'] += len(chunk)
+        output.extend(chunk)
+        crc = zlib.crc32(chunk, crc)
+        _zip_clock(deadline)
+        if complete:
+            break
+    _zip_check(len(output) == entry.file_size and crc == entry.CRC)
+    return output
+
+
+def _zip_admit(content, deadline):
+    """Additional ZIP scan closure, after actual AV OK, before document parsing.
+
+    No extraction, XML/document parser, cache, credential, or native fallback.
+    Declared sizes never cap inflation; actual output and EOF do.
+    """
+    budget = {'bytes': 0, 'members': 0}
+
+    def archive(data, depth):
+        directory = _zip_directory(data, deadline)
+        if directory is None:
+            return
+        _zip_check(depth <= ZIP_DEPTH_LIMIT, 'depth')
+        central, records = directory
+        budget['members'] += len(records)
+        _zip_check(budget['members'] <= ZIP_MEMBER_COUNT, 'members')
+        # The preflight has already bounded the number of actual central records.
+        with ZipFile(io.BytesIO(data)) as zipped:
+            entries = zipped.infolist()
+            _zip_check(len(entries) == len(records))
+            ranges, names = [], set()
+            for entry, (fields, raw_name) in zip(entries, records, strict=True):
+                _zip_check(raw_name not in names)
+                names.add(raw_name)
+                ranges.append(_zip_member(data, entry, fields, raw_name, central, deadline))
+            cursor = 0
+            for begin, stop, _, _ in sorted(ranges):
+                _zip_check(begin == cursor and stop >= begin)
+                cursor = stop
+            _zip_check(cursor == central)
+            for entry, (_, _, begin, end) in zip(entries, ranges, strict=True):
+                output = _zip_inflate(data, begin, end, entry, budget, deadline)
+                archive(output, depth + 1)
+                del output
+        _zip_clock(deadline)
+
+    try:
+        archive(content, 1)
+        _zip_clock(deadline)
+    except ZipAdmissionUnavailable:
+        raise
+    except Exception:
+        raise ZipAdmissionUnavailable('malformed') from None
+
+
 class OwnedClamd:
     """One foreground engine for exactly this request's two sequential scans."""
     def __init__(self, directory: Path, deadline: float):
@@ -271,6 +505,9 @@ class OwnedClamd:
         self.pipes = {}
         self.signatures = []
         self.scan_bindings = []
+        self.protocol_bindings = []
+        self.instream_attempts = 0
+        self.zip_admission_failure = None
         self.stopped = False
         self.forced = False
         self.manifest = None
@@ -496,7 +733,7 @@ class OwnedClamd:
 
     def scan(self, path: Path, content: bytes, *, now: datetime | None = None) -> dict:
         try:
-            if self.stopped or len(self.scan_bindings) >= 2 or type(content) is not bytes or not 0 < len(content) <= MAX_FILE:
+            if self.stopped or self.instream_attempts >= 2 or type(content) is not bytes or not 0 < len(content) <= MAX_FILE:
                 raise InspectionUnavailable()
             file_metadata = path.lstat()
             if (not stat.S_ISREG(file_metadata.st_mode) or stat.S_IMODE(file_metadata.st_mode) != 0o600
@@ -518,15 +755,24 @@ class OwnedClamd:
                 block = view[offset:offset + 65536]
                 chunks.extend((struct.pack(">I", len(block)), block))
             chunks.append(b"\0\0\0\0")
+            self.instream_attempts += 1
             result = self._exchange(chunks, deadline, 512)
             if path.read_bytes() != content or len(self.signatures) != 1:
                 raise InspectionUnavailable()
             binding = {"sha256": hashlib.sha256(content).hexdigest(), "size_bytes": len(content),
                        "metadata": metadata}
+            found = re.fullmatch(rb"stream: [A-Za-z0-9][A-Za-z0-9._-]{0,199} FOUND\x00", result)
+            reply = "OK" if result == b"stream: OK\0" else "FOUND" if found else "OTHER"
+            self.protocol_bindings.append({**binding, "reply": reply})
             if result == b"stream: OK\0":
+                try:
+                    _zip_admit(content, deadline)
+                except ZipAdmissionUnavailable as error:
+                    self.zip_admission_failure = {**binding, "reason": error.reason}
+                    raise
                 self.scan_bindings.append({**binding, "result": "CL_CLEAN"})
                 return metadata
-            if re.fullmatch(rb"stream: [A-Za-z0-9][A-Za-z0-9._-]{0,199} FOUND\x00", result):
+            if found:
                 self.scan_bindings.append({**binding, "result": "CL_VIRUS"})
                 raise InspectionDenied()
             raise InspectionUnavailable()

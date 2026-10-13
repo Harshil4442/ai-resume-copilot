@@ -71,22 +71,22 @@ class DiagnosticTests(unittest.TestCase):
 
     def object(self):
         return {'version': 1, 'status': 'native_clamd_proof_unavailable', 'phase': 'source_scan',
-                'chain': [{'class': 'InspectionUnavailable', 'frames': [{'function': 'scan', 'line': 536}]}],
+                'chain': [{'class': 'InspectionUnavailable', 'frames': [{'function': 'scan', 'line': 782}]}],
                 'truncated': False}
 
     def encoded(self, value):
         return (json.dumps(value, separators=(',', ':')) + '\n').encode()
 
     def test_context_chain_preserves_cleanup_wrapper_and_original_owned_raise(self):
-        original = self.exception_at('_diagnostics', 359)
-        wrapped = self.exception_at('scan', 536)
-        cleanup = self.exception_at('close', 569)
+        original = self.exception_at('_diagnostics', 596)
+        wrapped = self.exception_at('scan', 782)
+        cleanup = self.exception_at('close', 815)
         wrapped.__context__ = original
         cleanup.__context__ = wrapped
         receipt = self.native['failure_receipt'](cleanup)
         self.assertEqual([row['frames'][0] for row in receipt['chain']], [
-            {'function': 'close', 'line': 569}, {'function': 'scan', 'line': 536},
-            {'function': '_diagnostics', 'line': 359}])
+            {'function': 'close', 'line': 815}, {'function': 'scan', 'line': 782},
+            {'function': '_diagnostics', 'line': 596}])
         self.assertNotIn('unexported', json.dumps(receipt))
         self.assertNotIn('/opt/', json.dumps(receipt))
         self.assertFalse(receipt['truncated'])
@@ -118,7 +118,7 @@ class DiagnosticTests(unittest.TestCase):
 
     def test_literal_raise_tables_match_pinned_processor_AST(self):
         tree = ast.parse(PROCESSOR.read_bytes())
-        selected = {'_command', '_native_file', '_installed_clamd', '_clamd_definition', '_read_clamd_maps'}
+        selected = {'_command', '_native_file', '_installed_clamd', '_clamd_definition', '_read_clamd_maps', '_zip_check', '_zip_admit'}
         functions = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in selected]
         owner = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == 'OwnedClamd')
         functions += [node for node in owner.body if isinstance(node, ast.FunctionDef)]

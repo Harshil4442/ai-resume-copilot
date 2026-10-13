@@ -49,7 +49,7 @@ class StartupWireTests(unittest.TestCase):
 
     def core(self):
         return {'version': 1, 'status': 'native_clamd_proof_unavailable', 'phase': 'source_scan',
-            'chain': [{'class': 'InspectionUnavailable', 'frames': [{'function': '_diagnostics', 'line': 357}]}],
+            'chain': [{'class': 'InspectionUnavailable', 'frames': [{'function': '_diagnostics', 'line': 594}]}],
             'truncated': False}
 
     def value(self):
@@ -116,7 +116,7 @@ class StartupWireTests(unittest.TestCase):
         stored['clamd_failure'] = self.scope['_ClamdFailure']('clamd_two_clean', 'candidate_scan', original.chain, False)
         self.diagnose()
         stored['clamd_failure'] = self.scope['_ClamdFailure']('clamd_two_clean', 'source_scan',
-            (('InspectionUnavailable', (('_diagnostics', 359),)),), False)
+            (('InspectionUnavailable', (('_diagnostics', 596),)),), False)
         self.diagnose()
         self.assertEqual(self.calls, [])
         self.assertNotIn('clamd_startup_observation', stored)
