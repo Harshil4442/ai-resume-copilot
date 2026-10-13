@@ -1,36 +1,69 @@
 # Employer search and application delivery
 
-## Agreed major completion checklist — 12 October 2026
+## Current delivery status — 13 October 2026
 
-The user has fixed the following six checkpoints. Internal fixes and passing component
-checks are evidence within these checkpoints, not additional completed checkpoints.
-Mark an item complete only after its whole scope is verified. On each completion,
-report the unchanged original estimate and the recorded actual duration.
+The user fixed the following six checkpoints. Internal fixes and component checks
+are evidence within them, not additional completed checkpoints. Report each original
+estimate and the measured whole-checkpoint duration only when its complete scope passes.
 
-| Fixed checkpoint | Original estimate of additional active agent work | Status | Actual whole-checkpoint duration |
+| Fixed checkpoint | Original estimate of additional active agent work | Current status | Recorded whole-checkpoint duration |
 |---|---|---|---|
-| Full CI/regressions | 1–3 hours | Reopened. Source `c18528c`: native styled-fit checks pass; backend stops on the conservative reflow refusal classification. Last full-green baseline remains `178d8e8`; current-source backend regressions and OpenAPI are not verified | Historical recorded disjoint windows: 6 hours 26 minutes 56 seconds. Renewal began 12 October at 04:15:39.234304 UTC and remains open; include waits, do not count either window twice |
-| Resume worker output + PDF/DOCX/LaTeX fidelity | 4–8 hours | in progress | Not available; checkpoint not complete |
-| Candidate-reviewed browser integration | 2–6 hours after the approval blocker is resolved | blocked | Not available; checkpoint not complete |
-| Billing costs/failure recovery/load | 2–5 hours | in progress | Not available; checkpoint not complete |
-| Mobile/performance/SEO verification | 1–3 hours | in progress | Not available; checkpoint not complete |
-| GCP/Vercel env deployment/monitor | 2–4 hours | pending | Not available; checkpoint not complete |
+| Full CI/regressions | 1–3 hours | Reopened after the diagnostic update. Latest terminal CI is `d9ef43a`: four jobs pass; backend stops at the first new native daemon test, before runtime regressions and OpenAPI. Last full-green source is `6519de6` | Last completed cumulative duration: 20 hours 29 minutes 11 seconds, including waits. Current renewal began 12 October at 23:10:02.993537 UTC and remains open; do not count prior windows twice |
+| Resume worker output + PDF/DOCX/LaTeX fidelity | 4–8 hours | In progress. Request-local engine changes are committed; deployed document fidelity remains unverified | Unavailable; checkpoint incomplete |
+| Candidate-reviewed browser integration | 2–6 hours after the approval blocker clears | Blocked by automatic approval review of the protected integration | Unavailable; checkpoint incomplete |
+| Billing costs/failure recovery/load | 2–5 hours | In progress. Pricing and credit regressions pass; native credential retirement, release verification and representative load checks remain | Unavailable; checkpoint incomplete |
+| Mobile/performance/SEO verification | 1–3 hours | In progress. Public-page responsive and metadata checks passed; complete application journeys and field metrics remain | Unavailable; checkpoint incomplete |
+| GCP/Vercel env deployment/monitor | 2–4 hours | Pending. Preview builds succeed; production monetary deployment is not performed | Unavailable; checkpoint incomplete |
 
-The original rough subtotal was 12–30 additional active agent hours, excluding the
-unresolved approval wait. Those estimates have not held and are not a current ETA.
-Worldwide job
-coverage remains unverified, and the complete goal has no defensible ETA yet.
-Historical checkpoint start times were not recorded. Future timing must distinguish
-measured remaining work from the unavailable whole-checkpoint duration; no past time
-is to be invented. Keep these same six items in subsequent user progress updates.
+The original 12–30-hour subtotal excluded the unresolved approval wait. Those
+estimates have not held and are not a current ETA. Worldwide job coverage remains
+unverified. The complete goal has no defensible completion estimate yet. Preserve
+these same six checkpoints and distinguish active work from elapsed time including waits.
 
-The last verified baseline is [CI run 38198442355](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38198442355)
-for `178d8e86c16758a04d341da9eb74969f2c2afc03`, completed at 03:21:36 UTC on
-12 October. Its 15 minute 15 second run is already inside the measured timing windows
-and is not counted twice. The other five original checkpoints remain open. Passing
-DOCX custody controls or a disposable PostgreSQL reporting check does not close their
-parent checkpoints; deployed document fidelity, joined application flows and release
-verification still require their own evidence.
+The last complete source verification is [CI run 38312570609](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38312570609)
+for `6519de6aa3f9cbbbc0a9f215b3993e0e47340295`, completed on 12 October at
+22:10:24 UTC. All five jobs passed, including 3,859 backend tests and 60 subtests.
+The 25-minute 17-second CI run is already included in the recorded duration above.
+Changes after that source require renewed verification; its success cannot certify
+current document-worker behavior or production deployment.
+
+The current error-only diagnostic update preserves the original native acceptance
+program and adds one separately bounded startup observation only after its exact
+unknown-record failure. It never converts that failure into acceptance. Its 163
+focused local tests and configured lint on affected files pass; new native CI is
+required. The product processor, policy, resources and held image Build are unchanged.
+
+Current [CI run 38323982997](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38323982997)
+for `d9ef43aa9b7421f50a99071ca1285eee26055ea0` is terminal failure. Frontend,
+browser companion, security/container and cold-browser journey pass. Eight ordinary
+native document cases completed; the first request-local daemon case failed. The
+bounded native diagnostic identifies `OwnedClamd._diagnostics` rejecting an unknown
+startup record during the source scan. It does not identify the exact message or
+justify relaxing a validation rule. The 155 isolated local tests and configured Ruff
+pass; the full current-source backend suite and exporter remain unverified.
+
+The authenticated Neon API now confirms the current HireWiz project/branch/endpoint
+identity against the previously observed SQL/control-plane binding. The recovery-window
+listing is empty. The inventory preserves literal returned identities, skips deeper
+reads of the separate project and drops unrelated endpoint metadata explicitly. This
+is discovery evidence; an absent historical endpoint or an empty recovery window does
+not prove credential retirement, administrative isolation or a financial release fence.
+
+The billing release gap is executable code, not only an access or environment task:
+`NativeBoundary.verify_fences()` in `infra/gcp/monetary_release.py` currently refuses
+with `native_external_consumer_and_provider_fence_verifier_missing`. Its Plan lacks
+a complete provider/old-credential/authority scope contract. Existing queue, SQL,
+replacement-credential and backup checks cover parts of the release boundary; they
+do not establish global credential coverage, provider retirement, replacement
+isolation or retirement of every old cloud writer. Keep this refusal until a native
+composition proves those facts. Preserve Razorpay merchant credentials and current/
+previous webhook verification so already accepted settlements continue correctly.
+
+No production monetary activation, forward migration or complete environment rollout
+has occurred. Protected browser pairing/lifecycle work remains stopped after automatic
+approval review rejected it as a possible cybersecurity risk. No additional original
+checkpoint is complete. Historical evidence below remains recorded under its original
+source and must not be treated as current-source or production acceptance.
 
 Earlier source `093cff76ced0f2b21262115e54ab581bf8405fd1` has terminal
 [CI run 38249963613](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38249963613):
