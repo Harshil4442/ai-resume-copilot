@@ -107,6 +107,7 @@ jobs:
           ../infra/gcp/document_worker.py tests/test_document_worker_deployment.py
           app/resume_upload_worker.py app/services/resume_upload_coordinator.py
           tests/test_resume_upload_coordinator.py tests/test_resume_upload_coordinator_postgres.py
+          tests/test_database_transfer.py tests/test_database_transfer_postgres.py
       - name: Check modified legacy authentication imports
         working-directory: backend
         run: .venv/bin/ruff check --select I,F app/routers/auth.py app/security.py app/schemas.py
@@ -128,6 +129,7 @@ jobs:
           app/routers/resume_uploads.py
           ../infra/gcp/document_worker.py
           app/resume_upload_worker.py app/services/resume_upload_coordinator.py
+          scripts/database_transfer.py scripts/ci_database_transfer_clients.py
       - name: Compile backend
         run: backend/.venv/bin/python -m compileall -q backend/app
       - name: Configure verified public cache without restarting PostgreSQL
@@ -231,10 +233,20 @@ jobs:
               else:
                   raise RuntimeError("Disposable localhost Firestore data emulator did not become ready")
           PY
+      - name: Prepare cached native PG17 transfer clients
+        working-directory: backend
+        timeout-minutes: 2
+        env:
+          CI_POSTGRES_CONTAINER_ID: ${{ job.services.postgres.id }}
+        run: >-
+          .venv/bin/python scripts/ci_database_transfer_clients.py
+          --service-container "$CI_POSTGRES_CONTAINER_ID"
+          --root "$RUNNER_TEMP/hirewiz-transfer-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
       - name: Run backend tests
         working-directory: backend
         env:
           HIREWIZ_TEST_POSTGRES_URL: postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55433/hirewiz_admission_test
+          HIREWIZ_TRANSFER_POSTGRES_REQUIRED: "true"
           PAIRING_PASSWORD_TEST_POSTGRES_ADMIN_URL: postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55433/postgres
           PAIRING_PASSWORD_TEST_POSTGRES_REQUIRED: "true"
           EMPLOYER_PACING_TEST_REDIS_URL: redis://127.0.0.1:56379/0
@@ -244,6 +256,16 @@ jobs:
           # Catch the native delivery/application contract before the full suite.
           .venv/bin/pytest -q tests/test_analysis_runs.py::test_evidence_tailoring_creates_a_traceable_version_and_commits_once
           .venv/bin/pytest -q
+      - name: Remove only owned transfer client containers
+        if: always()
+        working-directory: backend
+        timeout-minutes: 1
+        env:
+          CI_POSTGRES_CONTAINER_ID: ${{ job.services.postgres.id }}
+        run: >-
+          .venv/bin/python scripts/ci_database_transfer_clients.py --cleanup
+          --service-container "$CI_POSTGRES_CONTAINER_ID"
+          --root "$RUNNER_TEMP/hirewiz-transfer-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
       - name: Remove disposable Lever pacing Redis
         if: always()
         timeout-minutes: 1

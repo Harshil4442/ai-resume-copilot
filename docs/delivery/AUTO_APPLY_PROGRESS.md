@@ -2,18 +2,27 @@
 
 ## Current delivery status — 13 October 2026
 
-The user fixed the following six checkpoints. Internal fixes and component checks
-are evidence within them, not additional completed checkpoints. Report each original
-estimate and the measured whole-checkpoint duration only when its complete scope passes.
+On 13 October, the user corrected the reporting contract: report major development
+and deployment outcomes, not repeated CI/regression passes. The following checklist
+is the active reporting board. Tests, builds, reviews and temporary infrastructure
+checks are supporting evidence within these outcomes. They never count as additional
+completed delivery checkpoints. A passing CI run does not complete a product feature
+or a deployment. Do not mark these items done without evidence for their full scope.
 
-| Fixed checkpoint | Original estimate of additional active agent work | Current status | Recorded whole-checkpoint duration |
-|---|---|---|---|
-| Full CI/regressions | 1–3 hours | Reopened. `990d3fb` passes all 21 native cases, static checks, early tailoring and four other CI jobs. Full backend reports 3,962 passed, six failed and three setup errors. Stale fixture repairs pass 26 focused tests and 15 subtests; complete corrected-source CI remains required. Last full-green source is `6519de6` | Last completed cumulative duration: 20 hours 29 minutes 11 seconds, including waits. Current renewal began 12 October at 23:10:02.993537 UTC and remains open; do not count prior windows twice |
-| Resume worker output + PDF/DOCX/LaTeX fidelity | 4–8 hours | In progress. All 21 native image cases pass. Actual GCP original-six execution passes four scanning/malware cases and fails two DOCX layout cases at outcome validation; its owned job and execution are deleted and absence verified. Customer resume fidelity remains unverified | Unavailable; checkpoint incomplete |
-| Candidate-reviewed browser integration | 2–6 hours after the approval blocker clears | Blocked by automatic approval review of the protected integration | Unavailable; checkpoint incomplete |
-| Billing costs/failure recovery/load | 2–5 hours | In progress. Pricing and credit regressions pass; native credential retirement, release verification and representative load checks remain | Unavailable; checkpoint incomplete |
-| Mobile/performance/SEO verification | 1–3 hours | In progress. Public-page responsive and metadata checks passed; complete application journeys and field metrics remain | Unavailable; checkpoint incomplete |
-| GCP/Vercel env deployment/monitor | 2–4 hours | Pending. Fresh isolated Neon destination is created on the existing Free plan. Customer-data migration, new native bindings, staged revisions and production monetary deployment remain | Unavailable; checkpoint incomplete |
+| Major development/deployment outcome | Current status | Remaining acceptance |
+|---|---|---|
+| Official job search, ranking and user-selected job counts | In progress | Verify origin-only discovery, recent/closed-job handling, result counts, ranking and requested coverage across the complete user flow |
+| Resume tailoring with preserved PDF/DOCX/LaTeX formatting | In progress | Resolve actual GCP DOCX outcome refusals, verify customer resume fidelity and original/custom/tailored resume selection without fabricated claims |
+| Candidate-reviewed direct company applications | Blocked | Complete the approved Razorpay/Greenhouse pilot, exact destination/file/answer review and application outcome tracking; protected pairing work remains stopped |
+| Paid search/application credits, finite profitable packs and payment recovery | In progress | Verify separate charging and requested-count limits end to end, complete the native monetary release safeguards and representative failure/load/settlement checks |
+| Fast responsive pages and SEO | In progress | Verify complete laptop/desktop/mobile application journeys, loading performance and production metadata; public-page checks alone are insufficient |
+| GCP/Vercel production deployment, preserved-data migration and monitoring | Pending production release | Verify full customer/financial transfer to the native-bound fresh target, new roles and secret versions, stage exact revisions, perform the reviewed switch, then monitor production |
+
+No item in this major-outcome board is newly complete. Preserve the earlier timing
+ledger as historical validation evidence; do not count its CI closures toward this
+board. Earlier estimates have not held and are not a current delivery ETA. When a
+major outcome actually completes, report its scope, original estimate if recorded,
+measured duration with waits identified, and the evidence for completion.
 
 On 13 October, the corrected scanner source `b8c569b80ffc7a19d24567e7ed0775985742cab8`
 passes all 21 genuine native cases in [CI run 38394316118](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38394316118).
@@ -36,6 +45,16 @@ finish before rendering; a failed close prevents rendering. The three corrected 
 files pass 26 focused tests and 15 subtests in 2.18 seconds, with configured Ruff
 passing. These are synthetic boundary checks, not replacement native/GCP proof.
 Whole CI remains open.
+
+The consolidated correction `0fb166412ca2ca152dcf53b3aae1cf22572a8bd3` subsequently
+passes [CI run 38405897186](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38405897186)
+on 13 October at 13:54:50 UTC. All five jobs, including migrations and OpenAPI drift,
+pass. Backend reports 3,972 passed and 148 passing subtests in 946.38 seconds; the
+early tailoring test passes in 12.33 seconds. The physical native artifact digest,
+all eleven committed source hashes, original 8/2 groups and the strict eleven-daemon
+validator are verified. This is completed internal validation for this source. Under
+the user's revised reporting contract it does not count as a completed major delivery
+checkpoint.
 
 The exact b8 GCP document image Build `53e0f559-3ce0-43d6-b7f4-35ce0428eab2`
 is independently reconciled as SUCCESS after its create acknowledgement was unavailable.
@@ -62,6 +81,34 @@ resumes/artifact references, credits, ledgers, accepted order snapshots and liab
 Final consistent copy, old-writer cut, new-role/native-target validation, settlement
 continuity and reviewed production switch remain required. Historical resources are
 not declared deleted from empty inventories, and no existing database is overwritten.
+
+The new target's actual read-only TLS connection succeeds on 13 October at
+13:40:10–13:40:14 UTC: PostgreSQL 17.11, database OID 16395, bootstrap role OID 16391,
+public schema OID 2200 and its standard database-owner role OID 6171. Its public
+relations, sequences, routines, migration marker and outside-public relations are
+empty. Credentials remain transient; no provider, SQL or Secret Manager writes occur.
+This proves the new destination identity and observed empty catalog, not a restore,
+new runtime-role setup, financial migration or production switch.
+
+The explicit two-database transfer implementation is now integrated with 24 passing
+pure protocol/refusal tests and configured lint/type checks. It keeps a consistent
+source snapshot, restores once into an empty target in one transaction without old
+owners or ACLs, then compares exact row multisets, sequence states, large objects,
+object ownership and native collation definitions/versions. The restricted migration
+role does not require privileged control-system queries. Eleven real PostgreSQL
+transfer cases are wired into the existing full suite using the cached pinned PG17
+image and a private temporary directory; native execution remains required. Rehearsal
+uses disposable databases, preserving the fresh production target for the final cut.
+The genuine final writer fence, absolute outer process owner, target role setup,
+protected final backup and reviewed production cutover remain prerequisites.
+
+The scoped GCP return observation on 13 October at 14:29:30 UTC confirms that both
+failed layout cases return `docx_layout_unavailable` with every original/candidate/edit
+binding matching. The outer launcher reports 1; the inner process exit status is not
+observed and must not be invented. This distinguishes worker unavailability from
+binding corruption, without establishing the underlying startup failure. All original
+six acceptance predicates remain unchanged; four cases pass, two fail. The temporary
+Job and Execution are removed once and their native absence is verified.
 
 The original 12–30-hour subtotal excluded the unresolved approval wait. Those
 estimates have not held and are not a current ETA. Worldwide job coverage remains
