@@ -194,6 +194,35 @@ CLAMD_SETTINGS = {
 }
 
 
+CLAMD_BINDING_ENV = "DOCUMENT_CLAMD_MANIFEST_BINDING"
+CLAMD_BINDING_MODE = "gcp-ro-root-v1"
+
+
+def _read_clamd_manifest() -> bytes:
+    binding = os.environ.get(CLAMD_BINDING_ENV)
+    match = re.fullmatch(re.escape(CLAMD_BINDING_MODE) + r":([a-f0-9]{64})", binding) if binding is not None else None
+    if binding is not None and match is None:
+        raise InspectionUnavailable()
+    descriptor = os.open(CLAMD_MANIFEST, os.O_RDONLY | os.O_NOFOLLOW)
+    try:
+        info = os.fstat(descriptor)
+        owner = info.st_uid == 0 or (
+            match is not None and info.st_uid == 65534 and info.st_gid == 65534
+            and os.getuid() == 0 and os.getgid() == 0 and stat.S_IMODE(info.st_mode) == 0o444
+        )
+        if not stat.S_ISREG(info.st_mode) or not owner or info.st_mode & 0o222 or not 0 < info.st_size <= 16384:
+            raise InspectionUnavailable()
+        raw = os.read(descriptor, 16385)
+        after = os.fstat(descriptor)
+        fields = ("st_dev", "st_ino", "st_mode", "st_uid", "st_gid", "st_size", "st_mtime_ns", "st_ctime_ns")
+        if (len(raw) != info.st_size or any(getattr(info, key) != getattr(after, key) for key in fields)
+                or match is not None and hashlib.sha256(raw).hexdigest() != match[1]):
+            raise InspectionUnavailable()
+        return raw
+    finally:
+        os.close(descriptor)
+
+
 def _native_file(path: Path, deadline: float | None = None) -> dict:
     descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
     try:
@@ -660,17 +689,8 @@ class OwnedClamd:
 
     def _start(self, deadline):
         # The generated installation manifest is a read-only native build file.
-        descriptor = os.open(CLAMD_MANIFEST, os.O_RDONLY | os.O_NOFOLLOW)
-        try:
-            info = os.fstat(descriptor)
-            if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o222 or not 0 < info.st_size <= 16384:
-                raise InspectionUnavailable()
-            raw = os.read(descriptor, 16385)
-            if len(raw) != info.st_size:
-                raise InspectionUnavailable()
-            manifest = json.loads(raw, object_pairs_hook=_pairs)
-        finally:
-            os.close(descriptor)
+        raw = _read_clamd_manifest()
+        manifest = json.loads(raw, object_pairs_hook=_pairs)
         if (type(manifest) is not dict or set(manifest) != {"version", "engine", "files"}
                 or type(manifest["version"]) is not int or manifest["version"] != 1
                 or manifest["engine"] != CLAMD_ENGINE):

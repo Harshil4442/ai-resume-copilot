@@ -16,17 +16,23 @@ import math
 import os
 import re
 import selectors
+import shutil
 import signal
 import socket
+import stat
 import subprocess
 import sys
 import threading
 import time
 import uuid
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
 from typing import IO, TypedDict
 
 SANDBOX = "/usr/local/gcp/bin/sandbox"
+CLAMD_MANIFEST = Path("/opt/document/clamd-native-manifest.json")
+CLAMD_BINDING_ENV = "DOCUMENT_CLAMD_MANIFEST_BINDING"
+CLAMD_BINDING_MODE = "gcp-ro-root-v1"
 MAX_REQUEST = 7 * 1024 * 1024
 MAX_OUTPUT = 1024 * 1024
 MAX_LAYOUT_OUTPUT = 32 * 1024
@@ -513,6 +519,62 @@ def _docx_result(result: dict, binding: dict, request: dict, code: int, image: s
             edits_sha256=binding["edits_sha256"], image=image, policy=policy)
 
 
+def _host_clamd_binding() -> str:
+    """Bind one actual immutable host manifest; never accept a request assertion."""
+    descriptor = os.open(CLAMD_MANIFEST, os.O_RDONLY | os.O_NOFOLLOW)
+    try:
+        info = os.fstat(descriptor)
+        if (not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o222
+                or not 0 < info.st_size <= 16384):
+            raise InspectionDenied()
+        raw = os.read(descriptor, 16385)
+        fields = ("st_dev", "st_ino", "st_mode", "st_uid", "st_gid", "st_size", "st_mtime_ns", "st_ctime_ns")
+        after = os.fstat(descriptor)
+        current = CLAMD_MANIFEST.lstat()
+        if (len(raw) != info.st_size or any(getattr(info, key) != getattr(after, key)
+                or getattr(info, key) != getattr(current, key) for key in fields)):
+            raise InspectionDenied()
+        manifest = json.loads(raw, object_pairs_hook=_pairs,
+            parse_constant=lambda _: (_ for _ in ()).throw(InspectionDenied()))
+        if (type(manifest) is not dict or set(manifest) != {"version", "engine", "files"}
+                or type(manifest["version"]) is not int or manifest["version"] != 1
+                or manifest["engine"] != "1.4.3" or type(manifest["files"]) is not list or len(manifest["files"]) != 3):
+            raise InspectionDenied()
+        libraries = {path.resolve(strict=True) for path in Path("/usr/lib").glob("*/libclamav.so.*")}
+        if len(libraries) != 1:
+            raise InspectionDenied()
+        paths = [Path("/usr/sbin/clamd").resolve(strict=True), Path("/usr/bin/clamscan").resolve(strict=True), *libraries]
+        machines = set()
+        for row, path in zip(manifest["files"], paths, strict=True):
+            if (type(row) is not dict or set(row) != {"path", "sha256", "size", "elf_machine"}
+                    or row["path"] != str(path) or type(row["sha256"]) is not str
+                    or re.fullmatch(r"[a-f0-9]{64}", row["sha256"]) is None
+                    or type(row["size"]) is not int or not 20 <= row["size"] <= 128 * 1024**2
+                    or type(row["elf_machine"]) is not int or row["elf_machine"] not in {62, 183}):
+                raise InspectionDenied()
+            machines.add(row["elf_machine"])
+        if len(machines) != 1:
+            raise InspectionDenied()
+        return CLAMD_BINDING_MODE + ":" + hashlib.sha256(raw).hexdigest()
+    except Exception:
+        raise InspectionDenied() from None
+    finally:
+        os.close(descriptor)
+
+
+def _remove_request_tmp(directory: Path, identity: tuple[int, int]) -> None:
+    if (directory.parent != Path("/tmp") or re.fullmatch(r"document-[a-f0-9]{32}", directory.name) is None
+            or not shutil.rmtree.avoids_symlink_attacks):
+        raise InspectionDenied()
+    info = directory.lstat()
+    if (not stat.S_ISDIR(info.st_mode) or (info.st_dev, info.st_ino) != identity
+            or info.st_uid != os.getuid() or info.st_gid != os.getgid() or stat.S_IMODE(info.st_mode) != 0o700):
+        raise InspectionDenied()
+    shutil.rmtree(directory)
+    if os.path.lexists(directory):
+        raise InspectionDenied()
+
+
 def inspect_in_sandbox(payload: bytes, *, docx_layout: bool = False) -> dict:
     diagnostic = _REQUEST_DIAGNOSTIC.get()
     image, policy = configuration()
@@ -523,18 +585,45 @@ def inspect_in_sandbox(payload: bytes, *, docx_layout: bool = False) -> dict:
         sha256, size, kind = binding["sha256"], binding["size_bytes"], "docx"
     else:
         sha256, size, kind = _request_identity(payload)
-    # Retain the existing write allowance for the scanner's temporary target.
-    # No imported/exported file, bind, environment inheritance or egress permission.
-    # The immutable processor receives request bytes only on stdin.
+    # Read-only image root; only a fresh empty request-owned /tmp is writable.
+    # No other mount, environment passthrough, archive, egress or payload argv.
     name = "document-" + uuid.uuid4().hex
-    cleanup_required = True
+    directory = Path("/tmp") / name
+    identity = None
+    host_created = False
+    host_creation_pending = False
+    cleanup_required = False
+    delete_confirmed = False
     try:
         if diagnostic is not None:
             diagnostic.begin_run()
-        code, output = _run([SANDBOX, "do", "--sandbox-name=" + name, "--write", "--",
+        with _absolute_deadline(55) as launch_deadline:
+            manifest_binding = _host_clamd_binding()
+            host_creation_pending = True
+            try:
+                os.mkdir(directory, 0o700)
+            except FileExistsError:
+                host_creation_pending = False
+                raise
+            host_created = True
+            host_creation_pending = False
+            info = directory.lstat()
+            identity = (info.st_dev, info.st_ino)
+            os.chown(directory, -1, os.getgid(), follow_symlinks=False)
+            info = directory.lstat()
+            if ((info.st_dev, info.st_ino) != identity or not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid()
+                    or info.st_gid != os.getgid() or stat.S_IMODE(info.st_mode) != 0o700):
+                raise InspectionDenied()
+        remaining = launch_deadline - time.monotonic()
+        if remaining <= 0:
+            raise InspectionDenied()
+        cleanup_required = True
+        code, output = _run([SANDBOX, "do", "--sandbox-name=" + name,
+            "--mount", "type=bind,source=" + str(directory) + ",destination=/tmp",
+            "--env", CLAMD_BINDING_ENV + "=" + manifest_binding, "--",
             "/usr/local/bin/python3", "-I", "/opt/document/processor.py",
             "--docx-layout-stdin" if docx_layout else "--stdin"],
-            timeout=55, limit=MAX_LAYOUT_OUTPUT if docx_layout else MAX_OUTPUT, allow_outcome=True, input_bytes=payload)
+            timeout=remaining, limit=MAX_LAYOUT_OUTPUT if docx_layout else MAX_OUTPUT, allow_outcome=True, input_bytes=payload)
         if diagnostic is not None:
             diagnostic.end_run(code)
             diagnostic.phase = "validation"
@@ -584,20 +673,35 @@ def inspect_in_sandbox(payload: bytes, *, docx_layout: bool = False) -> dict:
                 diagnostic.fail("validation")
         raise InspectionDenied() from None
     finally:
-        # Force cleanup after timeouts/nonzero do as well. Any failed
-        # cleanup refuses release; no fallback or mutation retry.
-        if cleanup_required:
-            if diagnostic is not None:
-                diagnostic.begin_run(cleanup=True)
-            try:
-                cleanup_code, _ = _run([SANDBOX, "delete", name, "--force"], timeout=5, limit=65536, cleanup=True)
-            except BaseException as exc:
-                if diagnostic is not None:
-                    diagnostic.end_run(error=exc, cleanup=True)
-                raise
-            else:
-                if diagnostic is not None:
-                    diagnostic.end_run(cleanup_code, cleanup=True)
+        # Keep host temporary bytes until native sandbox deletion is confirmed.
+        # Host erase shares the existing delete5 + reap2 envelope; unknown
+        # cleanup quarantines subsequent admission and never returns a receipt.
+        try:
+            with _absolute_deadline(7):
+                if cleanup_required:
+                    if diagnostic is not None:
+                        diagnostic.begin_run(cleanup=True)
+                    try:
+                        cleanup_code, _ = _run([SANDBOX, "delete", name, "--force"], timeout=5, limit=65536, cleanup=True)
+                    except BaseException as exc:
+                        if diagnostic is not None:
+                            diagnostic.end_run(error=exc, cleanup=True)
+                        raise
+                    else:
+                        if diagnostic is not None:
+                            diagnostic.end_run(cleanup_code, cleanup=True)
+                        if type(cleanup_code) is not int or cleanup_code != 0:
+                            raise InspectionDenied()
+                        delete_confirmed = True
+                if host_creation_pending or host_created and identity is None:
+                    raise InspectionDenied()
+                if identity is not None and (not cleanup_required or delete_confirmed):
+                    _remove_request_tmp(directory, identity)
+        except BaseException:
+            if host_created or host_creation_pending:
+                with _CREATION_LOCK:
+                    _CREATION_FAILED.set()
+            raise
 
 
 

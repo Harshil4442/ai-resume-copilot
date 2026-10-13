@@ -181,7 +181,7 @@ class NativeRequirementTests(unittest.TestCase):
         stored = self.host["_FAILURE"].get()
         stored.update(case="clamd_two_clean")
         original = {"version": 1, "status": "native_clamd_proof_unavailable", "phase": "source_scan",
-            "chain": [{"class": "InspectionUnavailable", "frames": [{"function": "_diagnostics", "line": 594}]}],
+            "chain": [{"class": "InspectionUnavailable", "frames": [{"function": "_diagnostics", "line": 623}]}],
             "truncated": False}
         self.host["_note_clamd_failure"](self.encoded(original), 1, case="clamd_two_clean")
         calls = []

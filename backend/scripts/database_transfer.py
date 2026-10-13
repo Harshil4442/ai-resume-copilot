@@ -10,6 +10,7 @@ No admission, credential rotation, schema upgrade or traffic promotion occurs he
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import re
 import resource
@@ -23,6 +24,7 @@ import sys
 import tempfile
 import threading
 import time
+import warnings
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -759,6 +761,34 @@ _OWNER_PHASES = (
 )
 
 
+def _owner_discard_streams() -> None:
+    # Called only in the forked worker. dup2 alone cannot replace inherited
+    # capture streams or logging handlers that retain other file descriptors.
+    null = os.open(os.devnull, os.O_RDWR)
+    for descriptor in (0, 1, 2):
+        os.dup2(null, descriptor)
+    if null > 2:
+        os.close(null)
+    sys.stdin = open(os.devnull, encoding="utf-8")
+    sys.stdout = open(os.devnull, "w", encoding="utf-8")
+    sys.stderr = open(os.devnull, "w", encoding="utf-8")
+    for name, stream in (("__stdin__", sys.stdin), ("__stdout__", sys.stdout), ("__stderr__", sys.stderr)):
+        setattr(sys, name, stream)
+    logging.disable(sys.maxsize)
+    loggers = [logging.getLogger(), *(value for value in logging.Logger.manager.loggerDict.values()
+                                     if isinstance(value, logging.Logger))]
+    for logger in loggers:
+        for handler in logger.handlers:
+            if isinstance(handler, logging.StreamHandler):
+                # setStream() would flush the old captured stream; direct
+                # replacement keeps inherited buffered diagnostics private.
+                handler.stream = sys.stderr
+        logger.handlers.clear()
+    logging.lastResort = logging.NullHandler()
+    warnings.simplefilter("ignore")
+    warnings.showwarning = lambda *_args, **_kwargs: None
+
+
 def _owner_worker(
     source: BoundDatabase, target: BoundDatabase, tools: PostgresTools, workdir: Path,
     purpose: Literal["rehearsal", "final"], limits: Limits,
@@ -769,11 +799,7 @@ def _owner_worker(
     try:
         # Data, credentials and the trusted native boundary are inherited in RAM;
         # no JSON/pickle/argv/env intake and no inherited vendor output escapes.
-        null = os.open(os.devnull, os.O_RDWR)
-        for descriptor in (0, 1, 2):
-            os.dup2(null, descriptor)
-        if null > 2:
-            os.close(null)
+        _owner_discard_streams()
         os.umask(0o077)
         if os.read(admission, 2) != b"\x01" or os.getpgrp() != group or os.getsid(0) != group:
             os._exit(1)

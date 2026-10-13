@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import functools
+import logging
 import os
 import struct
 import subprocess
 import sys
 import time
+import warnings
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -339,8 +341,29 @@ def test_owned_transfer_once_marker_and_typed_terminal_never_expose_credentials(
     directory = _owned_directory(tmp_path)
     sentinel = "synthetic-password-and-vendor-body-must-not-escape"
     calls = directory / "synthetic-callback-count"
+    captured_stdout = sys.stdout
+    logger = logging.getLogger("hirewiz.synthetic.inherited.capture")
+    handler = logging.StreamHandler(captured_stdout)
+    monkeypatch.setattr(logger, "handlers", [handler])
+    monkeypatch.setattr(logger, "level", logging.DEBUG)
+    monkeypatch.setattr(logger, "propagate", False)
+    def inherited_warning(message, *_args, **_kwargs):
+        captured_stdout.write(str(message))
+    monkeypatch.setattr(warnings, "showwarning", inherited_warning)
+    parent_logging_disable = logging.root.manager.disable
+    parent_warning_filters = list(warnings.filters)
     def synthetic(_source, _target, _tools, workdir, **_kwargs):
         print(sentinel, flush=True)
+        sys.stdout.write(sentinel)
+        sys.stdout.flush()
+        sys.stderr.write(sentinel)
+        sys.stderr.flush()
+        os.write(1, sentinel.encode())
+        os.write(2, sentinel.encode())
+        logger.error(sentinel)
+        handler.emit(logging.LogRecord("synthetic", logging.ERROR, "synthetic", 1, sentinel, (), None))
+        warnings.warn(sentinel, UserWarning, stacklevel=1)
+        warnings.showwarning(sentinel, UserWarning, "synthetic", 1)
         calls.write_text("one")
         return {"transfer": "verified", "purpose": "rehearsal", "schema": transfer.SCHEMA9,
                 "table_rows": {sentinel: 3}, "sequence_count": 2,
@@ -358,6 +381,9 @@ def test_owned_transfer_once_marker_and_typed_terminal_never_expose_credentials(
     assert calls.read_text() == "one"
     assert sentinel not in repr(first) + repr(second)
     assert sentinel not in "".join(capfd.readouterr())
+    assert logger.handlers == [handler] and handler.stream is captured_stdout
+    assert logging.root.manager.disable == parent_logging_disable
+    assert warnings.filters == parent_warning_filters and warnings.showwarning is inherited_warning
     other = tmp_path / "refusal"
     other.mkdir(mode=0o700)
     def secret_exception(*_args, **_kwargs):
@@ -388,3 +414,32 @@ def test_owned_cleanup_refuses_observable_or_uninspectable_groups_after_reap(mon
     assert result == ("anchor_reaped_group_unconfirmed" if permission_error else "cleanup_deadline_unconfirmed")
     after_reap = calls[calls.index(("reap", 0)) + 1:]
     assert after_reap and set(after_reap) == {("group", 0)}
+
+
+def test_owned_stream_suppression_closes_inherited_capture_routes_in_a_real_child():
+    # This cross-platform child exercises the actual stream helper without
+    # faking Linux ownership, using duplicate capture FDs and cached handlers.
+    backend = Path(__file__).resolve().parents[1]
+    program = (
+        "import os,sys,logging,warnings;"
+        "from pathlib import Path;"
+        f"sys.path.insert(0,{str(backend)!r});"
+        "from scripts.database_transfer import _owner_discard_streams;"
+        "cached=os.fdopen(os.dup(1),'w');sys.stdout=cached;"
+        "logger=logging.getLogger('synthetic.cached');"
+        "handler=logging.StreamHandler(cached);logger.addHandler(handler);logger.setLevel(1);"
+        "warnings.showwarning=lambda message,*args,**kwargs:cached.write(str(message));"
+        "_owner_discard_streams();"
+        "sys.stdout.write('synthetic-stdout');sys.stdout.flush();"
+        "sys.stderr.write('synthetic-stderr');sys.stderr.flush();"
+        "os.write(1,b'synthetic-FD1');os.write(2,b'synthetic-FD2');"
+        "logger.error('synthetic-logger');"
+        "handler.emit(logging.LogRecord('synthetic',40,'synthetic',1,'synthetic-handler',(),None));"
+        "warnings.warn('synthetic-warning');warnings.showwarning('synthetic-showwarning',UserWarning,'synthetic',1)"
+    )
+    result = subprocess.run([sys.executable, "-I", "-B", "-c", program],
+                            env={"LANG": "C", "LC_ALL": "C", "TZ": "UTC"},
+                            stdin=subprocess.DEVNULL, capture_output=True,
+                            timeout=5, check=False)
+    assert result.returncode == 0
+    assert result.stdout == result.stderr == b""

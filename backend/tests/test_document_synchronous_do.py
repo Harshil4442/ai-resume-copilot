@@ -8,6 +8,7 @@ import io
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -22,12 +23,27 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 @pytest.fixture
-def service(monkeypatch: pytest.MonkeyPatch) -> Any:
+def service(monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest) -> Any:
     module = load("service")
+    created = []
+    original_mkdir = os.mkdir
+    def mkdir(path: Any, *args: Any, **options: Any) -> None:
+        original_mkdir(path, *args, **options)
+        directory = Path(path)
+        if directory.parent == Path("/tmp") and re.fullmatch(r"document-[a-f0-9]{32}", directory.name):
+            created.append(directory)
+    def remove_synthetic_directories() -> None:
+        # Only paths observed in this fake-launch fixture, never native sandboxes.
+        for directory in created:
+            if directory.exists():
+                shutil.rmtree(directory)
+    monkeypatch.setattr(module.os, "mkdir", mkdir)
+    request.addfinalizer(remove_synthetic_directories)
     monkeypatch.setenv("DOCUMENT_WORKER_IMAGE_DIGEST", "registry.invalid/document@sha256:" + "a" * 64)
     monkeypatch.setenv("DOCUMENT_WORKER_POLICY_SHA256", "b" * 64)
     monkeypatch.setattr(module.os.path, "isfile", lambda _: True)
     monkeypatch.setattr(module.os, "access", lambda *_: True)
+    monkeypatch.setattr(module, "_host_clamd_binding", lambda: module.CLAMD_BINDING_MODE + ":" + "c" * 64)
     return module
 
 
@@ -47,11 +63,17 @@ def test_named_one_shot_exact_command_private_stdin_and_unique_cleanup(
             return 0, b""
         assert args[0:2] == [service.SANDBOX, "do"]
         assert re.fullmatch(r"--sandbox-name=document-[a-f0-9]{32}", args[2])
-        assert args[3:] == [
-            "--write", "--", "/usr/local/bin/python3", "-I", "/opt/document/processor.py", "--stdin"
-        ]
-        assert options == {"timeout": 55, "limit": service.MAX_OUTPUT,
-                           "allow_outcome": True, "input_bytes": original}
+        name = args[2].split("=", 1)[1]
+        assert args[3:] == ["--mount", "type=bind,source=/tmp/" + name + ",destination=/tmp",
+            "--env", service.CLAMD_BINDING_ENV + "=" + service.CLAMD_BINDING_MODE + ":" + "c" * 64,
+            "--", "/usr/local/bin/python3", "-I", "/opt/document/processor.py", "--stdin"]
+        directory = Path("/tmp") / name
+        assert directory.is_dir() and not directory.is_symlink() and not list(directory.iterdir())
+        assert directory.stat().st_mode & 0o777 == 0o700
+        assert directory.stat().st_uid == os.getuid() and directory.stat().st_gid == os.getgid()
+        assert 0 < options["timeout"] <= 55
+        assert {key: value for key, value in options.items() if key != "timeout"} == {
+            "limit": service.MAX_OUTPUT, "allow_outcome": True, "input_bytes": original}
         return 0, json.dumps(result).encode()
 
     monkeypatch.setattr(service, "_run", run)
@@ -61,7 +83,7 @@ def test_named_one_shot_exact_command_private_stdin_and_unique_cleanup(
         assert admitted["size_bytes"] == len(content) and admitted["source_format"] == kind
     assert [args[1] for args, _ in calls] == ["do", "delete", "do", "delete"]
     names = [calls[index][0][2].split("=", 1)[1] for index in (0, 2)]
-    assert names[0] != names[1]
+    assert names[0] != names[1] and all(not (Path("/tmp") / name).exists() for name in names)
     for index, name in zip((1, 3), names, strict=True):
         assert calls[index] == (
             [service.SANDBOX, "delete", name, "--force"], {"timeout": 5, "limit": 65536, "cleanup": True}
@@ -172,15 +194,31 @@ def test_http_release_requires_coherent_one_shot_outcome_and_cleanup(
 
     monkeypatch.setattr(service, "_run", run)
     server = service.InspectionHTTPServer(("127.0.0.1", 0), service.Handler)
-    thread = threading.Thread(target=server.handle_request, daemon=True)
+    responses: list[tuple[Any, dict]] = []
+    errors: list[BaseException] = []
+    def request() -> None:
+        connection = http.client.HTTPConnection(server.server_address[0], server.server_address[1], timeout=3)
+        try:
+            connection.request("POST", "/inspect", body=payload(content), headers={
+                "Content-Type": "application/json", "X-HireWiz-Document-Policy": "b" * 64
+            })
+            response = connection.getresponse()
+            responses.append((response, json.loads(response.read())))
+        except BaseException as exc:
+            errors.append(exc)
+        finally:
+            connection.close()
+    # Like the actual single-threaded HTTPServer entrypoint, request handling and
+    # its signal deadline run on the main thread; only the synthetic client is a thread.
+    thread = threading.Thread(target=request, daemon=True)
     thread.start()
-    connection = http.client.HTTPConnection(server.server_address[0], server.server_address[1], timeout=3)
     try:
-        connection.request("POST", "/inspect", body=payload(content), headers={
-            "Content-Type": "application/json", "X-HireWiz-Document-Policy": "b" * 64
-        })
-        response = connection.getresponse()
-        body = json.loads(response.read())
+        server.handle_request()
+        thread.join(timeout=3)
+        assert not thread.is_alive()
+        if errors:
+            raise errors[0]
+        response, body = responses[0]
         assert response.status == (503 if delete_fails else status)
         assert response.getheader("Cache-Control") == "no-store"
         if delete_fails:
@@ -192,7 +230,6 @@ def test_http_release_requires_coherent_one_shot_outcome_and_cleanup(
             }
         assert calls == ["do", "delete"]
     finally:
-        connection.close()
         server.server_close()
         thread.join(timeout=3)
     assert not thread.is_alive()

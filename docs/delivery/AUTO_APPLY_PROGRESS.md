@@ -130,6 +130,44 @@ and synthetic fit request are unchanged, no raw errors or resume contents are
 retained, and all diagnostic acceptance flags remain false. Sandbox cleanup and
 the temporary Job/Execution absence are verified after one Delete.
 
+The follow-up native metadata witness finishes on 13 October at 15:51:22 UTC.
+It proves the failing field: the manifest is a regular 476-byte file with mode
+0444, presented as UID/GID 65534 inside the GCP sandbox; the processor runs as
+UID/GID 0 and requires manifest UID 0. Root-ownership translation therefore
+causes the refusal. The source correction now uses a read-only sandbox root,
+one request-owned writable temporary mount and a trusted outer manifest hash
+checked inside the sandbox. The original scanner, renderer and file-ownership
+checks remain required. Setup failures and uncertain cleanup stop admission;
+host temporary files are erased only after confirmed sandbox deletion. Root and
+an independent peer review the exact source and downstream pins. The 229 affected
+local controls pass; these do not prove GCP bind-file ownership, native scanner
+execution or formatting preservation. A fresh image and genuine GCP acceptance
+remain required. The temporary diagnostic Job and Execution are removed and
+their absence is verified.
+
+Source `430fa195f13eb887559d37e4af05bec1bb6e81f3` executes the four genuine Linux
+process controls. Hanging descendant timeout, caller cancellation and final
+native-cut refusal pass. The once-marker case preserves its one-call/typed-result
+assertions but exposes inherited Python output bypassing file-descriptor
+suppression. The independently reviewed correction now replaces child Python
+streams and suppresses inherited logging/warnings while preserving the original
+once-marker test. Local validation reports 29 passed and four Linux-only skips;
+actual Linux acceptance of the correction remains required. The previous full
+backend reported 4,014 passed, one failed and 148 passing subtests. No production
+use of this transfer owner has occurred.
+
+The fresh target read-only bootstrap preflight succeeds at 15:38:54–15:39:04 UTC.
+It independently checks the original native IDs, still-empty target, bootstrap
+CREATEROLE capability, memberships and ACLs. The three isolated target roles are
+created once at 16:13:26–16:13:39 UTC, with COMMIT acknowledgement and independent
+native postchecks: runtime OID 24576, migrator OID 24578 and observer OID 24580.
+All three remain NOLOGIN with no passwords. The exact PostgreSQL 17 four-membership
+semantics are checked; all 19 existing roles and 11 memberships, bootstrap access
+and the empty target are preserved. This is additive target preparation, not a
+customer migration or deployment. Existing promotion guards require migrator
+LOGIN/CREATE; the proposed later CREATE revocation needs explicit phase-specific
+guard integration and cannot silently bypass that requirement.
+
 The original 12–30-hour subtotal excluded the unresolved approval wait. Those
 estimates have not held and are not a current ETA. Worldwide job coverage remains
 unverified. The complete goal has no defensible completion estimate yet. Preserve
