@@ -32,14 +32,17 @@ bodies and exception details are never printed or persisted.
 
 ## Exact invocation shape
 
-The application image copies `backend/`, so the new `infra/` source is not in the
-current image. Prepare a reviewed ordinary source override in a structured Cloud
+The production Git Build uses the repository-root `Dockerfile` with context `.`.
+It copies `backend/` to `/app/backend`; the new `infra/` source is not in that
+image. Prepare a reviewed ordinary source override in a structured Cloud
 Run v2 Job request; avoid shell escaping an embedded program. Set the one
 container's immutable application image to the approved backend image, command
-to `/app/.venv/bin/python`, and args to `['-c', SOURCE_TEXT, '--execute']`,
+to `/app/backend/.venv/bin/python`, and args to `['-c', SOURCE_TEXT, '--execute']`,
 where `SOURCE_TEXT` is the exact reviewed diagnostic file. Python `-c` does not
-define `__file__`; the diagnostic uses the image's fixed `/app/app/services`
-path. Source is ordinary software, not a credential.
+define `__file__`; the diagnostic uses the image's fixed `/app/backend/app/services`
+path. The separate `backend/Dockerfile` uses `/app/.venv/bin/python` and
+`/app/app/services`; those paths do not describe this production Git Build.
+Source is ordinary software, not a credential.
 
 Use these fixed Job settings:
 
