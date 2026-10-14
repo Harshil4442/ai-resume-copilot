@@ -64,7 +64,8 @@ Current development within these outcomes:
   has Full Access; a permanent file-level restriction has not been established.
   Previously affected integration operations remain stopped while that scope is
   established. The complete source-integrity check runs under current Full
-  Access and caught an unclean checkout, rather than a permission rejection.
+  Access. After reconciling generated declarations and preserving existing
+  notes, it verifies all 1,023 tracked files and the 16-revision migration chain.
   The full migration executor has not run. No source files are excluded from
   that check. The separate GitHub
   builder replacement is prepared and reviewed, but no trigger or builder IAM
@@ -79,6 +80,13 @@ Current development within these outcomes:
   and its Private Google Access subnet are confirmed. The private DNS zone and
   both records are created; native metadata matches the fixed routing contract.
   Actual authenticated requests from a Cloud Run caller remain pending.
+  The accepted document image is deployed on private revision
+  `hirewiz-document-inspector-00004-2bv`; the previous revision is retained and
+  natively verified. Its configuration and empty service IAM policy match.
+  The project-policy verifier now accepts standard version-3 condition metadata
+  for unrelated principals, while continuing to refuse public/worker principals
+  and conditional service grants. No policy or API traffic was changed by this
+  parser repair. Full caller integration and release remain pending.
   Document/network metadata checks alone cannot establish live connectivity or
   complete the tailoring or deployment outcomes. See the
   [private routing contract](DOCUMENT_PRIVATE_ROUTING.md).

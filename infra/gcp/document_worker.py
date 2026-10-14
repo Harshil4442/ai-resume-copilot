@@ -209,15 +209,28 @@ def _traffic_statuses(statuses: Any, ready: str) -> None:
         _deny()
 
 
-def _bindings(policy: dict[str, Any]) -> list[dict[str, Any]]:
+def _project_condition(value: Any) -> None:
+    """Bounded IAM Expr metadata, never CEL evaluation or access authorization."""
+    if (type(value) is not dict or "expression" not in value
+            or set(value) - {"expression", "title", "description", "location"}
+            or any(type(item) is not str for item in value.values())):
+        _deny()
+    sizes = [len(item.encode("utf-8")) for item in value.values()]
+    if (not value["expression"].strip() or any(size > 4096 for size in sizes)
+            or sum(sizes) > 8192):
+        _deny()
+
+
+def _bindings(policy: dict[str, Any], *, project_conditions: bool = False) -> list[dict[str, Any]]:
     if (not isinstance(policy, dict) or type(policy.get("version", 1)) is not int
-            or policy.get("version", 1) not in (1, 3)):
+            or policy.get("version", 1) not in (1, 3) or type(project_conditions) is not bool):
         _deny()
     bindings = policy.get("bindings", [])
     if not isinstance(bindings, list) or len(bindings) > 1000:
         _deny()
     for binding in bindings:
-        if not isinstance(binding, dict) or set(binding) - {"role", "members"}:
+        allowed = {"role", "members", "condition"} if project_conditions else {"role", "members"}
+        if not isinstance(binding, dict) or set(binding) - allowed:
             _deny()
         if not isinstance(binding.get("role"), str) or not isinstance(binding.get("members"), list):
             _deny()
@@ -226,6 +239,10 @@ def _bindings(policy: dict[str, Any]) -> list[dict[str, Any]]:
             _deny()
         if len(set(members)) != len(members):
             _deny()
+        if "condition" in binding:
+            if policy.get("version") != 3:
+                _deny()
+            _project_condition(binding["condition"])
     return bindings
 
 
@@ -277,7 +294,7 @@ def check_snapshot(snapshot: dict[str, Any], image: str, release: str, *, api_ph
             _deny()
         # A project snapshot cannot establish organization/folder/group/custom
         # role access closure. Known public or runtime grants are refused here.
-        for binding in _bindings(snapshot["project_iam"]):
+        for binding in _bindings(snapshot["project_iam"], project_conditions=True):
             if set(binding["members"]) & {"allUsers", "allAuthenticatedUsers", "serviceAccount:" + SERVICE_ACCOUNT}:
                 _deny()
         account = snapshot["service_account"]

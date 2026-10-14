@@ -177,6 +177,74 @@ def test_project_public_custom_roles_or_privileged_worker_identity_refused(confi
         config.check_snapshot(value, IMAGE, RELEASE)
 
 
+@pytest.mark.parametrize("condition", [
+    {"expression": "request.time < timestamp('2030-01-01T00:00:00Z')", "title": "temporary_read"},
+    {"expression": "resource.name.startsWith('projects/example')", "title": "bounded_read",
+     "description": "Existing project metadata", "location": "policy.example:1"},
+])
+def test_valid_project_condition_is_metadata_only(config, condition):
+    value = snapshots(config)
+    value["project_iam"] = {"version": 3, "bindings": [{
+        "role": "roles/viewer", "members": ["serviceAccount:other@example.test"], "condition": condition,
+    }]}
+    report = config.check_snapshot(value, IMAGE, RELEASE)
+    assert report["configuration_matches"] is True
+    assert report["effective_iam_proven"] is report["runtime_isolation_proven"] is False
+    assert report["api_wiring_enabled"] is False
+
+
+@pytest.mark.parametrize("condition", [
+    None, {}, {"title": "missing_expression"}, {"expression": ""}, {"expression": " \n\t"},
+    {"expression": False}, {"expression": "true", "title": None},
+    {"expression": "true", "description": []}, {"expression": "true", "location": 1},
+    {"expression": "true", "unsupported": "field"}, {"expression": "x" * 4097},
+    {"expression": "true", "title": "x" * 4097},
+    {"expression": "x" * 4096, "description": "y" * 4096, "location": "z"},
+    {"expression": "é" * 2049}, {"expression": "\ud800"},
+])
+def test_malformed_or_unbounded_project_condition_refused(config, condition):
+    value = snapshots(config)
+    value["project_iam"] = {"version": 3, "bindings": [{
+        "role": "roles/viewer", "members": ["user:other@example.test"], "condition": condition,
+    }]}
+    with pytest.raises(config.ConfigurationDenied):
+        config.check_snapshot(value, IMAGE, RELEASE)
+
+
+@pytest.mark.parametrize("version", [None, 1, True])
+def test_project_condition_requires_policy_version_three(config, version):
+    value = snapshots(config)
+    value["project_iam"] = {"bindings": [{
+        "role": "roles/viewer", "members": ["user:other@example.test"],
+        "condition": {"expression": "true"},
+    }]}
+    if version is not None:
+        value["project_iam"]["version"] = version
+    with pytest.raises(config.ConfigurationDenied):
+        config.check_snapshot(value, IMAGE, RELEASE)
+
+
+@pytest.mark.parametrize("member", ["allUsers", "allAuthenticatedUsers",
+    "serviceAccount:hirewiz-document-inspector@ai-resume-parser-482412.iam.gserviceaccount.com"])
+@pytest.mark.parametrize("expression", ["true", "false", "unresolved.condition()"])
+def test_forbidden_project_principal_is_refused_independent_of_condition(config, member, expression):
+    value = snapshots(config)
+    value["project_iam"] = {"version": 3, "bindings": [{
+        "role": "projects/p/roles/custom", "members": [member],
+        "condition": {"expression": expression, "title": "opaque_metadata"},
+    }]}
+    with pytest.raises(config.ConfigurationDenied):
+        config.check_snapshot(value, IMAGE, RELEASE)
+
+
+def test_service_condition_remains_refused_in_version_three(config):
+    value = snapshots(config)
+    value["service_iam"] = config.render(IMAGE, RELEASE)["after_isolation_service_iam"]
+    value["service_iam"]["bindings"][0]["condition"] = {"expression": "true", "title": "unsupported_service_condition"}
+    with pytest.raises(config.ConfigurationDenied):
+        config.check_snapshot(value, IMAGE, RELEASE, api_phase=True)
+
+
 def test_user_managed_worker_key_and_disabled_identity_refused(config):
     value = snapshots(config)
     value["service_account_keys"]["keys"] = [{"keyType": "USER_MANAGED", "name": "never-log-this"}]
