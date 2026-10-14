@@ -32,7 +32,8 @@ SOURCES = (
     "infra/document-processing/service.py", "backend/app/services/parsing.py",
     "backend/app/services/market/skill_extractor.py", "backend/app/services/market/skill_taxonomy.py",
     "backend/app/services/market/security.py",
-    "infra/document-processing/docx_renderer.py", "backend/app/services/resume_layout.py",
+    "infra/document-processing/docx_renderer.py", "infra/document-processing/writer_owner.py",
+    "backend/app/services/resume_layout.py",
     "backend/app/services/pdf_streams.py", "backend/app/services/docx_layout_validation.py",
 )
 IMAGE_ID = re.compile(r"sha256:[0-9a-f]{64}\Z")

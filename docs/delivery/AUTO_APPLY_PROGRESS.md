@@ -10,7 +10,7 @@ outcome; they are never separate checklist completions.
 | Major outcome | Status | Work remaining before completion |
 |---|---|---|
 | Official job search, ranking and user-selected job counts | In progress | Verify recent and closed jobs, matching quality, selected result counts and credit behavior across the complete user flow; measure coverage against a defined reference set |
-| Resume tailoring preserving PDF, DOCX and LaTeX formatting | In progress | Verify the GCP DOCX restart repair against original layout, verify truthful edits, and complete original/custom/tailored resume selection and downloads |
+| Resume tailoring preserving PDF, DOCX and LaTeX formatting | In progress | Verify truthful edits and complete original/custom/tailored resume selection, review, downloads and staged API integration |
 | Candidate-reviewed direct company applications | Blocked | Complete the approved Razorpay/Greenhouse pilot, destination/file/answer review, form filling and reliable application outcome tracking; rejected pairing integration remains stopped |
 | Paid search/application credits, profitable finite packs and payment recovery | In progress | Verify separate charging, finite limits, settlement/refund recovery and representative failure/load behavior; release through the native monetary safeguards |
 | Fast responsive pages and SEO | In progress | Verify complete desktop, laptop and mobile journeys, loading performance and production SEO metadata |
@@ -27,22 +27,23 @@ Current development within these outcomes:
   verified company-to-ATS joins. This is source implementation, with production
   seeding and complete search acceptance pending. Worldwide or 95% job coverage
   has not been established. See the [origin register](../delivery/EMPLOYER_ORIGIN_REGISTRY_2026-10-13.md).
-- Format-preserving DOCX output is still failing its two native layout cases.
-  The latest exact-image GCP run passed all four parsing/antivirus cases,
-  verified the ten installed runtime hashes and actual font/tool manifest,
-  and completed cleanup for every case. Its owned Job, Execution and Build
-  source upload are absent. A reviewed candidate permits one normal engine
-  restart within the original deadline and corrects process ownership during
-  cleanup. It is held until rendered layout acceptance succeeds. Earlier
-  diagnostics observed exit 81 followed by a wrapper report of exit 137;
-  this does not establish memory exhaustion or the latest failure's cause.
-  A focused diagnostic on the reviewed ownership repair now confirms the first
-  child's actual exit 81 and successful cleanup, followed by second-attempt
-  admission and an exact wrapper report of exit 137. It did not observe the
-  second child's exit. The bound own-cgroup view returned unavailable memory
-  counters, so the cause remains unclassified. The temporary Job and Execution
-  are verified absent. Rendering limits and document safety checks remain
-  unchanged; repeating the same failed acceptance run alone is not progress.
+- The DOCX rendering repair now passes all six original native acceptance
+  cases on the new immutable GCP image. Clean PDF/DOCX parsing, both antivirus
+  cases, styled multipage layout preservation and unsafe reflow refusal pass.
+  The styled case preserves two pages, graphics and links, with zero measured
+  displacement of protected text or pixels outside the edited region. The
+  new image's eleven runtime files and read-only font inventory are verified;
+  the six-case suite takes 131.310 seconds. Temporary Job and Execution removal
+  and Build-source removal are independently verified. The exact helper,
+  renderer, Dockerfile, test-image source list and policy are adopted into the
+  worktree. This resolves the demonstrated native rendering defect; arbitrary
+  resume equivalence, truthful tailoring, resume selection/downloads and the
+  full production release remain pending. Rendering limits and document safety
+  checks are unchanged. The cause of the earlier wrapper exit 137 remains
+  unconfirmed. The approved diagnostic is published as
+  [Cloud Run issue 573358022](https://issuetracker.google.com/issues/573358022).
+  Exact scope and native bindings are recorded in the
+  [document acceptance record](DOCUMENT_RENDERING_ACCEPTANCE_2026-10-14.md).
 - The fresh Neon target now has three genuinely authenticated restricted roles
   and three verified numeric Secret Manager versions. The separate source-to-target
   release sequence, portable Linux profile and fresh-only native authority checks
@@ -106,7 +107,7 @@ Current development within these outcomes:
   versions with native checksum/hash readback. No runtime access grant or policy
   activation occurred; their original expiry and pricing limits are preserved.
 - Public SEO source now includes explicit social metadata, a branded preview
-  image and a sitemap without invented dates. The current Vercel preview is
+  image and a sitemap without invented dates. The earlier Vercel preview was
   built from commit `ad7ddd6`. The homepage was checked at actual 1512×805 and
   390×844 viewports, and pricing at 1366×900 and 390×844. Public metadata,
   keyboard/mobile navigation and page overflow checks passed. The wrapped score
@@ -131,14 +132,14 @@ for completion. Do not add smaller checkpoints to create apparent progress.
 The [archived implementation and validation history](archive/AUTO_APPLY_VALIDATION_HISTORY_THROUGH_2026-10-13.md)
 preserves earlier results and timing without counting them as delivery completions.
 
-The latest completed source run (`e41d8d2`, GitHub Actions `38502419603`)
-passed frontend, cold-browser, companion and security/container jobs. Backend
-reported two ordinary failures and 4,216 passes: the fresh-user purchase fixture
-needs the new explicit quote/request identity, and the retired legacy-purchase
-case needs the intended original-order rejection contract. Both fixture repairs are
-included with positive payment reconciliation; the next native run must verify
-them against the full integration. The public schema's
-native byte check remains pending because backend tests failed first.
+The latest completed source run (`6d6723b`, GitHub Actions `38506666828`)
+passed all five jobs, including the backend integration and native OpenAPI
+byte check. It includes positive payment reconciliation and the two repaired
+purchase fixtures. This is source validation within the existing outcomes;
+it does not establish provider acceptance or production deployment.
+
+The exact `6d6723b` Vercel preview is ready. It has not been promoted to
+production, and its complete authenticated journeys are not yet verified.
 
 The exact `e41d8d2` preview is ready. Public home and pricing pages fit 390-pixel
 mobile and 1,366-pixel laptop widths without horizontal overflow; mobile

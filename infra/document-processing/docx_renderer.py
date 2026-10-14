@@ -17,7 +17,9 @@ import time
 from pathlib import Path
 
 MANIFEST = Path("/opt/document/docx-font-manifest.json")
-SOFFICE = "/usr/bin/soffice"
+# This native engine is included in the verified immutable font/tool inventory.
+SOFFICE = "/usr/lib/libreoffice/program/soffice.bin"
+WRITER_OWNER = "/opt/document/writer_owner.py"
 MAX_MANIFEST = 256 * 1024
 MAX_PDF = 10 * 1024 * 1024
 # Internal comparison PDFs need glyph/page/link pixels, not tagged attributes.
@@ -90,19 +92,39 @@ def _inventory() -> list[dict[str, str]]:
     return rows
 
 
-def _run(arguments: list[str], *, deadline: float, limit: int = 65536) -> bytes:
-    # Fixed local service module in /opt/document; it imports no application.
+def _run(arguments: list[str], *, deadline: float, limit: int = 65536,
+         restart_once: bool = False) -> bytes:
+    # Keep generic ownership and cleanup in the original local service helper.
+    from service import _CREATION_FAILED, _CREATION_PENDING, _LauncherRefused
     from service import _run as owned_run
-    remaining = deadline - time.monotonic()
-    if not math.isfinite(remaining) or not 0 < remaining <= 55:
+    if type(restart_once) is not bool:
         raise RendererUnavailable()
-    try:
-        code, output = owned_run(arguments, timeout=remaining, limit=limit)
+    command = tuple(arguments)
+    for attempt in range(2 if restart_once else 1):
+        remaining = deadline - time.monotonic()
+        if not math.isfinite(remaining) or not 0 < remaining <= 55:
+            raise RendererUnavailable()
+        try:
+            code, output = owned_run([sys.executable, "-I", WRITER_OWNER,
+                                     "--deadline", format(deadline, ".9f"), "--", *command],
+                                    timeout=remaining, limit=limit)
+        except _LauncherRefused as refusal:
+            # The installed engine returned 81: LibreOffice requests a normal
+            # restart with all arguments/profile. Admit it only after the owned
+            # launcher has returned through its original confirmed cleanup.
+            if (restart_once and attempt == 0 and type(refusal) is _LauncherRefused
+                    and refusal.authorized is True
+                    and type(refusal.code) is int and refusal.code == 81
+                    and refusal.outcome == "unexpected_exit"
+                    and not _CREATION_PENDING.is_set() and not _CREATION_FAILED.is_set()):
+                continue
+            raise RendererUnavailable() from None
+        except Exception:
+            raise RendererUnavailable() from None
         if code != 0:
             raise RendererUnavailable()
         return output
-    except Exception:
-        raise RendererUnavailable() from None
+    raise RendererUnavailable()
 
 
 def _version(*, deadline: float) -> str:
@@ -148,7 +170,7 @@ def _render(content: bytes, directory: Path, *, deadline: float) -> bytes:
     output.mkdir(mode=0o700)
     _run([SOFFICE, "--headless", "--nologo", "--nodefault", "--norestore",
           "-env:UserInstallation=" + (directory / "profile").as_uri(),
-          "--convert-to", EXPORT, "--outdir", str(output), str(source)], deadline=deadline)
+          "--convert-to", EXPORT, "--outdir", str(output), str(source)], deadline=deadline, restart_once=True)
     target = output / "input.pdf"
     if (source.read_bytes() != content or sorted(path.name for path in output.iterdir()) != ["input.pdf"]
             or target.is_symlink() or not target.is_file() or not 0 < target.stat().st_size <= MAX_PDF):

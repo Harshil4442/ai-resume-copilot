@@ -210,19 +210,43 @@ class _CreationState(TypedDict):
     failed: bool
 
 
-def _cleanup_child(child, *, authorized: bool = True) -> bool:
-    """Always attempt bounded reap and pipe closure, even when kill fails."""
-    failed = False
-    kill_failed = False
-    code = None
+def _cleanup_child(child, *, authorized: bool = True, expected_code: int | None = None) -> bool:
+    """Signal only an unreaped owned group, then reap and prove native absence."""
+    failed = (type(authorized) is not bool or expected_code is not None
+              and (type(expected_code) is not int or not -255 <= expected_code <= 255))
+    cleanup_deadline = time.monotonic() + 2
     try:
-        os.killpg(child.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
-    except BaseException:
-        kill_failed = True
-    try:
-        code = child.wait(timeout=2)
+        # A populated Popen.returncode means its PID anchor was already released.
+        # Refuse that custody instead of sending any nonzero signal to a stale ID.
+        if child.returncode is not None:
+            return False
+        try:
+            os.killpg(child.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        except PermissionError as error:
+            # EPERM does not prove absence; only post-reap native ESRCH can.
+            if error.errno != 1:
+                failed = True
+        except BaseException:
+            failed = True
+        try:
+            actual_code = child.wait(timeout=max(0, cleanup_deadline - time.monotonic()))
+            if (type(actual_code) is not int or not -255 <= actual_code <= 255
+                    or expected_code is not None and actual_code != expected_code
+                    or time.monotonic() >= cleanup_deadline):
+                failed = True
+            # Read only after the first actual reap. Never signal this ID again.
+            try:
+                os.killpg(child.pid, 0)
+            except ProcessLookupError:
+                pass
+            except BaseException:
+                failed = True
+            else:
+                failed = True
+        except BaseException:
+            failed = True
     except BaseException:
         failed = True
     finally:
@@ -232,12 +256,7 @@ def _cleanup_child(child, *, authorized: bool = True) -> bool:
                     stream.close()
                 except BaseException:
                     failed = True
-    # An ungated bootstrap cannot fork or exec a target. Exit 125 acknowledges
-    # its fixed EOF/timeout path; reaping that sole child completes cleanup even
-    # on platforms where killpg rejects its already-exited group (macOS EPERM).
-    if kill_failed and (authorized or code != 125):
-        failed = True
-    return not failed
+    return not failed and time.monotonic() < cleanup_deadline
 
 
 def _run(arguments: list[str], *, timeout: int | float, limit: int,
@@ -274,6 +293,10 @@ def _run(arguments: list[str], *, timeout: int | float, limit: int,
     state: _CreationState = {"child": None, "gate_write": None, "cancelled": False, "failed": False}
     try:
         with _absolute_deadline(timeout) as deadline:
+            if not all(hasattr(os, name) for name in (
+                    "waitid", "P_PID", "WEXITED", "WNOHANG", "WNOWAIT",
+                    "CLD_EXITED", "CLD_KILLED", "CLD_DUMPED")):
+                raise InspectionDenied()
             with _CREATION_LOCK:
                 if _CREATION_PENDING.is_set() or (_CREATION_FAILED.is_set() and not cleanup):
                     raise InspectionDenied()
@@ -407,7 +430,28 @@ def _run(arguments: list[str], *, timeout: int | float, limit: int,
                 remaining = deadline - time.monotonic()
                 if (input_bytes is not None and written != len(input_bytes)) or remaining <= 0:
                     raise InspectionDenied()
-                code = child.wait(timeout=remaining)
+                # Observe terminal status without releasing the PID/group anchor.
+                # The first actual reap belongs exclusively to bounded cleanup.
+                while True:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise _RunDeadline()
+                    terminal = os.waitid(os.P_PID, child.pid,
+                                         os.WEXITED | os.WNOHANG | os.WNOWAIT)
+                    if terminal is None:
+                        time.sleep(min(0.01, remaining))
+                        continue
+                    if (type(terminal.si_pid) is not int or terminal.si_pid != child.pid
+                            or type(terminal.si_code) is not int or type(terminal.si_status) is not int):
+                        raise InspectionDenied()
+                    if terminal.si_code == os.CLD_EXITED and 0 <= terminal.si_status <= 255:
+                        code = terminal.si_status
+                    elif (terminal.si_code in {os.CLD_KILLED, os.CLD_DUMPED}
+                          and 1 <= terminal.si_status <= 255):
+                        code = -terminal.si_status
+                    else:
+                        raise InspectionDenied()
+                    break
                 if code not in ((0, 1, 2) if allow_outcome else (0,)):
                     failure = "unexpected_exit"
                     raise InspectionDenied()
@@ -434,10 +478,15 @@ def _run(arguments: list[str], *, timeout: int | float, limit: int,
                 gate_write.close()
             except OSError:
                 pass
-        if child is not None and not _cleanup_child(child, authorized=authorized):
-            with _CREATION_LOCK:
-                _CREATION_FAILED.set()
-            raise _LauncherRefused(authorized, code=code, outcome="reap_failed") from None
+        if child is not None:
+            try:
+                cleanup_confirmed = _cleanup_child(child, authorized=authorized, expected_code=code)
+            except BaseException:
+                cleanup_confirmed = False
+            if not cleanup_confirmed:
+                with _CREATION_LOCK:
+                    _CREATION_FAILED.set()
+                raise _LauncherRefused(authorized, code=code, outcome="reap_failed") from None
         # A worker that never returns remains quarantined. Constructor time is
         # not unbounded on the request thread, and its gate never receives data.
 

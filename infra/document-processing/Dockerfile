@@ -29,7 +29,7 @@ COPY backend/app/services/market/skill_extractor.py backend/app/services/market/
 COPY backend/app/services/resume_layout.py backend/app/services/pdf_streams.py \
      backend/app/services/docx_layout_validation.py /opt/document/app/services/
 COPY infra/document-processing/processor.py infra/document-processing/service.py \
-     infra/document-processing/docx_renderer.py /opt/document/
+     infra/document-processing/docx_renderer.py infra/document-processing/writer_owner.py /opt/document/
 # Generated from actual installed Linux files and version, verified again on
 # every render. Its hash/version must be observed and pinned by the API before
 # enabling DOCX preparation; a syntax-valid declaration alone proves no render.
