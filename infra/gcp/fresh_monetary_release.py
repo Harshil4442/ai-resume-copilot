@@ -98,6 +98,7 @@ class TransferPlan:
 
 
 class FreshBoundary(release.Boundary, Protocol):
+    def verify_document_configuration(self, source: release.Plan) -> dict[str, Any]: ...
     def transfer_fresh(
         self,
         source: release.Plan,
@@ -235,6 +236,7 @@ def stage_fresh_release(
             "final_native_transfer_required": True,
             "target_finalization_required": True,
         }
+    boundary.verify_document_configuration(source)
     boundary.create_backup(source, fence)
     boundary.verify_backup(source, fence)
     _source_gate(source, boundary, clock)
@@ -822,6 +824,7 @@ class FreshNativeBoundary(release.NativeBoundary):
     def stage_fresh(
         self, source: release.Plan, target: release.FreshTargetPlan, service: str
     ) -> str:
+        self.verify_document_configuration(source)
         return self.stage(runtime_plan(source, target), service)
 
     def verify_fresh_revision(
@@ -831,6 +834,7 @@ class FreshNativeBoundary(release.NativeBoundary):
         service: str,
         revision: str,
     ) -> None:
+        self.verify_document_configuration(source)
         self.verify_revision(runtime_plan(source, target), service, revision)
 
     def verify_fresh_serving(
@@ -840,7 +844,64 @@ class FreshNativeBoundary(release.NativeBoundary):
         service: str,
         revision: str,
     ) -> None:
+        self.verify_document_configuration(source)
         self.verify_serving(runtime_plan(source, target), service, revision)
+
+    def verify_document_configuration(self, source: release.Plan) -> dict[str, Any]:
+        """Read current native configuration/IAM; no invocation or isolation claim.
+
+        Actual calls must originate from the staged Cloud Run consumers through
+        approved internal routing. A local identity token cannot prove ingress.
+        The exact fresh boundary supplies the authenticated v2 metadata reader.
+        """
+        documents = release.documents
+        if source.runtime_service_account != documents.API_INVOKER:
+            raise release.ReleaseDenied("fresh_document_runtime_identity_mismatch")
+        reader = getattr(self, "_get", None)
+        if not callable(reader):
+            raise release.ReleaseDenied("fresh_document_native_metadata_reader_missing")
+        try:
+            service = reader("run", documents.RESOURCE)
+            if service.get("uri") != documents.ACCEPTED_ORIGIN:
+                raise release.ReleaseDenied("fresh_document_origin_mismatch")
+            revision = reader("run", service["latestReadyRevision"])
+            keys = self._cloud(
+                "iam", "service-accounts", "keys", "list",
+                "--iam-account", documents.SERVICE_ACCOUNT,
+            )
+            if type(keys) is not list:
+                raise release.ReleaseDenied("fresh_document_key_inventory_invalid")
+            snapshot = {
+                "service": service,
+                "revision": revision,
+                "service_iam": self._cloud(
+                    "run", "services", "get-iam-policy", documents.SERVICE,
+                    "--region", release.REGION,
+                ),
+                "project_iam": self._cloud("projects", "get-iam-policy", release.PROJECT),
+                "service_account": self._cloud(
+                    "iam", "service-accounts", "describe", documents.SERVICE_ACCOUNT,
+                ),
+                "service_account_keys": {"keys": keys},
+            }
+            report = documents.check_snapshot(
+                snapshot, documents.ACCEPTED_IMAGE, source.release, api_phase=True,
+            )
+            routing = release.document_routing
+            routing.verify_network(
+                self._cloud("compute", "networks", "describe", routing.NETWORK),
+                self._cloud("compute", "networks", "subnets", "describe", routing.SUBNET,
+                            "--region", release.REGION),
+                self._cloud("dns", "managed-zones", "describe", routing.DNS_ZONE),
+                self._cloud("dns", "record-sets", "list", "--zone", routing.DNS_ZONE, "--limit", "5"),
+                self._cloud("compute", "routes", "list", "--filter", "network=" + routing.NETWORK_URL,
+                            "--limit", "65"),
+            )
+            return {**report, "native_authenticated_metadata_read": True}
+        except release.ReleaseDenied:
+            raise
+        except Exception:
+            raise release.ReleaseDenied("fresh_document_native_configuration_unverified") from None
 
     def frontend_configuration(
         self, source: release.Plan, target: release.FreshTargetPlan, revision: str

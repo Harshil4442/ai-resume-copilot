@@ -94,6 +94,11 @@ class Boundary:
         assert plan is self.source
         self.event("source-backup")
 
+    def verify_document_configuration(self, source):
+        assert source is self.source
+        self.event("document-configuration")
+        return {"configuration_matches": True, "runtime_isolation_proven": False}
+
     def verify_backup(self, plan, fence):
         assert plan is self.source
         self.event("source-backup-verified")

@@ -45,6 +45,39 @@ def test_default_plan_has_no_purchasable_or_enabled_wiring(config):
     assert value["image_bound"] is False and value["native_calls"] == 0
 
 
+def test_api_contract_uses_accepted_renderer_and_replacement_runtime(config):
+    origin = "https://hirewiz-document-inspector-mqff62d75a-uc.a.run.app"
+    assert config.API_INVOKER == (
+        "hirewiz-runtime-20261014@ai-resume-parser-482412.iam.gserviceaccount.com"
+    )
+    assert config.api_environment(origin) == {
+        "DOCUMENT_WORKER_URL": origin + "/inspect",
+        "DOCUMENT_WORKER_IMAGE_DIGEST": config.ACCEPTED_IMAGE,
+        "DOCUMENT_WORKER_POLICY_SHA256": config.POLICY_SHA256,
+        "DOCUMENT_WORKER_DOCX_RENDERER_VERSION": config.ACCEPTED_RENDERER,
+        "DOCUMENT_WORKER_DOCX_FONT_MANIFEST_SHA256": config.ACCEPTED_FONT_MANIFEST,
+    }
+    assert config.ACCEPTED_IMAGE.endswith(
+        "@sha256:624597726ce2fefa2b3574fbf0a8ec4ccdc02a826380d76c5edc8ebbd59aa107"
+    )
+
+
+@pytest.mark.parametrize("origin", [
+    "http://hirewiz-document-inspector-mqff62d75a-uc.a.run.app",
+    "https://other.run.app", "https://hirewiz-document-inspector-x.a.run.app.evil.test",
+    "https://hirewiz-document-inspector-x.a.run.app/inspect",
+    "https://hirewiz-document-inspector-x.a.run.app?redirect=1",
+    "https://user@hirewiz-document-inspector-x.a.run.app",
+    "https://hirewiz-document-inspector-x.a.run.app:80", None,
+    "https://hirewiz-document-inspector-mqff62d75a-uc.a.run.app:443",
+    "https://@hirewiz-document-inspector-mqff62d75a-uc.a.run.app",
+    "https://HIREWIZ-DOCUMENT-INSPECTOR-mqff62d75a-uc.a.run.app",
+])
+def test_api_contract_refuses_unbound_routing(config, origin):
+    with pytest.raises(config.ConfigurationDenied):
+        config.api_environment(origin)
+
+
 def test_render_is_separate_secretless_launcher_not_existing_api(config):
     value = config.render(IMAGE, RELEASE)
     service = value["service"]

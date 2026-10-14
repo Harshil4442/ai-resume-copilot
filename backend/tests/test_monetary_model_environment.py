@@ -91,6 +91,13 @@ def revision(selected, service):
                 "SERVICE_ROLE": "api" if service == release.SERVICES[0] else "worker"}
     secrets = [("DATABASE_URL", selected.runtime_secret), ("HIREWIZ_EXPENSE_POLICY_JSON", selected.expense_secret)]
     if service in release.SERVICES[:2]:
+        expected.update(
+            DOCUMENT_WORKER_URL="https://hirewiz-document-inspector-mqff62d75a-uc.a.run.app/inspect",
+            DOCUMENT_WORKER_IMAGE_DIGEST="us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz-document-inspector@sha256:624597726ce2fefa2b3574fbf0a8ec4ccdc02a826380d76c5edc8ebbd59aa107",
+            DOCUMENT_WORKER_POLICY_SHA256="dbd15ce3120bb6211bb6c1d7b166aaddbd8b80e00a72d564e6274ef10db3aaf1",
+            DOCUMENT_WORKER_DOCX_RENDERER_VERSION="LibreOffice 25.2.3.2 520(Build:2)",
+            DOCUMENT_WORKER_DOCX_FONT_MANIFEST_SHA256="abaf429caeeeb5fbcc000c878a315c89e23ecd3dc912bb74df10761c144f7d60",
+        )
         expected.update(LLM_MODEL=selected.model_primary, LLM_API_BASE=selected.model_api_base)
         secrets += [("LLM_MODEL_COST_POLICY_JSON", selected.model_policy_secret), ("LLM_API_KEY", selected.model_key_secret)]
     if service != release.SERVICES[0]:
@@ -101,7 +108,11 @@ def revision(selected, service):
         secret_name, key = reference.split(":")
         env.append({"name": name, "valueFrom": {"secretKeyRef": {"name": secret_name, "key": key}}})
     env.append({"name": "RAZORPAY_WEBHOOK_SECRET", "valueFrom": {"secretKeyRef": {"name": "payment-webhook", "key": "7"}}})
-    return {"metadata": {"labels": {"serving.knative.dev/service": service}},
+    annotations = ({
+        "run.googleapis.com/network-interfaces": '[{"network":"hirewiz-private","subnetwork":"hirewiz-callers-us-central1"}]',
+        "run.googleapis.com/vpc-access-egress": "private-ranges-only",
+    } if service in release.SERVICES[:2] else {})
+    return {"metadata": {"labels": {"serving.knative.dev/service": service}, "annotations": annotations},
             "spec": {"serviceAccountName": selected.runtime_service_account, "containers": [{"env": env}]},
             "status": {"imageDigest": selected.image, "conditions": [{"type": "Ready", "status": "True"}]}}
 

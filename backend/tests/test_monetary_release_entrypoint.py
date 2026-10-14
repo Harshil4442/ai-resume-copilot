@@ -383,6 +383,7 @@ def test_native_worker_refuses_unresolved_custom_project_role_public_principal(p
     service = release.SERVICES[1]
     environment = {**release.SAFE_ENV, "APP_RELEASE": plan.release, "SERVICE_ROLE": "worker",
                    "WORKER_LABEL": "analysis-worker", "WORKER_ALLOWED_TOPICS": "analysis.run"}
+    environment.update(release.documents.api_environment(release.documents.ACCEPTED_ORIGIN))
     environment.update(LLM_MODEL=plan.model_primary, LLM_API_BASE=plan.model_api_base)
     env = [{"name": name, "value": value} for name, value in environment.items()]
     for name, secret in (("DATABASE_URL", plan.runtime_secret), ("HIREWIZ_EXPENSE_POLICY_JSON", plan.expense_secret),
@@ -392,6 +393,7 @@ def test_native_worker_refuses_unresolved_custom_project_role_public_principal(p
     revision = {"metadata": {"labels": {"serving.knative.dev/service": service}},
                 "spec": {"serviceAccountName": plan.runtime_service_account, "containers": [{"env": env}]},
                 "status": {"imageDigest": plan.image, "conditions": [{"type": "Ready", "status": "True"}]}}
+    revision["metadata"]["annotations"] = release.document_routing.caller_annotations()
     binding = {"role": f"projects/{release.PROJECT}/roles/customInvoker", "members": [principal]}
     if condition:
         binding["condition"] = condition
@@ -588,6 +590,7 @@ def test_native_revision_requires_explicit_closed_checkout_without_disabling_pay
     service = release.SERVICES[0]
     environment = {**release.SAFE_ENV, "APP_RELEASE": plan.release, "SERVICE_ROLE": "api",
                    "RAZORPAY_KEY_ID": "rzp_test_synthetic"}
+    environment.update(release.documents.api_environment(release.documents.ACCEPTED_ORIGIN))
     if checkout is None:
         environment.pop("RAZORPAY_CHECKOUT_ENABLED", None)
     else:
@@ -602,6 +605,7 @@ def test_native_revision_requires_explicit_closed_checkout_without_disabling_pay
     revision = {"metadata": {"labels": {"serving.knative.dev/service": service}},
                 "spec": {"serviceAccountName": plan.runtime_service_account, "containers": [{"env": env}]},
                 "status": {"imageDigest": plan.image, "conditions": [{"type": "Ready", "status": "True"}]}}
+    revision["metadata"]["annotations"] = release.document_routing.caller_annotations()
     health = []
     def cloud(*args):
         assert args[:3] == ("run", "revisions", "describe")

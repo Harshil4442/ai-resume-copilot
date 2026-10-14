@@ -17,9 +17,16 @@ PROJECT = "ai-resume-parser-482412"
 REGION = "us-central1"
 SERVICE = "hirewiz-document-inspector"
 SERVICE_ACCOUNT = f"{SERVICE}@{PROJECT}.iam.gserviceaccount.com"
-API_INVOKER = f"hirewiz-api@{PROJECT}.iam.gserviceaccount.com"
+API_INVOKER = f"hirewiz-runtime-20261014@{PROJECT}.iam.gserviceaccount.com"
 RESOURCE = f"projects/{PROJECT}/locations/{REGION}/services/{SERVICE}"
 POLICY_SHA256 = "dbd15ce3120bb6211bb6c1d7b166aaddbd8b80e00a72d564e6274ef10db3aaf1"
+ACCEPTED_IMAGE = (
+    f"{REGION}-docker.pkg.dev/{PROJECT}/cloud-run-source-deploy/{SERVICE}"
+    "@sha256:624597726ce2fefa2b3574fbf0a8ec4ccdc02a826380d76c5edc8ebbd59aa107"
+)
+ACCEPTED_RENDERER = "LibreOffice 25.2.3.2 520(Build:2)"
+ACCEPTED_FONT_MANIFEST = "abaf429caeeeb5fbcc000c878a315c89e23ecd3dc912bb74df10761c144f7d60"
+ACCEPTED_ORIGIN = "https://hirewiz-document-inspector-mqff62d75a-uc.a.run.app"
 ROOT = Path(__file__).resolve().parents[2]
 MAX_INPUT_BYTES = 256 * 1024
 _IMAGE = re.compile(re.escape(f"{REGION}-docker.pkg.dev/{PROJECT}/cloud-run-source-deploy/{SERVICE}")
@@ -93,6 +100,25 @@ def plan() -> dict[str, Any]:
     return {"proposal_version": 1, "image_bound": False, "native_calls": 0,
             "api_wiring_enabled": False, "deployment_proven": False,
             "next_required": "reviewed_amd64_image_and_native_isolation_evidence"}
+
+
+def api_environment(origin: str) -> dict[str, str]:
+    """The accepted immutable renderer contract; this does not activate wiring."""
+    from urllib.parse import urlsplit
+
+    parsed = urlsplit(origin) if type(origin) is str else None
+    if (parsed is None or origin not in {ACCEPTED_ORIGIN, ACCEPTED_ORIGIN + "/"}
+            or parsed.scheme != "https" or not parsed.hostname
+            or parsed.username is not None or parsed.password is not None or parsed.port is not None
+            or parsed.path not in {"", "/"} or parsed.query or parsed.fragment):
+        _deny()
+    return {
+        "DOCUMENT_WORKER_URL": ACCEPTED_ORIGIN + "/inspect",
+        "DOCUMENT_WORKER_IMAGE_DIGEST": ACCEPTED_IMAGE,
+        "DOCUMENT_WORKER_POLICY_SHA256": POLICY_SHA256,
+        "DOCUMENT_WORKER_DOCX_RENDERER_VERSION": ACCEPTED_RENDERER,
+        "DOCUMENT_WORKER_DOCX_FONT_MANIFEST_SHA256": ACCEPTED_FONT_MANIFEST,
+    }
 
 
 def render(image: str, release: str) -> dict[str, Any]:

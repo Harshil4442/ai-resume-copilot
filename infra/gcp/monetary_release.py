@@ -23,6 +23,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol
 
+import document_network as document_routing
+import document_worker as documents
 import release_preflight as source_guard
 
 PROJECT = "ai-resume-parser-482412"
@@ -243,10 +245,11 @@ def runtime_environment(plan: Plan, service: str) -> tuple[dict[str, str], dict[
         env["WORKER_ALLOWED_TOPICS"] = ("analysis.run" if service == SERVICES[1]
                                        else "employer.search,employer.refresh,employer.apply,employer.artifact-delete")
     if service in SERVICES[:2]:
+        env.update(documents.api_environment(documents.ACCEPTED_ORIGIN))
         env.update(LLM_MODEL=plan.model_primary, LLM_API_BASE=plan.model_api_base)
         secrets.update(LLM_MODEL_COST_POLICY_JSON=plan.model_policy_secret, LLM_API_KEY=plan.model_key_secret)
     else:
-        removed = (*removed, *MODEL_ENV)
+        removed = (*removed, *MODEL_ENV, *documents.api_environment(documents.ACCEPTED_ORIGIN))
     return env, secrets, removed
 
 
@@ -399,7 +402,7 @@ class NativeBoundary:
             "CLOUDSDK_PROXY_ADDRESS": "", "CLOUDSDK_PROXY_PORT": "0",
         })
         for api in ("run", "secretmanager", "cloudbuild", "iam", "iamcredentials",
-                    "cloudtasks", "cloudscheduler", "cloudresourcemanager", "storage"):
+                    "cloudtasks", "cloudscheduler", "cloudresourcemanager", "storage", "compute", "dns"):
             environment["CLOUDSDK_API_ENDPOINT_OVERRIDES_" + api.upper()] = f"https://{api}.googleapis.com/"
         try:
             result = subprocess.run([executable, *args], cwd=self.root, check=True,
@@ -877,7 +880,9 @@ class NativeBoundary:
         # in gcloud rather than silently changing an unsupported source kind.
         literal_removals = (*removed, *secrets.keys())
         auth_args = () if service == SERVICES[0] else ("--no-allow-unauthenticated",)
+        network_args = tuple(document_routing.caller_deploy_args()) if service in SERVICES[:2] else ()
         staged = self._cloud("run", "deploy", service, *auth_args, "--region", REGION, "--image", plan.image,
+                             *network_args,
                              "--service-account", plan.runtime_service_account, "--no-traffic", "--tag", "monetary-candidate",
                              "--command", "", "--args", "", "--remove-env-vars", ",".join(literal_removals),
                              "--remove-secrets", ",".join(removed),
@@ -908,6 +913,11 @@ class NativeBoundary:
                        for name, reference in expected_secrets.items())
                 or not any(condition.get("type") == "Ready" and condition.get("status") == "True" for condition in observed.get("status", {}).get("conditions", []))):
             raise ReleaseDenied("joined_revision_identity_or_safety_mismatch")
+        if service in SERVICES[:2]:
+            try:
+                document_routing.verify_caller(observed)
+            except document_routing.NetworkConfigurationDenied:
+                raise ReleaseDenied("joined_document_caller_network_mismatch") from None
         if service != SERVICES[0]:
             service_metadata = self._cloud("run", "services", "describe", service, "--region", REGION)
             if service_metadata.get("metadata", {}).get("annotations", {}).get("run.googleapis.com/invoker-iam-disabled", "false") != "false":

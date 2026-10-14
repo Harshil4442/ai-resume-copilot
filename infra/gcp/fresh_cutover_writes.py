@@ -175,6 +175,7 @@ class OfficialWrites:
             "build": "https://cloudbuild.googleapis.com/v1/",
             "tasks": "https://cloudtasks.googleapis.com/v2/",
             "storage": "https://storage.googleapis.com/storage/v1/",
+            "run": "https://run.googleapis.com/v2/",
         }
         new_emails = {name + "@" + PROJECT + ".iam.gserviceaccount.com" for name in NEW_ACCOUNTS}
         secret_resource = re.fullmatch(
@@ -184,6 +185,12 @@ class OfficialWrites:
             path,
         )
         allowed = (
+            api == "run"
+            and ((method == "GET" and path in {
+                native.release.documents.RESOURCE,
+                native.release.documents.RESOURCE + ":getIamPolicy",
+            }) or (method == "POST" and path == native.release.documents.RESOURCE + ":setIamPolicy"))
+            or
             api == "iam"
             and method == "POST"
             and path == "projects/" + PROJECT + "/serviceAccounts"
@@ -812,6 +819,7 @@ class OfficialWrites:
             runtime.email,
             runtime.uid,
         )
+        self.grant_document_invoker(runtime)
         task = self._call("iam", "GET", "projects/-/serviceAccounts/" + TASKS_EMAIL)
         self._account(task, TASKS_EMAIL, TASKS_UID)
         need(
@@ -852,6 +860,58 @@ class OfficialWrites:
             member,
             condition=ARTIFACT_CONDITION,
         )
+
+    def grant_document_invoker(self, runtime: NativeAccount) -> None:
+        """Only the isolated replacement runtime may invoke the fixed worker."""
+        documents = native.release.documents
+        need(runtime.email == documents.API_INVOKER, "write_document_runtime_identity")
+        source_sql.verify_cloud_isolated(self.boundary)
+        account = self._call("iam", "GET", "projects/-/serviceAccounts/" + runtime.email)
+        self._account(account, runtime.email, runtime.uid)
+        need(account is not None and account.get("disabled", False) is False,
+             "write_document_runtime_disabled")
+        service = self._call("run", "GET", documents.RESOURCE)
+        need(service is not None and service.get("name") == documents.RESOURCE
+             and service.get("uri") == documents.ACCEPTED_ORIGIN
+             and type(service.get("uid")) is str and bool(service["uid"])
+             and service.get("reconciling", False) is False,
+             "write_document_service_identity")
+        path = documents.RESOURCE
+        before = self._call("run", "GET", path + ":getIamPolicy",
+                            query={"options.requestedPolicyVersion": "3"})
+        retired_email = "hirewiz-api@" + PROJECT + ".iam.gserviceaccount.com"
+        old_binding = [{"role": "roles/run.invoker", "members": ["serviceAccount:" + retired_email]}]
+        wanted = [{"role": "roles/run.invoker", "members": ["serviceAccount:" + runtime.email]}]
+        need(before is not None and set(before) <= {"version", "etag", "bindings"}
+             and type(before.get("etag")) is str and bool(before["etag"])
+             and type(before.get("version", 1)) is int and before.get("version", 1) in {1, 3}
+             and before.get("bindings", []) in ([], old_binding, wanted),
+             "write_document_iam_initial_policy_refused")
+        assert before is not None
+        if before.get("bindings", []) == wanted:
+            # A genuine current desired policy is read-only reconciliation. Do
+            # not replay a prior grant or overwrite its current etag.
+            reread = self._call("run", "GET", documents.RESOURCE)
+            need(reread is not None and reread.get("name") == documents.RESOURCE
+                 and reread.get("uid") == service["uid"]
+                 and reread.get("uri") == documents.ACCEPTED_ORIGIN,
+                 "write_document_service_identity_drift")
+            return
+        policy = {"version": 3, "etag": before["etag"], "bindings": wanted}
+        self._once("grant-document-runtime")
+        self._call("run", "POST", path + ":setIamPolicy", body={"policy": policy})
+        after = self._call("run", "GET", path + ":getIamPolicy",
+                           query={"options.requestedPolicyVersion": "3"})
+        need(after is not None and set(after) <= {"version", "etag", "bindings"}
+             and type(after.get("etag")) is str and bool(after["etag"])
+             and type(after.get("version", 1)) is int and after.get("version", 1) in {1, 3}
+             and after.get("bindings", []) == wanted,
+             "write_document_iam_readback_drift")
+        reread = self._call("run", "GET", documents.RESOURCE)
+        need(reread is not None and reread.get("name") == documents.RESOURCE
+             and reread.get("uid") == service["uid"]
+             and reread.get("uri") == documents.ACCEPTED_ORIGIN,
+             "write_document_service_identity_drift")
 
     def create_model_replacement(self) -> str:
         source_sql.verify_cloud_isolated(self.boundary)

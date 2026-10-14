@@ -11,7 +11,7 @@ outcome; they are never separate checklist completions.
 |---|---|---|
 | Official job search, ranking and user-selected job counts | In progress | Verify recent and closed jobs, matching quality, selected result counts and credit behavior across the complete user flow; measure coverage against a defined reference set |
 | Resume tailoring preserving PDF, DOCX and LaTeX formatting | In progress | Verify truthful edits and complete original/custom/tailored resume selection, review, downloads and staged API integration |
-| Candidate-reviewed direct company applications | Blocked | Complete the approved Razorpay/Greenhouse pilot, destination/file/answer review, form filling and reliable application outcome tracking; rejected pairing integration remains stopped |
+| Candidate-reviewed direct company applications | Pending integration | Complete the approved Razorpay/Greenhouse pilot, destination/file/answer review, form filling and reliable application outcome tracking; previously affected pairing operations remain stopped while the original review scope is established |
 | Paid search/application credits, profitable finite packs and payment recovery | In progress | Verify separate charging, finite limits, settlement/refund recovery and representative failure/load behavior; release through the native monetary safeguards |
 | Fast responsive pages and SEO | In progress | Verify complete desktop, laptop and mobile journeys, loading performance and production SEO metadata |
 | GCP/Vercel production deployment, preserved-data migration and monitoring | Pending production release | Finish release orchestration, preserve customer/financial data, establish the actual old-writer fence, migrate, stage, perform the reviewed production switch and monitor |
@@ -58,17 +58,30 @@ Current development within these outcomes:
   retain this reaping setup and the existing cleanup assertions. The concurrent
   native freshness check now returns its fixed refusal on wait timeout while
   keeping the original freshness window and clearing the retirement cut.
-- The local full migration executor is blocked by the standing approval-review
-  restriction: its required source-integrity check reads every tracked file,
-  including the stopped browser-pairing/lifecycle files. That check remains
-  intact. The executor has not been run, and changing its execution environment
-  or skipping those files is not an approved workaround. The separate GitHub
+- Earlier agent records described an approval-review rejection affecting the
+  pairing/lifecycle integration. An audit of the available session records did
+  not recover the original rejected call or its exact scope. The current session
+  has Full Access; a permanent file-level restriction has not been established.
+  Previously affected integration operations remain stopped while that scope is
+  established. The complete source-integrity check runs under current Full
+  Access and caught an unclean checkout, rather than a permission rejection.
+  The full migration executor has not run. No source files are excluded from
+  that check. The separate GitHub
   builder replacement is prepared and reviewed, but no trigger or builder IAM
   changes have occurred. The reviewed source executor is now adopted into the
   managed worktree. It retains the pre-cut password bank until all replacement
   passwords pass comparison and genuine authentication, and requires a native
   trigger hold and complete Build drain before retiring the old builder.
-  Source adoption does not resolve the execution restriction or prove cutover.
+  Source adoption does not establish approval scope or prove cutover.
+- The release configuration now includes the five accepted document worker pins
+  for the API and analysis worker, the replacement runtime invoker identity, and
+  Direct VPC routing. Native Compute and DNS API enablement, a dedicated network
+  and its Private Google Access subnet are confirmed. The private DNS zone and
+  both records are created; native metadata matches the fixed routing contract.
+  Actual authenticated requests from a Cloud Run caller remain pending.
+  Document/network metadata checks alone cannot establish live connectivity or
+  complete the tailoring or deployment outcomes. See the
+  [private routing contract](DOCUMENT_PRIVATE_ROUTING.md).
 - Google sign-in is restored on the live site. The failed Redis Cloud hostname
   was replaced by a user-authorized free Upstash resource through Vercel
   Marketplace (Cleveland, 500,000 monthly commands, eviction and automatic paid
@@ -120,9 +133,10 @@ Current development within these outcomes:
   Complete user journeys, measured loading performance and production verification
   remain pending. Its pricing page awaits the server-owned billing catalog.
 
-Automatic approval review rejected the browser-pairing/lifecycle integration as
-a possible cybersecurity risk. That work remains stopped; it is not bypassed by
-the other development or deployment work.
+Earlier records report an automatic cybersecurity review rejection of the
+browser-pairing/lifecycle integration. Its original scope and current status
+remain unverified. Previously affected operations remain stopped; ordinary
+authorized development and infrastructure work continue under Full Access.
 
 The previous time estimates have not held and are not a current completion ETA.
 When one of these same six outcomes actually completes, report its original
