@@ -14,6 +14,7 @@ import os
 import re
 import sys
 import time
+from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
@@ -99,7 +100,7 @@ class SDKGoogleReads:
             self.thread.pid = os.getpid()
         return self.thread.http
 
-    def get(self, api: str, path: str, params: dict[str, Any]) -> dict[str, Any]:
+    def get(self, api: str, path: str, params: Mapping[str, Any]) -> dict[str, Any]:
         origins = {
             "run": "https://run.googleapis.com/v2/",
             "project": "https://cloudresourcemanager.googleapis.com/v3/",

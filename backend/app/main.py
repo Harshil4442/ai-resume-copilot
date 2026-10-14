@@ -104,6 +104,7 @@ async def jwt_validation_middleware(request: Request, call_next):
         path.startswith("/api/public") or
         path == "/api/billing/webhooks/razorpay" or
         path.startswith("/api/v1/browser-pairing/")
+        or path.startswith("/api/v1/browser-assistance/device/")
     ):
         with catalog_span("middleware_jwt"):
             auth_header = request.headers.get("Authorization")

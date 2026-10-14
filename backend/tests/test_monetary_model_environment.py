@@ -12,6 +12,8 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "infra/gcp"))
 
@@ -27,6 +29,15 @@ def load(name, relative):
 
 release = load("hirewiz_model_environment_release", "infra/gcp/monetary_release.py")
 cost = load("hirewiz_model_environment_expense", "backend/app/billing/cost_policy.py")
+
+
+@pytest.fixture(autouse=True)
+def synthetic_tex_binding(monkeypatch):
+    """Synthetic source wiring only; no actual worker acceptance is asserted."""
+    monkeypatch.setattr(release.native_tex, "ACCEPTED_ORIGIN",
+                        "https://hirewiz-native-tex-synthetic-uc.a.run.app", raising=False)
+    monkeypatch.setattr(release.native_tex, "ACCEPTED_IMAGE",
+                        release.native_tex.REPOSITORY + "@sha256:" + "f" * 64, raising=False)
 
 
 def plan():
@@ -92,6 +103,9 @@ def revision(selected, service):
     secrets = [("DATABASE_URL", selected.runtime_secret), ("HIREWIZ_EXPENSE_POLICY_JSON", selected.expense_secret)]
     if service in release.SERVICES[:2]:
         expected.update(
+            NATIVE_TEX_COMPILER_URL="https://hirewiz-native-tex-synthetic-uc.a.run.app/compile",
+            NATIVE_TEX_IMAGE_DIGEST="us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz-native-tex@sha256:" + "f" * 64,
+            NATIVE_TEX_ISOLATION_POLICY_SHA256=release.native_tex.POLICY_SHA256,
             DOCUMENT_WORKER_URL="https://hirewiz-document-inspector-mqff62d75a-uc.a.run.app/inspect",
             DOCUMENT_WORKER_IMAGE_DIGEST="us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz-document-inspector@sha256:624597726ce2fefa2b3574fbf0a8ec4ccdc02a826380d76c5edc8ebbd59aa107",
             DOCUMENT_WORKER_POLICY_SHA256="dbd15ce3120bb6211bb6c1d7b166aaddbd8b80e00a72d564e6274ef10db3aaf1",
@@ -223,11 +237,20 @@ class ModelEnvironmentTests(unittest.TestCase):
                 self.assertTrue(set(release.MODEL_ALIASES) <= removed & removed_secrets)
                 self.assertTrue({"RAZORPAY_WEBHOOK_SECRET", "ANALYSIS_TASK_TOKEN", "GOOGLE_CLOUD_PROJECT"}.isdisjoint(removed | removed_secrets))
                 if service in release.SERVICES[:2]:
+                    self.assertIn("NATIVE_TEX_IMAGE", removed & removed_secrets)
+                    self.assertEqual(env["NATIVE_TEX_COMPILER_URL"],
+                                     "https://hirewiz-native-tex-synthetic-uc.a.run.app/compile")
+                    self.assertEqual(env["NATIVE_TEX_IMAGE_DIGEST"],
+                                     release.native_tex.REPOSITORY + "@sha256:" + "f" * 64)
+                    self.assertEqual(env["NATIVE_TEX_ISOLATION_POLICY_SHA256"],
+                                     release.native_tex.POLICY_SHA256)
+                    self.assertTrue(set(env).isdisjoint(removed))
                     self.assertEqual(env["LLM_MODEL"], selected.model_primary)
                     self.assertEqual(env["LLM_API_BASE"], selected.model_api_base)
                     self.assertEqual(refs["LLM_MODEL_COST_POLICY_JSON"], selected.model_policy_secret)
                     self.assertEqual(refs["LLM_API_KEY"], selected.model_key_secret)
                 else:
+                    self.assertTrue(set(release.NATIVE_ENV) <= removed & removed_secrets)
                     self.assertTrue(set(release.MODEL_ENV) <= removed & removed_secrets)
                     self.assertTrue(set(release.MODEL_ENV).isdisjoint(env.keys() | refs.keys()))
 
@@ -280,7 +303,7 @@ class ModelEnvironmentTests(unittest.TestCase):
         pinned = next(ast.literal_eval(node.value) for node in tree.body if isinstance(node, ast.Assign)
                       and any(isinstance(target, ast.Name) and target.id == "RELEASE_SOURCE_SHA256" for target in node.targets))
         self.assertEqual(pinned, hashlib.sha256(source).hexdigest())
-        self.assertEqual(len(release.ERASABLE_TABLES), 39)
+        self.assertEqual(len(release.ERASABLE_TABLES), 42)
         self.assertTrue({"payment_orders", "model_cost_liabilities"}.isdisjoint(release.ERASABLE_TABLES))
 
     def test_pure_controls_never_initialize_application_or_provider_modules(self):

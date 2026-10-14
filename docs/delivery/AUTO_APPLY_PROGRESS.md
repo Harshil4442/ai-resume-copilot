@@ -1,6 +1,6 @@
 # HireWiz development and deployment progress
 
-Updated 14 October 2026 (India time).
+Updated 15 October 2026 (India time).
 
 This is the active reporting checklist. Only the six major development and
 production deployment outcomes below count as checkpoints. Tests, regression
@@ -11,7 +11,7 @@ outcome; they are never separate checklist completions.
 |---|---|---|
 | Official job search, ranking and user-selected job counts | In progress | Verify recent and closed jobs, matching quality, selected result counts and credit behavior across the complete user flow; measure coverage against a defined reference set |
 | Resume tailoring preserving PDF, DOCX and LaTeX formatting | In progress | Verify truthful edits and complete original/custom/tailored resume selection, review, downloads and staged API integration |
-| Candidate-reviewed direct company applications | Pending integration | Complete the approved Razorpay/Greenhouse pilot, destination/file/answer review, form filling and reliable application outcome tracking; previously affected pairing operations remain stopped while the original review scope is established |
+| Candidate-reviewed direct company applications | In progress | Complete staged acceptance and activation of the Razorpay/Greenhouse pilot, exact destination/package/answer review, text autofill and reliable outcome tracking; file upload and final submission remain candidate actions in this pilot |
 | Paid search/application credits, profitable finite packs and payment recovery | In progress | Verify separate charging, finite limits, settlement/refund recovery and representative failure/load behavior; release through the native monetary safeguards |
 | Fast responsive pages and SEO | In progress | Verify complete desktop, laptop and mobile journeys, loading performance and production SEO metadata |
 | GCP/Vercel production deployment, preserved-data migration and monitoring | Pending production release | Finish release orchestration, preserve customer/financial data, establish the actual old-writer fence, migrate, stage, perform the reviewed production switch and monitor |
@@ -62,18 +62,19 @@ Current development within these outcomes:
   pairing/lifecycle integration. An audit of the available session records did
   not recover the original rejected call or its exact scope. The current session
   has Full Access; a permanent file-level restriction has not been established.
-  Previously affected integration operations remain stopped while that scope is
-  established. The complete source-integrity check runs under current Full
+  Authorized source integration is proceeding; the unverified historical note
+  is not treated as a standing source restriction. The complete source-integrity check runs under current Full
   Access. After reconciling generated declarations and preserving existing
   notes, it verifies all 1,023 tracked files and the 16-revision migration chain.
   The full migration executor has not run. No source files are excluded from
   that check. The separate GitHub
-  builder replacement is prepared and reviewed, but no trigger or builder IAM
-  changes have occurred. The reviewed source executor is now adopted into the
+  builder replacement is prepared and reviewed. The actual regional GitHub
+  trigger is held, with its previous build configuration preserved; replacement
+  builder IAM and trigger retargeting remain pending. The reviewed source executor is now adopted into the
   managed worktree. It retains the pre-cut password bank until all replacement
   passwords pass comparison and genuine authentication, and requires a native
   trigger hold and complete Build drain before retiring the old builder.
-  Source adoption does not establish approval scope or prove cutover.
+  Source adoption does not prove cutover.
 - The release configuration now includes the five accepted document worker pins
   for the API and analysis worker, the replacement runtime invoker identity, and
   Direct VPC routing. Native Compute and DNS API enablement, a dedicated network
@@ -81,7 +82,7 @@ Current development within these outcomes:
   both records are created; native metadata matches the fixed routing contract.
   Actual authenticated requests from a Cloud Run caller remain pending.
   The accepted document image is deployed on private revision
-  `hirewiz-document-inspector-00004-2bv`; the previous revision is retained and
+  `hirewiz-document-inspector-00005-qbw`; the previous revision is retained and
   natively verified. Its configuration and empty service IAM policy match.
   The project-policy verifier now accepts standard version-3 condition metadata
   for unrelated principals, while continuing to refuse public/worker principals
@@ -90,6 +91,49 @@ Current development within these outcomes:
   Document/network metadata checks alone cannot establish live connectivity or
   complete the tailoring or deployment outcomes. See the
   [private routing contract](DOCUMENT_PRIVATE_ROUTING.md).
+- The separate LaTeX worker now passes all eight native Cloud Run cases on its
+  new immutable image, including timeout cleanup and clean compilation after
+  refusals. Installed runtime hashes match the reviewed source. The demonstrated
+  cleanup defect was a terminated child adopted by the outer process rather
+  than the request controller. A TeX-only initialized subreaper now adopts and
+  reaps exact owned descendants while retaining the parent anchor and original
+  cleanup deadline; the accepted DOCX launcher is unchanged. Earlier failed
+  receipts remain retained. The separate private service is ready on revision
+  `hirewiz-native-tex-00001-67r`, with empty initial service IAM and no customer
+  processing enabled. The actual service URI and accepted image are bound into
+  source. Final cohort labels, runtime invocation, private HTTP checks and the
+  complete resume journey remain pending.
+- Production browser-assistance integration now uses owner-scoped PostgreSQL
+  approvals and requests, a device-held signing key, exact reviewed values and
+  short per-field leases. The actual installed Chrome extension has exercised
+  signed transport against an isolated SQL/cryptographic backend, including
+  lost-response refusal without replay and missing-host-permission refusal.
+  The current public Razorpay/Greenhouse form has been inspected and its five
+  supported text fields mapped from current metadata. This is implementation
+  and isolated integration evidence. The downloadable source package is prepared;
+  the live staged user journey, production delivery and activation remain pending. Autofill alone
+  is not application submission and must not settle application credits.
+- The Linux release runner's authentication failure has been isolated to the
+  mounted host credential-manager path. A private in-memory handoff from the
+  normal host authentication clients passes the read-only diagnostic, including
+  actual source database authentication. The source URI's required channel
+  binding is now preserved. Supported full-runner integration and token-expiry
+  handling are implemented. Actual stock Google and GitHub reads now pass inside
+  Linux through that RAM handoff, using genuinely fresh host authentication.
+  This diagnostic is not final full-source release admission. Three
+  application queues still require a deliberate freeze and drain at cutover.
+- The manual pilot now has an explicit owner-authenticated submission report.
+  The candidate reviews the current saved package and reports submission; the
+  first UTC timestamp is retained on repeated requests. The result is labelled
+  user-reported, creates no employer receipt, verifies no actual attachment and
+  charges no application fee. It stops further editing, execution and browser
+  filling. Release readers allow this terminal state only with valid manual,
+  zero-fee metadata and no concealed execution attempt or credit reservation.
+  Terminal candidate reports no longer consume the open-application preparation
+  limit; the same-opening duplicate fence is retained. The downloadable companion
+  is checked against its exact source bytes, and its installed browser/SQL flow
+  is now included in the release CI workflow.
+  Deployment and actual user-flow acceptance remain pending.
 - Google sign-in is restored on the live site. The failed Redis Cloud hostname
   was replaced by a user-authorized free Upstash resource through Vercel
   Marketplace (Cleveland, 500,000 monthly commands, eviction and automatic paid
@@ -141,12 +185,18 @@ Current development within these outcomes:
   Complete user journeys, measured loading performance and production verification
   remain pending. Its pricing page awaits the server-owned billing catalog.
 
-Earlier records report an automatic cybersecurity review rejection of the
-browser-pairing/lifecycle integration. Its original scope and current status
-remain unverified. Previously affected operations remain stopped; ordinary
-authorized development and infrastructure work continue under Full Access.
+Routine development is not waiting for another user permission. Remaining
+release work is final cohort verification, production browser
+integration and final native migration/release acceptance. The supported Linux
+authentication path now passes actual read-only provider checks. Customer data has
+not been migrated and the new feature release has not been promoted.
 
 The previous time estimates have not held and are not a current completion ETA.
+The demonstrated LaTeX native failures are now repaired and accepted, but this
+does not establish completion of the full resume workflow or the wider goal.
+Release and final verification were estimated at
+2–4 active hours after the blockers are resolved; that conditional estimate
+does not bound the unresolved repair work or promise a completion deadline.
 When one of these same six outcomes actually completes, report its original
 estimate if recorded, measured elapsed time, identifiable waits and the evidence
 for completion. Do not add smaller checkpoints to create apparent progress.

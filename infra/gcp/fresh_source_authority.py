@@ -12,7 +12,7 @@ import secrets
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, cast
 
 import native_fresh_fence as native
 from psycopg import sql
@@ -85,16 +85,20 @@ def original_owner(boundary: native.NativeFreshFenceBoundary, files: LinuxExecut
     try:
         _, value = retained._secret_value(boundary.reads, OLD_SECRET)
         require(type(value) is str, "source_original_secret_unavailable")
-        uri = make_url(value)
+        uri = make_url(cast(str, value))
         require((uri.host, uri.database, uri.username) == (SOURCE_HOST, "neondb", OLD_NAME)
                 and uri.port in (None, 5432) and uri.drivername in {"postgresql", "postgresql+psycopg"}
                 and set(uri.query) <= {"sslmode", "channel_binding"}
                 and uri.query.get("sslmode", "require") in {"require", "verify-ca", "verify-full"}
-                and uri.query.get("channel_binding", "prefer") == "prefer"
+                and uri.query.get("channel_binding", "prefer") in {"prefer", "require"}
                 and type(uri.password) is str and bool(uri.password), "source_original_secret_target")
+        binding: Literal["prefer", "require"] = (
+            "require" if uri.query.get("channel_binding", "prefer") == "require" else "prefer"
+        )
         identity = transfer.NativeDatabaseIdentity(SOURCE_HOST, 5432, "neondb", SOURCE_CLUSTER,
-            DATABASE_OID, OLD_NAME, OLD_OID, files.root_certificate)
-        result = transfer.BoundDatabase(identity, uri.password)
+            DATABASE_OID, OLD_NAME, OLD_OID, files.root_certificate,
+            channel_binding=binding)
+        result = transfer.BoundDatabase(identity, cast(str, uri.password))
         validate_origin(result)
         return result
     except SourceActionDenied:

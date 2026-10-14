@@ -65,6 +65,7 @@ RELEASE_POOLER_HOST = "ep-damp-rice-aosknaqp-pooler.c-2.ap-southeast-1.aws.neon.
 RELEASE_SCHEMAS = frozenset({
     "20261008_0009", "20261009_0010", "20261009_0011", "20261009_0012",
     "20261009_0013", "20261010_0014", "20261011_0015", "20261011_0016",
+    "20261014_0017",
 })
 RELEASE_ACTORS = {
     "observer": ("hirewiz_observer_20261010_r1", 1884182),

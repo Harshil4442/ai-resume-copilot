@@ -338,6 +338,7 @@ def test_real_coordinator_barrier_refusal_stops_before_password_rotation_restore
     for name in (
         "verify_identity_and_policy",
         "verify_admission_closed",
+        "verify_document_preparation",
         "bind_authorities_once",
         "begin_source_observer_isolation",
         "bind_source_observer_after_isolation",
@@ -415,6 +416,7 @@ def test_real_coordinator_barrier_refusal_stops_before_password_rotation_restore
     assert "establish_retirement_cut" not in log and "bind_replacements_after_isolation" not in log
     assert log.index("begin_source_observer_isolation") < log.index("create_accounts")
     assert log.index("delete_old_model_keys") < log.index("create_accounts")
+    assert log.index("verify_document_preparation") < log.index("disable_old_principals")
 
 
 @pytest.mark.parametrize("row", [(False, 0, 0), (True, 1, 0), (True, 0, 1)])

@@ -30,6 +30,7 @@ MAX_ROWS = 256
 SCHEMA_ORDER = (
     "20261008_0009", "20261009_0010", "20261009_0011", "20261009_0012",
     "20261009_0013", "20261010_0014", "20261011_0015", "20261011_0016",
+    "20261014_0017",
 )
 SCHEMAS = set(SCHEMA_ORDER)
 FINANCIAL_SCHEMAS = SCHEMAS - {"20261008_0009"}
@@ -43,6 +44,9 @@ EXTENSION_COLUMNS = {
     "20261011_0015": {("employer_searches", "history_revision"): ("bigint", True)},
 }
 EXTENSION_TABLES = {
+    "20261014_0017": {
+        "browser_assistance_devices", "browser_assistance_reviews", "browser_assistance_requests",
+    },
     "20261010_0014": {"resume_uploads", "resume_upload_cleanups"},
     "20261011_0015": {
         "employer_paid_delivery_history", "employer_paid_opening_registry",
@@ -111,6 +115,40 @@ class Denied(RuntimeError):
     """Only a fixed, nonsecret reason code may escape observation."""
 
 
+def unresolved_application_sql(namespace: str, version: str) -> str:
+    """A candidate report is terminal history only, never paid provider proof."""
+    if re.fullmatch(r"[a-z][a-z0-9_]{0,62}", namespace) is None or version not in SCHEMAS:
+        raise Denied("application_state_reader_identity_refused")
+    quoted = '"' + namespace + '"'
+    terminal = "'needs_action','ready','approved','manual_handoff','confirmed','failed','cancelled'"
+    if version != "20261014_0017":
+        return f"SELECT count(*) FROM {quoted}.employer_applications WHERE status NOT IN ({terminal})"
+    return f"""SELECT count(*) FROM {quoted}.employer_applications AS a
+     WHERE a.status NOT IN ({terminal},'user_reported')
+      OR (a.status = 'user_reported' AND NOT COALESCE(
+       a.application_mode = 'manual' AND a.credit_cost = 0 AND a.charged_credits = 0
+       AND a.reservation_id IS NULL AND a.batch_id IS NULL AND a.cancel_requested IS TRUE
+       AND a.approved_digest IS NULL
+       AND CASE WHEN json_typeof(a.allowed_actions) = 'array'
+        THEN json_array_length(a.allowed_actions) = 0 ELSE false END
+       AND CASE WHEN json_typeof(a.receipt) = 'object' THEN
+        (SELECT count(*) FROM json_object_keys(a.receipt)) = 6
+        AND a.receipt->>'source' = 'candidate_report'
+        AND json_typeof(a.receipt->'reported_at') = 'string'
+        AND length(a.receipt->>'reported_at') BETWEEN 1 AND 64
+        AND json_typeof(a.receipt->'actor_user_id') = 'number'
+        AND a.receipt->>'actor_user_id' = a.user_id::text
+        AND a.receipt->>'saved_package_digest' = a.package_digest
+        AND json_typeof(a.receipt->'employer_confirmed') = 'boolean'
+        AND a.receipt->>'employer_confirmed' = 'false'
+        AND json_typeof(a.receipt->'used_file_verified') = 'boolean'
+        AND a.receipt->>'used_file_verified' = 'false' ELSE false END
+       AND NOT EXISTS (SELECT 1 FROM {quoted}.employer_application_attempts AS attempt
+        WHERE attempt.application_id = a.id)
+       AND NOT EXISTS (SELECT 1 FROM {quoted}.service_credit_reservations AS hold
+        WHERE hold.operation = 'job_application' AND hold.source_id = a.id), false))"""
+
+
 class Strict(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
 
@@ -138,8 +176,8 @@ class Inventory(Strict):
     serving_commit: str = Field(pattern=r"^[a-f0-9]{40}$")
     candidate_commit: str = Field(pattern=r"^[a-f0-9]{40}$")
     candidate_image: str = Field(pattern=r"^sha256:[a-f0-9]{64}$")
-    expected_database_schema: Literal["20261008_0009", "20261009_0010", "20261009_0011", "20261009_0012", "20261009_0013", "20261010_0014", "20261011_0015", "20261011_0016"]
-    candidate_schema: Literal["20261009_0010", "20261009_0011", "20261009_0012", "20261009_0013", "20261010_0014", "20261011_0015", "20261011_0016"]
+    expected_database_schema: Literal["20261008_0009", "20261009_0010", "20261009_0011", "20261009_0012", "20261009_0013", "20261010_0014", "20261011_0015", "20261011_0016", "20261014_0017"]
+    candidate_schema: Literal["20261009_0010", "20261009_0011", "20261009_0012", "20261009_0013", "20261010_0014", "20261011_0015", "20261011_0016", "20261014_0017"]
     expected_system_identifier_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     expected_database_oid: int = Field(gt=0)
     database_namespace: str = Field(pattern=r"^[a-z][a-z0-9_]{0,62}$")
@@ -926,7 +964,7 @@ def observe(
             )
             uncertain_applications = _count(
                 connection,
-                f"SELECT count(*) FROM {quoted}.employer_applications WHERE status NOT IN ('needs_action','ready','approved','manual_handoff','confirmed','failed','cancelled')",
+                unresolved_application_sql(namespace, version),
             )
             pending_application_attempts = _count(
                 connection,

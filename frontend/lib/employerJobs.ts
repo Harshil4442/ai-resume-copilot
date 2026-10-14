@@ -177,7 +177,7 @@ export type ApplicationField = {
 export type ResumeChoice = "original" | "tailored" | "custom";
 export type EmployerApplication = {
   id: string;
-  status: "needs_action" | "ready" | "approved" | "queued" | "submitting" | "confirmed" | "failed" | "unknown" | "cancelled" | "manual_handoff";
+  status: "needs_action" | "ready" | "approved" | "queued" | "submitting" | "confirmed" | "failed" | "unknown" | "cancelled" | "manual_handoff" | "user_reported";
   application_mode: string;
   posting: EmployerPosting;
   resume_id: number;
@@ -194,6 +194,7 @@ export type EmployerApplication = {
   reserved_credits?: number;
   cancel_requested?: boolean;
   receipt?: Record<string, unknown> | null;
+  candidate_report?: { source: "candidate_report"; reported_at: string; saved_package_digest: string; employer_confirmed: false; used_file_verified: false } | null;
   requires_user_action: boolean;
   error?: { code: string; message: string } | null;
   approval_expires_at?: string | null;
@@ -254,4 +255,5 @@ export const applicationStatusLabels: Record<EmployerApplication["status"], stri
   needs_action: "Needs your answers", ready: "Ready for review", approved: "Approved", queued: "Queued",
   submitting: "Submission in progress", confirmed: "Submission confirmed", failed: "Could not complete",
   unknown: "Outcome unknown", cancelled: "Cancelled", manual_handoff: "Continue on employer portal",
+  user_reported: "Submitted — reported by you",
 };

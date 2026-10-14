@@ -17,6 +17,11 @@ RESOURCE = f"projects/{PROJECT}/locations/{REGION}/services/{SERVICE}"
 SERVICE_ACCOUNT = f"{SERVICE}@{PROJECT}.iam.gserviceaccount.com"
 INVOKER = documents.API_INVOKER
 REPOSITORY = f"{REGION}-docker.pkg.dev/{PROJECT}/cloud-run-source-deploy/{SERVICE}"
+ACCEPTED_IMAGE = (
+    REPOSITORY
+    + "@sha256:5feb099b9d2eb3f8bbf29ce3bc99130930fa09e194dc5a7695436c347281e291"
+)
+ACCEPTED_ORIGIN = "https://hirewiz-native-tex-mqff62d75a-uc.a.run.app"
 ROOT = Path(__file__).resolve().parents[2]
 POLICY_SHA256 = hashlib.sha256((ROOT / "infra/native-tex/policy.json").read_bytes()).hexdigest()
 

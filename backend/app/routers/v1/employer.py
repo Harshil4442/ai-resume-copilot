@@ -15,6 +15,7 @@ from ...database import get_db
 from ...domains.employer import (
     artifacts,
     batches,
+    manual_reporting,
     models,
     schemas,
     search_pages,
@@ -149,6 +150,15 @@ def execute_package(identity: str, payload: schemas.ExecuteCreate, db: Session =
 @router.post("/applications/{identity}/cancel")
 def cancel_package(identity: str, db: Session = Depends(get_db), user: core.User = Depends(get_current_user)):
     return service.application_response(db, service.cancel_application(db, user.id, identity))
+
+
+@router.post("/applications/{identity}/report-submitted")
+def report_manual_submission(response: Response, identity: str, payload: schemas.ManualSubmissionReport,
+                             db: Session = Depends(get_db), user: core.User = Depends(get_current_user)):
+    response.headers["Cache-Control"] = "private, no-store"
+    application = manual_reporting.report(db, user.id, identity, payload)
+    return {"id": application.id, "status": application.status, "candidate_report": copy.deepcopy(application.receipt),
+            "receipt": None, "application_mode": "manual", "charged_credits": 0, "reserved_credits": 0}
 
 
 @router.post("/application-batches", status_code=201)

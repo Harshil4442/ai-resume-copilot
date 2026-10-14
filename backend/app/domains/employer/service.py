@@ -32,7 +32,7 @@ from .search_preferences import POLICY_VERSION, evaluate
 if TYPE_CHECKING:
     from ..dispatch.service import EmployerSearchContinuation
 
-LOCKED_APPLICATION_STATES = {"queued", "submitting", "confirmed", "unknown", "failed"}
+LOCKED_APPLICATION_STATES = {"queued", "submitting", "confirmed", "unknown", "failed", "user_reported"}
 
 
 def _utc(value):
@@ -837,11 +837,11 @@ def create_application(db: Session, user_id: int, payload: schemas.ApplicationCr
         active_key = f"{user_id}:{opening_key}"
         if db.query(models.EmployerApplication.id).filter_by(user_id=user_id).filter(
             or_(models.EmployerApplication.opening_key == opening_key, models.EmployerApplication.posting_id == posting.id),
-            models.EmployerApplication.active_key.is_not(None),
+            or_(models.EmployerApplication.active_key.is_not(None), models.EmployerApplication.status == "user_reported"),
         ).first():
             raise HTTPException(409, {"code": "canonical_opening_conflict", "message": "An application already exists for this opening, including another source or language version. Review its status before creating another."})
         open_count = db.query(models.EmployerApplication.id).filter_by(user_id=user_id).filter(
-            models.EmployerApplication.status.notin_(["confirmed", "failed", "cancelled"]),
+            models.EmployerApplication.status.notin_(["confirmed", "failed", "cancelled", "user_reported"]),
         ).count()
         if open_count >= config.positive_int("EMPLOYER_MAX_OPEN_APPLICATIONS", 100, 1000):
             raise HTTPException(429, "Complete or cancel existing prepared applications before preparing more")
@@ -924,6 +924,10 @@ def application_response(db, application):
         "reserved_credits": 0,
         "admission": admissions.response(db, application),
     })
+    report = application.receipt if isinstance(application.receipt, dict) and application.receipt.get("source") == "candidate_report" else None
+    result["candidate_report"] = copy.deepcopy(report)
+    if report is not None:
+        result["receipt"] = None  # Candidate assertions are never provider receipts.
     if application.reservation_id:
         reservation = db.query(models.ServiceCreditReservation).filter_by(id=application.reservation_id).one()
         result["reserved_credits"] = reservation.reserved_amount if reservation.state == "reserved" else 0
@@ -1011,6 +1015,8 @@ def request_execution(db, user_id, identity, payload: schemas.ExecuteCreate, *, 
 
 def cancel_application(db, user_id, identity, *, commit=True):
     application = _owned(db, models.EmployerApplication, identity, user_id, lock=True)
+    if application.status == "user_reported":
+        raise HTTPException(409, "Your manual submission report is retained. It is not an employer-confirmed receipt; further execution is stopped.")
     if application.status == "confirmed":
         raise HTTPException(409, "The employer already received this application; future work can be stopped but it cannot be recalled here")
     if application.status in {"submitting", "unknown"}:

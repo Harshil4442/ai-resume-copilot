@@ -1,16 +1,19 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import userEvent from "@testing-library/user-event";
 
 import { apiGet, apiPostForm, apiPostJson, apiPutJson } from "../lib/api";
 import * as uploads from "../lib/resumeUpload";
 import type { EmployerApplication, JobServiceCatalog } from "../lib/employerJobs";
+import { accountMutationHeaders } from "../lib/accountTransportClient";
 import EmployerApplicationPanel from "./EmployerApplicationPanel";
 
 vi.mock("../lib/api", () => ({
   apiGet: vi.fn(), apiPostForm: vi.fn(), apiPostJson: vi.fn(), apiPutJson: vi.fn(),
   apiBlob: vi.fn(), apiDownload: vi.fn(),
 }));
+vi.mock("../lib/accountTransportClient", () => ({ accountMutationHeaders: vi.fn() }));
 
 const docxType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const maximum = 5 * 1024 * 1024;
@@ -38,8 +41,9 @@ beforeEach(() => {
     search_credits_per_job: 2, apply_credits_per_job: 7, pricing_version: "fixture-price", max_search_jobs: 20, balance: 10, sources: [] };
   vi.mocked(apiGet).mockImplementation(async (path) => path.endsWith("/catalog") ? catalog : application());
   vi.mocked(apiPostForm).mockResolvedValue({ resume_id: 42, source_available: true, source_format: "tex" });
+  vi.mocked(accountMutationHeaders).mockResolvedValue({ "Content-Type": "application/json", "X-Hirewiz-Account-CSRF": "9".repeat(64) });
 });
-afterEach(() => { cleanup(); clients.forEach((client) => client.clear()); clients.length = 0; });
+afterEach(() => { cleanup(); clients.forEach((client) => client.clear()); clients.length = 0; vi.unstubAllGlobals(); });
 
 async function upload(file: File) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } } });
@@ -116,4 +120,95 @@ it("custom-upload cancellation never replaces the saved application with a late 
     expect(screen.queryByText("Your saved preview is out of date. Save the package to preview the new file.")).toBeNull();
     expect(apiPutJson).not.toHaveBeenCalled(); expect(apiPostJson).not.toHaveBeenCalled();
   } finally { send.mockRestore(); }
+});
+
+it("offers the exact Razorpay companion handoff and application ID without approving, applying or charging", async () => {
+  const saved = application();
+  saved.resume_choice = "original";
+  saved.artifact = { filename: "Synthetic resume.docx", media_type: docxType, size_bytes: 1024, sha256: "a".repeat(64), preview_url: "/v1/employer-jobs/applications/app_local/artifact" };
+  saved.posting.employer = "Razorpay Software Private Limited";
+  saved.posting.canonical_url = "https://job-boards.greenhouse.io/razorpaysoftwareprivatelimited/jobs/4723040005";
+  saved.posting.apply_url = saved.posting.canonical_url;
+  vi.mocked(apiGet).mockResolvedValue(saved);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } } }); clients.push(client);
+  render(<QueryClientProvider client={client}><EmployerApplicationPanel id="app_local" onClose={vi.fn()} onChange={vi.fn()} resumes={[]} /></QueryClientProvider>);
+  expect(await screen.findByRole("link", { name: "Review browser assistance" })).toHaveAttribute("href", "/browser-companion?application=app_local");
+  expect(screen.getByRole("link", { name: "Open Razorpay application" })).toHaveAttribute("href", saved.posting.apply_url);
+  expect(screen.getByRole("button", { name: "Copy application ID" })).toBeEnabled();
+  expect(screen.getByText("app_local")).toBeVisible();
+  expect(apiPostJson).not.toHaveBeenCalled(); expect(apiPutJson).not.toHaveBeenCalled();
+});
+
+function manualApplication(): EmployerApplication {
+  const saved = application(); saved.status = "manual_handoff"; saved.resume_choice = "original"; saved.credit_cost = 0; saved.reserved_credits = 0; saved.receipt = null;
+  saved.artifact = { filename: "Synthetic retained resume.docx", media_type: docxType, size_bytes: 1024, sha256: "a".repeat(64), preview_url: "/v1/employer-jobs/applications/app_local/artifact" };
+  saved.posting.apply_url = "https://job-boards.greenhouse.io/razorpaysoftwareprivatelimited/jobs/4739199005"; saved.posting.canonical_url = saved.posting.apply_url;
+  saved.form.fields = [{ id: "first_name", label: "First Name", type: "text", required: true, options: [] }]; saved.answers = { first_name: "Synthetic Alice" };
+  return saved;
+}
+function reportProjection() {
+  return { id: "app_local", status: "user_reported", application_mode: "manual", charged_credits: 0, reserved_credits: 0, receipt: null,
+    candidate_report: { source: "candidate_report", reported_at: "2026-10-14T18:00:00+00:00", saved_package_digest: "a".repeat(64), employer_confirmed: false, used_file_verified: false } };
+}
+async function renderManual(read: () => EmployerApplication = manualApplication) {
+  const catalog: JobServiceCatalog = { enabled: true, auto_submit_enabled: false, search_credits_per_job: 1, apply_credits_per_job: 20, pricing_version: "synthetic", max_search_jobs: 20, balance: 0, sources: [] };
+  vi.mocked(apiGet).mockImplementation(async (path) => path.endsWith("/catalog") ? catalog : read());
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } } }); clients.push(client);
+  render(<QueryClientProvider client={client}><EmployerApplicationPanel id="app_local" onClose={vi.fn()} onChange={vi.fn()} resumes={[]} /></QueryClientProvider>);
+  await screen.findByRole("heading", { name: "Engineer" });
+}
+async function recordManualReport() {
+  await userEvent.click(screen.getByRole("checkbox", { name: /I reviewed this saved package and report/ }));
+  await userEvent.click(screen.getByRole("button", { name: "Record my manual submission" }));
+}
+
+describe("truthful candidate-reported manual application outcome", () => {
+  it("requires explicit review before its exact CSRF-bound report, retains the timestamp and stops duplicate filling/reporting", async () => {
+    const send = vi.fn().mockResolvedValue(Response.json(reportProjection())); vi.stubGlobal("fetch", send); await renderManual();
+    expect(screen.getByRole("button", { name: "Record my manual submission" })).toBeDisabled(); expect(send).not.toHaveBeenCalled();
+    await recordManualReport(); expect(await screen.findByRole("heading", { name: "Submission reported by you" })).toBeVisible();
+    expect(send).toHaveBeenCalledTimes(1); expect(accountMutationHeaders).toHaveBeenCalledTimes(1);
+    const [url, init] = send.mock.calls[0]; expect(url).toBe("/api/employer-applications/app_local/report-submitted");
+    expect(JSON.parse(init.body)).toEqual({ package_digest: "a".repeat(64), confirmed: true }); expect(init.headers["X-Hirewiz-Account-CSRF"]).toBe("9".repeat(64)); expect(init.redirect).toBe("error");
+    expect(screen.getByText(/Employer confirmation and the file actually used are unverified/)).toBeVisible();
+    expect(screen.getByText(`Report recorded: ${new Date("2026-10-14T18:00:00+00:00").toLocaleString("en-IN")}`)).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "Employer submission confirmed" })).toBeNull(); expect(screen.queryByRole("button", { name: "Record my manual submission" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Review browser assistance" })).toBeNull(); expect(screen.getByLabelText("Resume choice")).toBeDisabled(); expect(screen.getByLabelText("First Name (required)")).toBeDisabled();
+    expect(apiPostJson).not.toHaveBeenCalled(); expect(apiPutJson).not.toHaveBeenCalled();
+  });
+
+  it("loads a previously retained user report with an immutable form and no provider-confirmed heading", async () => {
+    const saved = { ...manualApplication(), ...reportProjection() } as EmployerApplication;
+    const send = vi.fn(); vi.stubGlobal("fetch", send); await renderManual(() => saved);
+    expect(screen.getByRole("heading", { name: "Submission reported by you" })).toBeVisible(); expect(screen.getByLabelText("Resume choice")).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Record my manual submission" })).toBeNull(); expect(screen.queryByRole("link", { name: "Review browser assistance" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Employer submission confirmed" })).toBeNull(); expect(send).not.toHaveBeenCalled();
+  });
+
+  it("freezes report/edit/fill after a lost reply and reconciles a persisted report through an explicit status refresh", async () => {
+    let current = manualApplication(); const send = vi.fn().mockRejectedValue(new Error("Synthetic reply lost")); vi.stubGlobal("fetch", send); await renderManual(() => current);
+    await recordManualReport(); expect(await screen.findByText(/The outcome needs a status check/)).toBeVisible();
+    expect(send).toHaveBeenCalledTimes(1); expect(screen.getByRole("button", { name: "Record my manual submission" })).toBeDisabled();
+    expect(screen.getByLabelText("Resume choice")).toBeDisabled(); expect(screen.getByLabelText("First Name (required)")).toBeDisabled(); expect(screen.getByRole("button", { name: "Cancel remaining work" })).toBeDisabled();
+    expect(screen.queryByRole("link", { name: "Review browser assistance" })).toBeNull();
+    current = { ...current, ...reportProjection() } as EmployerApplication;
+    await userEvent.click(screen.getByRole("button", { name: "Refresh application status" })); expect(await screen.findByRole("heading", { name: "Submission reported by you" })).toBeVisible();
+    expect(send).toHaveBeenCalledTimes(1); expect(screen.queryByRole("button", { name: "Record my manual submission" })).toBeNull();
+  });
+
+  it("allows a new explicit review only after a successful status refresh proves the report was not recorded", async () => {
+    const send = vi.fn().mockRejectedValue(new Error("Synthetic reply lost")); vi.stubGlobal("fetch", send); await renderManual();
+    await recordManualReport(); await screen.findByText(/The outcome needs a status check/);
+    expect(screen.getByRole("checkbox", { name: /I reviewed this saved package and report/ })).toBeDisabled();
+    await userEvent.click(screen.getByRole("button", { name: "Refresh application status" }));
+    await waitFor(() => expect(screen.getByRole("checkbox", { name: /I reviewed this saved package and report/ })).toBeEnabled());
+    expect(screen.getByRole("checkbox", { name: /I reviewed this saved package and report/ })).not.toBeChecked(); expect(screen.getByRole("button", { name: "Record my manual submission" })).toBeDisabled(); expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["provider-confirmed", "charged", "wrong-digest"])("rejects a misleading %s report reply instead of claiming a confirmed or recorded submission", async (kind) => {
+    const reply = reportProjection(); if (kind === "provider-confirmed") reply.status = "confirmed"; if (kind === "charged") reply.charged_credits = 1; if (kind === "wrong-digest") reply.candidate_report.saved_package_digest = "b".repeat(64);
+    const send = vi.fn().mockResolvedValue(Response.json(reply)); vi.stubGlobal("fetch", send); await renderManual(); await recordManualReport();
+    expect(await screen.findByText(/The outcome needs a status check/)).toBeVisible(); expect(screen.queryByRole("heading", { name: "Submission reported by you" })).toBeNull(); expect(screen.queryByRole("heading", { name: "Employer submission confirmed" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Record my manual submission" })).toBeDisabled(); expect(screen.getByLabelText("Resume choice")).toBeDisabled(); expect(send).toHaveBeenCalledTimes(1);
+  });
 });

@@ -650,3 +650,4 @@ from .domains.dispatch import models as _dispatch_models  # noqa: E402,F401
 
 # Register private admission aliases after the core run model is defined.
 from .domains.analysis import models as _analysis_models  # noqa: E402,F401
+from .domains.browser_assistance import models as _browser_assistance_models  # noqa: E402,F401

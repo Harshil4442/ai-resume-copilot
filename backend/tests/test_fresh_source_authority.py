@@ -14,6 +14,32 @@ sys.path[:0] = [str(Path(__file__).parent), str(ROOT / "infra/gcp"), str(ROOT / 
 module = importlib.import_module("fresh_source_authority")
 
 
+@pytest.mark.parametrize("binding", ["prefer", "require"])
+def test_original_source_preserves_channel_binding(monkeypatch, binding):
+    boundary = module.native.NativeFreshFenceBoundary.__new__(module.native.NativeFreshFenceBoundary)
+    boundary.reads = object()
+    files = module.LinuxExecutionFiles()
+    monkeypatch.setattr(module.LinuxExecutionFiles, "validate", lambda self: None)
+    uri = (f"postgresql://{module.OLD_NAME}:synthetic-password@{module.SOURCE_HOST}/neondb"
+           f"?sslmode=require&channel_binding={binding}")
+    monkeypatch.setattr(module.retained, "_secret_value", lambda *_: ("ENABLED", uri))
+    origin = module.original_owner(boundary, files)
+    assert origin.identity.channel_binding == binding
+    assert origin.environment(readonly=True)["PGCHANNELBINDING"] == binding
+    assert origin.environment(readonly=True)["PGSSLMODE"] == "verify-full"
+
+
+def test_original_source_refuses_disabled_channel_binding(monkeypatch):
+    boundary = module.native.NativeFreshFenceBoundary.__new__(module.native.NativeFreshFenceBoundary)
+    boundary.reads = object()
+    monkeypatch.setattr(module.LinuxExecutionFiles, "validate", lambda self: None)
+    uri = (f"postgresql://{module.OLD_NAME}:synthetic-password@{module.SOURCE_HOST}/neondb"
+           "?sslmode=require&channel_binding=disable")
+    monkeypatch.setattr(module.retained, "_secret_value", lambda *_: ("ENABLED", uri))
+    with pytest.raises(module.SourceActionDenied, match="source_original_secret_target"):
+        module.original_owner(boundary, module.LinuxExecutionFiles())
+
+
 class Result:
     def __init__(self, rows):
         self.rows = rows

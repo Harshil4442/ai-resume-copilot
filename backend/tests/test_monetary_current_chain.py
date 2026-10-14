@@ -30,9 +30,11 @@ def test_exact_current_chain_and_forward_steps_agree():
     tracked = {p.relative_to(ROOT).as_posix() for p in (ROOT / "backend/alembic/versions").glob("*.py")}
     assert release.source_guard.migration_chain(ROOT, tracked, allow_literal_sql=True) == release.CHAIN
     assert release.CUTOVER_CHAIN == step.CHAIN == observer.SCHEMA_ORDER
-    assert step.CHAIN[0] == "20261008_0009" and step.CHAIN[-1] == "20261011_0016"
-    assert len(step.CHAIN) == 8
-    assert set(observer.EXTENSION_TABLES) == {"20261010_0014", "20261011_0015", "20261011_0016"}
+    assert step.CHAIN[0] == "20261008_0009" and step.CHAIN[-1] == "20261014_0017"
+    assert len(step.CHAIN) == 9
+    assert set(observer.EXTENSION_TABLES) == {
+        "20261010_0014", "20261011_0015", "20261011_0016", "20261014_0017",
+    }
 
 
 def migration_root(tmp_path, extra):

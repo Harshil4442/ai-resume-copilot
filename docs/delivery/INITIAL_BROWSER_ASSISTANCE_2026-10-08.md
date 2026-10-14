@@ -42,17 +42,57 @@ legal, work-authorization or consent answers require the candidate's input.
 
 Existing search settlement remains 1 service credit per new qualifying delivered job,
 bounded by the candidate's chosen quantity. Optional tailoring uses its existing analysis
-units. The 5-credit automatic-application price remains limited to a verified complete
-automatic submission. Browser filling, manual upload, portal handoff and user-reported
+units. The historical automatic-application price was 5 credits; the reviewed finite-pack
+source proposes 20 for new quotes, with production activation still pending. Either price
+applies only to a verified complete automatic submission. Browser filling, manual upload, portal handoff and user-reported
 submission cannot settle that charge. This decision creates no new assisted-filling price
 or automatic execution reservation; any later assisted-service fee needs an explicit
 versioned quote and reviewed billing contract.
 
-The committed companion is still disabled with zero host grants. Its localhost fixtures
-are not production pairing, employer permission or independent recovery evidence. The
-Python recovery-core slice likewise supplies no production storage/authentication adapter.
-Current automatic-submission flags remain false. Public employer job feeds establish read
-capability; browser support needs a permitted, reviewed adapter and narrow origin access.
+The current companion package provides reviewed Razorpay text assistance with zero
+initial host grants; production assistance remains disabled in the release configuration.
+Its installed-browser/SQL fixtures are not deployed authentication, employer permission or
+independent recovery evidence. The Python recovery-core slice likewise supplies no
+production storage/authentication adapter. Current automatic-submission flags remain false.
+Public employer job feeds establish read capability; browser support needs a permitted,
+reviewed adapter and narrow origin access. The current limited implementation and wider
+recovery requirements are distinguished in [ADR 007](../adr/007-reviewed-browser-assistance.md).
+
+## Canonical-domain acceptance and activation
+
+The shipping companion binds its website origin, transport, optional permissions and
+CSP to `https://www.hirewizhq.com`. A Vercel preview cannot prove the installed companion
+to deployed BFF path by substituting a preview origin. Preview verification covers assets,
+downloaded source bytes and routing/authentication refusals. Genuine preview login requires
+an actually registered OAuth callback; canonical cookies or manufactured tokens are not
+preview authentication evidence.
+
+After the reviewed cutover, sign in freshly on canonical `www` with assistance disabled.
+Verify the real session, saved application, exact resume download and companion page.
+The authenticated availability response must report disabled actions and zero fee. Only
+then provision the separate `BROWSER_ASSISTANCE_SIGNING_SECRET` and explicitly enable
+`BROWSER_ASSISTANCE_ENABLED`; keep `EMPLOYER_AUTO_SUBMIT_ENABLED=false`. Migration
+`20261014_0017` and `EMPLOYER_DISCOVERY_ENABLED=true` are prerequisites. The current
+assistance flag is global: an acceptance run using one account is not an enforced
+one-candidate rollout.
+
+For the first real-session check, install the exact reviewed ZIP in desktop Chrome,
+verify extension ID `pnjmegppacleipajnifjmbcopjjffklb` and request only the HireWiz and
+Greenhouse optional origins. Compare and confirm the real device fingerprint through
+the authenticated website. Inspect one owned application against a fresh matching
+Razorpay posting; review its exact destination, file hash, values, manual controls,
+email-validation disclosure and zero fee. Approve and cancel before Fill, then revoke
+the device. Verify no begun field requests, employer events, submission records or
+application credit charges. This establishes deployed authentication/inspection/review/
+cancellation, while installed synthetic fill evidence remains separately labelled.
+
+If that check fails, disable assistance without restoring or rewriting financial data.
+Cancel/revoke owned authority first when possible, because disabled candidate routes
+refuse mutations. Existing field leases can last up to ten seconds; disabling does not
+recall prior disclosure. A database restore additionally requires resetting outstanding
+authority and rotating the signer before reopening. Live filling or submission needs its
+own exact candidate-approved actions and evidence; do not report an application that was
+never submitted.
 
 ## Development checklist
 

@@ -3,6 +3,7 @@ import { decode64 } from "./protocol.js";
 const element = (id) => document.getElementById(id);
 let review = null; let artifactUrl = null;
 let connection = null;
+let assistance = null;
 async function request(message) {
   const result = await chrome.runtime.sendMessage(message);
   if (!result?.ok) throw new Error(result?.error || "Companion worker unavailable. Inspect the portal before retrying.");
@@ -104,17 +105,58 @@ connectionAction("native-inspect", "pairing_inspect");
 element("native-confirmed").addEventListener("change", () => {
   element("native-complete").disabled = !element("native-confirmed").checked || element("native-confirmed").disabled;
 });
+
+async function showAssistance(value) {
+  assistance = value; element("assistance").hidden = false;
+  const origins = [`${CONFIG.websiteOrigin}/*`, `${CONFIG.portalOrigin}/*`];
+  const permitted = await chrome.permissions.contains({ origins });
+  element("assistance-permission").disabled = permitted;
+  element("assistance-connect").disabled = !permitted || value.busy || value.review_id || !["idle", "pending", "active"].includes(value.phase);
+  element("assistance-check").disabled = !permitted || value.busy || value.phase === "idle";
+  element("assistance-review").disabled = !value.review_url || value.busy || value.phase === "idle";
+  element("assistance-prepare").disabled = !permitted || value.busy || value.review_id || value.phase !== "active";
+  element("assistance-fill").disabled = !permitted || !value.can_fill;
+  element("assistance-cancel").disabled = !value.review_id;
+  const list = element("assistance-fingerprint"); list.replaceChildren();
+  pair(list, "Browser key SHA-256", value.key_sha256);
+  element("assistance-state").textContent = value.message || `Current state: ${value.phase}. ${value.filled_count} approved text answers filled. Check the portal yourself before submission.`;
+}
+function assistanceAction(id, type) {
+  action(id, async () => {
+    const message = type === "assistance_prepare" ? { type, application_id: element("assistance-application").value.trim() } : { type };
+    if (assistance && ["assistance_fill", "assistance_prepare"].includes(type)) await showAssistance({ ...assistance, busy: true, can_fill: false, message: "Working on the reviewed application…" });
+    try { await showAssistance(await request(message)); }
+    catch (failure) { await showAssistance(await request({ type: "status" })); throw failure; }
+  });
+}
+action("assistance-permission", async () => {
+  const granted = await chrome.permissions.request({ origins: [`${CONFIG.websiteOrigin}/*`, `${CONFIG.portalOrigin}/*`] });
+  if (!granted) throw new Error("The exact HireWiz and Greenhouse permissions were not granted.");
+  await showAssistance(await request({ type: "status" }));
+});
+action("assistance-review", async () => {
+  const url = new URL(assistance.review_url);
+  if (url.origin !== CONFIG.websiteOrigin || url.pathname !== "/browser-companion") throw new Error("The review destination changed.");
+  await chrome.tabs.create({ url: url.href });
+});
+assistanceAction("assistance-connect", "assistance_connect");
+assistanceAction("assistance-check", "assistance_check");
+assistanceAction("assistance-prepare", "assistance_prepare");
+assistanceAction("assistance-fill", "assistance_fill");
+assistanceAction("assistance-cancel", "assistance_cancel");
 try {
   const status = await request({ type: "status" });
   element("mode").textContent = status.mode === "disabled" ? "Disabled: production authorization, real tenant permits and device enrollment are not available."
     : status.mode === "local_fixture" ? "Local synthetic fixtures only. No real employer adapter is enabled."
     : status.mode === "local_native_fixture" ? "Controlled local native connection test. Production remains disabled."
+    : status.mode === "reviewed_assistance" ? "Candidate-reviewed Razorpay assistance. Approve your exact application on HireWiz before filling."
     : "Browser identity connection. Every application needs separate current approval.";
   if (status.mode === "local_fixture") {
     element("fixture-connection").hidden = false; element("fixture-prepare").hidden = false;
     element("grant").value = "local-owner-grant";
     element("permission").disabled = false; if (status.connected) element("prepare").disabled = false;
   } else if (["pairing_only", "local_native_fixture"].includes(status.mode)) await showConnection(status);
+  else if (status.mode === "reviewed_assistance") await showAssistance(status);
   if (status.checkpoint && ["action_in_progress", "unknown"].includes(status.checkpoint.status)) error("Previous fill may be incomplete. Inspect the portal; automatic recovery is disabled.");
 } catch {
   element("mode").textContent = "Browser connection unavailable. No application action is enabled.";

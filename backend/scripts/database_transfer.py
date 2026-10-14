@@ -59,10 +59,12 @@ class NativeDatabaseIdentity:
     actor_oid: int
     root_certificate: str
     transport: Literal["verify-full", "disposable-local"] = "verify-full"
+    channel_binding: Literal["prefer", "require"] = "prefer"
 
     def validate(self) -> None:
         if (
-            type(self.host) is not str or not re.fullmatch(r"[a-z0-9.-]{1,253}", self.host)
+            self.channel_binding not in {"prefer", "require"}
+            or type(self.host) is not str or not re.fullmatch(r"[a-z0-9.-]{1,253}", self.host)
             or type(self.port) is not int or not 0 < self.port < 65536
             or not re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_]{0,62}", self.database)
             or not re.fullmatch(r"[a-f0-9]{64}", self.cluster_sha256)
@@ -107,7 +109,7 @@ class BoundDatabase:
             "PGUSER": identity.actor, "PGPASSWORD": self.password, "PGOPTIONS": options,
             "PGCONNECT_TIMEOUT": "5", "PGAPPNAME": "hirewiz_owned_database_transfer",
             "PGSSLMODE": "verify-full" if identity.transport == "verify-full" else "disable",
-            "PGSSLCERTMODE": "disable", "PGCHANNELBINDING": "prefer",
+            "PGSSLCERTMODE": "disable", "PGCHANNELBINDING": identity.channel_binding,
         }
         if identity.transport == "verify-full":
             result["PGSSLROOTCERT"] = identity.root_certificate
@@ -133,6 +135,7 @@ class BoundDatabase:
                 or info.dbname != self.identity.database or info.user != self.identity.actor
                 or effective.get("options") != env["PGOPTIONS"]
                 or effective.get("sslmode") != env["PGSSLMODE"]
+                or effective.get("channel_binding", "prefer") != self.identity.channel_binding
                 or effective.get("service") or "hostaddr" in env
                 or self.identity.transport == "verify-full" and (
                     not connection.pgconn.ssl_in_use

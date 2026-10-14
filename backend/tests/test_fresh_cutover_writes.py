@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import importlib
 import json
 import os
@@ -73,6 +74,67 @@ def test_old_secret_and_unrelated_provider_routes_refuse_without_transport(write
             "iam", "POST", "projects/-/serviceAccounts/unrelated@example.com:disable", body={}
         )
     assert http.calls == []
+
+
+def tex_grant_fixture(writer, monkeypatch, *, bindings=None, unknown=False):
+    writes, http, _ = writer
+    tex = module.native.release.native_tex
+    origin = "https://hirewiz-native-tex-synthetic-uc.a.run.app"
+    monkeypatch.setattr(tex, "ACCEPTED_ORIGIN", origin, raising=False)
+    monkeypatch.setattr(tex, "ACCEPTED_IMAGE", tex.REPOSITORY + "@sha256:" + "f" * 64, raising=False)
+    monkeypatch.setattr(module.source_sql, "verify_cloud_isolated", lambda _: None)
+    runtime = module.NativeAccount(tex.INVOKER, "123456")
+    policy = {"version": 3, "etag": "synthetic-etag", "bindings": bindings or []}
+    def respond(method, url, body):
+        if "/serviceAccounts/" in url:
+            return 200, {"email": runtime.email, "uniqueId": runtime.uid, "disabled": False}
+        if ":getIamPolicy" in url:
+            return 200, copy.deepcopy(policy)
+        if method == "POST":
+            assert url.split("?")[0].endswith(tex.RESOURCE + ":setIamPolicy")
+            if unknown:
+                raise RuntimeError("synthetic-unknown-credential-and-body")
+            policy.update(body["policy"])
+            policy["etag"] = "synthetic-new-etag"
+            return 200, copy.deepcopy(policy)
+        return 200, {"name": tex.RESOURCE, "uid": "synthetic-service-uid", "uri": origin,
+                     "reconciling": False}
+    http.respond = respond
+    return writes, http, runtime
+
+
+def test_tex_invoker_grant_is_exact_once_and_desired_policy_is_readonly_reconciliation(
+    writer, monkeypatch,
+):
+    writes, http, runtime = tex_grant_fixture(writer, monkeypatch)
+    writes.grant_native_tex_invoker(runtime)
+    posts = [row for row in http.calls if row[0] == "POST"]
+    assert len(posts) == 1
+    assert posts[0][2]["policy"]["bindings"] == [{"role": "roles/run.invoker",
+        "members": ["serviceAccount:" + runtime.email]}]
+    writes.grant_native_tex_invoker(runtime)
+    assert sum(row[0] == "POST" for row in http.calls) == 1
+
+
+@pytest.mark.parametrize("bindings", [
+    [{"role": "roles/run.invoker", "members": ["allUsers"]}],
+    [{"role": "roles/run.invoker", "members": [
+        "serviceAccount:hirewiz-api@ai-resume-parser-482412.iam.gserviceaccount.com"]}],
+])
+def test_tex_invoker_refuses_public_or_old_runtime_initial_policy(writer, monkeypatch, bindings):
+    writes, http, runtime = tex_grant_fixture(writer, monkeypatch, bindings=bindings)
+    with pytest.raises(module.WriteDenied, match="initial_policy_refused"):
+        writes.grant_native_tex_invoker(runtime)
+    assert all(row[0] == "GET" for row in http.calls)
+
+
+def test_lost_tex_invoker_grant_is_never_replayed(writer, monkeypatch):
+    writes, http, runtime = tex_grant_fixture(writer, monkeypatch, unknown=True)
+    with pytest.raises(module.WriteDenied, match="native_result_unknown"):
+        writes.grant_native_tex_invoker(runtime)
+    with pytest.raises(module.WriteDenied, match="already_attempted"):
+        writes.grant_native_tex_invoker(runtime)
+    assert sum(row[0] == "POST" for row in http.calls) == 1
 
 
 def test_native_key_uid_drift_refuses_before_delete_or_marker(writer):

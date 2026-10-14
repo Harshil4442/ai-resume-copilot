@@ -44,6 +44,12 @@ async function forward(
   if (path[0] === "v1" && path[1] === "browser-pairing") {
     return NextResponse.json({ detail: "Use the dedicated browser pairing transport" }, { status: 403 });
   }
+  if (path[0] === "v1" && path[1] === "browser-assistance" && path[2] !== "availability") {
+    return NextResponse.json({ detail: "Use the dedicated reviewed browser assistance transport" }, { status: 403 });
+  }
+  if (path[0] === "v1" && path[1] === "employer-jobs" && path[2] === "applications" && path[4] === "report-submitted") {
+    return NextResponse.json({ detail: "Use the dedicated candidate report transport" }, { status: 403 });
+  }
   if (!path.length || path.length > 20 || path.some((segment) => segment === "." || segment === ".."
       || segment.length > 256 || !/^[A-Za-z0-9_.-]+$/.test(segment))) {
     return NextResponse.json({ detail: "Invalid backend path" }, { status: 400 });

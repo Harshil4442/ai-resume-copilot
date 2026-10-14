@@ -45,7 +45,7 @@ def expected_registry(release: str, image: str, reviewed_at: str) -> tuple[bytes
         "candidate_commit": release,
         "candidate_image": image,
         "expected_database_schema": "20261008_0009",
-        "candidate_schema": "20261011_0016",
+        "candidate_schema": "20261014_0017",
         "expected_system_identifier_sha256": "cabc69e0dc6343b8474c3e4d7fc4ca48e8a93e45c1694d1961a93ee56e4385f0",
         "expected_database_oid": 16391,
         "database_namespace": "public",

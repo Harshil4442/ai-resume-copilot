@@ -553,8 +553,20 @@ Improve native format preservation, tailored edits and sealed artifact generatio
 **Launch-order decision, 8 October 2026:** the candidate selected reviewed browser
 assistance first. See [the delivery decision](../delivery/INITIAL_BROWSER_ASSISTANCE_2026-10-08.md).
 Final submission stays candidate-controlled; fill-only/user-reported outcomes cannot
-settle the automatic-application charge or close Stage 5. Production pairing, independent
-authority and permitted adapters remain required before enabling Stage 4.
+settle the automatic-application charge or close Stage 5. Production pairing and
+permitted, reviewed adapters must be verified before activation.
+
+**Implementation trade-off, 14 October 2026:** the limited Razorpay text-assistance
+pilot uses the existing authenticated Google candidate session, PostgreSQL-owned
+device/review/revocation state and signed exact single-field leases described in
+[ADR 007](../adr/007-reviewed-browser-assistance.md). The experimental independent
+native pairing/recovery factories remain disabled and are not production proof for
+this pilot. Approval lasts five minutes; an already issued field lease can finish
+within ten seconds after cancellation. Phone, choices, custom/sensitive controls,
+attachment, CAPTCHA and final submission stay manual. Restore requires outstanding
+authority to be reset and the dedicated signer rotated before reopening, with fresh
+candidate review. This limited implementation does not close the wider Stage 4
+checklist or the Stage 5 independent recovery, automatic-send and receipt gates.
 
 Build a narrowly scoped browser companion for tested employer career adapters. Keep candidate sessions local, support checkpoint recovery and pause for human work. Stage 4 remains fill-only or candidate-submit. Any automatic send, including a browser pilot, must first pass G05A–D and the relevant recovery gates.
 

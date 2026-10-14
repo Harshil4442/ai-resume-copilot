@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import { apiBlob, apiDownload, apiGet, apiPostJson, apiPutJson } from "../lib/api";
+import { accountMutationHeaders } from "../lib/accountTransportClient";
 import { getSourcePreservingContent, type Opportunity, type ResumeVersion } from "../lib/career";
 import { applicationStatusLabels, employerJobsBase, safeEmployerUrl, type EmployerApplication, type JobServiceCatalog, type ResumeChoice } from "../lib/employerJobs";
 import { uploadResumeFile, type UploadProgress } from "../lib/resumeUpload";
@@ -60,7 +61,7 @@ export default function EmployerApplicationPanel({ id, onClose, onChange, resume
   });
   const status = application.data?.status;
   useEffect(() => {
-    if (status && ["confirmed", "failed", "cancelled"].includes(status)) onChange();
+    if (status && ["confirmed", "failed", "cancelled", "user_reported"].includes(status)) onChange();
   }, [status, onChange]);
   return <Dialog.Root open onOpenChange={(open) => { if (!open) onClose(); }}><Dialog.Portal><Dialog.Overlay className="fixed inset-0 z-[60] bg-black/30 backdrop-blur-sm" /><Dialog.Content className="fixed inset-x-2 top-[3vh] z-[70] mx-auto flex max-h-[94dvh] w-auto max-w-4xl flex-col overflow-hidden rounded-2xl border border-border bg-white shadow-xl sm:inset-x-6 sm:top-[5vh] sm:max-h-[90dvh]">
     <header className="flex shrink-0 items-start justify-between gap-4 border-b border-border p-5 sm:p-6"><div className="min-w-0"><Dialog.Title className="font-display text-2xl sm:text-3xl">Review your application</Dialog.Title><Dialog.Description className="mt-2 text-sm leading-6 text-muted-foreground">Choose the exact file and answers before anything is shared with the employer.</Dialog.Description></div><Dialog.Close asChild><Button variant="ghost" size="icon" aria-label="Close application review"><X size={20} /></Button></Dialog.Close></header>
@@ -82,6 +83,10 @@ function ApplicationEditor({ application, onChange, resumes }: { application: Em
   const [artifactReady, setArtifactReady] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [applicationIdCopied, setApplicationIdCopied] = useState(false);
+  const [copyIdError, setCopyIdError] = useState<string | null>(null);
+  const [reportReviewed, setReportReviewed] = useState(false);
+  const [reportUncertain, setReportUncertain] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
   const uploadController = useRef<AbortController | null>(null);
   const uploadMounted = useRef(true);
@@ -93,10 +98,11 @@ function ApplicationEditor({ application, onChange, resumes }: { application: Em
 
   const catalog = useQuery({ queryKey: ["employer-jobs", "catalog"], queryFn: ({ signal }) => apiGet<JobServiceCatalog>(`${employerJobsBase}/catalog`, signal) });
   const versions = useQuery({ queryKey: ["resume-versions", resumeId], queryFn: ({ signal }) => apiGet<ResumeVersion[]>(`/v1/resume-versions?resume_id=${encodeURIComponent(resumeId)}`, signal), enabled: choice === "tailored" && Boolean(resumeId) });
-  const immutable = ["queued", "submitting", "confirmed", "unknown", "cancelled"].includes(application.status);
+  const immutable = reportUncertain || ["queued", "submitting", "confirmed", "unknown", "cancelled", "user_reported"].includes(application.status);
   const automatic = application.application_mode === "api";
   const approvedVersions = (versions.data ?? []).filter((version) => version.approval_state === "approved" && Boolean(getSourcePreservingContent(version.structured_content)?.source_edits.length));
   const employerUrl = safeEmployerUrl(application.posting.apply_url || application.posting.canonical_url);
+  const razorpayBrowserUrl = employerUrl && /^https:\/\/job-boards\.greenhouse\.io\/razorpaysoftwareprivatelimited\/jobs\/\d+$/.test(employerUrl) ? employerUrl : null;
   const retainedResumes = resumes.filter((resume) => resume.source_available);
   const busy = application.status === "queued" || application.status === "submitting";
 
@@ -145,8 +151,28 @@ function ApplicationEditor({ application, onChange, resumes }: { application: Em
     onError: () => { void client.invalidateQueries({ queryKey: ["employer-jobs", "application", application.id] }); onChange(); },
   });
   const cancel = useMutation({ mutationFn: () => apiPostJson<EmployerApplication>(`${employerJobsBase}/applications/${encodeURIComponent(application.id)}/cancel`, {}), onSuccess: update });
-  const pending = save.isPending || upload.isPending || submit.isPending || handoff.isPending || cancel.isPending;
-  const error = save.error || submit.error || handoff.error || cancel.error;
+  const reportSubmission = useMutation({
+    retry: false,
+    mutationFn: async () => {
+      if (!reportReviewed || reportUncertain || immutable || automatic || dirty || !application.artifact || application.credit_cost !== 0
+        || application.charged_credits !== 0 || (application.reserved_credits ?? 0) !== 0 || application.batch_id) throw new Error("Review your current manual package before recording your report.");
+      const response = await fetch(`/api/employer-applications/${encodeURIComponent(application.id)}/report-submitted`, {
+        method: "POST", headers: await accountMutationHeaders(), credentials: "same-origin", redirect: "error", cache: "no-store",
+        signal: AbortSignal.timeout(15000), body: JSON.stringify({ package_digest: application.package_digest, confirmed: true }),
+      });
+      if (!response.ok) throw new Error("The report could not be verified. Refresh application status before another attempt.");
+      const result = await response.json();
+      if (result.id !== application.id || result.status !== "user_reported" || result.application_mode !== "manual" || result.receipt !== null
+        || result.charged_credits !== 0 || result.reserved_credits !== 0 || result.candidate_report?.source !== "candidate_report"
+        || result.candidate_report.saved_package_digest !== application.package_digest || result.candidate_report.employer_confirmed !== false
+        || result.candidate_report.used_file_verified !== false || !Number.isFinite(Date.parse(result.candidate_report.reported_at))) throw new Error("The report response changed. Refresh application status; no automatic retry will occur.");
+      return { ...application, ...result, cancel_requested: true, requires_user_action: false } as EmployerApplication;
+    },
+    onSuccess: (updated) => { setReportReviewed(false); setReportUncertain(false); update(updated); },
+    onError: () => { setReportReviewed(false); setReportUncertain(true); },
+  });
+  const pending = save.isPending || upload.isPending || submit.isPending || handoff.isPending || cancel.isPending || reportSubmission.isPending;
+  const error = save.error || submit.error || handoff.error || cancel.error || reportSubmission.error;
   const creditBalance = catalog.data?.balance;
   const enoughCredits = typeof creditBalance === "number" && creditBalance >= application.credit_cost;
 
@@ -155,10 +181,16 @@ function ApplicationEditor({ application, onChange, resumes }: { application: Em
     try { await apiDownload(`${employerJobsBase}/applications/${encodeURIComponent(application.id)}/artifact`, application.artifact?.filename ?? "application-resume"); }
     catch (error) { setDownloadError(error instanceof Error ? error.message : "Could not download the exact application file."); }
   }
+  async function copyApplicationId() {
+    setCopyIdError(null);
+    try { await navigator.clipboard.writeText(application.id); setApplicationIdCopied(true); }
+    catch { setCopyIdError("Copy the application ID below into your companion."); }
+  }
   function markDirty() { setDirty(true); setReviewed(false); }
   return <div className="space-y-7">
     <section className="border-b border-border pb-5"><p className="text-xs font-semibold text-primary">{application.posting.employer} · {application.posting.platform}</p><h2 className="mt-2 break-words text-xl font-semibold">{application.posting.title}</h2><p className="mt-2 text-sm text-muted-foreground">{application.posting.location}</p><p className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-primary"><ShieldCheck size={16} />{applicationStatusLabels[application.status]}</p>{employerUrl && (automatic || (application.status === "manual_handoff" && !dirty)) ? <a href={employerUrl} target="_blank" rel="noopener noreferrer" className="mt-3 block break-all text-xs text-primary underline underline-offset-4">{employerUrl}</a> : employerUrl ? <p className="mt-3 break-all text-xs text-muted-foreground">{employerUrl}</p> : <p className="mt-3 text-sm text-coral">Employer destination unavailable. Submission is disabled.</p>}</section>
     {application.status === "confirmed" ? <section className="rounded-lg border border-primary/30 bg-primary/5 p-4" aria-live="polite"><h3 className="flex items-center gap-2 font-semibold"><CheckCircle2 size={18} />Employer submission confirmed</h3><p className="mt-2 text-sm">{application.charged_credits} service credits charged.</p>{application.receipt ? <dl className="mt-3 grid gap-2 text-xs">{Object.entries(application.receipt).filter(([, value]) => ["string", "number"].includes(typeof value)).map(([key, value]) => <div key={key}><dt className="font-semibold">{key.replaceAll("_", " ")}</dt><dd className="break-all">{String(value)}</dd></div>)}</dl> : null}</section> : null}
+    {application.status === "user_reported" ? <section className="rounded-lg border border-border bg-surface p-4" aria-live="polite"><h3 className="font-semibold">Submission reported by you</h3><p className="mt-2 text-sm leading-6">Your manual submission report is recorded. Employer confirmation and the file actually used are unverified. Further assistance for this saved application is stopped. No application credits were charged.</p>{application.candidate_report ? <p className="mt-2 text-xs text-muted-foreground">Report recorded: {new Date(application.candidate_report.reported_at).toLocaleString("en-IN")}</p> : null}</section> : null}
     {application.status === "unknown" ? <div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">The employer may have received this application. Do not send another copy until its status is confirmed. No automatic retry is available.</div> : null}
     <p className="text-xs leading-5 text-muted-foreground">{application.reserved_credits ?? 0} service credits currently reserved · {application.charged_credits} charged.</p>
     {application.error ? <p role="alert" className="text-sm text-coral">{application.error.message}</p> : null}
@@ -176,8 +208,9 @@ function ApplicationEditor({ application, onChange, resumes }: { application: Em
     {application.form.consents.length ? <section aria-labelledby="consents-heading"><h3 id="consents-heading" className="font-semibold">Employer consent choices</h3><div className="mt-4 grid gap-4">{application.form.consents.map((consent) => <label key={consent.id} className="flex items-start gap-3 text-sm leading-6"><input type="checkbox" className="mt-1 h-4 w-4 shrink-0 accent-primary" checked={consents[consent.id] === true} disabled={immutable || pending} onChange={(event) => { setConsents((current) => ({ ...current, [consent.id]: event.target.checked })); markDirty(); }} /><span>{consent.label}{consent.required ? " (required)" : " (optional)"}{consent.text ? <span className="mt-1 block text-xs text-muted-foreground">{consent.text}</span> : null}{safeEmployerUrl(consent.policy_url) ? <a href={safeEmployerUrl(consent.policy_url)!} target="_blank" rel="noopener noreferrer" className="ml-2 text-primary underline">Read policy</a> : null}</span></label>)}</div></section> : null}
     {!immutable ? <div><Button variant="secondary" onClick={() => save.mutate()} disabled={pending || !dirty || !resumeId || (choice === "tailored" && !versionId)}>{save.isPending ? <LoaderCircle size={16} className="animate-spin" /> : null}Save and refresh review</Button>{dirty ? <p className="mt-2 text-xs text-muted-foreground">Save your changes to refresh the exact file and validation before approval.</p> : null}</div> : null}
     <section className="border-t border-border pt-5" aria-labelledby="exact-file-heading"><div className="mb-4 flex flex-wrap items-center justify-between gap-3"><h3 id="exact-file-heading" className="font-semibold">Exact file to disclose</h3><Button variant="secondary" size="sm" onClick={() => void downloadArtifact()} disabled={!application.artifact || dirty}><Download size={14} />Download review file</Button></div>{dirty ? <p className="text-sm text-muted-foreground">Your saved preview is out of date. Save the package to preview the new file.</p> : <ArtifactPreview key={application.artifact?.sha256 ?? "missing"} application={application} onReady={setArtifactReady} />}{downloadError ? <p role="alert" className="mt-3 text-sm text-coral">{downloadError}</p> : null}</section>
-    {application.missing_fields.length ? <div role="status" className="rounded-lg bg-amber-50 p-4 text-sm leading-6 text-amber-900">Needs attention: {application.missing_fields.join(", ")}. Complete the answers and save before submitting.</div> : null}
+    {application.missing_fields.length && application.status !== "user_reported" ? <div role="status" className="rounded-lg bg-amber-50 p-4 text-sm leading-6 text-amber-900">Needs attention: {application.missing_fields.join(", ")}. Complete the answers and save before submitting.</div> : null}
     {error ? <p role="alert" className="text-sm leading-6 text-coral">{error.message}</p> : null}
+    {!automatic && razorpayBrowserUrl && !immutable ? <section className="rounded-xl border border-border bg-surface p-5" aria-labelledby="browser-assistance-heading"><h3 id="browser-assistance-heading" className="font-semibold">Fill supported answers with your companion</h3><p className="mt-2 text-sm leading-6 text-muted-foreground">For Razorpay, review your exact file and up to seven supported text answers for this job before the companion fills them. Phone, employment, choices, attachment and final submission remain manual. This fill-only route has no automatic-application fee.</p>{dirty || !application.artifact ? <p className="mt-3 text-sm text-muted-foreground">Save your package with a retained resume file before starting browser assistance.</p> : <div className="mt-4 flex flex-wrap gap-3"><Button asChild><Link href={`/browser-companion?application=${encodeURIComponent(application.id)}`}>Review browser assistance</Link></Button><Button asChild variant="secondary"><a href={razorpayBrowserUrl} target="_blank" rel="noopener noreferrer">Open Razorpay application<ArrowUpRight size={15} /></a></Button></div>}<div className="mt-4"><p className="text-xs font-semibold">Application ID</p><code className="mt-1 block break-all text-xs">{application.id}</code><Button variant="secondary" size="sm" className="mt-2" onClick={() => void copyApplicationId()}>Copy application ID</Button>{applicationIdCopied ? <p role="status" className="mt-2 text-xs text-primary">Application ID copied.</p> : null}{copyIdError ? <p role="status" className="mt-2 text-xs text-muted-foreground">{copyIdError}</p> : null}</div></section> : null}
     <section className="rounded-xl border border-border bg-surface p-5" aria-labelledby="application-submit-heading"><h3 id="application-submit-heading" className="font-semibold">{automatic ? "Approve this application" : "Continue with the employer"}</h3><p className="mt-2 text-sm leading-6 text-muted-foreground">{automatic ? `${application.credit_cost} service credits per confirmed complete application. Your file and answers may be saved by the employer as soon as filling or uploading begins.` : "This route uses the employer portal. Preparation is not a submission, and this handoff does not charge automatic-apply credits. Sign in, complete the remaining steps and submit there yourself."}</p>
       {application.batch_id ? <div className="mt-4 space-y-2"><p className="text-sm leading-6">This application belongs to an exact reviewed batch. Queue it from that batch review. Saving a file or answer change clears this package's approval and requires a new batch review.</p><Link href={`/employer-jobs/batches/${encodeURIComponent(application.batch_id)}`} className="inline-flex min-h-11 items-center text-sm font-semibold text-primary underline">Review this application's batch</Link></div> : automatic && !immutable ? <><label className="mt-4 flex items-start gap-3 text-sm leading-6"><input type="checkbox" className="mt-1 h-4 w-4 shrink-0 accent-primary" checked={reviewed} disabled={dirty || !artifactReady || pending || application.missing_fields.length > 0} onChange={(event) => setReviewed(event.target.checked)} /><span>I reviewed this employer, exact resume, answers and consent choices. I authorize filling, uploading and submitting this application.</span></label><Button className="mt-4 min-h-11 w-full sm:w-auto" onClick={() => submit.mutate()} disabled={!reviewed || dirty || !artifactReady || pending || !enoughCredits || !employerUrl || !catalog.data?.auto_submit_enabled || application.missing_fields.length > 0}>{submit.isPending ? <LoaderCircle size={16} className="animate-spin" /> : <ShieldCheck size={16} />}Approve and submit</Button>{!catalog.data?.auto_submit_enabled ? <p className="mt-3 text-xs text-muted-foreground">Automatic submission is not enabled for this service.</p> : !enoughCredits ? <p className="mt-3 text-xs text-muted-foreground">You need {application.credit_cost} service credits. <Link href="/billing" className="underline text-primary">Review credit packs</Link>.</p> : null}</> : !automatic && employerUrl && !immutable ? <div className="mt-4 space-y-4">
         <dl className="space-y-2 text-xs leading-5" aria-label="Saved handoff package">
@@ -192,7 +225,8 @@ function ApplicationEditor({ application, onChange, resumes }: { application: Em
       </div> : null}
       {busy ? <p role="status" className="mt-3 flex items-center gap-2 text-sm"><LoaderCircle size={16} className="animate-spin" />Waiting for an employer-confirmed result. You can close this review and return later.</p> : null}
     </section>
-    {!["confirmed", "cancelled"].includes(application.status) ? <div className="flex flex-wrap items-center gap-3 border-t border-border pt-4"><Button variant="danger" size="sm" onClick={() => cancel.mutate()} disabled={pending || application.status === "unknown"}>Cancel remaining work</Button><p className="max-w-xl text-xs leading-5 text-muted-foreground">Cancellation stops future work. Already disclosed data or an in-flight submission may remain with the employer.</p></div> : null}
-    <Button variant="ghost" size="sm" onClick={() => void client.invalidateQueries({ queryKey: ["employer-jobs", "application", application.id] })}><RefreshCw size={14} />Refresh application status</Button>
+    {!automatic && ["needs_action", "ready", "approved", "manual_handoff"].includes(application.status) && application.credit_cost === 0 && application.charged_credits === 0 && (application.reserved_credits ?? 0) === 0 && !application.batch_id ? <section className="rounded-xl border border-border p-5"><h3 className="font-semibold">Already submitted on the company portal?</h3><p className="mt-2 text-sm leading-6 text-muted-foreground">Record your own report after you submit manually. This links the current saved package for reference; it does not verify employer acceptance or which file you used. Further filling is stopped; an already authorized field may finish within ten seconds.</p><label className="mt-4 flex items-start gap-3 text-sm leading-6"><input type="checkbox" className="mt-1 h-4 w-4 shrink-0 accent-primary" checked={reportReviewed} disabled={dirty || pending || reportUncertain || !application.artifact} onChange={(event) => setReportReviewed(event.target.checked)} /><span>I reviewed this saved package and report that I submitted this job application myself on the company portal.</span></label><Button className="mt-4" disabled={!reportReviewed || dirty || pending || reportUncertain || !application.artifact} onClick={() => reportSubmission.mutate()}>Record my manual submission</Button>{reportUncertain ? <p role="status" className="mt-3 text-xs text-muted-foreground">The outcome needs a status check. Refresh application status before taking another action; no automatic retry occurred.</p> : null}</section> : null}
+    {!["confirmed", "cancelled", "user_reported"].includes(application.status) ? <div className="flex flex-wrap items-center gap-3 border-t border-border pt-4"><Button variant="danger" size="sm" onClick={() => cancel.mutate()} disabled={pending || reportUncertain || application.status === "unknown"}>Cancel remaining work</Button><p className="max-w-xl text-xs leading-5 text-muted-foreground">Cancellation stops future work. Already disclosed data or an in-flight submission may remain with the employer.</p></div> : null}
+    <Button variant="ghost" size="sm" disabled={pending} onClick={() => { void client.fetchQuery({ queryKey: ["employer-jobs", "application", application.id], queryFn: () => apiGet<EmployerApplication>(`${employerJobsBase}/applications/${encodeURIComponent(application.id)}`) }).then(() => setReportUncertain(false), () => setReportUncertain(true)); }}><RefreshCw size={14} />Refresh application status</Button>
   </div>;
 }

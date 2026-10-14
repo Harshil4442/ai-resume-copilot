@@ -1,3 +1,4 @@
-// Production enrollment, authority, tenant grants and recovery infrastructure are
-// not available in this stage. Only the test builder replaces this configuration.
-export const CONFIG = Object.freeze({ mode: "disabled", authorityOrigin: null, portalOrigin: null, authorityKey: null, keyId: null });
+// Candidate-reviewed production pilot. The backend remains closed until the
+// dedicated deployment flag and signing credential are explicitly provisioned.
+export const CONFIG = Object.freeze({ mode: "reviewed_assistance", websiteOrigin: "https://www.hirewizhq.com",
+  portalOrigin: "https://job-boards.greenhouse.io", extensionId: "pnjmegppacleipajnifjmbcopjjffklb" });

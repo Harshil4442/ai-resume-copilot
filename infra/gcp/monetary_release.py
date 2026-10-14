@@ -25,6 +25,7 @@ from typing import Any, Protocol
 
 import document_network as document_routing
 import document_worker as documents
+import native_tex_worker as native_tex
 import release_preflight as source_guard
 
 PROJECT = "ai-resume-parser-482412"
@@ -53,6 +54,7 @@ CUTOVER_CHAIN = (
     "20261010_0014",
     "20261011_0015",
     "20261011_0016",
+    "20261014_0017",
 )
 CHAIN = (*source_guard.ALLOWED_CHAIN[:-1], *CUTOVER_CHAIN)
 SAFE_ENV = {
@@ -62,6 +64,7 @@ SAFE_ENV = {
     "EMPLOYER_AUTO_SUBMIT_ENABLED": "false",
     "RAZORPAY_CHECKOUT_ENABLED": "false",
     "CANDIDATE_ACCOUNT_LIFECYCLE_ENABLED": "false",
+    "BROWSER_ASSISTANCE_ENABLED": "false",
     "EMPLOYER_SEARCH_CREDITS_PER_JOB": "1",
     "EMPLOYER_APPLY_CREDITS_PER_JOB": "20",
 }
@@ -123,6 +126,9 @@ ERASABLE_TABLES = {
     # Ordinary revision pruning also needs DELETE; financial history does not.
     "employer_catalogue_source_revisions",
     "employer_catalogue_posting_revisions",
+    "browser_assistance_devices",
+    "browser_assistance_reviews",
+    "browser_assistance_requests",
 }
 
 
@@ -245,6 +251,15 @@ def runtime_environment(plan: Plan, service: str) -> tuple[dict[str, str], dict[
         env["WORKER_ALLOWED_TOPICS"] = ("analysis.run" if service == SERVICES[1]
                                        else "employer.search,employer.refresh,employer.apply,employer.artifact-delete")
     if service in SERVICES[:2]:
+        try:
+            tex_env = native_tex.api_environment(
+                getattr(native_tex, "ACCEPTED_ORIGIN", ""),
+                getattr(native_tex, "ACCEPTED_IMAGE", ""),
+            )
+        except ValueError:
+            raise ReleaseDenied("native_tex_accepted_worker_binding_missing") from None
+        removed = tuple(name for name in removed if name not in tex_env)
+        env.update(tex_env)
         env.update(documents.api_environment(documents.ACCEPTED_ORIGIN))
         env.update(LLM_MODEL=plan.model_primary, LLM_API_BASE=plan.model_api_base)
         secrets.update(LLM_MODEL_COST_POLICY_JSON=plan.model_policy_secret, LLM_API_KEY=plan.model_key_secret)

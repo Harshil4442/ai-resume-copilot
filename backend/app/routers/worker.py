@@ -93,5 +93,7 @@ def execute_maintenance_task(
     summary = run_maintenance(db).to_dict()
     summary["sources_queued"] = queued_sources
     summary["artifact_cleanup_queued"] = queued_cleanup
+    from ..domains.browser_assistance.service import expire_reviews
+    summary["browser_reviews_erased"] = expire_reviews(db, limit=100)
     summary["dispatch"] = dispatch_pending(limit=100)
     return summary

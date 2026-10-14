@@ -208,7 +208,8 @@ function productFacts(product: BillingProduct): string[] {
   return [
     `${product.entitlement_quantity} job service credits`,
     `${product.analysis_units} AI analysis units · full tailoring uses 2 units`,
-    "Search and confirmed automatic applications use job service credits",
+    "New verified employer jobs use job service credits",
+    "Current application pilot: reviewed assistance, manual final submission",
     "Optional AI uses its own displayed analysis-unit quote",
     "Finite prepaid balances · one-time payment · no automatic renewal",
   ];
@@ -727,7 +728,7 @@ function BillingContent({ requestedSku }: { requestedSku: string | null }) {
 
         <section className="grid gap-5 border-y border-border py-6 sm:grid-cols-3" aria-label="Current entitlement">
           <div><p className="data-label">Analysis units</p><p className="mt-2 text-3xl font-semibold text-primary">{currentTier ? analysisUnits : "..."}</p><p className="mt-1 text-xs text-muted-foreground">{currentTier === "premium" ? "Existing paid access terms remain; new AI requests depend on available funding." : "Finite balance after reservations and releases."}</p></div>
-          <div className="sm:border-l sm:border-border sm:pl-6"><p className="data-label">Job service credits</p><p className="mt-2 text-3xl font-semibold text-primary">{currentTier ? serviceCredits : "..."}</p><p className="mt-1 text-xs text-muted-foreground">Employer search and automatic apply. Charged separately, including for Premium members.</p></div>
+          <div className="sm:border-l sm:border-border sm:pl-6"><p className="data-label">Job service credits</p><p className="mt-2 text-3xl font-semibold text-primary">{currentTier ? serviceCredits : "..."}</p><p className="mt-1 text-xs text-muted-foreground">New verified employer jobs. Premium does not waive search charges. Automatic submission is unavailable in the current pilot.</p></div>
           <div className="sm:border-l sm:border-border sm:pl-6"><p className="data-label">Access period</p><p className="mt-2 text-lg font-semibold text-foreground">{currentTier === "premium" && premiumUntil ? `Through ${new Date(premiumUntil).toLocaleDateString("en-IN")}` : currentTier === "premium" ? "Active" : "Free tier"}</p><p className="mt-1 text-xs text-muted-foreground">Premium ends automatically. No renewal payment is scheduled.</p></div>
         </section>
 
@@ -754,7 +755,7 @@ function BillingContent({ requestedSku }: { requestedSku: string | null }) {
                   );
                 }) : <div className="border-y border-border py-8"><p className="font-bold text-foreground">No paid product is currently available.</p><p className="mt-2 text-sm text-muted-foreground">No checkout provider has been loaded.</p></div>}
               </div>
-              <div className="mt-8 border-y border-border py-6 text-sm leading-6 text-muted-foreground"><h3 className="font-semibold text-foreground">About analysis units</h3><p className="mt-2">Analysis units are software usage allowances, not money or stored value. They cannot be withdrawn, resold, or transferred. Job service credits are a separate prepaid allowance for employer search and confirmed automatic applications. Optional AI always has a separate reviewed quote. Free and legacy access AI work can pause when its finite funding pool is exhausted.</p><Link href="/pricing" className="mt-3 inline-flex items-center gap-1 font-bold text-primary hover:underline">Read full pricing and usage details <ExternalLink size={13} /></Link></div>
+              <div className="mt-8 border-y border-border py-6 text-sm leading-6 text-muted-foreground"><h3 className="font-semibold text-foreground">About analysis units</h3><p className="mt-2">Analysis units are software usage allowances, not money or stored value. They cannot be withdrawn, resold, or transferred. Job service credits are a separate prepaid allowance for newly delivered employer jobs. The current application pilot provides reviewed preparation and supported text assistance with manual attachment and final submission; it has no automatic-application fee. Optional AI always has a separate reviewed quote. Free and legacy access AI work can pause when its finite funding pool is exhausted.</p><Link href="/pricing" className="mt-3 inline-flex items-center gap-1 font-bold text-primary hover:underline">Read full pricing and usage details <ExternalLink size={13} /></Link></div>
             </section>
 
             <section aria-labelledby="checkout-heading">

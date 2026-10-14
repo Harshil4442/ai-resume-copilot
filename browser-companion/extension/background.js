@@ -5,6 +5,52 @@ import { FixtureTransport } from "./transport.js";
 import { localAdapter } from "./local-adapter.js";
 import { PairingTransport } from "./pairing-transport.js";
 import { PairingRuntime } from "./pairing-runtime.js";
+import { AssistanceTransport } from "./assistance-transport.js";
+import { AssistanceRuntime } from "./assistance-runtime.js";
+import { razorpayAdapter } from "./razorpay-adapter.js";
+
+let assistancePromise;
+async function assistanceEngine() {
+  return assistancePromise ??= (async () => {
+    if (CONFIG.mode !== "reviewed_assistance" || CONFIG.extensionId !== chrome.runtime.id) throw new Error("Reviewed assistance configuration is unavailable");
+    const permission = async (origin) => {
+      if (![CONFIG.websiteOrigin, CONFIG.portalOrigin].includes(origin)
+        || !await chrome.permissions.contains({ origins: [`${origin}/*`] })) throw new Error("The exact reviewed origin permission is missing or revoked");
+    };
+    const targetTab = async (url) => {
+      if (!/^https:\/\/job-boards\.greenhouse\.io\/razorpaysoftwareprivatelimited\/jobs\/[0-9]+$/.test(url)) throw new Error("Only the exact selected Razorpay job is supported");
+      await permission(CONFIG.portalOrigin);
+      const tabs = await chrome.tabs.query({ url });
+      if (tabs.length !== 1 || !Number.isInteger(tabs[0].id)) throw new Error("Open exactly one tab for the selected Razorpay application");
+      return tabs[0];
+    };
+    const browser = {
+      async inspect(url, mapping, documentId = null) {
+        const tab = await targetTab(url);
+        if (!documentId) {
+          const [identity] = await chrome.scripting.executeScript({ target: { tabId: tab.id, frameIds: [0] }, func: () => true });
+          documentId = identity?.documentId;
+        }
+        if (!documentId) throw new Error("Chrome document identity is unavailable");
+        const [result] = await chrome.scripting.executeScript({ target: { tabId: tab.id, documentIds: [documentId] }, func: razorpayAdapter,
+          args: [null, null, { document_id: documentId, frame_id: 0, field_mapping: mapping }] });
+        if (result?.documentId !== documentId || result?.result?.outcome !== "inspected") throw new Error(result?.result?.reason || "The exact current portal form is not supported");
+        return result.result;
+      },
+      async fill(url, mapping, expected, action) {
+        const tab = await targetTab(url);
+        const [result] = await chrome.scripting.executeScript({ target: { tabId: tab.id, documentIds: [expected.document_id] }, func: razorpayAdapter,
+          args: [expected, action, { document_id: expected.document_id, frame_id: 0, field_mapping: mapping }] });
+        return result?.documentId === expected.document_id && result?.result ? result.result : { outcome: "blocked", reason: "The reviewed document is no longer available" };
+      },
+    };
+    const identity = await deviceIdentity();
+    const transport = new AssistanceTransport({ configuration: CONFIG, identity, beforePost: () => permission(CONFIG.websiteOrigin) });
+    const store = { read: async () => (await boundedStorage(chrome.storage.local.get("assistance_checkpoint"))).assistance_checkpoint ?? null,
+      write: (value) => boundedStorage(chrome.storage.local.set({ assistance_checkpoint: value })) };
+    return new AssistanceRuntime({ transport, browser, store }).initialise();
+  })();
+}
 
 const nativeMode = () => ["pairing_only", "local_native_fixture"].includes(CONFIG.mode);
 let pairingPromise;
@@ -67,6 +113,18 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   // No page/content-script/external messages may trigger a privileged operation.
   if (sender.id !== chrome.runtime.id || sender.url !== chrome.runtime.getURL("popup.html")) return false;
   (async () => {
+    if (CONFIG.mode === "reviewed_assistance") {
+      if (!message || typeof message !== "object" || Array.isArray(message) || typeof message.type !== "string"
+        || Object.keys(message).some((key) => !["type", "application_id"].includes(key))) throw new Error("Unsupported assistance operation");
+      const current = await assistanceEngine();
+      if (message.type === "status") return { mode: CONFIG.mode, ...current.status() };
+      if (message.type === "assistance_connect") return current.start();
+      if (message.type === "assistance_check") return current.check();
+      if (message.type === "assistance_prepare") return current.prepare(message.application_id);
+      if (message.type === "assistance_fill") return current.fill();
+      if (message.type === "assistance_cancel") return current.cancel();
+      throw new Error("Unsupported assistance operation");
+    }
     if (nativeMode()) {
       if (!message || typeof message !== "object" || Array.isArray(message)
           || Object.keys(message).join(",") !== "type" || typeof message.type !== "string") throw new Error("Unsupported connection operation");

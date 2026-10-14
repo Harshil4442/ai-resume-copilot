@@ -283,7 +283,11 @@ def test_native_fence_remains_unimplemented_not_an_inventory_override(
         boundary.verify_fences(source)
 
 
-def test_runtime_copy_uses_target_secrets_without_changing_source(source, target):
+def test_runtime_copy_uses_target_secrets_without_changing_source(source, target, monkeypatch):
+    monkeypatch.setattr(release.native_tex, "ACCEPTED_ORIGIN",
+                        "https://hirewiz-native-tex-synthetic-uc.a.run.app", raising=False)
+    monkeypatch.setattr(release.native_tex, "ACCEPTED_IMAGE",
+                        release.native_tex.REPOSITORY + "@sha256:" + "f" * 64, raising=False)
     plan = fresh.runtime_plan(source, target)
     for service in release.SERVICES:
         env, secrets, _ = release.runtime_environment(plan, service)
@@ -314,6 +318,8 @@ class FinancialConnection:
 
 
 def financial_module(*, unresolved=0):
+    from backend.scripts.monetary_cutover_preflight import unresolved_application_sql
+
     return SimpleNamespace(
         TABLES={
             "analysis_runs",
@@ -328,6 +334,7 @@ def financial_module(*, unresolved=0):
         _candidate_projection_shape=lambda *args: None,
         _extension_shape=lambda *args: None,
         _liabilities=lambda *args: {"unresolved_count": unresolved},
+        unresolved_application_sql=unresolved_application_sql,
     )
 
 

@@ -959,6 +959,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/browser-assistance/availability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Availability */
+        get: operations["availability_api_v1_browser_assistance_availability_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/browser-assistance/candidate/{operation}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Candidate */
+        post: operations["candidate_api_v1_browser_assistance_candidate__operation__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/browser-assistance/device/{operation}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Device */
+        post: operations["device_api_v1_browser_assistance_device__operation__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/browser-pairing/candidate/{operation}": {
         parameters: {
             query?: never;
@@ -1261,6 +1312,23 @@ export interface paths {
         put?: never;
         /** Reconcile Application */
         post: operations["reconcile_application_api_v1_employer_jobs_applications__identity__reconcile_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/employer-jobs/applications/{identity}/report-submitted": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Report Manual Submission */
+        post: operations["report_manual_submission_api_v1_employer_jobs_applications__identity__report_submitted_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2064,6 +2132,23 @@ export interface components {
             /** File */
             file: string;
         };
+        /** CandidateRequest */
+        CandidateRequest: {
+            /**
+             * Confirmed
+             * @default false
+             */
+            confirmed: boolean;
+            /**
+             * Identity
+             * Format: uuid
+             */
+            identity: string;
+            /** Key Sha256 */
+            key_sha256?: string | null;
+            /** Review Digest */
+            review_digest?: string | null;
+        };
         /** CareerMemoryResponse */
         CareerMemoryResponse: {
             /** Approval State */
@@ -2541,6 +2626,13 @@ export interface components {
              * Format: uuid
              */
             operation_id: string;
+        };
+        /** ManualSubmissionReport */
+        ManualSubmissionReport: {
+            /** Confirmed */
+            confirmed: boolean;
+            /** Package Digest */
+            package_digest: string;
         };
         /** MarketAnalyzeRequest */
         MarketAnalyzeRequest: {
@@ -6439,6 +6531,92 @@ export interface operations {
             };
         };
     };
+    availability_api_v1_browser_assistance_availability_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    candidate_api_v1_browser_assistance_candidate__operation__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                operation: "device" | "confirm" | "revoke" | "review" | "approve" | "cancel";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CandidateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    device_api_v1_browser_assistance_device__operation__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                operation: "prepare" | "status" | "application" | "inspect" | "begin" | "outcome" | "cancel";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     candidate_api_v1_browser_pairing_candidate__operation__post: {
         parameters: {
             query?: never;
@@ -7187,6 +7365,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ReconciliationCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    report_manual_submission_api_v1_employer_jobs_applications__identity__report_submitted_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                identity: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManualSubmissionReport"];
             };
         };
         responses: {

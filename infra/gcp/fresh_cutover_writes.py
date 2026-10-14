@@ -189,7 +189,12 @@ class OfficialWrites:
             and ((method == "GET" and path in {
                 native.release.documents.RESOURCE,
                 native.release.documents.RESOURCE + ":getIamPolicy",
-            }) or (method == "POST" and path == native.release.documents.RESOURCE + ":setIamPolicy"))
+                native.release.native_tex.RESOURCE,
+                native.release.native_tex.RESOURCE + ":getIamPolicy",
+            }) or (method == "POST" and path in {
+                native.release.documents.RESOURCE + ":setIamPolicy",
+                native.release.native_tex.RESOURCE + ":setIamPolicy",
+            }))
             or
             api == "iam"
             and method == "POST"
@@ -820,6 +825,7 @@ class OfficialWrites:
             runtime.uid,
         )
         self.grant_document_invoker(runtime)
+        self.grant_native_tex_invoker(runtime)
         task = self._call("iam", "GET", "projects/-/serviceAccounts/" + TASKS_EMAIL)
         self._account(task, TASKS_EMAIL, TASKS_UID)
         need(
@@ -876,6 +882,7 @@ class OfficialWrites:
              and type(service.get("uid")) is str and bool(service["uid"])
              and service.get("reconciling", False) is False,
              "write_document_service_identity")
+        assert service is not None
         path = documents.RESOURCE
         before = self._call("run", "GET", path + ":getIamPolicy",
                             query={"options.requestedPolicyVersion": "3"})
@@ -912,6 +919,53 @@ class OfficialWrites:
              and reread.get("uid") == service["uid"]
              and reread.get("uri") == documents.ACCEPTED_ORIGIN,
              "write_document_service_identity_drift")
+
+    def grant_native_tex_invoker(self, runtime: NativeAccount) -> None:
+        """The accepted TeX service admits only the isolated new runtime."""
+        tex = native.release.native_tex
+        origin, image = getattr(tex, "ACCEPTED_ORIGIN", ""), getattr(tex, "ACCEPTED_IMAGE", "")
+        try:
+            tex.api_environment(origin, image)
+        except ValueError:
+            raise WriteDenied("write_native_tex_accepted_binding_missing") from None
+        need(runtime.email == tex.INVOKER, "write_native_tex_runtime_identity")
+        source_sql.verify_cloud_isolated(self.boundary)
+        account = self._call("iam", "GET", "projects/-/serviceAccounts/" + runtime.email)
+        self._account(account, runtime.email, runtime.uid)
+        need(account is not None and account.get("disabled", False) is False,
+             "write_native_tex_runtime_disabled")
+        service = self._call("run", "GET", tex.RESOURCE)
+        need(service is not None and service.get("name") == tex.RESOURCE
+             and service.get("uri") == origin and type(service.get("uid")) is str
+             and bool(service["uid"]) and service.get("reconciling", False) is False,
+             "write_native_tex_service_identity")
+        assert service is not None
+        path = tex.RESOURCE
+        before = self._call("run", "GET", path + ":getIamPolicy",
+                            query={"options.requestedPolicyVersion": "3"})
+        wanted = [{"role": "roles/run.invoker", "members": ["serviceAccount:" + runtime.email]}]
+        need(before is not None and set(before) <= {"version", "etag", "bindings"}
+             and type(before.get("etag")) is str and bool(before["etag"])
+             and type(before.get("version", 1)) is int and before.get("version", 1) in {1, 3}
+             and before.get("bindings", []) in ([], wanted),
+             "write_native_tex_iam_initial_policy_refused")
+        assert before is not None
+        if before.get("bindings", []) != wanted:
+            self._once("grant-native-tex-runtime")
+            self._call("run", "POST", path + ":setIamPolicy", body={"policy": {
+                "version": 3, "etag": before["etag"], "bindings": wanted,
+            }})
+            after = self._call("run", "GET", path + ":getIamPolicy",
+                               query={"options.requestedPolicyVersion": "3"})
+            need(after is not None and set(after) <= {"version", "etag", "bindings"}
+                 and type(after.get("etag")) is str and bool(after["etag"])
+                 and type(after.get("version", 1)) is int and after.get("version", 1) in {1, 3}
+                 and after.get("bindings", []) == wanted,
+                 "write_native_tex_iam_readback_drift")
+        reread = self._call("run", "GET", path)
+        need(reread is not None and reread.get("name") == path
+             and reread.get("uid") == service["uid"] and reread.get("uri") == origin,
+             "write_native_tex_service_identity_drift")
 
     def create_model_replacement(self) -> str:
         source_sql.verify_cloud_isolated(self.boundary)

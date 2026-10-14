@@ -1,9 +1,10 @@
 """Fresh destination release; old-cluster export and native fences stay separate.
 
-The existing native fence is intentionally still unavailable. This module does
-not grant cutover authority or activate production during preparation. Staging
-and promotion are separate calls so the approved bootstrap operator can retire
-the migrator between them; serving admission reobserves the actual final state.
+The concrete native fence is supplied by native_fresh_fence. This preparation
+module does not establish native closure or activate production at import.
+Staging and promotion are separate calls so the supported bootstrap operator
+can retire the migrator between them; serving admission reobserves the actual
+final state. Source controls are not an accepted customer cutover receipt.
 """
 
 from __future__ import annotations
@@ -98,6 +99,7 @@ class TransferPlan:
 
 
 class FreshBoundary(release.Boundary, Protocol):
+    def verify_document_preparation(self, source: release.Plan) -> dict[str, Any]: ...
     def verify_document_configuration(self, source: release.Plan) -> dict[str, Any]: ...
     def transfer_fresh(
         self,
@@ -361,7 +363,7 @@ def verify_financial_state(connection: Any, module: Any, schema: str) -> None:
         "SELECT count(*) FROM pg_catalog.pg_prepared_xacts WHERE database=current_database()",
         "SELECT count(*) FROM public.model_call_events WHERE status NOT IN ('succeeded','failed','invalid_output')",
         "SELECT count(*) FROM public.analysis_runs WHERE status NOT IN ('succeeded','failed','cancelled')",
-        "SELECT count(*) FROM public.employer_applications WHERE status NOT IN ('needs_action','ready','approved','manual_handoff','confirmed','failed','cancelled')",
+        module.unresolved_application_sql("public", schema),
         "SELECT count(*) FROM public.employer_application_attempts WHERE state NOT IN ('confirmed','failed')",
         "SELECT count(*) FROM public.service_credit_reservations WHERE state <> 'settled' OR reserved_amount <> committed_amount + released_amount OR reserved_amount < 0 OR committed_amount < 0 OR released_amount < 0",
     ]
@@ -848,6 +850,16 @@ class FreshNativeBoundary(release.NativeBoundary):
         self.verify_serving(runtime_plan(source, target), service, revision)
 
     def verify_document_configuration(self, source: release.Plan) -> dict[str, Any]:
+        """Require both private workers and the exact replacement invoker."""
+        return self._verify_document_workers(source, runtime_phase=True)
+
+    def verify_document_preparation(self, source: release.Plan) -> dict[str, Any]:
+        """Check ready isolated workers before retiring any current writer."""
+        return self._verify_document_workers(source, runtime_phase=False)
+
+    def _verify_document_workers(
+        self, source: release.Plan, *, runtime_phase: bool,
+    ) -> dict[str, Any]:
         """Read current native configuration/IAM; no invocation or isolation claim.
 
         Actual calls must originate from the staged Cloud Run consumers through
@@ -855,7 +867,7 @@ class FreshNativeBoundary(release.NativeBoundary):
         The exact fresh boundary supplies the authenticated v2 metadata reader.
         """
         documents = release.documents
-        if source.runtime_service_account != documents.API_INVOKER:
+        if runtime_phase and source.runtime_service_account != documents.API_INVOKER:
             raise release.ReleaseDenied("fresh_document_runtime_identity_mismatch")
         reader = getattr(self, "_get", None)
         if not callable(reader):
@@ -885,7 +897,36 @@ class FreshNativeBoundary(release.NativeBoundary):
                 "service_account_keys": {"keys": keys},
             }
             report = documents.check_snapshot(
-                snapshot, documents.ACCEPTED_IMAGE, source.release, api_phase=True,
+                snapshot, documents.ACCEPTED_IMAGE, source.release, api_phase=runtime_phase,
+            )
+            tex = release.native_tex
+            tex_origin = getattr(tex, "ACCEPTED_ORIGIN", "")
+            tex_image = getattr(tex, "ACCEPTED_IMAGE", "")
+            # The root binds only a natively accepted image and actual service
+            # URI. Missing bindings refuse before any isolation/cutover writes.
+            tex.api_environment(tex_origin, tex_image)
+            tex_service = reader("run", tex.RESOURCE)
+            if tex_service.get("uri") != tex_origin:
+                raise release.ReleaseDenied("fresh_native_tex_origin_mismatch")
+            tex_keys = self._cloud(
+                "iam", "service-accounts", "keys", "list", "--iam-account", tex.SERVICE_ACCOUNT,
+            )
+            if type(tex_keys) is not list:
+                raise release.ReleaseDenied("fresh_native_tex_key_inventory_invalid")
+            tex_snapshot = {
+                "service": tex_service,
+                "revision": reader("run", tex_service["latestReadyRevision"]),
+                "service_iam": self._cloud(
+                    "run", "services", "get-iam-policy", tex.SERVICE, "--region", release.REGION,
+                ),
+                "project_iam": snapshot["project_iam"],
+                "service_account": self._cloud(
+                    "iam", "service-accounts", "describe", tex.SERVICE_ACCOUNT,
+                ),
+                "service_account_keys": {"keys": tex_keys},
+            }
+            tex_report = tex.check_snapshot(
+                tex_snapshot, tex_image, source.release, runtime_phase=runtime_phase,
             )
             routing = release.document_routing
             routing.verify_network(
@@ -897,7 +938,8 @@ class FreshNativeBoundary(release.NativeBoundary):
                 self._cloud("compute", "routes", "list", "--filter", "network=" + routing.NETWORK_URL,
                             "--limit", "65"),
             )
-            return {**report, "native_authenticated_metadata_read": True}
+            return {**report, "native_tex": tex_report,
+                    "native_authenticated_metadata_read": True}
         except release.ReleaseDenied:
             raise
         except Exception:

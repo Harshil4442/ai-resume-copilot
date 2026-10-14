@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator, model_validator
 
 from .search_preferences import SearchPreferencesV1
 
@@ -110,6 +110,18 @@ class ApprovalCreate(StrictModel):
 
 class ExecuteCreate(StrictModel):
     package_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
+class ManualSubmissionReport(StrictModel):
+    package_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    confirmed: StrictBool
+
+    @field_validator("confirmed")
+    @classmethod
+    def explicitly_confirmed(cls, value):
+        if value is not True:
+            raise ValueError("Explicit confirmation is required")
+        return value
 
 
 class EmployerAdmissionPolicy(StrictModel):

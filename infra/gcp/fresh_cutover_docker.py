@@ -37,6 +37,7 @@ CA = Path("/opt/homebrew/etc/ca-certificates/cert.pem")
 CA_SHA256 = "426806ef8b5e5711c484e53522ca10e2f103c0d514a6699bdf615d45134477a1"
 GCP_MANAGER = Path("/Users/harshil/.config/gcloud")
 GH_MANAGER = Path("/Users/harshil/.config/gh")
+HOST_AUTH = Path(__file__).with_name("fresh_cutover_host_auth.py")
 LABEL = "com.hirewiz.reviewed-cutover"
 
 
@@ -158,6 +159,70 @@ def bootstrap_password(deadline: float) -> str:
             process.wait(timeout=2)
 
 
+def ephemeral_host_authentication(deadline: float) -> dict[str, Any]:
+    """Normal SDK/keychain clients deliver only short-lived RAM credentials."""
+    public_pin(writes.LOCAL_PYTHON, writes.LOCAL_PYTHON_SHA256)
+    metadata = HOST_AUTH.lstat()
+    need(stat.S_ISREG(metadata.st_mode) and metadata.st_uid == 501
+         and not metadata.st_mode & 0o022, "docker_auth_helper_metadata_refused")
+    read, write = os.pipe()
+    process = None
+    try:
+        process = subprocess.Popen(
+            [str(writes.LOCAL_PYTHON), "-I", "-B", str(HOST_AUTH),
+             "--credential-fd", str(write)],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            pass_fds=(write,), env=environment(),
+        )
+        os.close(write)
+        write = -1
+        result = bytearray()
+        with selectors.DefaultSelector() as selected:
+            selected.register(read, selectors.EVENT_READ)
+            while selected.get_map():
+                need(time.monotonic() < deadline, "docker_auth_native_deadline")
+                for key, _ in selected.select(min(0.1, max(0, deadline - time.monotonic()))):
+                    chunk = os.read(key.fd, 16385 - len(result))
+                    if not chunk:
+                        selected.unregister(key.fd)
+                        continue
+                    result.extend(chunk)
+                    need(len(result) <= 16384, "docker_auth_pipe_bound")
+        need(process.wait(timeout=max(0.001, deadline - time.monotonic())) == 0,
+             "docker_auth_native_unavailable")
+        value = json.loads(result, object_pairs_hook=writes.native.object_pairs)
+        result.clear()
+        need(type(value) is dict and set(value) == {"google_access_token", "google_expires_at"}
+             and type(value["google_access_token"]) is str
+             and re.fullmatch(r"[A-Za-z0-9._~+/=-]{1,8192}", value["google_access_token"])
+             and type(value["google_expires_at"]) in {float, int}
+             and 3570 <= value["google_expires_at"] - time.time() <= 3660,
+             "docker_auth_shape_or_expiry_refused")
+        github = subprocess.run(
+            ["/opt/homebrew/bin/gh", "auth", "token", "--hostname=github.com"],
+            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            timeout=max(0.001, min(30, deadline - time.monotonic())),
+            check=False, env=environment(),
+        )
+        need(github.returncode == 0 and 0 < len(github.stdout) <= 8193,
+             "docker_github_normal_manager_unavailable")
+        token = github.stdout.decode("ascii").strip()
+        need(re.fullmatch(r"[A-Za-z0-9._~+/=-]{1,8192}", token), "docker_github_auth_shape_refused")
+        value["github_token"] = token
+        return value
+    except writes.WriteDenied:
+        raise
+    except Exception:
+        raise writes.WriteDenied("docker_auth_native_unavailable") from None
+    finally:
+        if write >= 0:
+            os.close(write)
+        os.close(read)
+        if process is not None and process.poll() is None:
+            process.kill()
+            process.wait(timeout=2)
+
+
 def run_argv(
     image: str, release: str, name: str, volume: str, nonce: str, inputs: Path
 ) -> list[str]:
@@ -239,7 +304,7 @@ def run_argv(
         image,
         "-I",
         "-B",
-        "/opt/hirewiz-release/checkout/infra/gcp/fresh_cutover_execute.py",
+        "/opt/hirewiz-release/checkout/infra/gcp/fresh_cutover_auth.py",
     ]
 
 
@@ -273,6 +338,7 @@ def local_barrier(value: dict[str, Any], workdir: Path) -> None:
         reader, f"projects/{writes.NUMBER}/secrets/{name}/versions/{version}"
     )
     need(state == "ENABLED" and type(dsn) is str, "docker_local_source_secret_unavailable")
+    assert isinstance(dsn, str)
     uri = make_url(dsn)
     need(
         uri.host == writes.source_sql.SOURCE_HOST
@@ -286,6 +352,7 @@ def local_barrier(value: dict[str, Any], workdir: Path) -> None:
         and uri.query.get("channel_binding") == "prefer",
         "docker_local_source_secret_target_refused",
     )
+    assert isinstance(uri.password, str)
     identity = writes.transfer.NativeDatabaseIdentity(
         writes.source_sql.SOURCE_HOST,
         5432,
@@ -468,6 +535,7 @@ def run(image: str, value: dict[str, Any], inputs: Path, workdir: Path) -> dict[
     finally:
         os.close(fd)
     command(["volume", "create", "--label", LABEL + "=" + nonce, volume], work_deadline)
+    transient_auth = ephemeral_host_authentication(min(work_deadline, time.monotonic() + 60))
     process = None
     ident = None
     terminal = None
@@ -490,6 +558,10 @@ def run(image: str, value: dict[str, Any], inputs: Path, workdir: Path) -> dict[
         assert (
             process.stdin is not None and process.stdout is not None and process.stderr is not None
         )
+        need(transient_auth["google_expires_at"] - time.time() >= 3545,
+             "docker_auth_expired_before_container_handoff")
+        process.stdin.write(json.dumps(transient_auth, separators=(",", ":")).encode() + b"\n")
+        transient_auth.clear()
         process.stdin.write(json.dumps(value, separators=(",", ":")).encode() + b"\n")
         process.stdin.flush()
         value["bootstrap_password"] = ""
@@ -590,6 +662,7 @@ def run(image: str, value: dict[str, Any], inputs: Path, workdir: Path) -> dict[
         assert terminal is not None
         return terminal
     finally:
+        transient_auth.clear()
         signal.setitimer(signal.ITIMER_REAL, 0)
         signal.signal(signal.SIGALRM, prior)
         # No signal to reused local CLI PIDs or unjoined containers. The joined

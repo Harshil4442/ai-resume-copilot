@@ -2,7 +2,8 @@
 
 No provider operations at import. Invoke only in the reviewed owned Docker
 container after concrete cutover approval. Stdin credentials never enter files,
-argv, environment, receipts or stdout. The host barrier is a wakeup, not proof.
+argv, receipts or stdout. The supported RAM wrapper supplies short-lived SDK
+tokens in process memory; the host barrier is a wakeup, not proof.
 """
 
 from __future__ import annotations
@@ -218,6 +219,7 @@ def execute(
     )
     boundary.verify_identity_and_policy(before_isolation)
     boundary.verify_admission_closed()
+    boundary.verify_document_preparation(before_isolation)
     origin = source_sql.original_owner(boundary, files)
     source_sql.preflight_source(origin)
     readiness = origin.connect()
