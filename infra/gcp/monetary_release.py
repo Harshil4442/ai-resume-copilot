@@ -29,44 +29,99 @@ PROJECT = "ai-resume-parser-482412"
 REGION = "us-central1"
 REPOSITORY = "Harshil4442/ai-resume-copilot"
 SERVICES = ("ai-resume-parser", "hirewiz-analysis-worker", "hirewiz-employer-worker")
-QUEUES = ("hirewiz-analysis", "hirewiz-employer-search", "hirewiz-employer-ingestion", "hirewiz-employer-application")
-CI_JOBS = {"backend", "frontend", "security-and-container", "browser-companion", "cold-browser-journey"}
+QUEUES = (
+    "hirewiz-analysis",
+    "hirewiz-employer-search",
+    "hirewiz-employer-ingestion",
+    "hirewiz-employer-application",
+)
+CI_JOBS = {
+    "backend",
+    "frontend",
+    "security-and-container",
+    "browser-companion",
+    "cold-browser-journey",
+}
 CUTOVER_CHAIN = (
-    "20261008_0009", "20261009_0010", "20261009_0011", "20261009_0012",
-    "20261009_0013", "20261010_0014", "20261011_0015", "20261011_0016",
+    "20261008_0009",
+    "20261009_0010",
+    "20261009_0011",
+    "20261009_0012",
+    "20261009_0013",
+    "20261010_0014",
+    "20261011_0015",
+    "20261011_0016",
 )
 CHAIN = (*source_guard.ALLOWED_CHAIN[:-1], *CUTOVER_CHAIN)
 SAFE_ENV = {
-    "APP_ENV": "production", "AUTO_DB_MIGRATE": "false",
-    "OPTIONAL_AI_GENERATION_ENABLED": "false", "EMPLOYER_AUTO_SUBMIT_ENABLED": "false",
+    "APP_ENV": "production",
+    "AUTO_DB_MIGRATE": "false",
+    "OPTIONAL_AI_GENERATION_ENABLED": "false",
+    "EMPLOYER_AUTO_SUBMIT_ENABLED": "false",
     "RAZORPAY_CHECKOUT_ENABLED": "false",
     "CANDIDATE_ACCOUNT_LIFECYCLE_ENABLED": "false",
-    "EMPLOYER_SEARCH_CREDITS_PER_JOB": "1", "EMPLOYER_APPLY_CREDITS_PER_JOB": "20",
+    "EMPLOYER_SEARCH_CREDITS_PER_JOB": "1",
+    "EMPLOYER_APPLY_CREDITS_PER_JOB": "20",
 }
-NATIVE_ENV = ("NATIVE_TEX_IMAGE", "NATIVE_TEX_COMPILER_URL", "NATIVE_TEX_IMAGE_DIGEST", "NATIVE_TEX_ISOLATION_POLICY_SHA256")
+NATIVE_ENV = (
+    "NATIVE_TEX_IMAGE",
+    "NATIVE_TEX_COMPILER_URL",
+    "NATIVE_TEX_IMAGE_DIGEST",
+    "NATIVE_TEX_ISOLATION_POLICY_SHA256",
+)
 MODEL_API_BASE = "https://generativelanguage.googleapis.com"
 MODEL_ENV = ("LLM_MODEL", "LLM_API_BASE", "LLM_MODEL_COST_POLICY_JSON", "LLM_API_KEY")
 # Retire legacy/vendor selectors without touching project, task or payment settings.
-MODEL_ALIASES = ("GEMINI_API_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL", "GOOGLE_GENAI_USE_VERTEXAI")
+MODEL_ALIASES = (
+    "GEMINI_API_KEY",
+    "GOOGLE_API_KEY",
+    "OPENAI_API_KEY",
+    "OPENAI_BASE_URL",
+    "GOOGLE_GENAI_USE_VERTEXAI",
+)
 MAX_JSON = 131072
 ERASABLE_TABLES = {
-    "users", "user_profiles", "resumes", "job_matches", "skill_coverage",
-    "opportunities", "application_events", "resume_versions", "evidence_items",
-    "reminders", "opportunity_contacts", "career_memory_entries", "notification_outbox",
-    "model_call_events", "dispatch_outbox", "analysis_request_keys", "usage_events",
-    "analysis_runs", "candidate_password_accounts", "employer_application_approvals",
-    "employer_application_attempts", "employer_applications", "employer_application_batches",
-    "sealed_application_artifacts", "employer_job_deliveries", "employer_searches",
+    "users",
+    "user_profiles",
+    "resumes",
+    "job_matches",
+    "skill_coverage",
+    "opportunities",
+    "application_events",
+    "resume_versions",
+    "evidence_items",
+    "reminders",
+    "opportunity_contacts",
+    "career_memory_entries",
+    "notification_outbox",
+    "model_call_events",
+    "dispatch_outbox",
+    "analysis_request_keys",
+    "usage_events",
+    "analysis_runs",
+    "candidate_password_accounts",
+    "employer_application_approvals",
+    "employer_application_attempts",
+    "employer_applications",
+    "employer_application_batches",
+    "sealed_application_artifacts",
+    "employer_job_deliveries",
+    "employer_searches",
     "employer_artifact_uploads",
-    "employer_paid_delivery_history", "employer_paid_opening_registry",
-    "employer_paid_history_progress", "employer_search_history_progress",
-    "employer_search_history_seen", "employer_search_history_nodes",
-    "employer_search_preparations", "employer_catalogue_snapshots",
-    "employer_catalogue_snapshot_items", "employer_catalogue_winners",
+    "employer_paid_delivery_history",
+    "employer_paid_opening_registry",
+    "employer_paid_history_progress",
+    "employer_search_history_progress",
+    "employer_search_history_seen",
+    "employer_search_history_nodes",
+    "employer_search_preparations",
+    "employer_catalogue_snapshots",
+    "employer_catalogue_snapshot_items",
+    "employer_catalogue_winners",
     # Ordinary revision pruning also needs DELETE; financial history does not.
-    "employer_catalogue_source_revisions", "employer_catalogue_posting_revisions",
+    "employer_catalogue_source_revisions",
+    "employer_catalogue_posting_revisions",
 }
-
 
 
 class ReleaseDenied(RuntimeError):
@@ -141,23 +196,36 @@ class Plan:
             raise ReleaseDenied("release_plan_identity_invalid")
 
 
-
 @dataclass(frozen=True)
 class FreshTargetPlan:
     """Separate numeric destination sources; never reinterpret the source plan."""
+
     runtime_secret: str
     migration_secret: str
     observer_secret: str
 
     def validate(self, source: Plan) -> None:
+        source.validate()
         refs = (self.runtime_secret, self.migration_secret, self.observer_secret)
-        if any(type(ref) is not str or re.fullmatch(
-                r"[a-z][a-z0-9-]{2,62}:[1-9][0-9]{0,8}", ref) is None for ref in refs):
+        if any(
+            type(ref) is not str
+            or re.fullmatch(r"[a-z][a-z0-9-]{2,62}:[1-9][0-9]{0,8}", ref) is None
+            for ref in refs
+        ):
             raise ReleaseDenied("fresh_target_secret_identity_invalid")
         names = {ref.split(":")[0] for ref in refs}
-        old_names = {ref.split(":")[0] for ref in (
-            source.runtime_secret, source.migration_secret, source.observer_secret,
-            source.expense_secret, source.model_policy_secret, source.model_key_secret)}
+        old_names = {
+            ref.split(":")[0]
+            for ref in (
+                source.runtime_secret,
+                source.migration_secret,
+                source.observer_secret,
+                source.expense_secret,
+                source.model_policy_secret,
+                source.model_key_secret,
+            )
+            if ref
+        }
         if len(names) != 3 or names & old_names:
             raise ReleaseDenied("source_and_fresh_secret_classes_overlap")
 
@@ -933,7 +1001,6 @@ def verify_ci_checkout_contract(root: Path) -> None:
         checkouts = [step for step in job.get("steps", []) if str(step.get("uses", "")).startswith("actions/checkout@")]
         if len(checkouts) != 1 or checkouts[0].get("with", {}).get("ref") != "${{ github.event.pull_request.head.sha || github.sha }}":
             raise ReleaseDenied("reviewed_ci_checkout_contract_mismatch")
-
 
 
 def verify_fresh_role_phase(

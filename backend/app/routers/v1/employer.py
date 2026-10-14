@@ -20,6 +20,9 @@ from ...domains.employer import (
     search_pages,
     service,
 )
+from ...domains.employer import (
+    credit_history as service_credit_history,
+)
 from ...security import decode_access_token_user_id, get_current_user, oauth2_scheme
 from .admin import require_admin
 
@@ -188,13 +191,16 @@ def preview_artifact(identity: str, db: Session = Depends(get_db), user: core.Us
     })
 
 
-@router.get("/credits")
-def credit_history(limit: int = Query(100, ge=1, le=200), db: Session = Depends(get_db), user: core.User = Depends(get_current_user)):
-    events = db.query(models.ServiceCreditEvent).filter_by(user_id=user.id).order_by(models.ServiceCreditEvent.created_at.desc()).limit(limit).all()
-    held = db.query(models.ServiceCreditReservation).filter_by(user_id=user.id, state="reserved").all()
-    return {"balance": int(user.job_service_credits or 0), "reserved_credits": sum(row.reserved_amount for row in held),
-            "reservations": [{key: getattr(row, key) for key in ("id", "operation", "source_id", "reserved_amount", "state", "created_at")} for row in held],
-            "items": [{key: getattr(row, key) for key in ("id", "event_type", "amount", "balance_after", "source_type", "source_id", "reason", "created_at")} for row in events]}
+@router.get("/credits", response_model=service_credit_history.ServiceCreditHistory)
+def credit_history(response: Response, limit: int = Query(100, ge=1, le=200),
+                   cursor: str | None = Query(None, min_length=1, max_length=64),
+                   operation: str | None = Query(None, pattern="^(job_search|job_application)$"),
+                   db: Session = Depends(get_db), user: core.User = Depends(get_current_user)):
+    response.headers["Cache-Control"] = "private, no-store"
+    return service_credit_history.history(db, user.id, balance=int(user.job_service_credits or 0),
+                                         reservation_model=models.ServiceCreditReservation,
+                                         event_model=models.ServiceCreditEvent,
+                                         limit=limit, cursor=cursor, operation=operation)
 
 
 @router.post("/applications/{identity}/reconcile")

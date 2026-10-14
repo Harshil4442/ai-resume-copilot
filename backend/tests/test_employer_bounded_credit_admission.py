@@ -27,7 +27,10 @@ def bounded_db(catalogue_db, monkeypatch):
 
 
 def _payload(key):
-    return schemas.SearchCreate(resume_id=10, role="Software engineer", desired_count=3, idempotency_key=key)
+    prices = config.prices()
+    return schemas.SearchCreate(resume_id=10, role="Software engineer", desired_count=3, idempotency_key=key,
+        accepted_quote=schemas.SearchPriceAcceptance(pricing_version=prices["pricing_version"],
+            unit_price=prices["search_credits_per_job"], maximum_credits=3 * prices["search_credits_per_job"]))
 
 
 def _hold(db, identity):

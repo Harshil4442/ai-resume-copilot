@@ -13,13 +13,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "../../components/ui/Button";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { LoadingBlock } from "../../components/ui/LoadingBlock";
-import { apiGet, apiPostJson } from "../../lib/api";
-import { applicationStatusLabels, batchEligibility, employerJobsBase, isSearchPreparation, readSavedSearchQuery, searchSummary, type EmployerApplication, type EmployerSavedResultPage, type EmployerSearchCreateResult, type EmployerSearchPreparation, type EmployerSearchSummary, type JobServiceCatalog } from "../../lib/employerJobs";
+import { ApiError, apiGet, apiPostJson } from "../../lib/api";
+import { applicationStatusLabels, batchEligibility, employerJobsBase, isSearchPreparation, readSavedSearchQuery, searchSummary, type EmployerApplication, type EmployerSavedResultPage, type EmployerSearchCreateResult, type EmployerSearchPreparation, type EmployerSearchSummary, type JobServiceCatalog, type SearchPriceAcceptance } from "../../lib/employerJobs";
 import type { ResumeListResponse } from "../../lib/types";
 
 const ApplicationPanel = dynamic(() => import("../../components/EmployerApplicationPanel"), { loading: () => <LoadingBlock rows={2} /> });
 const BatchPanel = dynamic(() => import("../../components/EmployerBatchPanel"), { loading: () => <LoadingBlock rows={2} /> });
 const dateLabel = (value: string) => new Date(value).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+const needsSearchPriceReview = (error: unknown) => error instanceof ApiError &&
+  (error.detail as { detail?: { code?: string } } | null)?.detail?.code === "search_price_requires_review";
 
 export default function EmployerJobsPage() {
   const client = useQueryClient();
@@ -33,6 +35,8 @@ export default function EmployerJobsPage() {
   const [excludedEmployers, setExcludedEmployers] = useState<string[]>([]);
   const preferenceChoice = preferenceInput(preferences);
   const [recoverableQuery, setRecoverableQuery] = useState<string | null>(null);
+  const [recoverableQuote, setRecoverableQuote] = useState<SearchPriceAcceptance | null>(null);
+  const [priceRefreshRequired, setPriceRefreshRequired] = useState(false);
   const [activeSearch, setActiveSearch] = useState<EmployerSearchSummary | null>(null);
   const [preparation, setPreparation] = useState<EmployerSearchPreparation | null>(null);
   const preparationSelection = useRef<string | null>(null);
@@ -42,17 +46,21 @@ export default function EmployerJobsPage() {
   const [selectedApplications, setSelectedApplications] = useState<string[]>([]);
   const [batchReview, setBatchReview] = useState<{ id?: string; selected?: EmployerApplication[] } | null>(null);
   const applicationIntent = useRef<{ fingerprint: string; key: string } | null>(null);
-  const intent = useRef<{ fingerprint: string; key: string } | null>(null);
+  const intent = useRef<{ fingerprint: string; key: string; acceptedQuote: SearchPriceAcceptance } | null>(null);
   const catalog = useQuery({ queryKey: ["employer-jobs", "catalog"], queryFn: ({ signal }) => apiGet<JobServiceCatalog>(`${employerJobsBase}/catalog`, signal) });
   const resumes = useQuery({ queryKey: ["resumes"], queryFn: ({ signal }) => apiGet<ResumeListResponse>("/resume/list", signal) });
   const applications = useQuery({ queryKey: ["employer-jobs", "applications"], queryFn: ({ signal }) => apiGet<{ items: EmployerApplication[] }>(`${employerJobsBase}/applications`, signal) });
   const requestedCount = Number(count);
   const validCount = Number.isInteger(requestedCount) && requestedCount >= 1 && requestedCount <= (catalog.data?.max_search_jobs ?? 0);
-  const estimated = validCount && catalog.data ? requestedCount * catalog.data.search_credits_per_job : null;
+  const priceReady = Boolean(catalog.data?.pricing_version) && Number.isSafeInteger(catalog.data?.search_credits_per_job) && (catalog.data?.search_credits_per_job ?? 0) > 0;
+  const estimated = validCount && priceReady && catalog.data ? requestedCount * catalog.data.search_credits_per_job : null;
   const enoughCredits = estimated !== null && catalog.data !== undefined && catalog.data.balance >= estimated;
   const query = { resume_id: Number(resumeId), role: role.trim(), location: location.trim(), desired_count: requestedCount, remote_only: remote, published_within_days: days ? Number(days) : null, excluded_employers: excludedEmployers, preferences: preferenceChoice.preferences };
   const fingerprint = JSON.stringify(query);
   const recovering = recoverableQuery === fingerprint;
+  const retainedQuote = recovering ? recoverableQuote : null;
+  const displayedMaximum = retainedQuote?.maximum_credits ?? estimated;
+  const displayedUnitPrice = retainedQuote?.unit_price ?? catalog.data?.search_credits_per_job;
 
   const refreshBalances = useCallback(() => {
     window.dispatchEvent(new Event("refresh_analysis_units"));
@@ -60,10 +68,11 @@ export default function EmployerJobsPage() {
     void client.invalidateQueries({ queryKey: ["employer-jobs", "applications"] });
   }, [client]);
   const search = useMutation({
+    retry: false,
     mutationFn: async () => {
-      if (!catalog.data?.enabled || !validCount || preferenceChoice.error !== null || !resumeId || !role.trim() || (!enoughCredits && !recovering)) throw new Error("Check your resume, role, job count and service credit balance before searching.");
-      if (intent.current?.fingerprint !== fingerprint) intent.current = { fingerprint, key: crypto.randomUUID() };
-      return apiPostJson<EmployerSearchCreateResult>(`${employerJobsBase}/searches`, { ...query, idempotency_key: intent.current.key });
+      if (!catalog.data?.enabled || estimated === null || priceRefreshRequired || !validCount || preferenceChoice.error !== null || !resumeId || !role.trim() || (!enoughCredits && !recovering)) throw new Error("Check your resume, role, job count and service credit balance before searching.");
+      if (intent.current?.fingerprint !== fingerprint) intent.current = { fingerprint, key: crypto.randomUUID(), acceptedQuote: { pricing_version: catalog.data.pricing_version, unit_price: catalog.data.search_credits_per_job, maximum_credits: estimated } };
+      return apiPostJson<EmployerSearchCreateResult>(`${employerJobsBase}/searches`, { ...query, accepted_quote: intent.current.acceptedQuote, idempotency_key: intent.current.key });
     },
     onSuccess: (result) => {
       setPreparationError(null);
@@ -72,7 +81,15 @@ export default function EmployerJobsPage() {
       setPreparation(null); setActiveSearch(searchSummary(result)); intent.current = null; setRecoverableQuery(null);
       void client.invalidateQueries({ queryKey: ["employer-jobs", "search-summaries"] }); refreshBalances();
     },
-    onError: () => { setRecoverableQuery(intent.current?.fingerprint ?? null); refreshBalances(); },
+    onError: async (error) => {
+      if (needsSearchPriceReview(error)) {
+        intent.current = null; setRecoverableQuery(null); setRecoverableQuote(null); setPriceRefreshRequired(true);
+        const refreshed = await catalog.refetch();
+        if (!refreshed.isError && refreshed.data?.pricing_version) setPriceRefreshRequired(false);
+        return;
+      }
+      setRecoverableQuery(intent.current?.fingerprint ?? null); setRecoverableQuote(intent.current?.acceptedQuote ?? null); refreshBalances();
+    },
   });
   const reviewPreparation = useMutation({
     mutationFn: (identity: string) => apiGet<EmployerSearchPreparation>(`${employerJobsBase}/search-preparations/${encodeURIComponent(identity)}`),
@@ -157,8 +174,9 @@ export default function EmployerJobsPage() {
             <div className="grid grid-cols-2 gap-3"><label className="grid gap-2 text-sm font-semibold">Jobs to find<input className="field-control" type="number" min={1} max={catalog.data?.max_search_jobs ?? 100} step={1} value={count} onChange={(event) => setCount(event.target.value)} disabled={searchBusy} required /></label><label className="grid gap-2 text-sm font-semibold">Published/released within<select className="field-control" value={days} onChange={(event) => setDays(event.target.value)} disabled={searchBusy}><option value="">Any date</option><option value="7">7 days</option><option value="30">30 days</option><option value="90">90 days</option></select></label></div><p className="text-xs leading-5 text-muted-foreground">Dates may reflect republishing. A date window excludes postings whose publication date is unknown.</p>
             <label className="flex items-center gap-3 text-sm"><input type="checkbox" className="h-4 w-4 accent-primary" checked={remote} onChange={(event) => setRemote(event.target.checked)} disabled={searchBusy} />Remote roles only</label>
             <EmployerSearchPreferences value={preferences} onChange={setPreferences} disabled={searchBusy} error={preferenceChoice.error} />
-            <div className="rounded-lg bg-surface p-4 text-sm leading-6" id="search-cost"><p className="font-semibold">{estimated !== null ? `Up to ${estimated} service credits` : "Checking search price…"}</p><p className="mt-1 text-xs text-muted-foreground">{catalog.data ? `${catalog.data.search_credits_per_job} per new verified job delivered. Unused reservations are returned. Search does not apply to jobs.` : "Prices and availability come from the server."}</p></div>
-            <Button type="submit" className="min-h-11 w-full" aria-describedby="search-cost" disabled={!catalog.data?.enabled || !validCount || preferenceChoice.error !== null || !resumeId || !role.trim() || (!enoughCredits && !recovering) || searchBusy}>{searchBusy ? <LoaderCircle size={16} className="animate-spin" /> : <Search size={16} />}{searchBusy ? "Finding employer jobs…" : "Find jobs"}</Button>
+            <div className="rounded-lg bg-surface p-4 text-sm leading-6" id="search-cost"><p className="font-semibold">{displayedMaximum !== null ? `Up to ${displayedMaximum} service credits` : "Checking search price…"}</p><p className="mt-1 text-xs text-muted-foreground">{displayedUnitPrice !== undefined ? `${displayedUnitPrice} per new verified job delivered. Unused reservations are returned. Search does not apply to jobs.` : "Prices and availability come from the server."}</p>{retainedQuote ? <p className="mt-2 text-xs leading-5 text-muted-foreground">Checking your existing request at its originally accepted price. Retrying checks that request before starting any new paid search.</p> : null}</div>
+            <Button type="submit" className="min-h-11 w-full" aria-describedby="search-cost" disabled={!catalog.data?.enabled || estimated === null || priceRefreshRequired || !validCount || preferenceChoice.error !== null || !resumeId || !role.trim() || (!enoughCredits && !recovering) || searchBusy}>{searchBusy ? <LoaderCircle size={16} className="animate-spin" /> : <Search size={16} />}{searchBusy ? "Finding employer jobs…" : "Find jobs"}</Button>
+            {priceRefreshRequired ? <p role="status" className="text-xs leading-5 text-muted-foreground">Refresh the price before starting. <button type="button" className="underline text-primary" disabled={catalog.isFetching} onClick={async () => { const refreshed = await catalog.refetch(); if (!refreshed.isError && refreshed.data?.pricing_version) setPriceRefreshRequired(false); }}>Refresh search price</button></p> : null}
             {catalog.isError ? <p role="alert" className="text-sm text-coral">Could not read prices and availability. <button type="button" className="underline" onClick={() => void catalog.refetch()}>Retry</button></p> : catalog.data && !catalog.data.enabled ? <p className="text-xs leading-5 text-muted-foreground">Employer search is not enabled yet. You can continue tracking roles in <Link href="/workspace" className="underline text-primary">Workspace</Link>.</p> : estimated !== null && !enoughCredits && !recovering ? <p className="text-xs leading-5 text-muted-foreground">You need {estimated} service credits for this search. <Link className="underline text-primary" href="/billing">Review credit packs</Link>.</p> : null}
           </div>
         </form>
@@ -166,7 +184,7 @@ export default function EmployerJobsPage() {
         <EmployerSearchHistory selectedId={activeSearch?.id} onSelect={(item) => { const savedQuery = readSavedSearchQuery(item.query); setPreparation(null); setPreparationError(null); preparationSelection.current = item.status !== "completed" ? item.id : null; if (item.status !== "completed") { setActiveSearch(null); reviewPreparation.mutate(item.id); } else setActiveSearch(item); setResumeId(savedQuery ? String(savedQuery.resume_id) : ""); setRole(savedQuery?.role ?? ""); setLocation(savedQuery?.location ?? ""); setRemote(savedQuery?.remote_only ?? false); setDays(savedQuery?.published_within_days ? String(savedQuery.published_within_days) : ""); setCount(savedQuery ? String(savedQuery.desired_count ?? item.desired_count) : ""); setPreferences(preferenceDraft(savedQuery?.preferences)); setExcludedEmployers(savedQuery?.excluded_employers ?? []); }} />
       </aside>
       <div className="min-w-0 space-y-8">
-        {search.isError ? <div role="alert" className="rounded-lg border border-coral/30 bg-coral/5 p-4 text-sm leading-6 text-coral">{search.error.message} If the request was interrupted, retry the same search to check its existing result before starting a different paid search.</div> : null}
+        {search.isError ? <div role="alert" className="rounded-lg border border-coral/30 bg-coral/5 p-4 text-sm leading-6 text-coral">{search.error.message} {needsSearchPriceReview(search.error) ? "Review the refreshed maximum above and click Find jobs again when ready." : "If the request was interrupted, retry the same search to check its existing result before starting a different paid search."}</div> : null}
         {reviewPreparation.isError ? <p role="alert" className="text-sm text-coral">Could not open search progress. Select the search again to retry; its reserved credits and results are unchanged.</p> : null}
         {reviewPreparation.isPending ? <div role="status" aria-label="Opening search progress"><LoadingBlock rows={2} /></div> : null}
         {prepare.isError ? <p role="alert" className="text-sm text-coral">{prepare.error.message}</p> : null}

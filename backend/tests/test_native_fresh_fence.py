@@ -401,3 +401,14 @@ def test_auth_refuses_wrong_target_or_surviving_old_role_session(prepared, defec
     with pytest.raises(release.ReleaseDenied, match=reason):
         boundary._authenticate_empty_replacement(neon, binding, target)
     assert target.disposed
+
+
+def test_concurrent_native_timeout_refuses_and_invalidates_cut(prepared, monkeypatch):
+    boundary, source, *_ = ready(prepared)
+    def timeout(*_):
+        raise TimeoutError("synthetic-private-vendor-detail")
+    monkeypatch.setattr(boundary.reads, "get", timeout)
+    with pytest.raises(release.ReleaseDenied, match="^fence_native_observation_expired$") as error:
+        boundary.verify_fences(source)
+    assert "synthetic-private-vendor-detail" not in str(error.value)
+    assert boundary.retired_since is None

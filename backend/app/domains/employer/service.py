@@ -161,7 +161,7 @@ def _json_posting(posting, source):
 
 def _search_input(payload: schemas.SearchCreate) -> dict:
     # Keep the exact historical fingerprint for clients which omit preferences.
-    excluded = {"idempotency_key"} | ({"preferences"} if payload.preferences is None else set())
+    excluded = {"idempotency_key", "accepted_quote"} | ({"preferences"} if payload.preferences is None else set())
     return payload.model_dump(mode="json", exclude=excluded)
 
 
@@ -243,6 +243,11 @@ def _admit_bounded_search(db, user_id, payload):
             raise HTTPException(409, "This request key was already used with different search settings")
         db.commit()
         return existing
+    try:
+        prices = config.prices()
+    except CostPolicyUnavailable as exc:
+        raise HTTPException(503, detail=str(exc)) from None
+    config.validate_search_price(payload, prices)
     old = db.query(models.ServiceCreditReservation).filter_by(user_id=user_id, source_id=search_id,
         operation="job_search").populate_existing().with_for_update(nowait=True).first()
     if old is not None:
@@ -252,10 +257,6 @@ def _admit_bounded_search(db, user_id, payload):
             db.commit()
         raise HTTPException(409, {"code": "search_reservation_requires_review",
             "message": "This earlier search preparation needs review. Start a new search request."})
-    try:
-        prices = config.prices()
-    except CostPolicyUnavailable as exc:
-        raise HTTPException(503, detail=str(exc)) from None
     if payload.desired_count > int(prices["max_search_jobs"]):
         raise HTTPException(422, "Requested job count exceeds the current service limit")
     reservation = credits.reserve(db, user_id=user_id, operation="job_search", source_id=search_id,

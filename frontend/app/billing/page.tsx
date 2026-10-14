@@ -20,6 +20,7 @@ import {
 import { apiGet, apiPostJson } from "../../lib/api";
 import { Button } from "../../components/ui/Button";
 import { LoadingBlock } from "../../components/ui/LoadingBlock";
+import { ServiceCreditHistory } from "../../components/billing/ServiceCreditHistory";
 import { trackEvent } from "../../lib/analytics";
 
 const RAZORPAY_CHECKOUT_SRC = "https://checkout.razorpay.com/v1/checkout.js";
@@ -661,8 +662,10 @@ function BillingContent({ requestedSku }: { requestedSku: string | null }) {
           </div>
         )}
 
+        <ServiceCreditHistory refreshKey={currentOrder?.fulfilled ? currentOrder.order_id : ""} />
+
         <section className="border-t border-border pt-8" aria-labelledby="usage-history-heading">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><p className="data-label">Durable ledger</p><h2 id="usage-history-heading" className="font-display mt-2 flex items-center gap-2 text-2xl font-normal text-foreground"><History size={20} className="text-primary" /> Usage history</h2><p className="mt-2 text-sm text-muted-foreground">Reservations, completed operations, legacy access events, and automatic releases.</p></div><p className="text-sm font-bold text-foreground">Current balance: <span className="text-primary">{analysisUnits}</span></p></div>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><p className="data-label">Analysis units</p><h2 id="usage-history-heading" className="font-display mt-2 flex items-center gap-2 text-2xl font-normal text-foreground"><History size={20} className="text-primary" /> Analysis history</h2><p className="mt-2 text-sm text-muted-foreground">AI reservations, completed operations, legacy access events, and automatic releases.</p></div><p className="text-sm font-bold text-foreground">Current balance: <span className="text-primary">{analysisUnits}</span> units</p></div>
           {usageLoading ? <div className="mt-6"><LoadingBlock rows={4} /></div> : usageHistory?.items.length ? <div className="mt-6 divide-y divide-border border-y border-border">{usageHistory.items.map((event) => <div key={event.id} className="grid gap-2 py-4 sm:grid-cols-[1fr_auto_auto] sm:items-center sm:gap-6"><div><p className="text-sm font-bold text-foreground">{usageEventLabel(event)}</p><p className="mt-1 text-xs text-muted-foreground">{new Date(event.created_at).toLocaleString("en-IN")}{event.analysis_run_id ? ` | Run ${event.analysis_run_id.slice(-8)}` : ""}</p></div><p className={`text-sm font-semibold ${event.amount > 0 ? "text-primary" : event.amount < 0 ? "text-primary" : "text-muted-foreground"}`}>{event.amount > 0 ? "+" : ""}{event.amount} units</p><p className="text-xs text-muted-foreground sm:text-right">Balance {event.balance_after}</p></div>)}</div> : <p className="mt-6 border-y border-border py-7 text-sm text-muted-foreground">No analysis-unit activity yet.</p>}
         </section>
       </div>

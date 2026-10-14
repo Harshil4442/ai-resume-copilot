@@ -178,7 +178,7 @@ def test_requisition_aliases_deduplicate_discovery_billing_and_preparation(conte
         for row in db.query(models.EmployerPosting):
             row.requisition_id = "public-req-123"
         db.commit()
-    result = client.post("/api/v1/employer-jobs/searches", json={"resume_id": 10, "role": "Python", "desired_count": 2, "idempotency_key": "canonical-search-1"}).json()
+    result = client.post("/api/v1/employer-jobs/searches", json={"resume_id": 10, "role": "Python", "desired_count": 2, "idempotency_key": "canonical-search-1", "accepted_quote": original._search_quote(client, 2)}).json()
     assert (result["delivered_count"], result["charged_credits"]) == (1, 1)
     first = original._prepare(context)
     denied = client.post("/api/v1/employer-jobs/applications", json={"posting_id": "job_2", "resume_id": 10, "idempotency_key": "locale-alias-app"})

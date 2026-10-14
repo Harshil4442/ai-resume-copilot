@@ -22,7 +22,7 @@ test("preferences bind paid search retries, restore saved choices and remain usa
     if (path === "/auth/profile") value = { email: "fixture@example.com", tier: "premium", ai_credits: 500, job_service_credits: 100, profile_completeness: 80, full_name: "Fixture" };
     else if (path === "/v1/features") value = { features: { career_workspace: { enabled: true } } };
     else if (path === "/resume/list") value = { resumes: [{ id: 10, filename: "Fixture.pdf", source_available: true, source_format: "pdf" }] };
-    else if (path === "/v1/employer-jobs/catalog") value = { enabled: true, auto_submit_enabled: false, search_credits_per_job: 2, apply_credits_per_job: 7, max_search_jobs: 20, balance: 100, sources: [] };
+    else if (path === "/v1/employer-jobs/catalog") value = { enabled: true, auto_submit_enabled: false, search_credits_per_job: 2, apply_credits_per_job: 7, pricing_version: "fixture-price", max_search_jobs: 20, balance: 100, sources: [] };
     else if (path === "/v1/employer-jobs/applications") value = { items: [] };
     else if (path === "/v1/employer-jobs/search-summaries" && method === "GET") {
       savedReads.push({ path, method });

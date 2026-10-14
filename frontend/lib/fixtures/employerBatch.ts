@@ -2,7 +2,7 @@ import type { AdmissionLimits, EmployerApplication, EmployerApplicationBatch, Jo
 
 // Synthetic packages for local tests only; no real tenant or candidate data.
 export const batchLimits: AdmissionLimits = { version: "fixture-admissions-v1", daily_limit: 10, rolling_limit: 50, rolling_days: 30, pending_limit: 10, daily_credit_limit: 100, rolling_credit_limit: 500, batch_limit: 10, batch_credit_limit: 100, quote_hours: 24, day_boundary: "UTC", counting_policy: "pending_and_unknown_plus_possible_sends_in_window" };
-export const batchCatalog: JobServiceCatalog = { enabled: true, auto_submit_enabled: true, search_credits_per_job: 2, apply_credits_per_job: 99, max_search_jobs: 20, balance: 100, admission_limits: batchLimits, sources: [{ id: "src_batch_fixture", employer: "Example Studio", platform: "greenhouse", careers_url: "https://employer.example/careers", last_success_at: "2026-10-08T10:00:00Z", status: "healthy", application_mode: "api" }] };
+export const batchCatalog: JobServiceCatalog = { enabled: true, auto_submit_enabled: true, search_credits_per_job: 2, apply_credits_per_job: 99, pricing_version: "fixture-price", max_search_jobs: 20, balance: 100, admission_limits: batchLimits, sources: [{ id: "src_batch_fixture", employer: "Example Studio", platform: "greenhouse", careers_url: "https://employer.example/careers", last_success_at: "2026-10-08T10:00:00Z", status: "healthy", application_mode: "api" }] };
 export function batchApplication(number: number): EmployerApplication {
   const opening = `opening_fixture_${number}`;
   const price = number === 1 ? 7 : 11;

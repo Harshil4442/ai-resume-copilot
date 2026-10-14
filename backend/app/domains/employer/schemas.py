@@ -12,6 +12,12 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
 
+class SearchPriceAcceptance(StrictModel):
+    pricing_version: str = Field(min_length=1, max_length=160)
+    unit_price: int = Field(gt=0, le=1000, strict=True)
+    maximum_credits: int = Field(gt=0, le=100_000, strict=True)
+
+
 class SearchCreate(StrictModel):
     resume_id: int = Field(gt=0)
     role: str = Field(min_length=2, max_length=200)
@@ -21,6 +27,9 @@ class SearchCreate(StrictModel):
     published_within_days: int | None = Field(default=None, ge=1, le=365)
     excluded_employers: list[Annotated[str, Field(max_length=200)]] = Field(default_factory=list, max_length=100)
     preferences: SearchPreferencesV1 | None = None
+    # Historical saved queries omit this field. New admission refuses a missing
+    # acceptance before reserving funds; it is never a legacy charging fallback.
+    accepted_quote: SearchPriceAcceptance | None = None
     idempotency_key: str = Field(min_length=8, max_length=160, pattern=r"^[A-Za-z0-9_.:-]+$")
 
 

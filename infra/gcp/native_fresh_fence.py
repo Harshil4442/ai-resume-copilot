@@ -40,7 +40,6 @@ SETUP_REFERENCES = {
 SA_EMAIL = re.compile(r"[a-z0-9_-]{1,63}@[a-z0-9.-]{1,100}\.gserviceaccount\.com")
 
 
-
 def need(value: Any, code: str) -> None:
     if not value:
         raise release.ReleaseDenied(code)
@@ -164,18 +163,23 @@ class BoundScope:
     retired_source_actors: tuple[str, ...]
 
 
-
-
 class NativeFreshFenceBoundary(fresh.FreshNativeBoundary):
     """Positive native composition for fresh orchestration, never in-place DDL."""
 
-    def __init__(self, root: Path, target: release.FreshTargetPlan,
-                 reads: SDKGoogleReads, **native_options: Any):
+    def __init__(
+        self,
+        root: Path,
+        target: release.FreshTargetPlan,
+        reads: SDKGoogleReads,
+        **native_options: Any,
+    ):
         super().__init__(root, **native_options)
         self.target, self.reads = target, reads
         self.scope: BoundScope | None = None
         self.retired_since: datetime | None = None
         self._setup_passwords: dict[str, str] = {}
+        self._source_old_passwords: tuple[str, ...] = ()
+        self._source_isolated_at: datetime | None = None
         self._authenticated_replacements: tuple[str, str, str] | None = None
 
     def migrate(self, plan: release.Plan, expected: str, target: str) -> None:
@@ -203,8 +207,12 @@ class NativeFreshFenceBoundary(fresh.FreshNativeBoundary):
         need(self.scope is None, "fence_authority_scope_already_bound")
         source.validate()
         self.target.validate(source)
-        inventory_module = self._module("backend/scripts/legacy_credential_inventory.py", "hirewiz_native_fence_retained")
-        key_module = self._module("backend/scripts/model_key_revocation_observer.py", "hirewiz_native_fence_keys")
+        inventory_module = self._module(
+            "backend/scripts/legacy_credential_inventory.py", "hirewiz_native_fence_retained"
+        )
+        key_module = self._module(
+            "backend/scripts/model_key_revocation_observer.py", "hirewiz_native_fence_keys"
+        )
         captured: dict[tuple[str, str], dict[str, Any]] = {}
         owner = self
 
@@ -222,32 +230,48 @@ class NativeFreshFenceBoundary(fresh.FreshNativeBoundary):
             if credential.kind == "model":
                 relevant_resources.update(origin.resource for origin in credential.origins)
             elif inventory_module.make_url(credential.value).host in {
-                neon.RELEASE_DIRECT_HOST, neon.RELEASE_POOLER_HOST,
+                neon.RELEASE_DIRECT_HOST,
+                neon.RELEASE_POOLER_HOST,
             }:
                 relevant_resources.update(origin.resource for origin in credential.origins)
         # SQL closure independently covers every selected-source application
         # writer. A historical DSN alone grants no new-cluster/model authority.
         # A model alias or a mount in a relevant credential producer is unresolved.
-        unresolved = [row for row in retained.unresolved if (
-            row.origin.environment_name in inventory_module.MODEL_NAMES
-            or row.origin.environment_name and not row.origin.environment_name.startswith(("DB_", "DATABASE_", "POSTGRES_", "PG_"))
-            or not row.origin.environment_name and row.origin.resource in relevant_resources
-        )]
+        unresolved = [
+            row
+            for row in retained.unresolved
+            if (
+                row.origin.environment_name in inventory_module.MODEL_NAMES
+                or row.origin.environment_name
+                and not row.origin.environment_name.startswith(
+                    ("DB_", "DATABASE_", "POSTGRES_", "PG_")
+                )
+                or not row.origin.environment_name
+                and row.origin.resource in relevant_resources
+            )
+        ]
         need(not unresolved, "fence_relevant_model_credential_source_unmapped")
         old_keys: dict[str, NativeKey] = {}
         for credential in retained.credentials:
             if credential.kind != "model":
                 continue
             names = {origin.environment_name for origin in credential.origins}
-            need(names <= {"LLM_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"},
-                 "fence_non_google_model_issuer_native_retirement_unavailable")
-            need(re.fullmatch(r"AIza[A-Za-z0-9_-]{35}", credential.value),
-                 "fence_model_issuer_native_binding_unavailable")
+            need(
+                names <= {"LLM_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"},
+                "fence_non_google_model_issuer_native_retirement_unavailable",
+            )
+            need(
+                re.fullmatch(r"AIza[A-Za-z0-9_-]{35}", credential.value),
+                "fence_model_issuer_native_binding_unavailable",
+            )
             lookup = self._get("keys", "keys:lookupKey", {"keyString": credential.value})
             name = lookup.get("name")
-            need(type(name) is str and KEY.fullmatch(name)
-                 and lookup.get("parent") == name.rsplit("/keys/", 1)[0],
-                 "fence_model_credential_native_resource_unmapped")
+            need(
+                type(name) is str
+                and KEY.fullmatch(name)
+                and lookup.get("parent") == name.rsplit("/keys/", 1)[0],
+                "fence_model_credential_native_resource_unmapped",
+            )
             key = self._key(cast(str, name), key_module)
             old_keys[key.name] = key
         need(1 <= len(old_keys) <= 32, "fence_model_credential_scope_unavailable")
@@ -258,37 +282,79 @@ class NativeFreshFenceBoundary(fresh.FreshNativeBoundary):
             config = inventory_module._config(raw, kind)
             if name in relevant_resources:
                 email = config.get("serviceAccount")
-                need(type(email) is str and SA_EMAIL.fullmatch(email),
-                     "fence_retained_automated_principal_unmapped")
+                need(
+                    type(email) is str and SA_EMAIL.fullmatch(email),
+                    "fence_retained_automated_principal_unmapped",
+                )
                 emails.add(email)
             if kind == "service" and name.rsplit("/", 1)[-1] in release.SERVICES:
                 service_uids.append((name, uid))
-        need(1 <= len(emails) <= 16 and len(service_uids) <= 16,
-             "fence_relevant_authority_bound_exceeded")
-        need(not emails & {source.runtime_service_account, source.migration_service_account},
-             "fence_old_and_new_automated_principals_overlap")
+        need(
+            1 <= len(emails) <= 16 and len(service_uids) <= 16,
+            "fence_relevant_authority_bound_exceeded",
+        )
+        need(
+            not emails & {source.runtime_service_account, source.migration_service_account},
+            "fence_old_and_new_automated_principals_overlap",
+        )
         principals: list[NativePrincipal] = []
         for email in sorted(emails):
             raw = self._get("iam", "projects/-/serviceAccounts/" + email)
             uid = raw.get("uniqueId")
-            need(raw.get("email") == email and type(uid) is str and re.fullmatch(r"[1-9][0-9]{5,24}", uid),
-                 "fence_native_principal_identity_unmapped")
+            need(
+                raw.get("email") == email
+                and type(uid) is str
+                and re.fullmatch(r"[1-9][0-9]{5,24}", uid),
+                "fence_native_principal_identity_unmapped",
+            )
             principals.append(NativePrincipal(email, cast(str, uid)))
-        observer = self._module("backend/scripts/monetary_cutover_preflight.py", "hirewiz_native_fence_source")
-        inventory, _ = observer.load_inventory(source.inventory_path, source.inventory_sha256, datetime.now(UTC))
+        observer = self._module(
+            "backend/scripts/monetary_cutover_preflight.py", "hirewiz_native_fence_source"
+        )
+        inventory, _ = observer.load_inventory(
+            source.inventory_path, source.inventory_sha256, datetime.now(UTC)
+        )
         roles = {str(alias): os.environ[name] for alias, name in inventory.role_env.items()}
         operators = {os.environ[name] for name in inventory.database_operator_role_env}
         # Names come from actual captured source DSNs, not the classification
         # file. SQL authority/OIDs/ownership are freshly checked only after cut.
-        old_actors = tuple(sorted({inventory_module.make_url(credential.value).username
-            for credential in retained.credentials if credential.kind == "database"
-            and inventory_module.make_url(credential.value).host in {
-                neon.RELEASE_DIRECT_HOST, neon.RELEASE_POOLER_HOST}}))
+        old_actors = tuple(
+            sorted(
+                {
+                    inventory_module.make_url(credential.value).username
+                    for credential in retained.credentials
+                    if credential.kind == "database"
+                    and inventory_module.make_url(credential.value).host
+                    in {neon.RELEASE_DIRECT_HOST, neon.RELEASE_POOLER_HOST}
+                }
+            )
+        )
         need(old_actors and not set(old_actors) & operators, "fence_legacy_actor_operator_overlap")
-        need(set(old_actors) <= set(roles.values()), "fence_captured_source_actor_missing_sql_registry")
+        need(
+            set(old_actors) <= set(roles.values()),
+            "fence_captured_source_actor_missing_sql_registry",
+        )
+        self._source_old_passwords = tuple(
+            {
+                inventory_module.make_url(credential.value).password
+                for credential in retained.credentials
+                if credential.kind == "database"
+                and inventory_module.make_url(credential.value).host
+                in {neon.RELEASE_DIRECT_HOST, neon.RELEASE_POOLER_HOST}
+                and type(inventory_module.make_url(credential.value).password) is str
+            }
+        )
+        need(self._source_old_passwords, "fence_actual_source_precut_passwords_unavailable")
         self._capture_setup_passwords(neon)
-        self.scope = BoundScope(source, self.target, tuple(sorted(service_uids)),
-                                tuple(old_keys.values()), None, tuple(principals), old_actors)
+        self.scope = BoundScope(
+            source,
+            self.target,
+            tuple(sorted(service_uids)),
+            tuple(old_keys.values()),
+            None,
+            tuple(principals),
+            old_actors,
+        )
         retained = None
         captured.clear()
 
@@ -375,7 +441,8 @@ class NativeFreshFenceBoundary(fresh.FreshNativeBoundary):
             )
             password = observed.dump_environment()["PGPASSWORD"]
             need(all(not hmac.compare_digest(password.encode(), old_password.encode())
-                     for old_password in self._setup_passwords.values()),
+                     for old_password in (*getattr(self, "_source_old_passwords", ()),
+                                          *self._setup_passwords.values())),
                  "fence_replacement_reuses_precut_password")
             candidates.append((binding, observed))
         # Prove every payload is distinct before authenticating any replacement.
@@ -385,6 +452,7 @@ class NativeFreshFenceBoundary(fresh.FreshNativeBoundary):
             self._authenticate_empty_replacement(neon, binding, observed)
         self._authenticated_replacements = references
         self._setup_passwords.clear()
+        self._source_old_passwords = ()
 
     def describe_release_secret(self, reference: str) -> dict[str, Any]:
         need(re.fullmatch(r"[a-z][a-z0-9-]{2,62}:[1-9][0-9]{0,8}", reference),
@@ -433,6 +501,114 @@ class NativeFreshFenceBoundary(fresh.FreshNativeBoundary):
             need(all(type(item) is dict and (
                 item.get("state") == "PAUSED" if field == "jobs" else item.get("completionTime")
             ) for item in entries), "fence_schedule_or_execution_not_drained")
+
+    def begin_source_observer_isolation(self) -> None:
+        """Conservative cloud-only issuance boundary; never a full writer Fence."""
+        from fresh_source_authority import verify_cloud_isolated
+
+        need(
+            self.scope is not None
+            and self._source_isolated_at is None
+            and self.retired_since is None,
+            "fence_source_observer_isolation_not_available",
+        )
+        verify_cloud_isolated(self)
+        self._source_isolated_at = datetime.now(UTC)
+
+    def bind_source_observer_after_isolation(self, source: release.Plan) -> None:
+        """One explicit source-ref transition, with native readback and auth.
+
+        Scope IDs/OIDs/owner/inventory and all prior authority stay immutable.
+        Full source retirement is observed only after provider role deletion.
+        """
+        scope, cut = self.scope, self._source_isolated_at
+        need(
+            scope is not None
+            and cut is not None
+            and self.retired_since is None
+            and not scope.source.observer_secret,
+            "fence_source_observer_rebind_not_available",
+        )
+        assert scope is not None and cut is not None
+        source.validate()
+        need(
+            type(source) is fresh.FreshSourcePlan
+            and replace(source, observer_secret=scope.source.observer_secret) == scope.source
+            and re.fullmatch(
+                r"hirewiz-source-observer-db-20261014:[1-9][0-9]{0,8}", source.observer_secret
+            ),
+            "fence_source_observer_plan_or_name_drift",
+        )
+        metadata = self.describe_release_secret(source.observer_secret)
+        try:
+            created = datetime.fromisoformat(
+                str(metadata.get("createTime", "")).replace("Z", "+00:00")
+            )
+        except (ValueError, TypeError):
+            raise release.ReleaseDenied("fence_source_observer_issuance_unavailable") from None
+        need(
+            metadata.get("state") == "ENABLED"
+            and created.tzinfo is not None
+            and cut <= created <= datetime.now(UTC),
+            "fence_source_observer_issued_before_isolation",
+        )
+        neon = self._module(
+            "backend/scripts/neon_direct_identity.py", "hirewiz_native_source_rebind_neon"
+        )
+        binding, target = neon.collect_source_release_target(
+            self,
+            source.observer_secret,
+            alias="observer",
+            database_owner_oid=source.database_owner_oid,
+            expected_schema=release.CUTOVER_CHAIN[0],
+        )
+        password = target.dump_environment()["PGPASSWORD"]
+        old = (*self._source_old_passwords, *self._setup_passwords.values())
+        need(
+            old
+            and all(not hmac.compare_digest(password.encode(), value.encode()) for value in old),
+            "fence_source_observer_reuses_precut_password",
+        )
+        engine = None
+        try:
+            engine = target.engine()
+            with engine.connect() as connection, connection.begin():
+                connection.exec_driver_sql(
+                    "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"
+                )
+                connection.exec_driver_sql("SET LOCAL search_path=pg_catalog")
+                connection.exec_driver_sql("SET LOCAL statement_timeout='1000ms'")
+                neon.verify_transport(connection, binding)
+                neon.verify_native_target(connection, binding, 16391)
+                module = self._module(
+                    "backend/scripts/monetary_cutover_preflight.py", "hirewiz_source_rebind_session"
+                )
+                module._native_session_ids(connection, 16391, neon_binding=binding)
+                absence = connection.execute(
+                    neon.text(
+                        "SELECT "
+                        "(SELECT count(*) FROM pg_catalog.pg_roles WHERE oid=16387 OR rolname='neondb_owner'),"
+                        "(SELECT count(*) FROM pg_catalog.pg_auth_members WHERE roleid=16387 OR member=16387 OR grantor=16387),"
+                        "(SELECT count(*) FROM pg_catalog.pg_stat_activity WHERE usesysid=16387)"
+                    )
+                ).one()
+                need(
+                    tuple(absence) == (0, 0, 0),
+                    "fence_source_observer_old_sql_authority_still_present",
+                )
+                fresh._source_owner_closed(connection, source.database_owner_oid, neon.text)
+        except release.ReleaseDenied:
+            raise
+        except Exception:
+            raise release.ReleaseDenied(
+                "fence_source_observer_native_authentication_unavailable"
+            ) from None
+        finally:
+            if engine is not None:
+                engine.dispose()
+        self.scope = replace(scope, source=source)
+        # Retain every actual source/temporary-observer value until all three
+        # target comparisons and genuine authentication have completed.
 
     def bind_replacements_after_isolation(self, source: release.Plan,
                                           target: release.FreshTargetPlan) -> None:
@@ -556,9 +732,14 @@ class NativeFreshFenceBoundary(fresh.FreshNativeBoundary):
             sql = pool.submit(fresh.FreshNativeBoundary.verify_database, self, source, release.CUTOVER_CHAIN[0])
             fleet = pool.submit(self._cloud_closure, scope)
             futures = [pool.submit(self._get, *call) for call in calls]
-            values = [future.result(timeout=max(0.001, deadline - time.monotonic())) for future in futures]
-            sql.result(timeout=max(0.001, deadline - time.monotonic()))
-            fleet.result(timeout=max(0.001, deadline - time.monotonic()))
+            try:
+                values = [future.result(timeout=max(0.001, deadline - time.monotonic())) for future in futures]
+                sql.result(timeout=max(0.001, deadline - time.monotonic()))
+                fleet.result(timeout=max(0.001, deadline - time.monotonic()))
+            except TimeoutError:
+                # A concurrent wait may expire before the final freshness check.
+                # Refuse with the same fixed code; never refresh the start time.
+                raise release.ReleaseDenied("fence_native_observation_expired") from None
         need(time.monotonic() < deadline, "fence_native_observation_expired")
         offset = 0
         for key in keys:

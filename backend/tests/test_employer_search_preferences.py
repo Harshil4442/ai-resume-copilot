@@ -1,4 +1,4 @@
-"""Real search/credit transactions with explicit employer facts and old clients."""
+"""Search/credit transactions with explicit facts and legacy saved-query fields."""
 from copy import deepcopy
 from types import SimpleNamespace
 
@@ -9,6 +9,7 @@ from backend.app.domains.employer import connectors, models, schemas, service, t
 from backend.app.domains.employer.preference_metadata import normalize_metadata
 from backend.app.domains.employer.role_aliases import variants
 from backend.app.domains.employer.search_preferences import SearchPreferencesV1, evaluate
+from backend.tests.test_employer_services import _search_quote
 from backend.tests.test_employer_services import context as context
 from fastapi import HTTPException
 from pydantic import ValidationError
@@ -62,6 +63,7 @@ def test_partial_country_and_salary_search_persists_exact_quote_billing_and_unkn
         db.get(models.EmployerPosting, "job_1").preference_metadata = facts(country="US")
         db.commit()
     payload = {"resume_id": 10, "role": "Python Engineer", "desired_count": 3, "idempotency_key": "preference-search-1",
+        "accepted_quote": _search_quote(client, 3),
         "preferences": {"version": 1, "country_codes": ["IN"], "salary": {"minimum": "150", "currency": "INR", "period": "year"}, "sponsorship_required": True}}
     response = client.post("/api/v1/employer-jobs/searches", json=payload)
     assert response.status_code == 201, response.text
@@ -95,8 +97,8 @@ def test_legacy_fingerprint_retry_and_saved_snapshot_are_preserved(context):
     with factory() as db:
         db.get(models.EmployerSource, "source_test").platform = "lever"
         db.commit()
-    payload = {"resume_id": 10, "role": "Python Engineer", "idempotency_key": "legacy-pref-key"}
-    original_query = schemas.SearchCreate(**payload).model_dump(exclude={"idempotency_key", "preferences"})
+    payload = {"resume_id": 10, "role": "Python Engineer", "idempotency_key": "legacy-pref-key", "accepted_quote": _search_quote(client)}
+    original_query = schemas.SearchCreate(**payload).model_dump(exclude={"idempotency_key", "preferences", "accepted_quote"})
     result = client.post("/api/v1/employer-jobs/searches", json=payload).json()
     assert result["query"] == original_query and "preferences" not in result["query"]
     with factory() as db:
@@ -119,7 +121,7 @@ def test_qualifiers_survive_aliases_and_known_employment_changes_results(context
         first.preference_metadata = facts(commitment="Full-time")
         second.title, second.description = "Junior Python Software Engineer", "Junior Python software engineer"
         db.commit()
-    payload = {"resume_id": 10, "role": "Senior Python SDE", "preferences": {"employment_types": ["full_time"]}, "idempotency_key": "alias-pref-key"}
+    payload = {"resume_id": 10, "role": "Senior Python SDE", "preferences": {"employment_types": ["full_time"]}, "idempotency_key": "alias-pref-key", "accepted_quote": _search_quote(client)}
     result = client.post("/api/v1/employer-jobs/searches", json=payload).json()
     assert result["delivered_count"] == 1 and result["items"][0]["posting"]["id"] == "job_1"
     assert all("senior python" in role for role in result["scope"]["role_variants"])
@@ -153,7 +155,7 @@ def test_actual_salary_filter_excludes_only_comparable_known_conflict(context):
         db.get(models.EmployerPosting, "job_1").preference_metadata = facts(maximum=120)
         db.get(models.EmployerPosting, "job_2").preference_metadata = facts(currency="USD")
         db.commit()
-    response = client.post("/api/v1/employer-jobs/searches", json={"resume_id": 10, "role": "Python Engineer", "desired_count": 2, "idempotency_key": "salary-real-filter", "preferences": {"salary": {"minimum": "150", "currency": "INR", "period": "year"}}})
+    response = client.post("/api/v1/employer-jobs/searches", json={"resume_id": 10, "role": "Python Engineer", "desired_count": 2, "idempotency_key": "salary-real-filter", "preferences": {"salary": {"minimum": "150", "currency": "INR", "period": "year"}}, "accepted_quote": _search_quote(client, 2)})
     assert response.status_code == 201
     result = response.json()
     assert result["delivered_count"] == 1 and result["items"][0]["posting"]["id"] == "job_2"
@@ -168,7 +170,7 @@ def test_actual_posting_locale_changes_results_without_certifying_working_langua
         for identity, locale in (("job_1", "de"), ("job_2", "en")):
             db.get(models.EmployerPosting, identity).preference_metadata = normalize_metadata(SimpleNamespace(platform="personio"), {}, feed_language=locale)
         db.commit()
-    response = client.post("/api/v1/employer-jobs/searches", json={"resume_id": 10, "role": "Python Engineer", "desired_count": 2, "idempotency_key": "locale-real-filter", "preferences": {"posting_languages": ["de"]}})
+    response = client.post("/api/v1/employer-jobs/searches", json={"resume_id": 10, "role": "Python Engineer", "desired_count": 2, "idempotency_key": "locale-real-filter", "preferences": {"posting_languages": ["de"]}, "accepted_quote": _search_quote(client, 2)})
     assert response.status_code == 201
     result = response.json()
     assert result["delivered_count"] == 1 and result["items"][0]["posting"]["id"] == "job_1"

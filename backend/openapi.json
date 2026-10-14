@@ -4597,6 +4597,16 @@
       "SearchCreate": {
         "additionalProperties": false,
         "properties": {
+          "accepted_quote": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SearchPriceAcceptance"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "desired_count": {
             "default": 10,
             "maximum": 100.0,
@@ -4801,6 +4811,36 @@
         "title": "SearchPreferencesV1",
         "type": "object"
       },
+      "SearchPriceAcceptance": {
+        "additionalProperties": false,
+        "properties": {
+          "maximum_credits": {
+            "exclusiveMinimum": 0,
+            "maximum": 100000,
+            "title": "Maximum Credits",
+            "type": "integer"
+          },
+          "pricing_version": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Pricing Version",
+            "type": "string"
+          },
+          "unit_price": {
+            "exclusiveMinimum": 0,
+            "maximum": 1000,
+            "title": "Unit Price",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "pricing_version",
+          "unit_price",
+          "maximum_credits"
+        ],
+        "title": "SearchPriceAcceptance",
+        "type": "object"
+      },
       "SearchSummary": {
         "description": "Saved search metadata, including the original query and complete quote.",
         "properties": {
@@ -4889,6 +4929,191 @@
           "next_cursor"
         ],
         "title": "SearchSummaryPage",
+        "type": "object"
+      },
+      "ServiceCreditEventView": {
+        "properties": {
+          "amount": {
+            "title": "Amount",
+            "type": "integer"
+          },
+          "balance_after": {
+            "title": "Balance After",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "event_type": {
+            "title": "Event Type",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "source_id": {
+            "title": "Source Id",
+            "type": "string"
+          },
+          "source_type": {
+            "title": "Source Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "event_type",
+          "amount",
+          "balance_after",
+          "source_type",
+          "source_id",
+          "reason",
+          "created_at"
+        ],
+        "title": "ServiceCreditEventView",
+        "type": "object"
+      },
+      "ServiceCreditHistory": {
+        "properties": {
+          "balance": {
+            "title": "Balance",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ServiceCreditEventView"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "operations": {
+            "items": {
+              "$ref": "#/components/schemas/ServiceCreditOperation"
+            },
+            "title": "Operations",
+            "type": "array"
+          },
+          "reservations": {
+            "items": {
+              "$ref": "#/components/schemas/ServiceCreditOperation"
+            },
+            "title": "Reservations",
+            "type": "array"
+          },
+          "reserved_credits": {
+            "title": "Reserved Credits",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "balance",
+          "reserved_credits",
+          "reservations",
+          "items",
+          "operations",
+          "next_cursor"
+        ],
+        "title": "ServiceCreditHistory",
+        "type": "object"
+      },
+      "ServiceCreditOperation": {
+        "properties": {
+          "committed_amount": {
+            "title": "Committed Amount",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "held_amount": {
+            "title": "Held Amount",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "operation": {
+            "title": "Operation",
+            "type": "string"
+          },
+          "pricing_version": {
+            "title": "Pricing Version",
+            "type": "string"
+          },
+          "released_amount": {
+            "title": "Released Amount",
+            "type": "integer"
+          },
+          "requested_count": {
+            "title": "Requested Count",
+            "type": "integer"
+          },
+          "reserved_amount": {
+            "title": "Reserved Amount",
+            "type": "integer"
+          },
+          "settled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Settled At"
+          },
+          "source_id": {
+            "title": "Source Id",
+            "type": "string"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "unit_price": {
+            "title": "Unit Price",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "operation",
+          "source_id",
+          "unit_price",
+          "requested_count",
+          "reserved_amount",
+          "held_amount",
+          "committed_amount",
+          "released_amount",
+          "state",
+          "pricing_version",
+          "created_at",
+          "settled_at"
+        ],
+        "title": "ServiceCreditOperation",
         "type": "object"
       },
       "SkillRoiItem": {
@@ -10838,13 +11063,50 @@
               "title": "Limit",
               "type": "integer"
             }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "operation",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^(job_search|job_application)$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Operation"
+            }
           }
         ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceCreditHistory"
+                }
               }
             },
             "description": "Successful Response"

@@ -8,7 +8,7 @@ import pytest
 from backend.app import models as core
 from backend.app.database import Base
 from backend.app.domains.common import payload_fingerprint, utcnow
-from backend.app.domains.employer import admissions, models, schemas, service
+from backend.app.domains.employer import admissions, config, models, schemas, service
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
@@ -48,9 +48,12 @@ def indexed_search(monkeypatch) -> Iterator[Session]:
 
 
 def search(db, key, *, owner=1, count=1):
+    prices = config.prices()
     return service.search_response(service.create_search(db, owner, schemas.SearchCreate(
         resume_id=10 if owner == 1 else 20, role="Python Engineer",
         desired_count=count, idempotency_key=key,
+        accepted_quote=schemas.SearchPriceAcceptance(pricing_version=prices["pricing_version"],
+            unit_price=prices["search_credits_per_job"], maximum_credits=count * prices["search_credits_per_job"]),
     )))
 
 

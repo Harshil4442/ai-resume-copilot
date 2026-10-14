@@ -35,7 +35,7 @@ function application(): EmployerApplication {
 beforeEach(() => {
   vi.resetAllMocks();
   const catalog: JobServiceCatalog = { enabled: true, auto_submit_enabled: false,
-    search_credits_per_job: 2, apply_credits_per_job: 7, max_search_jobs: 20, balance: 10, sources: [] };
+    search_credits_per_job: 2, apply_credits_per_job: 7, pricing_version: "fixture-price", max_search_jobs: 20, balance: 10, sources: [] };
   vi.mocked(apiGet).mockImplementation(async (path) => path.endsWith("/catalog") ? catalog : application());
   vi.mocked(apiPostForm).mockResolvedValue({ resume_id: 42, source_available: true, source_format: "tex" });
 });

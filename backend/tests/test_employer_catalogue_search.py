@@ -10,7 +10,7 @@ import pytest
 from backend.app import models as core
 from backend.app.domains.common import payload_fingerprint, utcnow
 from backend.app.domains.employer import catalogue_search as catalogue
-from backend.app.domains.employer import credits, models, schemas, service
+from backend.app.domains.employer import config, credits, models, schemas, service
 from backend.tests.test_employer_search_new_results import (
     indexed_search as indexed_search,
 )
@@ -95,8 +95,11 @@ def _posting(db, identity, content, *, requisition=None, title="Software enginee
 
 
 def _plan(db, key, count=1):
+    prices = config.prices()
     plan = service.create_search(db, 1, schemas.SearchCreate(resume_id=10, role="Software engineer",
-        desired_count=count, idempotency_key=key))
+        desired_count=count, idempotency_key=key,
+        accepted_quote=schemas.SearchPriceAcceptance(pricing_version=prices["pricing_version"],
+            unit_price=prices["search_credits_per_job"], maximum_credits=count * prices["search_credits_per_job"])))
     plan.resume_ready, plan.resume_skills, plan.lease_token = True, ["python"], TOKEN
     db.commit()
     return plan.id

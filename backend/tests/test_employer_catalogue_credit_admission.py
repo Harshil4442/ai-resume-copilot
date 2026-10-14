@@ -30,8 +30,11 @@ def _reservation(db, identity):
 
 
 def _payload(key, count=3):
+    prices = config.prices()
     return schemas.SearchCreate(resume_id=10, role="Software engineer",
-        desired_count=count, idempotency_key=key)
+        desired_count=count, idempotency_key=key,
+        accepted_quote=schemas.SearchPriceAcceptance(pricing_version=prices["pricing_version"],
+            unit_price=prices["search_credits_per_job"], maximum_credits=count * prices["search_credits_per_job"]))
 
 
 def test_requested_credit_hold_and_queue_commit_atomically_after_bounded_normalization(catalogue_db, monkeypatch):
@@ -53,7 +56,8 @@ def test_requested_credit_hold_and_queue_commit_atomically_after_bounded_normali
 
     monkeypatch.setattr(catalogue, "lock_owner_nowait", claimed)
     monkeypatch.setattr(catalogue.role_aliases, "variants", before_hold)
-    plan = service.create_search(db, 1, _payload("catalogue-upfront-replay"))
+    payload = _payload("catalogue-upfront-replay")
+    plan = service.create_search(db, 1, payload)
     reservation = _reservation(db, plan.id)
     assert claims == [1]
     assert plan.state == "pending" and plan.query["role"] == "Software engineer"
@@ -64,7 +68,7 @@ def test_requested_credit_hold_and_queue_commit_atomically_after_bounded_normali
     assert db.query(models.ServiceCreditEvent).filter_by(source_id=plan.id, event_type="reserve").one().amount == -6
     monkeypatch.setattr(catalogue.role_aliases, "variants", variants)
     monkeypatch.setattr(config, "prices", lambda: pytest.fail("An accepted replay cannot be repriced"))
-    assert service.create_search(db, 1, _payload("catalogue-upfront-replay")).id == plan.id
+    assert service.create_search(db, 1, payload).id == plan.id
     assert db.get(core.User, 1).job_service_credits == balance - 6
     assert db.query(models.ServiceCreditReservation).filter_by(source_id=plan.id).count() == 1
     assert db.query(DispatchOutbox).filter_by(aggregate_id=plan.id).count() == 1

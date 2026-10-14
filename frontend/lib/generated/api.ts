@@ -3348,6 +3348,7 @@ export interface components {
         };
         /** SearchCreate */
         SearchCreate: {
+            accepted_quote?: components["schemas"]["SearchPriceAcceptance"] | null;
             /**
              * Desired Count
              * @default 10
@@ -3403,6 +3404,15 @@ export interface components {
             /** Willing To Relocate */
             willing_to_relocate?: boolean | null;
         };
+        /** SearchPriceAcceptance */
+        SearchPriceAcceptance: {
+            /** Maximum Credits */
+            maximum_credits: number;
+            /** Pricing Version */
+            pricing_version: string;
+            /** Unit Price */
+            unit_price: number;
+        };
         /**
          * SearchSummary
          * @description Saved search metadata, including the original query and complete quote.
@@ -3442,6 +3452,75 @@ export interface components {
             items: components["schemas"]["SearchSummary"][];
             /** Next Cursor */
             next_cursor: string | null;
+        };
+        /** ServiceCreditEventView */
+        ServiceCreditEventView: {
+            /** Amount */
+            amount: number;
+            /** Balance After */
+            balance_after: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Event Type */
+            event_type: string;
+            /** Id */
+            id: string;
+            /** Reason */
+            reason: string;
+            /** Source Id */
+            source_id: string;
+            /** Source Type */
+            source_type: string;
+        };
+        /** ServiceCreditHistory */
+        ServiceCreditHistory: {
+            /** Balance */
+            balance: number;
+            /** Items */
+            items: components["schemas"]["ServiceCreditEventView"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+            /** Operations */
+            operations: components["schemas"]["ServiceCreditOperation"][];
+            /** Reservations */
+            reservations: components["schemas"]["ServiceCreditOperation"][];
+            /** Reserved Credits */
+            reserved_credits: number;
+        };
+        /** ServiceCreditOperation */
+        ServiceCreditOperation: {
+            /** Committed Amount */
+            committed_amount: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Held Amount */
+            held_amount: number;
+            /** Id */
+            id: string;
+            /** Operation */
+            operation: string;
+            /** Pricing Version */
+            pricing_version: string;
+            /** Released Amount */
+            released_amount: number;
+            /** Requested Count */
+            requested_count: number;
+            /** Reserved Amount */
+            reserved_amount: number;
+            /** Settled At */
+            settled_at: string | null;
+            /** Source Id */
+            source_id: string;
+            /** State */
+            state: string;
+            /** Unit Price */
+            unit_price: number;
         };
         /** SkillRoiItem */
         SkillRoiItem: {
@@ -6991,6 +7070,8 @@ export interface operations {
         parameters: {
             query?: {
                 limit?: number;
+                cursor?: string | null;
+                operation?: string | null;
             };
             header?: never;
             path?: never;
@@ -7004,7 +7085,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ServiceCreditHistory"];
                 };
             };
             /** @description Validation Error */

@@ -687,6 +687,7 @@ def accept(db, user_id, payload):
             prices = config.prices()
         except CostPolicyUnavailable as exc:
             raise HTTPException(503, detail=str(exc)) from None
+        config.validate_search_price(payload, prices)
         if payload.desired_count > int(prices["max_search_jobs"]):
             raise HTTPException(422, "Requested job count exceeds the current service limit")
         reservation = credits.reserve(db, user_id=user_id, operation="job_search", source_id=search_id,
@@ -695,6 +696,8 @@ def accept(db, user_id, payload):
             "search_preparation": True, "history_search_fingerprint": fingerprint,
             "history_desired_count": payload.desired_count, "history_accepted_max_jobs": int(prices["max_search_jobs"])}
     else:
+        config.validate_search_price(payload, {"search_credits_per_job": reservation.unit_price,
+            "pricing_version": reservation.pricing_version})
         authority = reservation.cost_policy_snapshot or {}
         if (reservation.state != "reserved" or reservation.requested_count != payload.desired_count
                 or reservation.reserved_amount != payload.desired_count * reservation.unit_price

@@ -115,10 +115,16 @@ def _execute(client, application):
     return result.json()
 
 
+def _search_quote(client, count=10):
+    catalog = client.get("/api/v1/employer-jobs/catalog").json()
+    return {"pricing_version": catalog["pricing_version"], "unit_price": catalog["search_credits_per_job"],
+            "maximum_credits": count * catalog["search_credits_per_job"]}
+
+
 def test_paid_search_partial_delivery_idempotency_and_no_premium_waiver(context, monkeypatch):
     factory, client, _ = context
     monkeypatch.setenv("EMPLOYER_SEARCH_CREDITS_PER_JOB", "2")
-    payload = {"resume_id": 10, "role": "Python Engineer", "desired_count": 3, "idempotency_key": "search-key-1"}
+    payload = {"resume_id": 10, "role": "Python Engineer", "desired_count": 3, "idempotency_key": "search-key-1", "accepted_quote": _search_quote(client, 3)}
     result = client.post("/api/v1/employer-jobs/searches", json=payload)
     assert result.status_code == 201, result.text
     result = result.json()
@@ -141,7 +147,7 @@ def test_service_credits_required_even_with_promotional_credits_and_premium(cont
     with factory() as db:
         db.get(core.User, 1).job_service_credits = 0
         db.commit()
-    result = client.post("/api/v1/employer-jobs/searches", json={"resume_id": 10, "role": "Python", "desired_count": 2, "idempotency_key": "unfunded-search"})
+    result = client.post("/api/v1/employer-jobs/searches", json={"resume_id": 10, "role": "Python", "desired_count": 2, "idempotency_key": "unfunded-search", "accepted_quote": _search_quote(client, 2)})
     assert result.status_code == 402
     assert result.json()["detail"]["code"] == "insufficient_service_credits"
     with factory() as db:
@@ -418,7 +424,7 @@ def test_llm_unavailable_does_not_block_discovery_or_supported_original_submissi
     monkeypatch.setattr(llm_client, "_chat", lambda *args, **kwargs: pytest.fail("Employer workflow cannot require AI"))
     monkeypatch.setattr(llm_client, "_chat_with_budget", lambda *args, **kwargs: pytest.fail("Employer workflow cannot require AI"))
     _, client, _ = context
-    result = client.post("/api/v1/employer-jobs/searches", json={"resume_id": 10, "role": "Python", "desired_count": 1, "idempotency_key": "cold-no-ai-search"})
+    result = client.post("/api/v1/employer-jobs/searches", json={"resume_id": 10, "role": "Python", "desired_count": 1, "idempotency_key": "cold-no-ai-search", "accepted_quote": _search_quote(client, 1)})
     assert result.status_code == 201, result.text
     application = _prepare(context)
     _execute(client, application)

@@ -4,12 +4,13 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({ owner: "one", session: { status: "authenticated", data: { user: { id: "one" } } } as { status: string; data: { user: { id: string } } | null }, get: vi.fn(), post: vi.fn() }));
-vi.mock("../../lib/api", () => ({ apiGet: state.get, apiPostJson: state.post }));
+vi.mock("../../lib/api", () => ({ apiGet: state.get, apiPostJson: state.post, ApiError: class extends Error { constructor(message: string, public status: number, public detail: unknown) { super(message); } } }));
 vi.mock("next-auth/react", () => ({ SessionProvider: ({ children }: { children: React.ReactNode }) => children, useSession: () => state.session }));
 vi.mock("next/navigation", () => ({ usePathname: () => "/employer-jobs" }));
 vi.mock("next/dynamic", () => ({ default: () => ({ id }: { id: string }) => <div data-testid="application-panel">Review application {id}</div> }));
 
 import EmployerJobsPage from "./page";
+import { ApiError } from "../../lib/api";
 import SessionProviderWrapper from "../../components/SessionProviderWrapper";
 import type { EmployerSearchPreparation, EmployerSearchSummary, SearchResult } from "../../lib/employerJobs";
 
@@ -22,7 +23,7 @@ function item(owner = state.owner): SearchResult {
 }
 function read(url: string) {
   const owner = state.owner;
-  if (url.endsWith("/catalog")) return Promise.resolve({ enabled: true, auto_submit_enabled: false, balance: 50, search_credits_per_job: 9, apply_credits_per_job: 20, max_search_jobs: 100, sources: [] });
+  if (url.endsWith("/catalog")) return Promise.resolve({ enabled: true, auto_submit_enabled: false, balance: 50, search_credits_per_job: 9, apply_credits_per_job: 20, pricing_version: "current-price", max_search_jobs: 100, sources: [] });
   if (url === "/resume/list") return Promise.resolve({ resumes: [{ id: owner === "one" ? 10 : 20, filename: `original-${owner}.pdf`, source_available: true }] });
   if (url.endsWith("/applications")) return Promise.resolve({ items: [] });
   if (url.includes("/search-summaries?")) return Promise.resolve({ items: [summary(owner)], next_cursor: null });
@@ -44,6 +45,27 @@ beforeEach(() => {
 afterEach(() => { cleanup(); client.clear(); });
 
 describe("employer page saved-search composition", () => {
+  it("refreshes a changed price without posting again until another explicit click", async () => {
+    let catalogReads = 0;
+    state.get.mockImplementation((url: string) => url.endsWith("/catalog") ? Promise.resolve({ enabled: true, auto_submit_enabled: false, balance: 50, search_credits_per_job: ++catalogReads === 1 ? 9 : 10, apply_credits_per_job: 20, pricing_version: catalogReads === 1 ? "current-price" : "renewed-price", max_search_jobs: 100, sources: [] }) : read(url));
+    state.post.mockRejectedValueOnce(new ApiError("The search price changed. Refresh and review it.", 409, { detail: { code: "search_price_requires_review" } })).mockResolvedValueOnce({ ...summary(), items: [item()] });
+    render(<EmployerJobsPage />, { wrapper: withClient() });
+    await screen.findByText("Python Engineer one");
+    fireEvent.click(screen.getByRole("button", { name: /Python Engineer one/ }));
+    await screen.findByRole("heading", { name: "Saved job for one" });
+    fireEvent.click(screen.getByRole("button", { name: "Find jobs" }));
+    await screen.findByText("Up to 30 service credits");
+    await screen.findByRole("alert");
+    expect(state.post).toHaveBeenCalledTimes(1);
+    expect(state.post.mock.calls[0][1].accepted_quote).toEqual({ pricing_version: "current-price", unit_price: 9, maximum_credits: 27 });
+    expect(screen.getByText(/Review the refreshed maximum above and click Find jobs again/)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Find jobs" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Find jobs" }));
+    await waitFor(() => expect(state.post).toHaveBeenCalledTimes(2));
+    expect(state.post.mock.calls[1][1].accepted_quote).toEqual({ pricing_version: "renewed-price", unit_price: 10, maximum_credits: 30 });
+    expect(state.post.mock.calls[1][1].idempotency_key).not.toBe(state.post.mock.calls[0][1].idempotency_key);
+  });
+
   it("shows the funded pending quote and cancels without applying or charging again", async () => {
     state.post.mockImplementation((url: string) => Promise.resolve(url.endsWith("/cancel") ? { ...pendingSearch(), status: "cancelled", reserved_credits: 0, refunded_credits: 6 } : pendingSearch()));
     render(<EmployerJobsPage />, { wrapper: withClient() });
@@ -130,6 +152,27 @@ describe("employer page saved-search composition", () => {
     expect(first[1]).toMatchObject({ desired_count: 3, resume_id: 10, excluded_employers: ["Excluded Employer"], role: "Python Engineer one" });
     expect(retry[1]).toEqual(first[1]);
     expect(first[1].idempotency_key).toEqual(expect.any(String));
+  });
+
+  it("shows and retries the originally accepted maximum after a lost response and a lower current price", async () => {
+    let catalogReads = 0;
+    state.get.mockImplementation((url: string) => url.endsWith("/catalog") ? Promise.resolve({ enabled: true, auto_submit_enabled: false, balance: 50, search_credits_per_job: ++catalogReads === 1 ? 9 : 1, apply_credits_per_job: 20, pricing_version: catalogReads === 1 ? "current-price" : "lower-price", max_search_jobs: 100, sources: [] }) : read(url));
+    state.post.mockRejectedValueOnce(new Error("Synthetic lost response")).mockResolvedValueOnce({ ...summary(), items: [item()] });
+    render(<EmployerJobsPage />, { wrapper: withClient() });
+    await screen.findByText("Python Engineer one");
+    fireEvent.click(screen.getByRole("button", { name: /Python Engineer one/ }));
+    await screen.findByRole("heading", { name: "Saved job for one" });
+    fireEvent.click(screen.getByRole("button", { name: "Find jobs" }));
+    await screen.findByRole("alert");
+    await waitFor(() => expect(catalogReads).toBeGreaterThan(1));
+    expect(screen.getByText("Up to 27 service credits")).toBeInTheDocument();
+    expect(screen.queryByText("Up to 3 service credits")).not.toBeInTheDocument();
+    expect(screen.getByText(/Checking your existing request at its originally accepted price/)).toBeInTheDocument();
+    expect(state.post).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Find jobs" }));
+    await waitFor(() => expect(state.post).toHaveBeenCalledTimes(2));
+    expect(state.post.mock.calls[1][1]).toEqual(state.post.mock.calls[0][1]);
+    expect(state.post.mock.calls[1][1].accepted_quote).toEqual({ pricing_version: "current-price", unit_price: 9, maximum_credits: 27 });
   });
 
   it("remounts summary/result caches and local selection before another owner renders, including late old-owner reads", async () => {

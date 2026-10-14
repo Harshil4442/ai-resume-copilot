@@ -8,8 +8,9 @@ the migrator between them; serving admission reobserves the actual final state.
 
 from __future__ import annotations
 
+import hashlib
 import re
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
@@ -18,6 +19,63 @@ from urllib.parse import urlsplit
 import monetary_release as release
 
 from scripts.neon_execution_files import LinuxExecutionFiles
+
+
+class FreshSourcePlan(release.Plan):
+    """Explicit absent pre-cut slots; this is never a serving credential plan.
+
+    Runtime/migration source slots are unused and must remain absent strings.
+    Observer/model are empty only before their actual post-isolation issuance.
+    Final runtime_plan produces the original complete Plan from native versions.
+    """
+
+    def validate(self) -> None:
+        refs = (self.expense_secret, self.model_policy_secret)
+        optional = (self.observer_secret, self.model_key_secret)
+        if (
+            self.runtime_secret != ""
+            or self.migration_secret != ""
+            or not re.fullmatch(r"[a-f0-9]{40}", self.release)
+            or not re.fullmatch(r"sha256:[a-f0-9]{64}", self.image_digest)
+            or not re.fullmatch(r"[a-f0-9-]{36}", self.build_id)
+            or type(self.ci_run_id) is not int
+            or self.ci_run_id <= 0
+            or any(
+                type(ref) is not str
+                or not re.fullmatch(r"[a-z][a-z0-9-]{2,62}:[1-9][0-9]{0,8}", ref)
+                for ref in refs
+            )
+            or any(
+                type(ref) is not str
+                or ref
+                and not re.fullmatch(r"[a-z][a-z0-9-]{2,62}:[1-9][0-9]{0,8}", ref)
+                for ref in optional
+            )
+            or len({ref.split(":")[0] for ref in (*refs, *optional) if ref})
+            != sum(bool(ref) for ref in (*refs, *optional))
+            or not re.fullmatch(r"[a-f0-9]{64}", self.expense_sha256)
+            or not re.fullmatch(r"[a-f0-9]{64}", self.model_policy_sha256)
+            or not re.fullmatch(r"gemini-[A-Za-z0-9_.-]{1,113}", self.model_primary)
+            or self.model_api_base != release.MODEL_API_BASE
+            or type(self.database_owner_oid) is not int
+            or not 0 < self.database_owner_oid <= 4294967295
+            or not re.fullmatch(r"[a-f0-9]{64}", self.inventory_sha256)
+            or self.runtime_service_account == self.migration_service_account
+            or any(
+                not re.fullmatch(
+                    r"[a-z][a-z0-9-]{4,28}@" + release.PROJECT + r"\.iam\.gserviceaccount\.com",
+                    value,
+                )
+                for value in (self.runtime_service_account, self.migration_service_account)
+            )
+            or not re.fullmatch(
+                r"gs://"
+                + release.PROJECT
+                + r"-hirewiz-application-artifacts/releases/[a-zA-Z0-9_.-]+\.dump",
+                self.backup_uri,
+            )
+        ):
+            raise release.ReleaseDenied("fresh_source_plan_identity_invalid")
 
 
 @dataclass(frozen=True)
@@ -91,13 +149,35 @@ def runtime_plan(source: release.Plan, target: release.FreshTargetPlan) -> relea
     """Only deployment metadata uses this copy; never source capture or backup."""
     source.validate()
     target.validate(source)
-    return replace(
-        source,
+    if not source.observer_secret or not source.model_key_secret:
+        raise release.ReleaseDenied("fresh_source_native_issuance_not_complete")
+    values = {field: getattr(source, field) for field in release.Plan.__dataclass_fields__}
+    values.update(
         runtime_secret=target.runtime_secret,
         migration_secret=target.migration_secret,
         observer_secret=target.observer_secret,
         database_owner_oid=16391,
     )
+    result = release.Plan(**values)
+    result.validate()
+    return result
+
+
+def _source_owner_closed(connection: Any, owner_oid: int, text: Any) -> None:
+    row = connection.execute(
+        text(
+            "SELECT count(*)=1 AND bool_and(rolname='hirewiz_source_owner_20261014_r1' "
+            "AND NOT rolcanlogin AND NOT rolinherit AND NOT rolsuper AND NOT rolcreatedb "
+            "AND NOT rolcreaterole AND NOT rolreplication AND NOT rolbypassrls), "
+            "(SELECT count(*) FROM pg_catalog.pg_auth_members "
+            "WHERE roleid=:oid OR member=:oid OR grantor=:oid), "
+            "(SELECT count(*) FROM pg_catalog.pg_stat_activity WHERE usesysid=:oid) "
+            "FROM pg_catalog.pg_roles WHERE oid=:oid"
+        ),
+        {"oid": owner_oid},
+    ).one()
+    if tuple(row) != (True, 0, 0):
+        raise release.ReleaseDenied("fresh_source_owned_role_not_closed")
 
 
 def _source_gate(
@@ -137,7 +217,7 @@ def stage_fresh_release(
     considering a different attempt. The owned transfer leaves its once marker.
     """
     if (
-        type(source) is not release.Plan
+        type(source) not in {release.Plan, FreshSourcePlan}
         or type(target) is not release.FreshTargetPlan
         or type(transfer) is not TransferPlan
         or type(execute) is not bool
@@ -199,7 +279,10 @@ def promote_fresh_release(
     clock: Any = lambda: datetime.now(UTC),
 ) -> dict[str, Any]:
     """Native reread, not a stage receipt, authorizes each traffic mutation."""
-    if type(source) is not release.Plan or type(target) is not release.FreshTargetPlan:
+    if (
+        type(source) not in {release.Plan, FreshSourcePlan}
+        or type(target) is not release.FreshTargetPlan
+    ):
         raise release.ReleaseDenied("fresh_release_plan_shape_invalid")
     source.validate()
     target.validate(source)
@@ -315,23 +398,69 @@ class FreshNativeBoundary(release.NativeBoundary):
                 raise release.ReleaseDenied("fresh_linux_execution_files_invalid") from None
         self.linux_execution_files = linux_execution_files
 
+    def _verify_model_policy(self, plan: release.Plan, expense: dict[str, Any]) -> None:
+        if type(plan) is not FreshSourcePlan or plan.model_key_secret:
+            return super()._verify_model_policy(plan, expense)
+        plan.validate()
+        raw = self._secret(plan.model_policy_secret)
+        if hashlib.sha256(raw.encode()).hexdigest() != plan.model_policy_sha256:
+            raise release.ReleaseDenied("model_policy_secret_hash_mismatch")
+        authority = self._module(
+            "backend/app/services/model_cost_policy.py", "hirewiz_release_model_policy"
+        )
+        try:
+            policy = authority.ModelCostPolicy.model_validate(release._json(raw.encode()))
+            if (
+                policy.expense_funding is not None
+                or policy.expense_policy_version is not None
+                or policy.expense_paid_units is not None
+            ):
+                raise release.ReleaseDenied("model_policy_runtime_funding_not_configuration")
+            limits = expense["operation_model_ceilings_micros"]
+            if any(
+                limit > limits.get(operation, 0)
+                for operation, limit in policy.operation_limits_micros.items()
+            ):
+                raise release.ReleaseDenied("model_policy_exceeds_funded_operation_ceiling")
+            models = tuple(
+                dict.fromkeys((plan.model_primary, *release._gemini_fallbacks(self.root)))
+            )
+            now = datetime.now(UTC)
+            for model in models:
+                quotes = [
+                    quote
+                    for quote in policy.pricing_quotes
+                    if (quote.provider, quote.model, quote.api_base)
+                    == ("google", model, plan.model_api_base)
+                ]
+                if len(quotes) != 1 or not quotes[0].valid_from <= now < quotes[0].expires_at:
+                    raise release.ReleaseDenied("exact_model_fallback_price_authority_unavailable")
+        except release.ReleaseDenied:
+            raise
+        except (ValueError, TypeError, KeyError):
+            raise release.ReleaseDenied("model_policy_invalid") from None
+
     def verify_database(self, plan: release.Plan, schema: str) -> None:
         if schema != release.CUTOVER_CHAIN[0]:
             raise release.ReleaseDenied("fresh_source_schema_must_remain_nine")
-        module, (engine, inventory, binding, _), roles, operators = (
-            self._database_context(plan, schema)
+        module, (engine, inventory, binding, _), roles, operators = self._database_context(
+            plan, schema
         )
         try:
-            observed = module.observe(
-                engine, inventory, roles, operators, neon_binding=binding
-            )
-            result = module.evaluate(
-                inventory, plan.inventory_sha256, observed, datetime.now(UTC)
-            )
+            observed = module.observe(engine, inventory, roles, operators, neon_binding=binding)
+            result = module.evaluate(inventory, plan.inventory_sha256, observed, datetime.now(UTC))
             if result["database_gate_reasons"]:
-                raise release.ReleaseDenied(
-                    "fresh_source_retirement_or_obligations_unready"
-                )
+                raise release.ReleaseDenied("fresh_source_retirement_or_obligations_unready")
+            if type(plan) is FreshSourcePlan:
+                with engine.connect() as connection, connection.begin():
+                    connection.exec_driver_sql("SET TRANSACTION READ ONLY")
+                    connection.exec_driver_sql("SET LOCAL search_path=pg_catalog")
+                    connection.exec_driver_sql("SET LOCAL statement_timeout='1000ms'")
+                    module.neon_identity.verify_transport(connection, binding)
+                    module.neon_identity.verify_native_target(connection, binding, 16391)
+                    _source_owner_closed(
+                        connection, plan.database_owner_oid, module.neon_identity.text
+                    )
             for alias in ("replacement_runtime", "replacement_migration"):
                 row = observed["roles"][alias]
                 if (
@@ -344,9 +473,7 @@ class FreshNativeBoundary(release.NativeBoundary):
                     or row["writable_table_count"]
                     or row["executable_security_definer_count"]
                 ):
-                    raise release.ReleaseDenied(
-                        "fresh_source_automated_writer_not_retired"
-                    )
+                    raise release.ReleaseDenied("fresh_source_automated_writer_not_retired")
         finally:
             engine.dispose()
 

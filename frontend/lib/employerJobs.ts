@@ -17,6 +17,7 @@ export type AdmissionQuote = {
   employer_key: string; opening_key: string; quoted_at: string; expires_at: string; policy_fingerprint: string;
 };
 export type ApplicationPrice = { unit_price: number; pricing_version: string };
+export type SearchPriceAcceptance = ApplicationPrice & { maximum_credits: number };
 export type ApplicationAction = "fill" | "upload" | "submit";
 
 export type JobServiceCatalog = {
@@ -24,6 +25,7 @@ export type JobServiceCatalog = {
   auto_submit_enabled: boolean;
   search_credits_per_job: number;
   apply_credits_per_job: number;
+  pricing_version: string;
   max_search_jobs: number;
   balance: number;
   admission_limits?: AdmissionLimits;

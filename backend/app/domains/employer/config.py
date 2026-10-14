@@ -36,6 +36,21 @@ def prices() -> dict:
     return reviewed | {"max_search_jobs": positive_int("EMPLOYER_MAX_SEARCH_JOBS", 100, 100)}
 
 
+def validate_search_price(payload, current_prices: dict) -> None:
+    """Bind the displayed price and exact maximum before any new paid work."""
+    from fastapi import HTTPException
+
+    accepted = payload.accepted_quote
+    unit_price = int(current_prices["search_credits_per_job"])
+    if (accepted is None or accepted.pricing_version != current_prices["pricing_version"]
+            or accepted.unit_price != unit_price
+            or accepted.maximum_credits != payload.desired_count * unit_price):
+        raise HTTPException(409, {
+            "code": "search_price_requires_review",
+            "message": "The search price changed or needs review. No new credits were reserved. Refresh the price, review the maximum, then click Find jobs again.",
+        })
+
+
 def discovery_enabled() -> bool:
     return enabled("EMPLOYER_DISCOVERY_ENABLED")
 
