@@ -132,7 +132,7 @@ for completion. Do not add smaller checkpoints to create apparent progress.
 The [archived implementation and validation history](archive/AUTO_APPLY_VALIDATION_HISTORY_THROUGH_2026-10-13.md)
 preserves earlier results and timing without counting them as delivery completions.
 
-The latest completed source run (`6d6723b`, GitHub Actions `38506666828`)
+The earlier source run (`6d6723b`, GitHub Actions `38506666828`)
 passed all five jobs, including the backend integration and native OpenAPI
 byte check. It includes positive payment reconciliation and the two repaired
 purchase fixtures. This is source validation within the existing outcomes;
