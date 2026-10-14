@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { ASSISTED_FIELDS, CHOICES, RECIPIENT_POLICY, validateAnswers } from "../fixtures/razorpay/schema.js";
 import { fixtureHtml } from "../fixtures/razorpay/form.js";
 import { startRazorpayFixture } from "../fixtures/razorpay/server.js";
+import { CONFIG } from "../extension/config.js";
 
 test("synthetic schema preserves seven assisted fields and manual sensitive choices", () => {
   assert.equal(ASSISTED_FIELDS.length, 7);
@@ -43,11 +44,20 @@ test("loopback recorder distinguishes email, manual file and manual submit witho
   } finally { await server.close(); }
 });
 
-test("shipping manifest and configuration remain disabled; scaffold has no authority wiring", async () => {
+test("shipping package requests only optional reviewed origins; legacy factories and scaffold authority remain disabled", async () => {
   const manifest = JSON.parse(await readFile(new URL("../extension/manifest.json", import.meta.url)));
-  assert.deepEqual(manifest.host_permissions, []); assert.deepEqual(manifest.optional_host_permissions, []);
+  assert.deepEqual(manifest.host_permissions, []);
+  assert.deepEqual(manifest.optional_host_permissions, ["https://www.hirewizhq.com/*", "https://job-boards.greenhouse.io/*"]);
   assert.equal(manifest.content_scripts, undefined);
-  assert.match(await readFile(new URL("../extension/config.js", import.meta.url), "utf8"), /mode: "disabled"/);
+  assert.deepEqual(CONFIG, { mode: "reviewed_assistance", websiteOrigin: "https://www.hirewizhq.com",
+    portalOrigin: "https://job-boards.greenhouse.io", extensionId: "pnjmegppacleipajnifjmbcopjjffklb" });
+  assert.equal(Object.isFrozen(CONFIG), true);
+  const background = await readFile(new URL("../extension/background.js", import.meta.url), "utf8");
+  const legacy = background.match(/const nativeMode = \(\) => (\[[^;\n]+\])\.includes\(CONFIG\.mode\);/);
+  assert.ok(legacy, "Legacy factory admission must remain explicit");
+  const legacyModes = JSON.parse(legacy[1]);
+  assert.deepEqual(legacyModes, ["pairing_only", "local_native_fixture"]);
+  assert.equal(legacyModes.includes(CONFIG.mode), false);
   const server = await readFile(new URL("../fixtures/razorpay/server.js", import.meta.url), "utf8");
   assert.doesNotMatch(server, /fixtureAuthority|fetch\(|device-action|recover|enroll/);
 });

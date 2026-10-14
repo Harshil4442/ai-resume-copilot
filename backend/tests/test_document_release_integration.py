@@ -8,6 +8,7 @@ import json
 import re
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 from urllib.parse import urlencode
 
 import pytest
@@ -21,6 +22,11 @@ spec = importlib.util.spec_from_file_location("document_release_routing", ROOT /
 assert spec and spec.loader
 routing = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(routing)
+spec = importlib.util.spec_from_file_location("native_tex_release_contract", ROOT / "infra/gcp/native_tex_worker.py")
+assert spec and spec.loader
+native_tex = importlib.util.module_from_spec(spec)
+with patch.dict("sys.modules", {"document_worker": documents}):
+    spec.loader.exec_module(native_tex)
 
 
 class Denied(RuntimeError):
@@ -39,40 +45,44 @@ def selected_methods(path, class_name, methods, namespace):
     return namespace["Selected"]
 
 
-def snapshots():
-    rendered = documents.render(documents.ACCEPTED_IMAGE, "a" * 40)
+def snapshots(worker=documents, *, runtime_phase=True):
+    rendered = worker.render(worker.ACCEPTED_IMAGE, "a" * 40)
     service = copy.deepcopy(rendered["service"])
-    revision_name = documents.RESOURCE + "/revisions/hirewiz-document-inspector-00004-synthetic"
+    revision_name = worker.RESOURCE + "/revisions/" + worker.SERVICE + "-00004-synthetic"
     service.update(uid="synthetic-service", generation="4", observedGeneration="4",
-                   reconciling=False, uri=documents.ACCEPTED_ORIGIN,
+                   reconciling=False, uri=worker.ACCEPTED_ORIGIN,
                    latestReadyRevision=revision_name,
                    terminalCondition={"state": "CONDITION_SUCCEEDED"},
                    trafficStatuses=[{"type": "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST",
                                      "revision": revision_name, "percent": 100}])
     revision = copy.deepcopy(service["template"])
-    revision.update(name=revision_name, uid="synthetic-revision", service=documents.RESOURCE,
+    revision.update(name=revision_name, uid="synthetic-revision", service=worker.RESOURCE,
                     conditions=[{"type": "Ready", "state": "CONDITION_SUCCEEDED"}])
+    iam_phase = ("after_isolation_service_iam" if worker is documents else "runtime_service_iam") if runtime_phase else "initial_service_iam"
     return {"service": service, "revision": revision,
-            "service_iam": rendered["after_isolation_service_iam"],
+            "service_iam": rendered[iam_phase],
             "project_iam": {"bindings": []},
-            "service_account": {"email": documents.SERVICE_ACCOUNT, "disabled": False},
+            "service_account": {"email": worker.SERVICE_ACCOUNT, "disabled": False},
             "service_account_keys": {"keys": []}}
 
 
-def native_configuration(snapshot):
+def native_configuration(snapshot, tex_snapshot=None):
+    tex_snapshot = snapshots(native_tex) if tex_snapshot is None else tex_snapshot
     release = SimpleNamespace(documents=documents, ReleaseDenied=Denied, REGION=documents.REGION,
-                              PROJECT=documents.PROJECT, document_routing=routing)
+                              PROJECT=documents.PROJECT, document_routing=routing, native_tex=native_tex)
     cls = selected_methods("infra/gcp/fresh_monetary_release.py", "FreshNativeBoundary",
-                           {"verify_document_configuration"}, {"release": release})
+                           {"verify_document_configuration", "verify_document_preparation", "_verify_document_workers"}, {"release": release})
     boundary = cls()
     reads = []
 
     def get(api, path):
         reads.append((api, path))
-        if path == documents.RESOURCE:
-            return snapshot["service"]
-        assert path == snapshot["service"]["latestReadyRevision"]
-        return snapshot["revision"]
+        for worker, selected in ((documents, snapshot), (native_tex, tex_snapshot)):
+            if path == worker.RESOURCE:
+                return selected["service"]
+            if path == selected["service"]["latestReadyRevision"]:
+                return selected["revision"]
+        pytest.fail("Only the exact document and TeX metadata resources may be read")
 
     def cloud(*args):
         reads.append(args)
@@ -93,13 +103,19 @@ def native_configuration(snapshot):
             assert args[args.index("--filter") + 1] == "network=" + routing.NETWORK_URL
             return [{"network": routing.NETWORK_URL, "destRange": "0.0.0.0/0", "nextHopGateway": routing.GATEWAY_URL}]
         if args[:4] == ("iam", "service-accounts", "keys", "list"):
-            return snapshot["service_account_keys"]["keys"]
+            selected = snapshot if args[-1] == documents.SERVICE_ACCOUNT else tex_snapshot
+            assert args[-1] in {documents.SERVICE_ACCOUNT, native_tex.SERVICE_ACCOUNT}
+            return selected["service_account_keys"]["keys"]
         if args[:3] == ("run", "services", "get-iam-policy"):
-            return snapshot["service_iam"]
+            selected = snapshot if args[3] == documents.SERVICE else tex_snapshot
+            assert args[3] in {documents.SERVICE, native_tex.SERVICE}
+            return selected["service_iam"]
         if args[:2] == ("projects", "get-iam-policy"):
             return snapshot["project_iam"]
         assert args[:3] == ("iam", "service-accounts", "describe")
-        return snapshot["service_account"]
+        selected = snapshot if args[3] == documents.SERVICE_ACCOUNT else tex_snapshot
+        assert args[3] in {documents.SERVICE_ACCOUNT, native_tex.SERVICE_ACCOUNT}
+        return selected["service_account"]
 
     boundary._get, boundary._cloud = get, cloud
     return boundary, reads
@@ -113,21 +129,26 @@ def test_native_metadata_is_reread_without_claiming_invocation_or_isolation():
         assert report["native_authenticated_metadata_read"] is True
         assert report["runtime_isolation_proven"] is report["effective_iam_proven"] is False
         assert report["api_wiring_enabled"] is False
-    assert len(reads) == 22
+        assert report["native_tex"]["effective_iam_proven"] is report["native_tex"]["native_compile_proven"] is report["native_tex"]["native_http_proven"] is False
+    assert len(reads) == 32
+    for worker in (documents, native_tex):
+        assert reads.count(("run", worker.RESOURCE)) == 2
 
 
+@pytest.mark.parametrize("worker", [documents, native_tex], ids=["document", "native-tex"])
 @pytest.mark.parametrize("change", [
     lambda snap: snap["service"].update(uri="https://other.run.app"),
-    lambda snap: snap["revision"]["containers"][0].update(image=documents.ACCEPTED_IMAGE[:-1] + "0"),
+    lambda snap: snap["revision"]["containers"][0].update(image=snap["revision"]["containers"][0]["image"][:-1]
+        + ("1" if snap["revision"]["containers"][0]["image"].endswith("0") else "0")),
     lambda snap: snap["revision"]["containers"][0]["env"][1].update(value="f" * 64),
     lambda snap: snap["service_iam"]["bindings"][0].update(members=["serviceAccount:hirewiz-api@" + documents.PROJECT + ".iam.gserviceaccount.com"]),
     lambda snap: snap["service"].update(ingress="INGRESS_TRAFFIC_ALL"),
     lambda snap: snap["service_account_keys"]["keys"].append({"keyType": "USER_MANAGED"}),
 ])
-def test_live_worker_drift_refuses(change):
-    snapshot = snapshots()
-    change(snapshot)
-    boundary, _ = native_configuration(snapshot)
+def test_live_worker_drift_refuses(change, worker):
+    snapshot, tex_snapshot = snapshots(), snapshots(native_tex)
+    change(snapshot if worker is documents else tex_snapshot)
+    boundary, _ = native_configuration(snapshot, tex_snapshot)
     with pytest.raises(Denied):
         boundary.verify_document_configuration(SimpleNamespace(runtime_service_account=documents.API_INVOKER, release="a" * 40))
 
@@ -244,7 +265,7 @@ def runtime_namespace():
     chosen = [node for node in tree.body if (isinstance(node, ast.Assign)
               and any(isinstance(target, ast.Name) and target.id in names for target in node.targets))
               or isinstance(node, ast.FunctionDef) and node.name == "runtime_environment"]
-    namespace = {"documents": documents, "ReleaseDenied": Denied, "document_routing": routing, "re": re}
+    namespace = {"documents": documents, "native_tex": native_tex, "ReleaseDenied": Denied, "document_routing": routing, "re": re}
     module = ast.Module(body=[ast.ImportFrom(module="__future__", names=[ast.alias(name="annotations")], level=0), *chosen], type_ignores=[])
     exec(compile(ast.fix_missing_locations(module), "runtime_environment", "exec"), namespace)
     return namespace
@@ -260,14 +281,19 @@ def runtime_plan():
 def test_exact_runtime_environment_pins_api_and_analysis_only():
     namespace = runtime_namespace()
     plan = runtime_plan()
-    pins = documents.api_environment(documents.ACCEPTED_ORIGIN)
+    pins = {**documents.api_environment(documents.ACCEPTED_ORIGIN),
+            **native_tex.api_environment(native_tex.ACCEPTED_ORIGIN, native_tex.ACCEPTED_IMAGE)}
     for index, service in enumerate(namespace["SERVICES"]):
         env, _, removed = namespace["runtime_environment"](plan, service)
         if index < 2:
             assert {key: env[key] for key in pins} == pins
+            assert "NATIVE_TEX_IMAGE" in removed
+            assert "NATIVE_TEX_IMAGE" not in env
+            assert not set(pins) & set(removed)
         else:
             assert not set(pins) & set(env)
             assert set(pins) <= set(removed)
+            assert set(namespace["NATIVE_ENV"]) <= set(removed)
 
 
 def test_stage_attaches_direct_vpc_only_to_document_callers():
@@ -411,14 +437,15 @@ def test_document_iam_readback_drift_stops_after_one_mutation():
     ("GET", ":setIamPolicy", False), ("DELETE", "", False),
     ("GET", "/other-service", False),
 ])
-def test_native_run_route_is_fixed_to_document_service_and_iam(method, suffix, accepted):
+@pytest.mark.parametrize("worker", [documents, native_tex], ids=["document", "native-tex"])
+def test_native_run_route_is_fixed_to_document_service_and_iam(method, suffix, accepted, worker):
     calls = []
 
     def request(url, **options):
         calls.append((url, options))
         return SimpleNamespace(status=200), b"{}"
 
-    namespace = {"native": SimpleNamespace(release=SimpleNamespace(documents=documents),
+    namespace = {"native": SimpleNamespace(release=SimpleNamespace(documents=documents, native_tex=native_tex),
                                           object_pairs=lambda pairs: dict(pairs)),
                  "NEW_ACCOUNTS": ("hirewiz-runtime-20261014",),
                  "PROJECT": documents.PROJECT, "NUMBER": "157225724590",
@@ -430,10 +457,10 @@ def test_native_run_route_is_fixed_to_document_service_and_iam(method, suffix, a
     writer.requested_calls = 0
     writer.access_names = set()
     if accepted:
-        assert writer._call("run", method, documents.RESOURCE + suffix) == {}
-        assert calls[0][0] == "https://run.googleapis.com/v2/" + documents.RESOURCE + suffix
+        assert writer._call("run", method, worker.RESOURCE + suffix) == {}
+        assert calls[0][0] == "https://run.googleapis.com/v2/" + worker.RESOURCE + suffix
         assert calls[0][1]["redirections"] == 0
     else:
         with pytest.raises(Denied, match="write_fixed_route_or_call_bound_refused"):
-            writer._call("run", method, documents.RESOURCE + suffix)
+            writer._call("run", method, worker.RESOURCE + suffix)
         assert calls == []

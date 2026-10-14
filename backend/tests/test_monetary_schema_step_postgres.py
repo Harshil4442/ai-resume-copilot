@@ -24,7 +24,7 @@ def schema(context):
         return connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
 
 
-def test_actual_seven_forward_steps_observe_each_revision_and_nullable_expense_history(context):
+def test_actual_forward_steps_observe_each_revision_and_nullable_expense_history(context):
     for expected, target in zip(step.CHAIN[:-1], step.CHAIN[1:], strict=True):
         assert schema(context) == expected
         execute(context, expected, target)
@@ -32,6 +32,7 @@ def test_actual_seven_forward_steps_observe_each_revision_and_nullable_expense_h
     with context[0].connect() as connection:
         assert connection.execute(text("SELECT count(*) FROM pg_indexes WHERE schemaname=current_schema() AND indexname IN ('ix_payment_orders_paid_at','ix_payment_refunds_processed_at','ix_model_liability_created','ix_model_liability_state_created','ix_service_reservations_state_created')")).scalar_one() == 5
         assert connection.execute(text("SELECT count(*) FROM information_schema.tables WHERE table_schema=current_schema() AND table_name IN ('resume_uploads','employer_paid_delivery_history','employer_search_preparations')")).scalar_one() == 3
+        assert connection.execute(text("SELECT count(*) FROM information_schema.tables WHERE table_schema=current_schema() AND table_name IN ('browser_assistance_devices','browser_assistance_reviews','browser_assistance_requests')")).scalar_one() == 3
 
 
 @pytest.mark.parametrize("updates,reason", [
@@ -105,7 +106,7 @@ def test_failed_later_step_requires_observed_current_schema_before_explicit_resu
         execute(context, "20261009_0013", "20261010_0014")
     for expected, target in zip(step.CHAIN[5:-1], step.CHAIN[6:], strict=True):
         execute(context, expected, target)
-    assert schema(context) == "20261011_0016"
+    assert schema(context) == step.CHAIN[-1]
 
 
 def test_current_head_metadata_and_runtime_delete_paths_are_required(context):
@@ -122,12 +123,13 @@ def test_current_head_metadata_and_runtime_delete_paths_are_required(context):
         execute(context, expected, target)
     with engine.begin() as connection:
         namespace_oid = connection.execute(text("SELECT oid FROM pg_namespace WHERE nspname=:schema"), {"schema": namespace}).scalar_one()
-        preflight._extension_shape(connection, namespace_oid, "20261011_0016")
-        with pytest.raises(preflight.Denied, match="database_extension_shape_mismatch"):
-            preflight._extension_shape(connection, namespace_oid, "20261009_0013")
+        preflight._extension_shape(connection, namespace_oid, step.CHAIN[-1])
+        for older_version in ("20261009_0013", "20261011_0016"):
+            with pytest.raises(preflight.Denied, match="database_extension_shape_mismatch"):
+                preflight._extension_shape(connection, namespace_oid, older_version)
         connection.execute(text("ALTER TABLE employer_search_preparations RENAME TO synthetic_missing_preparations"))
         with pytest.raises(preflight.Denied, match="database_extension_shape_mismatch"):
-            preflight._extension_shape(connection, namespace_oid, "20261011_0016")
+            preflight._extension_shape(connection, namespace_oid, step.CHAIN[-1])
         connection.execute(text("ALTER TABLE synthetic_missing_preparations RENAME TO employer_search_preparations"))
         connection.execute(text(f'GRANT USAGE ON SCHEMA "{namespace}" TO "{runtime}"'))
         connection.execute(text(f'GRANT SELECT,INSERT,UPDATE ON ALL TABLES IN SCHEMA "{namespace}" TO "{runtime}"'))
@@ -137,7 +139,7 @@ def test_current_head_metadata_and_runtime_delete_paths_are_required(context):
             connection.execute(text(f'GRANT DELETE ON "{table}" TO "{runtime}"'))
         release.verify_runtime_permissions(connection, namespace, runtime, operator)
         assert connection.execute(text("SELECT has_table_privilege(:runtime,'model_cost_liabilities','DELETE')"), {"runtime": runtime}).scalar_one() is False
-        for table in ("employer_paid_delivery_history", "employer_catalogue_winners", "employer_catalogue_posting_revisions"):
+        for table in ("employer_paid_delivery_history", "employer_catalogue_winners", "employer_catalogue_posting_revisions", "browser_assistance_devices", "browser_assistance_reviews", "browser_assistance_requests"):
             connection.execute(text(f'REVOKE DELETE ON "{table}" FROM "{runtime}"'))
             with pytest.raises(release.ReleaseDenied, match="runtime_table_or_migration_ownership_permissions_missing"):
                 release.verify_runtime_permissions(connection, namespace, runtime, operator)

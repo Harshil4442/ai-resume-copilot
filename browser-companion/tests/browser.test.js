@@ -6,16 +6,22 @@ import { chromium, expect } from "@playwright/test";
 import { startFixtureServer } from "../fixtures/server.js";
 import { fixtureBuild } from "../scripts/fixture-build.js";
 
-async function browserFixture({ disabled = false } = {}) {
+async function browserFixture({ shipping = false } = {}) {
   const server = await startFixtureServer();
   const directory = await mkdtemp(`${tmpdir()}/hirewiz-companion-`);
   let context;
+  const transportRequests = [];
   try {
   const extension = `${directory}/extension`;
-  if (disabled) await cp(new URL("../extension", import.meta.url), extension, { recursive: true });
+  if (shipping) await cp(new URL("../extension", import.meta.url), extension, { recursive: true });
   else await fixtureBuild(extension, server.authority.configuration);
   const launch = async () => {
     context = await chromium.launchPersistentContext(`${directory}/profile`, { channel: "chromium", headless: true, args: [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`] });
+    // The shipping package must not reach a real authority from this fixture.
+    // Retain attempted HTTPS requests as failures instead of issuing them.
+    if (shipping) await context.route("https://**/*", (route) => {
+      transportRequests.push(route.request().url()); return route.abort("blockedbyclient");
+    });
     const worker = context.serviceWorkers()[0] || await context.waitForEvent("serviceworker");
     const extensionId = new URL(worker.url()).host;
     const portal = await context.newPage(); await portal.goto(`${server.origin}/fixture/apply`);
@@ -24,7 +30,7 @@ async function browserFixture({ disabled = false } = {}) {
   };
   const { worker, extensionId, portal, popup } = await launch();
   await context.addCookies([{ name: "portal-session", value: "synthetic-cookie-must-not-leave-portal", url: server.origin, httpOnly: true }]);
-  if (!disabled) {
+  if (!shipping) {
     await popup.getByRole("button", { name: "Allow exact local fixture origins" }).click();
     await popup.getByRole("button", { name: "Connect this device" }).click();
     await expect(popup.getByRole("button", { name: "Inspect and review package" })).toBeEnabled();
@@ -32,7 +38,7 @@ async function browserFixture({ disabled = false } = {}) {
   const prepare = async () => { await popup.getByRole("button", { name: "Inspect and review package" }).click(); await expect(popup.getByRole("heading", { name: "Exact fill review" })).toBeVisible(); };
   const approve = async () => { await popup.getByRole("checkbox").check(); await popup.getByRole("button", { name: "Approve and fill answers only" }).click(); };
   const noWrite = async () => { assert.deepEqual(await portal.evaluate(() => window.fixtureEvents), { input: 0, change: 0, submit: 0 }); await expect(portal.locator("#full_name")).toHaveValue(""); };
-  return { ...server, context, portal, popup, worker, extensionId, prepare, approve, noWrite,
+  return { ...server, context, portal, popup, worker, extensionId, prepare, approve, noWrite, transportRequests,
     async restart() { await context.close(); return { ...await launch(), context }; },
     async close() { await context.close(); await server.close(); await rm(directory, { recursive: true, force: true }); } };
   } catch (error) {
@@ -70,17 +76,27 @@ test("real MV3 Chrome: exact review before autosave, device signing without cook
   } finally { await f.close(); }
 });
 
-test("real Chrome: shipping extension remains disabled with zero host grants and no authority requests", async () => {
-  const f = await browserFixture({ disabled: true }); try {
-    await expect(f.popup.locator("#mode")).toContainText("Disabled: production authorization");
+test("real Chrome: reviewed shipping UI has zero host grants, no transport and no legacy or unapproved actions", async () => {
+  const f = await browserFixture({ shipping: true }); try {
+    await expect(f.popup.locator("#mode")).toContainText("Candidate-reviewed Razorpay assistance");
+    await expect(f.popup.locator("#assistance")).toBeVisible();
+    await expect(f.popup.locator("#assistance-permission")).toBeEnabled();
+    for (const id of ["assistance-connect", "assistance-prepare", "assistance-fill"]) await expect(f.popup.locator(`#${id}`)).toBeDisabled();
     await expect(f.popup.locator("#fixture-connection")).toBeHidden();
     await expect(f.popup.locator("#fixture-prepare")).toBeHidden();
     await expect(f.popup.locator("#native-connection")).toBeHidden();
     await expect(f.popup.locator("#fill")).toBeDisabled(); await expect(f.popup.locator("#review")).toBeHidden();
     const permissions = await f.popup.evaluate(() => chrome.permissions.getAll());
     assert.deepEqual(permissions.origins, []);
-    const response = await f.popup.evaluate(() => chrome.runtime.sendMessage({ type: "prepare", application_id: "app_fixture" }));
-    assert.equal(response.ok, false); assert.match(response.error, /disabled/);
+    for (const message of [{ type: "prepare", application_id: "app_fixture" }, { type: "enroll", grant: "synthetic-only" }, { type: "pairing_start" }]) {
+      const response = await f.popup.evaluate((value) => chrome.runtime.sendMessage(value), message);
+      assert.equal(response.ok, false); assert.match(response.error, /Unsupported assistance operation/);
+    }
+    const connect = await f.popup.evaluate(() => chrome.runtime.sendMessage({ type: "assistance_connect" }));
+    assert.equal(connect.ok, false); assert.match(connect.error, /exact reviewed origin permission is missing or revoked/);
+    const fill = await f.popup.evaluate(() => chrome.runtime.sendMessage({ type: "assistance_fill" }));
+    assert.equal(fill.ok, false); assert.match(fill.error, /freshly inspected, approved review is required/);
+    assert.deepEqual(f.transportRequests, []);
     assert.equal(f.authority.state.requests.length, 0); await f.noWrite();
   } finally { await f.close(); }
 });

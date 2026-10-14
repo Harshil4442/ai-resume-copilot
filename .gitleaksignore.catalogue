@@ -2,3 +2,6 @@
 91bf10b0bd9a095fb499d9eced5b508cb311dbfc:backend/alembic/versions/20261011_0016_employer_catalogue_search.py:generic-api-key:449
 91bf10b0bd9a095fb499d9eced5b508cb311dbfc:docs/delivery/evidence/2026-10-11-full-catalogue-integration.json:generic-api-key:81
 91bf10b0bd9a095fb499d9eced5b508cb311dbfc:docs/delivery/evidence/2026-10-11-full-catalogue-integration.json:generic-api-key:85
+# Chrome's DER RSA public key fixes the extension ID; parsed as RSAPublicKey,
+# not a credential/private key. Scope this historical false positive exactly.
+144841bece774f74a3a432da4638159599755745:browser-companion/extension/manifest.json:generic-api-key:6

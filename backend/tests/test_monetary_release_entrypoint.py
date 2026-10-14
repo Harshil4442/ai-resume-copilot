@@ -114,7 +114,7 @@ def test_observation_only_has_no_mutations(plan):
 def test_complete_sequence_keeps_all_enablement_gates_closed(plan):
     boundary = Boundary()
     result = run(plan, boundary)
-    assert result["schema"] == "20261011_0016"
+    assert result["schema"] == "20261014_0017"
     assert result["queue_admission"] == "closed" and result["goal_complete"] is False
     assert result["optional_generation"] is result["automatic_submission"] is result["native_lifecycle"] is False
     assert mutations(boundary) == [("backup-create",),
@@ -125,6 +125,7 @@ def test_complete_sequence_keeps_all_enablement_gates_closed(plan):
         ("migrate", "20261009_0013", "20261010_0014"),
         ("migrate", "20261010_0014", "20261011_0015"),
         ("migrate", "20261011_0015", "20261011_0016"),
+        ("migrate", "20261011_0016", "20261014_0017"),
         *(('stage', service) for service in release.SERVICES),
         *(('promote', service) for service in (*release.SERVICES[1:], release.SERVICES[0])),
     ]
@@ -164,6 +165,7 @@ def test_missing_or_stale_fence_never_authorizes_a_mutation(plan, changes):
     ("migrate", "20261009_0012", "20261009_0013"),
     ("migrate", "20261010_0014", "20261011_0015"),
     ("migrate", "20261011_0015", "20261011_0016"),
+    ("migrate", "20261011_0016", "20261014_0017"),
     *(('stage', service) for service in release.SERVICES),
     *(('promote', service) for service in release.SERVICES),
 ])
@@ -228,17 +230,18 @@ def test_raw_input_duplicate_keys_cannot_replace_a_pinned_reference():
 def test_legacy_release_still_refuses_the_current_extended_chain(tmp_path):
     tracked = {path.relative_to(ROOT).as_posix() for path in (ROOT / 'backend/alembic/versions').glob('*.py')}
     catalogue = 'backend/alembic/versions/20261011_0016_employer_catalogue_search.py'
-    assert catalogue in tracked
+    browser = 'backend/alembic/versions/20261014_0017_browser_assistance.py'
+    assert {catalogue, browser} <= tracked
     # Preserve the historical chain check in a finite copy before the catalogue
     # migration, whose module-level SQL constants fail the legacy parser closed.
     prefix = tmp_path / 'pre_catalogue'
     (prefix / 'backend/alembic/versions').mkdir(parents=True)
     (prefix / 'backend/alembic.ini').write_bytes((ROOT / 'backend/alembic.ini').read_bytes())
-    prefix_tracked = tracked - {catalogue}
+    prefix_tracked = tracked - {catalogue, browser}
     for path in sorted(prefix_tracked):
         (prefix / path).write_bytes((ROOT / path).read_bytes())
     chain = release.source_guard.migration_chain(prefix, prefix_tracked)
-    assert chain == release.CHAIN[:-1]
+    assert chain == release.CHAIN[:release.CHAIN.index("20261011_0016")]
     with pytest.raises(release.source_guard.PreflightDenied, match="only the reviewed schema0009 chain"):
         release.source_guard.migration_head(prefix, prefix_tracked)
     for operation in (release.source_guard.migration_chain, release.source_guard.migration_head):
@@ -384,6 +387,9 @@ def test_native_worker_refuses_unresolved_custom_project_role_public_principal(p
     environment = {**release.SAFE_ENV, "APP_RELEASE": plan.release, "SERVICE_ROLE": "worker",
                    "WORKER_LABEL": "analysis-worker", "WORKER_ALLOWED_TOPICS": "analysis.run"}
     environment.update(release.documents.api_environment(release.documents.ACCEPTED_ORIGIN))
+    environment.update(release.native_tex.api_environment(
+        release.native_tex.ACCEPTED_ORIGIN, release.native_tex.ACCEPTED_IMAGE))
+    environment.pop("NATIVE_TEX_IMAGE", None)
     environment.update(LLM_MODEL=plan.model_primary, LLM_API_BASE=plan.model_api_base)
     env = [{"name": name, "value": value} for name, value in environment.items()]
     for name, secret in (("DATABASE_URL", plan.runtime_secret), ("HIREWIZ_EXPENSE_POLICY_JSON", plan.expense_secret),
@@ -591,6 +597,9 @@ def test_native_revision_requires_explicit_closed_checkout_without_disabling_pay
     environment = {**release.SAFE_ENV, "APP_RELEASE": plan.release, "SERVICE_ROLE": "api",
                    "RAZORPAY_KEY_ID": "rzp_test_synthetic"}
     environment.update(release.documents.api_environment(release.documents.ACCEPTED_ORIGIN))
+    environment.update(release.native_tex.api_environment(
+        release.native_tex.ACCEPTED_ORIGIN, release.native_tex.ACCEPTED_IMAGE))
+    environment.pop("NATIVE_TEX_IMAGE", None)
     if checkout is None:
         environment.pop("RAZORPAY_CHECKOUT_ENABLED", None)
     else:
