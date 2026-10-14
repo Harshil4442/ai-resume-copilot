@@ -689,6 +689,133 @@
         "title": "BatchItem",
         "type": "object"
       },
+      "BillingOrderStatusResponse": {
+        "properties": {
+          "accepted_quote": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PurchaseQuoteAcceptance"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "amount_minor": {
+            "title": "Amount Minor",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "currency": {
+            "const": "INR",
+            "title": "Currency",
+            "type": "string"
+          },
+          "entitlement_kind": {
+            "title": "Entitlement Kind",
+            "type": "string"
+          },
+          "entitlement_quantity": {
+            "title": "Entitlement Quantity",
+            "type": "integer"
+          },
+          "fulfilled": {
+            "title": "Fulfilled",
+            "type": "boolean"
+          },
+          "order_id": {
+            "title": "Order Id",
+            "type": "string"
+          },
+          "paid_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paid At"
+          },
+          "payment_reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Reference"
+          },
+          "provider_order_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Order Id"
+          },
+          "refunded_amount_minor": {
+            "title": "Refunded Amount Minor",
+            "type": "integer"
+          },
+          "refunded_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refunded At"
+          },
+          "sku": {
+            "title": "Sku",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "paid",
+              "failed",
+              "refunded"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "order_id",
+          "provider_order_id",
+          "payment_reference",
+          "sku",
+          "entitlement_kind",
+          "entitlement_quantity",
+          "status",
+          "fulfilled",
+          "amount_minor",
+          "refunded_amount_minor",
+          "currency",
+          "created_at",
+          "paid_at",
+          "refunded_at",
+          "accepted_quote"
+        ],
+        "title": "BillingOrderStatusResponse",
+        "type": "object"
+      },
       "Body_parse_resume_api_resume_parse_post": {
         "properties": {
           "enrich_skills": {
@@ -834,6 +961,74 @@
           "new_password"
         ],
         "title": "ChangeCandidatePassword",
+        "type": "object"
+      },
+      "CheckoutOrderResponse": {
+        "properties": {
+          "accepted_quote": {
+            "$ref": "#/components/schemas/PurchaseQuoteAcceptance"
+          },
+          "amount_minor": {
+            "title": "Amount Minor",
+            "type": "integer"
+          },
+          "currency": {
+            "const": "INR",
+            "title": "Currency",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "key_id": {
+            "title": "Key Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "order_id": {
+            "title": "Order Id",
+            "type": "string"
+          },
+          "prefill": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prefill"
+          },
+          "provider": {
+            "const": "razorpay",
+            "title": "Provider",
+            "type": "string"
+          },
+          "provider_order_id": {
+            "title": "Provider Order Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "order_id",
+          "provider",
+          "provider_order_id",
+          "key_id",
+          "amount_minor",
+          "currency",
+          "name",
+          "description",
+          "accepted_quote"
+        ],
+        "title": "CheckoutOrderResponse",
         "type": "object"
       },
       "CheckoutResultRequest": {
@@ -1077,10 +1272,50 @@
       "CreateOrderRequest": {
         "additionalProperties": false,
         "properties": {
+          "accepted_quote": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PurchaseQuoteAcceptance"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Required before payable checkout, including recovery. Free status reads expose the original terms for review."
+          },
           "billing_country": {
             "const": "IN",
             "title": "Billing Country",
             "type": "string"
+          },
+          "idempotency_key": {
+            "anyOf": [
+              {
+                "maxLength": 160,
+                "minLength": 8,
+                "pattern": "^[A-Za-z0-9_.:-]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Required for new orders; reuse this identity and the original accepted quote after an interrupted response.",
+            "title": "Idempotency Key"
+          },
+          "order_reference": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "minLength": 5,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "An owned original order to resume without creating another order.",
+            "title": "Order Reference"
           },
           "sku": {
             "maxLength": 64,
@@ -3655,6 +3890,46 @@
         "title": "ProjectRecommendation",
         "type": "object"
       },
+      "PurchaseQuoteAcceptance": {
+        "additionalProperties": false,
+        "properties": {
+          "amount_minor": {
+            "exclusiveMinimum": 0.0,
+            "title": "Amount Minor",
+            "type": "integer"
+          },
+          "analysis_units": {
+            "minimum": 0.0,
+            "title": "Analysis Units",
+            "type": "integer"
+          },
+          "catalog_version": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Catalog Version",
+            "type": "string"
+          },
+          "currency": {
+            "const": "INR",
+            "title": "Currency",
+            "type": "string"
+          },
+          "job_service_credits": {
+            "minimum": 0.0,
+            "title": "Job Service Credits",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "catalog_version",
+          "amount_minor",
+          "currency",
+          "job_service_credits",
+          "analysis_units"
+        ],
+        "title": "PurchaseQuoteAcceptance",
+        "type": "object"
+      },
       "RagAskRequest": {
         "properties": {
           "job_match_id": {
@@ -4815,8 +5090,8 @@
         "additionalProperties": false,
         "properties": {
           "maximum_credits": {
-            "exclusiveMinimum": 0,
-            "maximum": 100000,
+            "exclusiveMinimum": 0.0,
+            "maximum": 100000.0,
             "title": "Maximum Credits",
             "type": "integer"
           },
@@ -4827,8 +5102,8 @@
             "type": "string"
           },
           "unit_price": {
-            "exclusiveMinimum": 0,
-            "maximum": 1000,
+            "exclusiveMinimum": 0.0,
+            "maximum": 1000.0,
             "title": "Unit Price",
             "type": "integer"
           }
@@ -8184,7 +8459,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/CheckoutOrderResponse"
+                }
               }
             },
             "description": "Successful Response"
@@ -8229,7 +8506,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/BillingOrderStatusResponse"
+                }
               }
             },
             "description": "Successful Response"
@@ -8321,8 +8600,7 @@
                 "schema": {
                   "anyOf": [
                     {
-                      "additionalProperties": true,
-                      "type": "object"
+                      "$ref": "#/components/schemas/BillingOrderStatusResponse"
                     },
                     {
                       "type": "null"

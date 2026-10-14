@@ -48,6 +48,14 @@ function fixture() {
     { sku: "growth_bundle", name: "Growth", description: "Finite prepaid pack", amount_minor: 109900, amount_display: "₹1,099", entitlement_quantity: 300, analysis_units: 6 },
     { sku: "scale_bundle", name: "Scale", description: "Finite prepaid pack", amount_minor: 219900, amount_display: "₹2,199", entitlement_quantity: 700, analysis_units: 15 },
   ].map(p => ({ ...p, currency: "INR", billing_type: "one_time", duration_days: 0, entitlement_kind: "credit_bundle", auto_renews: false, catalog_visible: true, enabled_for_purchase: true }));
+  function billingQuote(sku: string) {
+    const product = products.find((item) => item.sku === sku);
+    if (!product) throw new Error(`Unexpected billing fixture SKU: ${sku}`);
+    return { catalog_version: "fixture-v1", amount_minor: product.amount_minor, currency: product.currency, job_service_credits: product.entitlement_quantity, analysis_units: product.analysis_units };
+  }
+  function paidBillingOrder() {
+    return { order_id: "order_fixture", sku: "growth_bundle", status: "paid", fulfilled: true, amount_minor: 109900, currency: "INR", created_at: now, paid_at: now, refunded_at: null, accepted_quote: billingQuote("growth_bundle") };
+  }
 
   async function install(context: BrowserContext, baseURL: string) {
     const token = await encode({ secret: process.env.PLAYWRIGHT_AUTH_SECRET || "playwright-secret-at-least-thirty-two-characters", token: { sub: "424242", email: "fixture@example.com", name: "Taylor Example", hirewizUserId: 424242, accessToken: "local-fixture-token" }, maxAge: 3600 });
@@ -105,13 +113,14 @@ function fixture() {
       else if (path === "/v1/opportunities" && method === "POST") value = { id: "opp_job_fixture", ...body };
       else if (path === "/public/billing/catalog") value = { catalog_version: "fixture-v1", market: "IN", checkout_enabled: true, provider: "razorpay", products };
       else if (path === "/v1/usage-events") value = { balance: 40, items: [] };
-      else if (path === "/billing/recent-order") value = state.recentPaidPack ? { order_id: "order_fixture", sku: "growth_bundle", status: "paid", fulfilled: true, amount_minor: 109900, currency: "INR", created_at: now, paid_at: now, refunded_at: null } : null;
-      else if (path === "/billing/orders" && method === "POST") { status = 503; value = { detail: "Fixture checkout disabled. No provider loaded." }; }
+      else if (path === "/billing/recent-order") value = state.recentPaidPack ? paidBillingOrder() : null;
+      else if (path === "/billing/orders/order_fixture" && method === "GET" && state.recentPaidPack) value = paidBillingOrder();
+      else if (path === "/billing/orders" && method === "POST") { expect(body.accepted_quote).toEqual(billingQuote(String(body.sku))); expect(body.idempotency_key).toEqual(expect.any(String)); status = 503; value = { detail: "Fixture checkout disabled. No provider loaded." }; }
       else { unexpected.push(`${method} ${path}`); status = 503; value = { detail: "Unexpected fixture request" }; }
       await route.fulfill({ status, contentType: "application/json", body: JSON.stringify(value) });
     });
   }
-  return { catalog, application, state, requests, unexpected, searches, install };
+  return { catalog, application, state, requests, unexpected, searches, install, billingQuote };
 }
 
 async function searchOne(page: Page) {
@@ -302,7 +311,7 @@ test("unavailable service or insufficient balance cannot start a paid search", a
 });
 
 test("Legacy access can purchase finite bundles and only server fulfillment confirms payment", async ({ page, context, baseURL }) => {
-  const f = fixture(); f.state.premium = true; await f.install(context, baseURL!); await page.goto("/billing"); const pack = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Growth" }) }); await pack.getByRole("button", { name: "Review purchase" }).click(); await page.getByRole("checkbox", { name: /I confirm my billing country/ }).check(); await page.getByRole("button", { name: /Pay with Razorpay/ }).click(); await expect(page.getByRole("alert").filter({ hasText: "Fixture checkout disabled" })).toContainText("Fixture checkout disabled"); expect(f.requests.find((r) => r.path === "/billing/orders")?.body).toEqual({ sku: "growth_bundle", billing_country: "IN" }); await expect(page.getByRole("heading", { name: "Payment confirmed" })).toHaveCount(0);
+  const f = fixture(); f.state.premium = true; await f.install(context, baseURL!); await page.goto("/billing"); const pack = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Growth" }) }); await pack.getByRole("button", { name: "Review purchase" }).click(); await page.getByRole("checkbox", { name: /I confirm my billing country/ }).check(); await page.getByRole("button", { name: /Pay with Razorpay/ }).click(); await expect(page.getByRole("alert").filter({ hasText: "Fixture checkout disabled" })).toContainText("Fixture checkout disabled"); expect(f.requests.find((r) => r.path === "/billing/orders")?.body).toEqual({ sku: "growth_bundle", billing_country: "IN", accepted_quote: f.billingQuote("growth_bundle"), idempotency_key: expect.any(String) }); await expect(page.getByRole("heading", { name: "Payment confirmed" })).toHaveCount(0);
   f.state.recentPaidPack = true; await page.reload(); await expect(page.getByRole("heading", { name: "Payment confirmed" })).toBeVisible(); await expect(page.getByText(/delivered your purchased entitlements/)).toBeVisible(); await page.getByRole("button", { name: "Review another purchase" }).click(); await expect(pack.getByRole("button", { name: "Review purchase" })).toBeEnabled(); await checkLayout(page); expect(f.unexpected).toEqual([]);
 });
 
@@ -322,7 +331,7 @@ test("service credit checkout links select the requested pack without starting a
   await page.getByRole("checkbox", { name: /I confirm my billing country/ }).check();
   await page.getByRole("button", { name: /Pay with Razorpay/ }).click();
   await expect(page.getByRole("alert").filter({ hasText: "Fixture checkout disabled" })).toBeVisible();
-  expect(f.requests.find((r) => r.path === "/billing/orders")?.body).toEqual({ sku: "starter_bundle", billing_country: "IN" });
+  expect(f.requests.find((r) => r.path === "/billing/orders")?.body).toEqual({ sku: "starter_bundle", billing_country: "IN", accepted_quote: f.billingQuote("starter_bundle"), idempotency_key: expect.any(String) });
   await checkLayout(page);
   expect(f.unexpected).toEqual([]);
 });

@@ -1988,6 +1988,47 @@ export interface components {
             /** Package Digest */
             package_digest: string;
         };
+        /** BillingOrderStatusResponse */
+        BillingOrderStatusResponse: {
+            accepted_quote: components["schemas"]["PurchaseQuoteAcceptance"] | null;
+            /** Amount Minor */
+            amount_minor: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Currency
+             * @constant
+             */
+            currency: "INR";
+            /** Entitlement Kind */
+            entitlement_kind: string;
+            /** Entitlement Quantity */
+            entitlement_quantity: number;
+            /** Fulfilled */
+            fulfilled: boolean;
+            /** Order Id */
+            order_id: string;
+            /** Paid At */
+            paid_at: string | null;
+            /** Payment Reference */
+            payment_reference: string | null;
+            /** Provider Order Id */
+            provider_order_id: string | null;
+            /** Refunded Amount Minor */
+            refunded_amount_minor: number;
+            /** Refunded At */
+            refunded_at: string | null;
+            /** Sku */
+            sku: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "paid" | "failed" | "refunded";
+        };
         /** Body_parse_resume_api_resume_parse_post */
         Body_parse_resume_api_resume_parse_post: {
             /**
@@ -2048,6 +2089,36 @@ export interface components {
              * Format: password
              */
             new_password: string;
+        };
+        /** CheckoutOrderResponse */
+        CheckoutOrderResponse: {
+            accepted_quote: components["schemas"]["PurchaseQuoteAcceptance"];
+            /** Amount Minor */
+            amount_minor: number;
+            /**
+             * Currency
+             * @constant
+             */
+            currency: "INR";
+            /** Description */
+            description: string;
+            /** Key Id */
+            key_id: string;
+            /** Name */
+            name: string;
+            /** Order Id */
+            order_id: string;
+            /** Prefill */
+            prefill?: {
+                [key: string]: string;
+            } | null;
+            /**
+             * Provider
+             * @constant
+             */
+            provider: "razorpay";
+            /** Provider Order Id */
+            provider_order_id: string;
         };
         /** CheckoutResultRequest */
         CheckoutResultRequest: {
@@ -2113,11 +2184,23 @@ export interface components {
         };
         /** CreateOrderRequest */
         CreateOrderRequest: {
+            /** @description Required before payable checkout, including recovery. Free status reads expose the original terms for review. */
+            accepted_quote?: components["schemas"]["PurchaseQuoteAcceptance"] | null;
             /**
              * Billing Country
              * @constant
              */
             billing_country: "IN";
+            /**
+             * Idempotency Key
+             * @description Required for new orders; reuse this identity and the original accepted quote after an interrupted response.
+             */
+            idempotency_key?: string | null;
+            /**
+             * Order Reference
+             * @description An owned original order to resume without creating another order.
+             */
+            order_reference?: string | null;
             /** Sku */
             sku: string;
         };
@@ -2979,6 +3062,22 @@ export interface components {
             resume_bullets: string[];
             /** Title */
             title: string;
+        };
+        /** PurchaseQuoteAcceptance */
+        PurchaseQuoteAcceptance: {
+            /** Amount Minor */
+            amount_minor: number;
+            /** Analysis Units */
+            analysis_units: number;
+            /** Catalog Version */
+            catalog_version: string;
+            /**
+             * Currency
+             * @constant
+             */
+            currency: "INR";
+            /** Job Service Credits */
+            job_service_credits: number;
         };
         /** RagAskRequest */
         RagAskRequest: {
@@ -5176,7 +5275,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["CheckoutOrderResponse"];
                 };
             };
             /** @description Validation Error */
@@ -5207,7 +5306,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["BillingOrderStatusResponse"];
                 };
             };
             /** @description Validation Error */
@@ -5271,9 +5370,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    } | null;
+                    "application/json": components["schemas"]["BillingOrderStatusResponse"] | null;
                 };
             };
         };

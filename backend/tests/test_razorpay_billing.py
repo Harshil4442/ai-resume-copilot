@@ -1,10 +1,12 @@
 import hashlib
 import hmac
 import json
+import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from backend.app.billing.catalog import CATALOG_VERSION
+from backend.app.billing.catalog import CATALOG_VERSION, PRODUCTS
+from backend.app.billing.purchase_quote import product_quote
 from backend.app.billing.razorpay import RazorpayAdapter
 from backend.app.database import Base, get_db
 from backend.app.models import (
@@ -110,8 +112,15 @@ def enabled_checkout(monkeypatch):
     return calls
 
 
-def _create_order(client):
-    response = client.post("/api/billing/orders", json={"sku": "starter_bundle", "billing_country": "IN"})
+def _purchase_payload(order_reference=None):
+    return {"sku": "starter_bundle", "billing_country": "IN",
+            "accepted_quote": product_quote(PRODUCTS["starter_bundle"], CATALOG_VERSION).model_dump(),
+            "idempotency_key": uuid.uuid4().hex,
+            **({"order_reference": order_reference} if order_reference else {})}
+
+
+def _create_order(client, order_reference=None):
+    response = client.post("/api/billing/orders", json=_purchase_payload(order_reference))
     assert response.status_code == 200, response.text
     return response.json()
 
@@ -318,7 +327,7 @@ def test_catalog_and_checkout_fail_closed(client, monkeypatch, session_factory):
     assert config_response.headers["cache-control"] == "no-store, private"
     create_response = client.post(
         "/api/billing/orders",
-        json={"sku": "starter_bundle", "billing_country": "IN"},
+        json=_purchase_payload(),
     )
     assert create_response.status_code == 503
     with session_factory() as db:
@@ -348,7 +357,7 @@ def test_production_never_enables_test_mode(client, monkeypatch):
 def test_order_contract_rejects_non_india_country(client, enabled_checkout, session_factory):
     response = client.post(
         "/api/billing/orders",
-        json={"sku": "starter_bundle", "billing_country": "US"},
+        json=_purchase_payload() | {"billing_country": "US"},
     )
     assert response.status_code == 422
     assert enabled_checkout == []
@@ -386,7 +395,7 @@ def test_fresh_initializing_attempt_blocks_a_second_provider_order(
 
     response = client.post(
         "/api/billing/orders",
-        json={"sku": "starter_bundle", "billing_country": "IN"},
+        json=_purchase_payload(),
     )
     assert response.status_code == 409
     assert enabled_checkout == []
@@ -400,7 +409,7 @@ def test_server_owned_order_reuse_and_mode_isolation(
 ):
     manipulated = client.post(
         "/api/billing/orders",
-        json={"sku": "starter_bundle", "billing_country": "IN", "amount_minor": 1},
+        json=_purchase_payload() | {"amount_minor": 1},
     )
     assert manipulated.status_code == 422
 
@@ -411,7 +420,7 @@ def test_server_owned_order_reuse_and_mode_isolation(
     assert first["provider_order_id"] == "order_fake_1"
     assert client.post(
         "/api/billing/orders",
-        json={"sku": "starter_bundle", "billing_country": "IN"},
+        json=_purchase_payload(first["order_id"]),
     ).json()[
         "order_id"
     ] == first["order_id"]
@@ -422,7 +431,7 @@ def test_server_owned_order_reuse_and_mode_isolation(
         old.created_at = datetime.now(timezone.utc) - timedelta(minutes=31)
         db.commit()
 
-    aged = _create_order(client)
+    aged = _create_order(client, first["order_id"])
     assert aged["order_id"] == first["order_id"]
     assert len(enabled_checkout) == 1
     with session_factory() as db:
@@ -434,7 +443,7 @@ def test_server_owned_order_reuse_and_mode_isolation(
     monkeypatch.setenv("RAZORPAY_KEY_ID", "rzp_test_rotatedhirewiz123")
     rotated = client.post(
         "/api/billing/orders",
-        json={"sku": "starter_bundle", "billing_country": "IN"},
+        json=_purchase_payload(),
     )
     assert rotated.status_code == 409
     assert len(enabled_checkout) == 1
@@ -793,7 +802,7 @@ def test_retired_unlimited_and_old_pack_not_offered_for_new_purchase(client,enab
 
 def test_missing_expense_policy_blocks_checkout_before_provider_or_order(client,enabled_checkout,session_factory,monkeypatch):
     monkeypatch.delenv("HIREWIZ_EXPENSE_POLICY_JSON")
-    assert client.post("/api/billing/orders",json={"sku":"starter_bundle","billing_country":"IN"}).status_code==503
+    assert client.post("/api/billing/orders",json=_purchase_payload()).status_code==503
     assert enabled_checkout==[]
     with session_factory() as db: assert db.query(PaymentOrder).count()==0
 

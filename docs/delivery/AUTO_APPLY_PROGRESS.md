@@ -27,33 +27,22 @@ Current development within these outcomes:
   verified company-to-ATS joins. This is source implementation, with production
   seeding and complete search acceptance pending. Worldwide or 95% job coverage
   has not been established. See the [origin register](../delivery/EMPLOYER_ORIGIN_REGISTRY_2026-10-13.md).
-- The GCP DOCX trace captured engine exit code 81, which requests a normal
-  LibreOffice restart. The renderer now permits one confirmed normal restart
-  using the same profile, arguments and original deadline after successful
-  child cleanup. It still refuses crash restarts, timeouts and failed cleanup.
-  The candidate image has a successful native Build with its exact source
-  generation, archive hash and immutable digest verified. Original document
-  acceptance ran on that exact image: the four parsing/antivirus cases passed,
-  while both rendered-layout cases failed to return a valid response. Installed
-  runtime hashes, font manifest and renderer version passed their native checks;
-  every case completed cleanup. The remaining render failure is unclassified,
-  so the candidate is not ready for deployment. A narrow diagnostic observed
-  actual first/second child handling. It confirms first-child exit 81 and cleanup
-  reported by the original helper, followed
-  by admission of the second child. The sandbox then returns exit 137 without
-  a second-child exit or parent response. This does not prove memory exhaustion
-  or another termination cause. The diagnostic Job and Execution are removed.
-  The earlier wrapper exit 137 does not establish a memory exhaustion cause.
-  Diagnostic Jobs and Executions, the completed acceptance Job/Execution, and
-  the owned candidate source upload have
-  been removed. Rendering limits and document safety checks remain unchanged.
-  Independent source review then found that the helper signaled a process group
-  after reaping its leader; its successful return did not prove group absence.
-  A reviewed repair now observes termination without reaping, signals while it
-  retains ownership, then requires a bounded actual reap and native group-absence
-  proof. Fourteen isolated checks pass, including three real local children.
-  The repair is held as a candidate pending a new exact-image native acceptance
-  run. It does not establish the cause of exit 137.
+- Format-preserving DOCX output is still failing its two native layout cases.
+  The latest exact-image GCP run passed all four parsing/antivirus cases,
+  verified the ten installed runtime hashes and actual font/tool manifest,
+  and completed cleanup for every case. Its owned Job, Execution and Build
+  source upload are absent. A reviewed candidate permits one normal engine
+  restart within the original deadline and corrects process ownership during
+  cleanup. It is held until rendered layout acceptance succeeds. Earlier
+  diagnostics observed exit 81 followed by a wrapper report of exit 137;
+  this does not establish memory exhaustion or the latest failure's cause.
+  A focused diagnostic on the reviewed ownership repair now confirms the first
+  child's actual exit 81 and successful cleanup, followed by second-attempt
+  admission and an exact wrapper report of exit 137. It did not observe the
+  second child's exit. The bound own-cgroup view returned unavailable memory
+  counters, so the cause remains unclassified. The temporary Job and Execution
+  are verified absent. Rendering limits and document safety checks remain
+  unchanged; repeating the same failed acceptance run alone is not progress.
 - The fresh Neon target now has three genuinely authenticated restricted roles
   and three verified numeric Secret Manager versions. The separate source-to-target
   release sequence, portable Linux profile and fresh-only native authority checks
@@ -95,6 +84,15 @@ Current development within these outcomes:
   Billing now has owner-scoped, paginated service history with actual held,
   charged and released amounts, separate from analysis history. These source
   changes have focused verification; production journeys are still pending.
+  Checkout source now validates the reviewed pack total and both credit
+  allowances before creating an order. Stable request identities recover
+  original orders across interrupted responses and captured-payment races;
+  resuming checkout requires another explicit review of its original terms.
+  Unknown provider creation keeps its reservation, blocks replacement attempts
+  regardless of age, and offers free status checks and support reconciliation.
+  Provider-proof reconciliation of unmapped outcomes and live payment acceptance
+  remain release work. Eleven isolated backend checks and thirteen UI checks
+  pass for this change; they do not complete the billing outcome.
   Native financial continuity and production activation remain pending. Reviewed
   expense and model cost policies are now stored as exact numeric Secret Manager
   versions with native checksum/hash readback. No runtime access grant or policy
@@ -106,7 +104,10 @@ Current development within these outcomes:
   keyboard/mobile navigation and page overflow checks passed. The wrapped score
   denominator is corrected in source. Billing history now uses valid definition
   list markup; the affected desktop/mobile accessibility cases pass with their
-  original assertions. These fixes await a new preview and production release.
+  original assertions. The subsequent `045d9db` preview also passed its actual
+  390×844 homepage check: the score stays on one line, page width equals scroll
+  width, and the keyboard menu opens and closes. Production release remains
+  pending.
   Complete user journeys, measured loading performance and production verification
   remain pending. Its pricing page awaits the server-owned billing catalog.
 
@@ -121,3 +122,10 @@ for completion. Do not add smaller checkpoints to create apparent progress.
 
 The [archived implementation and validation history](archive/AUTO_APPLY_VALIDATION_HISTORY_THROUGH_2026-10-13.md)
 preserves earlier results and timing without counting them as delivery completions.
+
+The latest committed source run (`045d9db`, GitHub Actions `38494089488`)
+passed backend tests and the frontend job. Its remaining failure is the public
+OpenAPI byte comparison: numeric schema limits serialized as `0.0` and
+`1000.0` instead of `0` and `1000`. The native public schema baseline is
+preserved for the next ordinary contract update. This validation result does
+not complete a major outcome or authorize production release.

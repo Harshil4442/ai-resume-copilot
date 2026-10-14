@@ -17,7 +17,8 @@ import {
   RefreshCw,
   Shield,
 } from "lucide-react";
-import { apiGet, apiPostJson } from "../../lib/api";
+import { ApiError, apiGet, apiPostJson } from "../../lib/api";
+import type { components } from "../../lib/generated/api";
 import { Button } from "../../components/ui/Button";
 import { LoadingBlock } from "../../components/ui/LoadingBlock";
 import { ServiceCreditHistory } from "../../components/billing/ServiceCreditHistory";
@@ -30,6 +31,7 @@ const CONFIRMATION_INTERVAL_MS = 2500;
 
 type SupportedSku = (typeof SUPPORTED_SKUS)[number];
 type CheckoutPhase = "idle" | "opening" | "confirming" | "pending" | "confirmed";
+type PurchaseQuoteAcceptance = components["schemas"]["PurchaseQuoteAcceptance"];
 
 interface BillingProduct {
   sku: SupportedSku;
@@ -57,22 +59,25 @@ interface BillingCatalog {
   availability_message?: string | null;
 }
 
-interface CreateOrderResponse {
-  order_id: string;
-  provider: "razorpay";
-  provider_order_id: string;
-  key_id: string;
-  amount_minor: number;
-  currency: "INR";
-  name: string;
-  description: string;
-  prefill?: {
-    email?: string;
-  };
+type CreateOrderResponse = components["schemas"]["CheckoutOrderResponse"];
+
+function acceptedPurchaseQuote(catalog: BillingCatalog, product: BillingProduct): PurchaseQuoteAcceptance {
+  return { catalog_version: catalog.catalog_version, amount_minor: product.amount_minor,
+    currency: product.currency, job_service_credits: product.entitlement_quantity, analysis_units: product.analysis_units };
 }
+
+function samePurchaseQuote(actual: PurchaseQuoteAcceptance | undefined, accepted: PurchaseQuoteAcceptance): boolean {
+  return actual !== undefined && actual.catalog_version === accepted.catalog_version &&
+    actual.amount_minor === accepted.amount_minor && actual.currency === accepted.currency &&
+    actual.job_service_credits === accepted.job_service_credits && actual.analysis_units === accepted.analysis_units;
+}
+
+const needsPurchaseReview = (error: unknown) => error instanceof ApiError &&
+  (error.detail as { detail?: { code?: string } } | null)?.detail?.code === "billing_quote_requires_review";
 
 interface BillingOrderStatus {
   order_id: string;
+  provider_order_id?: string | null;
   payment_reference?: string | null;
   sku: string;
   status: "pending" | "paid" | "failed" | "refunded";
@@ -82,6 +87,7 @@ interface BillingOrderStatus {
   created_at: string;
   paid_at: string | null;
   refunded_at: string | null;
+  accepted_quote?: PurchaseQuoteAcceptance | null;
 }
 
 interface UsageEvent {
@@ -224,6 +230,7 @@ function BillingContent({ requestedSku }: { requestedSku: string | null }) {
   const confirmedOrderRef = useRef(new Set<string>());
   const [catalog, setCatalog] = useState<BillingCatalog | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(true);
+  const [priceRefreshRequired, setPriceRefreshRequired] = useState(false);
   const [selection, setSelection] = useState<{ sku: SupportedSku; querySku: string | null } | null>(null);
   const [currentTier, setCurrentTier] = useState<string | null>(null);
   const [premiumUntil, setPremiumUntil] = useState<string | null>(null);
@@ -234,6 +241,8 @@ function BillingContent({ requestedSku }: { requestedSku: string | null }) {
   const [indiaBillingConfirmed, setIndiaBillingConfirmed] = useState(false);
   const [phase, setPhase] = useState<CheckoutPhase>("idle");
   const [currentOrder, setCurrentOrder] = useState<BillingOrderStatus | null>(null);
+  const purchaseIntent = useRef<{ fingerprint: string; key: string; sku: SupportedSku; acceptedQuote: PurchaseQuoteAcceptance } | null>(null);
+  const [recoverablePurchase, setRecoverablePurchase] = useState<{ sku: SupportedSku; acceptedQuote: PurchaseQuoteAcceptance } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const refreshProfile = useCallback(async () => {
@@ -256,29 +265,32 @@ function BillingContent({ requestedSku }: { requestedSku: string | null }) {
     }
   }, []);
 
+  const refreshCatalog = useCallback(async () => {
+    const response = await apiGet<BillingCatalog>("/public/billing/catalog");
+    if (!mountedRef.current) return;
+    if (response.market !== "IN" || typeof response.catalog_version !== "string") {
+      throw new Error("The India billing catalog is temporarily unavailable.");
+    }
+    const products = Array.isArray(response.products)
+      ? response.products.filter(
+          (product): product is BillingProduct =>
+            Boolean(product) &&
+            isSupportedSku(product.sku) &&
+            product.currency === "INR" &&
+            product.billing_type === "one_time" &&
+            product.auto_renews === false &&
+            Number.isInteger(product.amount_minor) &&
+            product.amount_minor > 0,
+        )
+      : [];
+    setCatalog({ ...response, products });
+    setPriceRefreshRequired(false);
+  }, []);
+
   useEffect(() => {
     mountedRef.current = true;
 
-    apiGet<BillingCatalog>("/public/billing/catalog")
-      .then((response) => {
-        if (!mountedRef.current) return;
-        if (response.market !== "IN" || typeof response.catalog_version !== "string") {
-          throw new Error("The India billing catalog is temporarily unavailable.");
-        }
-        const products = Array.isArray(response.products)
-          ? response.products.filter(
-              (product): product is BillingProduct =>
-                Boolean(product) &&
-                isSupportedSku(product.sku) &&
-                product.currency === "INR" &&
-                product.billing_type === "one_time" &&
-                product.auto_renews === false &&
-                Number.isInteger(product.amount_minor) &&
-                product.amount_minor > 0,
-            )
-          : [];
-        setCatalog({ ...response, products });
-      })
+    refreshCatalog()
       .catch((catalogError: unknown) => {
         if (!mountedRef.current) return;
         setError(
@@ -304,7 +316,7 @@ function BillingContent({ requestedSku }: { requestedSku: string | null }) {
       mountedRef.current = false;
       pollRunRef.current += 1;
     };
-  }, [refreshProfile, refreshUsage]);
+  }, [refreshCatalog, refreshProfile, refreshUsage]);
 
   const visibleProducts = useMemo(() => {
     if (!catalog) return [];
@@ -319,10 +331,14 @@ function BillingContent({ requestedSku }: { requestedSku: string | null }) {
       ? selectedSku
       : visibleProducts[0]?.sku ?? null;
 
-  const selectedProduct = useMemo(
+  const catalogProduct = useMemo(
     () => visibleProducts.find((product) => product.sku === effectiveSelectedSku) ?? null,
     [effectiveSelectedSku, visibleProducts],
   );
+  const retainedQuote = recoverablePurchase?.sku === catalogProduct?.sku ? recoverablePurchase?.acceptedQuote : null;
+  const selectedProduct = useMemo(() => catalogProduct && retainedQuote ? { ...catalogProduct, amount_minor: retainedQuote.amount_minor,
+    entitlement_quantity: retainedQuote.job_service_credits, analysis_units: retainedQuote.analysis_units } : catalogProduct,
+  [catalogProduct, retainedQuote]);
 
   const checkoutEnabled = Boolean(
     catalog?.checkout_enabled && catalog.provider === "razorpay",
@@ -330,6 +346,8 @@ function BillingContent({ requestedSku }: { requestedSku: string | null }) {
   const purchaseAllowed = Boolean(
     checkoutEnabled &&
       selectedProduct?.enabled_for_purchase &&
+      !priceRefreshRequired &&
+      currentOrder === null &&
       currentTier !== null &&
       indiaBillingConfirmed,
   );
@@ -434,18 +452,32 @@ function BillingContent({ requestedSku }: { requestedSku: string | null }) {
     [markConfirmed],
   );
 
-  const handleCheckout = useCallback(async () => {
-    if (!selectedProduct || !purchaseAllowed || checkoutBusy) return;
+  const handleCheckout = useCallback(async (recoverOrder?: BillingOrderStatus) => {
+    if (checkoutBusy) return;
+    if (recoverOrder ? !recoverOrder.accepted_quote || !indiaBillingConfirmed || !checkoutEnabled :
+      !catalog || !selectedProduct || !purchaseAllowed) return;
+    if (recoverOrder && !recoverOrder.provider_order_id) return;
+    const targetSku = recoverOrder?.sku ?? selectedProduct?.sku;
+    if (!isSupportedSku(targetSku)) return;
+    const acceptedQuote = recoverOrder?.accepted_quote ?? retainedQuote ?? acceptedPurchaseQuote(catalog!, selectedProduct!);
+    const fingerprint = JSON.stringify({ sku: targetSku, accepted_quote: acceptedQuote });
+    if (purchaseIntent.current?.fingerprint !== fingerprint) purchaseIntent.current = {
+      fingerprint, key: crypto.randomUUID(), sku: targetSku, acceptedQuote,
+    };
+    const requestIdentity = purchaseIntent.current.key;
 
     setPhase("opening");
     setError(null);
-    setCurrentOrder(null);
+    if (!recoverOrder) setCurrentOrder(null);
     try {
-      // The browser sends only an allowlisted SKU. Amount, currency and
-      // entitlements are selected and locked by the server.
+      // Acceptance binds the displayed total and both included allowances.
+      // The server validates it before creating any new checkout attempt.
       const order = await apiPostJson<CreateOrderResponse>("/billing/orders", {
-        sku: selectedProduct.sku,
+        sku: targetSku,
         billing_country: "IN",
+        accepted_quote: acceptedQuote,
+        idempotency_key: requestIdentity,
+        ...(recoverOrder ? { order_reference: recoverOrder.order_id } : {}),
       });
 
       if (
@@ -453,22 +485,24 @@ function BillingContent({ requestedSku }: { requestedSku: string | null }) {
         !order.order_id ||
         !order.provider_order_id ||
         !order.key_id ||
-        order.currency !== selectedProduct.currency ||
-        order.amount_minor !== selectedProduct.amount_minor
+        order.currency !== acceptedQuote.currency ||
+        order.amount_minor !== acceptedQuote.amount_minor ||
+        !samePurchaseQuote(order.accepted_quote, acceptedQuote)
       ) {
         throw new Error("Checkout configuration changed. Refresh this page before trying again.");
       }
 
       trackEvent("checkout_started", {
-        sku: selectedProduct.sku,
-        amount_minor: selectedProduct.amount_minor,
-        currency: selectedProduct.currency,
+        sku: targetSku,
+        amount_minor: acceptedQuote.amount_minor,
+        currency: acceptedQuote.currency,
         provider: order.provider,
       });
 
       setCurrentOrder({
         order_id: order.order_id,
-        sku: selectedProduct.sku,
+        provider_order_id: order.provider_order_id,
+        sku: targetSku,
         status: "pending",
         fulfilled: false,
         amount_minor: order.amount_minor,
@@ -476,7 +510,9 @@ function BillingContent({ requestedSku }: { requestedSku: string | null }) {
         created_at: new Date().toISOString(),
         paid_at: null,
         refunded_at: null,
+        accepted_quote: acceptedQuote,
       });
+      setRecoverablePurchase(null);
 
       // The provider script is loaded only after the backend confirms that
       // checkout is approved, enabled and configured, and creates an order.
@@ -495,7 +531,7 @@ function BillingContent({ requestedSku }: { requestedSku: string | null }) {
         handler: (response) => {
           successReported = true;
           trackEvent("payment_client_confirmed", {
-            sku: selectedProduct.sku,
+            sku: targetSku,
             order_id: order.order_id,
             provider_order_id: response.razorpay_order_id,
           });
@@ -522,7 +558,7 @@ function BillingContent({ requestedSku }: { requestedSku: string | null }) {
           ondismiss: () => {
             if (successReported) return;
             trackEvent("checkout_dismissed", {
-              sku: selectedProduct.sku,
+              sku: targetSku,
               order_id: order.order_id,
             });
             setPhase("pending");
@@ -537,7 +573,7 @@ function BillingContent({ requestedSku }: { requestedSku: string | null }) {
 
       checkout.on("payment.failed", (response) => {
         trackEvent("checkout_failed", {
-          sku: selectedProduct.sku,
+          sku: targetSku,
           order_id: order.order_id,
           failure_category: "provider_failed",
         });
@@ -550,10 +586,45 @@ function BillingContent({ requestedSku }: { requestedSku: string | null }) {
       checkout.open();
     } catch (checkoutError: unknown) {
       trackEvent("checkout_failed", {
-        sku: selectedProduct.sku,
+        sku: targetSku,
         failure_category: "initialization_failed",
       });
       setPhase("idle");
+      const recovery = checkoutError instanceof ApiError ?
+        (checkoutError.detail as { detail?: { code?: string; order_id?: string } } | null)?.detail : undefined;
+      if (recovery?.code === "billing_order_requires_status" && recovery.order_id) {
+        setRecoverablePurchase(null);
+        try {
+          const original = await apiGet<BillingOrderStatus>(`/billing/orders/${encodeURIComponent(recovery.order_id)}`);
+          if (!mountedRef.current) return;
+          setCurrentOrder(original);
+          if (original.status === "paid" && original.fulfilled) await markConfirmed(original);
+          else { setPhase(original.status === "pending" ? "pending" : "idle"); setError(getErrorMessage(checkoutError, "Review your original order below. Checking its status is free and does not create another purchase.")); }
+        } catch {
+          if (mountedRef.current) { setCurrentOrder(recoverOrder ?? { order_id: recovery.order_id, sku: targetSku, status: "pending", fulfilled: false,
+            amount_minor: acceptedQuote.amount_minor, currency: acceptedQuote.currency, created_at: new Date().toISOString(),
+            paid_at: null, refunded_at: null, accepted_quote: null });
+            setPhase("pending"); setError("Could not read the original payment status. Use Check payment status before continuing."); }
+        }
+        return;
+      }
+      if (needsPurchaseReview(checkoutError)) {
+        purchaseIntent.current = null; setRecoverablePurchase(null);
+        setIndiaBillingConfirmed(false);
+        setPriceRefreshRequired(true);
+        setCatalog(null);
+        setCatalogLoading(true);
+        try {
+          await refreshCatalog();
+          if (mountedRef.current) setError("Pack terms were refreshed. Review the price and included credits, confirm India billing again, then click Pay when ready.");
+        } catch {
+          if (mountedRef.current) setError("Could not refresh pack terms. Refresh the catalog before reviewing another purchase. No new checkout was created.");
+        } finally {
+          if (mountedRef.current) setCatalogLoading(false);
+        }
+        return;
+      }
+      if (purchaseIntent.current) setRecoverablePurchase({ sku: purchaseIntent.current.sku, acceptedQuote: purchaseIntent.current.acceptedQuote });
       setError(
         getErrorMessage(
           checkoutError,
@@ -561,7 +632,7 @@ function BillingContent({ requestedSku }: { requestedSku: string | null }) {
         ),
       );
     }
-  }, [checkoutBusy, pollOrder, purchaseAllowed, selectedProduct]);
+  }, [catalog, checkoutBusy, checkoutEnabled, indiaBillingConfirmed, markConfirmed, pollOrder, purchaseAllowed, refreshCatalog, retainedQuote, selectedProduct]);
 
   const checkCurrentOrder = useCallback(() => {
     if (currentOrder?.order_id) void pollOrder(currentOrder.order_id);
@@ -584,7 +655,7 @@ function BillingContent({ requestedSku }: { requestedSku: string | null }) {
             </div>
             <div className="mt-7 flex flex-col justify-center gap-3 sm:flex-row">
               <Button asChild><Link href={"/employer-jobs"}>Continue to {"employer jobs"}</Link></Button>
-              <Button variant="secondary" onClick={() => { setPhase("idle"); setCurrentOrder(null); setIndiaBillingConfirmed(false); }}>Review another purchase</Button>
+              <Button variant="secondary" onClick={() => { setPhase("idle"); setCurrentOrder(null); setIndiaBillingConfirmed(false); purchaseIntent.current = null; setRecoverablePurchase(null); }}>Review another purchase</Button>
               <Button asChild variant="ghost"><Link href="/contact">Billing support</Link></Button>
             </div>
           </section>
@@ -614,7 +685,7 @@ function BillingContent({ requestedSku }: { requestedSku: string | null }) {
           <div className="sm:border-l sm:border-border sm:pl-6"><p className="data-label">Access period</p><p className="mt-2 text-lg font-semibold text-foreground">{currentTier === "premium" && premiumUntil ? `Through ${new Date(premiumUntil).toLocaleDateString("en-IN")}` : currentTier === "premium" ? "Active" : "Free tier"}</p><p className="mt-1 text-xs text-muted-foreground">Premium ends automatically. No renewal payment is scheduled.</p></div>
         </section>
 
-        {error ? <div role="alert" className="flex items-start gap-3 border-y border-coral/30 bg-coral/5 px-4 py-4 text-sm text-coral"><AlertCircle size={18} className="mt-0.5 shrink-0" /><span>{error}</span></div> : null}
+        {error ? <div role="alert" className="flex items-start gap-3 border-y border-coral/30 bg-coral/5 px-4 py-4 text-sm text-coral"><AlertCircle size={18} className="mt-0.5 shrink-0" /><span>{error}{priceRefreshRequired ? <button type="button" className="ml-2 underline" disabled={catalogLoading} onClick={async () => { setCatalogLoading(true); try { await refreshCatalog(); setError("Review the refreshed price and included credits, confirm India billing, then click Pay when ready."); } catch { setError("Could not refresh pack terms. Try refreshing the catalog again."); } finally { if (mountedRef.current) setCatalogLoading(false); } }}>Refresh catalog</button> : null}</span></div> : null}
 
         {catalogLoading ? <LoadingBlock rows={6} /> : (
           <div className="grid gap-10 lg:grid-cols-[minmax(0,1.08fr)_minmax(360px,0.92fr)] lg:items-start">
@@ -647,14 +718,14 @@ function BillingContent({ requestedSku }: { requestedSku: string | null }) {
                   <div className={`border-l-2 pl-4 ${checkoutEnabled ? "border-primary" : "border-primary/30"}`}><div className="flex items-start gap-3">{checkoutEnabled ? <Shield className="mt-0.5 shrink-0 text-primary" size={18} /> : <Clock3 className="mt-0.5 shrink-0 text-primary" size={18} />}<div><h3 className="font-semibold text-foreground">{checkoutEnabled ? "Secure checkout available" : "Checkout is not available yet"}</h3><p className="mt-1 text-sm leading-6 text-muted-foreground">{checkoutEnabled ? "Confirm India billing, then continue to Razorpay hosted checkout." : catalog?.availability_message || "The product remains visible while purchases are paused."}</p></div></div></div>
                   <div className="mt-6 grid grid-cols-[1fr_auto] gap-4 border-y border-border py-5"><div><p className="data-label">Product</p><p className="mt-2 font-semibold text-foreground">{selectedProduct.name}</p></div><div className="text-right"><p className="data-label">Due today</p><p className="mt-2 text-2xl font-semibold text-primary">{formatPrice(selectedProduct.amount_minor, selectedProduct.currency)}</p></div></div>
                   <dl className="divide-y divide-border text-sm">{[["Purchase type", "One-time payment"], ["Automatic renewal", "No"], ["Trial", "None"], ["Billing country", "India"], ["Seller", "HireWiz, operated by SAVALIYA HARSHIL YOGESHBHAI"], ["Delivery", `${selectedProduct.entitlement_quantity} service credits + ${selectedProduct.analysis_units} analysis units after verified payment`]].map(([term, value]) => <div key={term} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)] gap-4 py-3"><dt className="text-muted-foreground">{term}</dt><dd className="text-right font-semibold text-foreground">{value}</dd></div>)}</dl>
-                  <p className="border-y border-border py-4 text-xs leading-5 text-muted-foreground">The server locks this total before checkout. Compare the same amount in the hosted payment window before authorizing payment.</p>
+                  <p className="border-y border-border py-4 text-xs leading-5 text-muted-foreground">The server locks this total before checkout. Compare the same amount in the hosted payment window before authorizing payment.{retainedQuote ? " Checking the interrupted request at its originally accepted price and included credits; retrying retains that request identity." : ""}</p>
                   <label className="mt-5 flex cursor-pointer items-start gap-3 text-sm leading-6 text-muted-foreground"><input type="checkbox" checked={indiaBillingConfirmed} onChange={(event) => setIndiaBillingConfirmed(event.target.checked)} disabled={currentTier === null || !checkoutEnabled} className="mt-1 h-4 w-4 shrink-0 accent-primary" /><span>I confirm my billing country is India and this INR purchase is for domestic use.</span></label>
                   <div className="mt-5">
-                    {currentTier === null ? <div className="flex items-start gap-3 border-y border-border py-4 text-sm text-muted-foreground"><Lock size={17} className="mt-0.5 shrink-0" />Checkout waits for account status.</div> : checkoutEnabled && selectedProduct.enabled_for_purchase ? <Button type="button" onClick={handleCheckout} disabled={!purchaseAllowed || checkoutBusy} className="w-full">{checkoutBusy ? <><RefreshCw size={17} className="animate-spin" />{phase === "confirming" ? "Waiting for verified confirmation" : "Opening hosted checkout"}</> : <><CreditCard size={17} />Pay with Razorpay | {formatPrice(selectedProduct.amount_minor, selectedProduct.currency)}</>}</Button> : <Button type="button" variant="secondary" disabled className="w-full">Checkout unavailable</Button>}
+                    {currentTier === null ? <div className="flex items-start gap-3 border-y border-border py-4 text-sm text-muted-foreground"><Lock size={17} className="mt-0.5 shrink-0" />Checkout waits for account status.</div> : checkoutEnabled && selectedProduct.enabled_for_purchase ? <Button type="button" onClick={() => void handleCheckout()} disabled={!purchaseAllowed || checkoutBusy} className="w-full">{checkoutBusy ? <><RefreshCw size={17} className="animate-spin" />{phase === "confirming" ? "Waiting for verified confirmation" : "Opening hosted checkout"}</> : <><CreditCard size={17} />Pay with Razorpay | {formatPrice(selectedProduct.amount_minor, selectedProduct.currency)}</>}</Button> : <Button type="button" variant="secondary" disabled className="w-full">Checkout unavailable</Button>}
                   </div>
                 </div> : <div className="py-8 text-center"><FileText className="mx-auto text-muted-foreground" size={28} /><p className="mt-3 font-bold text-foreground">Select a product to review it.</p></div>}
 
-                {currentOrder && phase !== "confirmed" ? <div className="mt-6 border-t border-border pt-5 text-xs text-muted-foreground"><p className="break-all">Order reference: {currentOrder.order_id}</p>{currentOrder.payment_reference ? <p className="break-all">Payment reference: {currentOrder.payment_reference}</p> : null}<Button type="button" variant="secondary" size="sm" onClick={checkCurrentOrder} disabled={phase === "confirming"} className="mt-3"><RefreshCw size={13} className={phase === "confirming" ? "animate-spin" : ""} />Check payment status</Button></div> : null}
+                {currentOrder && phase !== "confirmed" ? <div className="mt-6 border-t border-border pt-5 text-xs text-muted-foreground"><p className="break-all">Order reference: {currentOrder.order_id}</p>{currentOrder.payment_reference ? <p className="break-all">Payment reference: {currentOrder.payment_reference}</p> : null}{currentOrder.accepted_quote ? <div className="mt-3 leading-5" aria-label="Original checkout terms"><p>Original order: {currentOrder.accepted_quote.job_service_credits} service credits + {currentOrder.accepted_quote.analysis_units} analysis units for {formatPrice(currentOrder.accepted_quote.amount_minor, currentOrder.accepted_quote.currency)}.</p><p className="break-all">Original catalog: {currentOrder.accepted_quote.catalog_version}. Resuming accepts these original terms and checks this same order.</p></div> : <p className="mt-3 leading-5">Original pack terms need review. Checking status is free; contact billing support before resuming payment.</p>}{currentOrder.status === "pending" && !currentOrder.provider_order_id ? <p className="mt-3 leading-5">Checkout creation has an unknown outcome. Payment remains paused. Check status or contact billing support to reconcile the original attempt before another purchase.</p> : null}<div className="mt-3 flex flex-wrap gap-2"><Button type="button" variant="secondary" size="sm" onClick={checkCurrentOrder} disabled={phase === "confirming"}><RefreshCw size={13} className={phase === "confirming" ? "animate-spin" : ""} />Check payment status</Button>{currentOrder.status === "pending" ? <Button type="button" variant="secondary" size="sm" onClick={() => void handleCheckout(currentOrder)} disabled={!currentOrder.provider_order_id || !currentOrder.accepted_quote || !indiaBillingConfirmed || !checkoutEnabled || checkoutBusy}>Resume original checkout</Button> : currentOrder.status === "failed" || currentOrder.status === "refunded" ? <Button type="button" variant="secondary" size="sm" onClick={() => { purchaseIntent.current = null; setRecoverablePurchase(null); setCurrentOrder(null); setIndiaBillingConfirmed(false); setError(null); setPhase("idle"); }}>Review another purchase</Button> : null}</div></div> : null}
               </div>
 
               <div className="mt-6 border-y border-border py-5 text-sm leading-6 text-muted-foreground"><div className="flex items-start gap-3"><Shield size={18} className="mt-0.5 shrink-0 text-primary" /><p>Card, CVV, UPI PIN, bank-login, and other payment credentials are entered only in Razorpay hosted checkout.</p></div><div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 border-t border-border pt-4 text-xs font-bold">{[["/terms", "Terms"], ["/privacy", "Privacy"], ["/refund", "Refunds"], ["/digital-delivery", "Digital delivery"], ["/contact", "Billing support"]].map(([href, label]) => <Link key={href} href={href} className="text-primary hover:underline">{label}</Link>)}</div></div>
