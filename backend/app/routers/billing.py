@@ -5,7 +5,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import and_, or_
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
 from ..billing.catalog import CATALOG_VERSION, get_product, product_purchase_enabled, public_catalog
@@ -25,9 +25,21 @@ from ..billing.purchase_quote import (
     validate_purchase_quote,
 )
 from ..billing.razorpay import RazorpayAdapter, RazorpayProviderError, RazorpaySettings
-from ..billing.service import WebhookValidationError, as_aware, process_razorpay_webhook
+from ..billing.reconciliation import (
+    OriginalOrder,
+    ReconciliationResponse,
+    ReconciliationUnavailable,
+    fetch_reconciliation,
+)
+from ..billing.service import (
+    WebhookValidationError,
+    _process_capture,
+    _process_refund,
+    as_aware,
+    process_razorpay_webhook,
+)
 from ..database import get_db
-from ..models import EntitlementLedger, PaymentOrder, PaymentTransaction, User
+from ..models import EntitlementLedger, PaymentEvent, PaymentOrder, PaymentTransaction, User
 from ..rate_limiter import limiter
 from ..security import get_current_user
 
@@ -152,7 +164,7 @@ def create_order(
             raise _order_status_required(original, "This request belongs to different original pack terms. Review the original order.")
         if original.status in UNCERTAIN_ORDER_STATUSES:
             raise _order_status_required(original, "Checkout creation has an unknown outcome. Contact billing support to reconcile this original attempt before another purchase.")
-        if original.status not in OPEN_ORDER_STATUSES or not original.provider_order_id:
+        if original.status != "created" or not original.provider_order_id:
             raise _order_status_required(original)
         settings = _settings()
         if not settings.checkout_enabled:
@@ -414,6 +426,7 @@ def _order_status_payload(db: Session, order: PaymentOrder) -> dict:
     return {
         "order_id": order.public_id,
         "provider_order_id": order.provider_order_id,
+        "checkout_available": bool(order.provider_order_id and order.status == "created"),
         "payment_reference": transaction.provider_payment_id if transaction else None,
         "sku": order.sku,
         "entitlement_kind": order.entitlement_kind,
@@ -467,6 +480,115 @@ def get_order_status(
     _no_store(response)
     order = _owned_order(db, order_reference, current_user.id)
     return _order_status_payload(db, order)
+
+
+def _reconciliation_reply(db, order, resolution="unresolved", message=None):
+    return {"resolution": resolution,
+            "message": message or "The original attempt remains unresolved. Payment stays paused; contact billing support. No new order was created.",
+            "order": _order_status_payload(db, order)}
+
+
+@router.post("/orders/{order_reference}/reconcile", response_model=ReconciliationResponse)
+@limiter.limit("3/minute")
+def reconcile_order(
+    order_reference: str,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Free explicit provider reads; never CREATE, capture, refund or open Checkout."""
+    _no_store(response)
+    owner_id = current_user.id
+    order = _owned_order(db, order_reference, owner_id)
+    order_reference = order.public_id
+    terminal = {"paid", "partially_refunded", "refunded"}
+    if order.status in terminal:
+        return _reconciliation_reply(db, order, "settled", "The original payment outcome is recorded. Review its status.")
+    if order.status == "paid_unfulfilled":
+        return _reconciliation_reply(db, order, message="The original payment is recorded, but allowance fulfilment needs billing support. No new order was created.")
+    try:
+        original = OriginalOrder.from_order(order)
+    except HTTPException:
+        return _reconciliation_reply(db, order)
+    settings = _settings()
+    # End the read transaction before bounded network reads. Reacquire owner and
+    # order locks, with refreshed rows, before any binding or accounting write.
+    db.rollback()
+    try:
+        proof = fetch_reconciliation(original, settings)
+    except ReconciliationUnavailable:
+        return _reconciliation_reply(db, _owned_order(db, order_reference, owner_id))
+
+    try:
+        # Match settlement's order-before-owner lock order. NOWAIT also avoids
+        # waiting on admission's owner lock while holding the original order.
+        order = (db.query(PaymentOrder)
+                 .filter(PaymentOrder.user_id == owner_id, PaymentOrder.public_id == order_reference)
+                 .populate_existing().with_for_update(nowait=True).first())
+        if order is None:
+            raise HTTPException(404, "Order not found.")
+        user = db.query(User).filter(User.id == owner_id).with_for_update(nowait=True).first()
+        if user is None:
+            raise HTTPException(404, "Order not found.")
+    except OperationalError:
+        db.rollback()
+        return _reconciliation_reply(db, _owned_order(db, order_reference, owner_id))
+    if order.status in terminal:
+        return _reconciliation_reply(db, order, "settled", "The original payment outcome was already recorded. Review its status.")
+    if order.status == "paid_unfulfilled":
+        return _reconciliation_reply(db, order, message="The original payment is recorded, but allowance fulfilment needs billing support. No new order was created.")
+    try:
+        if OriginalOrder.from_order(order) != original:
+            raise ReconciliationUnavailable("original_terms_changed")
+        provider_id = proof.order["id"]
+        bound = (db.query(PaymentOrder).filter(PaymentOrder.provider_order_id == provider_id)
+                 .first())
+        if (bound is not None and bound.id != order.id) or order.provider_order_id not in (None, provider_id):
+            raise ReconciliationUnavailable("provider_order_already_bound")
+        digest = proof.digest(original)
+        event_id = "get:" + original.public_id + ":" + digest
+        event = (db.query(PaymentEvent)
+                 .filter(PaymentEvent.provider == "razorpay_api", PaymentEvent.provider_event_id == event_id)
+                 .with_for_update().first())
+        if event is not None and (event.order_id != order.id or event.payload_sha256 != digest):
+            raise ReconciliationUnavailable("api_proof_ownership_mismatch")
+        if event is None:
+            event = PaymentEvent(provider="razorpay_api", provider_event_id=event_id,
+                                 event_type="api.order_reconciliation", payload_sha256=digest,
+                                 order_id=order.id, processing_status="received", provider_created_at=None)
+            db.add(event)
+        order.provider_order_id = provider_id
+        db.add(order)
+        db.flush()  # Existing unique provider-ID constraint protects a binding race.
+        if proof.payment is not None:
+            payload = {"payload": {"order": {"entity": proof.order}, "payment": {"entity": proof.payment}}}
+            if proof.refunds:
+                # Use actual refunded/captured payment and processed refund facts.
+                # Never fabricate a historical payment.captured notification.
+                for refund in proof.refunds:
+                    payload["payload"]["refund"] = {"entity": refund}
+                    if _process_refund(db, payload, event, original.provider_mode) != order.public_id:
+                        raise ReconciliationUnavailable("unmapped_refund_proof")
+            elif _process_capture(db, payload, event, "order.paid", original.provider_mode) != order.public_id:
+                raise ReconciliationUnavailable("unmapped_capture_proof")
+        elif proof.checkout_ready and order.status in UNCERTAIN_ORDER_STATUSES:
+            order.status = "created"
+        elif not proof.checkout_ready and order.status in OPEN_ORDER_STATUSES:
+            # Positive attempted/authorized/failed-only proof still has no final
+            # payment outcome. Keep Resume paused across later free reads.
+            order.status = "creation_unknown"
+        event.processing_status = "processed"
+        event.processed_at = _utcnow()
+        db.commit()
+    except (ReconciliationUnavailable, WebhookValidationError, IntegrityError, OperationalError, HTTPException):
+        db.rollback()
+        return _reconciliation_reply(db, _owned_order(db, order_reference, owner_id))
+    resolution = "settled" if order.status in terminal else "checkout_ready" if proof.checkout_ready and order.status == "created" else "unresolved"
+    message = ("Original checkout recovered. Review its original allowances and confirm again before resuming."
+               if resolution == "checkout_ready" else "The original payment outcome is recorded. Review its status."
+               if resolution == "settled" else None)
+    return _reconciliation_reply(db, order, resolution, message)
 
 
 def _end_premium_access(db: Session, user: User) -> dict:

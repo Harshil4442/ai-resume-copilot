@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), track: vi.fn() }));
@@ -51,11 +51,13 @@ function order(quote = originalQuote) {
   };
 }
 
-function orderStatus(status: "pending" | "paid" = "pending", quote = originalQuote) {
+function orderStatus(status: "pending" | "paid" | "refunded" = "pending", quote = originalQuote) {
   return {
     order_id: "order_original_fixture", provider_order_id: "provider_order_fixture", sku: "starter_bundle", status, fulfilled: status === "paid",
+    checkout_available: status === "pending",
     amount_minor: quote.amount_minor, currency: quote.currency, accepted_quote: { ...quote },
-    created_at: "2026-10-14T08:00:00Z", paid_at: status === "paid" ? "2026-10-14T08:01:00Z" : null, refunded_at: null,
+    created_at: "2026-10-14T08:00:00Z", paid_at: status !== "pending" ? "2026-10-14T08:01:00Z" : null,
+    refunded_at: status === "refunded" ? "2026-10-14T08:02:00Z" : null,
   };
 }
 
@@ -247,7 +249,7 @@ describe("billing checkout quote acceptance", () => {
   });
 
   it("keeps an unknown checkout creation unpayable while allowing free original status checks", async () => {
-    const unknownCreation = { ...orderStatus(), provider_order_id: null };
+    const unknownCreation = { ...orderStatus(), provider_order_id: null, checkout_available: false };
     state.get.mockImplementation((url: string) => ["/billing/recent-order", "/billing/orders/order_original_fixture"].includes(url)
       ? Promise.resolve(unknownCreation) : read(url));
     render(<BillingPage />);
@@ -271,5 +273,226 @@ describe("billing checkout quote acceptance", () => {
     await waitFor(() => expect(state.get.mock.calls.filter(([url]) => url === "/billing/orders/order_original_fixture")).toHaveLength(1));
     expect(state.post).not.toHaveBeenCalled();
     expectNoHostedCheckout();
+  });
+
+  it("reconciles an unknown original order and requires fresh acceptance before a separate resume", async () => {
+    const currentQuote = { ...originalQuote, catalog_version: "fixture-v2", amount_minor: 69900, job_service_credits: 120, analysis_units: 3 };
+    const unknownCreation = { ...orderStatus(), provider_order_id: null, accepted_quote: null, checkout_available: false };
+    state.get.mockImplementation((url: string) => url === "/public/billing/catalog"
+      ? Promise.resolve(catalog(currentQuote)) : url === "/billing/recent-order"
+        ? Promise.resolve(unknownCreation) : read(url));
+    state.post.mockResolvedValueOnce({
+      resolution: "checkout_ready", message: "The original checkout is ready for review.", order: orderStatus(),
+    }).mockResolvedValueOnce(order());
+
+    render(<BillingPage />);
+    const reconcile = await screen.findByRole("button", { name: "Reconcile original payment" });
+    const confirmation = await screen.findByRole("checkbox", { name: /I confirm my billing country/ });
+    await waitFor(() => expect(confirmation).toBeEnabled());
+    fireEvent.click(confirmation);
+    expect(screen.getByRole("button", { name: "Resume original checkout" })).toBeDisabled();
+    expect(state.post).not.toHaveBeenCalled();
+    expectNoHostedCheckout();
+    fireEvent.click(reconcile);
+
+    await screen.findByLabelText("Original checkout terms");
+    expect(screen.getByLabelText("Original checkout terms")).toHaveTextContent("Original order: 100 service credits + 2 analysis units for ₹649.");
+    expect(state.post.mock.calls).toEqual([["/billing/orders/order_original_fixture/reconcile", undefined]]);
+    expect(confirmation).not.toBeChecked();
+    const resume = screen.getByRole("button", { name: "Resume original checkout" });
+    expect(resume).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Pay with Razorpay/ })).toBeDisabled();
+    expectNoHostedCheckout();
+    fireEvent.click(resume);
+    expect(state.post).toHaveBeenCalledTimes(1);
+    fireEvent.click(confirmation);
+    expect(resume).toBeEnabled();
+    expect(state.post).toHaveBeenCalledTimes(1);
+    expectNoHostedCheckout();
+    fireEvent.click(resume);
+
+    await waitFor(() => expect(openCheckout).toHaveBeenCalledTimes(1));
+    expect(state.post).toHaveBeenCalledTimes(2);
+    expect(state.post.mock.calls[1]).toEqual(["/billing/orders", { ...purchaseRequest(), order_reference: "order_original_fixture" }]);
+    expect(hostedCheckout.mock.calls[0][0]).toMatchObject({ amount: 64900, currency: "INR", order_id: "provider_order_fixture" });
+  });
+
+  it("keeps unresolved reconciliation unpayable across free status reads even with a provider order ID", async () => {
+    const unresolvedOrder = { ...orderStatus(), checkout_available: false };
+    state.get.mockImplementation((url: string) => ["/billing/recent-order", "/billing/orders/order_original_fixture"].includes(url)
+      ? Promise.resolve(unresolvedOrder) : read(url));
+    const unresolvedMessage = "The original payment is still unresolved. Review it with billing support before paying.";
+    state.post.mockResolvedValue({ resolution: "unresolved", message: unresolvedMessage, order: unresolvedOrder });
+
+    render(<BillingPage />);
+    const reconcile = await screen.findByRole("button", { name: "Reconcile original payment" });
+    const confirmation = await screen.findByRole("checkbox", { name: /I confirm my billing country/ });
+    await waitFor(() => expect(confirmation).toBeEnabled());
+    fireEvent.click(confirmation);
+    expect(state.post).not.toHaveBeenCalled();
+    expectNoHostedCheckout();
+    fireEvent.click(reconcile);
+
+    await screen.findByText(unresolvedMessage);
+    expect(state.post.mock.calls).toEqual([["/billing/orders/order_original_fixture/reconcile", undefined]]);
+    if (!(confirmation as HTMLInputElement).checked) fireEvent.click(confirmation);
+    expect(confirmation).toBeChecked();
+    expect(screen.getByRole("button", { name: "Resume original checkout" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Pay with Razorpay/ })).toBeDisabled();
+    expectNoHostedCheckout();
+
+    vi.useFakeTimers();
+    try {
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Check payment status" }));
+        await vi.runAllTimersAsync();
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(state.get.mock.calls.filter(([url]) => url === "/billing/orders/order_original_fixture").length).toBeGreaterThan(1);
+    expect(screen.getByRole("button", { name: "Check payment status" })).toBeEnabled();
+    expect(confirmation).toBeChecked();
+    const resume = screen.getByRole("button", { name: "Resume original checkout" });
+    expect(resume).toBeDisabled();
+    fireEvent.click(resume);
+    expect(state.post).toHaveBeenCalledTimes(1);
+    expectNoHostedCheckout();
+  });
+
+  it("allows purchase review after a free status check confirms a previously unresolved original order was refunded", async () => {
+    const unresolvedOrder = { ...orderStatus(), checkout_available: false };
+    const unresolvedMessage = "The original payment is still unresolved. Review it with billing support before paying.";
+    state.get.mockImplementation((url: string) => url === "/billing/recent-order"
+      ? Promise.resolve(unresolvedOrder) : url === "/billing/orders/order_original_fixture"
+        ? Promise.resolve(orderStatus("refunded")) : read(url));
+    state.post.mockResolvedValue({ resolution: "unresolved", message: unresolvedMessage, order: unresolvedOrder });
+
+    render(<BillingPage />);
+    const reconcile = await screen.findByRole("button", { name: "Reconcile original payment" });
+    expect(state.post).not.toHaveBeenCalled();
+    fireEvent.click(reconcile);
+    await screen.findByText(unresolvedMessage);
+    expect(screen.getByRole("button", { name: "Resume original checkout" })).toBeDisabled();
+    expectNoHostedCheckout();
+    fireEvent.click(screen.getByRole("button", { name: "Check payment status" }));
+
+    const review = await screen.findByRole("button", { name: "Review another purchase" });
+    expect(review).toBeEnabled();
+    expect(screen.getByRole("alert")).toHaveTextContent(/refunded/i);
+    expect(screen.queryByRole("heading", { name: "Payment confirmed" })).not.toBeInTheDocument();
+    expect(state.get.mock.calls.filter(([url]) => url === "/billing/orders/order_original_fixture")).toHaveLength(1);
+    expect(state.post.mock.calls).toEqual([["/billing/orders/order_original_fixture/reconcile", undefined]]);
+    expectNoHostedCheckout();
+  });
+
+  it("keeps a reloaded pending order unpayable when checkout is unavailable despite its provider ID and accepted quote", async () => {
+    state.get.mockImplementation((url: string) => url === "/billing/recent-order"
+      ? Promise.resolve({ ...orderStatus(), checkout_available: false }) : read(url));
+
+    render(<BillingPage />);
+    await screen.findByText("Order reference: order_original_fixture");
+    expect(screen.getByLabelText("Original checkout terms")).toHaveTextContent("Original order: 100 service credits + 2 analysis units for ₹649.");
+    const confirmation = await screen.findByRole("checkbox", { name: /I confirm my billing country/ });
+    await waitFor(() => expect(confirmation).toBeEnabled());
+    fireEvent.click(confirmation);
+    expect(confirmation).toBeChecked();
+    const resume = screen.getByRole("button", { name: "Resume original checkout" });
+    const pay = screen.getByRole("button", { name: /Pay with Razorpay/ });
+    expect(resume).toBeDisabled();
+    expect(pay).toBeDisabled();
+    fireEvent.click(resume);
+    fireEvent.click(pay);
+    expect(state.post).not.toHaveBeenCalled();
+    expectNoHostedCheckout();
+  });
+
+  it("confirms a settled paid original order through reconciliation without opening checkout", async () => {
+    state.get.mockImplementation((url: string) => url === "/billing/recent-order"
+      ? Promise.resolve({ ...orderStatus(), provider_order_id: null, checkout_available: false }) : read(url));
+    state.post.mockResolvedValue({ resolution: "settled", message: "Verified payment was settled.", order: orderStatus("paid") });
+
+    render(<BillingPage />);
+    const reconcile = await screen.findByRole("button", { name: "Reconcile original payment" });
+    expect(state.post).not.toHaveBeenCalled();
+    expectNoHostedCheckout();
+    fireEvent.click(reconcile);
+
+    await screen.findByRole("heading", { name: "Payment confirmed" });
+    expect(state.post.mock.calls).toEqual([["/billing/orders/order_original_fixture/reconcile", undefined]]);
+    expect(screen.getByText("Order reference: order_original_fixture")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Resume original checkout" })).not.toBeInTheDocument();
+    expectNoHostedCheckout();
+  });
+
+  it("shows a settled refunded order for review without confirming or creating another checkout", async () => {
+    state.get.mockImplementation((url: string) => url === "/billing/recent-order"
+      ? Promise.resolve({ ...orderStatus(), provider_order_id: null, checkout_available: false }) : read(url));
+    state.post.mockResolvedValue({ resolution: "settled", message: "The original payment was refunded.", order: orderStatus("refunded") });
+
+    render(<BillingPage />);
+    const reconcile = await screen.findByRole("button", { name: "Reconcile original payment" });
+    expect(state.post).not.toHaveBeenCalled();
+    expectNoHostedCheckout();
+    fireEvent.click(reconcile);
+
+    const review = await screen.findByRole("button", { name: "Review another purchase" });
+    expect(screen.getByRole("alert")).toHaveTextContent(/refunded/i);
+    expect(screen.queryByRole("heading", { name: "Payment confirmed" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Resume original checkout" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Pay with Razorpay/ })).toBeDisabled();
+    expect(state.post.mock.calls).toEqual([["/billing/orders/order_original_fixture/reconcile", undefined]]);
+    expectNoHostedCheckout();
+    fireEvent.click(review);
+    expect(screen.getByRole("checkbox", { name: /I confirm my billing country/ })).not.toBeChecked();
+    expect(screen.getByRole("button", { name: /Pay with Razorpay/ })).toBeDisabled();
+    expect(state.post).toHaveBeenCalledTimes(1);
+    expectNoHostedCheckout();
+  });
+
+  it("retains the lost-response purchase identity through status, reconciliation and explicit original resume", async () => {
+    state.get.mockImplementation((url: string) => url === "/billing/orders/order_original_fixture"
+      ? Promise.resolve({ ...orderStatus(), provider_order_id: null, checkout_available: false }) : read(url));
+    state.post.mockRejectedValueOnce(new Error("The order response was interrupted."))
+      .mockRejectedValueOnce(new ApiError("Read this original order's current status.", 409, {
+        detail: { code: "billing_order_requires_status", order_id: "order_original_fixture" },
+      }))
+      .mockResolvedValueOnce({ resolution: "checkout_ready", message: "The original checkout is ready for review.", order: orderStatus() })
+      .mockResolvedValueOnce(order());
+
+    const { pay, confirmation } = await reviewPurchase();
+    fireEvent.click(pay);
+    await screen.findByRole("alert");
+    expect(state.post).toHaveBeenCalledTimes(1);
+    expect(state.post.mock.calls[0]).toEqual(["/billing/orders", purchaseRequest()]);
+    const originalRequest = state.post.mock.calls[0][1];
+    expectNoHostedCheckout();
+    await waitFor(() => expect(pay).toBeEnabled());
+    fireEvent.click(pay);
+
+    await screen.findByText("Order reference: order_original_fixture");
+    expect(state.post).toHaveBeenCalledTimes(2);
+    expect(state.post.mock.calls[1]).toEqual(state.post.mock.calls[0]);
+    expect(state.get.mock.calls.filter(([url]) => url === "/billing/orders/order_original_fixture")).toHaveLength(1);
+    expectNoHostedCheckout();
+    fireEvent.click(screen.getByRole("button", { name: "Reconcile original payment" }));
+
+    await screen.findByText("The original checkout is ready for review.");
+    expect(confirmation).not.toBeChecked();
+    expect(state.post).toHaveBeenCalledTimes(3);
+    expect(state.post.mock.calls[2]).toEqual(["/billing/orders/order_original_fixture/reconcile", undefined]);
+    const resume = screen.getByRole("button", { name: "Resume original checkout" });
+    expect(resume).toBeDisabled();
+    expectNoHostedCheckout();
+    fireEvent.click(confirmation);
+    expect(resume).toBeEnabled();
+    expect(state.post).toHaveBeenCalledTimes(3);
+    fireEvent.click(resume);
+
+    await waitFor(() => expect(openCheckout).toHaveBeenCalledTimes(1));
+    expect(state.post).toHaveBeenCalledTimes(4);
+    expect(state.post.mock.calls[3]).toEqual(["/billing/orders", { ...originalRequest, order_reference: "order_original_fixture" }]);
+    expect(hostedCheckout.mock.calls[0][0]).toMatchObject({ amount: 64900, currency: "INR", order_id: "provider_order_fixture" });
+    expect(state.get.mock.calls.filter(([url]) => url === "/public/billing/catalog")).toHaveLength(1);
   });
 });

@@ -411,11 +411,26 @@ def test_fresh_authenticated_no_ai_discovery_review_and_manual_handoff(journey):
     assert catalog["balance"] == 0 and catalog["auto_submit_enabled"] is False
     assert catalog["coverage"]["worldwide_recall_verified"] is False
 
+    purchase_catalog = _body(client.get("/api/public/billing/catalog"))
+    purchase_product = next(
+        item for item in purchase_catalog["products"] if item["sku"] == "starter_bundle"
+    )
     checkout = _body(
         client.post(
             "/api/billing/orders",
             headers=owner,
-            json={"sku": "starter_bundle", "billing_country": "IN"},
+            json={
+                "sku": "starter_bundle",
+                "billing_country": "IN",
+                "accepted_quote": {
+                    "catalog_version": purchase_catalog["catalog_version"],
+                    "amount_minor": purchase_product["amount_minor"],
+                    "currency": purchase_product["currency"],
+                    "job_service_credits": purchase_product["job_service_credits"],
+                    "analysis_units": purchase_product["analysis_units"],
+                },
+                "idempotency_key": "journey-original-purchase",
+            },
         )
     )
     assert len(supplier_orders) == 1

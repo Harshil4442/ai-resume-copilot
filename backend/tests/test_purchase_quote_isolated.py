@@ -25,7 +25,7 @@ def production_body(name, dependencies):
     node = next(item for item in ast.parse(ROUTE.read_text()).body
                 if isinstance(item, ast.FunctionDef) and item.name == name)
     node.decorator_list, node.returns = [], None
-    if name == "create_order":
+    if name in {"create_order", "reconcile_order"}:
         node.args.defaults = []
     for arg in node.args.args + node.args.kwonlyargs:
         arg.annotation = None
@@ -243,6 +243,29 @@ class PurchaseAcceptanceTest(unittest.TestCase):
                 self.assertEqual(error.exception.detail["code"], "billing_order_requires_status")
                 self.assertEqual(error.exception.detail["order_id"], response["order_id"])
                 self.assertEqual((len(db.writes), db.commits, len(db.provider_calls)), before)
+
+    def test_paused_original_states_refuse_same_key_and_order_reference_without_allowances_or_provider_work(self):
+        for state in ("client_confirmed", "payment_failed"):
+            for recovery in ("same_key", "order_reference"):
+                with self.subTest(state=state, recovery=recovery):
+                    db = Storage()
+                    db.owner.job_service_credits, db.owner.ai_credits = 7, 3
+                    operation, product = setup(db)
+                    accepted = quote.product_quote(product, "catalog-original")
+                    response = create(operation, db, accepted)
+                    db.orders[0].status = state
+                    before = (len(db.writes), db.commits, len(db.provider_calls))
+                    with self.assertRaises(HTTPException) as error:
+                        create(operation, db, accepted,
+                               reference=response["order_id"] if recovery == "order_reference" else None)
+                    self.assertEqual(error.exception.status_code, 409)
+                    self.assertEqual(error.exception.detail["code"], "billing_order_requires_status")
+                    self.assertEqual(error.exception.detail["order_id"], response["order_id"])
+                    self.assertEqual((len(db.writes), db.commits, len(db.provider_calls)), before)
+                    self.assertEqual((db.owner.job_service_credits, db.owner.ai_credits), (7, 3))
+                    self.assertEqual(db.orders[0].status, state)
+                    self.assertEqual(len(db.orders), 1)
+
     def test_currency_and_numeric_acceptance_are_strict(self):
         original = dict(catalog_version="catalog-original", amount_minor=64_900, currency="INR",
                         job_service_credits=100, analysis_units=2)

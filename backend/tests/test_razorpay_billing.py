@@ -575,8 +575,14 @@ def test_failed_payment_never_provisions(client, enabled_checkout, session_facto
         assert db.query(PaymentTransaction).one().status == "failed"
     # Old failed orders remain readable; they are never re-offered as new sales.
     assert client.get(f"/api/billing/orders/{created['order_id']}").status_code == 200
-    assert client.post("/api/billing/orders", json={"sku":"premium_30d","billing_country":"IN"}).status_code == 503
+    replacement = client.post("/api/billing/orders", json={"sku":"premium_30d","billing_country":"IN"})
+    assert replacement.status_code == 409
+    assert replacement.json()["detail"]["code"] == "billing_order_requires_status"
+    assert replacement.json()["detail"]["order_id"] == created["order_id"]
     assert enabled_checkout == []
+    with session_factory() as db:
+        assert db.query(PaymentOrder).count() == 1
+        assert db.query(EntitlementLedger).count() == 0
 
 
 def test_partial_and_full_refund_revoke_only_on_full_refund(

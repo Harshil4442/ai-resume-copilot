@@ -387,6 +387,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/billing/orders/{order_reference}/reconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reconcile Order
+         * @description Free explicit provider reads; never CREATE, capture, refund or open Checkout.
+         */
+        post: operations["reconcile_order_api_billing_orders__order_reference__reconcile_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/billing/recent-order": {
         parameters: {
             query?: never;
@@ -1994,6 +2014,11 @@ export interface components {
             /** Amount Minor */
             amount_minor: number;
             /**
+             * Checkout Available
+             * @default false
+             */
+            checkout_available: boolean;
+            /**
              * Created At
              * Format: date-time
              */
@@ -3154,6 +3179,17 @@ export interface components {
             } | null;
             /** Reason */
             reason: string;
+        };
+        /** ReconciliationResponse */
+        ReconciliationResponse: {
+            /** Message */
+            message: string;
+            order: components["schemas"]["BillingOrderStatusResponse"];
+            /**
+             * Resolution
+             * @enum {string}
+             */
+            resolution: "unresolved" | "checkout_ready" | "settled";
         };
         /** RegisterCandidate */
         RegisterCandidate: {
@@ -5342,6 +5378,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reconcile_order_api_billing_orders__order_reference__reconcile_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                order_reference: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReconciliationResponse"];
                 };
             };
             /** @description Validation Error */

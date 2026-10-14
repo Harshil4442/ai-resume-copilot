@@ -705,6 +705,11 @@
             "title": "Amount Minor",
             "type": "integer"
           },
+          "checkout_available": {
+            "default": false,
+            "title": "Checkout Available",
+            "type": "boolean"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -4109,6 +4114,33 @@
           "employer_posting_id"
         ],
         "title": "ReconciliationCreate",
+        "type": "object"
+      },
+      "ReconciliationResponse": {
+        "properties": {
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "order": {
+            "$ref": "#/components/schemas/BillingOrderStatusResponse"
+          },
+          "resolution": {
+            "enum": [
+              "unresolved",
+              "checkout_ready",
+              "settled"
+            ],
+            "title": "Resolution",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resolution",
+          "message",
+          "order"
+        ],
+        "title": "ReconciliationResponse",
         "type": "object"
       },
       "RegisterCandidate": {
@@ -8585,6 +8617,54 @@
           }
         ],
         "summary": "Record Checkout Result",
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/api/billing/orders/{order_reference}/reconcile": {
+      "post": {
+        "description": "Free explicit provider reads; never CREATE, capture, refund or open Checkout.",
+        "operationId": "reconcile_order_api_billing_orders__order_reference__reconcile_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "order_reference",
+            "required": true,
+            "schema": {
+              "title": "Order Reference",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReconciliationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Reconcile Order",
         "tags": [
           "billing"
         ]

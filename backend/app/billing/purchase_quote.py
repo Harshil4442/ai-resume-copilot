@@ -35,6 +35,7 @@ class CheckoutOrderResponse(BaseModel):
 class BillingOrderStatusResponse(BaseModel):
     order_id: str
     provider_order_id: str | None
+    checkout_available: bool = False
     payment_reference: str | None
     sku: str
     entitlement_kind: str

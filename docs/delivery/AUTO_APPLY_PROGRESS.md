@@ -90,9 +90,17 @@ Current development within these outcomes:
   resuming checkout requires another explicit review of its original terms.
   Unknown provider creation keeps its reservation, blocks replacement attempts
   regardless of age, and offers free status checks and support reconciliation.
-  Provider-proof reconciliation of unmapped outcomes and live payment acceptance
-  remain release work. Eleven isolated backend checks and thirteen UI checks
-  pass for this change; they do not complete the billing outcome.
+  Positive recovery now has an explicit owner-scoped action using bounded
+  provider GETs outside database locks. It validates the original receipt,
+  account mode/key and immutable terms, then re-locks and applies actual
+  capture/refund facts with separate API-proof provenance. Empty, incomplete
+  or conflicting proof keeps the original attempt held. Only a verified
+  unattempted created order can resume after another review; the server also
+  refuses paused-state checkout requests. Original credential rotation,
+  negative absence proof, paid-unfulfilled and unsupported outcomes remain
+  support cases. Twenty-six isolated backend checks and twenty checkout UI
+  checks pass; native provider acceptance and full monetary release remain
+  pending. These checks do not complete the billing outcome.
   Native financial continuity and production activation remain pending. Reviewed
   expense and model cost policies are now stored as exact numeric Secret Manager
   versions with native checksum/hash readback. No runtime access grant or policy
@@ -123,9 +131,19 @@ for completion. Do not add smaller checkpoints to create apparent progress.
 The [archived implementation and validation history](archive/AUTO_APPLY_VALIDATION_HISTORY_THROUGH_2026-10-13.md)
 preserves earlier results and timing without counting them as delivery completions.
 
-The latest committed source run (`045d9db`, GitHub Actions `38494089488`)
-passed backend tests and the frontend job. Its remaining failure is the public
-OpenAPI byte comparison: numeric schema limits serialized as `0.0` and
-`1000.0` instead of `0` and `1000`. The native public schema baseline is
-preserved for the next ordinary contract update. This validation result does
-not complete a major outcome or authorize production release.
+The latest completed source run (`e41d8d2`, GitHub Actions `38502419603`)
+passed frontend, cold-browser, companion and security/container jobs. Backend
+reported two ordinary failures and 4,216 passes: the fresh-user purchase fixture
+needs the new explicit quote/request identity, and the retired legacy-purchase
+case needs the intended original-order rejection contract. Both fixture repairs are
+included with positive payment reconciliation; the next native run must verify
+them against the full integration. The public schema's
+native byte check remains pending because backend tests failed first.
+
+The exact `e41d8d2` preview is ready. Public home and pricing pages fit 390-pixel
+mobile and 1,366-pixel laptop widths without horizontal overflow; mobile
+navigation and canonical metadata are verified. Pricing remains unavailable
+without a usable backend catalog. One authenticated HTTP sample per page
+measured 0.220 s and 0.810 s to first byte; these are preview response samples,
+not browser paint, full journey or production performance proof. No validation
+result here completes a major outcome or authorizes production release.

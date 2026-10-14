@@ -88,7 +88,10 @@ interface BillingOrderStatus {
   paid_at: string | null;
   refunded_at: string | null;
   accepted_quote?: PurchaseQuoteAcceptance | null;
+  checkout_available?: boolean;
 }
+
+type ReconciliationResponse = components["schemas"]["ReconciliationResponse"];
 
 interface UsageEvent {
   id: string;
@@ -241,6 +244,8 @@ function BillingContent({ requestedSku }: { requestedSku: string | null }) {
   const [indiaBillingConfirmed, setIndiaBillingConfirmed] = useState(false);
   const [phase, setPhase] = useState<CheckoutPhase>("idle");
   const [currentOrder, setCurrentOrder] = useState<BillingOrderStatus | null>(null);
+  const [reconciliation, setReconciliation] = useState<{ orderId: string; resolution: ReconciliationResponse["resolution"]; message: string } | null>(null);
+  const [reconciliationPending, setReconciliationPending] = useState(false);
   const purchaseIntent = useRef<{ fingerprint: string; key: string; sku: SupportedSku; acceptedQuote: PurchaseQuoteAcceptance } | null>(null);
   const [recoverablePurchase, setRecoverablePurchase] = useState<{ sku: SupportedSku; acceptedQuote: PurchaseQuoteAcceptance } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -352,6 +357,7 @@ function BillingContent({ requestedSku }: { requestedSku: string | null }) {
       indiaBillingConfirmed,
   );
   const checkoutBusy = phase === "opening" || phase === "confirming";
+  const reconciliationHeld = reconciliation?.orderId === currentOrder?.order_id && reconciliation?.resolution === "unresolved";
 
   const markConfirmed = useCallback(
     async (order: BillingOrderStatus) => {
@@ -426,6 +432,8 @@ function BillingContent({ requestedSku }: { requestedSku: string | null }) {
           }
           if (order.status === "refunded") {
             setPhase("idle");
+            setReconciliation((previous) => previous?.orderId === order.order_id
+              ? { ...previous, resolution: "settled", message: "The original payment was refunded." } : previous);
             setError("This order was refunded and did not activate paid access.");
             return;
           }
@@ -453,10 +461,11 @@ function BillingContent({ requestedSku }: { requestedSku: string | null }) {
   );
 
   const handleCheckout = useCallback(async (recoverOrder?: BillingOrderStatus) => {
-    if (checkoutBusy) return;
+    if (checkoutBusy || reconciliationPending) return;
     if (recoverOrder ? !recoverOrder.accepted_quote || !indiaBillingConfirmed || !checkoutEnabled :
       !catalog || !selectedProduct || !purchaseAllowed) return;
-    if (recoverOrder && !recoverOrder.provider_order_id) return;
+    if (recoverOrder && (!recoverOrder.provider_order_id || recoverOrder.checkout_available !== true)) return;
+    if (recoverOrder && reconciliation?.orderId === recoverOrder.order_id && reconciliation.resolution === "unresolved") return;
     const targetSku = recoverOrder?.sku ?? selectedProduct?.sku;
     if (!isSupportedSku(targetSku)) return;
     const acceptedQuote = recoverOrder?.accepted_quote ?? retainedQuote ?? acceptedPurchaseQuote(catalog!, selectedProduct!);
@@ -502,6 +511,7 @@ function BillingContent({ requestedSku }: { requestedSku: string | null }) {
       setCurrentOrder({
         order_id: order.order_id,
         provider_order_id: order.provider_order_id,
+        checkout_available: true,
         sku: targetSku,
         status: "pending",
         fulfilled: false,
@@ -632,11 +642,47 @@ function BillingContent({ requestedSku }: { requestedSku: string | null }) {
         ),
       );
     }
-  }, [catalog, checkoutBusy, checkoutEnabled, indiaBillingConfirmed, markConfirmed, pollOrder, purchaseAllowed, refreshCatalog, retainedQuote, selectedProduct]);
+  }, [catalog, checkoutBusy, checkoutEnabled, indiaBillingConfirmed, markConfirmed, pollOrder, purchaseAllowed, reconciliation, reconciliationPending, refreshCatalog, retainedQuote, selectedProduct]);
+
+  const reconcileCurrentOrder = useCallback(async () => {
+    if (!currentOrder || currentOrder.status !== "pending" || checkoutBusy || reconciliationPending) return;
+    const orderId = currentOrder.order_id;
+    pollRunRef.current += 1;
+    setReconciliationPending(true);
+    setIndiaBillingConfirmed(false);
+    setError(null);
+    setReconciliation({ orderId, resolution: "unresolved", message: "Checking the original payment. Checkout remains paused." });
+    try {
+      const result = await apiPostJson<ReconciliationResponse>(`/billing/orders/${encodeURIComponent(orderId)}/reconcile`, undefined);
+      if (!mountedRef.current) return;
+      if (!["unresolved", "checkout_ready", "settled"].includes(result.resolution) ||
+        result.order.order_id !== orderId || result.order.sku !== currentOrder.sku ||
+        (currentOrder.accepted_quote && !samePurchaseQuote(result.order.accepted_quote ?? undefined, currentOrder.accepted_quote)) ||
+        (result.resolution === "checkout_ready" && (result.order.status !== "pending" || !result.order.provider_order_id || !result.order.accepted_quote || result.order.checkout_available !== true)) ||
+        (result.resolution === "settled" && !["paid", "refunded"].includes(result.order.status))) {
+        throw new Error("The original payment could not be verified. Checkout remains paused; contact billing support.");
+      }
+      setCurrentOrder(result.order);
+      setReconciliation({ orderId, resolution: result.resolution, message: result.message });
+      if (result.resolution === "settled" && result.order.status === "paid" && result.order.fulfilled) {
+        await markConfirmed(result.order);
+      } else {
+        setPhase(result.order.status === "pending" || result.order.status === "paid" ? "pending" : "idle");
+        if (result.resolution === "settled" && result.order.status === "refunded") {
+          setError("This order was refunded and did not activate paid access.");
+        }
+      }
+    } catch (reconciliationError: unknown) {
+      if (mountedRef.current) setReconciliation({ orderId, resolution: "unresolved", message: getErrorMessage(reconciliationError,
+        "Could not reconcile the original payment. Checkout remains paused; check status or contact billing support.") });
+    } finally {
+      if (mountedRef.current) setReconciliationPending(false);
+    }
+  }, [checkoutBusy, currentOrder, markConfirmed, reconciliationPending]);
 
   const checkCurrentOrder = useCallback(() => {
-    if (currentOrder?.order_id) void pollOrder(currentOrder.order_id);
-  }, [currentOrder, pollOrder]);
+    if (currentOrder?.order_id && !checkoutBusy && !reconciliationPending) void pollOrder(currentOrder.order_id);
+  }, [checkoutBusy, currentOrder, pollOrder, reconciliationPending]);
 
   if (phase === "confirmed" && currentOrder) {
     return (
@@ -655,7 +701,7 @@ function BillingContent({ requestedSku }: { requestedSku: string | null }) {
             </div>
             <div className="mt-7 flex flex-col justify-center gap-3 sm:flex-row">
               <Button asChild><Link href={"/employer-jobs"}>Continue to {"employer jobs"}</Link></Button>
-              <Button variant="secondary" onClick={() => { setPhase("idle"); setCurrentOrder(null); setIndiaBillingConfirmed(false); purchaseIntent.current = null; setRecoverablePurchase(null); }}>Review another purchase</Button>
+              <Button variant="secondary" onClick={() => { setPhase("idle"); setCurrentOrder(null); setIndiaBillingConfirmed(false); purchaseIntent.current = null; setRecoverablePurchase(null); setReconciliation(null); }}>Review another purchase</Button>
               <Button asChild variant="ghost"><Link href="/contact">Billing support</Link></Button>
             </div>
           </section>
@@ -721,11 +767,31 @@ function BillingContent({ requestedSku }: { requestedSku: string | null }) {
                   <p className="border-y border-border py-4 text-xs leading-5 text-muted-foreground">The server locks this total before checkout. Compare the same amount in the hosted payment window before authorizing payment.{retainedQuote ? " Checking the interrupted request at its originally accepted price and included credits; retrying retains that request identity." : ""}</p>
                   <label className="mt-5 flex cursor-pointer items-start gap-3 text-sm leading-6 text-muted-foreground"><input type="checkbox" checked={indiaBillingConfirmed} onChange={(event) => setIndiaBillingConfirmed(event.target.checked)} disabled={currentTier === null || !checkoutEnabled} className="mt-1 h-4 w-4 shrink-0 accent-primary" /><span>I confirm my billing country is India and this INR purchase is for domestic use.</span></label>
                   <div className="mt-5">
-                    {currentTier === null ? <div className="flex items-start gap-3 border-y border-border py-4 text-sm text-muted-foreground"><Lock size={17} className="mt-0.5 shrink-0" />Checkout waits for account status.</div> : checkoutEnabled && selectedProduct.enabled_for_purchase ? <Button type="button" onClick={() => void handleCheckout()} disabled={!purchaseAllowed || checkoutBusy} className="w-full">{checkoutBusy ? <><RefreshCw size={17} className="animate-spin" />{phase === "confirming" ? "Waiting for verified confirmation" : "Opening hosted checkout"}</> : <><CreditCard size={17} />Pay with Razorpay | {formatPrice(selectedProduct.amount_minor, selectedProduct.currency)}</>}</Button> : <Button type="button" variant="secondary" disabled className="w-full">Checkout unavailable</Button>}
+                    {currentTier === null ? <div className="flex items-start gap-3 border-y border-border py-4 text-sm text-muted-foreground"><Lock size={17} className="mt-0.5 shrink-0" />Checkout waits for account status.</div> : checkoutEnabled && selectedProduct.enabled_for_purchase ? <Button type="button" onClick={() => void handleCheckout()} disabled={!purchaseAllowed || checkoutBusy || reconciliationPending} className="w-full">{checkoutBusy ? <><RefreshCw size={17} className="animate-spin" />{phase === "confirming" ? "Waiting for verified confirmation" : "Opening hosted checkout"}</> : <><CreditCard size={17} />Pay with Razorpay | {formatPrice(selectedProduct.amount_minor, selectedProduct.currency)}</>}</Button> : <Button type="button" variant="secondary" disabled className="w-full">Checkout unavailable</Button>}
                   </div>
                 </div> : <div className="py-8 text-center"><FileText className="mx-auto text-muted-foreground" size={28} /><p className="mt-3 font-bold text-foreground">Select a product to review it.</p></div>}
 
-                {currentOrder && phase !== "confirmed" ? <div className="mt-6 border-t border-border pt-5 text-xs text-muted-foreground"><p className="break-all">Order reference: {currentOrder.order_id}</p>{currentOrder.payment_reference ? <p className="break-all">Payment reference: {currentOrder.payment_reference}</p> : null}{currentOrder.accepted_quote ? <div className="mt-3 leading-5" aria-label="Original checkout terms"><p>Original order: {currentOrder.accepted_quote.job_service_credits} service credits + {currentOrder.accepted_quote.analysis_units} analysis units for {formatPrice(currentOrder.accepted_quote.amount_minor, currentOrder.accepted_quote.currency)}.</p><p className="break-all">Original catalog: {currentOrder.accepted_quote.catalog_version}. Resuming accepts these original terms and checks this same order.</p></div> : <p className="mt-3 leading-5">Original pack terms need review. Checking status is free; contact billing support before resuming payment.</p>}{currentOrder.status === "pending" && !currentOrder.provider_order_id ? <p className="mt-3 leading-5">Checkout creation has an unknown outcome. Payment remains paused. Check status or contact billing support to reconcile the original attempt before another purchase.</p> : null}<div className="mt-3 flex flex-wrap gap-2"><Button type="button" variant="secondary" size="sm" onClick={checkCurrentOrder} disabled={phase === "confirming"}><RefreshCw size={13} className={phase === "confirming" ? "animate-spin" : ""} />Check payment status</Button>{currentOrder.status === "pending" ? <Button type="button" variant="secondary" size="sm" onClick={() => void handleCheckout(currentOrder)} disabled={!currentOrder.provider_order_id || !currentOrder.accepted_quote || !indiaBillingConfirmed || !checkoutEnabled || checkoutBusy}>Resume original checkout</Button> : currentOrder.status === "failed" || currentOrder.status === "refunded" ? <Button type="button" variant="secondary" size="sm" onClick={() => { purchaseIntent.current = null; setRecoverablePurchase(null); setCurrentOrder(null); setIndiaBillingConfirmed(false); setError(null); setPhase("idle"); }}>Review another purchase</Button> : null}</div></div> : null}
+                {currentOrder && phase !== "confirmed" ? <div className="mt-6 border-t border-border pt-5 text-xs text-muted-foreground">
+                  <p className="break-all">Order reference: {currentOrder.order_id}</p>
+                  {currentOrder.payment_reference ? <p className="break-all">Payment reference: {currentOrder.payment_reference}</p> : null}
+                  {currentOrder.accepted_quote ? <div className="mt-3 leading-5" aria-label="Original checkout terms">
+                    <p>Original order: {currentOrder.accepted_quote.job_service_credits} service credits + {currentOrder.accepted_quote.analysis_units} analysis units for {formatPrice(currentOrder.accepted_quote.amount_minor, currentOrder.accepted_quote.currency)}.</p>
+                    <p className="break-all">Original catalog: {currentOrder.accepted_quote.catalog_version}. Resuming accepts these original terms and checks this same order.</p>
+                  </div> : <p className="mt-3 leading-5">Original pack terms need review. Checking status is free; contact billing support before resuming payment.</p>}
+                  {currentOrder.status === "pending" && !currentOrder.provider_order_id ? <p className="mt-3 leading-5">Checkout creation has an unknown outcome. Payment remains paused. Check status or contact billing support to reconcile the original attempt before another purchase.</p> : null}
+                  {currentOrder.status === "pending" && currentOrder.provider_order_id && currentOrder.checkout_available !== true ? <p className="mt-3 leading-5">Payment remains paused. Reconcile this original payment or contact billing support before resuming checkout.</p> : null}
+                  {reconciliation?.orderId === currentOrder.order_id ? <div role="status" className="mt-3 leading-5">
+                    <p>{reconciliation.message}</p>
+                    {reconciliation.resolution === "checkout_ready" ? <p className="mt-2">Review the original terms above, confirm India billing again, then click Resume original checkout when ready.</p> : null}
+                  </div> : null}
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Button type="button" variant="secondary" size="sm" onClick={checkCurrentOrder} disabled={checkoutBusy || reconciliationPending}><RefreshCw size={13} className={phase === "confirming" ? "animate-spin" : ""} />Check payment status</Button>
+                    {currentOrder.status === "pending" ? <>
+                      <Button type="button" variant="secondary" size="sm" className="min-h-11" onClick={() => void reconcileCurrentOrder()} disabled={checkoutBusy || reconciliationPending} aria-busy={reconciliationPending}>{reconciliationPending ? <RefreshCw size={13} className="animate-spin" /> : null}{reconciliationPending ? "Reconciling original payment" : "Reconcile original payment"}</Button>
+                      <Button type="button" variant="secondary" size="sm" onClick={() => void handleCheckout(currentOrder)} disabled={currentOrder.checkout_available !== true || !currentOrder.provider_order_id || !currentOrder.accepted_quote || !indiaBillingConfirmed || !checkoutEnabled || checkoutBusy || reconciliationPending || reconciliationHeld}>Resume original checkout</Button>
+                    </> : currentOrder.status === "failed" || currentOrder.status === "refunded" ? <Button type="button" variant="secondary" size="sm" disabled={reconciliationPending || reconciliationHeld} onClick={() => { purchaseIntent.current = null; setRecoverablePurchase(null); setCurrentOrder(null); setIndiaBillingConfirmed(false); setError(null); setPhase("idle"); setReconciliation(null); }}>Review another purchase</Button> : null}
+                  </div>
+                </div> : null}
               </div>
 
               <div className="mt-6 border-y border-border py-5 text-sm leading-6 text-muted-foreground"><div className="flex items-start gap-3"><Shield size={18} className="mt-0.5 shrink-0 text-primary" /><p>Card, CVV, UPI PIN, bank-login, and other payment credentials are entered only in Razorpay hosted checkout.</p></div><div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 border-t border-border pt-4 text-xs font-bold">{[["/terms", "Terms"], ["/privacy", "Privacy"], ["/refund", "Refunds"], ["/digital-delivery", "Digital delivery"], ["/contact", "Billing support"]].map(([href, label]) => <Link key={href} href={href} className="text-primary hover:underline">{label}</Link>)}</div></div>
