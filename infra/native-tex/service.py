@@ -68,7 +68,7 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             self.send_error(422, "Compilation refused; use original/custom PDF")
         finally:
-            shutil.rmtree(pathlib.Path("/work/project"), ignore_errors=True)
+            shutil.rmtree(pathlib.Path("/tmp/project"), ignore_errors=True)
             LOCK.release()
 
 

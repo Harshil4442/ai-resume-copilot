@@ -1,6 +1,7 @@
 """Private isolated GCP document-worker transport; no public compiler fallback."""
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from urllib.parse import urlsplit
@@ -22,8 +23,13 @@ def remote_compile(payload: bytes, *, url: str, image: str, policy: str) -> dict
     from google.oauth2.id_token import fetch_id_token
     audience = f"https://{target.netloc}"
     try:
-        token = fetch_id_token(Request(), audience)
-        with httpx.Client(timeout=httpx.Timeout(35, connect=5), follow_redirects=False, trust_env=False) as client:
+        class BoundedIdentityRequest(Request):
+            def __call__(self, *args, **kwargs):
+                kwargs["timeout"] = 5
+                return super().__call__(*args, **kwargs)
+
+        token = fetch_id_token(BoundedIdentityRequest(), audience)
+        with httpx.Client(timeout=httpx.Timeout(50, connect=5), follow_redirects=False, trust_env=False) as client:
             with client.stream("POST", url, content=payload,
                     headers={"Authorization": "Bearer " + token, "Content-Type": "application/json",
                              "X-HireWiz-TeX-Policy": policy}) as response:
@@ -35,7 +41,11 @@ def remote_compile(payload: bytes, *, url: str, image: str, policy: str) -> dict
                     if len(output) > 15 * 1024 * 1024:
                         raise ValueError("worker_output_too_large")
         data = json.loads(output)
-        if data.get("renderer_image") != image or data.get("isolation_policy_sha256") != policy:
+        if (type(data) is not dict or set(data) != {"protocol", "pdf", "sha256", "size", "renderer",
+                "request_sha256", "renderer_image", "isolation_policy_sha256"}
+                or data.get("protocol") != "hirewiz-tex-v1" or data.get("renderer") != "pdftex-no-shell-escape-v1"
+                or data.get("request_sha256") != hashlib.sha256(payload).hexdigest()
+                or data.get("renderer_image") != image or data.get("isolation_policy_sha256") != policy):
             raise ValueError("worker_contract_mismatch")
         return data
     except Exception as exc:

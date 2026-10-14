@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 import pathlib
+import re
 import resource
 import subprocess
 import sys
@@ -17,25 +18,42 @@ MAX_INPUT = 8 * 1024 * 1024
 MAX_OUTPUT = 10 * 1024 * 1024
 
 
+def pairs(items):
+    result = {}
+    for key, value in items:
+        if key in result:
+            raise ValueError("duplicate_project_key")
+        result[key] = value
+    return result
+
+
 def main():
     resource.setrlimit(resource.RLIMIT_CPU, (10, 10))
     resource.setrlimit(resource.RLIMIT_FSIZE, (MAX_OUTPUT, MAX_OUTPUT))
     resource.setrlimit(resource.RLIMIT_NOFILE, (64, 64))
+    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
     resource.setrlimit(resource.RLIMIT_AS, (256 * 1024 * 1024, 256 * 1024 * 1024))
     data = sys.stdin.buffer.read(MAX_INPUT + 1)
     if len(data) > MAX_INPUT:
         raise ValueError("project_too_large")
-    request = json.loads(data)
-    if request.get("protocol") != "hirewiz-tex-v1":
+    request = json.loads(data, object_pairs_hook=pairs)
+    if (type(request) is not dict or set(request) != {"protocol", "main", "files"}
+            or request.get("protocol") != "hirewiz-tex-v1" or type(request["files"]) is not list
+            or not 0 < len(request["files"]) <= 64):
         raise ValueError("unsupported_protocol")
-    root = pathlib.Path("/work/project")
+    # Cloud Run's child image root is read-only. Only its request-owned /tmp
+    # bind is writable; local Docker tests use their existing private /tmp.
+    root = pathlib.Path("/tmp/project")
     root.mkdir()
     names = set()
     total = 0
     for entry in request["files"]:
+        if type(entry) is not dict or set(entry) != {"path", "data"} or type(entry["path"]) is not str or type(entry["data"]) is not str:
+            raise ValueError("unsafe_project_path")
         name = entry["path"]
         path = pathlib.PurePosixPath(name)
-        if (not name or path.is_absolute() or any(p in {".", ".."} or p.startswith(".") for p in path.parts)
+        if (re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_./-]{0,159}", name) is None
+                or path.is_absolute() or any(p in {".", ".."} or p.startswith(".") for p in path.parts)
                 or "\\" in name or str(path) != name or name in names or len(names) >= 64
                 or path.suffix not in {".tex", ".sty", ".cls", ".png", ".jpg", ".jpeg", ".pdf"}):
             raise ValueError("unsafe_project_path")
@@ -48,13 +66,13 @@ def main():
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(content)
     main_file = request["main"]
-    if main_file not in names or not main_file.endswith(".tex"):
+    if type(main_file) is not str or main_file not in names or not main_file.endswith(".tex"):
         raise ValueError("missing_main")
     # All process state is disposable, and no application credentials are copied.
-    environment = {"PATH": "/usr/bin:/bin", "HOME": "/work", "TMPDIR": "/tmp",
+    environment = {"PATH": "/usr/bin:/bin", "HOME": "/tmp", "TMPDIR": "/tmp",
         "openin_any": "p", "openout_any": "p", "shell_escape": "f",
         "SOURCE_DATE_EPOCH": "946684800", "FORCE_SOURCE_DATE": "1",
-        "TEXMFOUTPUT": "/work/project"}
+        "TEXMFOUTPUT": "/tmp/project"}
     command = ["pdflatex", "-no-shell-escape", "-halt-on-error", "-interaction=batchmode",
         "-jobname=hirewiz-output", main_file]
     for _ in range(2):
