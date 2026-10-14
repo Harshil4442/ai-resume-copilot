@@ -8,7 +8,7 @@ import pytest
 from backend.app import models as core
 from backend.app.database import Base, get_db
 from backend.app.domains.common import payload_fingerprint, utcnow
-from backend.app.domains.employer import connectors, models, schemas, service, tasks
+from backend.app.domains.employer import config, connectors, models, schemas, service, tasks
 from backend.app.routers.v1.employer import router
 from backend.app.security import get_current_user
 from fastapi import FastAPI, HTTPException
@@ -116,9 +116,11 @@ def _execute(client, application):
 
 
 def _search_quote(client, count=10):
-    catalog = client.get("/api/v1/employer-jobs/catalog").json()
-    return {"pricing_version": catalog["pricing_version"], "unit_price": catalog["search_credits_per_job"],
-            "maximum_credits": count * catalog["search_credits_per_job"]}
+    # This service fixture overrides the ORM user dependency, not catalogue JWT
+    # decoding. Use the actual configured price for these paid-service requests.
+    prices = config.prices()
+    return {"pricing_version": prices["pricing_version"], "unit_price": prices["search_credits_per_job"],
+            "maximum_credits": count * prices["search_credits_per_job"]}
 
 
 def test_paid_search_partial_delivery_idempotency_and_no_premium_waiver(context, monkeypatch):

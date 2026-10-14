@@ -914,7 +914,7 @@ def test_settled_paid_provider_result_still_holds_risk_until_usage_commit(cost_d
 def test_actual_empty_search_admits_preparation_before_index_scan_and_replays_free(monkeypatch):
     from backend.app.domains.employer.models import ServiceCreditReservation
     from backend.app.models import User
-    from backend.tests.test_employer_services import context
+    from backend.tests.test_employer_services import _search_quote, context
     from sqlalchemy import event
 
     factory, client, _ = context.__wrapped__(monkeypatch)
@@ -930,6 +930,7 @@ def test_actual_empty_search_admits_preparation_before_index_scan_and_replays_fr
     per_request_hold = (payload["desired_count"] * policy["search_cost_minor"] * (10_000 + policy["contingency_bps"]) + 9999) // 10_000
     policy["monthly_legacy_service_budget_minor"] = per_request_hold * 2
     monkeypatch.setenv("HIREWIZ_EXPENSE_POLICY_JSON", json.dumps(policy))
+    payload["accepted_quote"] = _search_quote(client, payload["desired_count"])
     with factory() as db:
         db.get(User, 1).job_service_credits = payload["desired_count"]
         db.commit()

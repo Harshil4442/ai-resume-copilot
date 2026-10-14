@@ -457,6 +457,11 @@ def test_fresh_authenticated_no_ai_discovery_review_and_manual_handoff(journey):
         "role": "Python engineer",
         "location": "Bengaluru",
         "desired_count": 3,
+        "accepted_quote": {
+            "pricing_version": catalog["pricing_version"],
+            "unit_price": catalog["search_credits_per_job"],
+            "maximum_credits": 3 * catalog["search_credits_per_job"],
+        },
         "published_within_days": 7,
         "idempotency_key": "journey-cold-search",
     }

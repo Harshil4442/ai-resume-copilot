@@ -37,9 +37,9 @@ Current development within these outcomes:
   while both rendered-layout cases failed to return a valid response. Installed
   runtime hashes, font manifest and renderer version passed their native checks;
   every case completed cleanup. The remaining render failure is unclassified,
-  so the candidate is not ready for deployment. The next narrow diagnostic
-  observes actual first/second child exits rather than repeating the same suite.
-  That trace now confirms first-child exit 81 and successful cleanup, followed
+  so the candidate is not ready for deployment. A narrow diagnostic observed
+  actual first/second child handling. It confirms first-child exit 81 and cleanup
+  reported by the original helper, followed
   by admission of the second child. The sandbox then returns exit 137 without
   a second-child exit or parent response. This does not prove memory exhaustion
   or another termination cause. The diagnostic Job and Execution are removed.
@@ -47,6 +47,13 @@ Current development within these outcomes:
   Diagnostic Jobs and Executions, the completed acceptance Job/Execution, and
   the owned candidate source upload have
   been removed. Rendering limits and document safety checks remain unchanged.
+  Independent source review then found that the helper signaled a process group
+  after reaping its leader; its successful return did not prove group absence.
+  A reviewed repair now observes termination without reaping, signals while it
+  retains ownership, then requires a bounded actual reap and native group-absence
+  proof. Fourteen isolated checks pass, including three real local children.
+  The repair is held as a candidate pending a new exact-image native acceptance
+  run. It does not establish the cause of exit 137.
 - The fresh Neon target now has three genuinely authenticated restricted roles
   and three verified numeric Secret Manager versions. The separate source-to-target
   release sequence, portable Linux profile and fresh-only native authority checks
@@ -94,7 +101,12 @@ Current development within these outcomes:
   activation occurred; their original expiry and pricing limits are preserved.
 - Public SEO source now includes explicit social metadata, a branded preview
   image and a sitemap without invented dates. The current Vercel preview is
-  built and its mobile navigation, overflow and social metadata have been checked.
+  built from commit `ad7ddd6`. The homepage was checked at actual 1512×805 and
+  390×844 viewports, and pricing at 1366×900 and 390×844. Public metadata,
+  keyboard/mobile navigation and page overflow checks passed. The wrapped score
+  denominator is corrected in source. Billing history now uses valid definition
+  list markup; the affected desktop/mobile accessibility cases pass with their
+  original assertions. These fixes await a new preview and production release.
   Complete user journeys, measured loading performance and production verification
   remain pending. Its pricing page awaits the server-owned billing catalog.
 

@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { encode } from "next-auth/jwt";
 
 import { searchSummary, type EmployerApplication, type EmployerSearch, type JobServiceCatalog } from "../lib/employerJobs";
+import type { ServiceCreditHistoryPage } from "../lib/serviceCreditHistory";
 
 const base = "/v1/employer-jobs";
 const now = "2026-10-08T10:00:00Z";
@@ -71,6 +72,7 @@ function fixture() {
       else if (path.startsWith("/v1/analysis-runs/run_fixture_")) value = runs.find((run) => run.id === path.split("/").at(-1));
       else if (path === "/resume/list") value = { resumes };
       else if (path === `${base}/catalog`) value = catalog;
+      else if (path === `${base}/credits` && method === "GET") value = { balance: catalog.balance, reserved_credits: 0, reservations: [], operations: [], items: [], next_cursor: null } satisfies ServiceCreditHistoryPage;
       else if (path === `${base}/search-summaries` && method === "GET") {
         const offset = Number(url.searchParams.get("cursor")?.replace("history_", "") ?? 0);
         const limit = Number(url.searchParams.get("limit") ?? 10);
