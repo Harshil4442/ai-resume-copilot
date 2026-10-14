@@ -254,6 +254,7 @@ jobs:
           HIREWIZ_AUTHORITY_EMULATOR_REQUIRED: "true"
         run: |
           .venv/bin/python scripts/run_prompt_evals.py
+          .venv/bin/python -I -B isolated_checks/test_document_service_reap.py
           # Catch the native delivery/application contract before the full suite.
           .venv/bin/pytest -q tests/test_analysis_runs.py::test_evidence_tailoring_creates_a_traceable_version_and_commits_once
           .venv/bin/pytest -q
