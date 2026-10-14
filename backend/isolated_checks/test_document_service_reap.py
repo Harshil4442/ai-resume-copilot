@@ -377,6 +377,12 @@ class Controls(unittest.TestCase):
         self.assertFalse(m._cleanup_child(h.child, authorized=False))
         self.assertEqual(h.reaps, 1)
 
+    @unittest.skipIf(
+        sys.platform != "linux" and not all(hasattr(os, name) for name in (
+            "waitid", "P_PID", "WEXITED", "WNOHANG", "WNOWAIT",
+            "CLD_EXITED", "CLD_KILLED", "CLD_DUMPED")),
+        "Host lacks native nonreaping wait; Linux CI must execute this control.",
+    )
     def test_native_local_children_0_81_and_deadline_use_nonreaping_status_and_proved_absence(
         self,
     ):
