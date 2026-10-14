@@ -224,7 +224,8 @@ def ephemeral_host_authentication(deadline: float) -> dict[str, Any]:
 
 
 def run_argv(
-    image: str, release: str, name: str, volume: str, nonce: str, inputs: Path
+    image: str, release: str, name: str, volume: str, nonce: str, inputs: Path,
+    resume: writes.source_sql.PreparedOwnerResume | None = None,
 ) -> list[str]:
     need(
         re.fullmatch(
@@ -239,6 +240,12 @@ def run_argv(
         and volume == "hirewiz-cutover-data-" + nonce,
         "docker_fixed_execution_identity",
     )
+    prior_mount: list[str] = []
+    if resume is not None:
+        resume.validate()
+        need(volume != resume.volume, "docker_resume_current_prior_volume_overlap")
+        prior_mount = ["--mount", "type=volume,src=" + resume.volume
+                       + ",dst=/operator-prior,readonly"]
     return [
         str(DOCKER),
         "run",
@@ -266,6 +273,7 @@ def run_argv(
         "/tmp:rw,noexec,nosuid,nodev,size=256m,mode=1777",
         "--mount",
         "type=volume,src=" + volume + ",dst=/operator-work",
+        *prior_mount,
         "--mount",
         "type=bind,src=" + str(inputs) + ",dst=/operator-input,readonly",
         "--mount",
@@ -306,6 +314,25 @@ def run_argv(
         "-B",
         "/opt/hirewiz-release/checkout/infra/gcp/fresh_cutover_auth.py",
     ]
+
+
+def verify_resume_volume(resume: writes.source_sql.PreparedOwnerResume,
+                         deadline: float) -> None:
+    """Fixed prior operation must be terminal; retained volume is never erased."""
+    resume.validate()
+    rows = json.loads(command(["volume", "inspect", resume.volume], deadline),
+                      object_pairs_hook=writes.native.object_pairs)
+    need(type(rows) is list and len(rows) == 1, "docker_resume_prior_volume_identity")
+    row = rows[0]
+    need(type(row) is dict and row.get("Name") == resume.volume
+         and row.get("Driver") == "local" and row.get("Scope") == "local"
+         and row.get("Options") in (None, {})
+         and row.get("Labels", {}).get(LABEL) == resume.prior_nonce,
+         "docker_resume_prior_volume_identity")
+    containers = command(["ps", "-a", "--no-trunc", "--filter",
+                          "label=" + LABEL + "=" + resume.prior_nonce,
+                          "--format", "{{.ID}}"], deadline)
+    need(not containers.strip(), "docker_resume_prior_container_not_terminal")
 
 
 def local_barrier(value: dict[str, Any], workdir: Path) -> None:
@@ -483,7 +510,11 @@ def run(image: str, value: dict[str, Any], inputs: Path, workdir: Path) -> dict[
     )
     nonce = uuid.uuid4().hex
     name, volume = "hirewiz-cutover-" + nonce, "hirewiz-cutover-data-" + nonce
-    argv = run_argv(image, value["release"], name, volume, nonce, inputs)
+    resume = (writes.source_sql.PreparedOwnerResume.from_payload(value["prepared_owner_resume"])
+              if "prepared_owner_resume" in value else None)
+    if resume is not None:
+        verify_resume_volume(resume, work_deadline)
+    argv = run_argv(image, value["release"], name, volume, nonce, inputs, resume)
     image_row = json.loads(
         command(["image", "inspect", image], work_deadline),
         object_pairs_hook=writes.native.object_pairs,
@@ -515,6 +546,8 @@ def run(image: str, value: dict[str, Any], inputs: Path, workdir: Path) -> dict[
         "release": value["release"],
         "native_create_ack": False,
     }
+    if resume is not None:
+        scope["prepared_owner_resume"] = value["prepared_owner_resume"]
     fd = os.open(
         workdir
         / (
@@ -722,12 +755,17 @@ def main() -> None:
     )
     value = json.loads(raw, object_pairs_hook=writes.native.object_pairs)
     # Importing the Linux entry point is pure; no provider action is performed.
-    from fresh_cutover_execute import INPUT_FIELDS
+    from fresh_cutover_execute import INPUT_FIELDS, RESUME_FIELD
 
     need(
-        type(value) is dict and set(value) == INPUT_FIELDS - {"bootstrap_password", "operation"},
+        type(value) is dict and frozenset(value) in {
+            INPUT_FIELDS - {"bootstrap_password", "operation"},
+            (INPUT_FIELDS | {RESUME_FIELD}) - {"bootstrap_password", "operation"},
+        },
         "docker_approved_config_fields_refused",
     )
+    if RESUME_FIELD in value:
+        writes.source_sql.PreparedOwnerResume.from_payload(value[RESUME_FIELD])
     value["operation"] = "execute" if args.execute else "preflight"
     result = run(args.image, value, args.inputs, args.workdir)
     print(json.dumps(result, separators=(",", ":")))

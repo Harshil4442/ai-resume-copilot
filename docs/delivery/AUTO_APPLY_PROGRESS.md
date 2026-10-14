@@ -23,6 +23,42 @@ connection repair is live on the existing API image.
 
 Current development within these outcomes:
 
+- The production-target frontend deployment is now ready on Vercel, but the
+  public domain has not been moved to it. Its native deployment metadata binds
+  the reviewed source and upload manifest. The shared `NEXTAUTH_URL` configuration
+  now uses `https://www.hirewizhq.com`; the staged authentication-provider response
+  confirms the same origin. The existing Google OAuth client already authorizes
+  that callback, so no Google client change was required. Public staged home,
+  pricing, robots and sitemap checks pass; authenticated journeys and live billing
+  catalog verification remain pending.
+- Both private document services are ready on the reviewed cohort: DOCX revision
+  `hirewiz-document-inspector-00007-k7s` and LaTeX revision
+  `hirewiz-native-tex-00003-wjp`. Existing templates and empty service IAM are
+  preserved. Runtime invocation from the replacement API remains pending.
+- The standard native Linux preflight passed, and the first production cutover
+  attempt then stopped before cloud isolation, backup or data transfer. It
+  committed one unused NOLOGIN source-owner role; the source database still has
+  its original owner and schema, and the target remains empty. The exact prior
+  operation marker and retained volume are preserved. A supported recovery path
+  now checks that prior evidence and the current unused role, runs full fresh
+  admission, and resumes forward without replaying CREATE. It is implemented
+  and locally verified, but has not executed against production. See
+  [prepared-owner recovery](PREPARED_OWNER_RECOVERY_2026-10-15.md).
+- The cutover refusal was traced to a legacy key-format assumption. The Google
+  key correction now binds opaque key strings to exact native resource metadata,
+  issuer identity and value readback; it is awaiting release. The complete retained
+  census also contains Groq and OpenAI credentials. The user approved revoking
+  the three exact retained keys through the signed-in provider consoles. Provider
+  readback confirms revocation, and all three exact values now return HTTP 401
+  with `invalid_api_key`, after authenticated model-list responses before
+  revocation. This resolves those captured capabilities, not unrelated provider
+  accounts. The release verifier preserves every origin and rereads exact
+  provider authentication denial within its original freshness window before
+  isolation and throughout the final fence. No saved receipt or acceptance flag
+  substitutes for those reads. See
+  [provider capability retirement](NATIVE_MODEL_CAPABILITY_RETIREMENT_2026-10-15.md).
+  The four application queues and maintenance scheduler remain paused during
+  this controlled release window. No new major checkpoint is complete.
 - Official discovery now has 20 reviewed employer origins, including 16 additional
   verified company-to-ATS joins. This is source implementation, with production
   seeding and complete search acceptance pending. Worldwide or 95% job coverage

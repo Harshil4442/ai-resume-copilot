@@ -25,6 +25,7 @@ from urllib.parse import urlencode
 
 import fresh_monetary_release as fresh
 import monetary_release as release
+import native_model_auth_denial as model_denial
 
 PROJECT_NUMBER = "157225724590"
 PARENT = f"projects/{release.PROJECT}/locations/{release.REGION}"
@@ -39,6 +40,21 @@ SETUP_REFERENCES = {
     "observer": "hirewiz-fresh-observer-db-20261013:1",
 }
 SA_EMAIL = re.compile(r"[a-z0-9_-]{1,63}@[a-z0-9.-]{1,100}\.gserviceaccount\.com")
+
+
+def key_string_envelope(value: Any) -> bool:
+    """Bound opaque provider strings; syntax never proves Google ownership.
+
+    API Keys v2 documents an encrypted/signed string, not a fixed prefix.
+    Native lookupKey, key metadata, issuer and exact getKeyString bind it below.
+    """
+    return (type(value) is str and 1 <= len(value) <= 4096
+            and all(33 <= ord(character) <= 126 for character in value))
+
+
+def known_foreign_model_key(value: Any) -> bool:
+    """Known retained providers need their own native retirement verifier."""
+    return type(value) is str and value.startswith(("gsk_", "sk-"))
 
 
 def need(value: Any, code: str) -> None:
@@ -116,7 +132,12 @@ class SDKGoogleReads:
             api == "run" and re.fullmatch(re.escape(PARENT) + r"/(?:services|jobs)(?:/(?:[a-z0-9-]+|-)(?:/(?:revisions|executions)(?:/[a-z0-9-]+)?)?)?", path)
             or api == "project" and (CONTAINER.fullmatch(path) or path == "projects/" + release.PROJECT)
             or api == "secret" and re.fullmatch(r"projects/" + PROJECT_NUMBER + r"/secrets/[A-Za-z0-9_-]{1,255}/versions/[1-9][0-9]{0,18}(?::access)?", path)
-            or api == "keys" and (KEY.fullmatch(path) or path == "keys:lookupKey")
+            or api == "keys" and (
+                not params and (KEY.fullmatch(path)
+                                or path.endswith("/keyString") and KEY.fullmatch(path[:-10]))
+                or path == "keys:lookupKey" and set(params) == {"keyString"}
+                and key_string_envelope(params["keyString"])
+                and not known_foreign_model_key(params["keyString"]))
             or api == "iam" and re.fullmatch(r"projects/-/serviceAccounts/" + SA_EMAIL.pattern, path)
             or api == "tasks" and re.fullmatch(re.escape(PARENT) + r"/queues/hirewiz-[a-z-]+(?:/tasks)?", path)
             or api == "scheduler" and path == PARENT + "/jobs"
@@ -144,6 +165,7 @@ class NativeKey:
     name: str
     uid: str
     issuer: str | None
+    issuer_uid: str | None = None
 
 
 @dataclass(frozen=True)
@@ -162,6 +184,7 @@ class BoundScope:
     new_key: NativeKey | None
     principals: tuple[NativePrincipal, ...]
     retired_source_actors: tuple[str, ...]
+    foreign_keys: tuple[model_denial.ForeignModelCredential, ...] = ()
 
 
 class NativeFreshFenceBoundary(fresh.FreshNativeBoundary):
@@ -193,10 +216,35 @@ class NativeFreshFenceBoundary(fresh.FreshNativeBoundary):
         need(KEY.fullmatch(name), "fence_key_resource_unmapped")
         raw = self._get("keys", name)
         metadata = module._metadata(raw, name.rsplit("/keys/", 1)[0], datetime.now(UTC))
+        need(metadata["name"] == name, "fence_key_exact_resource_name_drift")
         issuer = raw.get("serviceAccountEmail") or None
         need(issuer is None or type(issuer) is str and SA_EMAIL.fullmatch(issuer),
              "fence_key_issuer_identity_unmapped")
-        return NativeKey(metadata["name"], metadata["uid"], issuer)
+        issuer_uid: str | None = None
+        if issuer is not None:
+            account = self._get("iam", "projects/-/serviceAccounts/" + issuer)
+            issuer_uid = account.get("uniqueId")
+            need(account.get("email") == issuer and type(issuer_uid) is str
+                 and re.fullmatch(r"[1-9][0-9]{5,24}", issuer_uid),
+                 "fence_key_issuer_native_account_unmapped")
+        return NativeKey(metadata["name"], metadata["uid"], issuer, issuer_uid)
+
+    def _credential_key(self, value: str, module: Any) -> NativeKey:
+        need(key_string_envelope(value), "fence_model_issuer_native_binding_unavailable")
+        need(not known_foreign_model_key(value),
+             "fence_non_google_model_issuer_native_retirement_unavailable")
+        lookup = self._get("keys", "keys:lookupKey", {"keyString": value})
+        name = lookup.get("name")
+        need(type(name) is str and KEY.fullmatch(name)
+             and lookup.get("parent") == name.rsplit("/keys/", 1)[0],
+             "fence_model_credential_native_resource_unmapped")
+        key = self._key(cast(str, name), module)
+        observed = self._get("keys", cast(str, name) + "/keyString")
+        native_value = observed.get("keyString")
+        need(key_string_envelope(native_value)
+             and hmac.compare_digest(value.encode(), native_value.encode()),
+             "fence_model_credential_native_value_mismatch")
+        return key
 
     def bind_authorities_once(self, source: release.Plan) -> None:
         """Explicit pre-cut acquisition; not invoked by verify_fences.
@@ -253,27 +301,26 @@ class NativeFreshFenceBoundary(fresh.FreshNativeBoundary):
         ]
         need(not unresolved, "fence_relevant_model_credential_source_unmapped")
         old_keys: dict[str, NativeKey] = {}
+        foreign_keys: list[model_denial.ForeignModelCredential] = []
         for credential in retained.credentials:
             if credential.kind != "model":
                 continue
             names = {origin.environment_name for origin in credential.origins}
+            try:
+                provider = model_denial.provider_for(credential.value)
+            except model_denial.DenialUnavailable as error:
+                raise release.ReleaseDenied(str(error)) from None
+            if provider is not None:
+                need(names <= {"LLM_API_KEY", "GROQ_API_KEY" if provider == "groq" else "OPENAI_API_KEY"},
+                     "fence_model_provider_alias_mismatch")
+                foreign_keys.append(model_denial.ForeignModelCredential(
+                    provider, credential.value, credential.origins))
+                continue
             need(
                 names <= {"LLM_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"},
                 "fence_non_google_model_issuer_native_retirement_unavailable",
             )
-            need(
-                re.fullmatch(r"AIza[A-Za-z0-9_-]{35}", credential.value),
-                "fence_model_issuer_native_binding_unavailable",
-            )
-            lookup = self._get("keys", "keys:lookupKey", {"keyString": credential.value})
-            name = lookup.get("name")
-            need(
-                type(name) is str
-                and KEY.fullmatch(name)
-                and lookup.get("parent") == name.rsplit("/keys/", 1)[0],
-                "fence_model_credential_native_resource_unmapped",
-            )
-            key = self._key(cast(str, name), key_module)
+            key = self._credential_key(credential.value, key_module)
             old_keys[key.name] = key
         need(1 <= len(old_keys) <= 32, "fence_model_credential_scope_unavailable")
         emails = {key.issuer for key in old_keys.values() if key.issuer}
@@ -309,6 +356,9 @@ class NativeFreshFenceBoundary(fresh.FreshNativeBoundary):
                 "fence_native_principal_identity_unmapped",
             )
             principals.append(NativePrincipal(email, cast(str, uid)))
+        issuer_uids = {principal.email: principal.uid for principal in principals}
+        need(all(key.issuer is None or issuer_uids.get(key.issuer) == key.issuer_uid
+                 for key in old_keys.values()), "fence_key_issuer_native_uid_drift")
         observer = self._module(
             "backend/scripts/monetary_cutover_preflight.py", "hirewiz_native_fence_source"
         )
@@ -347,6 +397,7 @@ class NativeFreshFenceBoundary(fresh.FreshNativeBoundary):
         )
         need(self._source_old_passwords, "fence_actual_source_precut_passwords_unavailable")
         self._capture_setup_passwords(neon)
+        self._observe_foreign_model_retirement(tuple(foreign_keys))
         self.scope = BoundScope(
             source,
             self.target,
@@ -355,9 +406,24 @@ class NativeFreshFenceBoundary(fresh.FreshNativeBoundary):
             None,
             tuple(principals),
             old_actors,
+            tuple(foreign_keys),
         )
         retained = None
         captured.clear()
+
+    @staticmethod
+    def _observe_foreign_model_retirement(
+        credentials: tuple[model_denial.ForeignModelCredential, ...], deadline: float | None = None,
+    ) -> None:
+        try:
+            model_denial.observe(credentials, deadline=deadline)
+        except model_denial.DenialUnavailable as error:
+            raise release.ReleaseDenied(str(error)) from None
+
+    def verify_foreign_model_retirement(self, deadline: float | None = None) -> None:
+        need(self.scope is not None, "fence_retained_provider_scope_not_bound")
+        assert self.scope is not None
+        self._observe_foreign_model_retirement(self.scope.foreign_keys, deadline)
 
     def _capture_setup_passwords(self, neon: Any) -> None:
         """Actual pre-cut Secret Manager access; values never leave this process."""
@@ -632,11 +698,14 @@ class NativeFreshFenceBoundary(fresh.FreshNativeBoundary):
         reference = f"projects/{PROJECT_NUMBER}/secrets/{name}/versions/{version}"
         _, value = inventory_module._secret_value(self.reads, reference)
         need(value is not None, "fence_replacement_model_secret_unavailable")
-        lookup = self._get("keys", "keys:lookupKey", {"keyString": value})
+        key = self._credential_key(value, key_module)
         value = None
-        need(type(lookup.get("name")) is str and KEY.fullmatch(lookup["name"]),
-             "fence_replacement_model_key_unmapped")
-        key = self._key(lookup["name"], key_module)
+        need(key.issuer == source.runtime_service_account and key.issuer_uid is not None,
+             "fence_replacement_model_authorization_issuer_unmapped")
+        raw_key = self._get("keys", key.name)
+        need(raw_key.get("restrictions") == {
+            "apiTargets": [{"service": "generativelanguage.googleapis.com"}]},
+            "fence_replacement_model_api_restrictions_drift")
         need(key.name not in {item.name for item in scope.keys}
              and key.issuer not in {item.email for item in scope.principals},
              "fence_replacement_model_key_reuses_retired_authority")
@@ -724,19 +793,28 @@ class NativeFreshFenceBoundary(fresh.FreshNativeBoundary):
             calls.append(("keys", key.name, {}))
         for principal in scope.principals:
             calls.append(("iam", "projects/-/serviceAccounts/" + principal.email, {}))
+        if replacements:
+            assert scope.new_key is not None
+            need(scope.new_key.issuer == source.runtime_service_account
+                 and scope.new_key.issuer_uid is not None,
+                 "fence_replacement_model_authorization_issuer_unmapped")
+            assert scope.new_key.issuer is not None
+            calls.append(("iam", "projects/-/serviceAccounts/" + scope.new_key.issuer, {}))
         refs = (scope.target.runtime_secret, scope.target.observer_secret) if replacements else ()
         for ref in refs:
             name, version = ref.split(":")
             calls.append(("secret", f"projects/{PROJECT_NUMBER}/secrets/{name}/versions/{version}", {}))
-        need(len(calls) <= MAX_READS, "fence_fresh_read_bound_exceeded")
+        need(len(calls) + len(scope.foreign_keys) <= MAX_READS, "fence_fresh_read_bound_exceeded")
         with ThreadPoolExecutor(max_workers=4) as pool:
             sql = pool.submit(fresh.FreshNativeBoundary.verify_database, self, source, release.CUTOVER_CHAIN[0])
             fleet = pool.submit(self._cloud_closure, scope)
+            providers = pool.submit(self.verify_foreign_model_retirement, deadline)
             futures = [pool.submit(self._get, *call) for call in calls]
             try:
                 values = [future.result(timeout=max(0.001, deadline - time.monotonic())) for future in futures]
                 sql.result(timeout=max(0.001, deadline - time.monotonic()))
                 fleet.result(timeout=max(0.001, deadline - time.monotonic()))
+                providers.result(timeout=max(0.001, deadline - time.monotonic()))
             except TimeoutError:
                 # A concurrent wait may expire before the final freshness check.
                 # Refuse with the same fixed code; never refresh the start time.
@@ -752,12 +830,24 @@ class NativeFreshFenceBoundary(fresh.FreshNativeBoundary):
                  "fence_native_key_uid_or_issuer_drift")
             need((metadata["delete_time"] is not None) == (key != scope.new_key),
                  "fence_old_provider_key_active_or_replacement_retired")
+            if key == scope.new_key:
+                need(raw.get("restrictions") == {
+                    "apiTargets": [{"service": "generativelanguage.googleapis.com"}]},
+                    "fence_replacement_model_api_restrictions_drift")
         for principal in scope.principals:
             raw = values[offset]
             offset += 1
             need(raw.get("email") == principal.email and raw.get("uniqueId") == principal.uid,
                  "fence_native_principal_uid_drift")
             need(raw.get("disabled") is True, "fence_old_automated_principal_still_enabled")
+        if replacements:
+            raw = values[offset]
+            offset += 1
+            assert scope.new_key is not None
+            need(raw.get("email") == scope.new_key.issuer
+                 and raw.get("uniqueId") == scope.new_key.issuer_uid
+                 and raw.get("disabled", False) is False,
+                 "fence_replacement_model_issuer_uid_or_state_drift")
         for ref in refs:
             raw = values[offset]
             offset += 1

@@ -9,7 +9,10 @@ import json
 import os
 import re
 import secrets
+import stat
+import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -34,6 +37,15 @@ MIGRATOR_NAME, MIGRATOR_OID = "hirewiz_migrator_20261010_r1", 1884180
 OLD_SECRET = "projects/157225724590/secrets/hirewiz-database-url/versions/1"
 ROLE_ROWS = "SELECT oid,rolname,rolcanlogin,rolinherit,rolsuper,rolcreatedb,rolcreaterole,rolreplication,rolbypassrls FROM pg_catalog.pg_roles ORDER BY oid LIMIT 257"
 MEMBERS = "SELECT roleid,member,grantor,admin_option,inherit_option,set_option FROM pg_catalog.pg_auth_members ORDER BY roleid,member,grantor LIMIT 257"
+PRIOR_WORK = Path("/operator-prior")
+RESUME_FIELDS = frozenset({"owner_oid", "prior_nonce", "prior_release", "prior_operator_image", "prior_config_sha256"})
+RESUME_VALUES = {
+    "owner_oid": 2080768,
+    "prior_nonce": "e3246e0ad682494ea4f7168fcec8814c",
+    "prior_release": "371b3c423c85529d00e8180bef66e7b0328c1540",
+    "prior_operator_image": "us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz-release-operator@sha256:ae4cc858febb8844e368e645ac8e3a736dd45c991377de3749ef6085c1204db3",
+    "prior_config_sha256": "b81f376536eb2499cb0657b83099b6393d9f5c5f1d70a1924dee8c0ef381ff38",
+}
 
 
 class SourceActionDenied(RuntimeError):
@@ -115,6 +127,134 @@ class PreparedOwner:
     def validate(self) -> None:
         require(self.name == OWNER_NAME and type(self.oid) is int and 0 < self.oid < 2**32
                 and self.oid not in {10, 16387, 1884182, 1884178, 1884180}, "source_prepared_owner_identity")
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedOwnerResume:
+    """Only the reconciled first-phase F2 owner; never a generic restart token."""
+
+    owner_oid: int
+    prior_nonce: str
+    prior_release: str
+    prior_operator_image: str
+    prior_config_sha256: str
+
+    @classmethod
+    def from_payload(cls, value: Any) -> PreparedOwnerResume:
+        require(type(value) is dict and set(value) == RESUME_FIELDS,
+                "source_resume_instruction_fields")
+        result = cls(**value)
+        result.validate()
+        return result
+
+    def validate(self) -> None:
+        require(type(self) is PreparedOwnerResume and all(
+            type(getattr(self, name)) is type(expected) and getattr(self, name) == expected
+            for name, expected in RESUME_VALUES.items()), "source_resume_fixed_prior_identity")
+
+    @property
+    def volume(self) -> str:
+        self.validate()
+        return "hirewiz-cutover-data-" + self.prior_nonce
+
+
+def verify_prior_owner_preparation(resume: PreparedOwnerResume) -> None:
+    """Read only the fixed prior once marker, never another phase or file body."""
+    resume.validate()
+    try:
+        metadata = PRIOR_WORK.lstat()
+        require(sys.platform == "linux" and stat.S_ISDIR(metadata.st_mode)
+                and metadata.st_uid == 0 and stat.S_IMODE(metadata.st_mode) == 0o700
+                and os.statvfs(PRIOR_WORK).f_flag & os.ST_RDONLY,
+                "source_resume_prior_volume_not_owned_readonly")
+        require(sorted(path.name for path in PRIOR_WORK.iterdir()) == ["source-owner-create.started.json"],
+                "source_resume_prior_partial_phase")
+        path = PRIOR_WORK / "source-owner-create.started.json"
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        try:
+            info = os.fstat(descriptor)
+            require(stat.S_ISREG(info.st_mode) and info.st_uid == 0 and info.st_nlink == 1
+                    and stat.S_IMODE(info.st_mode) == 0o600 and 0 < info.st_size <= 256,
+                    "source_resume_prior_marker_metadata")
+            raw = os.read(descriptor, 257)
+            require(raw == json.dumps({"phase": "source-owner-create", "automatic_replay": False}).encode() + b"\n",
+                    "source_resume_prior_marker_body")
+        finally:
+            os.close(descriptor)
+    except SourceActionDenied:
+        raise
+    except Exception:
+        raise SourceActionDenied("source_resume_prior_evidence_unavailable") from None
+
+
+def _unused_owner_catalogue(connection: Any, owner_oid: int, owner_name: str,
+                            creator_oid: int) -> None:
+    """Actual catalogue predicate; fixed native bindings belong to its caller."""
+    require(type(owner_oid) is int and type(creator_oid) is int
+            and 0 < owner_oid < 2**32 and 0 < creator_oid < 2**32
+            and owner_oid != creator_oid and type(owner_name) is str
+            and re.fullmatch(r"[a-z][a-z0-9_]{0,62}", owner_name), "source_resume_catalogue_identity")
+    roles = connection.execute(
+        "SELECT oid,rolname,rolcanlogin,rolinherit,rolsuper,rolcreatedb,rolcreaterole,rolreplication,rolbypassrls "
+        "FROM pg_catalog.pg_roles WHERE oid=%s OR rolname=%s ORDER BY oid LIMIT 3",
+        (owner_oid, owner_name),
+    ).fetchall()
+    require(roles == [(owner_oid, owner_name, False, False, False, False, False, False, False)],
+            "source_resume_owner_attributes_or_oid_drift")
+    members = connection.execute(
+        "SELECT roleid,member,grantor,admin_option,inherit_option,set_option "
+        "FROM pg_catalog.pg_auth_members WHERE roleid=%s OR member=%s OR grantor=%s "
+        "ORDER BY roleid,member,grantor LIMIT 3", (owner_oid, owner_oid, owner_oid),
+    ).fetchall()
+    require(members == [(owner_oid, creator_oid, 10, True, False, False)],
+            "source_resume_owner_membership_drift")
+    # Ownership and ACL references in every database, default privileges, role
+    # settings and existing authenticated sessions must all be absent. Only the
+    # exact creator membership checked above is excluded from pg_shdepend.
+    counts = connection.execute(
+        "SELECT (SELECT count(*) FROM pg_catalog.pg_shdepend "
+        "WHERE refclassid='pg_catalog.pg_authid'::regclass AND refobjid=%s "
+        "AND classid<>'pg_catalog.pg_auth_members'::regclass),"
+        "(SELECT count(*) FROM pg_catalog.pg_db_role_setting WHERE setrole=%s),"
+        "(SELECT count(*) FROM pg_catalog.pg_stat_activity WHERE usesysid=%s),"
+        "(SELECT count(*) FROM pg_catalog.pg_prepared_xacts WHERE owner=%s)",
+        (owner_oid, owner_oid, owner_oid, owner_name),
+    ).fetchone()
+    require(tuple(counts or ()) == (0, 0, 0, 0), "source_resume_owner_already_used")
+
+
+def resume_prepared_owner(origin: transfer.BoundDatabase,
+                          boundary: native.NativeFreshFenceBoundary,
+                          resume: PreparedOwnerResume, workdir: Path) -> PreparedOwner:
+    """Fresh native read admission for one reconciled role; never CREATE/replay."""
+    validate_origin(origin)
+    resume.validate()
+    require(type(boundary) is native.NativeFreshFenceBoundary and boundary.scope is not None
+            and boundary.scope.source.database_owner_oid == resume.owner_oid
+            and boundary.retired_since is None and boundary._source_isolated_at is None,
+            "source_resume_fresh_precut_scope_required")
+    verify_prior_owner_preparation(resume)
+    require(not any(workdir.iterdir()), "source_resume_current_phase_exists_reconcile_only")
+    owner = PreparedOwner(resume.owner_oid)
+    owner.validate()
+    connection = origin.connect()
+    try:
+        with connection.transaction():
+            connection.execute("SET TRANSACTION READ ONLY")
+            connection.execute("SET LOCAL statement_timeout='1000ms'")
+            snapshot(connection)  # Source is still schema9 with its original owner.
+            verify_source_quiescent(boundary, connection)
+            _unused_owner_catalogue(connection, owner.oid, OWNER_NAME, OLD_OID)
+        # This records a different operation. The original CREATE marker remains
+        # read-only and every following provider/SQL phase retains its own once.
+        once(workdir, "source-owner-resume")
+        return owner
+    except SourceActionDenied:
+        raise
+    except Exception:
+        raise SourceActionDenied("source_resume_native_observation_unavailable") from None
+    finally:
+        connection.close()
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -206,16 +346,27 @@ def verify_cloud_isolated(boundary: native.NativeFreshFenceBoundary) -> None:
     require(type(boundary) is native.NativeFreshFenceBoundary and scope is not None,
             "source_retained_native_scope_missing")
     assert scope is not None
-    key_module = boundary._module("backend/scripts/model_key_revocation_observer.py", "source_retirement_keys")
-    for key in scope.keys:
-        row = boundary._get("keys", key.name)
-        metadata = key_module._metadata(row, key.name.rsplit("/keys/", 1)[0], native.datetime.now(native.UTC))
-        require(metadata["uid"] == key.uid and metadata["delete_time"] is not None
-                and (row.get("serviceAccountEmail") or None) == key.issuer, "source_old_key_not_retired")
-    for principal in scope.principals:
-        row = boundary._get("iam", "projects/-/serviceAccounts/" + principal.email)
-        require(row.get("email") == principal.email and row.get("uniqueId") == principal.uid
-                and row.get("disabled") is True, "source_old_principal_not_isolated")
+    deadline = time.monotonic() + native.WINDOW
+    require(len(scope.keys) + len(scope.principals) + len(scope.foreign_keys) <= native.MAX_READS,
+            "source_native_observation_bound_exceeded")
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        providers = pool.submit(boundary.verify_foreign_model_retirement, deadline)
+        key_module = boundary._module("backend/scripts/model_key_revocation_observer.py", "source_retirement_keys")
+        for key in scope.keys:
+            row = boundary._get("keys", key.name)
+            metadata = key_module._metadata(row, key.name.rsplit("/keys/", 1)[0], native.datetime.now(native.UTC))
+            require(metadata["name"] == key.name and metadata["uid"] == key.uid
+                    and metadata["delete_time"] is not None
+                    and (row.get("serviceAccountEmail") or None) == key.issuer, "source_old_key_not_retired")
+        for principal in scope.principals:
+            row = boundary._get("iam", "projects/-/serviceAccounts/" + principal.email)
+            require(row.get("email") == principal.email and row.get("uniqueId") == principal.uid
+                    and row.get("disabled") is True, "source_old_principal_not_isolated")
+        try:
+            providers.result(timeout=max(0.001, deadline - time.monotonic()))
+        except TimeoutError:
+            raise SourceActionDenied("source_native_observation_expired") from None
+    require(time.monotonic() < deadline, "source_native_observation_expired")
 
 
 def verify_source_quiescent(boundary: native.NativeFreshFenceBoundary, connection: Any) -> None:

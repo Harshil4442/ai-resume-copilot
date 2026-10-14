@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import importlib
+import json
 import os
 import sys
 from contextlib import contextmanager
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -85,6 +87,12 @@ class Connection:
             return Result(self.roles[:])
         if text == module.MEMBERS:
             return Result(self.members[:])
+        if text.startswith("SELECT oid,rolname,rolcanlogin"):
+            return Result([row for row in self.roles if row[0] == params[0] or row[1] == params[1]])
+        if text.startswith("SELECT roleid,member,grantor"):
+            return Result([row for row in self.members if params[0] in row[:3]])
+        if text.startswith("SELECT (SELECT count(*) FROM pg_catalog.pg_shdepend"):
+            return Result([(self.dependencies, 0, len(self.session_rows), 0)])
         if text.startswith('CREATE ROLE '):
             self.created = True
             self.roles.append((2000000, module.OWNER_NAME, False, False, False, False, False, False, False))
@@ -136,6 +144,158 @@ def test_one_additive_owner_native_oid_and_exact_memberships(prepared):
     assert connection.members[-1] == (2000000, 16387, 10, True, False, False)
     assert connection.closed and (workdir / "source-owner-create.started.json").is_file()
     assert not any(text.startswith(("REASSIGN", "ALTER ROLE", "DROP", "INSERT", "UPDATE", "DELETE")) for text in connection.commands)
+
+
+def resume_payload():
+    return dict(module.RESUME_VALUES)
+
+
+@pytest.mark.parametrize("change", [
+    {"owner_oid": True}, {"owner_oid": 2080768.0}, {"owner_oid": 2080769},
+    {"prior_nonce": "f" * 32}, {"prior_release": "f" * 40},
+    {"prior_operator_image": "unrelated"}, {"prior_config_sha256": "f" * 64},
+])
+def test_resume_instruction_rejects_other_roles_operations_and_untyped_oids(change):
+    with pytest.raises(module.SourceActionDenied, match="source_resume_fixed_prior_identity"):
+        module.PreparedOwnerResume.from_payload({**resume_payload(), **change})
+
+
+def test_resume_instruction_requires_all_and_only_explicit_fixed_fields():
+    value = resume_payload()
+    assert module.PreparedOwnerResume.from_payload(value).volume.endswith(value["prior_nonce"])
+    for malformed in (None, {}, {**value, "allow_replay": True},
+                      {key: item for key, item in value.items() if key != "owner_oid"}):
+        with pytest.raises(module.SourceActionDenied, match="source_resume_instruction_fields"):
+            module.PreparedOwnerResume.from_payload(malformed)
+
+
+@pytest.mark.parametrize("drift", [None, "writable", "later_phase", "marker_body", "file_owner", "hardlink", "symlink", "directory_owner", "directory_mode", "platform"])
+def test_prior_marker_requires_exact_owned_readonly_first_phase_only(tmp_path, monkeypatch, drift):
+    marker = tmp_path / "source-owner-create.started.json"
+    marker.write_bytes(json.dumps({"phase": "source-owner-create", "automatic_replay": False}).encode() + b"\n")
+    marker.chmod(0o600)
+    if drift == "later_phase":
+        (tmp_path / "source-owner-transition.started.json").write_text("{}")
+    elif drift == "marker_body":
+        marker.write_text('{"phase":"source-owner-create","automatic_replay":true}\n')
+    elif drift == "hardlink":
+        os.link(marker, tmp_path.parent / (tmp_path.name + "-outside-hardlink"))
+    elif drift == "symlink":
+        target = tmp_path.parent / (tmp_path.name + "-outside-marker")
+        marker.rename(target)
+        marker.symlink_to(target)
+
+    class PriorDirectory:
+        def lstat(self):
+            return SimpleNamespace(st_uid=501 if drift == "directory_owner" else 0,
+                                   st_mode=0o040755 if drift == "directory_mode" else 0o040700)
+
+        def iterdir(self):
+            return tmp_path.iterdir()
+
+        def __truediv__(self, name):
+            return tmp_path / name
+
+    class MetadataOS:
+        def __getattr__(self, name):
+            return getattr(os, name)
+
+        def statvfs(self, _):
+            return SimpleNamespace(f_flag=0 if drift == "writable" else os.ST_RDONLY)
+
+        def fstat(self, descriptor):
+            real = os.fstat(descriptor)
+            return SimpleNamespace(st_mode=real.st_mode, st_uid=501 if drift == "file_owner" else 0,
+                                   st_nlink=real.st_nlink, st_size=real.st_size)
+
+    monkeypatch.setattr(module, "PRIOR_WORK", PriorDirectory())
+    monkeypatch.setattr(module, "os", MetadataOS())
+    monkeypatch.setattr(module, "sys", SimpleNamespace(platform="darwin" if drift == "platform" else "linux"))
+    resume = module.PreparedOwnerResume.from_payload(resume_payload())
+    if drift:
+        with pytest.raises(module.SourceActionDenied):
+            module.verify_prior_owner_preparation(resume)
+    else:
+        module.verify_prior_owner_preparation(resume)
+
+
+@pytest.fixture
+def resumable(prepared, monkeypatch):
+    origin, connection, workdir = prepared
+    resume = module.PreparedOwnerResume.from_payload(resume_payload())
+    connection.roles.append((resume.owner_oid, module.OWNER_NAME, False, False, False, False, False, False, False))
+    connection.members.append((resume.owner_oid, module.OLD_OID, 10, True, False, False))
+    boundary = object.__new__(module.native.NativeFreshFenceBoundary)
+    boundary.scope = SimpleNamespace(source=SimpleNamespace(database_owner_oid=resume.owner_oid))
+    boundary.retired_since = boundary._source_isolated_at = None
+    monkeypatch.setattr(module, "verify_prior_owner_preparation", lambda _: None)
+    return origin, connection, workdir, resume, boundary
+
+
+def test_native_resume_reuses_actual_unused_role_without_create_or_sql_write(resumable):
+    origin, connection, workdir, resume, boundary = resumable
+    owner = module.resume_prepared_owner(origin, boundary, resume, workdir)
+    assert owner.oid == resume.owner_oid and connection.owner == module.OLD_OID
+    assert connection.closed and not connection.created
+    assert json.loads((workdir / "source-owner-resume.started.json").read_text()) == {
+        "phase": "source-owner-resume", "automatic_replay": False,
+    }
+    assert not (workdir / "source-owner-create.started.json").exists()
+    assert not any(text.startswith(("CREATE", "ALTER", "DROP", "REASSIGN", "GRANT", "REVOKE", "INSERT", "UPDATE", "DELETE", "SET TRANSACTION READ WRITE")) for text in connection.commands)
+
+
+@pytest.mark.parametrize("drift", ["login", "oid", "membership_set", "membership_extra", "dependency", "session", "schema_owner"])
+def test_resume_rejects_used_changed_or_partially_transitioned_role(resumable, drift):
+    origin, connection, workdir, resume, boundary = resumable
+    if drift == "login":
+        connection.roles[-1] = (*connection.roles[-1][:2], True, *connection.roles[-1][3:])
+    elif drift == "oid":
+        connection.roles[-1] = (2080769, *connection.roles[-1][1:])
+    elif drift == "membership_set":
+        connection.members[-1] = (*connection.members[-1][:5], True)
+    elif drift == "membership_extra":
+        connection.members.append((resume.owner_oid, 10, 10, True, False, False))
+    elif drift == "dependency":
+        connection.dependencies = 1
+    elif drift == "session":
+        connection.session_rows = [(12345, resume.owner_oid, 16391, "client backend")]
+    else:
+        connection.owner = resume.owner_oid
+    with pytest.raises(module.SourceActionDenied):
+        module.resume_prepared_owner(origin, boundary, resume, workdir)
+    assert not list(workdir.iterdir()) and not connection.created
+
+
+@pytest.mark.parametrize("change", ["scope", "oid", "retired", "isolated"])
+def test_resume_requires_unretired_full_native_scope_before_read(resumable, change):
+    origin, connection, workdir, resume, boundary = resumable
+    if change == "scope":
+        boundary.scope = None
+    elif change == "oid":
+        boundary.scope.source.database_owner_oid = 2080769
+    elif change == "retired":
+        boundary.retired_since = object()
+    else:
+        boundary._source_isolated_at = object()
+    with pytest.raises(module.SourceActionDenied, match="source_resume_fresh_precut_scope_required"):
+        module.resume_prepared_owner(origin, boundary, resume, workdir)
+    assert connection.commands == [] and not list(workdir.iterdir())
+
+
+def test_native_resume_marker_never_replays(resumable):
+    origin, connection, workdir, resume, boundary = resumable
+    module.resume_prepared_owner(origin, boundary, resume, workdir)
+    with pytest.raises(module.SourceActionDenied, match="source_resume_current_phase_exists_reconcile_only"):
+        module.resume_prepared_owner(origin, boundary, resume, workdir)
+    assert not connection.created
+
+
+def test_resume_rejects_any_current_partial_phase_before_source_read(resumable):
+    origin, connection, workdir, resume, boundary = resumable
+    (workdir / "unresolved-provider-write.started.json").write_text("{}")
+    with pytest.raises(module.SourceActionDenied, match="source_resume_current_phase_exists_reconcile_only"):
+        module.resume_prepared_owner(origin, boundary, resume, workdir)
+    assert connection.commands == [] and not connection.created
 
 
 def test_unknown_commit_keeps_once_marker_and_never_replays(prepared):

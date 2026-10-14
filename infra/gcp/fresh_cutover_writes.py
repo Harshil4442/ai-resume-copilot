@@ -249,6 +249,13 @@ class OfficialWrites:
             and path == "projects/" + NUMBER + "/locations/global/keys"
             or api == "keys"
             and method == "GET"
+            and path == "keys:lookupKey"
+            and query is not None
+            and set(query) == {"keyString"}
+            and native.key_string_envelope(query["keyString"])
+            and not native.known_foreign_model_key(query["keyString"])
+            or api == "keys"
+            and method == "GET"
             and path
             in {
                 "projects/" + NUMBER + "/locations/global/keys/" + MODEL_KEY_ID,
@@ -270,6 +277,11 @@ class OfficialWrites:
                 or method == "POST"
                 and secret_resource[2] == "setIamPolicy"
             )
+            or api == "secret"
+            and method == "GET"
+            and path in {"projects/" + NUMBER + "/secrets/" + row[2] + "/versions"
+                         for row in TARGET_ROLES}
+            and query == {"pageSize": "100"}
             or api == "secret"
             and method in {"GET", "POST"}
             and re.fullmatch(
@@ -372,6 +384,64 @@ class OfficialWrites:
         need(time.monotonic() < deadline, "write_action_deadline")
         return tuple(accounts)
 
+    def verify_prepared_owner_resume_pristine(self) -> None:
+        """Read-only prerequisite for resuming an existing NOLOGIN owner.
+
+        SQL independently verifies the exact owner/target and unchanged source.
+        Here native absence/UID/state checks exclude prior cloud isolation,
+        replacement issuance and rotated target versions. No supplied flag or
+        historic receipt substitutes for these current GETs.
+        """
+        scope = self.boundary.scope
+        need(scope is not None and self.boundary.retired_since is None,
+             "write_owner_resume_scope_not_pristine")
+        assert scope is not None
+        need({principal.email: principal.uid for principal in scope.principals} == OLD_PRINCIPALS
+             and {key.name for key in scope.keys} == OLD_KEYS,
+             "write_owner_resume_captured_authority_incomplete")
+        need(set(self.boundary._setup_passwords) == set(native.SETUP_REFERENCES)
+             and (scope.target.runtime_secret, scope.target.migration_secret,
+                  scope.target.observer_secret) == tuple(native.SETUP_REFERENCES.values()),
+             "write_owner_resume_target_setup_not_pristine")
+        deadline = time.monotonic() + 30
+        for principal in scope.principals:
+            need(time.monotonic() < deadline, "write_owner_resume_observation_expired")
+            row = self._call("iam", "GET", "projects/-/serviceAccounts/" + principal.email)
+            self._account(row, principal.email, principal.uid)
+            need(row is not None and row.get("disabled", False) is False,
+                 "write_owner_resume_old_principal_not_enabled")
+        keys = self.boundary._module("backend/scripts/model_key_revocation_observer.py",
+                                     "owner_resume_native_keys")
+        for key in scope.keys:
+            row = self._call("keys", "GET", key.name)
+            metadata = keys._metadata(row, key.name.rsplit("/keys/", 1)[0], datetime.now(UTC))
+            need(metadata["uid"] == key.uid and metadata["delete_time"] is None
+                 and row is not None and (row.get("serviceAccountEmail") or None) == key.issuer,
+                 "write_owner_resume_old_key_not_active")
+        for name in NEW_ACCOUNTS:
+            email = name + "@" + PROJECT + ".iam.gserviceaccount.com"
+            need(self._call("iam", "GET", "projects/-/serviceAccounts/" + email,
+                            allow_absent=True) is None,
+                 "write_owner_resume_replacement_account_exists")
+        for api, path in (
+            ("keys", f"projects/{NUMBER}/locations/global/keys/{MODEL_KEY_ID}"),
+            ("secret", f"projects/{NUMBER}/secrets/{MODEL_SECRET}"),
+            ("secret", f"projects/{NUMBER}/secrets/{SOURCE_SECRET}"),
+        ):
+            need(self._call(api, "GET", path, allow_absent=True) is None,
+                 "write_owner_resume_replacement_issuance_exists")
+        for _, _, name in TARGET_ROLES:
+            parent = f"projects/{NUMBER}/secrets/{name}/versions"
+            listing = self._call("secret", "GET", parent, query={"pageSize": "100"})
+            need(listing is not None and listing.get("nextPageToken") in (None, "")
+                 and type(listing.get("versions")) is list and len(listing["versions"]) == 1,
+                 "write_owner_resume_target_versions_not_pristine")
+            row = listing["versions"][0]
+            need(type(row) is dict and row.get("name") == parent + "/1"
+                 and row.get("state") == "ENABLED",
+                 "write_owner_resume_target_versions_not_pristine")
+        need(time.monotonic() < deadline, "write_owner_resume_observation_expired")
+
     def verify_trigger_held(self) -> None:
         """Fresh exact trigger read; a caller declaration cannot retire Compute."""
         row = self._call("build", "GET", TRIGGER_PATH)
@@ -442,6 +512,7 @@ class OfficialWrites:
     def disable_old_principals(self) -> tuple[NativeAccount, ...]:
         scope = self.boundary.scope
         need(scope is not None and scope.principals, "write_authenticated_old_scope_missing")
+        self.boundary.verify_foreign_model_retirement()
         assert scope is not None
         need(
             all(
@@ -519,6 +590,7 @@ class OfficialWrites:
     def delete_old_model_keys(self) -> tuple[str, ...]:
         scope = self.boundary.scope
         need(scope is not None and scope.keys, "write_authenticated_old_scope_missing")
+        self.boundary.verify_foreign_model_retirement()
         assert scope is not None
         need(all(key.name in OLD_KEYS for key in scope.keys), "write_old_key_unmapped")
         deadline = time.monotonic() + 55
@@ -967,11 +1039,20 @@ class OfficialWrites:
              and reread.get("uid") == service["uid"] and reread.get("uri") == origin,
              "write_native_tex_service_identity_drift")
 
-    def create_model_replacement(self) -> str:
+    def create_model_replacement(self, runtime: NativeAccount) -> str:
         source_sql.verify_cloud_isolated(self.boundary)
         cut = self.boundary.retired_since
         need(cut is not None, "write_native_isolation_cut_required")
         assert cut is not None
+        email = NEW_ACCOUNTS[0] + "@" + PROJECT + ".iam.gserviceaccount.com"
+        need(type(runtime) is NativeAccount and runtime.email == email,
+             "write_new_model_issuer_class_refused")
+        account_path = "projects/-/serviceAccounts/" + runtime.email
+        account = self._call("iam", "GET", account_path)
+        need(self._account(account, email, runtime.uid) == runtime
+             and account is not None and account.get("projectId") == PROJECT
+             and account.get("disabled", False) is False,
+             "write_new_model_issuer_native_state_drift")
         path = f"projects/{NUMBER}/locations/global/keys/{MODEL_KEY_ID}"
         need(
             self._call("keys", "GET", path, allow_absent=True) is None,
@@ -987,6 +1068,7 @@ class OfficialWrites:
             body={
                 "displayName": MODEL_KEY_ID,
                 "restrictions": {"apiTargets": [{"service": "generativelanguage.googleapis.com"}]},
+                "serviceAccountEmail": runtime.email,
             },
         )
         result = self._operation(ack, resource=path, uid=None, deadline=deadline)
@@ -997,6 +1079,7 @@ class OfficialWrites:
             and observed.get("uid") == result.get("uid")
             and type(observed.get("uid")) is str
             and not observed.get("deleteTime")
+            and observed.get("serviceAccountEmail") == runtime.email
             and observed.get("restrictions")
             == {"apiTargets": [{"service": "generativelanguage.googleapis.com"}]},
             "write_new_model_key_readback_drift",
@@ -1015,11 +1098,20 @@ class OfficialWrites:
         key = self._call("keys", "GET", path + "/keyString")
         need(
             key is not None
-            and type(key.get("keyString")) is str
-            and re.fullmatch(r"AIza[A-Za-z0-9_-]{35}", key["keyString"]),
+            and native.key_string_envelope(key.get("keyString"))
+            and not native.known_foreign_model_key(key.get("keyString")),
             "write_new_model_key_value_unavailable",
         )
         assert key is not None
+        lookup = self._call("keys", "GET", "keys:lookupKey",
+                            query={"keyString": key["keyString"]})
+        need(lookup is not None and lookup.get("name") == path
+             and lookup.get("parent") == path.rsplit("/keys/", 1)[0],
+             "write_new_model_key_native_value_unmapped")
+        current = self._call("iam", "GET", account_path)
+        need(self._account(current, email, runtime.uid) == runtime
+             and current is not None and current.get("disabled", False) is False,
+             "write_new_model_issuer_native_state_drift")
         self.create_secret(MODEL_SECRET)
         return self.add_version(MODEL_SECRET, key["keyString"], phase="post-isolation-model")
 

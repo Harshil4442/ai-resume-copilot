@@ -39,6 +39,18 @@ def values():
     }
 
 
+def test_decode_accepts_original_or_exact_resume_fields_only():
+    original = values()
+    assert execute.decode_input(json.dumps(original).encode()) == original
+    resumed = {**original, execute.RESUME_FIELD: dict(execute.source_sql.RESUME_VALUES)}
+    assert execute.decode_input(json.dumps(resumed).encode()) == resumed
+    for malformed in ({**resumed, "resume_from_any_phase": True},
+                      {**original, execute.RESUME_FIELD: None},
+                      {**original, execute.RESUME_FIELD: {**execute.source_sql.RESUME_VALUES, "owner_oid": 2080769}}):
+        with pytest.raises((native.release.ReleaseDenied, execute.source_sql.SourceActionDenied)):
+            execute.decode_input(json.dumps(malformed).encode())
+
+
 def source():
     return execute.plan(
         values(),
@@ -247,6 +259,49 @@ def test_docker_route_requires_init_isolated_amd64_and_opaque_managers_only():
         )
 
 
+def test_resume_mount_is_exact_prior_readonly_volume_and_cannot_overlap_current():
+    resume = execute.source_sql.PreparedOwnerResume.from_payload(dict(execute.source_sql.RESUME_VALUES))
+    nonce = "a" * 32
+    image = resume.prior_operator_image
+    argv = docker.run_argv(image, "c" * 40, "hirewiz-cutover-" + nonce,
+                          "hirewiz-cutover-data-" + nonce, nonce, Path("/synthetic/inputs"), resume)
+    assert "type=volume,src=" + resume.volume + ",dst=/operator-prior,readonly" in argv
+    assert argv.count("type=volume,src=" + resume.volume + ",dst=/operator-prior,readonly") == 1
+    assert not any("TOKEN=" in arg or "PASSWORD=" in arg for arg in argv)
+    with pytest.raises(execute.writes.WriteDenied, match="docker_resume_current_prior_volume_overlap"):
+        docker.run_argv(image, "c" * 40, "hirewiz-cutover-" + resume.prior_nonce,
+                        resume.volume, resume.prior_nonce, Path("/synthetic/inputs"), resume)
+
+
+@pytest.mark.parametrize("drift", [None, "label", "driver", "options", "live"])
+def test_native_prior_volume_and_container_absence_are_observed_before_resume(monkeypatch, drift):
+    resume = execute.source_sql.PreparedOwnerResume.from_payload(dict(execute.source_sql.RESUME_VALUES))
+    row = {"Name": resume.volume, "Driver": "local", "Scope": "local", "Options": None,
+           "Labels": {docker.LABEL: resume.prior_nonce}}
+    if drift == "label":
+        row["Labels"][docker.LABEL] = "f" * 32
+    elif drift == "driver":
+        row["Driver"] = "unrelated"
+    elif drift == "options":
+        row["Options"] = {"device": "/unrelated"}
+    calls = []
+
+    def command(args, _deadline):
+        calls.append(args)
+        return (json.dumps([row]).encode() if args[:2] == ["volume", "inspect"]
+                else b"f" * 64 if drift == "live" else b"")
+
+    monkeypatch.setattr(docker, "command", command)
+    if drift:
+        with pytest.raises(execute.writes.WriteDenied):
+            docker.verify_resume_volume(resume, 9999999999)
+    else:
+        docker.verify_resume_volume(resume, 9999999999)
+        assert calls[1][0] == "ps"
+        assert "label=" + docker.LABEL + "=" + resume.prior_nonce in calls[1]
+    assert all(args[0] in {"volume", "ps"} for args in calls)
+
+
 def test_fixed_terminal_projection_never_emits_extra_credential_or_accepts_goal_completion():
     event = {
         "event": "gcp_cutover_complete",
@@ -328,8 +383,9 @@ def test_local_neon_owner_metadata_and_delete_are_fixed_and_not_sql_fence_proof(
     assert result["source_sql_absence_verified"] is result["native_fence_complete"] is False
 
 
+@pytest.mark.parametrize("resume_mode", [False, True])
 def test_real_coordinator_barrier_refusal_stops_before_password_rotation_restore_and_promotion(
-    monkeypatch, tmp_path
+    monkeypatch, tmp_path, resume_mode
 ):
     log = []
     boundary = object.__new__(native.NativeFreshFenceBoundary)
@@ -379,17 +435,21 @@ def test_real_coordinator_barrier_refusal_stops_before_password_rotation_restore
             return lambda *_a, **_k: log.append(name)
 
     monkeypatch.setattr(execute.writes, "OfficialWrites", lambda *a: Writer())
-    owner = execute.source_sql.PreparedOwner(99991)
+    owner = execute.source_sql.PreparedOwner(2080768 if resume_mode else 99991)
     for name, result in [
         ("original_owner", SimpleNamespace(connect=lambda: DB())),
         ("preflight_source", {}),
         ("prepare_owner", owner),
+        ("resume_prepared_owner", owner),
         ("transition_source", object()),
         ("observer_target", object()),
         ("verify_provider_delete_ready", None),
         ("verify_source_quiescent", None),
     ]:
-        monkeypatch.setattr(execute.source_sql, name, lambda *_a, _result=result, **_k: _result)
+        def operation(*_a, _result=result, _name=name, **_k):
+            log.append(_name)
+            return _result
+        monkeypatch.setattr(execute.source_sql, name, operation)
     monkeypatch.setattr(
         execute.writes,
         "publish_source_observer",
@@ -410,13 +470,26 @@ def test_real_coordinator_barrier_refusal_stops_before_password_rotation_restore
         raise RuntimeError("synthetic local refusal")
 
     events = []
+    value = values()
+    if resume_mode:
+        value[execute.RESUME_FIELD] = dict(execute.source_sql.RESUME_VALUES)
     with pytest.raises(RuntimeError, match="synthetic local refusal"):
-        execute.execute(values(), boundary, events.append, refused)
+        execute.execute(value, boundary, events.append, refused)
     assert events[-1]["event"] == "local_neon_delete_required"
     assert "establish_retirement_cut" not in log and "bind_replacements_after_isolation" not in log
     assert log.index("begin_source_observer_isolation") < log.index("create_accounts")
     assert log.index("delete_old_model_keys") < log.index("create_accounts")
     assert log.index("verify_document_preparation") < log.index("disable_old_principals")
+    if resume_mode:
+        assert "prepare_owner" not in log
+        assert log.index("verify_source_quiescent") < log.index("bind_authorities_once")
+        assert log.index("bind_authorities_once") < log.index("verify_prepared_owner_resume_pristine")
+        assert log.index("verify_prepared_owner_resume_pristine") < log.index("resume_prepared_owner")
+        assert log.index("resume_prepared_owner") < log.index("disable_old_principals")
+    else:
+        assert "resume_prepared_owner" not in log
+        assert "verify_prepared_owner_resume_pristine" not in log
+        assert log.index("prepare_owner") < log.index("bind_authorities_once")
 
 
 @pytest.mark.parametrize("row", [(False, 0, 0), (True, 1, 0), (True, 0, 1)])

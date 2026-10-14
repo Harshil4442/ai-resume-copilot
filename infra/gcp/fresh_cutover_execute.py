@@ -48,6 +48,7 @@ INPUT_FIELDS = frozenset(
         "operation",
     }
 )
+RESUME_FIELD = "prepared_owner_resume"
 TARGET = native.release.FreshTargetPlan(
     "hirewiz-fresh-runtime-db-20261013:1",
     "hirewiz-fresh-migrator-db-20261013:1",
@@ -67,7 +68,11 @@ def decode_input(raw: bytes) -> dict[str, Any]:
         value = json.loads(raw, object_pairs_hook=native.object_pairs)
     except Exception:
         raise native.release.ReleaseDenied("cutover_input_json_refused") from None
-    need(type(value) is dict and set(value) == INPUT_FIELDS, "cutover_input_fields_refused")
+    need(type(value) is dict and frozenset(value) in {
+        INPUT_FIELDS, INPUT_FIELDS | {RESUME_FIELD},
+    }, "cutover_input_fields_refused")
+    if RESUME_FIELD in value:
+        source_sql.PreparedOwnerResume.from_payload(value[RESUME_FIELD])
     need(
         type(value["bootstrap_password"]) is str
         and 1 <= len(value["bootstrap_password"].encode()) <= 8192
@@ -229,9 +234,18 @@ def execute(
             source_sql.verify_source_quiescent(boundary, readiness)
     finally:
         readiness.close()
-    owner = source_sql.prepare_owner(origin, WORK)
-    source = replace(source, database_owner_oid=owner.oid)
-    boundary.bind_authorities_once(source)
+    if RESUME_FIELD not in value:
+        owner = source_sql.prepare_owner(origin, WORK)
+        source = replace(source, database_owner_oid=owner.oid)
+        boundary.bind_authorities_once(source)
+    else:
+        resume = source_sql.PreparedOwnerResume.from_payload(value[RESUME_FIELD])
+        # The reviewed OID is a planned input until complete fresh native census
+        # and the actual unused-role observation both succeed. No CREATE here.
+        source = replace(source, database_owner_oid=resume.owner_oid)
+        boundary.bind_authorities_once(source)
+        writer.verify_prepared_owner_resume_pristine()
+        owner = source_sql.resume_prepared_owner(origin, boundary, resume, WORK)
     event(
         {"event": "native_scope_bound", "source_database_oid": 16391, "source_owner_oid": owner.oid}
     )
@@ -275,7 +289,7 @@ def execute(
     boundary.bind_source_observer_after_isolation(source)
     boundary.establish_retirement_cut(source)
     target = writes.rotate_empty_target(writer, bootstrap)
-    model = writer.create_model_replacement()
+    model = writer.create_model_replacement(accounts[0])
     writer.grant_secret_access(writes.MODEL_SECRET, (accounts[0],))
     source = replace(source, model_key_secret=model)
     boundary.bind_replacements_after_isolation(source, target)

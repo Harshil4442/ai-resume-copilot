@@ -18,7 +18,10 @@ sys.path[:0] = [str(Path(__file__).parent), str(ROOT / "infra/gcp"), str(ROOT / 
 module = importlib.import_module("native_fresh_fence")
 release = module.release
 OLD = module.NativeKey("projects/157225724590/locations/global/keys/old-key", "a" * 32, None)
-NEW = module.NativeKey("projects/157225724590/locations/global/keys/new-key", "b" * 32, None)
+NEW_ISSUER = f"inert-runtime@{release.PROJECT}.iam.gserviceaccount.com"
+NEW_ISSUER_UID = "123456789012345678901"
+NEW = module.NativeKey("projects/157225724590/locations/global/keys/new-key", "b" * 32,
+                       NEW_ISSUER, NEW_ISSUER_UID)
 EMAIL = "157225724590-compute@developer.gserviceaccount.com"
 UID = "115689643755778240830"
 PAST = "2026-01-01T00:00:00Z"
@@ -34,6 +37,7 @@ class Responses:
         self.unavailable = False
         self.tag = False
         self.created = datetime.now(UTC)
+        self.key_value = "synthetic-google-key"
 
     def get(self, api, path, params):
         self.calls.append((api, path, params))
@@ -42,13 +46,20 @@ class Responses:
         if api == "keys":
             if path == "keys:lookupKey":
                 return {"name": NEW.name, "parent": NEW.name.rsplit("/keys/", 1)[0]}
+            if path.endswith("/keyString"):
+                return {"keyString": self.key_value}
             key = OLD if path == OLD.name else NEW
             row = {"name": key.name, "uid": key.uid, "etag": "native-etag",
                    "createTime": self.created.isoformat()}
             if key == OLD and not self.active:
                 row["deleteTime"] = PAST
+            if key == NEW:
+                row["serviceAccountEmail"] = NEW_ISSUER
+                row["restrictions"] = {"apiTargets": [{"service": "generativelanguage.googleapis.com"}]}
             return row
         if api == "iam":
+            if path.endswith("/" + NEW_ISSUER):
+                return {"email": NEW_ISSUER, "uniqueId": NEW_ISSUER_UID, "disabled": False}
             return {"email": EMAIL, "uniqueId": UID + "9" if self.bad_uid else UID,
                     "disabled": not self.enabled}
         if api == "secret":
@@ -412,3 +423,199 @@ def test_concurrent_native_timeout_refuses_and_invalidates_cut(prepared, monkeyp
         boundary.verify_fences(source)
     assert "synthetic-private-vendor-detail" not in str(error.value)
     assert boundary.retired_since is None
+
+
+@pytest.mark.parametrize("value", ["synthetic-standard-key", "AQ." + "synthetic-auth-envelope-" * 8])
+def test_opaque_google_key_is_bound_by_lookup_metadata_account_and_exact_value(prepared, value):
+    boundary, _, _, responses, _ = prepared
+    responses.key_value = value
+    key = boundary._credential_key(value, boundary._module(
+        "backend/scripts/model_key_revocation_observer.py", "opaque_key_test"))
+    assert key == NEW and key.issuer_uid == NEW_ISSUER_UID
+    assert responses.calls[-1] == ("keys", NEW.name + "/keyString", {})
+    assert responses.calls[0] == ("keys", "keys:lookupKey", {"keyString": value})
+
+
+def test_native_unbound_standard_key_remains_retirable_without_invented_issuer(prepared, monkeypatch):
+    boundary, _, _, responses, _ = prepared
+    original = responses.get
+    def unbound(api, path, params):
+        row = original(api, path, params)
+        if path == NEW.name:
+            row.pop("serviceAccountEmail")
+        return row
+    monkeypatch.setattr(responses, "get", unbound)
+    key = boundary._credential_key(responses.key_value, boundary._module(
+        "backend/scripts/model_key_revocation_observer.py", "standard_key_test"))
+    assert key.issuer is key.issuer_uid is None
+    assert not any(api == "iam" for api, _, _ in responses.calls)
+
+
+@pytest.mark.parametrize("value", [None, "", "x" * 4097, "AQ.\nsecret", "AQ.\x00secret", "AQ.é"])
+def test_invalid_opaque_envelope_refuses_without_native_request(prepared, value):
+    boundary, _, _, responses, _ = prepared
+    with pytest.raises(release.ReleaseDenied, match="fence_model_issuer_native_binding_unavailable"):
+        boundary._credential_key(value, object())
+    assert responses.calls == []
+
+
+@pytest.mark.parametrize(("defect", "reason"), [
+    ("parent", "fence_model_credential_native_resource_unmapped"),
+    ("value", "fence_model_credential_native_value_mismatch"),
+    ("issuer", "fence_key_issuer_identity_unmapped"),
+    ("account", "fence_key_issuer_native_account_unmapped"),
+    ("name", "fence_key_exact_resource_name_drift"),
+])
+def test_native_opaque_key_binding_mismatch_refuses(prepared, monkeypatch, defect, reason):
+    boundary, _, _, responses, _ = prepared
+    value = "AQ.synthetic-auth-key-in-RAM"
+    responses.key_value = value
+    original = responses.get
+    def changed(api, path, params):
+        row = original(api, path, params)
+        if defect == "parent" and path == "keys:lookupKey":
+            row["parent"] = "projects/999/locations/global"
+        if defect == "value" and path.endswith("/keyString"):
+            row["keyString"] = "AQ.different-native-value"
+        if defect == "issuer" and path == NEW.name:
+            row["serviceAccountEmail"] = "foreign@provider.example"
+        if defect == "name" and path == NEW.name:
+            row["name"] = NEW.name + "-same-parent-other-key"
+        if defect == "account" and api == "iam":
+            row["email"] = EMAIL
+        return row
+    monkeypatch.setattr(responses, "get", changed)
+    with pytest.raises(release.ReleaseDenied, match=reason) as error:
+        boundary._credential_key(value, boundary._module(
+            "backend/scripts/model_key_revocation_observer.py", "opaque_key_test"))
+    assert value not in str(error.value)
+
+
+@pytest.mark.parametrize("value", ["sk-synthetic-openai-key", "gsk_synthetic_groq_key"])
+def test_known_foreign_provider_key_refuses_before_any_google_request(prepared, value):
+    boundary, _, _, responses, _ = prepared
+    with pytest.raises(release.ReleaseDenied, match="^fence_non_google_model_issuer_native_retirement_unavailable$") as error:
+        boundary._credential_key(value, object())
+    assert responses.calls == [] and value not in str(error.value)
+
+
+@pytest.mark.parametrize("value", ["gsk_synthetic_groq_key", "sk-synthetic-openai-key"])
+def test_sdk_lookup_cannot_disclose_known_foreign_provider_key(monkeypatch, value):
+    reads = module.SDKGoogleReads(Path("/inert/public-sdk"), "inert@example.com")
+    calls = []
+    monkeypatch.setattr(reads, "_http", lambda: calls.append("http") or object())
+    with pytest.raises(release.ReleaseDenied, match="^fence_native_route_refused$"):
+        reads.get("keys", "keys:lookupKey", {"keyString": value})
+    assert calls == []
+
+
+@pytest.mark.parametrize("defect", ["issuer_uid", "issuer_disabled", "restrictions"])
+def test_bound_replacement_account_and_api_scope_drift_invalidate_fence(prepared, monkeypatch, defect):
+    boundary, source, _, responses = ready(prepared)
+    original = responses.get
+    def changed(api, path, params):
+        row = original(api, path, params)
+        if path.endswith("/" + NEW_ISSUER):
+            if defect == "issuer_uid":
+                row["uniqueId"] = "999999999999999999999"
+            elif defect == "issuer_disabled":
+                row["disabled"] = True
+        if path == NEW.name and defect == "restrictions":
+            row["restrictions"] = {"apiTargets": [{"service": "unrelated.googleapis.com"}]}
+        return row
+    monkeypatch.setattr(responses, "get", changed)
+    reason = "fence_replacement_model_api_restrictions_drift" if defect == "restrictions" else "fence_replacement_model_issuer_uid_or_state_drift"
+    with pytest.raises(release.ReleaseDenied, match=reason):
+        boundary.verify_fences(source)
+    assert boundary.retired_since is None
+
+
+def test_every_foreign_retained_capability_is_reobserved_in_same_fresh_closure(prepared, monkeypatch):
+    boundary, source, *_ = ready(prepared)
+    foreign = (module.model_denial.ForeignModelCredential(
+        "openai", "sk-synthetic-retained-value", ("captured-origin",)),)
+    boundary.scope = replace(boundary.scope, foreign_keys=foreign)
+    calls = []
+    monkeypatch.setattr(module.model_denial, "observe", lambda values, **kwargs:
+                        calls.append((values, kwargs["deadline"])))
+    boundary.verify_fences(source)
+    assert len(calls) == 1 and calls[0][0] == foreign
+    assert module.time.monotonic() < calls[0][1]
+    assert foreign[0].value not in repr(boundary.scope)
+
+
+def test_one_foreign_capability_restored_or_unavailable_invalidates_full_fence(prepared, monkeypatch):
+    boundary, source, *_ = ready(prepared)
+    boundary.scope = replace(boundary.scope, foreign_keys=(module.model_denial.ForeignModelCredential(
+        "openai", "sk-synthetic-retained-value", ("captured-origin",)),))
+    def refused(*_args, **_kwargs):
+        raise module.model_denial.DenialUnavailable("provider_exact_invalid_key_denial_unavailable")
+    monkeypatch.setattr(module.model_denial, "observe", refused)
+    with pytest.raises(release.ReleaseDenied, match="provider_exact_invalid_key_denial_unavailable"):
+        boundary.verify_fences(source)
+    assert boundary.retired_since is None
+
+
+@pytest.mark.parametrize("denied", [True, False])
+def test_mixed_retained_census_keeps_all_foreign_values_and_origins_before_scope_admission(
+    prepared, monkeypatch, denied,
+):
+    boundary, source, _, responses, _ = prepared
+    boundary.scope = None
+    responses.active = True
+    original_modules = boundary._module
+    retained = original_modules("backend/scripts/legacy_credential_inventory.py", "mixed_retained_test")
+    neon = original_modules("backend/scripts/neon_direct_identity.py", "mixed_neon_test")
+    path = module.PARENT + "/services/ai-resume-parser"
+    origin = retained.Origin(path, "service-uid", "service", 0, "LLM_API_KEY", 0)
+    values = ("gsk_synthetic_retained_groq", "sk-first-synthetic-retained-openai",
+              "sk-second-synthetic-retained-openai")
+    model_items = tuple(retained.Credential("model", (origin,), value)
+                        for value in (responses.key_value, *values))
+    db_origin = retained.Origin(path, "service-uid", "service", 0, "DATABASE_URL", 1)
+    database = retained.Credential("database", (db_origin,),
+        f"postgresql://legacy_owner:synthetic-password@{neon.RELEASE_DIRECT_HOST}/neondb")
+    inventory = retained.RetainedInventory((*model_items, database), (), (),
+                                          (("service", path, "service-uid"),))
+    def collect(capture):
+        capture.get("run", path, {})
+        return inventory
+    monkeypatch.setattr(retained, "collect_retained_credentials", collect)
+    reviewer_inventory = SimpleNamespace(role_env={"retired": "HIREWIZ_TEST_MIXED_OLD_ROLE"},
+        database_operator_role_env=("HIREWIZ_TEST_MIXED_OPERATOR",))
+    observer = SimpleNamespace(load_inventory=lambda *args: (reviewer_inventory, {}))
+    def modules(relative, name):
+        if relative.endswith("legacy_credential_inventory.py"):
+            return retained
+        if relative.endswith("monetary_cutover_preflight.py"):
+            return observer
+        if relative.endswith("neon_direct_identity.py"):
+            return neon
+        return original_modules(relative, name)
+    monkeypatch.setattr(boundary, "_module", modules)
+    monkeypatch.setenv("HIREWIZ_TEST_MIXED_OLD_ROLE", "legacy_owner")
+    monkeypatch.setenv("HIREWIZ_TEST_MIXED_OPERATOR", "synthetic_operator")
+    monkeypatch.setattr(boundary, "_capture_setup_passwords", lambda *_: None)
+    native_get = responses.get
+    def google(api, key_path, params):
+        if api == "keys" and key_path == "keys:lookupKey":
+            responses.calls.append((api, key_path, params))
+            return {"name": OLD.name, "parent": OLD.name.rsplit("/keys/", 1)[0]}
+        return native_get(api, key_path, params)
+    monkeypatch.setattr(responses, "get", google)
+    observed = []
+    def foreign(credentials, **kwargs):
+        observed.extend(credentials)
+        if not denied:
+            raise module.model_denial.DenialUnavailable("provider_exact_invalid_key_denial_unavailable")
+    monkeypatch.setattr(module.model_denial, "observe", foreign)
+    if denied:
+        boundary.bind_authorities_once(source)
+        assert tuple(item.value for item in boundary.scope.foreign_keys) == values
+        assert all(item.origins == (origin,) for item in boundary.scope.foreign_keys)
+    else:
+        with pytest.raises(release.ReleaseDenied, match="provider_exact_invalid_key_denial_unavailable"):
+            boundary.bind_authorities_once(source)
+        assert boundary.scope is None
+    assert tuple(item.value for item in observed) == values
+    assert not any(params.get("keyString") in values for api, _, params in responses.calls if api == "keys")
