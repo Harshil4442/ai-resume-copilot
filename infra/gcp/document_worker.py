@@ -18,6 +18,8 @@ REGION = "us-central1"
 SERVICE = "hirewiz-document-inspector"
 SERVICE_ACCOUNT = f"{SERVICE}@{PROJECT}.iam.gserviceaccount.com"
 API_INVOKER = f"hirewiz-runtime-20261014@{PROJECT}.iam.gserviceaccount.com"
+UPLOAD_COORDINATOR = f"hirewiz-resume-coordinator@{PROJECT}.iam.gserviceaccount.com"
+UPLOAD_COORDINATOR_UID = "109155185167233588129"
 RESOURCE = f"projects/{PROJECT}/locations/{REGION}/services/{SERVICE}"
 POLICY_SHA256 = "dbd15ce3120bb6211bb6c1d7b166aaddbd8b80e00a72d564e6274ef10db3aaf1"
 ACCEPTED_IMAGE = (
@@ -246,10 +248,31 @@ def _bindings(policy: dict[str, Any], *, project_conditions: bool = False) -> li
     return bindings
 
 
-def check_snapshot(snapshot: dict[str, Any], image: str, release: str, *, api_phase: bool = False) -> dict[str, Any]:
+def _coordinator_identity(snapshot: dict[str, Any]) -> None:
+    """Only the natively recorded keyless upload principal may join API calls.
+
+    The caller must freshly read these account/key bodies from IAM. Offline
+    agreement still does not prove its SQL/storage grants or runtime acceptance.
+    """
+    account = snapshot["upload_coordinator_service_account"]
+    keys = snapshot["upload_coordinator_service_account_keys"].get("keys", [])
+    if (not isinstance(account, dict)
+            or account.get("name") != f"projects/{PROJECT}/serviceAccounts/{UPLOAD_COORDINATOR}"
+            or account.get("projectId") != PROJECT
+            or account.get("email") != UPLOAD_COORDINATOR
+            or account.get("uniqueId") != UPLOAD_COORDINATOR_UID
+            or account.get("disabled", False) is not False
+            or not isinstance(keys, list) or len(keys) > 100
+            or any(not isinstance(key, dict) or key.get("keyType") != "SYSTEM_MANAGED" for key in keys)):
+        _deny()
+
+
+def check_snapshot(snapshot: dict[str, Any], image: str, release: str, *, api_phase: bool = False,
+                   coordinator_phase: bool = False) -> dict[str, Any]:
     """Check bounded native-shaped inputs while explicitly retaining their unknown provenance."""
     try:
-        if type(api_phase) is not bool:
+        if (type(api_phase) is not bool or type(coordinator_phase) is not bool
+                or coordinator_phase and not api_phase):
             _deny()
         expected = render(image, release)
         service, revision = snapshot["service"], snapshot["revision"]
@@ -290,12 +313,22 @@ def check_snapshot(snapshot: dict[str, Any], image: str, release: str, *, api_ph
             _traffic_statuses(statuses, ready)
         _configuration(revision, desired["template"])
         phase = "after_isolation_service_iam" if api_phase else "initial_service_iam"
-        if _bindings(snapshot["service_iam"]) != expected[phase]["bindings"]:
+        wanted = expected[phase]["bindings"]
+        if coordinator_phase:
+            _coordinator_identity(snapshot)
+            wanted = [{"role": "roles/run.invoker", "members": sorted(
+                ["serviceAccount:" + API_INVOKER, "serviceAccount:" + UPLOAD_COORDINATOR])}]
+        if _bindings(snapshot["service_iam"]) != wanted:
             _deny()
         # A project snapshot cannot establish organization/folder/group/custom
         # role access closure. Known public or runtime grants are refused here.
         for binding in _bindings(snapshot["project_iam"], project_conditions=True):
-            if set(binding["members"]) & {"allUsers", "allAuthenticatedUsers", "serviceAccount:" + SERVICE_ACCOUNT}:
+            forbidden = {"allUsers", "allAuthenticatedUsers", "serviceAccount:" + SERVICE_ACCOUNT}
+            # Upload SQL/GCS/secret permissions are granted on exact resources,
+            # never a project-wide role for this credential-bearing coordinator.
+            if coordinator_phase:
+                forbidden.add("serviceAccount:" + UPLOAD_COORDINATOR)
+            if set(binding["members"]) & forbidden:
                 _deny()
         account = snapshot["service_account"]
         if account.get("email") != SERVICE_ACCOUNT or account.get("disabled", False) is not False:
@@ -306,7 +339,8 @@ def check_snapshot(snapshot: dict[str, Any], image: str, release: str, *, api_ph
         if any(key.get("keyType") != "SYSTEM_MANAGED" for key in keys):
             _deny()
         return {"configuration_matches": True, "input_authority": "untrusted_offline_snapshot",
-                "service_iam_phase": "api-only" if api_phase else "service-no-bindings",
+                "service_iam_phase": ("api-and-resume-coordinator" if coordinator_phase
+                                      else "api-only" if api_phase else "service-no-bindings"),
                 "traffic_status_checked": statuses is not None,
                 "effective_iam_proven": False, "runtime_isolation_proven": False,
                 "api_wiring_enabled": False, "native_calls": 0}
@@ -326,6 +360,7 @@ def main() -> int:
     parser.add_argument("--release")
     parser.add_argument("--snapshot", type=Path)
     parser.add_argument("--api-phase", action="store_true")
+    parser.add_argument("--coordinator-phase", action="store_true")
     try:
         args = parser.parse_args()
         if args.mode == "plan":
@@ -337,7 +372,8 @@ def main() -> int:
                 _deny()
             with args.snapshot.open("rb") as handle:
                 raw = handle.read(MAX_INPUT_BYTES + 1)
-            result = check_snapshot(decode(raw), args.image, args.release, api_phase=args.api_phase)
+            result = check_snapshot(decode(raw), args.image, args.release, api_phase=args.api_phase,
+                                    coordinator_phase=args.coordinator_phase)
         print(json.dumps(result, sort_keys=True))
         return 0
     except (ConfigurationDenied, OSError):

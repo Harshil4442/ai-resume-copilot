@@ -8,6 +8,7 @@ tokens in process memory; the host barrier is a wakeup, not proof.
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import logging
@@ -19,6 +20,7 @@ import time
 import warnings
 from collections.abc import Callable
 from dataclasses import replace
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +34,7 @@ import native_fresh_fence as native  # noqa: E402 -- explicit standalone checkou
 
 from scripts.neon_execution_files import (  # noqa: E402 -- standalone checkout
     LinuxExecutionFiles,  # noqa: E402 -- explicit standalone checkout imports under -I
+    LinuxExecutionFilesDenied,
 )
 
 INPUT_FIELDS = frozenset(
@@ -55,6 +58,84 @@ TARGET = native.release.FreshTargetPlan(
     "hirewiz-fresh-observer-db-20261013:1",
 )
 WORK = Path("/operator-work")
+
+STAGES = frozenset({
+    "decode_input", "native_boundary", "readonly_preflight", "execute_admission",
+    "execution_files", "empty_target", "registry_binding", "identity_and_policy",
+    "admission_closed", "document_preparation", "original_source",
+    "source_quiescence", "source_owner_prepare", "retained_authority_binding",
+    "prepared_owner_pristine", "source_owner_resume", "old_principal_isolation",
+    "old_model_retirement", "runtime_accounts", "runtime_policy_grants",
+    "runtime_resource_grants", "source_observer_issue", "source_owner_transition",
+    "provider_role_delete", "provider_role_reobserve", "observer_rotation",
+    "source_retirement_cut", "target_rotation", "model_replacement",
+    "replacement_binding", "transfer_migration_staging", "migrator_retirement",
+    "traffic_promotion", "unclassified",
+})
+_BASE_STOPPED = {"event": "cutover_stopped_reconcile_only", "automatic_replay": False, "goal_complete": False}
+_CODE = re.compile(r"[a-z][a-z0-9_]{3,159}\Z")
+
+
+@lru_cache(maxsize=2)
+def literal_codes(root: Path) -> frozenset[str]:
+    """Only literals in the immutable checkout; observation cannot repair a gate."""
+    codes: set[str] = set()
+    try:
+        if not root.is_absolute():
+            return frozenset()
+        for folder in (root / "infra/gcp", root / "backend/scripts"):
+            for source in folder.glob("*.py"):
+                if source.is_symlink() or source.stat().st_size > 1024 * 1024:
+                    return frozenset()
+                for node in ast.walk(ast.parse(source.read_bytes())):
+                    if not isinstance(node, ast.Call):
+                        continue
+                    name = node.func.id if isinstance(node.func, ast.Name) else getattr(node.func, "attr", "")
+                    if name in {"need", "require", "_need", "ensure"} or name.endswith(("Denied", "Error", "Violation")):
+                        for argument in node.args:
+                            if isinstance(argument, ast.Constant) and type(argument.value) is str and _CODE.fullmatch(argument.value):
+                                codes.add(argument.value)
+    except (OSError, SyntaxError, ValueError):
+        return frozenset()
+    return frozenset(codes)
+
+
+def stage_event(stage: str) -> dict[str, Any]:
+    return stage_projection({"event": "cutover_stage", "stage": stage})
+
+
+def stage_projection(value: Any) -> dict[str, Any]:
+    if (type(value) is not dict or set(value) != {"event", "stage"}
+            or value.get("event") != "cutover_stage" or type(value.get("stage")) is not str
+            or value["stage"] not in STAGES):
+        raise ValueError("cutover_observability_projection_refused")
+    return {"event": "cutover_stage", "stage": value["stage"]}
+
+
+def stopped_event(error: BaseException, stage: str, codes: frozenset[str],
+                  controlled_types: tuple[type[BaseException], ...]) -> dict[str, Any]:
+    """Exact trusted exception classes and one known literal; no str(error)."""
+    result = dict(_BASE_STOPPED)
+    if (type(error) in controlled_types and len(error.args) == 1
+            and type(error.args[0]) is str and error.args[0] in codes
+            and _CODE.fullmatch(error.args[0])):
+        result.update(stage=stage if type(stage) is str and stage in STAGES else "unclassified",
+                      fixed_code=error.args[0])
+    return result
+
+
+def stopped_projection(value: Any, codes: frozenset[str]) -> dict[str, Any]:
+    if (type(value) is not dict or value.get("event") != _BASE_STOPPED["event"]
+            or value.get("automatic_replay") is not False or value.get("goal_complete") is not False):
+        raise ValueError("cutover_observability_projection_refused")
+    if set(value) == set(_BASE_STOPPED):
+        return dict(_BASE_STOPPED)
+    if (set(value) != set(_BASE_STOPPED) | {"stage", "fixed_code"}
+            or type(value.get("stage")) is not str or value["stage"] not in STAGES
+            or type(value.get("fixed_code")) is not str or value["fixed_code"] not in codes
+            or not _CODE.fullmatch(value["fixed_code"])):
+        raise ValueError("cutover_observability_projection_refused")
+    return {**_BASE_STOPPED, "stage": value["stage"], "fixed_code": value["fixed_code"]}
 
 
 def need(value: Any, code: str) -> None:
@@ -179,6 +260,7 @@ def execute(
     barrier: Callable[[], None],
 ) -> dict[str, Any]:
     """Real forward path. Any exception stops; no roll-forward/replay fallback."""
+    event(stage_event("execution_files"))
     files = LinuxExecutionFiles()
     files.validate()
     need(type(boundary) is native.NativeFreshFenceBoundary, "cutover_native_boundary_required")
@@ -188,6 +270,7 @@ def execute(
     )
     # Existing full Git/CI/image gate runs before old authority retirement.
     # Replacement identities are created only after captured issuers are isolated.
+    event(stage_event("empty_target"))
     bootstrap = writes.transfer.BoundDatabase(
         writes.transfer.NativeDatabaseIdentity(
             writes.TARGET_HOST,
@@ -216,17 +299,23 @@ def execute(
     source = plan(value, policies)
     # These published versions were observed by root with native CRC/hash
     # readback; the existing live price/hash gate must still pass now.
+    event(stage_event("registry_binding"))
     configure_registry(boundary, source, value["role_environment"])
     before_isolation = replace(
         source,
         runtime_service_account="hirewiz-api@" + writes.PROJECT + ".iam.gserviceaccount.com",
         migration_service_account=writes.TASKS_EMAIL,
     )
+    event(stage_event("identity_and_policy"))
     boundary.verify_identity_and_policy(before_isolation)
+    event(stage_event("admission_closed"))
     boundary.verify_admission_closed()
+    event(stage_event("document_preparation"))
     boundary.verify_document_preparation(before_isolation)
+    event(stage_event("original_source"))
     origin = source_sql.original_owner(boundary, files)
     source_sql.preflight_source(origin)
+    event(stage_event("source_quiescence"))
     readiness = origin.connect()
     try:
         with readiness.transaction():
@@ -235,29 +324,39 @@ def execute(
     finally:
         readiness.close()
     if RESUME_FIELD not in value:
+        event(stage_event("source_owner_prepare"))
         owner = source_sql.prepare_owner(origin, WORK)
         source = replace(source, database_owner_oid=owner.oid)
+        event(stage_event("retained_authority_binding"))
         boundary.bind_authorities_once(source)
     else:
         resume = source_sql.PreparedOwnerResume.from_payload(value[RESUME_FIELD])
         # The reviewed OID is a planned input until complete fresh native census
         # and the actual unused-role observation both succeed. No CREATE here.
         source = replace(source, database_owner_oid=resume.owner_oid)
+        event(stage_event("retained_authority_binding"))
         boundary.bind_authorities_once(source)
+        event(stage_event("prepared_owner_pristine"))
         writer.verify_prepared_owner_resume_pristine()
+        event(stage_event("source_owner_resume"))
         owner = source_sql.resume_prepared_owner(origin, boundary, resume, WORK)
     event(
         {"event": "native_scope_bound", "source_database_oid": 16391, "source_owner_oid": owner.oid}
     )
+    event(stage_event("old_principal_isolation"))
     writer.disable_old_principals()
+    event(stage_event("old_model_retirement"))
     writer.delete_old_model_keys()
     boundary.begin_source_observer_isolation()
+    event(stage_event("runtime_accounts"))
     accounts = writer.create_accounts()
     boundary.verify_identity_and_policy(source)
+    event(stage_event("runtime_policy_grants"))
     writer.grant_attested_policy_sources(source, accounts[0])
     for (_, _, name), account in zip(writes.TARGET_ROLES, accounts, strict=True):
         writer.grant_secret_access(name, (account,))
     writer.grant_secret_access(writes.REDIS_SECRET, (accounts[0],))
+    event(stage_event("runtime_resource_grants"))
     writer.grant_runtime_resources(accounts[0])
     passwords = source_sql.new_source_passwords()
     need(
@@ -267,10 +366,13 @@ def execute(
         ),
         "cutover_source_password_reuses_precut_value",
     )
+    event(stage_event("source_observer_issue"))
     observer_ref = writes.publish_source_observer(writer, origin, passwords)
+    event(stage_event("source_owner_transition"))
     transition = source_sql.transition_source(origin, owner, boundary, WORK, passwords)
     observer = source_sql.observer_target(origin, transition)
     writer.grant_secret_access(writes.SOURCE_SECRET, (accounts[2],))
+    event(stage_event("provider_role_delete"))
     source_sql.verify_provider_delete_ready(observer, owner)
     event(
         {
@@ -283,15 +385,21 @@ def execute(
         }
     )
     barrier()  # Fixed notification only; fresh native absence is mandatory below.
+    event(stage_event("provider_role_reobserve"))
     source_sql.verify_provider_delete_complete(observer, owner)
+    event(stage_event("observer_rotation"))
     observer_ref, observer = writes.rotate_source_observer_after_delete(writer, observer, owner)
     source = replace(source, observer_secret=observer_ref)
     boundary.bind_source_observer_after_isolation(source)
+    event(stage_event("source_retirement_cut"))
     boundary.establish_retirement_cut(source)
+    event(stage_event("target_rotation"))
     target = writes.rotate_empty_target(writer, bootstrap)
+    event(stage_event("model_replacement"))
     model = writer.create_model_replacement(accounts[0])
     writer.grant_secret_access(writes.MODEL_SECRET, (accounts[0],))
     source = replace(source, model_key_secret=model)
+    event(stage_event("replacement_binding"))
     boundary.bind_replacements_after_isolation(source, target)
     dump = Path("/usr/lib/postgresql/17/bin/pg_dump")
     restore = Path("/usr/lib/postgresql/17/bin/pg_restore")
@@ -311,12 +419,15 @@ def execute(
             "target_database_oid": 16395,
         }
     )
+    event(stage_event("transfer_migration_staging"))
     staged = fresh.stage_fresh_release(source, target, transfer, boundary, execute=True)
     need(
         staged.get("staging_complete") is True and staged.get("traffic_promoted") is False,
         "cutover_stage_result_shape",
     )
+    event(stage_event("migrator_retirement"))
     writes.finalize_target_migrator(writer, bootstrap, source, target)
+    event(stage_event("traffic_promotion"))
     result = fresh.promote_fresh_release(source, target, staged["joined_revisions"], boundary)
     # Existing feature admission, payment checkout, queue resumption and Vercel
     # acceptance remain separate; this result never says the overall goal ended.
@@ -422,7 +533,13 @@ def main() -> None:
         logging.disable(logging.CRITICAL)
         warnings.simplefilter("ignore")
 
+        last_stage = "decode_input"
+
         def event(value: dict[str, Any]) -> None:
+            nonlocal last_stage
+            if value.get("event") == "cutover_stage":
+                value = stage_projection(value)
+                last_stage = value["stage"]
             need(time.monotonic() < absolute, "cutover_absolute_deadline_reconcile_only")
             body = json.dumps(value, separators=(",", ":")).encode() + b"\n"
             need(len(body) <= 4096, "cutover_protocol_bound")
@@ -436,6 +553,7 @@ def main() -> None:
             )
 
         try:
+            event(stage_event("decode_input"))
             value = decode_input(sys.stdin.buffer.readline(131074))
             need(WORK.is_dir() and WORK.stat().st_uid == 0, "cutover_private_volume_owner")
             WORK.chmod(0o700)
@@ -446,6 +564,7 @@ def main() -> None:
                 and WORK.stat().st_mode & 0o777 == 0o700,
                 "cutover_linux_private_owner_required",
             )
+            event(stage_event("native_boundary"))
             boundary = native.NativeFreshFenceBoundary(
                 ROOT,
                 TARGET,
@@ -454,16 +573,19 @@ def main() -> None:
                 ),
                 linux_execution_files=LinuxExecutionFiles(),
             )
+            event(stage_event("readonly_preflight" if value["operation"] == "preflight" else "execute_admission"))
             event(
                 preflight(value, boundary)
                 if value["operation"] == "preflight"
                 else execute(value, boundary, event, barrier)
             )
-        except BaseException:
-            os.write(
-                protocol,
-                b'{"event":"cutover_stopped_reconcile_only","automatic_replay":false,"goal_complete":false}\n',
+        except BaseException as error:
+            refusal = stopped_event(
+                error, last_stage, literal_codes(ROOT),
+                (native.release.ReleaseDenied, writes.WriteDenied, source_sql.SourceActionDenied,
+                 writes.transfer.TransferDenied, LinuxExecutionFilesDenied),
             )
+            os.write(protocol, json.dumps(refusal, separators=(",", ":")).encode() + b"\n")
             raise SystemExit(2) from None
         finally:
             signal.setitimer(signal.ITIMER_REAL, 0)

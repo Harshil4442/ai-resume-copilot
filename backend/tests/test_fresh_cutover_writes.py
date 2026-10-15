@@ -190,8 +190,8 @@ def test_operation_resource_drift_is_not_a_delete_success(writer):
 
 def test_live_build_prevents_all_service_account_disables(writer):
     writes, http, workdir = writer
-    email, uid = next(iter(module.OLD_PRINCIPALS.items()))
-    writes.boundary.scope.principals = (module.native.NativePrincipal(email, uid),)
+    writes.boundary.scope.principals = tuple(module.native.NativePrincipal(email, uid)
+        for email, uid in module.OLD_PRINCIPALS.items())
 
     def respond(_method, url, _body):
         if "/triggers/" in url:
@@ -389,8 +389,8 @@ def held_trigger():
 
 def test_enabled_trigger_prevents_any_old_principal_mutation(writer):
     writes, http, workdir = writer
-    email, uid = next(iter(module.OLD_PRINCIPALS.items()))
-    writes.boundary.scope.principals = (module.native.NativePrincipal(email, uid),)
+    writes.boundary.scope.principals = tuple(module.native.NativePrincipal(email, uid)
+        for email, uid in module.OLD_PRINCIPALS.items())
     http.respond = lambda *_: (200, {**held_trigger(), "disabled": False})
     with pytest.raises(module.WriteDenied, match="write_trigger_not_exactly_held"):
         writes.disable_old_principals()
@@ -587,7 +587,9 @@ def pristine_owner_fixture(writer, monkeypatch, defect=None):
 def test_prepared_owner_resume_pristine_uses_only_native_metadata_reads(writer, monkeypatch):
     writes, http = pristine_owner_fixture(writer, monkeypatch)
     writes.verify_prepared_owner_resume_pristine()
-    assert len(http.calls) == 18 and all(row[0] == "GET" for row in http.calls)
+    assert len(http.calls) == 19 and all(row[0] == "GET" for row in http.calls)
+    assert any(url.endswith("/serviceAccounts/hirewiz-worker@" + module.PROJECT + ".iam.gserviceaccount.com")
+               for _, url, _ in http.calls)
     assert not list(writer[2].iterdir())
 
 
@@ -618,3 +620,110 @@ def test_foreign_authentication_not_retired_prevents_any_google_isolation_write(
     with pytest.raises(module.native.release.ReleaseDenied, match="provider_exact_invalid_key_denial_unavailable"):
         getattr(writes, operation)()
     assert http.calls == [] and not list(workdir.iterdir())
+
+
+@pytest.mark.parametrize("operation", ["pristine", "disable"])
+@pytest.mark.parametrize("defect", ["missing_worker", "worker_uid", "unknown_actor", "duplicate_worker"])
+def test_six_actor_scope_must_be_complete_and_exact_before_any_native_action(writer, monkeypatch, operation, defect):
+    writes, http = pristine_owner_fixture(writer, monkeypatch)
+    worker = "hirewiz-worker@ai-resume-parser-482412.iam.gserviceaccount.com"
+    principals = list(writes.boundary.scope.principals)
+    if defect == "missing_worker":
+        principals = [principal for principal in principals if principal.email != worker]
+    elif defect == "worker_uid":
+        principals = [module.native.NativePrincipal(principal.email, "900000000000000000001")
+                      if principal.email == worker else principal for principal in principals]
+    elif defect == "unknown_actor":
+        principals.append(module.native.NativePrincipal("unknown@" + module.PROJECT + ".iam.gserviceaccount.com",
+                                                       "900000000000000000002"))
+    else:
+        principals.append(next(principal for principal in principals if principal.email == worker))
+    writes.boundary.scope.principals = tuple(principals)
+    reason = "write_owner_resume_captured_authority_incomplete" if operation == "pristine" else "write_old_principal_unmapped"
+    with pytest.raises(module.WriteDenied, match=reason):
+        (writes.verify_prepared_owner_resume_pristine if operation == "pristine" else writes.disable_old_principals)()
+    assert http.calls == [] and not list(writer[2].iterdir())
+
+
+@pytest.mark.parametrize("defect", ["uid", "enabled"])
+def test_prepared_owner_pristine_rechecks_actual_sixth_worker_uid_and_enabled_state(writer, monkeypatch, defect):
+    writes, http = pristine_owner_fixture(writer, monkeypatch)
+    original = http.respond
+    def respond(method, url, body):
+        status, row = original(method, url, body)
+        if url.endswith("/serviceAccounts/hirewiz-worker@" + module.PROJECT + ".iam.gserviceaccount.com"):
+            row["uniqueId" if defect == "uid" else "disabled"] = "900000000000000000001" if defect == "uid" else True
+        return status, row
+    http.respond = respond
+    reason = "write_native_account_identity_drift" if defect == "uid" else "write_owner_resume_old_principal_not_enabled"
+    with pytest.raises(module.WriteDenied, match=reason):
+        writes.verify_prepared_owner_resume_pristine()
+    assert all(method == "GET" for method, _, _ in http.calls) and not list(writer[2].iterdir())
+
+
+def six_actor_retirement_fixture(writer, monkeypatch, *, unknown_worker=False):
+    writes, http, workdir = writer
+    writes.boundary.scope.principals = tuple(module.native.NativePrincipal(email, uid)
+        for email, uid in module.OLD_PRINCIPALS.items())
+    monkeypatch.setattr(writes.boundary, "verify_admission_closed", lambda: None)
+    states = {email: False for email in module.OLD_PRINCIPALS}
+    def respond(method, url, _body):
+        clean = url.split("?")[0]
+        if "/triggers/" in clean:
+            return 200, held_trigger()
+        if clean.endswith("/builds/" + module.LAST_OPERATOR_BUILD):
+            return 200, {"id": module.LAST_OPERATOR_BUILD, "projectId": module.PROJECT,
+                         "name": "projects/" + module.NUMBER + "/locations/us-central1/builds/" + module.LAST_OPERATOR_BUILD,
+                         "serviceAccount": held_trigger()["serviceAccount"], "status": "SUCCESS"}
+        if clean.endswith("/builds"):
+            return 200, {}
+        if method == "POST":
+            assert clean.endswith(":disable")
+            uid = clean.rsplit("/", 1)[-1].removesuffix(":disable")
+            email = next(email for email, expected_uid in module.OLD_PRINCIPALS.items() if expected_uid == uid)
+            states[email] = True
+            if unknown_worker and email == "hirewiz-worker@" + module.PROJECT + ".iam.gserviceaccount.com":
+                raise RuntimeError("synthetic-unknown-worker-disable")
+            return 200, {}
+        email = clean.rsplit("/", 1)[-1]
+        return 200, {"email": email, "uniqueId": module.OLD_PRINCIPALS[email], "disabled": states[email]}
+    http.respond = respond
+    return writes, http, workdir, states
+
+
+def test_all_six_actual_native_actors_are_disabled_with_exact_uid_and_durable_attempt(writer, monkeypatch):
+    writes, http, workdir, states = six_actor_retirement_fixture(writer, monkeypatch)
+    observed = writes.disable_old_principals()
+    worker = "hirewiz-worker@ai-resume-parser-482412.iam.gserviceaccount.com"
+    assert dict((account.email, account.uid) for account in observed) == module.OLD_PRINCIPALS
+    assert len(observed) == 6 and module.OLD_PRINCIPALS[worker] == "115123377998883908933"
+    assert all(states.values()) and len(list(workdir.glob("disable-*.started.json"))) == 6
+    mutations = [(index, url) for index, (method, url, _) in enumerate(http.calls) if method == "POST"]
+    assert len(mutations) == 6 and any(url.endswith("/115123377998883908933:disable") for _, url in mutations)
+    compute_index = next(index for index, url in mutations if url.endswith("/115689643755778240830:disable"))
+    before_compute = http.calls[compute_index - 4:compute_index]
+    assert all(method == "GET" for method, _, _ in before_compute)
+    assert "/triggers/" in before_compute[0][1] and "/builds/" in before_compute[1][1]
+    assert all("/builds?" in url for _, url, _ in before_compute[2:])
+
+
+def test_unknown_worker_disable_keeps_its_attempt_and_never_replays_any_disable(writer, monkeypatch):
+    writes, http, workdir, states = six_actor_retirement_fixture(writer, monkeypatch, unknown_worker=True)
+    with pytest.raises(module.WriteDenied, match="write_native_result_unknown_reconcile_only"):
+        writes.disable_old_principals()
+    worker = "hirewiz-worker@ai-resume-parser-482412.iam.gserviceaccount.com"
+    marker = workdir / ("disable-" + module.hashlib.sha256(worker.encode()).hexdigest()[:16] + ".started.json")
+    assert marker.is_file() and states[worker]
+    count = sum(method == "POST" for method, _, _ in http.calls)
+    with pytest.raises(module.WriteDenied, match="write_old_principal_already_disabled_reconcile_only"):
+        writes.disable_old_principals()
+    assert sum(method == "POST" for method, _, _ in http.calls) == count
+    assert sum(method == "POST" and url.endswith("/115123377998883908933:disable")
+               for method, url, _ in http.calls) == 1
+
+
+def test_builder_restoration_requires_the_same_exact_six_retired_actors():
+    builder = importlib.import_module("github_builder")
+    assert builder.OLD_PRINCIPALS == module.OLD_PRINCIPALS
+    assert len(builder.OLD_PRINCIPALS) == 6
+    assert builder.OLD_PRINCIPALS["hirewiz-worker@ai-resume-parser-482412.iam.gserviceaccount.com"] == "115123377998883908933"

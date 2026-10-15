@@ -497,30 +497,33 @@ class NativeBoundary:
         # serialize its credential; provider retirement remains a separate gate.
         self._verify_secret_version(plan.model_key_secret)
 
-    def verify_identity_and_policy(self, plan: Plan) -> None:
-        tracked = source_guard.checked_files(self.root, plan.release)
+    def verify_source_image(self, *, release: str, image_digest: str, build_id: str,
+                            ci_run_id: int) -> None:
+        """Current Git/CI/native app-image proof, independent of database cutover."""
+        image = f"{REGION}-docker.pkg.dev/{PROJECT}/cloud-run-source-deploy/hirewiz@{image_digest}"
+        tracked = source_guard.checked_files(self.root, release)
         if source_guard.migration_chain(self.root, tracked, allow_literal_sql=True) != CHAIN:
             raise ReleaseDenied("reviewed_schema16_chain_required")
         verify_ci_checkout_contract(self.root)
-        ci = _json(self._command("gh", "run", "view", str(plan.ci_run_id), "--repo", REPOSITORY,
+        ci = _json(self._command("gh", "run", "view", str(ci_run_id), "--repo", REPOSITORY,
                                  "--json", "headSha,status,conclusion,jobs,workflowName"))
-        workflow = _json(self._command("gh", "api", f"repos/{REPOSITORY}/actions/runs/{plan.ci_run_id}"))
+        workflow = _json(self._command("gh", "api", f"repos/{REPOSITORY}/actions/runs/{ci_run_id}"))
         jobs = ci.get("jobs", [])
         if (workflow.get("path") != ".github/workflows/ci.yml"
-                or workflow.get("head_sha") != plan.release
+                or workflow.get("head_sha") != release
                 or workflow.get("event") not in {"push", "pull_request"}
                 or workflow.get("repository", {}).get("full_name") != REPOSITORY
                 or len(jobs) != len(CI_JOBS)
-                or ci.get("headSha") != plan.release or ci.get("workflowName") != "CI"
+                or ci.get("headSha") != release or ci.get("workflowName") != "CI"
                 or ci.get("status") != "completed" or ci.get("conclusion") != "success"
                 or {item.get("name") for item in jobs} != CI_JOBS
                 or any(item.get("status") != "completed" or item.get("conclusion") != "success" for item in jobs)):
             raise ReleaseDenied("exact_release_five_ci_jobs_not_successful")
-        build = self._cloud("builds", "describe", plan.build_id, "--region", REGION)
+        build = self._cloud("builds", "describe", build_id, "--region", REGION)
         # Only a native Cloud Build Git-source attestation is supported. Uploaded
         # local archives, labels or caller source-hash files are not provenance.
         provenance = build.get("sourceProvenance", {}).get("resolvedGitSource", {})
-        tag = plan.image.split("@")[0] + ":" + plan.release
+        tag = image.split("@")[0] + ":" + release
         steps = build.get("steps", [])
         images = build.get("results", {}).get("images", [])
         expected_steps = (["build", "--tag", tag, "."], ["push", tag])
@@ -529,8 +532,8 @@ class NativeBoundary:
         elif steps and steps[0].get("args") == ["build", "--tag=" + tag, "."]:
             expected_steps = (["build", "--tag=" + tag, "."], ["push", tag])
         if (build.get("status") != "SUCCESS" or build.get("projectId") != PROJECT
-                or build.get("id") != plan.build_id
-                or provenance.get("revision") != plan.release
+                or build.get("id") != build_id
+                or provenance.get("revision") != release
                 or provenance.get("url") != f"https://github.com/{REPOSITORY}.git"
                 or provenance.get("dir", ".") not in {"", "."}
                 or len(steps) != 2
@@ -542,9 +545,12 @@ class NativeBoundary:
                 or build.get("options", {}).get("env") or build.get("options", {}).get("secretEnv")
                 or build.get("options", {}).get("volumes") or build.get("options", {}).get("automapSubstitutions")
                 or len(images) != 1 or images[0].get("name") != tag
-                or images[0].get("digest") != plan.image_digest
+                or images[0].get("digest") != image_digest
                 or build.get("availableSecrets") or build.get("secrets")):
             raise ReleaseDenied("native_exact_source_image_provenance_not_verified")
+
+    def verify_policy_configuration(self, plan: Any) -> None:
+        """Reuse the actual expense/model authority without enabling any actor."""
         raw = self._secret(plan.expense_secret)
         if hashlib.sha256(raw.encode()).hexdigest() != plan.expense_sha256:
             raise ReleaseDenied("approved_expense_policy_secret_hash_mismatch")
@@ -565,6 +571,11 @@ class NativeBoundary:
                     os.environ.pop(name, None)
                 else:
                     os.environ[name] = value
+
+    def verify_identity_and_policy(self, plan: Plan) -> None:
+        self.verify_source_image(release=plan.release, image_digest=plan.image_digest,
+                                 build_id=plan.build_id, ci_run_id=plan.ci_run_id)
+        self.verify_policy_configuration(plan)
         for identity in (plan.runtime_service_account, plan.migration_service_account):
             account = self._cloud("iam", "service-accounts", "describe", identity)
             if account.get("email") != identity or account.get("disabled") is True:
@@ -951,15 +962,18 @@ class NativeBoundary:
                 raise ReleaseDenied("private_worker_invoker_policy_mismatch")
         self._verify_http_health(plan, service, revision)
 
-    def _verify_http_health(self, plan: Plan, service: str, revision: str) -> None:
+    def _verify_http_health(self, plan: Plan, service: str, revision: str, *,
+                            candidate_tag: str = "monetary-candidate") -> None:
         import ssl
         import urllib.request
         from urllib.parse import urlsplit
 
         import certifi
+        if type(candidate_tag) is not str or not re.fullmatch(r"[a-z][a-z0-9-]{0,62}", candidate_tag):
+            raise ReleaseDenied("exact_candidate_health_tag_invalid")
         observed = self._cloud("run", "services", "describe", service, "--region", REGION)
         tagged = [item for item in observed.get("status", {}).get("traffic", [])
-                  if item.get("tag") == "monetary-candidate" and item.get("revisionName") == revision]
+                  if item.get("tag") == candidate_tag and item.get("revisionName") == revision]
         if len(tagged) != 1:
             raise ReleaseDenied("exact_candidate_health_destination_missing")
         url = tagged[0].get("url", "")

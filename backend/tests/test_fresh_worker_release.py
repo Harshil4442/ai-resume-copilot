@@ -125,3 +125,44 @@ def test_unbound_worker_cannot_configure_api_or_analysis(monkeypatch):
     env, _, removed = release.runtime_environment(plan, release.SERVICES[2])
     assert set(release.NATIVE_ENV) <= set(removed)
     assert set(release.NATIVE_ENV).isdisjoint(env)
+
+
+@pytest.mark.parametrize("change", [None, "uid", "key", "extra-invoker", "tex-invoker"])
+def test_runtime_gate_freshly_reads_only_exact_additional_upload_caller(binding, monkeypatch, change):
+    adapter, plan, states = boundary(monkeypatch, runtime_phase=True)
+    documents = release.documents
+    principal = documents.UPLOAD_COORDINATOR
+    account = {"name": f"projects/{documents.PROJECT}/serviceAccounts/{principal}",
+               "projectId": documents.PROJECT, "email": principal,
+               "uniqueId": documents.UPLOAD_COORDINATOR_UID}
+    keys = [{"keyType": "SYSTEM_MANAGED"}]
+    states[documents.SERVICE]["service_iam"]["bindings"][0]["members"].append("serviceAccount:" + principal)
+    states[documents.SERVICE]["service_iam"]["bindings"][0]["members"].sort()
+    before = adapter._cloud
+    reads = []
+    def read(*args):
+        if args == ("iam", "service-accounts", "describe", principal):
+            reads.append("identity")
+            return account
+        if args == ("iam", "service-accounts", "keys", "list", "--iam-account", principal):
+            reads.append("keys")
+            return keys
+        return before(*args)
+    monkeypatch.setattr(adapter, "_cloud", read)
+    if change == "uid":
+        account["uniqueId"] = "109155185167233588130"
+    if change == "key":
+        keys.append({"keyType": "USER_MANAGED"})
+    if change == "extra-invoker":
+        states[documents.SERVICE]["service_iam"]["bindings"][0]["members"].append("allAuthenticatedUsers")
+    if change == "tex-invoker":
+        states[tex.SERVICE]["service_iam"]["bindings"][0]["members"].append("serviceAccount:" + principal)
+    if change is None:
+        report = adapter.verify_document_configuration(plan)
+        assert report["service_iam_phase"] == "api-and-resume-coordinator"
+        assert report["native_tex"]["configuration_matches"] is True
+        assert report["effective_iam_proven"] is report["runtime_isolation_proven"] is False
+    else:
+        with pytest.raises(release.ReleaseDenied):
+            adapter.verify_document_configuration(plan)
+    assert reads == ["identity", "keys"]

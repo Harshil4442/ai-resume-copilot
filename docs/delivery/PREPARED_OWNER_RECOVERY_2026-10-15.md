@@ -42,6 +42,14 @@ freshly verifies that captured old principals/keys are still in the original
 pre-isolation state and that later account, model, observer and target credential
 issuance has not happened.
 
+The captured principal set contains six exact native email/UID pairs, including
+the existing `hirewiz-worker` account. Both pristine recovery and ordinary
+retirement require the complete set, with no duplicates or additional actors.
+The GitHub builder continuation also requires all six to remain disabled before
+creating or granting the replacement builder or enabling its trigger. This
+corrects the five-account allowlist that caused the reconciled F3 attempts to
+stop before mutation; it does not waive any native observation.
+
 The source connection still authenticates through the fixed numeric secret and
 proves its native TLS/cluster/database/actor identity. A bounded READ ONLY
 transaction verifies the old database/schema ownership and schema9, the actual
@@ -74,3 +82,9 @@ credentials and cannot select the production source database.
 
 The recovered path still needs the new exact source commit, successful CI/native
 images and production execution. Local controls are not a native cutover receipt.
+
+The Linux operator emits fixed stages and, for exact trusted control exception
+types, a single literal refusal code drawn from the immutable checkout. Provider
+messages, URLs and credentials are never reflected. An unknown exception keeps
+the generic reconcile-only result. These diagnostics do not change mutation
+order, replay rules or completion criteria.

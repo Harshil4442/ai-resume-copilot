@@ -105,6 +105,11 @@ jobs:
           tests/test_document_ingestion.py tests/test_document_processor.py tests/test_document_definition_cache.py tests/test_monetary_release_transport.py
           app/routers/resume_uploads.py tests/test_resume_upload_quarantine.py tests/test_resume_source_access.py
           ../infra/gcp/document_worker.py tests/test_document_worker_deployment.py
+          ../infra/gcp/fresh_cutover_execute.py ../infra/gcp/fresh_cutover_docker.py
+          ../infra/gcp/fresh_cutover_writes.py ../infra/gcp/fresh_monetary_release.py
+          ../infra/gcp/github_builder.py ../infra/gcp/rolling_release.py ../infra/gcp/rolling_native.py
+          tests/test_cutover_safe_observability.py tests/test_fresh_cutover_writes.py
+          tests/test_fresh_worker_release.py tests/test_github_builder.py tests/test_rolling_release.py
           app/resume_upload_worker.py app/services/resume_upload_coordinator.py
           tests/test_resume_upload_coordinator.py tests/test_resume_upload_coordinator_postgres.py
           tests/test_database_transfer.py tests/test_database_transfer_postgres.py

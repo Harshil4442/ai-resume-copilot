@@ -850,7 +850,7 @@ class FreshNativeBoundary(release.NativeBoundary):
         self.verify_serving(runtime_plan(source, target), service, revision)
 
     def verify_document_configuration(self, source: release.Plan) -> dict[str, Any]:
-        """Require both private workers and the exact replacement invoker."""
+        """Require both private workers and exactly the natively bound callers."""
         return self._verify_document_workers(source, runtime_phase=True)
 
     def verify_document_preparation(self, source: release.Plan) -> dict[str, Any]:
@@ -896,8 +896,27 @@ class FreshNativeBoundary(release.NativeBoundary):
                 ),
                 "service_account_keys": {"keys": keys},
             }
+            # The optional upload caller is a fixed native identity, never an
+            # environment-supplied arbitrary invoker. Read its current IAM UID
+            # and key inventory whenever it appears in the service policy.
+            coordinator_phase = runtime_phase and any(
+                "serviceAccount:" + documents.UPLOAD_COORDINATOR in binding.get("members", [])
+                for binding in snapshot["service_iam"].get("bindings", [])
+            )
+            if coordinator_phase:
+                snapshot["upload_coordinator_service_account"] = self._cloud(
+                    "iam", "service-accounts", "describe", documents.UPLOAD_COORDINATOR,
+                )
+                coordinator_keys = self._cloud(
+                    "iam", "service-accounts", "keys", "list",
+                    "--iam-account", documents.UPLOAD_COORDINATOR,
+                )
+                if type(coordinator_keys) is not list:
+                    raise release.ReleaseDenied("fresh_upload_coordinator_key_inventory_invalid")
+                snapshot["upload_coordinator_service_account_keys"] = {"keys": coordinator_keys}
             report = documents.check_snapshot(
                 snapshot, documents.ACCEPTED_IMAGE, source.release, api_phase=runtime_phase,
+                coordinator_phase=coordinator_phase,
             )
             tex = release.native_tex
             tex_origin = getattr(tex, "ACCEPTED_ORIGIN", "")

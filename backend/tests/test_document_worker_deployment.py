@@ -476,3 +476,62 @@ def test_missing_output_traffic_remains_unverified_offline_provenance(config):
     assert report["traffic_status_checked"] is False
     assert report["input_authority"] == "untrusted_offline_snapshot"
     assert report["runtime_isolation_proven"] is False
+
+
+# The additional caller is a fixed optional phase; default API-only checks remain
+# unchanged. These native-shaped fixtures are not actual IAM/runtime acceptance.
+def upload_coordinator_snapshot(config):
+    value = snapshots(config)
+    value["service_iam"] = {"version": 3, "bindings": [{"role": "roles/run.invoker",
+        "members": sorted(["serviceAccount:" + config.API_INVOKER,
+                           "serviceAccount:" + config.UPLOAD_COORDINATOR])}]}
+    value["upload_coordinator_service_account"] = {
+        "name": f"projects/{config.PROJECT}/serviceAccounts/{config.UPLOAD_COORDINATOR}",
+        "projectId": config.PROJECT, "email": config.UPLOAD_COORDINATOR,
+        "uniqueId": config.UPLOAD_COORDINATOR_UID,
+    }
+    value["upload_coordinator_service_account_keys"] = {"keys": [{"keyType": "SYSTEM_MANAGED"}]}
+    return value
+
+
+def test_exact_keyless_upload_coordinator_does_not_claim_runtime_or_storage_proof(config):
+    value = upload_coordinator_snapshot(config)
+    report = config.check_snapshot(value, IMAGE, RELEASE, api_phase=True, coordinator_phase=True)
+    assert report["service_iam_phase"] == "api-and-resume-coordinator"
+    assert report["effective_iam_proven"] is report["runtime_isolation_proven"] is False
+    assert report["api_wiring_enabled"] is False
+    # A grant cannot silently make an API-only or initial preparation check pass.
+    for options in ({}, {"api_phase": True}, {"coordinator_phase": True}):
+        with pytest.raises(config.ConfigurationDenied):
+            config.check_snapshot(value, IMAGE, RELEASE, **options)
+
+
+@pytest.mark.parametrize("change", [
+    lambda value: value.pop("upload_coordinator_service_account"),
+    lambda value: value.pop("upload_coordinator_service_account_keys"),
+    lambda value: value["upload_coordinator_service_account"].update(uniqueId="109155185167233588130"),
+    lambda value: value["upload_coordinator_service_account"].update(email="other@ai-resume-parser-482412.iam.gserviceaccount.com"),
+    lambda value: value["upload_coordinator_service_account"].update(projectId="other-project"),
+    lambda value: value["upload_coordinator_service_account"].update(disabled=True),
+    lambda value: value["upload_coordinator_service_account"].update(disabled=0),
+    lambda value: value["upload_coordinator_service_account_keys"].update(keys=[{"keyType": "USER_MANAGED"}]),
+    lambda value: value["upload_coordinator_service_account_keys"].update(keys=[{}]),
+    lambda value: value["upload_coordinator_service_account_keys"].update(keys=[{"keyType": "SYSTEM_MANAGED"}] * 101),
+    lambda value: value["service_iam"]["bindings"][0]["members"].append("allUsers"),
+    lambda value: value["service_iam"]["bindings"][0]["members"].append("serviceAccount:other@example.test"),
+    lambda value: value["service_iam"]["bindings"][0]["members"].pop(),
+    lambda value: value["service_iam"]["bindings"][0].update(condition={"expression": "true"}),
+    lambda value: value["project_iam"].update(bindings=[{"role": "roles/viewer", "members": ["serviceAccount:hirewiz-resume-coordinator@ai-resume-parser-482412.iam.gserviceaccount.com"]}]),
+])
+def test_upload_coordinator_wrong_uid_keys_policy_and_project_grants_refused(config, change):
+    value = upload_coordinator_snapshot(config)
+    change(value)
+    with pytest.raises(config.ConfigurationDenied):
+        config.check_snapshot(value, IMAGE, RELEASE, api_phase=True, coordinator_phase=True)
+
+
+@pytest.mark.parametrize("phase", ["true", 1, None])
+def test_upload_coordinator_phase_is_not_a_truthy_policy_waiver(config, phase):
+    with pytest.raises(config.ConfigurationDenied):
+        config.check_snapshot(upload_coordinator_snapshot(config), IMAGE, RELEASE,
+                              api_phase=True, coordinator_phase=phase)

@@ -37,6 +37,7 @@ NUMBER = "157225724590"
 NEW_ACCOUNTS = ("hirewiz-runtime-20261014", "hirewiz-migrate-20261014", "hirewiz-observer-20261014")
 OLD_PRINCIPALS = {
     "hirewiz-api@ai-resume-parser-482412.iam.gserviceaccount.com": "101596337064821972716",
+    "hirewiz-worker@ai-resume-parser-482412.iam.gserviceaccount.com": "115123377998883908933",
     "ais-gemini-key-43d738d3dfb9485@226979001779.iam.gserviceaccount.com": "100592881791239522151",
     "ais-gemini-key-41af2f49a3fb4b6@157225724590.iam.gserviceaccount.com": "117611807420650799123",
     "ais-gemini-key-7aeb7c91129947c@157225724590.iam.gserviceaccount.com": "103651370799427077361",
@@ -396,7 +397,8 @@ class OfficialWrites:
         need(scope is not None and self.boundary.retired_since is None,
              "write_owner_resume_scope_not_pristine")
         assert scope is not None
-        need({principal.email: principal.uid for principal in scope.principals} == OLD_PRINCIPALS
+        need(len(scope.principals) == len(OLD_PRINCIPALS)
+             and {principal.email: principal.uid for principal in scope.principals} == OLD_PRINCIPALS
              and {key.name for key in scope.keys} == OLD_KEYS,
              "write_owner_resume_captured_authority_incomplete")
         need(set(self.boundary._setup_passwords) == set(native.SETUP_REFERENCES)
@@ -515,10 +517,8 @@ class OfficialWrites:
         self.boundary.verify_foreign_model_retirement()
         assert scope is not None
         need(
-            all(
-                OLD_PRINCIPALS.get(principal.email) == principal.uid
-                for principal in scope.principals
-            ),
+            len(scope.principals) == len(OLD_PRINCIPALS)
+            and {principal.email: principal.uid for principal in scope.principals} == OLD_PRINCIPALS,
             "write_old_principal_unmapped",
         )
         deadline = time.monotonic() + 55

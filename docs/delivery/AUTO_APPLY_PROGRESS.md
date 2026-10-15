@@ -31,9 +31,9 @@ Current development within these outcomes:
   that callback, so no Google client change was required. Public staged home,
   pricing, robots and sitemap checks pass; authenticated journeys and live billing
   catalog verification remain pending.
-- Both private document services are ready on the reviewed cohort: DOCX revision
-  `hirewiz-document-inspector-00007-k7s` and LaTeX revision
-  `hirewiz-native-tex-00003-wjp`. Existing templates and empty service IAM are
+- Both private document services are ready on the reviewed F3 cohort: DOCX revision
+  `hirewiz-document-inspector-00008-l8g` and LaTeX revision
+  `hirewiz-native-tex-00004-qbs`. Existing templates and empty service IAM are
   preserved. Runtime invocation from the replacement API remains pending.
 - The standard native Linux preflight passed, and the first production cutover
   attempt then stopped before cloud isolation, backup or data transfer. It
@@ -44,6 +44,27 @@ Current development within these outcomes:
   admission, and resumes forward without replaying CREATE. It is implemented
   and locally verified, but has not executed against production. See
   [prepared-owner recovery](PREPARED_OWNER_RECOVERY_2026-10-15.md).
+- Two subsequent F3 attempts stopped before recording a new mutation marker.
+  Native read-only reconciliation located the remaining source defect: the
+  retirement allowlist contained five accounts, while the complete retained
+  inventory correctly contained six, including the existing worker. The source
+  now requires the exact six email/UID pairs for recovery, retirement and build
+  restoration. Unknown, missing, duplicate or changed identities still refuse.
+  The correction is awaiting a new immutable release; no data transfer is
+  implied. The runner now emits bounded stages and trusted fixed refusal codes
+  so the next stopping point can be observed without vendor errors or secrets.
+- The document verifier now supports the exact existing, keyless resume-upload
+  coordinator as an optional additional invoker. It rereads its native UID and
+  keys and refuses arbitrary, public, conditional or project-wide coordinator
+  grants. This source support does not provision or activate the coordinator;
+  its restricted database role, scheduler, runtime calls and upload acceptance
+  remain pending. The initial no-binding and API-only phases are preserved.
+- Routine deployments now have a separate schema17-only source path. It reuses
+  current native identities, numeric secrets and the existing database, verifies
+  financial continuity, stages immutable revisions and retains traffic rollback.
+  It does not repeat the fresh migration or credential retirement. Actual
+  post-cutover capture and staging/rollback acceptance remain pending; see the
+  [routine release procedure](ROLLING_RELEASE_2026-10-15.md).
 - The cutover refusal was traced to a legacy key-format assumption. The Google
   key correction now binds opaque key strings to exact native resource metadata,
   issuer identity and value readback; it is awaiting release. The complete retained
@@ -101,7 +122,7 @@ Current development within these outcomes:
   Authorized source integration is proceeding; the unverified historical note
   is not treated as a standing source restriction. The complete source-integrity check runs under current Full
   Access. After reconciling generated declarations and preserving existing
-  notes, it verifies all 1,023 tracked files and the 16-revision migration chain.
+  notes, it verifies every tracked source file and the single reviewed migration chain.
   The full migration executor has not run. No source files are excluded from
   that check. The separate GitHub
   builder replacement is prepared and reviewed. The actual regional GitHub

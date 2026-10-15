@@ -26,6 +26,7 @@ sys.path[:0] = [
     str(Path(__file__).resolve().parent),
     str(Path(__file__).resolve().parents[2] / "backend"),
 ]
+import fresh_cutover_execute as safe_events  # noqa: E402 -- pure protocol definitions
 import fresh_cutover_writes as writes  # noqa: E402 -- standalone ordinary imports
 import local_neon_source_delete as local  # noqa: E402 -- standalone ordinary imports
 from sqlalchemy.engine import make_url  # noqa: E402
@@ -648,6 +649,17 @@ def run(image: str, value: dict[str, Any], inputs: Path, workdir: Path) -> dict[
                                 },
                                 "docker_progress_projection_refused",
                             )
+                        elif event["event"] == "cutover_stage":
+                            need(terminal is None, "docker_progress_after_terminal_refused")
+                            projection = safe_events.stage_projection(event)
+                            print(json.dumps(projection, separators=(",", ":")), flush=True)
+                        elif event["event"] == "cutover_stopped_reconcile_only":
+                            need(terminal is None, "docker_refusal_after_terminal_refused")
+                            projection = safe_events.stopped_projection(
+                                event, safe_events.literal_codes(Path(__file__).resolve().parents[2]),
+                            )
+                            print(json.dumps(projection, separators=(",", ":")), flush=True)
+                            raise writes.WriteDenied("docker_cutover_stopped_reconcile_only")
                         elif event["event"] == "operator_preflight_complete":
                             need(
                                 value["operation"] == "preflight"

@@ -25,6 +25,7 @@ class NativeDouble(repair.SDKRepair):
         super().__init__(Path("/not-used-sdk"), "inert-operator", workdir)
         self.trigger_row = old_trigger()
         self.old_disabled = False
+        self.old_account_overrides = {}
         self.builder_row = None
         self.docx_status = "SUCCESS"
         self.live = {}
@@ -47,7 +48,8 @@ class NativeDouble(repair.SDKRepair):
                     result["uniqueId"] = "900000000000000000002"
                 return result
             email = path.split("/serviceAccounts/")[1]
-            return {"email": email, "uniqueId": repair.OLD_PRINCIPALS[email], "disabled": self.old_disabled}
+            return {"email": email, "uniqueId": repair.OLD_PRINCIPALS[email], "disabled": self.old_disabled,
+                    **self.old_account_overrides.get(email, {})}
         mutation = False
         if api == "iam" and method == "POST":
             mutation = True
@@ -312,6 +314,43 @@ class BuilderRepairControls(unittest.TestCase):
         self.native.policies["project"]["bindings"].append({"role": "roles/owner", "members": [repair.MEMBER]})
         with self.assertRaises(repair.RepairDenied):
             repair.add_binding(self.native.policies["project"], "roles/logging.logWriter")
+
+    def test_sixth_old_worker_must_have_exact_native_uid_and_be_disabled_before_create(self):
+        worker = "hirewiz-worker@ai-resume-parser-482412.iam.gserviceaccount.com"
+        self.assertEqual(repair.OLD_PRINCIPALS[worker], "115123377998883908933")
+        self.native.old_disabled = True
+        self.native.trigger_row["disabled"] = True
+        for override in ({"disabled": False}, {"uniqueId": "900000000000000000002"}):
+            self.native.old_account_overrides[worker] = override
+            with self.subTest(override=override), self.assertRaisesRegex(repair.RepairDenied, "old_principal_uid_or_state_drift"):
+                self.native.create_builder_once()
+            self.assertEqual(self.native.mutations(), [])
+            self.assertFalse(list(self.path.glob("*.started.json")))
+
+    def test_worker_reactivation_blocks_every_builder_continuation_before_write(self):
+        worker = "hirewiz-worker@ai-resume-parser-482412.iam.gserviceaccount.com"
+        for phase in ("grant", "retarget", "enable"):
+            path = self.path / phase
+            path.mkdir(mode=0o700)
+            native = NativeDouble(path)
+            native.old_disabled = True
+            native.trigger_row["disabled"] = True
+            builder = native.create_builder_once()
+            if phase in {"retarget", "enable"}:
+                native.grant_builder_once(builder)
+            if phase == "enable":
+                native.retarget_once(builder)
+            count = len(native.mutations())
+            native.old_account_overrides[worker] = {"disabled": False}
+            action = {"grant": native.grant_builder_once, "retarget": native.retarget_once,
+                      "enable": native.enable_trigger_once}[phase]
+            with self.subTest(phase=phase), self.assertRaisesRegex(repair.RepairDenied, "old_principal_uid_or_state_drift"):
+                action(builder)
+            self.assertEqual(len(native.mutations()), count)
+
+    def test_new_builder_cannot_reuse_retired_worker_uid(self):
+        with self.assertRaisesRegex(repair.RepairDenied, "native_uid_invalid"):
+            repair.Builder("115123377998883908933").validate()
 
 
 if __name__ == "__main__":
