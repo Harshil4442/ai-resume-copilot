@@ -729,6 +729,94 @@ def test_unknown_worker_disable_keeps_its_attempt_and_never_replays_any_disable(
                for method, url, _ in http.calls) == 1
 
 
+def test_delayed_iam_disabled_readback_polls_reads_without_repeating_posts(writer, monkeypatch):
+    writes, http, workdir, states = six_actor_retirement_fixture(writer, monkeypatch)
+    original = http.respond
+    reads = dict.fromkeys(states, 0)
+    sleeps = []
+    monkeypatch.setattr(module.time, "sleep", sleeps.append)
+
+    def delayed(method, url, body):
+        status, row = original(method, url, body)
+        email = url.rsplit("/", 1)[-1]
+        if method == "GET" and email in states and states[email]:
+            reads[email] += 1
+            if reads[email] <= 3:
+                row["disabled"] = False
+        return status, row
+
+    http.respond = delayed
+    assert len(writes.disable_old_principals()) == 6
+    assert set(reads.values()) == {4}
+    assert sleeps == [0.5] * 18
+    assert len(list(workdir.glob("disable-*.started.json"))) == 6
+    assert sum(method == "POST" for method, _, _ in http.calls) == 6
+
+
+def test_unconfirmed_iam_disable_stops_at_read_bound_and_never_replays_post(writer, monkeypatch):
+    writes, http, workdir, states = six_actor_retirement_fixture(writer, monkeypatch)
+    original = http.respond
+    monkeypatch.setattr(module.time, "sleep", lambda _: None)
+
+    def unconfirmed(method, url, body):
+        status, row = original(method, url, body)
+        if method == "GET" and url.rsplit("/", 1)[-1] in states:
+            row["disabled"] = False
+        return status, row
+
+    http.respond = unconfirmed
+    with pytest.raises(module.WriteDenied, match="write_old_principal_disable_unconfirmed"):
+        writes.disable_old_principals()
+    assert sum(states.values()) == 1
+    assert sum(method == "POST" for method, _, _ in http.calls) == 1
+    assert len(list(workdir.glob("disable-*.started.json"))) == 1
+    first = next(iter(states))
+    assert sum(method == "GET" and url.endswith("/serviceAccounts/" + first)
+               for method, url, _ in http.calls) == 17
+    with pytest.raises(module.WriteDenied, match="write_already_attempted"):
+        writes.disable_old_principals()
+    assert sum(method == "POST" for method, _, _ in http.calls) == 1
+
+
+def test_iam_disabled_readback_uid_drift_is_not_polled_away(writer, monkeypatch):
+    writes, http, _, states = six_actor_retirement_fixture(writer, monkeypatch)
+    original = http.respond
+    sleeps = []
+    monkeypatch.setattr(module.time, "sleep", sleeps.append)
+
+    def drift(method, url, body):
+        status, row = original(method, url, body)
+        email = url.rsplit("/", 1)[-1]
+        if method == "GET" and email in states and states[email]:
+            row["uniqueId"] = "900000000000000000001"
+        return status, row
+
+    http.respond = drift
+    with pytest.raises(module.WriteDenied, match="write_native_account_identity_drift"):
+        writes.disable_old_principals()
+    assert sum(method == "POST" for method, _, _ in http.calls) == 1
+    assert sleeps == []
+
+
+def test_iam_readback_does_not_refresh_the_original_action_deadline(writer, monkeypatch):
+    writes, http, _, states = six_actor_retirement_fixture(writer, monkeypatch)
+    original = http.respond
+    clock = [0.0]
+    monkeypatch.setattr(module.time, "monotonic", lambda: clock[0])
+
+    def late(method, url, body):
+        status, row = original(method, url, body)
+        email = url.rsplit("/", 1)[-1]
+        if method == "GET" and email in states and states[email]:
+            clock[0] = 56.0
+        return status, row
+
+    http.respond = late
+    with pytest.raises(module.WriteDenied, match="write_action_deadline"):
+        writes.disable_old_principals()
+    assert sum(method == "POST" for method, _, _ in http.calls) == 1
+
+
 def test_builder_restoration_requires_the_same_exact_six_retired_actors():
     builder = importlib.import_module("github_builder")
     assert builder.OLD_PRINCIPALS == module.OLD_PRINCIPALS

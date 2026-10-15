@@ -17,7 +17,7 @@ installed.
 The reader permits at most three operator GET attempts within one three-second
 monotonic observation budget. Each attempt receives only the remaining socket
 timeout. A late response is refused; the budget is never restarted. Temporary
-HTTP429/502/503/504 may retry only after the existing bounded JSON-object checks
+HTTP 429/502/503/504 may retry only after the existing bounded JSON-object checks
 succeed. Explicit requests connection/connect-timeout/read-timeout/timeout
 types may retry; SSL/proxy subclasses and nested TLS failures do not. Redirects,
 permanent statuses, authentication/refresh failures, configuration errors,
@@ -25,13 +25,13 @@ untyped exceptions, oversized bodies, malformed JSON and duplicate JSON keys
 stop without an added operator attempt. Exception text, credential-bearing
 lookup URLs and server bodies are not logged or returned.
 
-Backoff starts at0.1seconds and then0.2seconds. A valid Retry-After delta or
+Backoff starts at 0.1 seconds and then 0.2 seconds. A valid Retry-After delta or
 HTTP date can extend that wait within the original budget; it is never capped
 to a shorter wait to force another attempt. Invalid Retry-After or a requested
 delay that exhausts the budget refuses. The final result always comes from the
 successful server response, never an earlier error payload or cached receipt.
 
-The original600-second retained-census acceptance bound,30-second fresh closure
+The original 600-second retained-census acceptance bound, 30-second fresh closure
 window, original observation timestamp and logical read limits are unchanged.
 These limits are not asserted to count every physical wire request: the stock
 SDK can perform its existing credential refresh/authentication challenge replay,

@@ -11,7 +11,7 @@ outcome; they are never separate checklist completions.
 |---|---|---|
 | Official job search, ranking and user-selected job counts | In progress | Verify recent and closed jobs, matching quality, selected result counts and credit behavior across the complete user flow; measure coverage against a defined reference set |
 | Resume tailoring preserving PDF, DOCX and LaTeX formatting | In progress | Verify truthful edits and complete original/custom/tailored resume selection, review, downloads and staged API integration |
-| Candidate-reviewed direct company applications | In progress | Complete staged acceptance and activation of the Razorpay/Greenhouse pilot, exact destination/package/answer review, text autofill and reliable outcome tracking; file upload and final submission remain candidate actions in this pilot |
+| Candidate-reviewed direct company applications | In progress | Complete required and conditional form controls, reviewed original/custom/tailored resume upload, separate final-submit approval, one-shot submission, genuine employer receipt/reconciliation and paid settlement; the current pilot fills text only |
 | Paid search/application credits, profitable finite packs and payment recovery | In progress | Verify separate charging, finite limits, settlement/refund recovery and representative failure/load behavior; release through the native monetary safeguards |
 | Fast responsive pages and SEO | In progress | Verify complete desktop, laptop and mobile journeys, loading performance and production SEO metadata |
 | GCP/Vercel production deployment, preserved-data migration and monitoring | Pending production release | Finish release orchestration, preserve customer/financial data, establish the actual old-writer fence, migrate, stage, perform the reviewed production switch and monitor |
@@ -23,72 +23,48 @@ connection repair is live on the existing API image.
 
 Current development within these outcomes:
 
-- The latest replacement release is held. Its backend verification found a
-  missed whole-file integrity pin after the release code was refactored. That
-  dependency is corrected, and a fast source-only check now runs before native
-  builds so the same oversight fails early. Full release verification remains
-  required. A separate read-only production Redis compatibility check found that
-  Upstash omits the server identifier required by Lever feed coordination. The
-  correction uses two bounded PostgreSQL host rows and an additive schema18
-  migration; Upstash remains the login and cache provider. Native migration,
-  feed activation and release acceptance have not occurred.
-- The production-target frontend deployment is now ready on Vercel, but the
-  public domain has not been moved to it. Its native deployment metadata binds
-  the reviewed source and upload manifest. The shared `NEXTAUTH_URL` configuration
-  now uses `https://www.hirewizhq.com`; the staged authentication-provider response
-  confirms the same origin. The existing Google OAuth client already authorizes
-  that callback, so no Google client change was required. Public staged home,
-  pricing, robots and sitemap checks pass; authenticated journeys and live billing
-  catalog verification remain pending.
-- Both private document services are ready on the reviewed F3 cohort: DOCX revision
-  `hirewiz-document-inspector-00008-l8g` and LaTeX revision
-  `hirewiz-native-tex-00004-qbs`. Existing templates and empty service IAM are
-  preserved. Runtime invocation from the replacement API remains pending.
-- The standard native Linux preflight passed, and the first production cutover
-  attempt then stopped before cloud isolation, backup or data transfer. It
-  committed one unused NOLOGIN source-owner role; the source database still has
-  its original owner and schema, and the target remains empty. The exact prior
-  operation marker and retained volume are preserved. A supported recovery path
-  now checks that prior evidence and the current unused role, runs full fresh
-  admission, and resumes forward without replaying CREATE. It is implemented
-  and locally verified, but has not executed against production. See
-  [prepared-owner recovery](PREPARED_OWNER_RECOVERY_2026-10-15.md).
-- Two subsequent F3 attempts stopped before recording a new mutation marker.
-  Native read-only reconciliation located the remaining source defect: the
-  retirement allowlist contained five accounts, while the complete retained
-  inventory correctly contained six, including the existing worker. The source
-  now requires the exact six email/UID pairs for recovery, retirement and build
-  restoration. Unknown, missing, duplicate or changed identities still refuse.
-  The correction is awaiting a new immutable release; no data transfer is
-  implied. The runner now emits bounded stages and trusted fixed refusal codes
-  so the next stopping point can be observed without vendor errors or secrets.
-- The document verifier now supports the exact existing, keyless resume-upload
-  coordinator as an optional additional invoker. It rereads its native UID and
-  keys and refuses arbitrary, public, conditional or project-wide coordinator
-  grants. This source support does not provision or activate the coordinator;
-  its restricted database role, scheduler, runtime calls and upload acceptance
-  remain pending. The initial no-binding and API-only phases are preserved.
-- Routine deployments now have a separate schema18-only source path. It reuses
-  current native identities, numeric secrets and the existing database, verifies
-  financial continuity, stages immutable revisions and retains traffic rollback.
-  It does not repeat the fresh migration or credential retirement. Actual
-  post-cutover capture and staging/rollback acceptance remain pending; see the
-  [routine release procedure](ROLLING_RELEASE_2026-10-15.md).
-- The cutover refusal was traced to a legacy key-format assumption. The Google
-  key correction now binds opaque key strings to exact native resource metadata,
-  issuer identity and value readback; it is awaiting release. The complete retained
-  census also contains Groq and OpenAI credentials. The user approved revoking
-  the three exact retained keys through the signed-in provider consoles. Provider
-  readback confirms revocation, and all three exact values now return HTTP 401
-  with `invalid_api_key`, after authenticated model-list responses before
-  revocation. This resolves those captured capabilities, not unrelated provider
-  accounts. The release verifier preserves every origin and rereads exact
-  provider authentication denial within its original freshness window before
-  isolation and throughout the final fence. No saved receipt or acceptance flag
-  substitutes for those reads. See
-  [provider capability retirement](NATIVE_MODEL_CAPABILITY_RETIREMENT_2026-10-15.md).
-  The four application queues and maintenance scheduler remain paused during
-  this controlled release window. No new major checkpoint is complete.
+- F5 passed its exact five-job CI run and both native image builds. These are
+  supporting evidence, not completed development or deployment checkpoints.
+  Its fresh migration attempt passed the retained-credential census and unused
+  source-owner checks, then stopped when immediate IAM metadata did not confirm
+  one disable. Native reconciliation found five exact old accounts disabled and
+  the worker unattempted. All five were restored to their prior enabled state
+  and verified natively. Source ownership, customer data, target contents and
+  production traffic were not changed by that attempt. The stopped journals are
+  retained; no original disable or owner CREATE was replayed. See
+  [IAM readback recovery](IAM_READBACK_RECOVERY_2026-10-15.md).
+- The next source release polls only IAM metadata after an acknowledged disable,
+  within the original deadline, with exact UID checks and no repeated POST.
+  It also includes bounded transient metadata GET retries and the reviewed
+  account-erasure cleanup: orphan upload fingerprints are deleted only after
+  both canonical retirement markers are freshly verified. Linked uploads keep
+  their quota history. Native release, complete upload custody and finite marker
+  disposal remain unfinished. See [metadata retries](NATIVE_METADATA_GET_RETRIES_2026-10-15.md).
+- Lever feed pacing uses two bounded PostgreSQL host rows and an additive
+  schema18 migration. Upstash remains the login/cache provider; its missing
+  Redis server identifier prevents using the stricter Redis pacing adapter.
+  Native schema migration, feed activation and coverage acceptance remain open.
+- Both private document services match F5: DOCX revision
+  `hirewiz-document-inspector-00009-mbb` and LaTeX revision
+  `hirewiz-native-tex-00005-44t`. Existing images and empty service IAM are
+  preserved. Replacement API invocation and complete resume journeys remain open.
+- The staged production-target frontend is ready on Vercel, with unchanged
+  frontend source between its build and F5. Public domains have not moved.
+  The staged callback origin is `https://www.hirewizhq.com`; complete
+  authenticated journeys, live catalog and direct-upload build flags remain open.
+- The prepared source-owner role remains unused and NOLOGIN. The supported
+  recovery path validates the original retained operation and fresh native
+  catalog without repeating CREATE. Complete source retirement, consistent
+  backup, preserved-data migration and staged production switch remain open.
+- Direct upload still needs its restricted coordinator SQL/secret, runtime,
+  Scheduler and effective invocation bindings, followed by real custody tests.
+  Existing bucket/signing identities are retained. The routine schema18 release
+  path stages future code updates without repeating migration or retirement;
+  native rolling release acceptance remains open.
+- The three approved old Groq/OpenAI keys were revoked and their exact captured
+  values returned authentication denial. Fresh provider checks remain required
+  at release. The four application queues, maintenance scheduler and GitHub
+  deployment trigger stay held. No new major checkpoint is complete.
 - Official discovery now has 20 reviewed employer origins, including 16 additional
   verified company-to-ATS joins. This is source implementation, with production
   seeding and complete search acceptance pending. Worldwide or 95% job coverage
