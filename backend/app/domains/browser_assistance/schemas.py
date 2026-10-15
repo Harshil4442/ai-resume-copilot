@@ -30,6 +30,7 @@ class CandidateRequest(StrictModel):
     review_digest: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     key_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     confirmed: bool = False
+    hosted_answers: dict[str, str] | None = None
 
     @field_validator("confirmed", mode="before")
     @classmethod

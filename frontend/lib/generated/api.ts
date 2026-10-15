@@ -2139,6 +2139,10 @@ export interface components {
              * @default false
              */
             confirmed: boolean;
+            /** Hosted Answers */
+            hosted_answers?: {
+                [key: string]: string;
+            } | null;
             /**
              * Identity
              * Format: uuid
@@ -6556,7 +6560,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                operation: "device" | "confirm" | "revoke" | "review" | "approve" | "cancel";
+                operation: "device" | "confirm" | "revoke" | "review" | "revise" | "approve" | "cancel";
             };
             cookie?: never;
         };

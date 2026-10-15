@@ -1,6 +1,6 @@
 # HireWiz candidate-reviewed Chrome companion
 
-The 0.4.0 source package supports separately reviewed Razorpay/Greenhouse answer
+The 0.5.0 source package supports separately reviewed Razorpay/Greenhouse answer
 and resume-attachment assistance. Production stays closed until a later schema19
 release, dedicated signer and explicit feature flags are accepted. The frozen F7
 release remains schema18. Existing experimental native pairing
@@ -11,9 +11,7 @@ The candidate chooses a saved application and resume, connects this browser by
 reviewing its fingerprint on HireWiz, opens the exact company portal, and reviews
 the file, destination, supported answers and disclosure before filling. The
 backend issues a ten-second exact single-field signed lease only after approval.
-Unknown acknowledgements stop the sequence without replay. Version two adds only
-explicitly saved phone and four supported choices behind its own default-false
-flag. Missing sensitive answers remain manual.
+Unknown acknowledgements stop the sequence without replay. Version two supports explicitly saved phone and four supported choices, plus candidate-entered Phone Country and known employment controls, behind its default-false flag. Missing personal answers remain manual.
 
 Attachment uses a separate version-three approval behind
 `BROWSER_ASSISTANCE_ATTACHMENT_ENABLED=false`. Clear the answer review and inspect
@@ -23,8 +21,7 @@ opening, document and empty Resume/CV input before any binary delivery. One sign
 action authorizes one bounded binary delivery and one local file selection within
 the same ten-second lease; it is never extended or silently resent. Selection can
 immediately upload the bytes through employer callbacks. The result confirms only
-local selection; employer upload acceptance is unconfirmed. Country, employment,
-unsupported controls, CAPTCHA/login and final submission remain manual. Neither
+local selection; employer upload acceptance is unconfirmed. Unreviewed or changed controls, CAPTCHA/login and final submission remain manual. Neither
 assistance action charges application credits or creates an employer receipt.
 
 The shipping manifest has no granted hosts. It requests two optional origins,
@@ -64,3 +61,11 @@ changes; no private key, session credential, test builder or candidate data belo
 in this artifact. See [the design decision](../docs/adr/007-reviewed-browser-assistance.md)
 for expiry, cancellation and database-restore limitations. Existing local synthetic
 and native experiment tests remain separate and do not constitute production proof.
+
+The current disabled v2 draft can bind the known Phone Country selector and up to
+five employment rows in one review (bounded cursor 0–64 in undeployed schema19).
+The candidate saves exact hosted values on the same review page, then explicitly
+approves its updated digest; no citizenship, work authorization or employment is
+inferred. Add another and current-role toggles receive one action lease and end
+the sequence for inspection; neither is replayed automatically. See
+`docs/delivery/BROWSER_HOSTED_CONTROLS_2026-10-15.md` for local-only evidence.

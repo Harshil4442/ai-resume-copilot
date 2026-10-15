@@ -22,20 +22,27 @@ export async function razorpayAdapter(expected = null, action = null, identity =
   const baseLabels = { first_name: "First Name", last_name: "Last Name", email: "Email" };
   const customLabels = new Set(["LinkedIn Profile", "Website", "Total Years of Experience", "Current Location"]);
   const choiceLabels = new Set(["Current Career Stage", "Gender", "Current Industry", "Current Designation"]);
-  const validChoice = (field) => version >= 2 && field.type === "combobox" && choiceLabels.has(field.label)
-    && /^question_\d{1,20}$/.test(field.id) && Array.isArray(field.options) && field.options.length >= 1 && field.options.length <= 64
+  const hostedText = (field) => /^(company-name|title|start-date-year|end-date-year)-[0-4]$/.test(field.id)
+    && field.label === (field.id.startsWith("company-name-") ? "Company name" : field.id.startsWith("title-") ? "Title" : field.id.startsWith("start-") ? "Start date year" : "End date year");
+  const hostedChoice = (field) => field.id === "country" && field.label === "Country"
+    || /^(start|end)-date-month-[0-4]$/.test(field.id) && field.label === (field.id.startsWith("start-") ? "Start date month" : "End date month");
+  const validChoice = (field) => version >= 2 && field.type === "combobox" && (choiceLabels.has(field.label)
+    && /^question_\d{1,20}$/.test(field.id) || hostedChoice(field)) && Array.isArray(field.options) && field.options.length >= 1 && field.options.length <= (field.id === "country" ? 244 : 64)
     && field.options.every((option) => option && Object.keys(option).sort().join(",") === "label,value"
       && [option.value, option.label].every((value) => typeof value === "string" && value.length > 0 && value.length <= 255 && value.isWellFormed()))
     && new Set(field.options.map(({ value }) => value)).size === field.options.length
     && new Set(field.options.map(({ label }) => label)).size === field.options.length;
   const supplied = identity?.field_mapping;
-  if (!Array.isArray(supplied) || supplied.length < 3 || supplied.length > (version >= 2 ? 12 : 7)
+  if (!Array.isArray(supplied) || supplied.length < 3 || supplied.length > (version >= 2 ? 64 : 7)
     || supplied.some((field) => !field || typeof field !== "object" || Array.isArray(field)
       || Object.keys(field).sort().join(",") !== (field.type === "combobox" ? "id,label,options,required,type" : "id,label,required,type")
       || typeof field.id !== "string" || field.id.length > 128 || typeof field.label !== "string" || typeof field.required !== "boolean"
-      || !(field.type === "text" && (Object.hasOwn(baseLabels, field.id) ? field.label === baseLabels[field.id] : /^question_\d+$/.test(field.id) && customLabels.has(field.label))
-        || version >= 2 && field.type === "tel" && field.id === "phone" && field.label === "Phone" || validChoice(field)))
-    || new Set(supplied.map(({ id }) => id)).size !== supplied.length || new Set(supplied.map(({ label }) => label)).size !== supplied.length
+      || !(field.type === "text" && (Object.hasOwn(baseLabels, field.id) ? field.label === baseLabels[field.id] : /^question_\d+$/.test(field.id) && customLabels.has(field.label) || version === 2 && hostedText(field))
+        || version >= 2 && field.type === "tel" && field.id === "phone" && field.label === "Phone" || validChoice(field)
+        || version === 2 && field.type === "checkbox" && /^current-role-[0-4]_1$/.test(field.id) && field.label === "Current role" && field.required === false
+        || version === 2 && field.type === "button" && /^employment-add-[1-4]$/.test(field.id) && field.label === "Add another" && field.required === false))
+    || new Set(supplied.map(({ id }) => id)).size !== supplied.length
+    || new Set(supplied.filter((field) => !hostedText(field) && !hostedChoice(field) && !["checkbox", "button"].includes(field.type)).map(({ label }) => label)).size !== supplied.filter((field) => !hostedText(field) && !hostedChoice(field) && !["checkbox", "button"].includes(field.type)).length
     || Object.keys(baseLabels).some((id) => !supplied.some((field) => field.id === id))) return fail("Signed application mapping must contain only the reviewed text semantics and exact unique IDs");
   const fieldMapping = supplied.map(({ id, label, type, required, options }) => ({ id, label, type, required, ...(options ? { options } : {}) }));
   const labels = Object.fromEntries(fieldMapping.map(({ id, label }) => [id, label]));
@@ -102,6 +109,22 @@ export async function razorpayAdapter(expected = null, action = null, identity =
     }
     return bounded(clone.outerHTML, bounds.text);
   };
+  const addDescriptor = fieldMapping.find(({ type }) => type === "button");
+  const addButtons = () => [...document.querySelectorAll(".employment--container > button.add-another-button")].filter((node) => node.type === "button" && normalise(node.textContent || "") === "Add another");
+  const getControl = (id) => id === addDescriptor?.id ? (addButtons().length === 1 ? addButtons()[0] : null) : document.getElementById(id);
+  const controlId = (node) => addDescriptor && node === getControl(addDescriptor.id) ? addDescriptor.id : node.id;
+  const discoverRows = () => {
+    const companies = [...document.querySelectorAll('input[id^="company-name-"]')];
+    if (!companies.length) return null;
+    if (companies.length > 5 || companies.some((node, index) => node.id !== `company-name-${index}`)) throw new Error("Unsupported employment row identities require manual review");
+    const rows = companies.map((node, index) => {
+      const role = document.getElementById(`current-role-${index}_1`);
+      const ids = [`title-${index}`, `start-date-month-${index}`, `start-date-year-${index}`, ...(!role?.checked ? [`end-date-month-${index}`, `end-date-year-${index}`] : [])];
+      if (!(role instanceof HTMLInputElement) || role.type !== "checkbox" || ids.some((id) => !document.getElementById(id))) return null;
+      return { index, current_role: role.checked };
+    });
+    return rows.some((row) => row === null) ? null : rows;
+  };
   const read = (activeChoice = null, selectedAttachment = null) => {
     // Raw manual state stays in this isolated execution. Local hashes bind
     // changes, not anonymity: low-entropy answers can still be guessed.
@@ -144,14 +167,16 @@ export async function razorpayAdapter(expected = null, action = null, identity =
       if (node.id) duplicates.add(node.id);
     }
     const assisted = fieldMapping.map(({ id, label: mappedLabel, type, required }) => {
-      const node = document.getElementById(id);
-      if (!(node instanceof HTMLInputElement) || !node.form) throw new Error("The mapped application form is incomplete");
-      const label = normalise([...(node.labels || [])].map((entry) => entry.textContent).join(" ")).replace(/\s*\*\s*$/, "");
+      const node = getControl(id);
+      if (!(node instanceof HTMLInputElement || type === "button" && node instanceof HTMLButtonElement) || !node.form) throw new Error("The mapped application form is incomplete");
+      const label = type === "button" ? normalise(node.textContent || "") : normalise([...(node.labels || [])].map((entry) => entry.textContent).join(" ")).replace(/\s*\*\s*$/, "");
       const choice = type === "combobox";
       if (label !== mappedLabel || node.type !== (choice ? "text" : type)
         || (choice ? node.getAttribute("role") !== "combobox" : node.getAttribute("role"))
-        || (choice ? ![-1, 255].includes(node.maxLength) : node.maxLength !== 255) || Boolean(node.required || node.getAttribute("aria-required") === "true") !== required
+        || (choice ? ![-1, 255].includes(node.maxLength) : type === "checkbox" || type === "button" ? false : node.maxLength !== (/^(start|end)-date-year-[0-4]$/.test(id) ? 4 : 255)) || Boolean(node.required || node.getAttribute("aria-required") === "true") !== required
         || node.disabled || node.readOnly || !visible(node)) throw new Error("Reviewed text field metadata changed or requires manual input");
+      if (type === "checkbox" && (node.name !== id.slice(0, -2) || node.value !== "1")) throw new Error("The reviewed current-role checkbox changed");
+      if (type === "button" && discoverRows()?.length !== Number(id.split("-").at(-1))) throw new Error("Employment row count changed before Add another");
       return node;
     });
     const form = assisted[0].form;
@@ -180,11 +205,12 @@ export async function razorpayAdapter(expected = null, action = null, identity =
       bindPrivate(entry, "text_sha256", bounded(normalise(clone.textContent), bounds.text)); return entry;
     });
     const fields = all.map((node) => {
+      const id = controlId(node);
       const labelled = (node.getAttribute("aria-labelledby") || "").split(/\s+/).filter(Boolean).map((id) => document.getElementById(id)?.textContent || "");
       const descriptionIds = choices.has(node.id) ? stableChoiceDescription(node) : (node.getAttribute("aria-describedby") || "").split(/\s+/).filter(Boolean);
       const described = descriptionIds.map((id) => document.getElementById(id)?.textContent || "");
       const control = {
-        id: node.id, name: node.name || "", label: bounded(normalise([...(node.labels || [])].map((entry) => entry.textContent).join(" "))),
+        id, name: node.name || "", label: bounded(normalise([...(node.labels || [])].map((entry) => entry.textContent).join(" "))),
         aria_labelled: labelled.map((value) => bounded(normalise(value))), description: described.map((value) => bounded(normalise(value))),
         type: node.tagName === "TEXTAREA" ? "textarea" : node.type, tag: node.tagName,
         // Chrome scripting dictionary transport drops null-valued properties.
@@ -193,7 +219,7 @@ export async function razorpayAdapter(expected = null, action = null, identity =
         max: node.maxLength ?? -1, disabled: Boolean(node.disabled), readonly: Boolean(node.readOnly), hidden: !visible(node),
         // A controlled React input can update its value attribute after a fill.
         // Assisted values are bound by approved-prefix/expected-before checks.
-        attributes: allowed.has(node.id) ? attributes(node).filter(([name]) => !(choices.has(node.id)
+        attributes: allowed.has(controlId(node)) ? attributes(node).filter(([name]) => !(choices.has(node.id)
           ? ["value", "checked", "selected", "aria-expanded", "aria-controls", "aria-activedescendant"] : ["value", "checked", "selected"]).includes(name))
           .map(([name, value]) => [name, choices.has(node.id) && name === "aria-describedby" ? stableChoiceDescription(node).join(" ") : value]) : [],
         path: path(widgets.get(node.id)?.widget || node), form: node.form ? [...document.forms].indexOf(node.form) : -1,
@@ -204,7 +230,7 @@ export async function razorpayAdapter(expected = null, action = null, identity =
       const controlled = node.getAttribute("aria-controls");
       const target = controlled ? document.getElementById(controlled) : null;
       const controlledContext = target ? { path: path(target), attributes: attributes(target), text: bounded(normalise(target.textContent || "")) } : false;
-      if (!allowed.has(node.id)) bindPrivate(control, "manual_value_sha256", {
+      if (!allowed.has(controlId(node))) bindPrivate(control, "manual_value_sha256", {
         value: node.type === "file" ? "" : bounded(node.value || ""), selected_count: node.type === "file" && selectedAttachment !== node ? node.files.length : 0,
         checked: Boolean(node.checked), selected_value: bounded(node.dataset.selectedValue || ""),
         text: bounded(normalise(node.textContent || "")), attributes: attributes(node),
@@ -231,7 +257,10 @@ export async function razorpayAdapter(expected = null, action = null, identity =
     };
     const serialized = canonical({ context, private_values: privateHashes.map(({ key, value }) => [key, value]) });
     if (new TextEncoder().encode(serialized).length > bounds.total) throw new Error("Form context exceeds the reviewed total byte bound");
-    const assistedValues = Object.fromEntries(assisted.map((node) => [node.id, bounded(widgets.get(node.id)?.value ?? node.value, 255)]));
+    const assistedValues = Object.fromEntries(assisted.map((node) => {
+      const id = controlId(node);
+      return [id, bounded(widgets.get(id)?.value ?? (node.type === "checkbox" ? String(node.checked) : node.type === "button" ? String(discoverRows()?.length) : node.value), 255)];
+    }));
     return { context, serialized, fields, form, assisted, assistedValues, privateHashes };
   };
   let current;
@@ -247,8 +276,9 @@ export async function razorpayAdapter(expected = null, action = null, identity =
     assisted_fields: current.fields.filter((field) => allowed.has(field.id)), manual_fields: current.fields.filter((field) => !allowed.has(field.id)),
     assisted_values: current.assistedValues,
     field_mapping: fieldMapping,
+    ...(version === 2 && discoverRows() ? { hosted_rows: discoverRows() } : {}),
     required_controls: current.fields.filter((field) => field.required).length, checkpoint: null, status: "manual_handoff",
-    message: version === 2 ? "Only explicitly reviewed text, phone and supported choices can be filled. Country, employment, unknown controls, attachment and final submission remain manual. No application receipt or charge is established."
+    message: version === 2 ? "Only explicitly reviewed text, phone and supported choices can be filled. Only listed values and actions are authorized. Changed or unknown controls, attachment and final submission require separate action. No application receipt or charge is established."
       : "Up to seven reviewed plain text fields only. Phone, Country, employment, choices, attachment and final submission remain manual. No application receipt or charge is established.",
   };
   if (!action) return inspection;
@@ -303,7 +333,7 @@ export async function razorpayAdapter(expected = null, action = null, identity =
     return { outcome: "selected_only", field_id: "resume", message: "Exact resume selected locally. Employer upload acceptance is unconfirmed. No application was submitted or charged." };
   }
   const reviewed = expected.reviewed_answers;
-  if (!reviewed || typeof reviewed !== "object" || Array.isArray(reviewed) || !Object.keys(reviewed).length || Object.keys(reviewed).length > (version === 2 ? 12 : 7)
+  if (!reviewed || typeof reviewed !== "object" || Array.isArray(reviewed) || !Object.keys(reviewed).length || Object.keys(reviewed).length > (version === 2 ? 64 : 7)
     || Object.keys(reviewed).some((key) => !allowed.has(key) || typeof reviewed[key] !== "string" || !reviewed[key].isWellFormed() || !reviewed[key].trim() || reviewed[key].length > 255)
     || !allowed.has(action.field_id) || !Object.hasOwn(reviewed, action.field_id) || action.value !== reviewed[action.field_id]
     || typeof action.expected_before !== "string" || !Number.isSafeInteger(action.deadline) || Date.now() >= action.deadline || action.deadline - Date.now() > 10000
@@ -320,12 +350,22 @@ export async function razorpayAdapter(expected = null, action = null, identity =
     || Object.keys(expectedValues).length !== allowed.size || Object.keys(expectedValues).some((id) => !allowed.has(id)
       || typeof expectedValues[id] !== "string" || !expectedValues[id].isWellFormed() || expectedValues[id].length > 255)
     || !same(current.assistedValues, expectedValues)) return fail("Assisted values changed from the reviewed expected-before and filled prefix");
-  const control = document.getElementById(action.field_id);
+  const control = getControl(action.field_id);
   if (!current.assisted.includes(control) || current.assistedValues[action.field_id] !== action.expected_before) return fail("Reviewed control expected-before value changed");
   if (control.id === "email" && (!action.email_blur_disclosure || action.email_blur_disclosure.acknowledged !== true
     || action.email_blur_disclosure.event !== "blur" || action.email_blur_disclosure.recipient !== recipient
     || action.email_blur_disclosure.context_digest !== contextDigest)) return fail("Review and acknowledge the bound email validation disclosure before filling");
   if (version === 2 && (action.review_protocol_version !== 2 || action.control_type !== fieldMapping.find(({ id }) => id === action.field_id).type)) return fail("The typed control action changed");
+  if (["checkbox", "button"].includes(control.type)) {
+    const id = action.field_id;
+    if (control.type === "checkbox" && !["true", "false"].includes(action.value)
+      || control.type === "button" && (action.value !== String(Number(action.expected_before) + 1) || id !== `employment-add-${action.expected_before}`)) return fail("The exact reviewed employment action changed");
+    if (Date.now() >= action.deadline || action.cancelled === true) return fail("The employment action expired before disclosure");
+    control.click();
+    // Structural transitions deliberately end the approved sequence. A fresh
+    // inspection/review binds any newly added row or conditional end controls.
+    return { outcome: "unknown", field_id: id, reason: "The single reviewed employment click requires inspection. Review the current form before continuing; no automatic replay." };
+  }
   if (choices.has(control.id)) {
     const descriptor = choices.get(control.id), option = descriptor.options.find(({ value }) => value === action.value);
     if (!option || action.option_label !== option.label) return fail("The exact reviewed option changed");
@@ -341,6 +381,10 @@ export async function razorpayAdapter(expected = null, action = null, identity =
       const listId = control.getAttribute("aria-controls"), list = listId ? document.getElementById(listId) : null;
       if (list && list.getAttribute("role") === "listbox" && control.closest("div.select").contains(list)) {
         const options = [...list.querySelectorAll("[role=option]")].filter(visible);
+        if (control.id === "country" && options.some((node) => {
+          const flag = [...(node.querySelector(".iti__flag")?.classList || [])].find((name) => /^iti__[a-z]{2}$/.test(name));
+          return !descriptor.options.some(({ value, label }) => flag === `iti__${value}` && label === normalise(node.textContent || ""));
+        })) return { outcome: "unknown", field_id: control.id, reason: "The exact country flag/value changed" };
         const labelSet = new Set(options.map((node) => normalise(node.textContent || "")));
         if (labelSet.size !== options.length || options.some((node) => !descriptor.options.some(({ label }) => label === normalise(node.textContent || "")))) return { outcome: "unknown", field_id: control.id, reason: "The employer option list changed" };
         const matches = options.filter((node) => normalise(node.textContent || "") === option.label && node.getAttribute("aria-disabled") !== "true" && !node.disabled);
@@ -363,6 +407,10 @@ export async function razorpayAdapter(expected = null, action = null, identity =
   control.dispatchEvent(new Event("input", { bubbles: true }));
   control.dispatchEvent(new Event("change", { bubbles: true }));
   if (control.id === "email") control.dispatchEvent(new FocusEvent("blur"));
+  try {
+    const after = read();
+    if (after.serialized !== current.serialized || !same(after.assistedValues, { ...expectedValues, [control.id]: action.value })) return { outcome: "unknown", field_id: control.id, reason: "The filled value or conditional form changed after disclosure. Inspect and review again." };
+  } catch (error) { return { outcome: "unknown", field_id: control.id, reason: error.message }; }
   const manualHandoff = current.fields.filter((field) => field.required && (!allowed.has(field.id)
     || !Object.hasOwn(reviewed, field.id) || document.getElementById(field.id)?.value !== reviewed[field.id])).map(({ id, label, hidden }) => ({ id, label, hidden }));
   return { outcome: control.value === action.value ? "filled_only" : "unknown", field_id: control.id, manual_handoff: manualHandoff,

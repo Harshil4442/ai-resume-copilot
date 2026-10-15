@@ -1,0 +1,178 @@
+{
+  "status": "LOCAL_HOSTED_CONTROLS_VERIFIED_DISABLED_UNDEPLOYED",
+  "date": "2026-10-15",
+  "branch": "codex/application-form-completion",
+  "base_commit": "fa12e999b863123adfe70c99901b89cfaf5733fe",
+  "scope": "Known Razorpay/Greenhouse Phone Country and candidate-entered employment controls, synthetic owned SQL/crypto/browser fixtures only. Not full paid apply.",
+  "review_protocol_version": 2,
+  "wire_signature_protocol_version": 1,
+  "max_employment_rows": 5,
+  "draft_cursor_bound": "0..64",
+  "v1_authorized_action_bound": 7,
+  "v3_attachment_action_bound": 1,
+  "flag": {
+    "name": "BROWSER_ASSISTANCE_TYPED_CONTROLS_ENABLED",
+    "default": false
+  },
+  "f7_schema_target": "20261015_0018",
+  "undeployed_schema_draft": "20261015_0019",
+  "schema18_deployment_consumers_changed": false,
+  "public_observation": {
+    "opening": "4740333005",
+    "country_meaning": "Phone country-code selector; not citizenship or work authorization",
+    "country_option_count": 244,
+    "country_identity": "observed flag code plus exact visible country/calling-code label",
+    "month_identity": "canonical exact visible month label, not an unobserved employer API ID",
+    "values_selected": false,
+    "employment_rows_changed": false,
+    "files_uploaded": false,
+    "submission": false,
+    "live_conditional_callbacks_tested": false
+  },
+  "source_hashes": {
+    "backend/app/domains/browser_assistance/hosted.py": "c8d9c6da55c0474887d502bb34a147187becb94d1beadb30729bfe07f3a5363c",
+    "backend/app/domains/browser_assistance/hosted_country_options.json": "65390587b0d7a6306a4e783c196180bf239f7884e26fc0b4b0af70c5b71bc79d",
+    "backend/app/domains/browser_assistance/service.py": "e0b1c24d40e9ece7a170d26930dc91c6e7b1797ee1bdaf2aa8fbfbefefc37c86",
+    "backend/alembic/versions/20261015_0019_browser_typed_controls.py": "320126b218fde21a0ba37da7b0c08a12e6c4f163ed09f4b5aa7bc09d46e14f84",
+    "browser-companion/extension/razorpay-adapter.js": "8df0a8aae215cd06d3102a7a7581615379ae62c61f6c5759df56dec5316f267c",
+    "browser-companion/extension/assistance-runtime.js": "44f9004f777ab757c3d9cf0d9dc1bc7ffdf6bf53607534d3acc72df83098ab60",
+    "frontend/components/BrowserAssistanceReview.tsx": "a0f3bc87e0d16f8b66aa3365721bd0b4c54faf055662797b7188371bdc7fbf10",
+    "frontend/public/downloads/hirewiz-browser-companion-0.2.0.zip": "d7ac1d2abdfbcd0871aa1613b95f0cc2798249679d33101ddf49499679d463e8",
+    "frontend/public/downloads/hirewiz-browser-companion-0.3.0.zip": "088107e95a4570f829ed32292ca520c9d29fff2d64966ae8f5daa1840a40f618",
+    "frontend/public/downloads/hirewiz-browser-companion-0.4.0.zip": "880f4510dacf4b6ea40f741322c1560067c5296209ba8f81553522aa76d9ab5d",
+    "frontend/public/downloads/hirewiz-browser-companion-0.5.0.zip": "6a2cdd049d4049dc95a01219bba8c304881860dd45590e179877058b7370c97f"
+  },
+  "verification": [
+    {
+      "command": "pytest -q tests/test_browser_assistance_isolated.py tests/test_browser_assistance_postgres.py tests/test_browser_attachment_isolated.py tests/test_browser_attachment_postgres.py tests/test_browser_hosted_controls_isolated.py tests/test_browser_typed_migration_postgres.py tests/test_monetary_current_chain.py tests/test_rolling_release.py tests/test_monetary_schema_step_postgres.py tests/test_alembic_schema.py",
+      "cwd": "backend",
+      "passed": 283,
+      "failed": 0,
+      "skipped": 0,
+      "hosted_isolated_cases": 26,
+      "actual_postgresql_migration_cases": 14,
+      "warnings": [
+        "Existing passlib crypt deprecation",
+        "Existing Starlette TestClient httpx deprecation"
+      ]
+    },
+    {
+      "command": "npm test -- --maxWorkers=2",
+      "cwd": "frontend",
+      "files_passed": 37,
+      "passed": 665,
+      "failed": 0
+    },
+    {
+      "command": "npm run lint; npm run typecheck",
+      "cwd": "frontend",
+      "result": "PASS"
+    },
+    {
+      "command": "NEXT_TELEMETRY_DISABLED=1 NEXTAUTH_SECRET=<synthetic build-only value> NEXTAUTH_URL=https://www.hirewizhq.com npm run build -- --webpack",
+      "cwd": "frontend",
+      "result": "PASS",
+      "static_pages": 43
+    },
+    {
+      "command": "npm run test:assistance",
+      "cwd": "browser-companion",
+      "passed": 94,
+      "failed": 0,
+      "installed_mv3_cases": 33,
+      "adapter_cases": 47,
+      "runtime_cases": 14,
+      "concurrency": 1
+    },
+    {
+      "command": "npm test",
+      "cwd": "browser-companion",
+      "passed": 76,
+      "failed": 0
+    },
+    {
+      "command": "node --test tests/razorpay-fixture.test.js",
+      "cwd": "browser-companion",
+      "passed": 5,
+      "failed": 0
+    },
+    {
+      "command": "npm run test:browser",
+      "cwd": "browser-companion",
+      "passed": 14,
+      "failed": 0
+    },
+    {
+      "command": "ruff check app/domains app/routers/v1 app/routers/worker.py scripts and changed focused tests",
+      "cwd": "backend",
+      "result": "PASS"
+    },
+    {
+      "command": "mypy app/domains app/routers/v1 app/routers/worker.py",
+      "cwd": "backend",
+      "files": 121,
+      "result": "PASS"
+    },
+    {
+      "command": "scripts/export_openapi.py; npm run api:generate",
+      "result": "PASS; generated contracts synchronized"
+    },
+    {
+      "command": "two package-reviewed.py builds; package-reviewed.py --check; npm run check",
+      "cwd": "browser-companion",
+      "result": "PASS; both0.5.0 builds identical; exact runtime bytes verified"
+    },
+    {
+      "command": "git diff --check; frozen paths and retained ZIP diff",
+      "result": "PASS; F7 deployment paths/config and old archives unchanged"
+    }
+  ],
+  "invariants": [
+    "Existing v1/v2 reviews gain no new controls; hosted descriptors occur only in freshly inspected v2 draft behind default-false flag; v3 remains separate explicit attachment",
+    "One known form review can contain Phone Country and up to five exact candidate-entered employment rows, without artificial per-row approval screens",
+    "Owner-authenticated draft revision rechecks active device/source/application/flags/current digest/expiry; new approval digest and no TTL extension or sealed app.answers/package change",
+    "No citizenship/work-authorization/employment inference, no inheritance of stale hosted keys from native app.answers",
+    "Exact country flag/label, month label, year maxlength4, checkbox metadata, Add another target, current DOM/document/destination/answers and row order are bound",
+    "One durable action claim before dispatch; current-role or Add another click always stops for fresh inspection; newly added rows acquire no previous answers or approvals",
+    "Callback drift including the last native text field becomes unknown; lost or uncertain actions never silently replay",
+    "Durable erased terminal v1/v2/v3 counts retain7/64/1 bounds; original lease capped to original review expiry",
+    "No fee/reservation/receipt or employer submitted-state transition for fill-only assistance",
+    "F7/schema18 consumers remain frozen and explicitly refuse19; unsafe downgrade still refuses durable v2/v3 or cursor>7"
+  ],
+  "independent_review_corrections": [
+    "Exclude stale native app.answers hosted keys",
+    "Restore required manual controls when clearing a draft",
+    "Retain explicit Country/no-inference disclosure",
+    "Always stop after a current-role click",
+    "Retain durable protocol/count checks after payload erasure",
+    "Bind revision/approval response document, frame and full mapping",
+    "Bind second hosted application response to the original application/destination/version"
+  ],
+  "test_harness_notes": [
+    "New hosted fixture declares UTF-8 so exact non-ASCII country labels round-trip correctly",
+    "A default-parallel frontend run had timing failures under shared load; final bounded-worker665-test run passed",
+    "A direct adapter positive test exhausted its synthetic1.5-second deadline under concurrent PostgreSQL/frontend/browser load. The helper now issues a fresh9-second test action within the existing10-second product bound; expiry/overlong/constructor-race tests remain intact. Final bounded-concurrency94-case run passed."
+  ],
+  "postgresql": {
+    "image": "postgres:17-alpine",
+    "owned_container": "hirewiz-hosted-controls-pg-20261015",
+    "address": "127.0.0.1:55433",
+    "database": "hirewiz_admission_test",
+    "remaining_owned_test_schemas_before_stop": 0,
+    "container_stopped_and_removed": true
+  },
+  "provider_writes": 0,
+  "production_mutations": 0,
+  "real_candidate_data_used": false,
+  "real_candidate_portal_values_filled_or_files_uploaded": false,
+  "pushed_merged_or_deployed": false,
+  "full_paid_application_complete": false,
+  "remaining": [
+    "Later separately admitted schema19 release and native/browser rollout",
+    "Actual employer conditional compatibility, permissions/authentication and upload acknowledgement/recipient acceptance",
+    "Unknown required controls, CAPTCHA and login",
+    "Exact final-submit approval and one-shot submission",
+    "Genuine employer receipt/status reconciliation and paid-application settlement"
+  ],
+  "report": "docs/delivery/BROWSER_HOSTED_CONTROLS_2026-10-15.md"
+}

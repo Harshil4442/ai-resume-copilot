@@ -28,7 +28,7 @@ from sqlalchemy.orm import Session
 from ... import models as core
 from ..employer import models as employer
 from ..employer.service import _package_digest
-from . import attachments
+from . import attachments, hosted
 from .models import BrowserAssistanceDevice as Device
 from .models import BrowserAssistanceRequest as RequestRecord
 from .models import BrowserAssistanceReview as Review
@@ -45,7 +45,7 @@ FIELDS = (
 FIELD_IDS = frozenset(field[0] for field in FIELDS)
 FIELD_LABELS = frozenset(field[1] for field in FIELDS)
 CHOICE_LABELS = ("Current Career Stage", "Gender", "Current Industry", "Current Designation")
-MAX_REVIEW_FIELDS = 12
+MAX_REVIEW_FIELDS = hosted.MAX_ACTIONS
 
 
 def typed_controls_enabled() -> bool:
@@ -222,7 +222,7 @@ def _application(db: Session, review_or_id, user_id: int):
     return app, posting, artifact
 
 
-def field_mapping(app, review_protocol_version: int = 1) -> list[dict]:
+def field_mapping(app, review_protocol_version: int = 1, hosted_rows: object = None) -> list[dict]:
     """Exact job-specific semantics; v1 approvals never acquire v2 controls."""
     require(type(review_protocol_version) is int and review_protocol_version in {1, 2, 3})
     if review_protocol_version == 3:
@@ -231,7 +231,7 @@ def field_mapping(app, review_protocol_version: int = 1) -> list[dict]:
     require(review_protocol_version == 1 or typed_controls_enabled(), 503)
     fields = app.form.get("fields", [])
     require(isinstance(fields, list) and len(fields) <= 200)
-    mapping = []
+    mapping: list[dict] = []
     labels = set()
     identities = set()
     base = {"First Name": "first_name", "Last Name": "last_name", "Email": "email"}
@@ -266,9 +266,16 @@ def field_mapping(app, review_protocol_version: int = 1) -> list[dict]:
         if options is not None:
             descriptor["options"] = options
         mapping.append(descriptor)
-    require(set(base) <= labels and 3 <= len(mapping) <= (7 if review_protocol_version == 1 else MAX_REVIEW_FIELDS))
+    require(set(base) <= labels and 3 <= len(mapping) <= (7 if review_protocol_version == 1 else 12))
     order = {label: index for index, label in enumerate([*(label for _, label in FIELDS), "Phone", *CHOICE_LABELS])}
-    return sorted(mapping, key=lambda field: order[field["label"]])
+    result = sorted(mapping, key=lambda field: order[field["label"]])
+    if hosted_rows is not None:
+        require(review_protocol_version == 2 and typed_controls_enabled(), 503)
+        extra = hosted.mapping(hosted_rows)
+        require(not identities.intersection(field["id"] for field in extra))
+        result.extend(extra)
+        require(len(result) <= MAX_REVIEW_FIELDS)
+    return result
 
 
 def candidate(db: Session, user_id: int, operation: str, request: CandidateRequest) -> dict:
@@ -293,13 +300,21 @@ def candidate(db: Session, user_id: int, operation: str, request: CandidateReque
         review = db.query(Review).filter_by(id=identity, user_id=user_id).with_for_update().first()
         require(review is not None, 404)
         _expire(review)
-        if operation == "approve":
+        if operation == "revise":
+            require(request.confirmed is False and request.review_digest == review.review_digest
+                    and review.state == "draft" and review.review_protocol_version == 2 and typed_controls_enabled())
+            require(db.query(Device.id).filter_by(id=review.device_id, user_id=user_id, state="active").first() is not None)
+            _application(db, review, user_id)
+            review.payload = hosted.revise(review.payload, request.hosted_answers)
+            review.review_digest = digest(review.payload)
+        elif operation == "approve":
             device = db.query(Device).filter_by(id=review.device_id, user_id=user_id, state="active").first()
             require(device is not None and review.state == "draft" and bool(review.payload))
             _application(db, review, user_id)
             version = review.review_protocol_version
             require(version == 1 or version == 2 and typed_controls_enabled() or version == 3 and attachments.enabled(), 503)
             require(request.confirmed is True and request.review_digest == review.review_digest)
+            require(bool(review.payload.get("fields")) or version == 3)
             review.state, review.approved_at = "approved", now()
         elif operation == "cancel":
             require(request.confirmed is True)
@@ -317,7 +332,9 @@ def _inspection(body: dict, app, posting, artifact) -> dict:
     require(isinstance(inspection, dict))
     values = inspection.get("assisted_values")
     version = inspection.get("review_protocol_version", 1)
-    mapping = field_mapping(app, version)
+    rows = inspection.get("hosted_rows")
+    require(rows is None or version == 2)
+    mapping = field_mapping(app, version, rows)
     identities = {field["id"] for field in mapping}
     require(isinstance(values, dict) and set(values) == identities)
     require(inspection.get("outcome") == "inspected" and inspection.get("origin") == ORIGIN
@@ -329,8 +346,10 @@ def _inspection(body: dict, app, posting, artifact) -> dict:
     require(all(isinstance(values[field], str) and len(values[field]) <= 255 for field in identities))
     if version == 3:
         return attachments.review_payload(inspection, app, posting, artifact, mapping)
-    answers = {field["id"]: app.answers[field["id"]] for field in mapping if isinstance(app.answers.get(field["id"]), str) and app.answers[field["id"]]}
-    require(bool(answers) and all(len(value) <= 255 for value in answers.values()))
+    hosted_ids = {field["id"] for field in hosted.mapping(rows)} if rows is not None else set()
+    answers = {field["id"]: app.answers[field["id"]] for field in mapping if field["id"] not in hosted_ids
+               and isinstance(app.answers.get(field["id"]), str) and app.answers[field["id"]]}
+    require((bool(answers) or rows is not None) and all(len(value) <= 255 for value in answers.values()))
     fields = []
     for field in mapping:
         option_labels = {option["value"]: option["label"] for option in field.get("options", [])}
@@ -343,7 +362,7 @@ def _inspection(body: dict, app, posting, artifact) -> dict:
         if field["type"] == "combobox":
             entry.update(value_label=option_labels[entry["value"]], expected_before_label=option_labels.get(entry["expected_before"], ""))
         fields.append(entry)
-    require(bool(fields))
+    require(bool(fields) or rows is not None)
     descriptor = {"sha256": artifact.sha256, "filename": artifact.filename, "media_type": artifact.media_type, "size_bytes": artifact.size_bytes}
     approved_answers = {field["id"]: field["value"] for field in fields}
     payload = {"application_id": app.id, "package_digest": app.package_digest, "target_url": posting.apply_url,
@@ -354,13 +373,18 @@ def _inspection(body: dict, app, posting, artifact) -> dict:
                "disclosures": ["Filling can disclose or autosave the exact approved answers before submission.",
                    "Email blur can send the approved email to https://email-address-validator.us.greenhouse.io/address/validate.",
                    "Country, phone, employment, custom choices, sensitive answers, file attachment, CAPTCHA and final submission remain yours."]}
+    if rows is not None:
+        extra = hosted.mapping(rows)
+        payload["hosted"] = hosted.controls(inspection, extra)
     if version == 2:
         payload["review_protocol_version"] = 2
-        payload["disclosures"][-1] = "Only your explicitly saved phone and supported choices can be filled. Gender and other personal answers are never inferred. Country, employment, unknown choices, file attachment, CAPTCHA and final submission remain yours."
+        payload["disclosures"][-1] = "Only your explicitly saved phone and supported choices can be filled. Gender and other personal answers are never inferred. Only controls listed in this exact review are authorized. Unknown choices, file attachment, CAPTCHA and final submission remain yours."
         payload["disclosures"].append("Opening a reviewed dropdown and selecting its exact option can disclose or autosave that choice before final submission.")
         payload["manual_fields"] = [*payload["manual_fields"], *[
             {key: field[key] for key in ("id", "label", "required")} for field in mapping
             if field["required"] and field["id"] not in answers and not values[field["id"]]]]
+    if rows is not None:
+        payload["disclosures"].append("Country selects the Phone country code only. It does not state citizenship or work authorization. Employment is entered by you and is never invented or inferred. Add another and current-role changes can alter the form; fresh inspection and approval are required before continuing.")
     require(isinstance(payload["manual_fields"], list) and len(payload["manual_fields"]) <= 128)
     require(all(isinstance(field, dict) and set(field) == {"id", "label", "required"}
                 and isinstance(field["id"], str) and len(field["id"]) <= 160
@@ -426,13 +450,15 @@ def device(db: Session, origin: str, request: DeviceRequest) -> dict | attachmen
     else:
         require(record.state == "active" and record.user_id is not None, 403)
         if request.operation == "application":
-            require(set(request.body) <= {"application_id", "review_protocol_version"} and isinstance(request.body.get("application_id"), str))
+            require(set(request.body) <= {"application_id", "review_protocol_version", "hosted_rows"} and isinstance(request.body.get("application_id"), str))
             requested_version = request.body.get("review_protocol_version", 1)
             require(type(requested_version) is int and requested_version in {1, 2, 3})
             require(requested_version != 3 or attachments.enabled(), 503)
             version = 3 if requested_version == 3 else 2 if requested_version == 2 and typed_controls_enabled() else 1
             app, posting, _ = _application(db, request.body["application_id"], record.user_id)
-            response = {"application_id": app.id, "target_url": posting.apply_url, "field_mapping": field_mapping(app, version)}
+            response = {"application_id": app.id, "target_url": posting.apply_url, "field_mapping": field_mapping(app, version, request.body.get("hosted_rows"))}
+            if version == 2:
+                response["hosted_controls_available"] = True
             if version > 1:
                 response["review_protocol_version"] = version
         elif request.operation == "inspect":
@@ -483,7 +509,8 @@ def _action(db: Session, record: Device, request: DeviceRequest) -> dict:
                 and body["document_id"] == review.payload["document_id"])
         require(db.query(RequestRecord.id).filter_by(review_id=review.id, field_index=index).first() is None)
         action_id = str(uuid4())
-        expires = now() + timedelta(milliseconds=LEASE_MS)
+        expires = min(_aware(review.expires_at), now() + timedelta(milliseconds=LEASE_MS))
+        require(expires > now() and enabled() and (version == 1 or typed_controls_enabled()))
         field = review.payload["fields"][index]
         payload = {"protocol_version": 1, "action_id": action_id, "review_id": review.id, "device_id": record.id,
                    "application_id": review.application_id, "package_digest": review.package_digest,

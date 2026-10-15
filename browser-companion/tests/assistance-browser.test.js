@@ -10,6 +10,7 @@ import { createInterface } from "node:readline";
 import { createHash } from "node:crypto";
 import { chromium, expect } from "@playwright/test";
 import { fixtureHtml } from "../fixtures/razorpay/form.js";
+import { hostedFixtureHtml } from "../fixtures/razorpay/hosted-form.js";
 import { typedFixtureHtml } from "../fixtures/razorpay/typed-form.js";
 
 const ROOT = new URL("../../", import.meta.url);
@@ -19,7 +20,7 @@ const EXTENSION = "pnjmegppacleipajnifjmbcopjjffklb";
 const message = (popup, value) => popup.evaluate((input) => chrome.runtime.sendMessage(input), value);
 async function fixture({ granted = true, loseBegin = false, typed = false, unknownOption = false, conditional = false, tamperChoiceLease = false,
   attachment = false, tamperBinary = false, loseArtifact = false, loseAttachmentOutcome = false, attachmentFault = null, tamperAttachmentLease = false,
-  pauseArtifact = false, attachmentConditional = false } = {}) {
+  pauseArtifact = false, attachmentConditional = false, hosted = false, hostedRows = 1, wrongCountryFlag = false, currentRoleConditional = true } = {}) {
   const directory = await mkdtemp(`${tmpdir()}/hirewiz-reviewed-assistance-`);
   const pending = []; const requests = []; const leases = []; const uploads = []; let errors = ""; let context;
   let releaseArtifact; let signalArtifact;
@@ -37,8 +38,8 @@ async function fixture({ granted = true, loseBegin = false, typed = false, unkno
     python.stdin.write(`${JSON.stringify(value)}\n`);
   });
   try {
-    const typedApplication = attachment ? await bridge({ operation: "configure_attachment" }) : typed ? await bridge({ operation: "configure_typed" }) : null;
-    if (typed || attachment) assert.equal(typedApplication.status, 200);
+    const typedApplication = hosted ? await bridge({ operation: "configure_hosted", rows: hostedRows }) : attachment ? await bridge({ operation: "configure_attachment" }) : typed ? await bridge({ operation: "configure_typed" }) : null;
+    if (typed || attachment || hosted) assert.equal(typedApplication.status, 200);
     const extension = `${directory}/extension`;
     await cp(new URL("../extension/", import.meta.url), extension, { recursive: true });
     const manifest = JSON.parse(await readFile(`${extension}/manifest.json`, "utf8"));
@@ -56,7 +57,7 @@ async function fixture({ granted = true, loseBegin = false, typed = false, unkno
       if (url.startsWith("chrome-extension:")) return route.continue();
       requests.push({ url, method: request.method(), origin: request.headers().origin ?? null });
       if (url === PORTAL && request.method() === "GET") {
-        const html = typed || attachment ? typedFixtureHtml(typedApplication.body.field_mapping, PORTAL, { unknownOption, conditional, attachmentUpload: attachment, attachmentConditional })
+        const html = hosted ? hostedFixtureHtml(typedApplication.body.field_mapping, PORTAL, { extraConditional: conditional, wrongCountryFlag, currentRoleConditional }) : typed || attachment ? typedFixtureHtml(typedApplication.body.field_mapping, PORTAL, { unknownOption, conditional, attachmentUpload: attachment, attachmentConditional })
           : fixtureHtml().replace(/<main[^>]*>/, "<main>").replace(/<script type="module">[\s\S]*?<\/script>/,
           `<script>window.events={input:[],change:[],blur:[],submit:0};document.querySelector('form').addEventListener('input',e=>events.input.push(e.target.id));document.querySelector('form').addEventListener('change',e=>events.change.push(e.target.id));document.querySelector('#email').addEventListener('blur',()=>events.blur.push('email'));document.querySelector('form').addEventListener('submit',e=>{e.preventDefault();events.submit++});</script>`)
           .replace('action="/fixture/razorpay-like/apply"', `action="${PORTAL}"`);
@@ -405,4 +406,75 @@ test("installed MV3 v3 lost selection outcome acknowledgement never selects/uplo
     const audit = (await f.bridge({ operation: "audit", detailed: true, attachment: true })).body;
     assert.equal(audit.review_state, "filled"); assert.equal(audit.delivery_count, 1); assert.equal(audit.receipt, null);
   } finally { await f.close(); }
+});
+
+function hostedAnswers(rows = 1) {
+  return Object.fromEntries([['country','in'],...Array.from({length:rows},(_,i)=>[
+    [`company-name-${i}`,`Explicit synthetic company ${i}`],[`title-${i}`,'Synthetic engineer'],
+    [`start-date-month-${i}`,'January'],[`start-date-year-${i}`,'2020'],
+    [`end-date-month-${i}`,'December'],[`end-date-year-${i}`,'2022'],[`current-role-${i}_1`,'false']]).flat()]);
+}
+async function reviseHosted(f, review, values) {
+  const result = await f.bridge({operation:'candidate',action:'revise',body:{identity:review.id,review_digest:review.review_digest,hosted_answers:values}});
+  assert.equal(result.status,200); return result.body;
+}
+
+test('installed MV3 one review fills two exact employment rows and Phone Country through real SQL/crypto', async()=>{
+  const f=await fixture({hosted:true,hostedRows:2});try{
+    await f.connect();const draft=await f.prepare();assert.equal(draft.payload.hosted.rows.length,2);assert.equal(draft.payload.fields.length,12);
+    const premature=await message(f.popup,{type:'assistance_fill'});assert.equal(premature.ok,false);assert.deepEqual(await f.portal.evaluate(()=>events.input),[]);
+    const review=await reviseHosted(f,draft,hostedAnswers(2));assert.equal(review.payload.fields.length,25);assert.notEqual(review.review_digest,draft.review_digest);assert.equal(review.expires_at_ms,draft.expires_at_ms);
+    await f.approve(review);const result=await message(f.popup,{type:'assistance_fill'});assert.equal(result.ok,true,result.error);assert.equal(result.value.phase,'filled');assert.equal(result.value.filled_count,25);
+    assert.equal(f.leases.length,25);const events=await f.portal.evaluate(()=>window.events);assert.equal(events.submit,0);assert.equal(events.add,0);assert.deepEqual(events.current,[]);
+    assert.deepEqual(events.choice.find(value=>value.id==='country'),{id:'country',value:'in',label:'India +91'});
+    assert.equal(await f.portal.locator('#company-name-1').inputValue(),'Explicit synthetic company 1');assert.equal(await f.portal.locator('#start-date-year-1').inputValue(),'2020');
+    assert.equal((await f.bridge({operation:'audit',detailed:true})).body.receipt,null);assert.equal((await f.bridge({operation:'audit'})).body.charged_credits,0);
+    const stored=await f.worker.evaluate(async()=> (await chrome.storage.local.get('assistance_checkpoint')).assistance_checkpoint);assert.equal(stored.filled_count,25);assert.equal(Object.hasOwn(stored,'answers'),false);
+  }finally{await f.close();}
+});
+
+test('installed MV3 current role changes stop for fresh inspection before any newly conditional action',async()=>{
+  const f=await fixture({hosted:true});try{
+    await f.connect();const draft=await f.prepare();const values=hostedAnswers();delete values['end-date-month-0'];delete values['end-date-year-0'];values['current-role-0_1']='true';values['employment-add-1']='2';
+    const review=await reviseHosted(f,draft,values);await f.approve(review);const result=await message(f.popup,{type:'assistance_fill'});assert.equal(result.ok,true,result.error);assert.equal(result.value.phase,'unknown');
+    assert.equal(await f.portal.locator('#current-role-0_1').isChecked(),true);assert.equal(await f.portal.locator('#end-date-year-0').count(),0);assert.equal(await f.portal.evaluate(()=>events.add),0);
+    const before=f.leases.length;assert.equal((await message(f.popup,{type:'assistance_fill'})).ok,false);assert.equal(f.leases.length,before);
+    await f.popup.locator('#assistance-cancel').click();await expect(f.popup.locator('#assistance-prepare')).toBeEnabled();const fresh=await f.prepare();assert.deepEqual(fresh.payload.hosted.rows,[{index:0,current_role:true}]);assert.equal(fresh.payload.field_mapping.some(field=>field.id==='end-date-year-0'),false);assert.equal(fresh.payload.hosted.draft_answers,undefined);
+  }finally{await f.close();}
+});
+
+test('installed MV3 Add another is one exact approved click and new row requires a fresh review',async()=>{
+  const f=await fixture({hosted:true});try{
+    await f.connect();const draft=await f.prepare();const review=await reviseHosted(f,draft,{...hostedAnswers(),'employment-add-1':'2'});await f.approve(review);
+    const result=await message(f.popup,{type:'assistance_fill'});assert.equal(result.ok,true,result.error);assert.equal(result.value.phase,'unknown');assert.equal(await f.portal.evaluate(()=>events.add),1);
+    assert.equal(await f.portal.locator('#company-name-1').inputValue(),'');assert.equal(await f.portal.locator('#title-1').inputValue(),'');const count=f.leases.length;
+    assert.equal((await message(f.popup,{type:'assistance_fill'})).ok,false);assert.equal(f.leases.length,count);assert.equal(await f.portal.evaluate(()=>events.add),1);
+    await f.popup.locator('#assistance-cancel').click();await expect(f.popup.locator('#assistance-prepare')).toBeEnabled();const fresh=await f.prepare();assert.equal(fresh.payload.hosted.rows.length,2);assert.equal(fresh.payload.hosted.values['company-name-1'],'');assert.notEqual(fresh.payload.context_digest,review.payload.context_digest);
+  }finally{await f.close();}
+});
+
+test('installed MV3 country code tamper opens once but selects no unapproved country or employment',async()=>{
+  const f=await fixture({hosted:true,wrongCountryFlag:true});try{
+    await f.connect();const review=await reviseHosted(f,await f.prepare(),hostedAnswers());await f.approve(review);const result=await message(f.popup,{type:'assistance_fill'});
+    assert.equal(result.ok,true,result.error);assert.equal(result.value.phase,'unknown');assert.equal(await f.portal.locator('#company-name-0').inputValue(),'');
+    assert.equal(await f.portal.evaluate(()=>events.choice.some(choice=>choice.id==='country')),false);assert.equal(await f.portal.evaluate(()=>events.opens.filter(id=>id==='country').length),1);
+    assert.equal((await message(f.popup,{type:'assistance_fill'})).ok,false);
+  }finally{await f.close();}
+});
+
+for(const kind of ['manual-employment-change','changed-employment-year-bound','changed-add-target'])test(`installed MV3 ${kind} cancels exact review before first disclosure`,async()=>{
+  const f=await fixture({hosted:true});try{
+    await f.connect();const review=await reviseHosted(f,await f.prepare(),{...hostedAnswers(),'employment-add-1':'2'});await f.approve(review);
+    await f.portal.evaluate(kind=>{if(kind==='manual-employment-change')document.getElementById('company-name-0').value='Unreviewed edit';if(kind==='changed-employment-year-bound')document.getElementById('start-date-year-0').maxLength=5;if(kind==='changed-add-target')document.querySelector('.add-another-button').textContent='Apply now';},kind);
+    assert.equal((await message(f.popup,{type:'assistance_fill'})).ok,false);assert.equal(f.leases.length,0);assert.deepEqual(await f.portal.evaluate(()=>events.input),[]);assert.equal(await f.portal.evaluate(()=>events.add),0);
+  }finally{await f.close();}
+});
+
+test('installed MV3 current-role toggle always ends the sequence even with no conditional DOM callback',async()=>{
+  const f=await fixture({hosted:true,currentRoleConditional:false});try{
+    await f.connect();const review=await reviseHosted(f,await f.prepare(),{'current-role-0_1':'true','employment-add-1':'2'});await f.approve(review);
+    const result=await message(f.popup,{type:'assistance_fill'});assert.equal(result.ok,true,result.error);assert.equal(result.value.phase,'unknown');
+    assert.equal(await f.portal.locator('#current-role-0_1').isChecked(),true);assert.equal(await f.portal.locator('#end-date-year-0').count(),1);assert.equal(await f.portal.evaluate(()=>events.add),0);
+    assert.equal((await message(f.popup,{type:'assistance_fill'})).ok,false);assert.equal(await f.portal.evaluate(()=>events.current.length),1);
+  }finally{await f.close();}
 });

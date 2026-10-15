@@ -38,7 +38,7 @@ class BrowserAssistanceReview(Base):
     __tablename__ = "browser_assistance_reviews"
     __table_args__ = (
         CheckConstraint("state IN ('draft','approved','running','filled','unknown','cancelled','expired')", name="ck_browser_review_state"),
-        CheckConstraint("next_index BETWEEN 0 AND 12", name="ck_browser_review_index"),
+        CheckConstraint("next_index BETWEEN 0 AND 64", name="ck_browser_review_index"),
         CheckConstraint("review_protocol_version BETWEEN 1 AND 3", name="ck_browser_review_protocol"),
         Index("ix_browser_review_owner_application", "user_id", "application_id", "created_at"),
         Index("ix_browser_review_expiry", "expires_at"),

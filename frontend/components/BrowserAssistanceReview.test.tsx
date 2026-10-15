@@ -5,6 +5,7 @@ import { signIn } from "next-auth/react";
 import { accountMutationHeaders } from "../lib/accountTransportClient";
 import { apiDownload } from "../lib/api";
 import BrowserAssistanceReview from "./BrowserAssistanceReview";
+import countryOptions from "../../backend/app/domains/browser_assistance/hosted_country_options.json";
 
 vi.mock("next-auth/react", () => ({ signIn: vi.fn() }));
 vi.mock("../lib/accountTransportClient", () => ({ accountMutationHeaders: vi.fn() }));
@@ -45,6 +46,40 @@ function attachmentReview(state = "draft") {
       manual_fields: [{ id: "country", label: "Country", required: true }],
       disclosures: ["Selecting the file can upload it before final submission; the storage recipient is not verified."] } };
 }
+type HostedControl = { id: string; label: string; type: string; required: boolean; options?: { value: string; label: string }[] };
+type HostedField = { id: string; label: string; type: string; value: string; expected_before: string;
+  required?: boolean; options?: { value: string; label: string }[]; value_label?: string; expected_before_label?: string };
+const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"].map((value) => ({ value, label: value }));
+function hostedReview(rows = [{ index: 0, current_role: false }], withBaseActions = false) {
+  const base = typedReview();
+  const controls: HostedControl[] = [{ id: "country", label: "Country", type: "combobox", required: true, options: structuredClone(countryOptions) }];
+  for (const { index, current_role } of rows) {
+    const parts = [["company-name", "Company name", "text"], ["title", "Title", "text"], ["start-date-month", "Start date month", "combobox"], ["start-date-year", "Start date year", "text"],
+      ...current_role ? [] : [["end-date-month", "End date month", "combobox"], ["end-date-year", "End date year", "text"]], ["current-role", "Current role", "checkbox"]];
+    for (const [name, label, type] of parts) controls.push({ id: `${name}-${index}${type === "checkbox" ? "_1" : ""}`, label, type, required: type !== "checkbox", ...(type === "combobox" ? { options: months } : {}) });
+  }
+  if (rows.length < 5) controls.push({ id: `employment-add-${rows.length}`, label: "Add another", type: "button", required: false });
+  const values: Record<string, string> = Object.fromEntries(controls.map(({ id, type }) => [id, type === "button" ? String(rows.length) : type === "checkbox" ? String(rows[Number(id.split("-").at(-1)!.split("_")[0])].current_role) : id === "country" ? "us" : ""]));
+  return { ...base, review_protocol_version: 2, payload: { ...base.payload, fields: (withBaseActions ? base.payload.fields : []) as HostedField[],
+    document_id: "owned-chrome-document", frame_id: 0, field_mapping: [
+      { id: "first_name", label: "First Name", type: "text", required: true }, { id: "last_name", label: "Last Name", type: "text", required: true },
+      { id: "email", label: "Email", type: "text", required: true }, ...controls],
+    manual_fields: [...base.payload.manual_fields.filter(({ id }) => !controls.some((control) => control.id === id)),
+      ...controls.filter(({ id, required }) => required && !values[id]).map(({ id, label, required }) => ({ id, label, required }))],
+    reviewed_answers: Object.fromEntries((withBaseActions ? base.payload.fields : []).map(({ id, value }) => [id, value])) as Record<string, string>, hosted: { rows, controls, values, draft_answers: {} as Record<string, string> } } };
+}
+function revisedHostedReview(base: ReturnType<typeof hostedReview>, answers: Record<string, string>) {
+  const result = structuredClone(base);
+  result.review_digest = "1".repeat(64); result.payload.reviewed_answers_sha256 = "2".repeat(64); result.payload.hosted.draft_answers = answers;
+  const { controls, values } = result.payload.hosted;
+  result.payload.fields = [...result.payload.fields.filter(({ id }) => !controls.some((control) => control.id === id)),
+    ...controls.filter(({ id }) => Object.hasOwn(answers, id) && answers[id] !== values[id]).map((control) => ({ ...control, value: answers[control.id], expected_before: values[control.id],
+      ...control.type === "combobox" ? { value_label: control.options!.find(({ value }) => value === answers[control.id])!.label, expected_before_label: control.options!.find(({ value }) => value === values[control.id])?.label ?? "" } : {} }))];
+  result.payload.reviewed_answers = Object.fromEntries(result.payload.fields.map(({ id, value }) => [id, value]));
+  result.payload.manual_fields = [...result.payload.manual_fields.filter(({ id }) => !controls.some((control) => control.id === id)),
+    ...controls.filter(({ id, required }) => required && !values[id] && !Object.hasOwn(answers, id)).map(({ id, label, required }) => ({ id, label, required }))];
+  return result;
+}
 beforeEach(() => { vi.resetAllMocks(); vi.stubGlobal("fetch", request); vi.mocked(accountMutationHeaders).mockResolvedValue({ "Content-Type": "application/json", "X-Hirewiz-Account-CSRF": "9".repeat(64) }); vi.mocked(apiDownload).mockResolvedValue(); });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.useRealTimers(); });
 async function loadReview() {
@@ -56,6 +91,194 @@ async function acceptReview() {
   await userEvent.click(screen.getByRole("button", { name: "Download exact review file" }));
   await userEvent.click(screen.getByRole("checkbox"));
 }
+
+describe("candidate-entered hosted country and employment review", () => {
+  async function load(result: ReturnType<typeof hostedReview>) {
+    request.mockResolvedValueOnce(Response.json(result));
+    render(<BrowserAssistanceReview deviceId={null} reviewId={identity} applicationId={application} />);
+    await userEvent.click(screen.getByRole("button", { name: "Load exact application review" }));
+    await screen.findByRole("button", { name: "Save exact answers" });
+  }
+  const acceptance = () => screen.getByRole("checkbox", { name: /I reviewed the exact file, destination and answers/ });
+
+  it("saves only explicit country and employment entries, then separately approves the refreshed exact digest", async () => {
+    const initial = hostedReview();
+    const answers = { country: "in", "company-name-0": "Owned fixture company", "title-0": "Engineer", "start-date-month-0": "January", "start-date-year-0": "2020", "end-date-month-0": "March", "end-date-year-0": "2024" };
+    const revised = revisedHostedReview(initial, answers);
+    await load(initial);
+    request.mockResolvedValueOnce(Response.json(revised)).mockResolvedValueOnce(Response.json({ ...revised, state: "approved" }));
+    expect(screen.getByText(/not citizenship or work authorization/)).toBeVisible();
+    expect(screen.getByLabelText("Country (phone country code)")).toHaveValue("");
+    expect(screen.getByLabelText("Company name · employment 1")).toHaveValue("");
+    expect(screen.getByLabelText("Current role · employment 1")).toHaveValue("");
+    expect(screen.getByRole("button", { name: "Save exact answers" })).toBeDisabled();
+    await userEvent.click(screen.getByRole("button", { name: "Download exact review file" }));
+    expect(acceptance()).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Approve reviewed form assistance" })).toBeDisabled();
+    await userEvent.selectOptions(screen.getByLabelText("Country (phone country code)"), "in");
+    fireEvent.change(screen.getByLabelText("Company name · employment 1"), { target: { value: answers["company-name-0"] } });
+    fireEvent.change(screen.getByLabelText("Title · employment 1"), { target: { value: answers["title-0"] } });
+    await userEvent.selectOptions(screen.getByLabelText("Start date month · employment 1"), "January");
+    fireEvent.change(screen.getByLabelText("Start date year · employment 1"), { target: { value: "2020" } });
+    await userEvent.selectOptions(screen.getByLabelText("End date month · employment 1"), "March");
+    fireEvent.change(screen.getByLabelText("End date year · employment 1"), { target: { value: "2024" } });
+    expect(request).toHaveBeenCalledTimes(1); expect(acceptance()).toBeDisabled();
+    await userEvent.click(screen.getByRole("button", { name: "Save exact answers" }));
+    expect(await screen.findByText(/Exact answers saved for this review/)).toBeVisible();
+    expect(JSON.parse(request.mock.calls[1][1].body)).toEqual({ identity, review_digest: initial.review_digest, hosted_answers: answers });
+    expect(request.mock.calls[1][0]).toBe("/api/browser-assistance/candidate/revise");
+    expect(acceptance()).not.toBeChecked(); expect(acceptance()).toBeEnabled();
+    expect(screen.getByText("Owned fixture company")).toBeVisible();
+    await userEvent.click(acceptance()); await userEvent.click(screen.getByRole("button", { name: "Approve reviewed form assistance" }));
+    expect(await screen.findByText(/Form assistance approved/)).toBeVisible();
+    expect(JSON.parse(request.mock.calls[2][1].body)).toEqual({ identity, confirmed: true, review_digest: revised.review_digest });
+    expect(request.mock.calls.map(([url]) => url)).toEqual(["/api/browser-assistance/candidate/review", "/api/browser-assistance/candidate/revise", "/api/browser-assistance/candidate/approve"]);
+    expect(apiDownload).toHaveBeenCalledTimes(1);
+  });
+
+  it("clears existing acceptance immediately on an unsaved edit and requires a separate save before approval", async () => {
+    await load(hostedReview(undefined, true));
+    await userEvent.click(screen.getByRole("button", { name: "Download exact review file" }));
+    await userEvent.click(acceptance()); expect(acceptance()).toBeChecked();
+    fireEvent.change(screen.getByLabelText("Company name · employment 1"), { target: { value: "Owned employer" } });
+    expect(acceptance()).not.toBeChecked(); expect(acceptance()).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Approve reviewed form assistance" })).toBeDisabled();
+    expect(screen.getByText(/Save your changed answers/)).toBeVisible(); expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it("saves an explicit no-op country choice as a zero-action draft and keeps approval unavailable", async () => {
+    const initial = hostedReview(); await load(initial);
+    request.mockResolvedValueOnce(Response.json(revisedHostedReview(initial, { country: "us" })));
+    await userEvent.selectOptions(screen.getByLabelText("Country (phone country code)"), "us");
+    await userEvent.click(screen.getByRole("button", { name: "Save exact answers" }));
+    expect(await screen.findByText(/Exact answers saved for this review/)).toBeVisible();
+    expect(screen.getByText(/No changed answers to fill/)).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "Download exact review file" }));
+    expect(acceptance()).toBeDisabled(); expect(screen.getByRole("button", { name: "Approve reviewed form assistance" })).toBeDisabled();
+    expect(JSON.parse(request.mock.calls[1][1].body).hosted_answers).toEqual({ country: "us" }); expect(request).toHaveBeenCalledTimes(2);
+  });
+
+  it("clears a saved last action and restores its required manual field without extending the review", async () => {
+    const initial = revisedHostedReview(hostedReview(), { "company-name-0": "Owned employer" }); await load(initial);
+    const revised = revisedHostedReview(initial, {}); revised.review_digest = "3".repeat(64);
+    request.mockResolvedValueOnce(Response.json(revised));
+    expect(screen.queryByText("Company name", { selector: "li" })).toBeNull();
+    await userEvent.clear(screen.getByLabelText("Company name · employment 1"));
+    await userEvent.click(screen.getByRole("button", { name: "Save exact answers" }));
+    expect(await screen.findByText(/Exact answers saved for this review/)).toBeVisible();
+    expect(screen.getByText("Company name", { selector: "li" })).toBeVisible();
+    expect(screen.getByText(/No changed answers to fill/)).toBeVisible();
+    expect(acceptance()).toBeDisabled(); expect(JSON.parse(request.mock.calls[1][1].body).hosted_answers).toEqual({});
+    expect(revised.expires_at_ms).toBe(initial.expires_at_ms); expect(request).toHaveBeenCalledTimes(2);
+  });
+
+  it("lets the candidate request a current-role toggle or Add only as reviewed actions, with conditional controls requiring fresh inspection", async () => {
+    const initial = hostedReview(); await load(initial);
+    await userEvent.selectOptions(screen.getByLabelText("End date month · employment 1"), "March");
+    fireEvent.change(screen.getByLabelText("End date year · employment 1"), { target: { value: "2024" } });
+    await userEvent.selectOptions(screen.getByLabelText("Current role · employment 1"), "true");
+    expect(screen.getByLabelText("End date month · employment 1")).toBeDisabled();
+    expect(screen.getByLabelText("End date month · employment 1")).toHaveValue("");
+    expect(screen.getByLabelText("End date year · employment 1")).toHaveValue("");
+    await userEvent.click(screen.getByLabelText("Add another employment row (2 total)"));
+    const answers = { "current-role-0_1": "true", "employment-add-1": "2" };
+    request.mockResolvedValueOnce(Response.json(revisedHostedReview(initial, answers)));
+    await userEvent.click(screen.getByRole("button", { name: "Save exact answers" }));
+    await screen.findByText(/Exact answers saved for this review/);
+    expect(JSON.parse(request.mock.calls[1][1].body).hosted_answers).toEqual(answers);
+    expect(screen.getByText(/create a fresh review before filling newly visible controls/)).toBeVisible();
+    expect(screen.getByText("Add row 2")).toBeVisible(); expect(request).toHaveBeenCalledTimes(2);
+  });
+
+  it("preserves five distinct employment rows and omits end controls for an observed current role", async () => {
+    const rows = Array.from({ length: 5 }, (_, index) => ({ index, current_role: index === 2 }));
+    await load(hostedReview(rows));
+    for (let index = 1; index <= 5; index++) expect(screen.getByLabelText(`Company name · employment ${index}`)).toHaveValue("");
+    expect(screen.queryByLabelText("End date month · employment 3")).toBeNull();
+    expect(screen.queryByLabelText(/Add another employment row/)).toBeNull();
+    await userEvent.selectOptions(screen.getByLabelText("Current role · employment 3"), "false");
+    expect(screen.queryByLabelText("End date month · employment 3")).toBeNull();
+    expect(screen.getByRole("button", { name: "Save exact answers" })).toBeEnabled();
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps malformed years, reversed dates and whitespace out of a saved draft", async () => {
+    await load(hostedReview());
+    fireEvent.change(screen.getByLabelText("Company name · employment 1"), { target: { value: " Owned employer" } });
+    expect(screen.getByRole("button", { name: "Save exact answers" })).toBeDisabled();
+    await userEvent.clear(screen.getByLabelText("Company name · employment 1"));
+    fireEvent.change(screen.getByLabelText("Start date year · employment 1"), { target: { value: "020" } });
+    expect(screen.getByRole("button", { name: "Save exact answers" })).toBeDisabled();
+    await userEvent.clear(screen.getByLabelText("Start date year · employment 1"));
+    fireEvent.change(screen.getByLabelText("Start date year · employment 1"), { target: { value: "2025" } });
+    await userEvent.selectOptions(screen.getByLabelText("Start date month · employment 1"), "December");
+    await userEvent.selectOptions(screen.getByLabelText("End date month · employment 1"), "January");
+    fireEvent.change(screen.getByLabelText("End date year · employment 1"), { target: { value: "2025" } });
+    expect(screen.getByRole("button", { name: "Save exact answers" })).toBeDisabled(); expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["country-label", "country-option", "country-count", "month-value", "employment-id", "employment-label", "control-type", "current-role", "extra-control", "extra-row", "duplicate-row", "value-id", "button-value", "protocol"])("refuses unsupported hosted descriptors before draft entry or approval: %s", async (change) => {
+    const result = hostedReview(); const hosted = result.payload.hosted;
+    if (change === "country-label") hosted.controls[0].label = "Citizenship";
+    if (change === "country-option") hosted.controls[0].options![0].label = "Unknown country label";
+    if (change === "country-count") hosted.controls[0].options!.pop();
+    if (change === "month-value") hosted.controls[3].options = [{ value: "1", label: "January" }];
+    if (change === "employment-id") hosted.controls[1].id = "company-name-9";
+    if (change === "employment-label") hosted.controls[1].label = "Work authorization";
+    if (change === "control-type") hosted.controls[1].type = "select";
+    if (change === "current-role") hosted.values["current-role-0_1"] = "true";
+    if (change === "extra-control") hosted.controls.push({ id: "authorization", label: "Authorization", type: "checkbox", required: true });
+    if (change === "extra-row") hosted.rows = Array.from({ length: 6 }, (_, index) => ({ index, current_role: false }));
+    if (change === "duplicate-row") hosted.rows.push(hosted.rows[0]);
+    if (change === "value-id") hosted.values["company-name-9"] = "Unknown company";
+    if (change === "button-value") hosted.values["employment-add-1"] = "2";
+    if (change === "protocol") result.payload.review_protocol_version = 1;
+    request.mockResolvedValueOnce(Response.json(result));
+    render(<BrowserAssistanceReview deviceId={null} reviewId={identity} applicationId={null} />);
+    await userEvent.click(screen.getByRole("button", { name: "Load exact application review" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("response changed");
+    expect(screen.queryByRole("button", { name: "Save exact answers" })).toBeNull(); expect(apiDownload).not.toHaveBeenCalled();
+  });
+
+  it.each(["file", "destination", "context", "document", "frame", "mapping", "expiry", "answer", "digest", "base-answer", "options"])("rejects a revision response that changes unapproved review data: %s", async (change) => {
+    const initial = hostedReview(undefined, true); await load(initial);
+    const revised = revisedHostedReview(initial, { country: "in" });
+    if (change === "file") revised.payload.artifact.sha256 = "9".repeat(64);
+    if (change === "destination") revised.payload.target_url = "https://job-boards.greenhouse.io/razorpaysoftwareprivatelimited/jobs/4739199005";
+    if (change === "context") revised.payload.context_digest = "9".repeat(64);
+    if (change === "document") revised.payload.document_id = "unreviewed-document";
+    if (change === "frame") revised.payload.frame_id = 1;
+    if (change === "mapping") revised.payload.field_mapping[0].label = "Changed mapping";
+    if (change === "expiry") revised.expires_at_ms++;
+    if (change === "answer") { revised.payload.hosted.draft_answers.country = "us"; revised.payload.fields.pop(); delete revised.payload.reviewed_answers.country; }
+    if (change === "digest") revised.review_digest = initial.review_digest;
+    if (change === "base-answer") { revised.payload.fields[0].value = "Changed automatically"; revised.payload.reviewed_answers.first_name = "Changed automatically"; }
+    if (change === "options") revised.payload.hosted.controls[0].options![0].label = "Changed country";
+    request.mockResolvedValueOnce(Response.json(revised));
+    await userEvent.selectOptions(screen.getByLabelText("Country (phone country code)"), "in");
+    await userEvent.click(screen.getByRole("button", { name: "Save exact answers" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/response changed|saved answer review changed/);
+    expect(screen.queryByText(/Exact answers saved for this review/)).toBeNull(); expect(acceptance()).toBeDisabled();
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+
+  it("never retries a lost revision and requires a status load before another save or approval", async () => {
+    await load(hostedReview()); request.mockRejectedValueOnce(new Error("Synthetic lost revision reply"));
+    await userEvent.selectOptions(screen.getByLabelText("Country (phone country code)"), "in");
+    await userEvent.click(screen.getByRole("button", { name: "Save exact answers" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Synthetic lost revision reply");
+    expect(screen.getByLabelText("Country (phone country code)")).toBeDisabled(); expect(acceptance()).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Load current review status" })).toBeEnabled(); expect(request).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([{ version: 2, count: 64, valid: true }, { version: 2, count: 65, valid: false }, { version: 1, count: 8, valid: false }])("retains protocol-specific terminal cursor bounds: %j", async ({ version, count, valid }) => {
+    request.mockResolvedValueOnce(Response.json({ ...review("filled"), review_protocol_version: version === 1 ? undefined : version, filled_count: count, payload: {} }));
+    render(<BrowserAssistanceReview deviceId={null} reviewId={identity} applicationId={null} />);
+    await userEvent.click(screen.getByRole("button", { name: "Load exact application review" }));
+    if (valid) expect(await screen.findByRole("status")).toHaveTextContent("filled only");
+    else expect(await screen.findByRole("alert")).toHaveTextContent("response changed");
+  });
+});
 
 describe("candidate reviewed browser assistance", () => {
   it("requires explicit attachment approval before any file download or companion binary disclosure", async () => {

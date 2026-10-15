@@ -9,7 +9,7 @@ from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "browser-companion" / "extension"
-DESTINATION = ROOT / "frontend" / "public" / "downloads" / "hirewiz-browser-companion-0.4.0.zip"
+DESTINATION = ROOT / "frontend" / "public" / "downloads" / "hirewiz-browser-companion-0.5.0.zip"
 
 
 def main():
@@ -17,7 +17,7 @@ def main():
     parser.add_argument("--check", action="store_true", help="Verify the delivered ZIP without writing files")
     arguments = parser.parse_args()
     manifest = json.loads((SOURCE / "manifest.json").read_text())
-    if (manifest["version"] != "0.4.0" or manifest["host_permissions"] != []
+    if (manifest["version"] != "0.5.0" or manifest["host_permissions"] != []
             or manifest["optional_host_permissions"] != [
                 "https://www.hirewizhq.com/*", "https://job-boards.greenhouse.io/*"]):
         raise ValueError("reviewed_source_manifest_mismatch")

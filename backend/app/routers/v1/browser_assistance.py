@@ -24,7 +24,7 @@ def availability(user: models.User = Depends(get_current_user)):
 
 
 @router.post("/candidate/{operation}")
-def candidate(operation: Literal["device", "confirm", "revoke", "review", "approve", "cancel"],
+def candidate(operation: Literal["device", "confirm", "revoke", "review", "revise", "approve", "cancel"],
               payload: schemas.CandidateRequest, db: Session = Depends(get_db),
               user: models.User = Depends(get_current_user)):
     return JSONResponse(service.candidate(db, user.id, operation, payload), headers=HEADERS)

@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { candidateAuthSecret, csrfMatches, websiteOrigin } from "./candidateAuthServer";
 import { boundedPairingBytes } from "./browserPairingGateway";
 
-const CANDIDATE = new Set(["device", "confirm", "revoke", "review", "approve", "cancel"]);
+const CANDIDATE = new Set(["device", "confirm", "revoke", "review", "revise", "approve", "cancel"]);
 const DEVICE = new Set(["prepare", "status", "application", "inspect", "begin", "outcome", "cancel", "artifact"]);
 const HEADERS = { "Cache-Control": "private, no-store", Pragma: "no-cache", "X-Content-Type-Options": "nosniff" };
 const ARTIFACT_TYPES = new Set(["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"]);
@@ -56,7 +56,7 @@ export async function browserAssistanceGateway(request: NextRequest, operation: 
     const base = process.env.BACKEND_URL?.trim().replace(/\/+$/, "").replace(/\/api$/, "")
       || (process.env.NODE_ENV !== "production" ? "http://127.0.0.1:8000" : "");
     if (!base) return failure();
-    const bytes = await boundedPairingBytes(request.body, device ? 65536 : 4096);
+    const bytes = await boundedPairingBytes(request.body, device ? 65536 : operation === "revise" ? 16384 : 4096);
     const input: unknown = JSON.parse(new TextDecoder("utf8", { fatal: true }).decode(bytes));
     if (!input || typeof input !== "object" || Array.isArray(input)) return failure(422);
     const response = await fetch(`${base}/api/v1/browser-assistance/${device ? "device" : "candidate"}/${operation}`, {

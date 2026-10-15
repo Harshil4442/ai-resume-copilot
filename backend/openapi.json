@@ -848,6 +848,20 @@
             "title": "Confirmed",
             "type": "boolean"
           },
+          "hosted_answers": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hosted Answers"
+          },
           "identity": {
             "format": "uuid",
             "title": "Identity",
@@ -10273,6 +10287,7 @@
                 "confirm",
                 "revoke",
                 "review",
+                "revise",
                 "approve",
                 "cancel"
               ],

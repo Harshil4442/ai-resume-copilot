@@ -60,6 +60,11 @@ try:
                     raise ValueError("Unsupported owned attachment fault")
                 fixture.db.commit()
                 result = {"fault_applied": True}
+            elif operation == "configure_hosted":
+                os.environ["BROWSER_ASSISTANCE_TYPED_CONTROLS_ENABLED"] = "true"
+                fixture.configure_typed_application()
+                rows = [{"index": i, "current_role": False} for i in range(incoming.get("rows", 1))]
+                result = {"field_mapping": service.field_mapping(fixture.app, 2, rows), "answers": fixture.app.answers}
             elif operation == "configure_typed":
                 # Owned synthetic application only; no browser/candidate authority
                 # is manufactured here. Pairing and approval still use the real service.

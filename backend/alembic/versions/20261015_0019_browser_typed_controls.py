@@ -16,7 +16,7 @@ def upgrade():
     # Alembic's copy-and-move batch operation to replace a check constraint.
     with op.batch_alter_table("browser_assistance_reviews") as batch:
         batch.drop_constraint("ck_browser_review_index", type_="check")
-        batch.create_check_constraint("ck_browser_review_index", "next_index BETWEEN 0 AND 12")
+        batch.create_check_constraint("ck_browser_review_index", "next_index BETWEEN 0 AND 64")
         batch.create_check_constraint("ck_browser_review_protocol", "review_protocol_version BETWEEN 1 AND 3")
 
 

@@ -116,7 +116,7 @@ async function fixture({ mapping = historicalMapping, html = publicShape(), valu
       reviewed_answers_sha256: hash(canonical({ context_digest: review.context_digest, reviewed_answers: values })) };
     const expectedValues = { ...review.assisted_values };
     const fill = async (field = "first_name", extra = {}, expected = reviewed) => invoke({ ...expected, current_assisted_values: expected.current_assisted_values ?? expectedValues }, {
-      field_id: field, value: values[field], expected_before: "", deadline: Date.now() + 1500,
+      field_id: field, value: values[field], expected_before: "", deadline: Date.now() + 9000,
       document_id: expected.document_id, frame_id: 0, context_digest: expected.context_digest,
       review_digest: expected.review_digest, reviewed_answers_sha256: expected.reviewed_answers_sha256,
       ...(protocolVersion === 2 ? { review_protocol_version: 2, control_type: mapping.find(({ id }) => id === field)?.type,
@@ -491,3 +491,11 @@ for (const marker of ["hidden-upload-reference", "remove-resume", "uploaded-file
     } finally { await f.close(); }
   });
 }
+
+test('a final reviewed text callback adding an unknown required field stays unknown',async()=>{
+  const f=await fixture();try{
+    await f.page.evaluate(()=>document.getElementById('question_8970461005').addEventListener('change',()=>{const node=document.createElement('input');node.id='unreviewed-final-required';node.required=true;document.querySelector('form').append(node);}));
+    const result=await f.fill('question_8970461005');assert.equal(result.outcome,'unknown');assert.equal(result.field_id,'question_8970461005');
+    assert.deepEqual(await f.page.evaluate(()=>window.observed),{input:['question_8970461005'],change:['question_8970461005'],blur:[],submit:0,file:0});
+  }finally{await f.close();}
+});

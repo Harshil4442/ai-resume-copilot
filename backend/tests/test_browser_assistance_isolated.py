@@ -83,6 +83,7 @@ exec(compile(ast.fix_missing_locations(ast.Module(body=[node for node in artifac
 sys.modules[artifact_reader.__name__] = artifact_reader
 models = load(PREFIX + ".domains.browser_assistance.models", ROOT / "domains/browser_assistance/models.py")
 schemas = load(PREFIX + ".domains.browser_assistance.schemas", ROOT / "domains/browser_assistance/schemas.py")
+hosted = load(PREFIX + ".domains.browser_assistance.hosted", ROOT / "domains/browser_assistance/hosted.py")
 attachments = load(PREFIX + ".domains.browser_assistance.attachments", ROOT / "domains/browser_assistance/attachments.py")
 service = load(PREFIX + ".domains.browser_assistance.service", ROOT / "domains/browser_assistance/service.py")
 manual_reporting = load(PREFIX + ".domains.employer.manual_reporting", ROOT / "domains/employer/manual_reporting.py")

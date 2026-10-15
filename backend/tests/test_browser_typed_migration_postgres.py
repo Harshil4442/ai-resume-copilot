@@ -110,10 +110,10 @@ def test_actual_schema18_to19_preserves_v1_rows_and_only_expands_cursor_then_rou
     with owned.engine.connect() as db:
         assert db.scalar(text("SELECT review_protocol_version FROM browser_assistance_reviews")) == 1
     assert review_snapshot(owned.engine) == before
-    for index in (0, 7, 8, 12):
+    for index in (0, 7, 8, 12, 48, 64):
         set_cursor(owned.engine, index)
         assert review_snapshot(owned.engine)[0]["next_index"] == index
-    for index in (-1, 13):
+    for index in (-1, 65):
         assert_cursor_refused(owned.engine, index)
     # A retained historical v1 review fits the old bound and can round-trip.
     set_cursor(owned.engine, 7)
@@ -134,7 +134,7 @@ def test_actual_migrated_postgres_supports_twelve_signed_actions_without_charge_
         admission._migrate(owned.engine, "20261015_0018", direction="downgrade")
     assert version(owned.engine) == "20261015_0019"
     assert review_snapshot(owned.engine)[0]["next_index"] == 12
-    assert_cursor_refused(owned.engine, 13)
+    assert_cursor_refused(owned.engine, 65)
 
 
 @pytest.mark.parametrize("index,payload", [(0, {"review_protocol_version": 2}),
@@ -152,7 +152,7 @@ def test_downgrade_guard_is_transactional_for_typed_payload_or_extended_cursor(m
     assert review_snapshot(owned.engine) == before
     # Failure must leave the schema19 constraint in place, without a partial DDL downgrade.
     set_cursor(owned.engine, 12)
-    assert_cursor_refused(owned.engine, 13)
+    assert_cursor_refused(owned.engine, 65)
 
 
 def test_schema19_backfills_existing_typed_payload_marker(migrated_browser):
@@ -186,5 +186,19 @@ def test_erased_completed_cancelled_or_expired_v2_v3_keeps_durable_marker_and_do
     owned.db.refresh(row)
     assert row.payload == {} and row.review_protocol_version == protocol and row.state == state
     owned.db.rollback()
+    with pytest.raises(RuntimeError, match="Typed-control review history must be retained"):
+        admission._migrate(owned.engine, "20261015_0018", direction="downgrade")
+
+
+def test_actual_migrated_postgres_supports_one_review_with_five_hosted_employment_rows(migrated_browser):
+    import os
+    from unittest.mock import patch
+
+    from backend.tests import test_browser_hosted_controls_isolated as hosted_tests
+    owned = migrated_browser
+    admission._migrate(owned.engine, "20261015_0019")
+    with patch.dict(os.environ, {"BROWSER_ASSISTANCE_TYPED_CONTROLS_ENABLED": "true"}):
+        hosted_tests.test_five_rows_fit_one_v2_review_with_signed_sql_actions_and_no_fee(owned)
+    assert review_snapshot(owned.engine)[0]["next_index"] == 38
     with pytest.raises(RuntimeError, match="Typed-control review history must be retained"):
         admission._migrate(owned.engine, "20261015_0018", direction="downgrade")

@@ -99,7 +99,7 @@ describe("browser assistance NextAuth and device transport boundaries", () => {
     expect((await candidate(operation)).status).toBe(403); expect(upstream).not.toHaveBeenCalled(); expect(getToken).not.toHaveBeenCalled();
   });
 
-  it.each(["approve", "confirm", "revoke", "constructor", "../status"])("device caller cannot choose candidate/issuer operation %s", async (operation) => {
+  it.each(["approve", "confirm", "revise", "revoke", "constructor", "../status"])("device caller cannot choose candidate/issuer operation %s", async (operation) => {
     expect((await device(operation)).status).toBe(403); expect(upstream).not.toHaveBeenCalled(); expect(getToken).not.toHaveBeenCalled();
   });
 
@@ -115,6 +115,39 @@ describe("browser assistance NextAuth and device transport boundaries", () => {
     const body = JSON.stringify({ padding: "x".repeat(isDevice ? 65536 : 4096) });
     const response = isDevice ? await device("inspect", { body }) : await candidate("review", { body });
     expect(response.status).toBe(503); privateResponse(response); expect(upstream).not.toHaveBeenCalled();
+  });
+
+  it("forwards one exact candidate draft revision with the account bearer and no confirmation or automatic approval", async () => {
+    const body = JSON.stringify({ identity, review_digest: "b".repeat(64), hosted_answers: { country: "in", "company-name-0": "Owned fixture company" } });
+    const response = await candidate("revise", { body }); expect(response.status).toBe(200); privateResponse(response);
+    expect(upstream).toHaveBeenCalledTimes(1); expect(getToken).toHaveBeenCalledTimes(1);
+    const [url, init] = upstream.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("https://api.example/api/v1/browser-assistance/candidate/revise");
+    expect(new TextDecoder().decode(init.body as Uint8Array)).toBe(body);
+    expect(new Headers(init.headers).get("Authorization")).toBe(`Bearer ${backendBearer}`);
+    expect(new Headers(init.headers).has("Cookie")).toBe(false);
+  });
+
+  it.each<Options>([{ origin: "https://foreign.example" }, { csrf: null }, { csrf: "0".repeat(64) },
+    { headers: { "Sec-Fetch-Site": "cross-site" } }, { headers: { Authorization: "Bearer client-token" } }])("keeps draft revisions behind account origin and CSRF checks: %j", async (options) => {
+    expect((await candidate("revise", options)).status).toBe(403); expect(getToken).not.toHaveBeenCalled(); expect(upstream).not.toHaveBeenCalled();
+  });
+
+  it("requires a signed-in account for a draft revision", async () => {
+    vi.mocked(getToken).mockResolvedValue(null);
+    expect((await candidate("revise", { anonymous: true })).status).toBe(401); expect(upstream).not.toHaveBeenCalled();
+  });
+
+  it("allows exactly 16384 UTF-8 request bytes only for revisions and preserves the 4096 limit on other candidate actions", async () => {
+    const base = JSON.stringify({ identity, hosted_answers: { "company-name-0": "" } });
+    const body = base.replace('"company-name-0":""', `"company-name-0":"${"x".repeat(16384 - new TextEncoder().encode(base).byteLength)}"`);
+    expect(new TextEncoder().encode(body)).toHaveLength(16384);
+    expect((await candidate("revise", { body })).status).toBe(200);
+    expect((await candidate("approve", { body })).status).toBe(503);
+    expect((await candidate("review", { body })).status).toBe(503);
+    expect((await candidate("revise", { body: `${body} ` })).status).toBe(503);
+    expect(upstream).toHaveBeenCalledTimes(1);
+    expect(new TextDecoder().decode(upstream.mock.calls[0][1].body)).toBe(body);
   });
 
   it("rejects invalid UTF-8 before decoding or forwarding candidate data", async () => {

@@ -82,3 +82,10 @@ before external calls. F7 cutover still targets schema18. Schema19 needs a later
 additive release with its own admission, migration and rollout evidence. Do not
 enable typed controls against the old constraint or mark deployment complete
 from these local checks.
+
+## Later local hosted-control increment
+
+The later disabled v2 Country/employment increment and companion0.5.0 are recorded
+in `BROWSER_HOSTED_CONTROLS_2026-10-15.md`. Its one-review hosted values raise only
+undeployed19's cursor bound to0–64; prior0.3.0/0.4.0 package bytes and this original
+typed-control acceptance evidence remain retained. F7 still targets schema18.

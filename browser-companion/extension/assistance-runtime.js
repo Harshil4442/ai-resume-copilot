@@ -22,7 +22,7 @@ export class AssistanceRuntime {
       && value.device_id === this.transport.identity.device_id && PHASES.has(value.phase)
       && (value.review_id === null || UUID.test(value.review_id))
       && (value.application_id === null || typeof value.application_id === "string" && /^[A-Za-z0-9_-]{1,80}$/.test(value.application_id))
-      && Number.isSafeInteger(value.filled_count) && value.filled_count >= 0 && value.filled_count <= 12;
+      && Number.isSafeInteger(value.filled_count) && value.filled_count >= 0 && value.filled_count <= 64;
   }
   async save(changes) {
     const next = { ...this.state, ...changes };
@@ -34,7 +34,7 @@ export class AssistanceRuntime {
       attachment_available: this.attachmentAvailable, review_protocol_version: this.review?.review_protocol_version ?? this.review?.payload?.review_protocol_version ?? 1,
       review_url: this.state.review_id ? `${this.transport.configuration.websiteOrigin}/browser-companion?review=${this.state.review_id}`
         : `${this.transport.configuration.websiteOrigin}/browser-companion?device=${this.state.device_id}`,
-      can_fill: !this.busy && !this.cancelled && this.state.phase === "approved" && Boolean(this.inspection && this.review), message };
+      can_fill: Boolean(this.review?.payload?.fields?.length || this.review?.payload?.review_protocol_version === 3) && !this.busy && !this.cancelled && this.state.phase === "approved" && Boolean(this.inspection && this.review), message };
   }
   async start() {
     if (this.busy || this.state.review_id) throw new Error("Cancel or inspect the current review before connecting again.");
@@ -60,17 +60,22 @@ export class AssistanceRuntime {
   }
   async acceptReview(review) {
     if (!review || !UUID.test(review.id) || !PHASES.has(review.state) || !HEX.test(review.review_digest)
-      || !Number.isSafeInteger(review.filled_count) || review.filled_count < 0 || review.filled_count > 12
+      || !Number.isSafeInteger(review.filled_count) || review.filled_count < 0 || review.filled_count > 64
       || !Number.isSafeInteger(review.expires_at_ms)) throw new Error("The current review could not be verified.");
     if (this.state.review_id && review.id !== this.state.review_id) throw new Error("A different review was returned.");
     const payload = review.payload;
+    const durableVersion = review.review_protocol_version ?? payload?.review_protocol_version ?? 1;
+    if (![1, 2, 3].includes(durableVersion) || !Number.isSafeInteger(durableVersion)
+      || review.filled_count > (durableVersion === 1 ? 7 : durableVersion === 3 ? 1 : 64)
+      || durableVersion === 3 && review.state === "filled" && review.filled_count !== 1
+      || payload && Object.keys(payload).length && (payload.review_protocol_version ?? 1) !== durableVersion) throw new Error("The durable reviewed control version or outcome count changed.");
     if (payload && Object.keys(payload).length) {
       const version = payload.review_protocol_version ?? 1;
-      if (![1, 2, 3].includes(version) || !Number.isSafeInteger(version) || payload.fields?.length > (version === 1 ? 7 : 12)) throw new Error("The reviewed control version changed.");
+      if (![1, 2, 3].includes(version) || !Number.isSafeInteger(version) || payload.fields?.length > (version === 1 ? 7 : 64)) throw new Error("The reviewed control version changed.");
       if (await digest(canonical(payload)) !== review.review_digest || payload.application_id !== this.state.application_id
         || canonical(payload.allowed_actions) !== (version === 3 ? '["attach"]' : '["fill"]') || payload.fee_credits !== 0
         || !HEX.test(payload.package_digest) || !HEX.test(payload.artifact?.sha256) || !HEX.test(payload.context_digest)
-        || !Array.isArray(payload.fields) || payload.fields.length < (version === 3 ? 0 : 1) || payload.fields.length > (version === 3 ? 0 : 12)
+        || !Array.isArray(payload.fields) || payload.fields.length < (version === 3 || payload.hosted ? 0 : 1) || payload.fields.length > (version === 3 ? 0 : 64)
         || review.filled_count > (version === 3 ? 1 : payload.fields.length)) throw new Error("The exact reviewed package changed.");
       if (this.inspection && (payload.context_digest !== this.inspection.context_digest
         || payload.document_id !== this.inspection.document_id || payload.frame_id !== 0 || payload.target_url !== this.inspection.url
@@ -85,12 +90,19 @@ export class AssistanceRuntime {
     try {
       const device = await this.transport.device();
       if (device.state !== "active") throw new Error("Approve this browser on HireWiz before inspecting an application.");
-      const app = await this.transport.request("application", { application_id: applicationId, review_protocol_version: requestedVersion });
+      let app = await this.transport.request("application", { application_id: applicationId, review_protocol_version: requestedVersion });
       if (app.application_id !== applicationId || !Array.isArray(app.field_mapping)
         || !/^https:\/\/job-boards\.greenhouse\.io\/razorpaysoftwareprivatelimited\/jobs\/[0-9]+$/.test(app.target_url)) throw new Error("Only the selected current Razorpay portal is supported.");
       const version = app.review_protocol_version ?? 1;
       if (![1, 2, 3].includes(version) || !Number.isSafeInteger(version) || requestedVersion === 3 && version !== 3) throw new Error("The application control version is unavailable.");
-      const inspection = await this.browser.inspect(app.target_url, app.field_mapping, null, version);
+      let inspection = await this.browser.inspect(app.target_url, app.field_mapping, null, version);
+      if (version === 2 && app.hosted_controls_available && inspection.hosted_rows) {
+        const target = app.target_url;
+        app = await this.transport.request("application", { application_id: applicationId, review_protocol_version: 2, hosted_rows: inspection.hosted_rows });
+        if (app.application_id !== applicationId || app.target_url !== target || app.review_protocol_version !== 2
+          || app.hosted_controls_available !== true || !Array.isArray(app.field_mapping)) throw new Error("The selected application's hosted controls changed during inspection.");
+        inspection = await this.browser.inspect(app.target_url, app.field_mapping, inspection.document_id, 2);
+      }
       if (inspection.outcome !== "inspected" || inspection.url !== app.target_url || inspection.frame_id !== 0
         || !HEX.test(inspection.context_digest) || await digest(canonical(inspection.context)) !== inspection.context_digest) throw new Error("The exact current form could not be inspected.");
       if (this.cancelled) throw new Error("Inspection cancelled before review.");
@@ -98,6 +110,7 @@ export class AssistanceRuntime {
       await this.save({ phase: "active", application_id: applicationId, filled_count: 0 });
       const minimal = { outcome: "inspected", origin: inspection.origin, url: inspection.url, frame_id: 0,
         document_id: inspection.document_id, context_digest: inspection.context_digest, assisted_values: inspection.assisted_values,
+        ...(version === 2 && inspection.hosted_rows && app.hosted_controls_available ? { hosted_rows: inspection.hosted_rows } : {}),
         manual_fields: inspection.manual_fields.map(({ id, label, required }) => ({ id, label, required })),
         ...(version > 1 ? { review_protocol_version: version } : {}), ...(version === 3 ? { attachment: inspection.attachment } : {}) };
       const review = await this.transport.request("inspect", { application_id: applicationId, inspection: minimal });
@@ -155,7 +168,7 @@ export class AssistanceRuntime {
       return { ...this.status(this.cancelled ? "Further text filling stopped. An already authorized field may have finished. Check the portal and clear this review before another inspection."
         : this.state.phase === "unknown" ? "Filling stopped because a field outcome is uncertain. Check the company portal and clear this review before another inspection. No automatic retry occurred and no application fee was charged."
         : this.state.phase !== "filled" ? "Filling stopped before all approved answers were filled. Check the company portal and clear this review before another inspection. No application fee was charged."
-        : this.review.payload.review_protocol_version === 2 ? "Approved answers filled. Complete the remaining Country/employment or unsupported controls, attach your reviewed file and submit on the company portal yourself. No application fee was charged."
+        : this.review.payload.review_protocol_version === 2 ? "Approved answers filled. Check any remaining required or changed controls, attach your reviewed file and submit on the company portal yourself. No application fee was charged."
         : "Approved text filling finished. Complete the remaining fields, attach your reviewed file and submit on the company portal yourself. No application fee was charged."), busy: false };
     } catch (failure) {
       if (this.state.phase === "running") await this.save({ phase: "unknown" });
