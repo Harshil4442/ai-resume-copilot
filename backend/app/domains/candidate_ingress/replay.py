@@ -155,7 +155,7 @@ class CandidatePrivateIngress:
         self.replay._consume(ack, assertion)
 
 
-def production_candidate_ingress() -> CandidatePrivateIngress:
-    # An env key cannot establish independent UID/custody/OPEN/restore, clock,
-    # retention or an original replay ACK. No automatic production clients.
-    raise GuardUnavailable("Private candidate ingress is unavailable pending reviewed provision")
+def production_candidate_ingress():
+    from .production import configured_candidate_ingress
+
+    return configured_candidate_ingress()

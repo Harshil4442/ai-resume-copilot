@@ -1,0 +1,40 @@
+{
+  "scope": "local normal-candidate account, private ingress and paired browser source",
+  "production_activated": false,
+  "all_six_full_journey_outcomes": "OPEN",
+  "f7_schema18_unchanged": true,
+  "provider_writes": 0,
+  "real_candidate_actions": 0,
+  "employer_submissions": 0,
+  "employer_receipts": 0,
+  "application_credits_settled": 0,
+  "tests": {
+    "installed_mv3_real_sdk_bridge": {"passed": 3, "native_precheck_enabled": true, "https": "locally fulfilled", "shipping_extension_id": "pnjmegppacleipajnifjmbcopjjffklb"},
+    "paired_production_sdk": {"passed": 29, "provider_transports": "intercepted"},
+    "account_auth_focused": {"passed": 149},
+    "postgres17_migrations_lifecycle": {"passed": 26, "owned_ephemeral_local_database": true},
+    "firestore_postgres_lifecycle": {"passed": 117, "owned_local_emulator_and_database": true},
+    "frontend": {"passed": 730, "files": 41, "lint": "passed", "typecheck": "passed", "production_build_pages": 44, "build_secret": "synthetic-local"},
+    "companion_unit": {"passed": 76},
+    "backend_ruff": "passed",
+    "backend_mypy": {"passed": true, "source_files": 133}
+  },
+  "native_multipart_experiment": {
+    "browser": "151.0.7922.34",
+    "transport": "owned-loopback-HTTP; no TLS acceptance claim",
+    "file_bytes": 1048576,
+    "file_sha256": "fbbab289f7f94b25736c58be46a994c441fd02552cc6022352e3d86d2fab7c83",
+    "actual_multipart_bytes": 1048998,
+    "native_raw_part_bytes": [376, 46],
+    "native_raw_total_bytes": 422,
+    "raw_matches_network": false,
+    "conclusion": "programmatic File binary is omitted; old selection does not prove exact employer-storage bytes"
+  },
+  "remaining": [
+    "real native resources, immutable pins, narrow IAM, secrets and operator bootstrap",
+    "later additive schema19 release and configured 0.7.0 package activation",
+    "real normal-user enrollment/pairing and human permission acceptance",
+    "separately approved extension-owned official-presign upload and exact native TLS receipt correlation",
+    "truthful receipt reconciliation and actual paid full-journey acceptance"
+  ]
+}

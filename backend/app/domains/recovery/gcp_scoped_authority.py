@@ -31,9 +31,11 @@ from .gcp_partitioned_publication import PartitionedPublicationCoordinator, part
 from .gcp_password_contracts import PasswordSigningMarker
 from .gcp_password_lifetime import GcpPasswordLifetimeCoordinator, PasswordLifetimeOwnedAck
 from .gcp_password_lifetime_contracts import (
+    CreateVerifiedOAuthWebSession,
     CreateVerifiedPasswordWebSession,
     EnrollPasswordAccount,
     LifetimeGrantEvidence,
+    verified_session_matches,
 )
 from .password_reauth import CandidateWebSession, PasswordAccountBinding, RetainedWebSession
 from .store import GuardDenied, GuardUnavailable
@@ -130,7 +132,9 @@ def current_session(tx: BufferedTransaction, context: CandidateWebSession, now: 
     subject = current_subject(tx, session.subject_uuid, pending_owner=pending_owner)
     evidence = _origin(tx, session.activation_operation)
     command = evidence.intent.command
-    if (not isinstance(command, CreateVerifiedPasswordWebSession)
+    if (not isinstance(command, (CreateVerifiedPasswordWebSession, CreateVerifiedOAuthWebSession))
+            or not verified_session_matches(command, authentication_method=session.authentication_method,
+                verified_proof_sha256=session.verified_proof_sha256, principal_sha256=session.principal_sha256)
             or command.session_id != session.session_id or command.account_binding_id != session.account_binding_id
             or command.expected_auth_generation != session.auth_generation
             or command.credential_sha256 != session.credential_sha256
@@ -139,6 +143,7 @@ def current_session(tx: BufferedTransaction, context: CandidateWebSession, now: 
             or context.account_binding_id != session.account_binding_id
             or context.account_binding_id != subject.account_binding_id
             or context.session_id != session.session_id
+            or context.authentication_method != session.authentication_method
             or session.auth_generation != subject.auth_generation
             or session.credential_sha256 != subject.credential_sha256
             or session.principal_sha256 != subject.principal_sha256
@@ -215,11 +220,13 @@ class ScopedCandidateAuthority:
                     auth_generation=1, operation_id=intent.operation_id, credential_sha256=subject.credential_sha256)
                 tx.put("v3_generation_history", f"{subject.subject_uuid}:1", _json(history), immutable=True)
                 output[:] = [None]
-            elif isinstance(command, CreateVerifiedPasswordWebSession):
+            elif isinstance(command, (CreateVerifiedPasswordWebSession, CreateVerifiedOAuthWebSession)):
                 subject = current_subject(tx, actual.intent.subject_uuid)
                 retained = RetainedWebSession.model_validate(next(r.value for r in actual.intent.effects.after
                     if r.namespace == "pairing_web_sessions" and r.key == str(command.session_id)))
                 if (retained.subject_uuid != subject.subject_uuid or retained.account_binding_id != subject.account_binding_id
+                        or not verified_session_matches(command, authentication_method=retained.authentication_method,
+                            verified_proof_sha256=retained.verified_proof_sha256, principal_sha256=retained.principal_sha256)
                         or retained.principal_sha256 != subject.principal_sha256
                         or subject.auth_generation != command.expected_auth_generation
                         or subject.credential_sha256 != command.credential_sha256
@@ -232,10 +239,12 @@ class ScopedCandidateAuthority:
                 session = ScopedSession(subject_uuid=subject.subject_uuid, account_binding_id=subject.account_binding_id,
                     session_id=command.session_id, auth_generation=subject.auth_generation,
                     principal_sha256=subject.principal_sha256, credential_sha256=subject.credential_sha256,
-                    expires_at_ms=command.expires_at_ms, activation_operation=intent.operation_id)
+                    expires_at_ms=command.expires_at_ms, activation_operation=intent.operation_id,
+                    authentication_method=retained.authentication_method, verified_proof_sha256=retained.verified_proof_sha256)
                 tx.put("v3_sessions", str(session.session_id), _json(session), immutable=True)
                 output[:] = [CandidateWebSession(candidate_id=subject.candidate_id,
-                    account_binding_id=subject.account_binding_id, session_id=session.session_id)]
+                    account_binding_id=subject.account_binding_id, session_id=session.session_id,
+                    authentication_method=session.authentication_method)]
             else:
                 raise GuardDenied("Only genuine enrollment or verified session own-ACKs activate")
             tx.put("v3_activations", str(intent.operation_id), _json(actual), immutable=True)
@@ -347,7 +356,8 @@ class ScopedCandidateAuthority:
         if not isinstance(cmd, ScopedPasswordReset):
             raise GuardDenied("Exact original reset request required")
         context = CandidateWebSession(candidate_id=cmd.subject.candidate_id,
-            account_binding_id=cmd.subject.account_binding_id, session_id=cmd.session.session_id)
+            account_binding_id=cmd.subject.account_binding_id, session_id=cmd.session.session_id,
+            authentication_method=cmd.session.authentication_method)
         return self._deny_intent(context, intent)
 
     def _deny_intent(self, context: CandidateWebSession, intent: ScopedJournalIntent) -> ScopedDenialAck | None:
@@ -481,6 +491,28 @@ class ScopedCandidateAuthority:
         with self._lock:
             self._begins[intent.operation_id] = ack
         return ack
+
+    def verify_begin(self, ack: ScopedBeginAck, action: PasswordSigningMarker) -> ScopedJournalIntent:
+        """Fresh original protected signing acknowledgement, never reconstructed from JSON."""
+        if type(ack) is not ScopedBeginAck or ack._issuer is not self._issuer:
+            raise GuardDenied("Original protected signing acknowledgement required")
+        intent = ScopedJournalIntent.model_validate_json(ack._raw)
+        command = intent.command
+        with self._lock:
+            if self._begins.get(intent.operation_id) is not ack:
+                raise GuardDenied("Protected signing acknowledgement is not owned")
+        if not isinstance(command, ScopedBegin) or command.action != action:
+            raise GuardDenied("Protected signing acknowledgement belongs to another action")
+        def check(tx: BufferedTransaction) -> None:
+            self.publication._root(tx, opened=True)
+            if (not intent.created_at_ms <= self._now() < intent.deadline_ms
+                    or current_session(tx, action.context, self._now()) != (command.subject, command.session)
+                    or tx.get("v3_begins", f"signing:{action.challenge_id}") != {
+                        "operation_id": str(intent.operation_id), "command_sha256": fingerprint(_json(command))}
+                    or PartitionedRecord.model_validate(tx.get("v3_records", str(intent.operation_id))).intent != _json(intent)):
+                raise GuardDenied("Protected signing scope is stale or changed")
+        self._run(check)
+        return intent
 
     def verify_denial(self, ack: ScopedDenialAck) -> ScopedJournalIntent:
         if type(ack) is not ScopedDenialAck or ack._issuer is not self._issuer:

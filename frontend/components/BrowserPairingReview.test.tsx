@@ -58,11 +58,12 @@ describe("candidate connection review", () => {
     expect(await screen.findByRole("link", { name: "Sign in and return to this connection" })).toHaveAttribute("href", `/login?returnTo=${encodeURIComponent(`/browser-companion?pairing=${pairing}`)}`);
     expect(request).toHaveBeenCalledTimes(1); expect(screen.queryByLabelText("HireWiz password")).toBeNull();
   });
-  for (const status of ["LEGACY_ENROLLMENT_UNAVAILABLE", "UNAVAILABLE"]) it(`does not bootstrap context from ${status}`, async () => {
+  for (const status of ["LEGACY_ENROLLMENT_UNAVAILABLE", "GOOGLE_ENROLLMENT_AVAILABLE", "UNAVAILABLE"]) it(`does not bootstrap context from ${status}`, async () => {
     const request = vi.fn().mockResolvedValueOnce(Response.json({ status }));
     vi.stubGlobal("fetch", request); render(<BrowserPairingReview pairingId={pairing} />);
     await userEvent.click(screen.getByRole("button", { name: "Review connection" }));
-    expect(await screen.findByRole("status")).toHaveTextContent(status === "UNAVAILABLE" ? "currently unavailable" : "not available for this account");
+    expect(await screen.findByRole("status")).toHaveTextContent(status === "UNAVAILABLE" ? "currently unavailable" : "Enroll your existing account");
+    if (status !== "UNAVAILABLE") expect(screen.getByRole("link", { name: "Review account enrollment" })).toHaveAttribute("href", "/account-enrollment");
     expect(request).toHaveBeenCalledTimes(1); expect(screen.queryByLabelText("HireWiz password")).toBeNull();
   });
   it("rejects malformed eligibility instead of exposing backend fields or requesting a challenge", async () => {

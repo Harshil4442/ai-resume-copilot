@@ -1,4 +1,4 @@
-"""Injected identity-only native bridge; no production factory or portal routes.
+"""Native identity pairing commands with original one-use completion handoffs.
 
 The real PairingService owns lifecycle/crypto rules. Only whitelisted commands
 can enter this scoped store. Receipt/status replay never reconstructs nonce or
@@ -109,6 +109,13 @@ class _PasswordInvocation:
     claim: PasswordSigningClaim
     proof: CandidateChallengeProof = field(repr=False)
     assertion: CandidateAssertion = field(repr=False)
+
+
+@dataclass(frozen=True)
+class PairingOwnedAck:
+    _operation: UUID = field(repr=False)
+    _issuer: object = field(repr=False)
+
 
 
 class _PasswordReadTransaction:
@@ -327,6 +334,7 @@ class GcpPairingCoordinator:
         self.password_signing = password_signing if password_signing is not None else UnavailablePasswordSigning()
         self._password_scope: contextvars.ContextVar[_PasswordInvocation | None] = contextvars.ContextVar("gcp_password_dispatch", default=None)
         self._password_admitted: dict[UUID, tuple[_PasswordInvocation, bool]] = {}
+        self._owned_pairing: dict[UUID, tuple[PairingExecution, PairingOwnedAck, PairingJournalIntent]] = {}
         self._issuer = object()
         self._plan_lock = Lock()
         self._issued: dict[UUID, tuple[str, tuple[UUID, ...], bool]] = {}
@@ -465,8 +473,13 @@ class GcpPairingCoordinator:
             if not scope.confirmed:
                 raise GuardUnavailable("Pairing command has no confirmed mutation receipt")
             self._before_claim(intent, claim)
-            return PairingExecution(status="COMMITTED", operation_id=intent.operation_id,
+            execution = PairingExecution(status="COMMITTED", operation_id=intent.operation_id,
                                     intent_sha256=intent.digest, journal=receipt, result=result)
+            if intent.command in {"complete_device", "revoke_device"}:
+                ack = PairingOwnedAck(intent.operation_id, self._issuer)
+                with self._plan_lock:
+                    self._owned_pairing[intent.operation_id] = execution, ack, intent
+            return execution
         except _Replay:
             return self._receipt_only(intent)
         except AmbiguousCommit:
@@ -477,6 +490,65 @@ class GcpPairingCoordinator:
             raise
         finally:
             self._scope.reset(token)
+
+    def take_owned_ack(self, execution: PairingExecution) -> PairingOwnedAck:
+        with self._plan_lock:
+            owned = self._owned_pairing.get(execution.operation_id)
+            if owned is None or owned[0] is not execution:
+                raise GuardDenied("Only the original native completion/revocation result owns an acknowledgement")
+            return owned[1]
+
+    def take_password_owned_ack(self, assertion: CandidateAssertion) -> PairingOwnedAck:
+        with self._plan_lock:
+            owned = tuple(self._owned_pairing.values())
+        for _execution, ack, intent in owned:
+            if intent.command == "revoke_device" and intent.password_signing is not None:
+                reference = intent.password_signing
+                row = self.registry.read("pairing_password_signing_attempts", str(reference.challenge_id))
+                if row is not None and row["marker"]["assertion_sha256"] == fingerprint(assertion.model_dump(mode="json")):
+                    return ack
+        raise GuardDenied("Original native password revocation acknowledgement required")
+
+    def consume_owned_ack(self, ack: PairingOwnedAck):
+        from .gcp_paired_device_contracts import PairingOwnedEvidence
+        from .password_reauth import PasswordAccountBinding, RetainedWebSession
+        if type(ack) is not PairingOwnedAck or ack._issuer is not self._issuer:
+            raise GuardDenied("Original native pairing acknowledgement required")
+        with self._plan_lock:
+            owned = self._owned_pairing.pop(ack._operation, None)
+        if owned is None or owned[1] is not ack:
+            raise GuardDenied("Pairing acknowledgement is absent or consumed")
+        execution, _, intent = owned
+        status = self.status(intent)
+        if status.status != "COMMITTED" or status.journal != execution.journal:
+            raise GuardUnavailable("Original native pairing completion is no longer current")
+        projection = self.registry.read("pairing_projections", str(intent.operation_id))
+        invocation = self.registry.read("pairing_invocations", str(intent.operation_id))
+        if projection is None:
+            raise GuardUnavailable("Original pairing projection is absent")
+        event = projection["event"]
+        device = self.registry.read("devices", event["payload"]["device_id"])
+        if device is None:
+            raise GuardUnavailable("Original pairing device is absent")
+        confirmation = self.registry.read("pairing_confirmations", device["pairing_id"])
+        if confirmation is None:
+            raise GuardUnavailable("Original candidate confirmation is absent")
+        retained = RetainedWebSession.model_validate(self.registry.read("pairing_web_sessions", confirmation["assertion"]["session_id"]))
+        binding = PasswordAccountBinding.model_validate(self.registry.read("pairing_account_bindings", str(retained.account_binding_id)))
+        context = CandidateWebSession(candidate_id=binding.candidate_id, account_binding_id=retained.account_binding_id,
+            session_id=retained.session_id, authentication_method=retained.authentication_method)
+        signing = None
+        if intent.command == "revoke_device":
+            if intent.password_signing is None:
+                raise GuardDenied("Native revocation requires its original password signing proof")
+            signing = PasswordSigningClaim.model_validate(self.registry.read("pairing_password_signing_attempts", str(intent.password_signing.challenge_id)))
+            if signing.marker.context.candidate_id != binding.candidate_id or signing.marker.context.account_binding_id != binding.account_binding_id:
+                raise GuardDenied("Revocation cannot change its original paired account owner")
+            context = signing.marker.context
+        self.fence.check(self.pin)
+        assert execution.journal is not None
+        return PairingOwnedEvidence(intent=intent, journal=execution.journal, invocation=invocation,
+            projection=projection, device=device, confirmation=confirmation, context=context, signing=signing)
 
     def status(self, intent: PairingJournalIntent) -> OperationStatus:
         """Read-only commit evidence. Never reconstruct challenge or identity output."""
@@ -610,7 +682,7 @@ class GcpPairingCoordinator:
             self._password_check(tx, password, retained=True)
 
     def admit_password_candidate(self, context: CandidateWebSession, proof: CandidateChallengeProof,
-                                 assertion: CandidateAssertion) -> None:
+                                 assertion: CandidateAssertion, *, protected_begin: Callable[[PasswordSigningMarker], None] | None = None) -> None:
         """Fresh protected create AND native own ACK before one signer invocation.
 
         Existing/unknown creates never become a signing permission, including
@@ -629,6 +701,8 @@ class GcpPairingCoordinator:
         if not marker.created_at_ms <= now < marker.deadline_ms:
             raise GuardDenied("Signing consumption is outside its assertion lifetime")
         self.fence.check(self.pin)
+        if protected_begin is not None:
+            protected_begin(marker)
         receipt = self.password_signing.consume(marker)
         if receipt is None:
             raise GuardUnavailable("Signing consumption has no fresh acknowledged create")

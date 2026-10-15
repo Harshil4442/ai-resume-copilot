@@ -27,6 +27,7 @@ describe("retained candidate context remains server-only", () => {
     { ...context, candidate_id: 13 }, { ...context, candidate_id: true },
     { ...context, account_binding_id: context.account_binding_id.toUpperCase() },
     { ...context, injected: true }, { candidate_id: 12 },
+    { ...context, authentication_method: "google" },
   ])("rejects malformed or cross-account returned context", async (value) => {
     backend(value);
     expect(await login()).toBeNull();
@@ -48,6 +49,24 @@ it("clears prior password context on verified legacy Google sign-in", async () =
   backend();
   const result = await callback({ token: { browserPairingSession: context }, user: { id: "12", email: "candidate@example.com" }, account: { provider: "google", id_token: "synthetic-google-id-token" } } as Parameters<typeof callback>[0]);
   expect(result.browserPairingSession).toBeUndefined();
+});
+
+it("preserves a distinct retained Google session after explicit native linking without exposing its claims", async () => {
+  const googleContext = { ...context, authentication_method: "google" };
+  backend(googleContext);
+  const token = await callback({ token: {}, user: { id: "12", email: "candidate@example.com" }, account: { provider: "google", id_token: "synthetic-google-id-token" } } as Parameters<typeof callback>[0]);
+  expect(token.browserPairingSession).toEqual(googleContext);
+  expect(token.candidateSignInMethod).toBe("google");
+  expect(token.candidateLogoutRequest).toMatch(/^[a-f0-9-]{36}$/);
+  const session = await authOptions.callbacks!.session!({ session: { user: { email: "candidate@example.com" }, expires: "2026-10-16" }, token } as never);
+  expect(JSON.stringify(session)).not.toContain(context.session_id);
+  expect(JSON.stringify(session)).not.toContain("authentication_method");
+});
+
+it.each([context, { ...context, authentication_method: "password" }, { ...context, authentication_method: "google", candidate_id: 13 }])("rejects a Google callback that relabels password or another owner's native context", async (wrong) => {
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  backend(wrong);
+  await expect(callback({ token: {}, user: { id: "12", email: "candidate@example.com" }, account: { provider: "google", id_token: "synthetic-google-id-token" } } as Parameters<typeof callback>[0])).rejects.toThrow("AUTH_UNAVAILABLE");
 });
 
 

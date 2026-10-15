@@ -4,6 +4,7 @@ const element = (id) => document.getElementById(id);
 let review = null; let artifactUrl = null;
 let connection = null;
 let assistance = null;
+const nativeAssistance = CONFIG.mode === "reviewed_assistance" && CONFIG.nativePairing != null;
 async function request(message) {
   const result = await chrome.runtime.sendMessage(message);
   if (!result?.ok) throw new Error(result?.error || "Companion worker unavailable. Inspect the portal before retrying.");
@@ -59,6 +60,7 @@ async function showConnection(value) {
   element("native-confirmed").disabled = !permission || !idle || value.phase !== "awaiting_candidate";
   element("native-complete").disabled = element("native-confirmed").disabled || !element("native-confirmed").checked;
   element("native-refresh").disabled = !permission || !idle || value.phase !== "paired";
+  element("native-disconnect").disabled = !permission || !idle || !value.device_id || !(value.phase === "paired" || value.phase === "paused" && value.resume_phase === "paired");
   element("native-pause").disabled = ["idle", "paused"].includes(value.phase);
   element("native-resume").disabled = !idle || value.phase !== "paused";
   element("native-inspect").disabled = !permission || !idle || value.phase !== "unknown" || !value.pairing_id;
@@ -79,7 +81,14 @@ function connectionAction(id, type) {
     // This is presentation only; the worker persists intent before any request.
     // Keep Pause usable while a socket response is pending.
     if (pending && connection) await showConnection({ ...connection, phase: pending, busy: true, connected: false, message: "" });
-    try { await showConnection(await request({ type })); }
+    try {
+      const result = await request({ type });
+      await showConnection(result);
+      if (nativeAssistance) {
+        element("assistance").hidden = !result.connected;
+        if (result.connected) await showAssistance(await request({ type: "assistance_status" }));
+      }
+    }
     catch (failure) {
       await showConnection(await request({ type: "pairing_status" }));
       throw failure;
@@ -102,6 +111,11 @@ connectionAction("native-refresh", "pairing_refresh");
 connectionAction("native-pause", "pairing_cancel");
 connectionAction("native-resume", "pairing_resume");
 connectionAction("native-inspect", "pairing_inspect");
+action("native-disconnect", async () => {
+  if (!connection?.device_id || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(connection.device_id)
+      || !(connection.phase === "paired" || connection.phase === "paused" && connection.resume_phase === "paired")) throw new Error("A completed browser connection is required.");
+  await chrome.tabs.create({ url: `${CONFIG.websiteOrigin}/browser-companion?native_device=${connection.device_id}` });
+});
 element("native-confirmed").addEventListener("change", () => {
   element("native-complete").disabled = !element("native-confirmed").checked || element("native-confirmed").disabled;
 });
@@ -112,6 +126,7 @@ async function showAssistance(value) {
   const permitted = await chrome.permissions.contains({ origins });
   element("assistance-permission").disabled = permitted;
   element("assistance-connect").disabled = !permitted || value.busy || value.review_id || !["idle", "pending", "active"].includes(value.phase);
+  element("assistance-connect").hidden = nativeAssistance;
   element("assistance-check").disabled = !permitted || value.busy || value.phase === "idle";
   element("assistance-review").disabled = !value.review_url || value.busy || value.phase === "idle";
   element("assistance-prepare").disabled = !permitted || value.busy || value.review_id || value.phase !== "active";
@@ -132,13 +147,13 @@ function assistanceAction(id, type) {
     const message = ["assistance_prepare", "assistance_prepare_attachment", "assistance_prepare_submit"].includes(type) ? { type, application_id: element("assistance-application").value.trim() } : { type };
     if (assistance && ["assistance_fill", "assistance_prepare", "assistance_prepare_attachment", "assistance_prepare_submit"].includes(type)) await showAssistance({ ...assistance, busy: true, can_fill: false, message: "Working on the reviewed application…" });
     try { await showAssistance(await request(message)); }
-    catch (failure) { await showAssistance(await request({ type: "status" })); throw failure; }
+    catch (failure) { await showAssistance(await request({ type: "assistance_status" })); throw failure; }
   });
 }
 action("assistance-permission", async () => {
   const granted = await chrome.permissions.request({ origins: [`${CONFIG.websiteOrigin}/*`, `${CONFIG.portalOrigin}/*`] });
   if (!granted) throw new Error("The exact HireWiz and Greenhouse permissions were not granted.");
-  await showAssistance(await request({ type: "status" }));
+  await showAssistance(await request({ type: "assistance_status" }));
 });
 action("assistance-review", async () => {
   const url = new URL(assistance.review_url);
@@ -165,7 +180,10 @@ try {
     element("grant").value = "local-owner-grant";
     element("permission").disabled = false; if (status.connected) element("prepare").disabled = false;
   } else if (["pairing_only", "local_native_fixture"].includes(status.mode)) await showConnection(status);
-  else if (status.mode === "reviewed_assistance") await showAssistance(status);
+  else if (status.mode === "reviewed_assistance" && status.native_pairing === true) {
+    await showConnection(status.connection);
+    if (status.assistance) await showAssistance(status.assistance);
+  } else if (status.mode === "reviewed_assistance") await showAssistance(status);
   if (status.checkpoint && ["action_in_progress", "unknown"].includes(status.checkpoint.status)) error("Previous fill may be incomplete. Inspect the portal; automatic recovery is disabled.");
 } catch {
   element("mode").textContent = "Browser connection unavailable. No application action is enabled.";

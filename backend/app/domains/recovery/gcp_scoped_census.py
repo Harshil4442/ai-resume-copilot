@@ -12,6 +12,9 @@ from .gcp_partitioned_contracts import (
     ScopedBegin,
     ScopedDenial,
     ScopedJournalIntent,
+    ScopedPairedDeviceActivation,
+    ScopedPairedDeviceDenial,
+    ScopedPairedRevocation,
     ScopedPasswordReset,
     ScopedSession,
     ScopedSubject,
@@ -20,18 +23,20 @@ from .gcp_partitioned_contracts import (
     ScopedTombstone,
 )
 from .gcp_password_lifetime_contracts import (
+    CreateVerifiedOAuthWebSession,
     CreateVerifiedPasswordWebSession,
     EnrollPasswordAccount,
     LifetimeGrantEvidence,
+    verified_session_matches,
 )
-from .gcp_submit_contracts import SubmitDeviceRegistration
+from .gcp_submit_contracts import PairedSubmitDeviceRegistration, SubmitDeviceRegistration
 from .store import GuardUnavailable
 
 SCOPED_NAMESPACES = {"v3_activations", "v3_subjects", "v3_account_owners", "v3_candidate_owners",
     "v3_generation_history", "v3_sessions", "v3_session_tombstones", "v3_account_tombstones",
     "v3_subject_tombstones", "v3_pending_session_denials", "v3_pending_subject_denials", "v3_begins", "v3_reset_completions",
     "v3_submit_devices", "v3_submit_key_owners", "v3_submit_device_tombstones",
-    "v3_submit_reservations", "v3_submit_begins", "v3_submit_exports"}
+    "v3_submit_reservations", "v3_submit_begins", "v3_submit_exports", "v3_pairing_completions", "v3_pairing_revocations"}
 
 
 def validate_scoped_rows(values: dict[tuple[str, str], dict]) -> set[tuple[str, str]]:
@@ -79,11 +84,13 @@ def validate_scoped_rows(values: dict[tuple[str, str], dict]) -> set[tuple[str, 
             initial = GenerationHistory(subject_uuid=subject.subject_uuid, previous_generation=0, auth_generation=1,
                 operation_id=intent.operation_id, credential_sha256=command.credential_sha256)
             expect("v3_generation_history", f"{subject.subject_uuid}:1", initial.model_dump(mode="json"))
-        elif isinstance(command, CreateVerifiedPasswordWebSession):
+        elif isinstance(command, (CreateVerifiedPasswordWebSession, CreateVerifiedOAuthWebSession)):
             # Historical expired/denied sessions remain immutable inventory.
             session = ScopedSession.model_validate(values.get(("v3_sessions", str(command.session_id))))
             subject = subjects.get(str(intent.subject_uuid))
             if (subject is None or session.subject_uuid != subject.subject_uuid
+                    or not verified_session_matches(command, authentication_method=session.authentication_method,
+                        verified_proof_sha256=session.verified_proof_sha256, principal_sha256=session.principal_sha256)
                     or session.principal_sha256 != subject.principal_sha256 or session.activation_operation != intent.operation_id
                     or session.account_binding_id != command.account_binding_id or session.account_binding_id != subject.account_binding_id
                     or session.auth_generation != command.expected_auth_generation
@@ -96,6 +103,37 @@ def validate_scoped_rows(values: dict[tuple[str, str], dict]) -> set[tuple[str, 
         intent = ScopedJournalIntent.model_validate(record.intent)
         command = intent.command
         subject = subjects.get(str(command.subject.subject_uuid))
+        if isinstance(command, (ScopedPairedDeviceActivation, ScopedPairedDeviceDenial, ScopedPairedRevocation)):
+            from .gcp_paired_devices import denial_record, signing_intent
+            if subject is None or subject.enrollment_operation != command.subject.enrollment_operation:
+                raise GuardUnavailable("Paired device command lost protected account origin")
+            operation = "confirm_pairing" if isinstance(command, ScopedPairedDeviceActivation) else "revoke_device"
+            signing = signing_intent(command.signing_begin, command.subject, command.session, operation=operation)
+            retained = records.get(str(signing.operation_id))
+            if retained is None or retained.intent != command.signing_begin:
+                raise GuardUnavailable("Paired device census lost exact full protected signing BEGIN")
+            if isinstance(command, ScopedPairedDeviceActivation):
+                grant, evidence = command.grant, command.evidence
+                device = PairedSubmitDeviceRegistration(operation_id=intent.operation_id, grant=grant,
+                    pairing_operation_id=evidence.intent.operation_id, signing_operation_id=signing.operation_id,
+                    evidence_sha256=evidence.digest)
+                if ("v3_submit_devices", str(grant.device_id)) in values:
+                    expect("v3_submit_devices", str(grant.device_id), device.model_dump(mode="json"))
+                    expect("v3_submit_key_owners", grant.key_sha256, {"device_id":str(grant.device_id),
+                        "subject_uuid":str(command.subject.subject_uuid), "registration_operation":key})
+                    expect("v3_pairing_completions", str(evidence.intent.operation_id), {
+                        "operation_id":key, "evidence_sha256":evidence.digest})
+            elif isinstance(command, ScopedPairedDeviceDenial):
+                if ("v3_submit_device_tombstones", str(command.device_id)) in values:
+                    expect("v3_submit_device_tombstones", str(command.device_id), denial_record(intent))
+            else:
+                denial = records.get(str(command.denial_operation))
+                if denial is None or not isinstance(ScopedJournalIntent.model_validate(denial.intent).command, ScopedPairedDeviceDenial):
+                    raise GuardUnavailable("Native revocation census lost its original protected denial")
+                if ("v3_pairing_revocations", str(command.evidence.intent.operation_id)) in values:
+                    expect("v3_pairing_revocations", str(command.evidence.intent.operation_id), {
+                        "operation_id":key, "evidence_sha256":command.evidence.digest})
+            continue
         if isinstance(command, (ScopedSubmitDeviceEnrollment, ScopedSubmitBegin)):
             if (subject is None or command.subject.enrollment_operation != subject.enrollment_operation
                     or command.subject.account_binding_id != subject.account_binding_id

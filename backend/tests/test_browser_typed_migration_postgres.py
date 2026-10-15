@@ -102,7 +102,8 @@ def test_actual_schema18_to19_preserves_v1_rows_and_only_expands_cursor_then_rou
     assert_cursor_refused(owned.engine, 8)
     admission._migrate(owned.engine, "20261015_0019")
     assert version(owned.engine) == "20261015_0019"
-    assert set(inspect(owned.engine).get_table_names()) == tables_before
+    assert set(inspect(owned.engine).get_table_names()) == tables_before | {
+        "candidate_google_enrollment_challenges", "candidate_google_identities", "candidate_identity_history"}
     after_columns = columns(owned.engine)
     assert [column for column in after_columns if column["name"] != "review_protocol_version"] == columns_before
     protocol_column = next(column for column in after_columns if column["name"] == "review_protocol_version")

@@ -1,18 +1,20 @@
-"""Distinct disabled v3 publication and scoped denial wire contracts."""
+"""Distinct v3 publication, scoped denial and original paired-device contracts."""
 
 from __future__ import annotations
 
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import ConfigDict, Field, model_validator
+from pydantic import ConfigDict, Field, model_serializer, model_validator
 
 from .contracts import Binding, Contract, Digest, Identifier, Timestamp, canonical, fingerprint
 from .gcp_contracts import Generation, RegistryPin
+from .gcp_paired_device_contracts import PairingOwnedEvidence
 from .gcp_password_contracts import PasswordSigningMarker
 from .gcp_password_lifetime_contracts import PasswordLifetimeEffects
 from .gcp_publication_contracts import PublicationPin
 from .gcp_submit_contracts import (
+    PairedSubmitDeviceRegistration,
     SubmitBinding,
     SubmitDeviceGrant,
     SubmitDeviceRegistration,
@@ -133,6 +135,22 @@ class ScopedSession(PartitionedContract):
     expires_at_ms: Timestamp
     credential_sha256: Digest
     activation_operation: UUID
+    authentication_method: Literal["password", "google"] = "password"
+    verified_proof_sha256: Digest | None = None
+
+    @model_validator(mode="after")
+    def exact_authentication(self):
+        if (self.authentication_method == "google") != (self.verified_proof_sha256 is not None):
+            raise ValueError("Protected OAuth sessions require the exact original proof")
+        return self
+
+    @model_serializer(mode="wrap")
+    def compatible_session(self, handler):
+        value = handler(self)
+        if self.authentication_method == "password":
+            value.pop("authentication_method", None)
+            value.pop("verified_proof_sha256", None)
+        return value
 
 
 class GenerationHistory(PartitionedContract):
@@ -278,7 +296,7 @@ class ScopedSubmitDeviceEnrollment(PartitionedContract):
 class ScopedSubmitBegin(PartitionedContract):
     kind: Literal["scoped_submit_begin"] = "scoped_submit_begin"
     subject: ScopedSubject
-    device: SubmitDeviceRegistration
+    device: SubmitDeviceRegistration | PairedSubmitDeviceRegistration
     action: SubmitBinding
 
     @model_validator(mode="after")
@@ -292,12 +310,100 @@ class ScopedSubmitBegin(PartitionedContract):
         return self
 
 
+class ScopedPairedDeviceActivation(PartitionedContract):
+    kind: Literal["scoped_paired_device_activation"] = "scoped_paired_device_activation"
+    subject: ScopedSubject
+    session: ScopedSession
+    grant: SubmitDeviceGrant
+    evidence: PairingOwnedEvidence
+    signing_begin: dict
+
+    @model_validator(mode="after")
+    def exact(self):
+        evidence, grant = self.evidence, self.grant
+        begin = ScopedJournalIntent.model_validate(self.signing_begin)
+        signing = begin.command
+        from .pairing_contracts import digest
+        if (not isinstance(signing, ScopedBegin) or not isinstance(signing.action, PasswordSigningMarker)
+                or signing.subject != self.subject or signing.session != self.session
+                or signing.action.operation != "confirm_pairing" or signing.action.context != evidence.context
+                or signing.action.challenge_id != UUID(evidence.confirmation["challenge_id"])
+                or signing.action.assertion_sha256 != fingerprint(evidence.confirmation["assertion"])
+                or signing.action.challenge_sha256 != digest("candidate-context", evidence.confirmation["context"])
+                or begin.pin != grant.pin or self.session.subject_uuid != self.subject.subject_uuid
+                or self.session.auth_generation != self.subject.auth_generation
+                or self.session.credential_sha256 != self.subject.credential_sha256
+                or evidence.confirmation["assertion"]["principal_sha256"] != self.subject.principal_sha256
+                or evidence.confirmation["assertion"]["auth_generation"] != self.subject.auth_generation):
+            raise ValueError("Paired device activation lost original protected candidate/password approval")
+        if (evidence.intent.command != "complete_device"
+                or grant.context.model_dump(mode="json") != self.subject.model_dump(mode="json", exclude={"enrollment_operation"})
+                or grant.enrollment_provenance_sha256 != evidence.digest
+                or str(grant.device_id) != evidence.device["device_id"]
+                or grant.public_key != evidence.device["public_key"] or grant.key_sha256 != evidence.device["key_sha256"]
+                or grant.key_generation != evidence.device["key_generation"] or grant.executor_revision != evidence.device["executor_revision"]
+                or grant.pin != evidence.intent.pin or grant.epoch_generation != evidence.intent.epoch_generation
+                or self.session.session_id != evidence.context.session_id or self.subject.subject_uuid != UUID(evidence.device["subject_uuid"])):
+            raise ValueError("Exact original paired candidate/device completion required")
+        return self
+
+
+class ScopedPairedDeviceDenial(PartitionedContract):
+    kind: Literal["scoped_paired_device_denial"] = "scoped_paired_device_denial"
+    subject: ScopedSubject
+    session: ScopedSession
+    device_id: UUID
+    signing_begin: dict
+    candidate_challenge: dict
+
+    @model_validator(mode="after")
+    def exact(self):
+        from .pairing_contracts import digest
+        begin = ScopedJournalIntent.model_validate(self.signing_begin)
+        command = begin.command
+        if (not isinstance(command, ScopedBegin) or not isinstance(command.action, PasswordSigningMarker)
+                or command.subject != self.subject or command.session != self.session
+                or command.action.operation != "revoke_device"
+                or command.action.challenge_sha256 != digest("candidate-context", self.candidate_challenge)
+                or self.candidate_challenge.get("device_id") != str(self.device_id)
+                or self.candidate_challenge.get("subject_uuid") != str(self.subject.subject_uuid)
+                or self.candidate_challenge.get("session_id") != str(self.session.session_id)
+                or self.candidate_challenge.get("principal_sha256") != self.subject.principal_sha256
+                or self.candidate_challenge.get("auth_generation") != self.subject.auth_generation):
+            raise ValueError("Protected device denial needs exact original current candidate approval")
+        return self
+
+
+class ScopedPairedRevocation(PartitionedContract):
+    kind: Literal["scoped_paired_revocation"] = "scoped_paired_revocation"
+    subject: ScopedSubject
+    session: ScopedSession
+    evidence: PairingOwnedEvidence
+    signing_begin: dict
+    denial_operation: UUID
+
+    @model_validator(mode="after")
+    def exact(self):
+        begin = ScopedJournalIntent.model_validate(self.signing_begin)
+        command, evidence = begin.command, self.evidence
+        if (evidence.intent.command != "revoke_device" or evidence.intent.password_signing is None
+                or not isinstance(command, ScopedBegin) or not isinstance(command.action, PasswordSigningMarker)
+                or command.subject != self.subject or command.session != self.session
+                or command.action.operation != "revoke_device"
+                or command.action.challenge_id != evidence.intent.password_signing.challenge_id
+                or command.action.context != evidence.context
+                or str(self.subject.subject_uuid) != evidence.device["subject_uuid"]
+                or self.subject.principal_sha256 != evidence.confirmation["assertion"]["principal_sha256"]):
+            raise ValueError("Protected revocation requires exact original native current owner acknowledgement")
+        return self
+
+
 class ScopedJournalIntent(PartitionedContract):
     version: Literal[3] = 3
     kind: Literal["scoped_admission"] = "scoped_admission"
     operation_id: UUID
     pin: RegistryPin
-    command: Annotated[ScopedDenial | ScopedPasswordReset | ScopedBegin | ScopedSubmitDeviceEnrollment | ScopedSubmitBegin, Field(discriminator="kind")]
+    command: Annotated[ScopedDenial | ScopedPasswordReset | ScopedBegin | ScopedSubmitDeviceEnrollment | ScopedSubmitBegin | ScopedPairedDeviceActivation | ScopedPairedDeviceDenial | ScopedPairedRevocation, Field(discriminator="kind")]
     created_at_ms: Timestamp
     deadline_ms: Timestamp
 

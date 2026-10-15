@@ -20,6 +20,37 @@ async function request(operation: string, token?: Record<string, unknown>, body?
 const params = (operation: string) => ({ params: Promise.resolve({ operation }) });
 
 describe("candidate website projected BFF contracts", () => {
+  const legacy = { hirewizUserId: 12, accessToken: "synthetic-private-legacy-bearer", candidateSignInMethod: "google" };
+  it("offers explicit Google enrollment from the private sign-in method without manufacturing native context", async () => {
+    const fetch = vi.fn(); vi.stubGlobal("fetch", fetch);
+    const reply = await GET(await request("eligibility", legacy), params("eligibility"));
+    expect(await reply.json()).toEqual({status:"GOOGLE_ENROLLMENT_AVAILABLE"}); expect(fetch).not.toHaveBeenCalled();
+  });
+  it.each(["google-enrollment-challenge", "enroll-google", "enroll-password"])("requires same-owner private bearer, CSRF and no existing native account for %s", async (operation) => {
+    const fetch = vi.fn(); vi.stubGlobal("fetch", fetch);
+    expect((await POST(await request(operation, undefined, "{}"), params(operation))).status).toBe(401);
+    expect((await POST(await request(operation, retained, "{}"), params(operation))).status).toBe(409);
+    expect((await POST(await request(operation, legacy, "{}", true), params(operation))).status).toBe(403);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+  it("forwards exact Google proof bytes with private bearer and an independently signed ingress header", async () => {
+    const challenge = {challenge_id:context.account_binding_id, nonce:"n".repeat(43),client_id:"synthetic-google-client",expires_at_ms:Date.now()+300000};
+    const fetch = vi.fn(async () => Response.json(challenge)); vi.stubGlobal("fetch", fetch);
+    const reply = await POST(await request("google-enrollment-challenge", legacy, "{}"), params("google-enrollment-challenge"));
+    expect(await reply.json()).toEqual(challenge);
+    const sent=fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(sent[0]).toBe("https://backend.example.com/api/auth/candidate/v1/google-enrollment-challenge");
+    expect(new Headers(sent[1].headers).get("authorization")).toBe(`Bearer ${legacy.accessToken}`);
+    expect(new Headers(sent[1].headers).get("x-hirewiz-candidate-ingress")).toBeTruthy();
+    expect(sent[1].body?.toString()).toBe("{}");
+  });
+  it("rejects a different candidate's enrollment success and malformed/stale challenge", async () => {
+    for (const [operation,data] of [["enroll-google",{status:"ENROLLED",user_id:13}], ["google-enrollment-challenge",{challenge_id:context.account_binding_id,nonce:"n".repeat(43),client_id:"client",expires_at_ms:Date.now()-1}]] as const) {
+      vi.stubGlobal("fetch", vi.fn(async () => Response.json(data)));
+      const result=await POST(await request(operation,legacy,"{}"),params(operation));
+      expect(result.status).toBe(503); expect(await result.json()).toEqual({status:"UNAVAILABLE"});
+    }
+  });
   it("decodes private eligibility with the issuer's trimmed secret", async () => {
     vi.stubEnv("NEXTAUTH_SECRET", ` ${secret} `);
     const fetch=vi.fn(async()=>Response.json({status:"ELIGIBLE"}));vi.stubGlobal("fetch",fetch);

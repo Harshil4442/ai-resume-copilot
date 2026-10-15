@@ -56,6 +56,39 @@ def typed_controls_enabled() -> bool:
     return os.getenv("BROWSER_ASSISTANCE_TYPED_CONTROLS_ENABLED", "false").lower() == "true"
 
 
+def native_pairing_enabled() -> bool:
+    return os.getenv("BROWSER_ASSISTANCE_NATIVE_PAIRING_ENABLED", "false") == "true"
+
+
+def _native_device(db: Session, origin: str, request: DeviceRequest) -> None:
+    """Authenticate locally, release SQL, then refresh independent paired authority."""
+    from ..candidate_accounts.service import revision_from_row
+    from ..recovery.browser_pairing import production_browser_pairing
+    from ..recovery.store import GuardDenied, GuardUnavailable
+    require(enabled(), 503)
+    require(request.operation != "prepare", 409)
+    record = db.query(Device).filter_by(id=str(request.device_id)).first()
+    require(record is not None and record.state == "active" and record.user_id is not None, 403)
+    require(origin == "chrome-extension://" + record.extension_id and record.extension_id == EXTENSION_ID, 403)
+    _verify(request, record.public_key)
+    key, owner = dict(record.public_key), int(record.user_id)
+    db.rollback()  # No native/Storage/KMS request runs beneath SQL/owner locks.
+    try:
+        context = production_browser_pairing().assistance_context(request.device_id, key)
+    except (GuardDenied, GuardUnavailable):
+        raise HTTPException(403, ERROR) from None
+    _owner_lock(db, owner)
+    current = db.query(Device).filter_by(id=str(request.device_id), user_id=owner).populate_existing().with_for_update().one_or_none()
+    account = db.query(core.CandidatePasswordAccount).filter_by(user_id=owner).with_for_update().one_or_none()
+    user = db.query(core.User).filter_by(id=owner).one_or_none()
+    require(current is not None and current.state == "active" and current.public_key == key
+            and account is not None and user is not None and context.candidate_id == owner, 403)
+    try:
+        require(revision_from_row(account, user.password_hash).model_dump(mode="json") == context.model_dump(mode="json"), 403)
+    except (GuardDenied, GuardUnavailable):
+        raise HTTPException(403, ERROR) from None
+
+
 REVIEW_MS = 300_000
 LEASE_MS = 10_000
 P256_ORDER = 0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551
@@ -301,10 +334,12 @@ def candidate(db: Session, user_id: int, operation: str, request: CandidateReque
         require(device is not None, 404)
         require(device.user_id in {None, user_id}, 404)
         if operation == "confirm":
+            require(not native_pairing_enabled(), 409)
             require(request.confirmed is True and request.key_sha256 == device.key_sha256)
             require(device.state == "pending" and _aware(device.pairing_expires_at) > now())
             device.user_id, device.state, device.confirmed_at = user_id, "active", now()
         elif operation == "revoke":
+            require(not native_pairing_enabled(), 409)
             require(device.user_id == user_id and request.confirmed is True)
             device.state, device.revoked_at = "revoked", now()
             for review in db.query(Review).filter_by(device_id=device.id, user_id=user_id).filter(Review.state.in_(["draft", "approved", "running"])):
@@ -423,6 +458,8 @@ def _inspection(body: dict, app, posting, artifact, *, db=None, record=None) -> 
 
 
 def device(db: Session, origin: str, request: DeviceRequest) -> dict | attachments.BinaryDelivery:
+    if native_pairing_enabled():
+        _native_device(db, origin, request)
     if request.operation == "artifact":
         return attachments.deliver(db, origin, request)
     require(enabled(), 503)

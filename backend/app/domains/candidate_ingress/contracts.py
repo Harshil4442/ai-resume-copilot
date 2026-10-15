@@ -27,8 +27,12 @@ CANONICAL_OPERATIONS = frozenset(
         ("POST", "/api/auth/candidate/v1/logout"),
         ("POST", "/api/auth/candidate/v1/web-logout"),
         ("POST", "/api/auth/candidate/v1/password"),
+        ("POST", "/api/auth/candidate/v1/google-enrollment-challenge"),
+        ("POST", "/api/auth/candidate/v1/enroll-google"),
+        ("POST", "/api/auth/candidate/v1/enroll-password"),
         ("POST", "/api/auth/register"),
         ("POST", "/api/auth/login"),
+        ("POST", "/api/auth/google-login"),
         ("POST", "/api/auth/delete-account"),
     }
 )

@@ -10,6 +10,7 @@ import { AssistanceRuntime } from "./assistance-runtime.js";
 import { razorpayAdapter } from "./razorpay-adapter.js";
 
 let assistancePromise;
+const nativeAssistance = () => CONFIG.mode === "reviewed_assistance" && CONFIG.nativePairing != null;
 async function assistanceEngine() {
   return assistancePromise ??= (async () => {
     if (CONFIG.mode !== "reviewed_assistance" || CONFIG.extensionId !== chrome.runtime.id) throw new Error("Reviewed assistance configuration is unavailable");
@@ -59,15 +60,24 @@ async function assistanceEngine() {
         return result?.documentId === expected.document_id && result?.result ? result.result : { outcome: "blocked", reason: "The reviewed document is no longer available" };
       },
     };
-    const identity = await deviceIdentity();
+    let identity = await deviceIdentity();
+    if (nativeAssistance()) {
+      const connection = await pairingEngine();
+      if (!connection.status().connected || connection.state.phase !== "paired") throw new Error("Complete and check the reviewed native browser connection before application assistance.");
+      // Native pairing assigns its durable device ID. The retained private key
+      // stays in IndexedDB; the signed identity claim cannot replace that key.
+      identity = { ...identity, device_id: connection.state.device_id };
+    }
     const transport = new AssistanceTransport({ configuration: CONFIG, identity, beforePost: () => permission(CONFIG.websiteOrigin) });
     const store = { read: async () => (await boundedStorage(chrome.storage.local.get("assistance_checkpoint"))).assistance_checkpoint ?? null,
       write: (value) => boundedStorage(chrome.storage.local.set({ assistance_checkpoint: value })) };
-    return new AssistanceRuntime({ transport, browser, store }).initialise();
+    const runtime = await new AssistanceRuntime({ transport, browser, store }).initialise();
+    if (nativeAssistance()) await runtime.check();
+    return runtime;
   })();
 }
 
-const nativeMode = () => ["pairing_only", "local_native_fixture"].includes(CONFIG.mode);
+const nativeMode = () => ["pairing_only", "local_native_fixture"].includes(CONFIG.mode) || nativeAssistance();
 let pairingPromise;
 function boundedStorage(operation) {
   let timer;
@@ -81,7 +91,8 @@ async function pairingEngine() {
     const checkPermission = async () => {
       if (!await chrome.permissions.contains({ origins: [`${CONFIG.websiteOrigin}/*`] })) throw new Error("The exact HireWiz connection permission is missing or revoked");
     };
-    const transport = new PairingTransport({ configuration: CONFIG, identity: await deviceIdentity(), beforePost: checkPermission });
+    const configuration = nativeAssistance() ? { ...CONFIG, ...CONFIG.nativePairing, mode: "pairing_only" } : CONFIG;
+    const transport = new PairingTransport({ configuration, identity: await deviceIdentity(), beforePost: checkPermission });
     const store = {
       read: async () => (await boundedStorage(chrome.storage.local.get("pairing_checkpoint"))).pairing_checkpoint ?? null,
       write: (value) => boundedStorage(chrome.storage.local.set({ pairing_checkpoint: value })),
@@ -131,8 +142,23 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     if (CONFIG.mode === "reviewed_assistance") {
       if (!message || typeof message !== "object" || Array.isArray(message) || typeof message.type !== "string"
         || Object.keys(message).some((key) => !["type", "application_id"].includes(key))) throw new Error("Unsupported assistance operation");
+      if (nativeAssistance()) {
+        const connection = await pairingEngine();
+        if (message.type === "status") return { mode: CONFIG.mode, native_pairing: true,
+          connection: connection.status(), assistance: connection.status().connected ? (await assistanceEngine()).status() : null };
+        const operations = { pairing_start: "start", pairing_complete: "complete", pairing_refresh: "refresh",
+          pairing_cancel: "cancel", pairing_resume: "resume", pairing_inspect: "inspectUnknown" };
+        if (message.type === "pairing_status") return { mode: CONFIG.mode, ...connection.status() };
+        if (Object.hasOwn(operations, message.type)) {
+          if (message.type === "pairing_cancel" && assistancePromise) await (await assistancePromise).cancel();
+          const result = await connection[operations[message.type]]();
+          return { mode: CONFIG.mode, ...result };
+        }
+        if (!connection.status().connected) throw new Error("Check the current native browser connection before application assistance.");
+        if (message.type === "assistance_connect") throw new Error("Use the candidate-reviewed browser connection above.");
+      }
       const current = await assistanceEngine();
-      if (message.type === "status") return { mode: CONFIG.mode, ...current.status() };
+      if (["status", "assistance_status"].includes(message.type)) return { mode: CONFIG.mode, ...current.status() };
       if (message.type === "assistance_connect") return current.start();
       if (message.type === "assistance_check") return current.check();
       if (message.type === "assistance_prepare") return current.prepare(message.application_id);

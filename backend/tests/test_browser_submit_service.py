@@ -23,6 +23,17 @@ def launch(owned, review):
     return service.device(owned.db, owned.origin, owned.begin_request(review))
 
 
+def test_submit_binding_uses_native_domain_fingerprint_of_the_same_exact_device_key(owned):
+    from backend.app.domains.recovery.pairing_auth import key_fingerprint
+    review = owned.approved()
+    launch(owned, review)
+    native_binding = owned.native.calls[0][1]
+    record = owned.db.get(models.BrowserAssistanceDevice, owned.device_id)
+    assert native_binding.device_key_sha256 == key_fingerprint(record.public_key)
+    assert record.key_sha256 == service.digest(record.public_key)
+    assert native_binding.device_key_sha256 != record.key_sha256
+
+
 def test_final_review_exact_complete_package_and_explicit_twenty_credit_reservation(owned):
     review = owned.review()
     payload = review["payload"]

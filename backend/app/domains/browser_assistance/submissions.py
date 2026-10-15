@@ -229,6 +229,7 @@ def approve(db, record, review):
 
 def _binding(db, record, review, app, artifact, issued, deadline):
     from ..recovery.gcp_submit_contracts import SubmitBinding
+    from ..recovery.pairing_auth import key_fingerprint
     from . import service as s
 
     admission = db.query(s.employer.EmployerAdmission).filter_by(application_id=app.id).one()
@@ -241,7 +242,7 @@ def _binding(db, record, review, app, artifact, issued, deadline):
         action="submit",
         candidate_id=app.user_id,
         device_id=record.id,
-        device_key_sha256=record.key_sha256,
+        device_key_sha256=key_fingerprint(record.public_key),
         device_key_generation=1,
         executor_revision=revision,
         review_id=review.id,

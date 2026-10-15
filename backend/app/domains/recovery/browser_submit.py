@@ -9,9 +9,9 @@ from __future__ import annotations
 import os
 import time
 from threading import Lock
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
-from pydantic import model_validator
+from pydantic import Field, model_serializer, model_validator
 
 from .contracts import canonical, fingerprint
 from .gcp_contracts import WitnessBody, WitnessPin
@@ -35,7 +35,8 @@ class SubmitNativeConfiguration(SubmitContract):
     execution_witness_pin: WitnessPin
     execution_witness_body: WitnessBody
     publication_resource: PartitionedResource
-    device_grant_pin: SubmitGrantPin
+    device_grant_pin: SubmitGrantPin | None = Field(default=None, exclude_if=lambda value: value is None)
+    device_enrollment: Literal["operator", "paired"] = "operator"
     epoch_generation: PositiveInteger
     executor_revision: str
 
@@ -46,6 +47,8 @@ class SubmitNativeConfiguration(SubmitContract):
             self.execution_witness_body,
             self.publication_resource,
         )
+        if ((self.device_enrollment == "operator") != (self.device_grant_pin is not None)):
+            raise ValueError("Operator mode requires its exact grant; paired mode forbids it")
         if (
             pin.registry != body.registry
             or pin.registry != resource.pin.authority.target
@@ -62,6 +65,14 @@ class SubmitNativeConfiguration(SubmitContract):
                 "Exact independent native submit resources, OPEN witness and executor pins required"
             )
         return self
+
+
+    @model_serializer(mode="wrap")
+    def old_operator_configuration(self, handler):
+        value = handler(self)
+        if self.device_enrollment == "operator":
+            value.pop("device_enrollment", None)
+        return value
 
 
 def _sdk_authority(config: SubmitNativeConfiguration) -> GcpSubmitAuthority:
@@ -104,6 +115,7 @@ def _sdk_authority(config: SubmitNativeConfiguration) -> GcpSubmitAuthority:
         config.device_grant_pin,
         epoch_generation=config.epoch_generation,
         executor_revision=config.executor_revision,
+        device_enrollment=config.device_enrollment,
         now_ms=lambda: time.time_ns() // 1_000_000,
     )
 

@@ -1,11 +1,12 @@
 # HireWiz candidate-reviewed Chrome companion
 
-The 0.6.0 source package supports separately reviewed Razorpay/Greenhouse answer
-and resume-attachment assistance. Production stays closed until a later schema19
-release, dedicated signer and explicit feature flags are accepted. The frozen F7
-release remains schema18. Existing experimental native pairing
-and independent-recovery factories remain disabled; this pilot uses the existing
-signed-in Google candidate session and a retained nonextractable browser key.
+The 0.7.0 source package supports separately reviewed Razorpay/Greenhouse answers,
+resume attachment and one final submit action. Production stays closed until a
+later schema19 release, native resources, public key pins and explicit feature
+flags are accepted. The frozen F7 release remains schema18. A separately configured
+release connects normal candidates through genuine protected account enrollment,
+current-password approval and native browser pairing. The default ZIP preserves
+the earlier pilot configuration; it does not contain native authority or deployment pins.
 
 The candidate chooses a saved application and resume, connects this browser by
 reviewing its fingerprint on HireWiz, opens the exact company portal, and reviews
@@ -60,6 +61,14 @@ changes; no private key, session credential, test builder or candidate data belo
 in this artifact. See [the design decision](../docs/adr/007-reviewed-browser-assistance.md)
 for expiry, cancellation and database-restore limitations. Existing local synthetic
 and native experiment tests remain separate and do not constitute production proof.
+
+For the normal candidate cohort, build with `python3 scripts/package-reviewed.py
+--native-config /absolute/path/to/reviewed-public-pins.json`. The bounded JSON has
+exactly `executorRevision: "companion_0_7_0"` and `authorityKey`, the actual public
+P-256 claim JWK from the configured KMS version. Use the same argument with
+`--check`. This replaces only public `config.js` bytes in the archive; it supplies
+no account, device or action grant. Publish the digest of that configured build.
+See [normal candidate activation](../docs/delivery/NORMAL_CANDIDATE_BROWSER_ACTIVATION_2026-10-15.md).
 
 The current disabled v2 draft can bind the known Phone Country selector and up to
 five employment rows in one review (bounded cursor 0–64 in undeployed schema19).

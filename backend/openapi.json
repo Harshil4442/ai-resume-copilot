@@ -1469,6 +1469,12 @@
         "title": "EmployerAdmissionPolicy",
         "type": "object"
       },
+      "EmptyEnrollmentChallenge": {
+        "additionalProperties": false,
+        "properties": {},
+        "title": "EmptyEnrollmentChallenge",
+        "type": "object"
+      },
       "EvidenceCreate": {
         "additionalProperties": false,
         "properties": {
@@ -1761,6 +1767,69 @@
           "package_digest"
         ],
         "title": "ExecuteCreate",
+        "type": "object"
+      },
+      "GoogleEnrollment": {
+        "additionalProperties": false,
+        "properties": {
+          "accepted_enrollment": {
+            "const": true,
+            "title": "Accepted Enrollment",
+            "type": "boolean"
+          },
+          "challenge_id": {
+            "format": "uuid",
+            "title": "Challenge Id",
+            "type": "string"
+          },
+          "current_password": {
+            "anyOf": [
+              {
+                "format": "password",
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string",
+                "writeOnly": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Password"
+          },
+          "id_token": {
+            "format": "password",
+            "maxLength": 4096,
+            "minLength": 100,
+            "title": "Id Token",
+            "type": "string",
+            "writeOnly": true
+          },
+          "nonce": {
+            "format": "password",
+            "maxLength": 128,
+            "minLength": 32,
+            "title": "Nonce",
+            "type": "string",
+            "writeOnly": true
+          },
+          "password": {
+            "format": "password",
+            "maxLength": 128,
+            "minLength": 10,
+            "title": "Password",
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "accepted_enrollment",
+          "challenge_id",
+          "nonce",
+          "id_token",
+          "password"
+        ],
+        "title": "GoogleEnrollment",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -3921,6 +3990,30 @@
           "via"
         ],
         "title": "PartialMatch",
+        "type": "object"
+      },
+      "PasswordEnrollment": {
+        "additionalProperties": false,
+        "properties": {
+          "accepted_enrollment": {
+            "const": true,
+            "title": "Accepted Enrollment",
+            "type": "boolean"
+          },
+          "password": {
+            "format": "password",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "accepted_enrollment",
+          "password"
+        ],
+        "title": "PasswordEnrollment",
         "type": "object"
       },
       "ProjectRecommendation": {
@@ -6711,6 +6804,468 @@
           }
         },
         "summary": "Availability",
+        "tags": [
+          "candidate-password-lifecycle"
+        ]
+      }
+    },
+    "/api/auth/candidate/v1/enroll-google": {
+      "post": {
+        "operationId": "enroll_google_api_auth_candidate_v1_enroll_google_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GoogleEnrollment"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "408": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Enroll Google",
+        "tags": [
+          "candidate-password-lifecycle"
+        ]
+      }
+    },
+    "/api/auth/candidate/v1/enroll-password": {
+      "post": {
+        "operationId": "enroll_password_api_auth_candidate_v1_enroll_password_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordEnrollment"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "408": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Enroll Password",
+        "tags": [
+          "candidate-password-lifecycle"
+        ]
+      }
+    },
+    "/api/auth/candidate/v1/google-enrollment-challenge": {
+      "post": {
+        "operationId": "google_enrollment_challenge_api_auth_candidate_v1_google_enrollment_challenge_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmptyEnrollmentChallenge"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "408": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Google Enrollment Challenge",
         "tags": [
           "candidate-password-lifecycle"
         ]

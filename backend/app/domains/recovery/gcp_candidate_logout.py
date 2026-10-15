@@ -20,7 +20,11 @@ from .gcp_partitioned_contracts import (
     ScopedSession,
     ScopedTombstone,
 )
-from .gcp_password_lifetime_contracts import CreateVerifiedPasswordWebSession
+from .gcp_password_lifetime_contracts import (
+    CreateVerifiedOAuthWebSession,
+    CreateVerifiedPasswordWebSession,
+    verified_session_matches,
+)
 from .gcp_scoped_authority import (
     ScopedCandidateAuthority,
     _origin,
@@ -43,11 +47,14 @@ class GcpCandidateCookieLogout:
         session = ScopedSession.model_validate(tx.get("v3_sessions", str(context.session_id)))
         origin = _origin(tx, session.activation_operation).intent.command
         if (subject.model_dump(mode="json", exclude={"enrollment_operation"}) != expected.model_dump(mode="json")
+                or context.authentication_method != session.authentication_method
+                or not verified_session_matches(origin, authentication_method=session.authentication_method,
+                    verified_proof_sha256=session.verified_proof_sha256, principal_sha256=session.principal_sha256)
                 or context.candidate_id != subject.candidate_id or context.account_binding_id != subject.account_binding_id
                 or context.account_binding_id != session.account_binding_id or context.session_id != session.session_id
                 or session.subject_uuid != subject.subject_uuid or session.auth_generation != subject.auth_generation
                 or session.principal_sha256 != subject.principal_sha256 or session.credential_sha256 != subject.credential_sha256
-                or not isinstance(origin, CreateVerifiedPasswordWebSession)
+                or not isinstance(origin, (CreateVerifiedPasswordWebSession, CreateVerifiedOAuthWebSession))
                 or origin.account_binding_id != context.account_binding_id or origin.session_id != context.session_id
                 or origin.expected_auth_generation != expected.auth_generation or origin.credential_sha256 != expected.credential_sha256
                 or origin.expires_at_ms != session.expires_at_ms):
@@ -98,7 +105,10 @@ class GcpCandidateCookieLogout:
                     or enrollment.command.account_binding_id != frozen.account_binding_id
                     or enrollment.command.candidate_id != frozen.candidate_id
                     or enrollment.command.principal_sha256 != command.subject.principal_sha256
-                    or not isinstance(session.command, CreateVerifiedPasswordWebSession)
+                    or not isinstance(session.command, (CreateVerifiedPasswordWebSession, CreateVerifiedOAuthWebSession))
+                    or command.session.authentication_method != frozen.authentication_method
+                    or not verified_session_matches(session.command, authentication_method=command.session.authentication_method,
+                        verified_proof_sha256=command.session.verified_proof_sha256, principal_sha256=command.session.principal_sha256)
                     or session.command.account_binding_id != frozen.account_binding_id
                     or session.command.session_id != frozen.session_id
                     or session.command.expected_auth_generation != auth_generation
@@ -145,7 +155,10 @@ class GcpCandidateCookieLogout:
             if tx.get("v3_sessions", str(fixed_context.session_id)) != command.session.model_dump(mode="json"):
                 raise GuardUnavailable("Retained logout lost its immutable session")
             original = _origin(tx, command.session.activation_operation).intent.command
-            if (not isinstance(original, CreateVerifiedPasswordWebSession)
+            if (not isinstance(original, (CreateVerifiedPasswordWebSession, CreateVerifiedOAuthWebSession))
+                    or command.session.authentication_method != fixed_context.authentication_method
+                    or not verified_session_matches(original, authentication_method=command.session.authentication_method,
+                        verified_proof_sha256=command.session.verified_proof_sha256, principal_sha256=command.session.principal_sha256)
                     or original.session_id != fixed_context.session_id
                     or original.account_binding_id != fixed_context.account_binding_id
                     or original.expected_auth_generation != expected.auth_generation

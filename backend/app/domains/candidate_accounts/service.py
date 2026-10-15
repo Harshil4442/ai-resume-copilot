@@ -19,11 +19,18 @@ from uuid import UUID, uuid4
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from ...models import CandidateLifetimeHistory, CandidatePasswordAccount, User, UserProfile
+from ...models import (
+    CandidateGoogleIdentity,
+    CandidateLifetimeHistory,
+    CandidatePasswordAccount,
+    User,
+    UserProfile,
+)
 from ...security import hash_password, verify_password
 from ..recovery.password_reauth import CandidateWebSession
 from ..recovery.store import GuardDenied, GuardUnavailable
 from .contracts import CandidateCredentialRevision, CandidateLoginResult
+from .google import GoogleBearerProof, GoogleIdentity
 from .retention import CandidateLifetimeRetention
 
 FAILURE = "Candidate password authentication failed"
@@ -66,6 +73,39 @@ class CandidateAccountService:
         self._dummy_hash = hash_password(secrets.token_urlsafe(32))
         self.retention, self.now_ms = retention, now_ms
         self.cookie_logout = cookie_logout
+
+    def google_challenge(self, candidate_id: int, proof: GoogleBearerProof) -> dict:
+        from .enrollment import google_challenge
+        return google_challenge(self, candidate_id, proof)
+
+    def enroll_google(self, candidate_id: int, proof: GoogleBearerProof, **values) -> int:
+        from .enrollment import enroll_google
+        return enroll_google(self, candidate_id, proof, **values)
+
+    def enroll_password(self, candidate_id: int, password: str) -> int:
+        from .enrollment import enroll_password
+        return enroll_password(self, candidate_id, password)
+
+    def login_google(self, identity: GoogleIdentity) -> CandidateLoginResult:
+        with self.sessions() as db:
+            link = db.query(CandidateGoogleIdentity).filter_by(principal_sha256=identity.principal_sha256).one_or_none()
+            if link is None or link.state != "ACTIVE":
+                raise GuardDenied("Google account is not explicitly linked")
+            user = db.query(User).filter_by(id=link.user_id).one_or_none()
+            row = mapped_account(db, link.user_id)
+            if user is None or row is None:
+                raise GuardDenied(FAILURE)
+            revision = revision_from_row(row, user.password_hash)
+        now = self.now_ms()
+        if (not now - 120_000 <= identity.authenticated_at_ms <= now + 5_000
+                or not now - 120_000 <= identity.issued_at_ms <= now + 5_000):
+            raise GuardDenied(FAILURE)
+        context = self.retention.issue_oauth(revision, principal_sha256=identity.principal_sha256,
+            verified_proof_sha256=identity.proof_sha256, expires_at_ms=now + SESSION_MS)
+        if context is None or self.retention.check_session(context, revision) is not True:
+            raise GuardUnavailable(UNAVAILABLE)
+        return CandidateLoginResult(context=context, auth_generation=revision.auth_generation,
+                                    expires_at_ms=now + SESSION_MS)
 
     def registration_status(self, *, email: str, password: str) -> str:
         """Credential-verified status only; never adopt an enrollment ACK."""
@@ -226,5 +266,6 @@ class CandidateAccountService:
             db.commit()  # Existing account-data deletion must run only after this independent denial.
 
 
-def production_candidate_accounts() -> CandidateAccountService:
-    raise GuardUnavailable(UNAVAILABLE)
+def production_candidate_accounts():
+    from .production import production_candidate_accounts as configured
+    return configured()

@@ -38,6 +38,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/candidate/v1/enroll-google": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enroll Google */
+        post: operations["enroll_google_api_auth_candidate_v1_enroll_google_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/candidate/v1/enroll-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enroll Password */
+        post: operations["enroll_password_api_auth_candidate_v1_enroll_password_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/candidate/v1/google-enrollment-challenge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Google Enrollment Challenge */
+        post: operations["google_enrollment_challenge_api_auth_candidate_v1_google_enrollment_challenge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/candidate/v1/login": {
         parameters: {
             query?: never;
@@ -2342,6 +2393,8 @@ export interface components {
             /** Version */
             version: string;
         };
+        /** EmptyEnrollmentChallenge */
+        EmptyEnrollmentChallenge: Record<string, never>;
         /** EvidenceCreate */
         EvidenceCreate: {
             /**
@@ -2432,6 +2485,36 @@ export interface components {
         ExecuteCreate: {
             /** Package Digest */
             package_digest: string;
+        };
+        /** GoogleEnrollment */
+        GoogleEnrollment: {
+            /**
+             * Accepted Enrollment
+             * @constant
+             */
+            accepted_enrollment: true;
+            /**
+             * Challenge Id
+             * Format: uuid
+             */
+            challenge_id: string;
+            /** Current Password */
+            current_password?: string | null;
+            /**
+             * Id Token
+             * Format: password
+             */
+            id_token: string;
+            /**
+             * Nonce
+             * Format: password
+             */
+            nonce: string;
+            /**
+             * Password
+             * Format: password
+             */
+            password: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -3168,6 +3251,19 @@ export interface components {
             skill: string;
             /** Via */
             via: string;
+        };
+        /** PasswordEnrollment */
+        PasswordEnrollment: {
+            /**
+             * Accepted Enrollment
+             * @constant
+             */
+            accepted_enrollment: true;
+            /**
+             * Password
+             * Format: password
+             */
+            password: string;
         };
         /** ProjectRecommendation */
         ProjectRecommendation: {
@@ -4107,6 +4203,294 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+        };
+    };
+    enroll_google_api_auth_candidate_v1_enroll_google_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GoogleEnrollment"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+        };
+    };
+    enroll_password_api_auth_candidate_v1_enroll_password_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordEnrollment"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+        };
+    };
+    google_enrollment_challenge_api_auth_candidate_v1_google_enrollment_challenge_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmptyEnrollmentChallenge"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

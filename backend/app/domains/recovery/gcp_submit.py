@@ -7,10 +7,11 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from threading import Lock
-from typing import cast
+from typing import Literal, cast
 from uuid import UUID, uuid4
 
 from google.cloud.storage import Bucket, Client
+from pydantic import TypeAdapter
 
 from .contracts import canonical, fingerprint
 from .gcp_buffer import BufferedTransaction
@@ -21,6 +22,7 @@ from .gcp_partitioned_contracts import (
     PartitionedRecord,
     PartitionedResource,
     ScopedJournalIntent,
+    ScopedPairedDeviceActivation,
     ScopedSubject,
     ScopedSubmitBegin,
     ScopedSubmitDeviceEnrollment,
@@ -28,8 +30,10 @@ from .gcp_partitioned_contracts import (
 from .gcp_partitioned_publication import PartitionedPublicationCoordinator
 from .gcp_scoped_authority import current_subject
 from .gcp_submit_contracts import (
+    PairedSubmitDeviceRegistration,
     SubmitBinding,
     SubmitContext,
+    SubmitDevice,
     SubmitDeviceGrant,
     SubmitDeviceRegistration,
     SubmitGrantPin,
@@ -107,19 +111,25 @@ def checked_device(
     context: SubmitContext,
     binding: SubmitBinding,
     resource: PartitionedResource,
-) -> SubmitDeviceRegistration:
-    device = SubmitDeviceRegistration.model_validate(
-        tx.get("v3_submit_devices", str(binding.device_id))
-    )
+) -> SubmitDevice:
+    device = TypeAdapter(SubmitDevice).validate_python(tx.get("v3_submit_devices", str(binding.device_id)))
     grant = device.grant
     full = PartitionedRecord.model_validate(tx.get("v3_records", str(device.operation_id)))
     intent = ScopedJournalIntent.model_validate(full.intent)
     command = intent.command
+    valid = (isinstance(command, ScopedSubmitDeviceEnrollment) and isinstance(device, SubmitDeviceRegistration)
+             and command.grant_pin == device.grant_pin)
+    if isinstance(command, ScopedPairedDeviceActivation) and isinstance(device, PairedSubmitDeviceRegistration):
+        from .gcp_paired_devices import check_signing
+        begin = check_signing(tx, command.signing_begin, command.subject, command.session, operation="confirm_pairing")
+        valid = (device.pairing_operation_id == command.evidence.intent.operation_id
+            and device.signing_operation_id == begin.operation_id and device.evidence_sha256 == command.evidence.digest
+            and tx.get("v3_pairing_completions", str(device.pairing_operation_id)) == {
+                "operation_id":str(device.operation_id), "evidence_sha256":device.evidence_sha256})
     if (
-        not isinstance(command, ScopedSubmitDeviceEnrollment)
+        not valid
         or intent.pin != resource.pin.authority.target
         or command.grant != grant
-        or command.grant_pin != device.grant_pin
         or grant.pin != intent.pin
         or grant.context != context
         or grant.device_id != binding.device_id
@@ -177,10 +187,11 @@ class GcpSubmitAuthority:
         publication: PartitionedPublicationCoordinator,
         journal: GcsJournal,
         fence: GcsWitnessFence,
-        grant_pin: SubmitGrantPin,
+        grant_pin: SubmitGrantPin | None,
         *,
         epoch_generation: int,
         executor_revision: str,
+        device_enrollment: Literal["operator", "paired"] = "operator",
         now_ms: Callable[[], int] = lambda: time.time_ns() // 1_000_000,
     ):
         if (
@@ -193,11 +204,13 @@ class GcpSubmitAuthority:
             or type(epoch_generation) is not int
             or epoch_generation < 1
             or not executor_revision
+            or ((device_enrollment == "operator") != (grant_pin is not None))
         ):
             raise GuardDenied(
                 "Exact independent native submit composition and deployment pins required"
             )
         self.publication, self.journal, self.fence = publication, journal, fence
+        self.device_enrollment = device_enrollment
         self.grant_pin, self.epoch_generation, self.executor_revision = (
             grant_pin,
             epoch_generation,
@@ -212,12 +225,25 @@ class GcpSubmitAuthority:
             raise GuardUnavailable("Trusted submit authority clock is unavailable")
         return now
 
-    def _fresh(self) -> SubmitDeviceGrant:
+    def _fresh(self) -> SubmitDeviceGrant | None:
         self.fence.check(self.publication.resource.pin.authority.target)
         self.publication._fresh_open()
-        grant = read_operator_grant(
-            self.journal.bucket.client.bucket(self.grant_pin.bucket), self.grant_pin
-        )
+        if self.device_enrollment == "paired":
+            from .gcp_buffer import BufferedRegistry
+            from .gcp_pairing import pairing_control_record
+            from .gcp_rpc import FirestoreRpc
+            from .gcp_service import control_record
+            if type(self.fence.identity) is not FirestoreRpc:
+                raise GuardUnavailable("Actual execution control reader is required")
+            execution = BufferedRegistry(self.fence.identity)
+            controls = execution.read_many((("control", "meta"), ("pairing_control", "current")))
+            pin = self.publication.resource.pin.authority.target
+            if (controls["control", "meta"] != control_record(pin)
+                    or controls["pairing_control", "current"] != pairing_control_record(pin, self.epoch_generation)):
+                raise GuardUnavailable("Current independent paired execution epoch changed")
+            return None
+        assert self.grant_pin is not None
+        grant = read_operator_grant(self.journal.bucket.client.bucket(self.grant_pin.bucket), self.grant_pin)
         if (
             grant.pin != self.publication.resource.pin.authority.target
             or grant.epoch_generation != self.epoch_generation
@@ -232,7 +258,7 @@ class GcpSubmitAuthority:
         context: SubmitContext,
         binding: SubmitBinding,
         expected: ScopedSubmitBegin | None = None,
-    ) -> tuple[ScopedSubject, SubmitDeviceRegistration]:
+    ) -> tuple[ScopedSubject, SubmitDevice]:
         self.publication._root(tx, opened=True)
         now = self._now()
         if (
@@ -244,7 +270,8 @@ class GcpSubmitAuthority:
         subject = checked_subject(tx, context)
         device = checked_device(tx, context, binding, self.publication.resource)
         if (
-            device.grant_pin != self.grant_pin
+            (self.device_enrollment == "operator" and (not isinstance(device, SubmitDeviceRegistration) or device.grant_pin != self.grant_pin))
+            or (self.device_enrollment == "paired" and not isinstance(device, PairedSubmitDeviceRegistration))
             or device.grant.epoch_generation != self.epoch_generation
             or expected is not None
             and (expected.subject != subject or expected.device != device)
@@ -261,7 +288,10 @@ class GcpSubmitAuthority:
 
     def provision_device(self) -> None:
         """Explicit operator port only. Never called by factory/reserve or SQL adoption."""
+        if self.device_enrollment != "operator" or self.grant_pin is None:
+            raise GuardDenied("Operator device provisioning is unavailable in paired mode")
         grant = self._fresh()
+        assert grant is not None
         subject: list[ScopedSubject] = []
         self._run(lambda tx: subject.append(checked_subject(tx, grant.context)))
         now = self._now()
@@ -324,7 +354,7 @@ class GcpSubmitAuthority:
     def reserve(self, context: SubmitContext, binding: SubmitBinding) -> SubmitBeginAck | None:
         context = SubmitContext.model_validate_json(canonical(_json(context)))
         binding = SubmitBinding.model_validate_json(canonical(_json(binding)))
-        current: list[tuple[ScopedSubject, SubmitDeviceRegistration]] = []
+        current: list[tuple[ScopedSubject, SubmitDevice]] = []
         self._run(lambda tx: current.append(self._current(tx, context, binding)))
         now = self._now()
         intent = ScopedJournalIntent(

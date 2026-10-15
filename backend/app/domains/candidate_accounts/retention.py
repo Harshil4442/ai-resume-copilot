@@ -14,6 +14,7 @@ from ..recovery.gcp_password_lifetime import (
     PasswordLifetimeOwnedAck,
 )
 from ..recovery.gcp_password_lifetime_contracts import (
+    CreateVerifiedOAuthWebSession,
     CreateVerifiedPasswordWebSession,
     EnrollPasswordAccount,
 )
@@ -40,6 +41,7 @@ class ProtectedCandidateLifetimes(Protocol):
 class CandidateLifetimeRetention(Protocol):
     def enroll(self, revision: CandidateCredentialRevision) -> bool: ...
     def issue(self, revision: CandidateCredentialRevision, *, expires_at_ms: int) -> CandidateWebSession | None: ...
+    def issue_oauth(self, revision: CandidateCredentialRevision, *, principal_sha256: str, verified_proof_sha256: str, expires_at_ms: int) -> CandidateWebSession | None: ...
     def check_account(self, revision: CandidateCredentialRevision) -> bool: ...
     def check_session(self, context: CandidateWebSession, revision: CandidateCredentialRevision) -> bool: ...
     def revoke_session(self, context: CandidateWebSession, revision: CandidateCredentialRevision) -> bool: ...
@@ -72,6 +74,21 @@ class NativeCandidateLifetimeRetention:
             expires_at_ms=expires_at_ms)))
         if (execution.status.status != "COMMITTED" or execution.owned_ack is None
                 or execution.context is None
+                or self.protected.activate(execution.owned_ack, self.issuer) is not True):
+            return None
+        if self.protected.check_session(execution.context, revision) is not True:
+            return None
+        return execution.context
+
+    def issue_oauth(self, revision: CandidateCredentialRevision, *, principal_sha256: str, verified_proof_sha256: str, expires_at_ms: int) -> CandidateWebSession | None:
+        if principal_sha256 != revision.principal_sha256 or self.protected.check_account(revision) is not True:
+            raise GuardUnavailable("Verified OAuth proof does not own the enrolled principal")
+        execution = self.issuer.execute(self.issuer.allocate(CreateVerifiedOAuthWebSession(
+            account_binding_id=revision.account_binding_id, session_id=uuid4(), expected_auth_generation=revision.auth_generation,
+            credential_sha256=revision.credential_sha256, principal_sha256=principal_sha256,
+            verified_proof_sha256=verified_proof_sha256, expires_at_ms=expires_at_ms)))
+        if (execution.status.status != "COMMITTED" or execution.owned_ack is None or execution.context is None
+                or execution.context.authentication_method != "google"
                 or self.protected.activate(execution.owned_ack, self.issuer) is not True):
             return None
         if self.protected.check_session(execution.context, revision) is not True:

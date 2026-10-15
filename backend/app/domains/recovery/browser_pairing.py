@@ -1,4 +1,4 @@
-"""Identity-only HTTP composition; production provisioning is deliberately absent.
+"""Exact candidate/device HTTP pairing over separately configured native authority.
 
 The gateway assertion is not candidate reauthentication. It only selects a retained
 server session. Password verification and independent consume occur in the existing
@@ -164,11 +164,12 @@ class GatewayVerifier:
 class NativeBrowserPairing:
     """One explicitly injected native coordinator, password boundary and gateway pin."""
     def __init__(self, coordinator: GcpPairingCoordinator, password: PasswordReauthService,
-                 gateway: GatewayVerifier):
+                 gateway: GatewayVerifier, *, paired_devices=None):
         if (type(coordinator) is not GcpPairingCoordinator
                 or type(password) is not PasswordReauthService or password.pairing is not coordinator.core):
             raise GuardUnavailable("Connected native pairing/password boundaries are required")
         self.coordinator, self.password, self.gateway = coordinator, password, gateway
+        self.paired_devices = paired_devices
         self.identity = RegisteredPasswordIdentity(coordinator.core.store)
 
     def _consume(self, namespace: str, request_id: str, *, context: CandidateWebSession | None,
@@ -198,12 +199,16 @@ class NativeBrowserPairing:
         if result.status != "COMMITTED" or result.result is None:
             return {"status": "UNKNOWN", "operation_id": str(result.operation_id),
                     "retry_allowed": False}
+        if command == "complete_device" and self.paired_devices is not None:
+            self.paired_devices.activate(self.coordinator.take_owned_ack(result))
         return result.result
 
     def candidate(self, operation: str, raw: bytes, assertion: str, signature: str) -> dict:
         c = self.coordinator
         envelope = self.gateway.verify(assertion, signature, path=f"{PREFIX}/candidate/{operation}",
             raw=raw, now_ms=c.now_ms())
+        if self.paired_devices is not None:
+            self.paired_devices.scoped.resolve(envelope.context)
         data = exact_json(raw)
         if operation in {"challenge", "revoke-challenge"}:
             model = PairingSelection if operation == "challenge" else DeviceSelection
@@ -330,6 +335,9 @@ class NativeBrowserPairing:
 
 
 class UnavailableBrowserPairing:
+    def assistance_context(self, device_id, public_key):
+        raise GuardUnavailable("Native assistance pairing is unavailable")
+
     def candidate(self, operation: str, raw: bytes, assertion: str, signature: str) -> dict:
         raise GuardUnavailable("Browser pairing is not available for this release")
 
@@ -337,6 +345,9 @@ class UnavailableBrowserPairing:
         raise GuardUnavailable("Browser pairing is not available for this release")
 
 
-def production_browser_pairing() -> UnavailableBrowserPairing:
-    """No env flag, ADC, legacy bearer, SQL projection or fixture enables authority."""
-    return UnavailableBrowserPairing()
+def production_browser_pairing():
+    import os
+    if os.environ.get("BROWSER_PAIRING_NATIVE_ENABLED") != "true":
+        return UnavailableBrowserPairing()
+    from .browser_pairing_production import production_browser_pairing as configured
+    return configured()

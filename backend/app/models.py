@@ -74,6 +74,33 @@ class CandidateLifetimeHistory(Base):
     registration_id = Column(String(36), primary_key=True)
 
 
+class CandidateGoogleEnrollmentChallenge(Base):
+    __tablename__ = "candidate_google_enrollment_challenges"
+    id = Column(String(36), primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    nonce_sha256 = Column(String(64), nullable=False)
+    principal_sha256 = Column(String(64), nullable=False)
+    email_sha256 = Column(String(64), nullable=False)
+    credential_sha256 = Column(String(64), nullable=False)
+    expires_at_ms = Column(BigInteger, nullable=False)
+    used = Column(Boolean, nullable=False)
+
+
+class CandidateGoogleIdentity(Base):
+    """Projection only; the original native account/session grant remains required."""
+    __tablename__ = "candidate_google_identities"
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    principal_sha256 = Column(String(64), unique=True, nullable=False)
+    enrollment_proof_sha256 = Column(String(64), nullable=False)
+    state = Column(String(24), nullable=False)
+
+
+class CandidateIdentityHistory(Base):
+    """Detached identity-feature marker survives candidate deletion/answer erasure."""
+    __tablename__ = "candidate_identity_history"
+    registration_id = Column(String(36), primary_key=True)
+
+
 class PaymentOrder(Base):
     """Provider-neutral, server-priced checkout order.
 

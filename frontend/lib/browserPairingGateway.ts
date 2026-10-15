@@ -8,7 +8,7 @@ export const CANDIDATE_OPERATIONS = new Set(["challenge", "confirm", "revoke-cha
 export const DEVICE_OPERATIONS = new Set(["prepare", "create", "challenge", "complete", "status", "refresh-challenge", "refresh"]);
 const UUID_PATTERN = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 
-export type RetainedBrowserSession = { candidate_id: number; account_binding_id: string; session_id: string };
+export type RetainedBrowserSession = { candidate_id: number; account_binding_id: string; session_id: string; authentication_method?: "google" };
 
 export function retainedBrowserSession(token: JWT | null): RetainedBrowserSession | null {
   // This future claim must be installed by reviewed native session provisioning at login.
@@ -16,11 +16,13 @@ export function retainedBrowserSession(token: JWT | null): RetainedBrowserSessio
   const value = token?.browserPairingSession;
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const session = value as Record<string, unknown>;
-  if (Object.keys(session).sort().join(",") !== "account_binding_id,candidate_id,session_id"
+  const keys = Object.keys(session).sort().join(",");
+  if (!(keys === "account_binding_id,candidate_id,session_id" || (keys === "account_binding_id,authentication_method,candidate_id,session_id" && session.authentication_method === "google"))
       || typeof session.candidate_id !== "number" || !Number.isSafeInteger(session.candidate_id) || session.candidate_id <= 0
       || typeof session.account_binding_id !== "string" || !UUID_PATTERN.test(session.account_binding_id)
       || typeof session.session_id !== "string" || !UUID_PATTERN.test(session.session_id)) return null;
-  return { candidate_id: session.candidate_id, account_binding_id: session.account_binding_id, session_id: session.session_id };
+  return { candidate_id: session.candidate_id, account_binding_id: session.account_binding_id, session_id: session.session_id,
+    ...(session.authentication_method === "google" ? { authentication_method: "google" as const } : {}) };
 }
 
 export function gatewayConfiguration() {

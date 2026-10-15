@@ -4,17 +4,17 @@ from datetime import UTC, datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
-from google.auth.transport import requests as google_requests
-from google.oauth2 import id_token as google_id_token
 from sqlalchemy.orm import Session
 
 from ..database import get_db
+from ..domains.candidate_accounts.google import google_id_token as google_id_token
 from ..domains.notifications import enqueue_notification
 from ..models import (
     FREE_SIGNUP_ANALYSIS_UNITS,
     AdminAuditEvent,
     AnalysisRun,
     ApplicationEvent,
+    CandidateGoogleIdentity,
     CandidatePasswordAccount,
     CareerMemoryEntry,
     EntitlementLedger,
@@ -228,35 +228,34 @@ def login(request: Request, payload: AuthLoginRequest, db: Session = Depends(get
 @router.post("/google-login", response_model=AuthTokenResponse)
 @limiter.limit("10/minute")
 def google_login(request: Request, payload: AuthGoogleLoginRequest, db: Session = Depends(get_db)):
-    client_id = (os.getenv("GOOGLE_CLIENT_ID") or "").strip()
-    if not client_id:
-        raise HTTPException(status_code=503, detail="Google sign-in is not configured")
-
+    from ..domains.candidate_accounts.google import verify_google_identity
+    from ..domains.candidate_accounts.service import production_candidate_accounts
+    from ..domains.recovery.store import GuardDenied, GuardUnavailable
     try:
-        claims = google_id_token.verify_oauth2_token(
-            payload.id_token,
-            google_requests.Request(),
-            client_id,
-        )
-    except (ValueError, TypeError):
+        identity = verify_google_identity(payload.id_token)
+    except GuardDenied:
         raise HTTPException(status_code=401, detail="Invalid Google identity token") from None
-
-    if claims.get("iss") not in {"accounts.google.com", "https://accounts.google.com"}:
-        raise HTTPException(status_code=401, detail="Invalid Google identity token")
-    if claims.get("email_verified") is not True:
-        raise HTTPException(status_code=401, detail="Google email is not verified")
-    email_claim = claims.get("email")
-    subject = claims.get("sub")
-    if not isinstance(email_claim, str) or not email_claim.strip() or not isinstance(subject, str):
-        raise HTTPException(status_code=401, detail="Invalid Google identity token")
-
-    email = email_claim.strip().lower()
-    name = claims.get("name") if isinstance(claims.get("name"), str) else ""
-
-    # Legacy Google lookup cannot link a mapped candidate lifetime by email.
-    u = db.query(User).filter(User.email == email).first()
+    except GuardUnavailable:
+        raise HTTPException(status_code=503, detail="Google sign-in is not configured") from None
+    email = identity.email
+    linked = db.query(CandidateGoogleIdentity).filter_by(principal_sha256=identity.principal_sha256).first()
+    u = db.query(User).filter(User.id == linked.user_id).first() if linked else db.query(User).filter(User.email == email).first()
     if u is not None and db.query(CandidatePasswordAccount).filter_by(user_id=u.id).first() is not None:
-        raise HTTPException(status_code=403, detail="Candidate account requires its enrolled sign-in method")
+        if linked is None:
+            raise HTTPException(status_code=403, detail="Google account is not explicitly linked; use your enrolled sign-in method")
+        db.rollback()
+        require_candidate_ingress(request)
+        try:
+            result = production_candidate_accounts().login_google(identity)
+        except GuardDenied:
+            raise HTTPException(status_code=401, detail="Google account is not explicitly linked; use your enrolled sign-in method") from None
+        except GuardUnavailable:
+            raise HTTPException(status_code=503, detail="Candidate account lifetime is unavailable") from None
+        token = create_access_token(subject=str(result.context.candidate_id), expires_delta=timedelta(days=1),
+            candidate_lifetime={"version": 1, "context": result.context.model_dump(mode="json"),
+                                "auth_generation": result.auth_generation}, google_identity=identity.bearer_claim())
+        return AuthTokenResponse(access_token=token, user_id=result.context.candidate_id,
+                                 browser_pairing_session=result.context.model_dump(mode="json"))
     
     if not u:
         if not payload.registration_consent or payload.policy_version != CURRENT_POLICY_VERSION:
@@ -278,7 +277,7 @@ def google_login(request: Request, payload: AuthGoogleLoginRequest, db: Session 
         )
         db.add(u)
         db.flush()
-        db.add(UserProfile(user_id=u.id, full_name=name))
+        db.add(UserProfile(user_id=u.id, full_name=identity.name))
         enqueue_notification(
             db,
             user_id=u.id,
@@ -299,7 +298,7 @@ def google_login(request: Request, payload: AuthGoogleLoginRequest, db: Session 
         db.commit()
         db.refresh(u)
 
-    token = create_access_token(subject=str(u.id))
+    token = create_access_token(subject=str(u.id), google_identity=identity.bearer_claim())
     return AuthTokenResponse(access_token=token, user_id=u.id, token_type="bearer")
 
 @router.get("/me", response_model=UserMeResponse)

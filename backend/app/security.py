@@ -1,7 +1,6 @@
 import os
 import sys
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import UTC, datetime, timedelta
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -70,14 +69,17 @@ ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1008
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 
-def create_access_token(*, subject: str, expires_delta: Optional[timedelta] = None,
-                        candidate_lifetime: dict | None = None) -> str:
-    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+def create_access_token(*, subject: str, expires_delta: timedelta | None = None,
+                        candidate_lifetime: dict | None = None, google_identity: dict | None = None) -> str:
+    expire = datetime.now(UTC) + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
     to_encode: dict = {"sub": subject, "exp": expire}
     if candidate_lifetime is not None:
         from .domains.candidate_accounts.access import context_from_claims
         context_from_claims({"candidate_lifetime": candidate_lifetime}, candidate_id=int(subject))
         to_encode["candidate_lifetime"] = candidate_lifetime
+    if google_identity is not None:
+        from .domains.candidate_accounts.google import GoogleBearerProof
+        to_encode["google_identity"] = GoogleBearerProof.model_validate(google_identity).model_dump(mode="json")
     return jwt.encode(to_encode, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 

@@ -1,4 +1,4 @@
-"""Disabled recent-password boundary connected to independent pairing transactions.
+"""Recent-password proof connected to independent pairing transactions.
 
 No bearer, SQL lifetime bootstrap, assertion-signing key or HTTP route fallback is
 provided. Credential IO and assertion signing run outside authority transactions.
@@ -18,7 +18,16 @@ from typing import Literal, Protocol, TypeVar
 from uuid import UUID, uuid4
 
 import psycopg
-from pydantic import ConfigDict, Field, SecretStr, TypeAdapter, ValidationError, field_validator
+from pydantic import (
+    ConfigDict,
+    Field,
+    SecretStr,
+    TypeAdapter,
+    ValidationError,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import QueuePool
@@ -93,6 +102,14 @@ class CandidateWebSession(PairingContract):
     candidate_id: PositiveInteger
     account_binding_id: UUID
     session_id: UUID
+    authentication_method: Literal["password", "google"] = "password"
+
+    @model_serializer(mode="wrap")
+    def compatible_context(self, handler):
+        value = handler(self)
+        if self.authentication_method == "password":
+            value.pop("authentication_method", None)
+        return value
 
 
 class PasswordAccountBinding(PairingContract):
@@ -115,6 +132,26 @@ class RetainedWebSession(PairingContract):
     issued_at_ms: Timestamp
     expires_at_ms: Timestamp
     active: Literal[True]
+    authentication_method: Literal["password", "google"] = "password"
+    verified_proof_sha256: Digest | None = None
+
+    @model_validator(mode="after")
+    def exact_authentication(self):
+        if (self.authentication_method == "google") != (self.verified_proof_sha256 is not None):
+            raise ValueError("OAuth sessions require an exact verified proof digest")
+        return self
+
+    @model_serializer(mode="wrap")
+    def compatible_session(self, handler):
+        value = handler(self)
+        if self.authentication_method == "password":
+            value.pop("authentication_method", None)
+            value.pop("verified_proof_sha256", None)
+        return value
+
+    @property
+    def registration_kind(self) -> str:
+        return "OAUTH_WEB_SESSION_CREATED" if self.authentication_method == "google" else "PASSWORD_WEB_SESSION_CREATED"
 
     @field_validator("active", mode="before")
     @classmethod
@@ -176,7 +213,7 @@ class SqlPasswordCredentials:
     The source engine supplies trusted connection identity, never a browser DSN.
     """
 
-    def __init__(self, source: Engine, *, dummy_hash: str, timeout_seconds: float = 2.0):
+    def __init__(self, source: Engine, *, dummy_hash: str, timeout_seconds: float = 2.0, reuse_pool: bool = False):
         # The operator supplies a valid same-policy dummy hash for missing users.
         # A hash/key is never generated or journaled by this disabled adapter.
         if (type(dummy_hash) is not str or not dummy_hash or not isinstance(source, Engine)
@@ -184,6 +221,7 @@ class SqlPasswordCredentials:
                 or not 0 < timeout_seconds <= 5):
             raise GuardUnavailable(UNAVAILABLE)
         self._timeout, self._dummy_hash = float(timeout_seconds), dummy_hash
+        self._reuse_pool = reuse_pool
         self._milliseconds = max(1, math.ceil(self._timeout * 1000))
         url = source.url
         connect_args: dict[str, object]
@@ -199,13 +237,19 @@ class SqlPasswordCredentials:
                 "options": f"-c statement_timeout={self._milliseconds} -c lock_timeout={self._milliseconds} -c idle_in_transaction_session_timeout={self._milliseconds}"}
         else:
             raise GuardUnavailable(UNAVAILABLE)
-        self._engine = create_engine(url, connect_args=connect_args, poolclass=QueuePool,
-            pool_size=1, max_overflow=0, pool_timeout=self._timeout, pool_pre_ping=False,
-            hide_parameters=True)
+        if reuse_pool:
+            if source.hide_parameters is not True:
+                raise GuardUnavailable(UNAVAILABLE)
+            self._engine = source
+        else:
+            self._engine = create_engine(url, connect_args=connect_args, poolclass=QueuePool,
+                pool_size=1, max_overflow=0, pool_timeout=self._timeout, pool_pre_ping=False,
+                hide_parameters=True)
         self._sessions = sessionmaker(bind=self._engine, autoflush=False, expire_on_commit=False)
 
     def close(self) -> None:
-        self._engine.dispose()
+        if not self._reuse_pool:
+            self._engine.dispose()
 
     def verify(self, candidate_id: int, password: str) -> bool:
         with self._sessions() as db:
@@ -216,7 +260,8 @@ class SqlPasswordCredentials:
                 cursor = native.cursor()
                 try:
                     cursor.execute(f"PRAGMA busy_timeout={self._milliseconds}")
-                    cursor.execute("PRAGMA query_only=ON")
+                    if not self._reuse_pool:
+                        cursor.execute("PRAGMA query_only=ON")
                     cursor.execute("SELECT CASE WHEN length(CAST(password_hash AS BLOB)) BETWEEN 1 AND 1024 THEN password_hash ELSE NULL END FROM users WHERE id = ? LIMIT 1", (candidate_id,))
                     row = cursor.fetchone()
                 finally:
@@ -280,12 +325,13 @@ class RegisteredPasswordIdentity:
             raise GuardDenied(FAILURE)
         session = RetainedWebSession.model_validate(raw_session)
         if (session.session_id != context.session_id or session.account_binding_id != context.account_binding_id
+                or session.authentication_method != context.authentication_method
                 or session.subject_uuid != binding.subject_uuid or session.principal_sha256 != binding.principal_sha256
                 or session.auth_generation != subject["auth_generation"]
                 or not session.issued_at_ms <= now_ms < session.expires_at_ms):
             raise GuardDenied(FAILURE)
         registered_session = tx.event(str(session.registration_event_id))
-        if (registered_session is None or registered_session["kind"] != "PASSWORD_WEB_SESSION_CREATED"
+        if (registered_session is None or registered_session["kind"] != session.registration_kind
                 or registered_session["payload"] != session.model_dump(mode="json", exclude={"registration_event_id"})):
             raise GuardDenied(FAILURE)
         identity = {"subject_uuid": subject_id, "session_id": str(context.session_id),

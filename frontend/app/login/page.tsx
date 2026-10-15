@@ -64,7 +64,7 @@ export default function LoginPage() {
       setError(status === "PENDING_REVIEW_REQUIRED"
         ? "Secure registration is pending review. No session has been issued. Contact support for recovery; checking status cannot activate it."
         : status === "LEGACY_ENROLLMENT_UNAVAILABLE"
-        ? "Your existing account can use ordinary sign-in. Browser companion enrollment for existing accounts is not available yet."
+        ? "Your existing account can use ordinary sign-in. After signing in, open Account enrollment to review browser companion enrollment."
         : "Secure registration is complete. Retry password sign-in.");
     } catch { setError("Registration status could not be verified. Check your credentials or retry later."); }
     finally { setPassword(""); setLoading(false); }

@@ -125,12 +125,14 @@ class GcpPasswordCredentialProjection:
             raise GuardDenied("Reset native old exact salted-hash commitment disagrees")
         actual = RetainedWebSession.model_validate(snap.get("pairing_web_sessions", str(session.session_id)))
         if (actual.subject_uuid != subject.subject_uuid or actual.session_id != session.session_id
+                or actual.authentication_method != session.authentication_method
+                or actual.verified_proof_sha256 != session.verified_proof_sha256
                 or actual.account_binding_id != subject.account_binding_id
                 or actual.principal_sha256 != subject.principal_sha256
                 or actual.auth_generation != subject.auth_generation or actual.active is not True
                 or actual.expires_at_ms != session.expires_at_ms or now >= actual.expires_at_ms):
             raise GuardDenied("Reset requires its original current native password session")
-        snap.event(str(actual.registration_event_id), "PASSWORD_WEB_SESSION_CREATED",
+        snap.event(str(actual.registration_event_id), actual.registration_kind,
                    actual.model_dump(mode="json", exclude={"registration_event_id"}))
         projection = {"subject_uuid": str(subject.subject_uuid), "principal_sha256": subject.principal_sha256,
                       "auth_generation": subject.auth_generation, "active": True}

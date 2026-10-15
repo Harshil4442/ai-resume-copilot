@@ -145,3 +145,15 @@ class SubmitDeviceRegistration(SubmitContract):
         ):
             raise ValueError("Device registration requires the exact pinned full operator grant")
         return self
+
+
+class PairedSubmitDeviceRegistration(SubmitContract):
+    source: Literal["native_pairing"] = "native_pairing"
+    operation_id: UUID
+    grant: SubmitDeviceGrant
+    pairing_operation_id: UUID
+    signing_operation_id: UUID
+    evidence_sha256: Digest
+
+
+SubmitDevice = SubmitDeviceRegistration | PairedSubmitDeviceRegistration

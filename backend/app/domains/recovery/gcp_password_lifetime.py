@@ -24,6 +24,7 @@ from .gcp_password_lifetime_contracts import (
     AdvancePasswordAuthGeneration,
     BindPasswordAccount,
     CreatePasswordWebSession,
+    CreateVerifiedOAuthWebSession,
     CreateVerifiedPasswordWebSession,
     DeletePasswordSubject,
     EnrollPasswordAccount,
@@ -49,7 +50,7 @@ _COMMAND = TypeAdapter(PasswordLifetimeCommand)
 _SESSION_MS = 86_400_000
 _COMMAND_TYPES = (BindPasswordAccount, CreatePasswordWebSession, RevokePasswordWebSession,
                   AdvancePasswordAuthGeneration, TombstonePasswordAccount, DeletePasswordSubject,
-                  EnrollPasswordAccount, CreateVerifiedPasswordWebSession)
+                  EnrollPasswordAccount, CreateVerifiedPasswordWebSession, CreateVerifiedOAuthWebSession)
 _DENIAL_TYPES = (RevokePasswordWebSession, AdvancePasswordAuthGeneration,
                  TombstonePasswordAccount, DeletePasswordSubject)
 
@@ -253,7 +254,7 @@ class GcpPasswordLifetimeCoordinator:
                  operation_id: UUID, event_id: UUID, now: int,
                  _preclose_validation: bool = False) -> tuple[UUID, PasswordLifetimeEffects]:
         if (not isinstance(command, (BindPasswordAccount, CreatePasswordWebSession,
-                EnrollPasswordAccount, CreateVerifiedPasswordWebSession))
+                EnrollPasswordAccount, CreateVerifiedPasswordWebSession, CreateVerifiedOAuthWebSession))
                 and self.closed_denial is None and not _preclose_validation):
             raise GuardUnavailable("A protected acknowledged closure is required before retaining a denial")
         if self.closed_denial is not None and not self.closed_denial.command_matches(command):
@@ -339,14 +340,24 @@ class GcpPasswordLifetimeCoordinator:
         else:
             binding, subject = self._binding(snap, command.account_binding_id)
             subject_id = binding.subject_uuid
-            if isinstance(command, (CreatePasswordWebSession, CreateVerifiedPasswordWebSession)):
-                if isinstance(command, CreateVerifiedPasswordWebSession):
+            if isinstance(command, (CreatePasswordWebSession, CreateVerifiedPasswordWebSession, CreateVerifiedOAuthWebSession)):
+                if isinstance(command, (CreateVerifiedPasswordWebSession, CreateVerifiedOAuthWebSession)):
                     revision = {"subject_uuid": str(subject_id), "auth_generation": command.expected_auth_generation,
                         "credential_sha256": command.credential_sha256}
                     if not _same(snap.get("password_credential_revisions", str(subject_id)), revision):
                         raise GuardDenied("Exact independently retained credential revision is required")
                 if command.expected_auth_generation != subject.auth_generation:
                     raise GuardDenied("New session belongs to a stale authentication generation")
+                oauth = isinstance(command, CreateVerifiedOAuthWebSession)
+                if oauth:
+                    assert isinstance(command, CreateVerifiedOAuthWebSession)
+                    if command.principal_sha256 != binding.principal_sha256 or command.principal_sha256 != subject.principal_sha256:
+                        raise GuardDenied("Verified OAuth principal is not the original enrolled owner")
+                    snap.absent("oauth_web_session_proofs", command.verified_proof_sha256)
+                    change("oauth_web_session_proofs", command.verified_proof_sha256, {
+                        "subject_uuid": str(subject_id), "principal_sha256": command.principal_sha256,
+                        "verified_proof_sha256": command.verified_proof_sha256,
+                        "session_id": str(command.session_id), "operation_id": str(operation_id)})
                 if not now < command.expires_at_ms <= now + _SESSION_MS:
                     raise GuardDenied("Web-session lifetime must be within one day")
                 for namespace in ("pairing_web_sessions", "pairing_sessions", "pairing_web_session_tombstones"):
@@ -354,11 +365,13 @@ class GcpPasswordLifetimeCoordinator:
                 session = RetainedWebSession(session_id=command.session_id, account_binding_id=command.account_binding_id,
                     subject_uuid=subject_id, principal_sha256=binding.principal_sha256,
                     auth_generation=subject.auth_generation, registration_event_id=event_id,
-                    issued_at_ms=now, expires_at_ms=command.expires_at_ms, active=True)
+                    issued_at_ms=now, expires_at_ms=command.expires_at_ms, active=True,
+                    authentication_method="google" if oauth else "password",
+                    verified_proof_sha256=command.verified_proof_sha256 if isinstance(command, CreateVerifiedOAuthWebSession) else None)
                 change("pairing_web_sessions", str(command.session_id), session.model_dump(mode="json"))
                 change("pairing_sessions", str(command.session_id), {"subject_uuid": str(subject_id),
                     "principal_sha256": binding.principal_sha256, "auth_generation": subject.auth_generation, "active": True})
-                kind = "PASSWORD_WEB_SESSION_CREATED"
+                kind = session.registration_kind
                 payload = session.model_dump(mode="json", exclude={"registration_event_id"})
             elif isinstance(command, RevokePasswordWebSession):
                 raw = snap.get("pairing_web_sessions", str(command.session_id))
@@ -368,7 +381,7 @@ class GcpPasswordLifetimeCoordinator:
                 if (session.session_id != command.session_id or session.account_binding_id != binding.account_binding_id
                         or session.subject_uuid != subject_id or session.principal_sha256 != binding.principal_sha256):
                     raise GuardDenied("Session revocation belongs to another account")
-                snap.event(str(session.registration_event_id), "PASSWORD_WEB_SESSION_CREATED",
+                snap.event(str(session.registration_event_id), session.registration_kind,
                            session.model_dump(mode="json", exclude={"registration_event_id"}))
                 snap.absent("pairing_web_session_tombstones", str(command.session_id))
                 projection = {"subject_uuid": str(subject_id), "principal_sha256": binding.principal_sha256,
@@ -496,7 +509,7 @@ class GcpPasswordLifetimeCoordinator:
                     tx.put(record.namespace, record.key, record.value,
                         immutable=record.namespace in {"pairing_account_bindings", "pairing_subject_accounts",
                             "pairing_sql_accounts", "pairing_web_sessions", "pairing_account_tombstones",
-                            "pairing_web_session_tombstones", "revocations"})
+                            "pairing_web_session_tombstones", "oauth_web_session_proofs", "revocations"})
             if isinstance(attempt.command, EnrollPasswordAccount):
                 registered = next(record.value for record in effects.after if record.namespace == "events"
                     and record.key == str(attempt.command.subject_registration_event_id))
@@ -528,15 +541,16 @@ class GcpPasswordLifetimeCoordinator:
         status = OperationStatus(status="COMMITTED", operation_id=intent.operation_id,
                                  intent_sha256=owned.sha256, journal=receipt)
         context = None
-        if isinstance(intent.command, (CreatePasswordWebSession, CreateVerifiedPasswordWebSession)):
+        if isinstance(intent.command, (CreatePasswordWebSession, CreateVerifiedPasswordWebSession, CreateVerifiedOAuthWebSession)):
             binding = next(item.value for item in intent.effects.before
                 if item.namespace == "pairing_account_bindings" and item.key == str(intent.command.account_binding_id))
             assert binding is not None
             context = CandidateWebSession(candidate_id=binding["candidate_id"],
-                account_binding_id=intent.command.account_binding_id, session_id=intent.command.session_id)
+                account_binding_id=intent.command.account_binding_id, session_id=intent.command.session_id,
+                authentication_method="google" if isinstance(intent.command, CreateVerifiedOAuthWebSession) else "password")
         self._checked(raw, owned=owned)
         ack = None
-        if isinstance(intent.command, (EnrollPasswordAccount, CreateVerifiedPasswordWebSession)):
+        if isinstance(intent.command, (EnrollPasswordAccount, CreateVerifiedPasswordWebSession, CreateVerifiedOAuthWebSession)):
             evidence = LifetimeGrantEvidence(intent=intent, status=status.model_dump(mode="json"))
             ack = PasswordLifetimeOwnedAck(canonical(evidence.model_dump(mode="json")).encode(), self._issuer)
             with self._lock:

@@ -153,8 +153,17 @@ class UnavailableClaims:
 
 
 def production_assertions() -> AssertionVerifier:
-    return UnavailableAssertions()
+    import os
+    if os.environ.get("BROWSER_PAIRING_NATIVE_ENABLED") != "true":
+        return UnavailableAssertions()
+    from .browser_pairing_production import configuration
+    value = configuration()
+    return PinnedAssertions(issuer=value.assertion_issuer, public_key=value.assertion_key.public_key)
 
 
 def production_claims() -> ClaimIssuer:
-    return UnavailableClaims()
+    import os
+    if os.environ.get("BROWSER_PAIRING_NATIVE_ENABLED") != "true":
+        return UnavailableClaims()
+    from .browser_pairing_production import RefreshingKmsSigner, configuration
+    return RefreshingKmsSigner(configuration().claim_key)

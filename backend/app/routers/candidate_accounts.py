@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..domains.candidate_accounts.access import context_from_claims
+from ..domains.candidate_accounts.google import GoogleBearerProof, verify_google_identity
 from ..domains.candidate_accounts.service import production_candidate_accounts
 from ..domains.recovery.pairing_contracts import PairingContract
 from ..domains.recovery.store import GuardDenied, GuardUnavailable
@@ -42,7 +43,7 @@ def availability():
         production_candidate_accounts()
     except GuardUnavailable:
         return {"fresh_registration": False, "legacy_enrollment": False}
-    return {"fresh_registration": True, "legacy_enrollment": False}
+    return {"fresh_registration": True, "legacy_enrollment": True}
 
 
 class RegisterCandidate(PairingContract):
@@ -74,6 +75,84 @@ class ChangeCandidatePassword(PairingContract):
 
 class LogoutCookie(PairingContract):
     operation_id: UUID
+
+
+class EnrollmentConsent(PairingContract):
+    model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
+    accepted_enrollment: Literal[True]
+
+    @field_validator("accepted_enrollment", mode="before")
+    @classmethod
+    def explicit_consent(cls, value: object) -> object:
+        if type(value) is not bool or value is not True:
+            raise ValueError("Explicit enrollment consent is required")
+        return value
+
+
+class GoogleEnrollment(EnrollmentConsent):
+    challenge_id: UUID
+    nonce: SecretStr = Field(min_length=32, max_length=128, repr=False)
+    id_token: SecretStr = Field(min_length=100, max_length=4096, repr=False)
+    password: SecretStr = Field(min_length=10, max_length=128, repr=False)
+    current_password: SecretStr | None = Field(default=None, min_length=1, max_length=128, repr=False)
+
+
+class PasswordEnrollment(EnrollmentConsent):
+    password: SecretStr = Field(min_length=1, max_length=128, repr=False)
+
+
+class EmptyEnrollmentChallenge(PairingContract):
+    pass
+
+
+def _google_bearer(token: str) -> GoogleBearerProof:
+    try:
+        claims = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        return GoogleBearerProof.model_validate(claims.get("google_identity"))
+    except (JWTError, ValueError, TypeError):
+        raise GuardDenied("Fresh Google sign-in required") from None
+
+
+@router.post("/google-enrollment-challenge")
+@limiter.limit("5/minute")
+def google_enrollment_challenge(request: Request, payload: EmptyEnrollmentChallenge,
+        current_user: User = Depends(get_current_user), token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    candidate_id = int(current_user.id)
+    db.rollback()
+    try:
+        return production_candidate_accounts().google_challenge(candidate_id, _google_bearer(token))
+    except (GuardDenied, GuardUnavailable) as error:
+        raise _failure(error) from None
+
+
+@router.post("/enroll-google")
+@limiter.limit("5/minute")
+def enroll_google(request: Request, payload: GoogleEnrollment, current_user: User = Depends(get_current_user),
+                  token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    candidate_id = int(current_user.id)
+    db.rollback()
+    try:
+        proof = _google_bearer(token)
+        identity = verify_google_identity(payload.id_token.get_secret_value(), nonce=payload.nonce.get_secret_value())
+        uid = production_candidate_accounts().enroll_google(candidate_id, proof,
+            challenge_id=str(payload.challenge_id), nonce=payload.nonce.get_secret_value(), identity=identity,
+            password=payload.password.get_secret_value(), current_password=payload.current_password.get_secret_value() if payload.current_password else None)
+    except (GuardDenied, GuardUnavailable) as error:
+        raise _failure(error) from None
+    return {"user_id": uid, "status": "ENROLLED"}
+
+
+@router.post("/enroll-password")
+@limiter.limit("5/minute")
+def enroll_password(request: Request, payload: PasswordEnrollment, current_user: User = Depends(get_current_user),
+                    db: Session = Depends(get_db)):
+    candidate_id = int(current_user.id)
+    db.rollback()
+    try:
+        uid = production_candidate_accounts().enroll_password(candidate_id, payload.password.get_secret_value())
+    except (GuardDenied, GuardUnavailable) as error:
+        raise _failure(error) from None
+    return {"user_id": uid, "status": "ENROLLED"}
 
 
 def _failure(error: Exception) -> HTTPException:

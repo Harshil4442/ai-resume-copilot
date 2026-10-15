@@ -61,7 +61,7 @@ export const authOptions: NextAuthOptions = {
           const user = res.data as BackendAuthToken;
           if (typeof user.access_token === "string" && typeof user.user_id === "number" && Number.isSafeInteger(user.user_id) && user.user_id > 0) {
             const candidateSession = user.browser_pairing_session == null ? null : retainedBrowserSession({ browserPairingSession: user.browser_pairing_session });
-            if (user.browser_pairing_session != null && (!candidateSession || candidateSession.candidate_id !== user.user_id)) return null;
+            if (user.browser_pairing_session != null && (!candidateSession || candidateSession.candidate_id !== user.user_id || candidateSession.authentication_method != null)) return null;
             return {
               id: String(user.user_id),
               email: credentials.email,
@@ -114,8 +114,16 @@ export const authOptions: NextAuthOptions = {
           }
           token.accessToken = data.access_token;
           token.hirewizUserId = data.user_id;
-          delete token.browserPairingSession;
-          delete token.candidateLogoutRequest;
+          const candidateSession = data.browser_pairing_session == null ? null : retainedBrowserSession({ browserPairingSession: data.browser_pairing_session });
+          if (data.browser_pairing_session != null && (!candidateSession || candidateSession.candidate_id !== data.user_id || candidateSession.authentication_method !== "google")) throw new Error("Invalid OAuth session");
+          if (candidateSession) {
+            token.browserPairingSession = candidateSession;
+            token.candidateLogoutRequest = randomUUID();
+          } else {
+            delete token.browserPairingSession;
+            delete token.candidateLogoutRequest;
+          }
+          token.candidateSignInMethod = "google";
         } catch {
           console.error("Google backend sign-in is unavailable.", {
             category: failureCategory,
@@ -124,6 +132,7 @@ export const authOptions: NextAuthOptions = {
           throw new Error("AUTH_UNAVAILABLE");
         }
       } else if (user?.accessToken && user.hirewizUserId) {
+        token.candidateSignInMethod = "password";
         token.accessToken = user.accessToken;
         token.hirewizUserId = user.hirewizUserId;
         const candidateSession = retainedBrowserSession({ browserPairingSession: user.browserPairingSession });

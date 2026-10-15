@@ -40,6 +40,25 @@ class CreateVerifiedPasswordWebSession(PairingContract):
     expires_at_ms: Timestamp
 
 
+class CreateVerifiedOAuthWebSession(PairingContract):
+    """Fresh server-verified Google proof for an already enrolled exact principal."""
+    kind: Literal["create_verified_oauth_web_session"] = "create_verified_oauth_web_session"
+    account_binding_id: UUID
+    session_id: UUID
+    expected_auth_generation: PositiveInteger
+    credential_sha256: Digest
+    principal_sha256: Digest
+    verified_proof_sha256: Digest
+    expires_at_ms: Timestamp
+
+
+def verified_session_matches(command, *, authentication_method: str, verified_proof_sha256: str | None, principal_sha256: str) -> bool:
+    if isinstance(command, CreateVerifiedOAuthWebSession):
+        return (authentication_method == "google" and verified_proof_sha256 == command.verified_proof_sha256
+                and principal_sha256 == command.principal_sha256)
+    return isinstance(command, CreateVerifiedPasswordWebSession) and authentication_method == "password" and verified_proof_sha256 is None
+
+
 class CreatePasswordWebSession(PairingContract):
     kind: Literal["create_password_web_session"] = "create_password_web_session"
     account_binding_id: UUID
@@ -72,7 +91,7 @@ class DeletePasswordSubject(PairingContract):
 
 
 PasswordLifetimeCommand = Annotated[
-    BindPasswordAccount | CreatePasswordWebSession | EnrollPasswordAccount | CreateVerifiedPasswordWebSession | RevokePasswordWebSession
+    BindPasswordAccount | CreatePasswordWebSession | EnrollPasswordAccount | CreateVerifiedPasswordWebSession | CreateVerifiedOAuthWebSession | RevokePasswordWebSession
     | AdvancePasswordAuthGeneration | TombstonePasswordAccount | DeletePasswordSubject,
     Field(discriminator="kind"),
 ]
@@ -97,7 +116,7 @@ class LifetimeRecord(Contract):
         "control", "pairing_control", "pairing_clock", "head", "events", "subjects", "revocations",
         "pairing_account_bindings", "pairing_account_tombstones", "pairing_web_sessions", "pairing_sessions",
         "pairing_subject_accounts", "pairing_sql_accounts", "pairing_web_session_tombstones",
-        "pairing_auth_high_water", "password_lifetime_operations", "password_credential_revisions",
+        "pairing_auth_high_water", "password_lifetime_operations", "password_credential_revisions", "oauth_web_session_proofs",
     ]
     key: Annotated[str, Field(min_length=1, max_length=200)]
     value: dict | None
@@ -166,6 +185,6 @@ class LifetimeGrantEvidence(Contract):
         if (status.status != "COMMITTED" or status.journal is None
                 or status.operation_id != self.intent.operation_id
                 or status.intent_sha256 != self.intent.digest
-                or not isinstance(self.intent.command, (EnrollPasswordAccount, CreateVerifiedPasswordWebSession))):
+                or not isinstance(self.intent.command, (EnrollPasswordAccount, CreateVerifiedPasswordWebSession, CreateVerifiedOAuthWebSession))):
             raise ValueError("Only exact original credential enrollment/session ACK evidence is accepted")
         return self
