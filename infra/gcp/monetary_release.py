@@ -870,7 +870,15 @@ class NativeBoundary:
         if len(retention_fields) != 1 or type(retention_fields[0]) is not dict:
             raise ReleaseDenied("fresh_post_fence_protected_backup_not_verified")
         retention = retention_fields[0]
-        until = datetime.fromisoformat(retention.get("retain_until_time", retention.get("retainUntilTime", "")).replace("Z", "+00:00"))
+        until_raw = retention.get("retain_until_time", retention.get("retainUntilTime", ""))
+        if type(until_raw) is not str:
+            raise ReleaseDenied("fresh_post_fence_protected_backup_not_verified")
+        try:
+            until = datetime.fromisoformat(until_raw.replace("Z", "+00:00"))
+        except ValueError:
+            raise ReleaseDenied("fresh_post_fence_protected_backup_not_verified") from None
+        if until.tzinfo is None:
+            raise ReleaseDenied("fresh_post_fence_protected_backup_not_verified")
         if (str(backup.get("generation")) != receipt["generation"]
                 or not receipt["started"] <= created <= datetime.now(UTC)
                 or datetime.now(UTC) - created > timedelta(minutes=60)

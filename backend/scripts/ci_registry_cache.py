@@ -55,18 +55,32 @@ def configure(path: Path) -> None:
 def verify() -> None:
     deadline = time.monotonic() + 10
     while True:
-        response = subprocess.run(
-            ["docker", "info", "--format", "{{json .RegistryConfig.Mirrors}}"],
-            check=True, capture_output=True, text=True, timeout=5,
-        )
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise ValueError("Native daemon did not activate the configured public cache.")
+        try:
+            response = subprocess.run(
+                ["docker", "info", "--format", "{{json .RegistryConfig.Mirrors}}"],
+                check=True, capture_output=True, text=True, timeout=min(5, remaining),
+            )
+        except subprocess.TimeoutExpired:
+            # A SIGHUP reload may briefly stall this read-only observation. The
+            # same absolute budget covers every attempt; no daemon mutation or
+            # cache-activation requirement is retried, waived or substituted.
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise
+            time.sleep(min(0.25, remaining))
+            continue
         mirrors = json.loads(response.stdout)
         if not isinstance(mirrors, list) or any(not isinstance(value, str) for value in mirrors):
             raise ValueError("Native daemon mirror observation is malformed.")
         if MIRROR in [value.rstrip("/") for value in mirrors]:
             return
-        if time.monotonic() >= deadline:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
             raise ValueError("Native daemon did not activate the configured public cache.")
-        time.sleep(0.25)
+        time.sleep(min(0.25, remaining))
 
 
 def main() -> int:
@@ -80,6 +94,10 @@ def main() -> int:
             verify()
         else:
             configure(CONFIG)
+    except subprocess.TimeoutExpired:
+        raise SystemExit("Public registry cache daemon observation timed out; CI remains required.") from None
+    except subprocess.CalledProcessError:
+        raise SystemExit("Public registry cache daemon observation command failed; CI remains required.") from None
     except Exception:
         raise SystemExit("Public registry cache configuration/verification failed; CI remains required.") from None
     return 0

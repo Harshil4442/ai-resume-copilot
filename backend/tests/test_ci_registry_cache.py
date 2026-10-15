@@ -129,3 +129,69 @@ def test_workflow_preserves_required_exact_source_compiler_and_security_contract
     assert "--platform linux/amd64 --github-env" in workflow
     assert ".venv/bin/pytest -q" in workflow
     assert (root / "infra/native-tex/Dockerfile").read_text().splitlines()[2] == "FROM mirror.gcr.io/library/debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587"
+
+
+def test_reload_observation_timeout_retries_only_read_inside_original_deadline(monkeypatch):
+    clock, calls = [0.0], []
+    monkeypatch.setattr(cache.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(cache.time, "sleep", lambda seconds: clock.__setitem__(0, clock[0] + seconds))
+
+    def observe(command, **kwargs):
+        calls.append((command, kwargs["timeout"]))
+        assert command == ["docker", "info", "--format", "{{json .RegistryConfig.Mirrors}}"]
+        if len(calls) == 1:
+            clock[0] += kwargs["timeout"]
+            raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+        return SimpleNamespace(stdout=json.dumps([cache.MIRROR]))
+
+    monkeypatch.setattr(cache.subprocess, "run", observe)
+    cache.verify()
+    assert [timeout for _, timeout in calls] == [5, 4.75]
+    assert clock[0] == 5.25
+
+
+def test_repeated_observation_timeouts_exhaust_same_ten_second_budget(monkeypatch):
+    clock, calls = [0.0], []
+    monkeypatch.setattr(cache.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(cache.time, "sleep", lambda seconds: clock.__setitem__(0, clock[0] + seconds))
+
+    def unavailable(command, **kwargs):
+        calls.append((command, kwargs["timeout"]))
+        clock[0] += kwargs["timeout"]
+        raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+
+    monkeypatch.setattr(cache.subprocess, "run", unavailable)
+    with pytest.raises(subprocess.TimeoutExpired):
+        cache.verify()
+    assert [timeout for _, timeout in calls] == [5, 4.75]
+    assert clock[0] == 10
+    assert all(command == ["docker", "info", "--format", "{{json .RegistryConfig.Mirrors}}"]
+               for command, _ in calls)
+
+
+@pytest.mark.parametrize("raw", ["not-json", "{}", '[123]'])
+def test_malformed_native_mirrors_are_not_retried_or_accepted(raw, monkeypatch):
+    calls = []
+    monkeypatch.setattr(cache.subprocess, "run", lambda *args, **kwargs: calls.append(args) or SimpleNamespace(stdout=raw))
+    with pytest.raises((ValueError, json.JSONDecodeError)):
+        cache.verify()
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("failure,reason", [
+    (subprocess.TimeoutExpired("private-command-metadata", 5, stderr="do-not-export"), "observation timed out"),
+    (subprocess.CalledProcessError(1, "private-command-metadata", stderr="do-not-export"), "observation command failed"),
+])
+def test_cli_reports_only_fixed_timeout_or_command_diagnostics(failure, reason, monkeypatch):
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("RUNNER_OS", "Linux")
+    monkeypatch.setattr("sys.argv", ["cache", "--verify"])
+
+    def refused():
+        raise failure
+
+    monkeypatch.setattr(cache, "verify", refused)
+    with pytest.raises(SystemExit, match=reason) as result:
+        cache.main()
+    assert "CI remains required" in str(result.value)
+    assert "private-command-metadata" not in str(result.value) and "do-not-export" not in str(result.value)

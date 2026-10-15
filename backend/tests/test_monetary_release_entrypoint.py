@@ -442,7 +442,7 @@ def test_caller_backup_metadata_never_substitutes_for_native_owned_creation(plan
         boundary.verify_backup(plan, release.Fence(STAMP, STAMP - timedelta(minutes=5), True, True, True))
 
 
-@pytest.mark.parametrize("fault", [None, "wire_metadata", "retention", "retention_conflict", "changed_bytes", "bucket_missing", "bucket_acl", "bucket_pap", "bucket_retention_disabled"])
+@pytest.mark.parametrize("fault", [None, "wire_metadata", "retention", "retention_conflict", "retention_null", "retention_number", "retention_invalid", "retention_naive", "changed_bytes", "bucket_missing", "bucket_acl", "bucket_pap", "bucket_retention_disabled"])
 def test_native_owned_backup_creation_and_exact_generation_verification(plan, monkeypatch, fault):
     import hashlib
     from types import SimpleNamespace
@@ -503,6 +503,11 @@ def test_native_owned_backup_creation_and_exact_generation_verification(plan, mo
             metadata["retention"] = metadata.pop("retention_settings")
         elif fault == "retention_conflict":
             metadata["retention"] = {**metadata["retention_settings"], "mode": "Unlocked"}
+        elif fault in {"retention_null", "retention_number", "retention_invalid", "retention_naive"}:
+            metadata["retention_settings"]["retainUntilTime"] = {
+                "retention_null": None, "retention_number": 7,
+                "retention_invalid": "not-a-time", "retention_naive": "2026-10-23T00:00:00",
+            }[fault]
         return metadata
     monkeypatch.setattr(release.subprocess, "run", process)
     monkeypatch.setattr(boundary, "_command", command)
