@@ -112,7 +112,7 @@ gcloud run deploy hirewiz-analysis-worker "${common[@]}" --image "$image" \
 # Existing non-secret settings and secret references are retained on the API.
 gcloud run deploy ai-resume-parser "${common[@]}" --image "$image" --no-traffic --tag release-candidate --min 1 \
   --command '' --args '' \
-  --update-env-vars "SERVICE_ROLE=api,APP_ENV=production,AUTO_DB_MIGRATE=false,APP_RELEASE=${release},EMPLOYER_DISCOVERY_ENABLED=true,EMPLOYER_AUTO_SUBMIT_ENABLED=false,ANALYSIS_TASKS_MODE=cloud_tasks,GOOGLE_CLOUD_PROJECT=${project},ANALYSIS_TASKS_LOCATION=${region},ANALYSIS_TASKS_QUEUE=hirewiz-analysis,ANALYSIS_TASKS_SERVICE_ACCOUNT=hirewiz-tasks@${project}.iam.gserviceaccount.com,ANALYSIS_WORKER_URL=${analysis_url},EMPLOYER_SEARCH_CREDITS_PER_JOB=1,EMPLOYER_APPLY_CREDITS_PER_JOB=5,EMPLOYER_ARTIFACT_BUCKET=${project}-hirewiz-application-artifacts,DB_POOL_SIZE=4,DB_MAX_OVERFLOW=2,${shared}" \
+  --update-env-vars "SERVICE_ROLE=api,APP_ENV=production,AUTO_DB_MIGRATE=false,APP_RELEASE=${release},EMPLOYER_DISCOVERY_ENABLED=true,EMPLOYER_AUTO_SUBMIT_ENABLED=false,ANALYSIS_TASKS_MODE=cloud_tasks,GOOGLE_CLOUD_PROJECT=${project},ANALYSIS_TASKS_LOCATION=${region},ANALYSIS_TASKS_QUEUE=hirewiz-analysis,ANALYSIS_TASKS_SERVICE_ACCOUNT=hirewiz-tasks@${project}.iam.gserviceaccount.com,ANALYSIS_WORKER_URL=${analysis_url},EMPLOYER_SEARCH_CREDITS_PER_JOB=1,EMPLOYER_APPLY_CREDITS_PER_JOB=20,EMPLOYER_ARTIFACT_BUCKET=${project}-hirewiz-application-artifacts,DB_POOL_SIZE=4,DB_MAX_OVERFLOW=2,${shared}" \
   --update-secrets ANALYSIS_TASK_TOKEN=hirewiz-analysis-task-token:latest
 candidate_file="$(mktemp)"
 trap 'rm -f "$candidate_file" "$candidate_file.verified"' EXIT
