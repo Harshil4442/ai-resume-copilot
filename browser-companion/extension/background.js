@@ -25,7 +25,7 @@ async function assistanceEngine() {
       return tabs[0];
     };
     const browser = {
-      async inspect(url, mapping, documentId = null) {
+      async inspect(url, mapping, documentId = null, version = 1) {
         const tab = await targetTab(url);
         if (!documentId) {
           const [identity] = await chrome.scripting.executeScript({ target: { tabId: tab.id, frameIds: [0] }, func: () => true });
@@ -33,14 +33,14 @@ async function assistanceEngine() {
         }
         if (!documentId) throw new Error("Chrome document identity is unavailable");
         const [result] = await chrome.scripting.executeScript({ target: { tabId: tab.id, documentIds: [documentId] }, func: razorpayAdapter,
-          args: [null, null, { document_id: documentId, frame_id: 0, field_mapping: mapping }] });
+          args: [null, null, { document_id: documentId, frame_id: 0, field_mapping: mapping, review_protocol_version: version }] });
         if (result?.documentId !== documentId || result?.result?.outcome !== "inspected") throw new Error(result?.result?.reason || "The exact current portal form is not supported");
         return result.result;
       },
       async fill(url, mapping, expected, action) {
         const tab = await targetTab(url);
         const [result] = await chrome.scripting.executeScript({ target: { tabId: tab.id, documentIds: [expected.document_id] }, func: razorpayAdapter,
-          args: [expected, action, { document_id: expected.document_id, frame_id: 0, field_mapping: mapping }] });
+          args: [expected, action, { document_id: expected.document_id, frame_id: 0, field_mapping: mapping, review_protocol_version: expected.review_protocol_version ?? 1 }] });
         return result?.documentId === expected.document_id && result?.result ? result.result : { outcome: "blocked", reason: "The reviewed document is no longer available" };
       },
     };

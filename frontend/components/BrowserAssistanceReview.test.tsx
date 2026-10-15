@@ -23,6 +23,17 @@ function review(state = "draft") {
       manual_fields: [{ id: "phone", label: "Phone", required: true }, { id: "resume", label: "Resume/CV", required: true }, { id: "question_8970458005", label: "Gender", required: true }],
       disclosures: ["Email blur can send the address to Greenhouse validation before final submission."], allowed_actions: ["fill"], fee_credits: 0 } };
 }
+function typedReview(state = "draft") {
+  const result = review(state);
+  return { ...result, payload: { ...result.payload, review_protocol_version: 2,
+    fields: [...result.payload.fields,
+      { id: "phone", label: "Phone", type: "tel", value: "+919000000000", expected_before: "" },
+      { id: "question_9132967005", label: "Current Career Stage", type: "combobox", value: "owned-choice", expected_before: "",
+        options: [{ value: "owned-choice", label: "Explicit candidate choice" }, { value: "other-choice", label: "Other candidate choice" }],
+        value_label: "Explicit candidate choice", expected_before_label: "" }],
+    manual_fields: [{ id: "country", label: "Country", required: true }],
+    disclosures: [...result.payload.disclosures, "Selecting this exact approved dropdown option can autosave before submission."] } };
+}
 beforeEach(() => { vi.resetAllMocks(); vi.stubGlobal("fetch", request); vi.mocked(accountMutationHeaders).mockResolvedValue({ "Content-Type": "application/json", "X-Hirewiz-Account-CSRF": "9".repeat(64) }); vi.mocked(apiDownload).mockResolvedValue(); });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.useRealTimers(); });
 async function loadReview() {
@@ -36,6 +47,38 @@ async function acceptReview() {
 }
 
 describe("candidate reviewed browser assistance", () => {
+  it("shows and approves explicit typed answers only after the exact resume is reviewed", async () => {
+    request.mockResolvedValueOnce(Response.json(typedReview())).mockResolvedValueOnce(Response.json(typedReview("approved")));
+    render(<BrowserAssistanceReview deviceId={null} reviewId={identity} applicationId={null} />);
+    await userEvent.click(screen.getByRole("button", { name: "Load exact application review" }));
+    const approve = await screen.findByRole("button", { name: "Approve reviewed form assistance" });
+    expect(approve).toBeDisabled();
+    expect(screen.getByText("Explicit candidate choice")).toBeVisible();
+    expect(screen.queryByText("owned-choice")).toBeNull();
+    expect(screen.getByText("+919000000000")).toBeVisible();
+    expect(screen.getByText("Country")).toBeVisible();
+    await acceptReview(); await userEvent.click(approve);
+    expect(await screen.findByText(/Form assistance approved/)).toBeVisible();
+    expect(JSON.parse(request.mock.calls[1][1].body)).toEqual({ identity, confirmed: true, review_digest: "b".repeat(64) });
+    expect(request.mock.calls.map(([url]) => url)).toEqual(["/api/browser-assistance/candidate/review", "/api/browser-assistance/candidate/approve"]);
+  });
+
+  it("rejects a changed choice label even when the response contains a matching new options list", async () => {
+    const changed = typedReview("approved");
+    const field = changed.payload.fields.at(-1)!;
+    if (!("options" in field)) throw new Error("Expected typed fixture option");
+    field.options[0].label = "Changed after candidate approval";
+    field.value_label = "Changed after candidate approval";
+    request.mockResolvedValueOnce(Response.json(typedReview())).mockResolvedValueOnce(Response.json(changed));
+    render(<BrowserAssistanceReview deviceId={null} reviewId={identity} applicationId={null} />);
+    await userEvent.click(screen.getByRole("button", { name: "Load exact application review" }));
+    await screen.findByRole("button", { name: "Approve reviewed form assistance" });
+    await acceptReview(); await userEvent.click(screen.getByRole("button", { name: "Approve reviewed form assistance" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("approved review changed");
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText(/Form assistance approved/)).toBeNull();
+  });
+
   it("does not request, approve or download anything before an explicit valid review", async () => {
     const view = render(<BrowserAssistanceReview deviceId={null} reviewId={null} applicationId={application} />);
     expect(screen.getByText(application)).toBeVisible(); expect(request).not.toHaveBeenCalled(); expect(apiDownload).not.toHaveBeenCalled();

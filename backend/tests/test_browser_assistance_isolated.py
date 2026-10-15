@@ -178,6 +178,91 @@ class BrowserAssistanceFlow(unittest.TestCase):
         return {"review_id": review["id"], "review_digest": review["review_digest"], "index": index,
             "context_digest": review["payload"]["context_digest"], "document_id": "owned_chrome_document"}
 
+    def typed_review(self, *, protocol=2, omit_gender=False):
+        fields = list(self.app.form["fields"])
+        fields.append({"id": "phone", "label": "Phone", "type": "text", "required": True})
+        answers = {**self.app.answers, "phone": "+919000000000"}
+        for index, label in enumerate(service.CHOICE_LABELS):
+            identity = f"question_{9132967005 + index * 1000}"
+            fields.append({"id": identity, "label": label, "type": "single_select", "required": True,
+                           "options": [{"value": "owned-choice", "label": "Explicit candidate choice"},
+                                       {"value": "other-choice", "label": "Other candidate choice"}]})
+            if not (omit_gender and label == "Gender"):
+                answers[identity] = "owned-choice"
+        self.app.form = {**self.app.form, "fields": fields}
+        self.app.answers = answers
+        posting = self.db.get(employer.EmployerPosting, self.app.posting_id)
+        source = self.db.get(employer.EmployerSource, posting.source_id)
+        artifact = self.db.get(employer.SealedApplicationArtifact, self.app.artifact_id)
+        self.app.package_digest = employer_service._package_digest(self.app, posting, source, artifact)
+        self.db.commit()
+        self.paired()
+        context = {"synthetic_typed_fixture": True}
+        mapping = service.field_mapping(self.app, protocol)
+        return self.call("inspect", {"application_id": self.app.id, "inspection": {
+            "review_protocol_version": protocol, "outcome": "inspected", "origin": service.ORIGIN,
+            "url": posting.apply_url, "frame_id": 0, "document_id": "owned_chrome_document",
+            "context": context, "context_digest": service.digest(context),
+            "assisted_values": {field["id"]: "" for field in mapping},
+            "manual_fields": [{"id": "country", "label": "Country", "required": True}],
+        }})
+
+    def test_typed_twelve_field_sql_flow_has_explicit_signed_control_actions_and_zero_fee(self):
+        with patch.dict(os.environ, {"BROWSER_ASSISTANCE_TYPED_CONTROLS_ENABLED": "true"}):
+            review = self.typed_review()
+            self.assertEqual(len(review["payload"]["fields"]), 12)
+            service.candidate(self.db, 1, "approve", schemas.CandidateRequest(
+                identity=review["id"], confirmed=True, review_digest=review["review_digest"]))
+            for index, field in enumerate(review["payload"]["fields"]):
+                begun = self.call("begin", self.begin_body(review, index))
+                lease = begun["lease"]
+                raw = base64.urlsafe_b64decode(lease["signature"] + "=" * (-len(lease["signature"]) % 4))
+                key = service._public_key(service.public_signer())[1]
+                key.verify(encode_dss_signature(int.from_bytes(raw[:32], "big"), int.from_bytes(raw[32:], "big")),
+                    b"hirewiz.browser-assistance.lease.v1\n" + service.canonical(lease["payload"]), ec.ECDSA(hashes.SHA256()))
+                self.assertEqual(lease["payload"]["review_protocol_version"], 2)
+                self.assertEqual(lease["payload"]["control_type"], field["type"])
+                self.assertEqual(lease["payload"]["value"], field["value"])
+                self.assertEqual(lease["payload"]["allowed_actions"], ["fill"])
+                if field["type"] == "combobox":
+                    self.assertEqual(lease["payload"]["option_label"], "Explicit candidate choice")
+                completed = self.call("outcome", {"review_id": review["id"], "action_id": lease["payload"]["action_id"],
+                                                 "outcome": "filled"})
+            self.assertEqual(completed["state"], "filled")
+            self.assertEqual(completed["filled_count"], 12)
+            self.assertEqual(review["payload"]["fee_credits"], 0)
+            self.assertIsNone(self.app.receipt)
+            self.assertEqual(self.app.charged_credits, 0)
+
+    def test_typed_sensitive_choice_without_explicit_candidate_answer_remains_manual(self):
+        with patch.dict(os.environ, {"BROWSER_ASSISTANCE_TYPED_CONTROLS_ENABLED": "true"}):
+            review = self.typed_review(omit_gender=True)
+            self.assertNotIn("Gender", [field["label"] for field in review["payload"]["fields"]])
+            self.assertIn({"id": "question_9132968005", "label": "Gender", "required": True},
+                          review["payload"]["manual_fields"])
+
+    def test_typed_feature_off_revokes_unstarted_review_without_issuing_a_lease(self):
+        with patch.dict(os.environ, {"BROWSER_ASSISTANCE_TYPED_CONTROLS_ENABLED": "true"}):
+            review = self.typed_review()
+            service.candidate(self.db, 1, "approve", schemas.CandidateRequest(
+                identity=review["id"], confirmed=True, review_digest=review["review_digest"]))
+        with patch.dict(os.environ, {"BROWSER_ASSISTANCE_TYPED_CONTROLS_ENABLED": "false"}):
+            with self.assertRaises(HTTPException) as error:
+                self.call("begin", self.begin_body(review))
+            self.assertEqual(error.exception.status_code, 503)
+            self.assertEqual(self.db.query(models.BrowserAssistanceRequest).filter_by(operation="field").count(), 0)
+
+    def test_typed_capability_does_not_expand_historical_review_approval(self):
+        with patch.dict(os.environ, {"BROWSER_ASSISTANCE_TYPED_CONTROLS_ENABLED": "true"}):
+            review = self.typed_review(protocol=1)
+            self.assertNotIn("review_protocol_version", review["payload"])
+            self.assertEqual(len(review["payload"]["fields"]), 7)
+            service.candidate(self.db, 1, "approve", schemas.CandidateRequest(
+                identity=review["id"], confirmed=True, review_digest=review["review_digest"]))
+            lease = self.call("begin", self.begin_body(review))["lease"]["payload"]
+            self.assertNotIn("control_type", lease)
+            self.assertNotIn("review_protocol_version", lease)
+
     def test_real_signed_sql_flow_fills_only_and_never_charges_or_confirms(self):
         review = self.approved()
         for index in range(7):

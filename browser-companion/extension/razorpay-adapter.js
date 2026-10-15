@@ -15,19 +15,29 @@ export async function razorpayAdapter(expected = null, action = null, identity =
   const fail = (reason) => ({ outcome: "blocked", reason });
   const origin = "https://job-boards.greenhouse.io";
   const tenant = "razorpaysoftwareprivatelimited";
-  const adapterVersion = "razorpay-greenhouse-text-v1";
+  const version = identity?.review_protocol_version ?? 1;
+  if (![1, 2].includes(version) || !Number.isSafeInteger(version)) return fail("Unsupported reviewed form protocol");
+  const adapterVersion = version === 2 ? "razorpay-greenhouse-controls-v2" : "razorpay-greenhouse-text-v1";
   const recipient = "https://email-address-validator.us.greenhouse.io/address/validate";
   const baseLabels = { first_name: "First Name", last_name: "Last Name", email: "Email" };
   const customLabels = new Set(["LinkedIn Profile", "Website", "Total Years of Experience", "Current Location"]);
+  const choiceLabels = new Set(["Current Career Stage", "Gender", "Current Industry", "Current Designation"]);
+  const validChoice = (field) => version === 2 && field.type === "combobox" && choiceLabels.has(field.label)
+    && /^question_\d{1,20}$/.test(field.id) && Array.isArray(field.options) && field.options.length >= 1 && field.options.length <= 64
+    && field.options.every((option) => option && Object.keys(option).sort().join(",") === "label,value"
+      && [option.value, option.label].every((value) => typeof value === "string" && value.length > 0 && value.length <= 255 && value.isWellFormed()))
+    && new Set(field.options.map(({ value }) => value)).size === field.options.length
+    && new Set(field.options.map(({ label }) => label)).size === field.options.length;
   const supplied = identity?.field_mapping;
-  if (!Array.isArray(supplied) || supplied.length < 3 || supplied.length > 7
+  if (!Array.isArray(supplied) || supplied.length < 3 || supplied.length > (version === 2 ? 12 : 7)
     || supplied.some((field) => !field || typeof field !== "object" || Array.isArray(field)
-      || Object.keys(field).sort().join(",") !== "id,label,required,type" || typeof field.id !== "string" || field.id.length > 128
-      || typeof field.label !== "string" || field.type !== "text" || typeof field.required !== "boolean"
-      || (Object.hasOwn(baseLabels, field.id) ? field.label !== baseLabels[field.id] : !/^question_\d+$/.test(field.id) || !customLabels.has(field.label)))
+      || Object.keys(field).sort().join(",") !== (field.type === "combobox" ? "id,label,options,required,type" : "id,label,required,type")
+      || typeof field.id !== "string" || field.id.length > 128 || typeof field.label !== "string" || typeof field.required !== "boolean"
+      || !(field.type === "text" && (Object.hasOwn(baseLabels, field.id) ? field.label === baseLabels[field.id] : /^question_\d+$/.test(field.id) && customLabels.has(field.label))
+        || version === 2 && field.type === "tel" && field.id === "phone" && field.label === "Phone" || validChoice(field)))
     || new Set(supplied.map(({ id }) => id)).size !== supplied.length || new Set(supplied.map(({ label }) => label)).size !== supplied.length
     || Object.keys(baseLabels).some((id) => !supplied.some((field) => field.id === id))) return fail("Signed application mapping must contain only the reviewed text semantics and exact unique IDs");
-  const fieldMapping = supplied.map(({ id, label, type, required }) => ({ id, label, type, required }));
+  const fieldMapping = supplied.map(({ id, label, type, required, options }) => ({ id, label, type, required, ...(options ? { options } : {}) }));
   const labels = Object.fromEntries(fieldMapping.map(({ id, label }) => [id, label]));
   const allowed = new Set(Object.keys(labels));
   // Chrome result/argument transport may reorder object keys. Preserve exact
@@ -68,7 +78,31 @@ export async function razorpayAdapter(expected = null, action = null, identity =
     return [...node.attributes].map(({ name, value }) => [name, bounded(value)]).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0);
   };
   const sha256 = async (value) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)))].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-  const read = () => {
+  const choices = new Map(fieldMapping.filter(({ type }) => type === "combobox").map((field) => [field.id, field]));
+  const stableChoiceDescription = (node) => (node.getAttribute("aria-describedby") || "")
+    .split(/\s+/).filter((id) => id && id !== `react-select-${node.id}-placeholder`);
+  const choiceSchema = (widget, input) => {
+    const clone = widget.cloneNode(true);
+    // Selection/search callbacks update only these known presentation nodes.
+    // Keep all other attributes, labels, structure and button behavior bound.
+    for (const node of clone.querySelectorAll(".select__menu,.select__single-value,.select__placeholder")) node.remove();
+    for (const node of clone.querySelectorAll("[aria-live],[role=log]")) node.textContent = "";
+    for (const node of clone.querySelectorAll('input[aria-hidden="true"][tabindex="-1"]')) node.remove();
+    const control = clone.querySelector(`[id="${input.id}"]`);
+    for (const name of ["value", "aria-expanded", "aria-controls", "aria-activedescendant"]) control.removeAttribute(name);
+    const description = stableChoiceDescription(input).join(" ");
+    if (description) control.setAttribute("aria-describedby", description); else control.removeAttribute("aria-describedby");
+    for (const node of clone.querySelectorAll("[class]")) {
+      node.classList.remove("select__control--is-focused", "select__control--menu-is-open", "select__value-container--has-value");
+      if (node.classList.contains("select__control")) {
+        // Exact normal unfocused/focused styles observed on the live portal.
+        // Unknown classes remain in the fingerprint and cannot be ignored.
+        node.classList.remove("remix-css-13cymwt-control", "remix-css-yt0d77-control");
+      }
+    }
+    return bounded(clone.outerHTML, bounds.text);
+  };
+  const read = (activeChoice = null) => {
     // Raw manual state stays in this isolated execution. Local hashes bind
     // changes, not anonymity: low-entropy answers can still be guessed.
     const privateHashes = [];
@@ -81,7 +115,26 @@ export async function razorpayAdapter(expected = null, action = null, identity =
     if (document.querySelector("input[type=password]") || [...document.querySelectorAll("input[autocomplete='one-time-code'],input[id*='security-code'],input[id*='verification-code']")].some(visible)) throw new Error("Login or verification checkpoint requires the candidate");
     if ([...document.querySelectorAll("dialog[open],[role=dialog],[contenteditable]:not([contenteditable=false])")].some(visible)) throw new Error("Unsupported modal or editable context requires the candidate");
     if ([...document.querySelectorAll("iframe")].some((node) => visible(node) && /recaptcha/i.test(node.src) && /challenge/i.test(node.title))) throw new Error("CAPTCHA challenge requires the candidate");
-    const all = [...document.querySelectorAll("input,select,textarea,button")];
+    const widgets = new Map();
+    for (const [id, descriptor] of choices) {
+      const input = document.getElementById(id), widget = input?.closest("div.select");
+      if (!widget || input.getAttribute("role") !== "combobox" || widget.querySelectorAll("input[role=combobox]").length !== 1
+        || !widget.querySelector(".select__value-container") || input.value !== ""
+        || input.getAttribute("aria-expanded") === "true" && id !== activeChoice) throw new Error("Reviewed choice widget is unsupported or has an active search");
+      const auxiliary = [...widget.querySelectorAll("input,select,textarea,button")].filter((node) => node !== input && !node.closest(".select__menu"));
+      if (auxiliary.some((node) => !(node instanceof HTMLInputElement && node.type === "text" && node.getAttribute("aria-hidden") === "true" && node.tabIndex === -1
+        || node instanceof HTMLButtonElement && node.type === "button"))) throw new Error("An unknown control appeared inside the reviewed choice widget");
+      const selected = [...widget.querySelectorAll(".select__single-value")];
+      if (selected.length > 1) throw new Error("Choice selection is ambiguous");
+      const label = selected.length ? normalise(selected[0].textContent || "") : "";
+      const matches = descriptor.options.filter((option) => option.label === label);
+      if (label && matches.length !== 1 || !label && widget.querySelectorAll(".select__placeholder").length !== 1) throw new Error("The current choice is outside the saved employer options");
+      // Greenhouse's ReactSelect widget has no named hidden option-ID input.
+      // The one-to-one public schema label/value mapping binds its visible choice.
+      widgets.set(id, { widget, value: label ? matches[0].value : "", schema: choiceSchema(widget, input) });
+    }
+    const all = [...document.querySelectorAll("input,select,textarea,button")].filter((node) =>
+      ![...widgets.values()].some(({ widget }) => widget.contains(node) && !choices.has(node.id)));
     if (!all.length || all.length > bounds.controls) throw new Error("Form context exceeds the reviewed control bound");
     const duplicates = new Set();
     const identified = document.querySelectorAll("[id]");
@@ -94,8 +147,10 @@ export async function razorpayAdapter(expected = null, action = null, identity =
       const node = document.getElementById(id);
       if (!(node instanceof HTMLInputElement) || !node.form) throw new Error("The mapped application form is incomplete");
       const label = normalise([...(node.labels || [])].map((entry) => entry.textContent).join(" ")).replace(/\s*\*\s*$/, "");
-      if (label !== mappedLabel || node.type !== type || node.getAttribute("role")
-        || node.maxLength !== 255 || Boolean(node.required || node.getAttribute("aria-required") === "true") !== required
+      const choice = type === "combobox";
+      if (label !== mappedLabel || node.type !== (choice ? "text" : type)
+        || (choice ? node.getAttribute("role") !== "combobox" : node.getAttribute("role"))
+        || (choice ? ![-1, 255].includes(node.maxLength) : node.maxLength !== 255) || Boolean(node.required || node.getAttribute("aria-required") === "true") !== required
         || node.disabled || node.readOnly || !visible(node)) throw new Error("Reviewed text field metadata changed or requires manual input");
       return node;
     });
@@ -104,11 +159,16 @@ export async function razorpayAdapter(expected = null, action = null, identity =
     if ([...document.querySelectorAll("input[type=file]")].some((node) => node.files.length)) throw new Error("Selected manual attachment is unverified; finish text assistance before attachment");
     const forms = [...document.forms].map((node) => {
       const entry = { path: path(node), attributes: attributes(node), action: node.action, method: node.method };
-      bindPrivate(entry, "text_sha256", bounded(normalise(node.textContent), bounds.text)); return entry;
+      const clone = node.cloneNode(true);
+      // Only reviewed choice subtrees contain mutable selection labels/popups.
+      // Their complete supported semantics are captured as field descriptors.
+      for (const id of widgets.keys()) clone.querySelector(`[id="${id}"]`)?.closest("div.select")?.remove();
+      bindPrivate(entry, "text_sha256", bounded(normalise(clone.textContent), bounds.text)); return entry;
     });
     const fields = all.map((node) => {
       const labelled = (node.getAttribute("aria-labelledby") || "").split(/\s+/).filter(Boolean).map((id) => document.getElementById(id)?.textContent || "");
-      const described = (node.getAttribute("aria-describedby") || "").split(/\s+/).filter(Boolean).map((id) => document.getElementById(id)?.textContent || "");
+      const descriptionIds = choices.has(node.id) ? stableChoiceDescription(node) : (node.getAttribute("aria-describedby") || "").split(/\s+/).filter(Boolean);
+      const described = descriptionIds.map((id) => document.getElementById(id)?.textContent || "");
       const control = {
         id: node.id, name: node.name || "", label: bounded(normalise([...(node.labels || [])].map((entry) => entry.textContent).join(" "))),
         aria_labelled: labelled.map((value) => bounded(normalise(value))), description: described.map((value) => bounded(normalise(value))),
@@ -119,8 +179,10 @@ export async function razorpayAdapter(expected = null, action = null, identity =
         max: node.maxLength ?? -1, disabled: Boolean(node.disabled), readonly: Boolean(node.readOnly), hidden: !visible(node),
         // A controlled React input can update its value attribute after a fill.
         // Assisted values are bound by approved-prefix/expected-before checks.
-        attributes: allowed.has(node.id) ? attributes(node).filter(([name]) => !["value", "checked", "selected"].includes(name)) : [],
-        path: path(node), form: node.form ? [...document.forms].indexOf(node.form) : -1,
+        attributes: allowed.has(node.id) ? attributes(node).filter(([name]) => !(choices.has(node.id)
+          ? ["value", "checked", "selected", "aria-expanded", "aria-controls", "aria-activedescendant"] : ["value", "checked", "selected"]).includes(name))
+          .map(([name, value]) => [name, choices.has(node.id) && name === "aria-describedby" ? stableChoiceDescription(node).join(" ") : value]) : [],
+        path: path(widgets.get(node.id)?.widget || node), form: node.form ? [...document.forms].indexOf(node.form) : -1,
         options: node instanceof HTMLSelectElement ? [...node.options].map((option) => ({ value: bounded(option.value), label: bounded(option.label), disabled: option.disabled })) : [],
       };
       // Assisted values change only under separately reviewed expected-before and
@@ -134,7 +196,11 @@ export async function razorpayAdapter(expected = null, action = null, identity =
         text: bounded(normalise(node.textContent || "")), attributes: attributes(node),
         selected_options: node instanceof HTMLSelectElement ? [...node.options].map((option) => option.selected) : [], controlled_context: controlledContext,
       });
-      else if (controlled) control.controlled_context = controlledContext;
+      else if (controlled && !choices.has(node.id)) control.controlled_context = controlledContext;
+      if (choices.has(node.id)) {
+        control.options = choices.get(node.id).options;
+        bindPrivate(control, "widget_schema_sha256", widgets.get(node.id).schema);
+      }
       return control;
     });
     const scripts = [...document.scripts]; const links = [...document.querySelectorAll("a[href],link[href]")]; const frames = [...document.querySelectorAll("iframe")];
@@ -151,7 +217,7 @@ export async function razorpayAdapter(expected = null, action = null, identity =
     };
     const serialized = canonical({ context, private_values: privateHashes.map(({ key, value }) => [key, value]) });
     if (new TextEncoder().encode(serialized).length > bounds.total) throw new Error("Form context exceeds the reviewed total byte bound");
-    const assistedValues = Object.fromEntries(assisted.map((node) => [node.id, bounded(node.value, 255)]));
+    const assistedValues = Object.fromEntries(assisted.map((node) => [node.id, bounded(widgets.get(node.id)?.value ?? node.value, 255)]));
     return { context, serialized, fields, form, assisted, assistedValues, privateHashes };
   };
   let current;
@@ -161,14 +227,15 @@ export async function razorpayAdapter(expected = null, action = null, identity =
   // Web Crypto yields. Recheck all state after it returns, before any events.
   try { const latest = read(); if (latest.serialized !== current.serialized) return fail("Form context changed during inspection"); current.assisted = latest.assisted; current.assistedValues = latest.assistedValues; } catch (error) { return fail(error.message); }
   const inspection = {
-    outcome: "inspected", adapter_id: adapterVersion, origin, url: location.href, frame_id: 0, document_id: identity.document_id,
+    outcome: "inspected", ...(version === 2 ? { review_protocol_version: 2 } : {}), adapter_id: adapterVersion, origin, url: location.href, frame_id: 0, document_id: identity.document_id,
     tenant_id: tenant, employer_key: "razorpay", canonical_opening_key: current.context.opening,
     form_version: `${adapterVersion}:${contextDigest}`, context_digest: contextDigest, context: current.context, fields: current.fields,
     assisted_fields: current.fields.filter((field) => allowed.has(field.id)), manual_fields: current.fields.filter((field) => !allowed.has(field.id)),
     assisted_values: current.assistedValues,
     field_mapping: fieldMapping,
     required_controls: current.fields.filter((field) => field.required).length, checkpoint: null, status: "manual_handoff",
-    message: "Up to seven reviewed plain text fields only. Phone, Country, employment, choices, attachment and final submission remain manual. No application receipt or charge is established.",
+    message: version === 2 ? "Only explicitly reviewed text, phone and supported choices can be filled. Country, employment, unknown controls, attachment and final submission remain manual. No application receipt or charge is established."
+      : "Up to seven reviewed plain text fields only. Phone, Country, employment, choices, attachment and final submission remain manual. No application receipt or charge is established.",
   };
   if (!action) return inspection;
   if (!expected || expected.outcome !== "inspected" || !digestPattern.test(expected.context_digest || "")
@@ -179,7 +246,7 @@ export async function razorpayAdapter(expected = null, action = null, identity =
   if (expected.document_id !== identity.document_id || action.document_id !== identity.document_id || action.frame_id !== 0) return fail("Chrome document or frame changed");
   if (["origin", "url", "tenant_id", "employer_key", "canonical_opening_key"].some((key) => inspection[key] !== expected[key])) return fail("Reviewed employer destination changed");
   const reviewed = expected.reviewed_answers;
-  if (!reviewed || typeof reviewed !== "object" || Array.isArray(reviewed) || !Object.keys(reviewed).length || Object.keys(reviewed).length > 7
+  if (!reviewed || typeof reviewed !== "object" || Array.isArray(reviewed) || !Object.keys(reviewed).length || Object.keys(reviewed).length > (version === 2 ? 12 : 7)
     || Object.keys(reviewed).some((key) => !allowed.has(key) || typeof reviewed[key] !== "string" || !reviewed[key].isWellFormed() || !reviewed[key].trim() || reviewed[key].length > 255)
     || !allowed.has(action.field_id) || !Object.hasOwn(reviewed, action.field_id) || action.value !== reviewed[action.field_id]
     || typeof action.expected_before !== "string" || !Number.isSafeInteger(action.deadline) || Date.now() >= action.deadline || action.deadline - Date.now() > 10000
@@ -197,10 +264,43 @@ export async function razorpayAdapter(expected = null, action = null, identity =
       || typeof expectedValues[id] !== "string" || !expectedValues[id].isWellFormed() || expectedValues[id].length > 255)
     || !same(current.assistedValues, expectedValues)) return fail("Assisted values changed from the reviewed expected-before and filled prefix");
   const control = document.getElementById(action.field_id);
-  if (!current.assisted.includes(control) || control.value !== action.expected_before) return fail("Reviewed control expected-before value changed");
+  if (!current.assisted.includes(control) || current.assistedValues[action.field_id] !== action.expected_before) return fail("Reviewed control expected-before value changed");
   if (control.id === "email" && (!action.email_blur_disclosure || action.email_blur_disclosure.acknowledged !== true
     || action.email_blur_disclosure.event !== "blur" || action.email_blur_disclosure.recipient !== recipient
     || action.email_blur_disclosure.context_digest !== contextDigest)) return fail("Review and acknowledge the bound email validation disclosure before filling");
+  if (version === 2 && (action.review_protocol_version !== 2 || action.control_type !== fieldMapping.find(({ id }) => id === action.field_id).type)) return fail("The typed control action changed");
+  if (choices.has(control.id)) {
+    const descriptor = choices.get(control.id), option = descriptor.options.find(({ value }) => value === action.value);
+    if (!option || action.option_label !== option.label) return fail("The exact reviewed option changed");
+    // Opening a dropdown is itself part of the explicitly reviewed compound
+    // action: page callbacks can disclose/autosave before final submission.
+    // No await separates the final checks above from this first event.
+    control.click();
+    let selected = false;
+    while (Date.now() < action.deadline) {
+      let latest;
+      try { latest = read(control.id); } catch (error) { return { outcome: "unknown", field_id: control.id, reason: error.message }; }
+      if (latest.serialized !== current.serialized || !same(latest.assistedValues, expectedValues)) return { outcome: "unknown", field_id: control.id, reason: "Form or answers changed while opening the reviewed choice" };
+      const listId = control.getAttribute("aria-controls"), list = listId ? document.getElementById(listId) : null;
+      if (list && list.getAttribute("role") === "listbox" && control.closest("div.select").contains(list)) {
+        const options = [...list.querySelectorAll("[role=option]")].filter(visible);
+        const labelSet = new Set(options.map((node) => normalise(node.textContent || "")));
+        if (labelSet.size !== options.length || options.some((node) => !descriptor.options.some(({ label }) => label === normalise(node.textContent || "")))) return { outcome: "unknown", field_id: control.id, reason: "The employer option list changed" };
+        const matches = options.filter((node) => normalise(node.textContent || "") === option.label && node.getAttribute("aria-disabled") !== "true" && !node.disabled);
+        if (matches.length === 1) {
+          if (Date.now() >= action.deadline) break;
+          matches[0].click(); selected = true; break;
+        }
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    if (!selected) return { outcome: "unknown", field_id: control.id, reason: "The reviewed option did not become available before expiry" };
+    try {
+      const latest = read();
+      if (latest.serialized !== current.serialized || !same(latest.assistedValues, { ...expectedValues, [control.id]: action.value })) return { outcome: "unknown", field_id: control.id, reason: "The selected choice or conditional form changed" };
+    } catch (error) { return { outcome: "unknown", field_id: control.id, reason: error.message }; }
+    return { outcome: "filled_only", field_id: control.id, message: "One explicitly reviewed choice selected. Attachment and final submission remain manual. No application fee was charged." };
+  }
   // No await between the final synchronous context/value checks and mutation.
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(control, action.value);
   control.dispatchEvent(new Event("input", { bubbles: true }));

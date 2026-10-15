@@ -1,4 +1,4 @@
-"""Explicit reviewed text assistance on Razorpay's official Greenhouse portal.
+"""Explicit reviewed form assistance on Razorpay's official Greenhouse portal.
 
 PostgreSQL owns revocation, review expiry and one-shot field outcomes. TLS and a
 nonextractable device key identify the caller; signed leases bind exact actions.
@@ -43,6 +43,16 @@ FIELDS = (
 )
 FIELD_IDS = frozenset(field[0] for field in FIELDS)
 FIELD_LABELS = frozenset(field[1] for field in FIELDS)
+CHOICE_LABELS = ("Current Career Stage", "Gender", "Current Industry", "Current Designation")
+MAX_REVIEW_FIELDS = 12
+
+
+def typed_controls_enabled() -> bool:
+    # Keep the new widget contract separate from the established text pilot.
+    # A native read-only portal compatibility check precedes production rollout.
+    return os.getenv("BROWSER_ASSISTANCE_TYPED_CONTROLS_ENABLED", "false").lower() == "true"
+
+
 REVIEW_MS = 300_000
 LEASE_MS = 10_000
 P256_ORDER = 0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551
@@ -205,8 +215,10 @@ def _application(db: Session, review_or_id, user_id: int):
     return app, posting, artifact
 
 
-def field_mapping(app) -> list[dict]:
-    """Only known text semantics from this exact job's saved public form."""
+def field_mapping(app, review_protocol_version: int = 1) -> list[dict]:
+    """Exact job-specific semantics; v1 approvals never acquire v2 controls."""
+    require(type(review_protocol_version) is int and review_protocol_version in {1, 2})
+    require(review_protocol_version == 1 or typed_controls_enabled(), 503)
     fields = app.form.get("fields", [])
     require(isinstance(fields, list) and len(fields) <= 200)
     mapping = []
@@ -217,17 +229,34 @@ def field_mapping(app) -> list[dict]:
         if not isinstance(field, dict):
             continue
         label = re.sub(r"\s+", " ", str(field.get("label", ""))).strip().rstrip("*").strip()
-        if label not in FIELD_LABELS or field.get("type") not in {"text", "email"}:
+        kind = "text"
+        options = None
+        if review_protocol_version == 2 and label == "Phone" and field.get("id") == "phone" and field.get("type") in {"text", "tel"}:
+            kind = "tel"
+        elif review_protocol_version == 2 and label in CHOICE_LABELS and field.get("type") == "single_select":
+            kind = "combobox"
+            options = field.get("options")
+            require(isinstance(options, list) and 1 <= len(options) <= 64)
+            require(all(isinstance(option, dict) and set(option) == {"value", "label"}
+                        and all(isinstance(option[key], str) and 1 <= len(option[key]) <= 255 for key in ("value", "label"))
+                        for option in options))
+            require(len({option["value"] for option in options}) == len(options)
+                    and len({option["label"] for option in options}) == len(options))
+        elif label not in FIELD_LABELS or field.get("type") not in {"text", "email"}:
             continue
         identity = field.get("id")
         require(isinstance(identity, str) and label not in labels and identity not in identities)
         assert isinstance(identity, str)
-        require(identity == base[label] if label in base else re.fullmatch(r"question_[0-9]{1,20}", identity) is not None)
+        require(identity == base[label] if label in base else identity == "phone" if kind == "tel"
+                else re.fullmatch(r"question_[0-9]{1,20}", identity) is not None)
         labels.add(label)
         identities.add(identity)
-        mapping.append({"id": identity, "label": label, "type": "text", "required": bool(field.get("required"))})
-    require(set(base) <= labels and 3 <= len(mapping) <= 7)
-    order = {label: index for index, (_, label) in enumerate(FIELDS)}
+        descriptor = {"id": identity, "label": label, "type": kind, "required": bool(field.get("required"))}
+        if options is not None:
+            descriptor["options"] = options
+        mapping.append(descriptor)
+    require(set(base) <= labels and 3 <= len(mapping) <= (7 if review_protocol_version == 1 else MAX_REVIEW_FIELDS))
+    order = {label: index for index, label in enumerate([*(label for _, label in FIELDS), "Phone", *CHOICE_LABELS])}
     return sorted(mapping, key=lambda field: order[field["label"]])
 
 
@@ -257,6 +286,7 @@ def candidate(db: Session, user_id: int, operation: str, request: CandidateReque
             device = db.query(Device).filter_by(id=review.device_id, user_id=user_id, state="active").first()
             require(device is not None and review.state == "draft" and bool(review.payload))
             _application(db, review, user_id)
+            require(review.payload.get("review_protocol_version", 1) == 1 or typed_controls_enabled(), 503)
             require(request.confirmed is True and request.review_digest == review.review_digest)
             review.state, review.approved_at = "approved", now()
         elif operation == "cancel":
@@ -274,7 +304,8 @@ def _inspection(body: dict, app, posting, artifact) -> dict:
     inspection = body["inspection"]
     require(isinstance(inspection, dict))
     values = inspection.get("assisted_values")
-    mapping = field_mapping(app)
+    version = inspection.get("review_protocol_version", 1)
+    mapping = field_mapping(app, version)
     identities = {field["id"] for field in mapping}
     require(isinstance(values, dict) and set(values) == identities)
     require(inspection.get("outcome") == "inspected" and inspection.get("origin") == ORIGIN
@@ -286,9 +317,18 @@ def _inspection(body: dict, app, posting, artifact) -> dict:
     require(all(isinstance(values[field], str) and len(values[field]) <= 255 for field in identities))
     answers = {field["id"]: app.answers[field["id"]] for field in mapping if isinstance(app.answers.get(field["id"]), str) and app.answers[field["id"]]}
     require(bool(answers) and all(len(value) <= 255 for value in answers.values()))
-    # Sensitive/custom choices are never inferred or automatically filled.
-    fields = [{**field, "value": answers[field["id"]], "expected_before": values[field["id"]]}
-              for field in mapping if field["id"] in answers and answers[field["id"]] != values[field["id"]]]
+    fields = []
+    for field in mapping:
+        option_labels = {option["value"]: option["label"] for option in field.get("options", [])}
+        if field["type"] == "combobox":
+            require(values[field["id"]] == "" or values[field["id"]] in option_labels)
+            require(field["id"] not in answers or answers[field["id"]] in option_labels)
+        if field["id"] not in answers or answers[field["id"]] == values[field["id"]]:
+            continue
+        entry = {**field, "value": answers[field["id"]], "expected_before": values[field["id"]]}
+        if field["type"] == "combobox":
+            entry.update(value_label=option_labels[entry["value"]], expected_before_label=option_labels.get(entry["expected_before"], ""))
+        fields.append(entry)
     require(bool(fields))
     descriptor = {"sha256": artifact.sha256, "filename": artifact.filename, "media_type": artifact.media_type, "size_bytes": artifact.size_bytes}
     approved_answers = {field["id"]: field["value"] for field in fields}
@@ -300,6 +340,13 @@ def _inspection(body: dict, app, posting, artifact) -> dict:
                "disclosures": ["Filling can disclose or autosave the exact approved answers before submission.",
                    "Email blur can send the approved email to https://email-address-validator.us.greenhouse.io/address/validate.",
                    "Country, phone, employment, custom choices, sensitive answers, file attachment, CAPTCHA and final submission remain yours."]}
+    if version == 2:
+        payload["review_protocol_version"] = 2
+        payload["disclosures"][-1] = "Only your explicitly saved phone and supported choices can be filled. Gender and other personal answers are never inferred. Country, employment, unknown choices, file attachment, CAPTCHA and final submission remain yours."
+        payload["disclosures"].append("Opening a reviewed dropdown and selecting its exact option can disclose or autosave that choice before final submission.")
+        payload["manual_fields"] = [*payload["manual_fields"], *[
+            {key: field[key] for key in ("id", "label", "required")} for field in mapping
+            if field["required"] and field["id"] not in answers and not values[field["id"]]]]
     require(isinstance(payload["manual_fields"], list) and len(payload["manual_fields"]) <= 128)
     require(all(isinstance(field, dict) and set(field) == {"id", "label", "required"}
                 and isinstance(field["id"], str) and len(field["id"]) <= 160
@@ -363,9 +410,14 @@ def device(db: Session, origin: str, request: DeviceRequest) -> dict:
     else:
         require(record.state == "active" and record.user_id is not None, 403)
         if request.operation == "application":
-            require(set(request.body) == {"application_id"} and isinstance(request.body["application_id"], str))
+            require(set(request.body) <= {"application_id", "review_protocol_version"} and isinstance(request.body.get("application_id"), str))
+            requested_version = request.body.get("review_protocol_version", 1)
+            require(type(requested_version) is int and requested_version in {1, 2})
+            version = 2 if requested_version == 2 and typed_controls_enabled() else 1
             app, posting, _ = _application(db, request.body["application_id"], record.user_id)
-            response = {"application_id": app.id, "target_url": posting.apply_url, "field_mapping": field_mapping(app)}
+            response = {"application_id": app.id, "target_url": posting.apply_url, "field_mapping": field_mapping(app, version)}
+            if version == 2:
+                response["review_protocol_version"] = 2
         elif request.operation == "inspect":
             require(isinstance(request.body.get("application_id"), str))
             app, posting, artifact = _application(db, request.body["application_id"], record.user_id)
@@ -398,6 +450,8 @@ def _action(db: Session, record: Device, request: DeviceRequest) -> dict:
         return _review_response(review)
     require(review.state in {"approved", "running"} and bool(review.payload))
     _application(db, review, record.user_id)
+    version = review.payload.get("review_protocol_version", 1)
+    require(version == 1 or typed_controls_enabled(), 503)
     if request.operation == "begin":
         require(set(body) == {"review_id", "review_digest", "index", "context_digest", "document_id"})
         index = body["index"]
@@ -415,6 +469,11 @@ def _action(db: Session, record: Device, request: DeviceRequest) -> dict:
                    "review_digest": review.review_digest, "reviewed_answers_sha256": review.payload["reviewed_answers_sha256"],
                    "field_id": field["id"], "value": field["value"], "expected_before": field["expected_before"],
                    "issued_at_ms": _ms(now()), "deadline": _ms(expires), "allowed_actions": ["fill"]}
+        if version == 2:
+            payload["review_protocol_version"] = 2
+            payload["control_type"] = field["type"]
+            if field["type"] == "combobox":
+                payload["option_label"] = field["value_label"]
         if field["id"] == "email":
             payload["email_blur_disclosure"] = {"acknowledged": True, "event": "blur",
                 "recipient": "https://email-address-validator.us.greenhouse.io/address/validate", "context_digest": review.context_digest}

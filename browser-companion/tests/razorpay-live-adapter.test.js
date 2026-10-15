@@ -34,6 +34,46 @@ document.querySelector('form').addEventListener('change',e=>{window.observed.cha
 document.querySelector('#email').addEventListener('blur',e=>window.observed.blur.push(e.target.value));
 document.querySelector('form').addEventListener('submit',e=>{e.preventDefault();window.observed.submit++;});
 </script>`;
+const typedChoiceId = "question_9132967005";
+const typedMapping = Object.freeze([...historicalMapping.slice(0, 3),
+  { id: "phone", label: "Phone", type: "tel", required: true },
+  { id: typedChoiceId, label: "Current Career Stage", type: "combobox", required: true,
+    options: [{ value: "24525587005", label: "Experienced Professional" },
+      { value: "24525588005", label: "College Grads / Fresher" },
+      { value: "24525589005", label: "Student / College Intern" }] },
+]);
+const typedAnswers = Object.freeze({ ...Object.fromEntries(Object.entries(answers).slice(0, 3)),
+  phone: "+919000000000", [typedChoiceId]: "24525587005" });
+function typedShape({ unknownOption = false, conditional = false } = {}) {
+  const fields = historicalMapping.slice(0, 3).map(({ id, label }) => `<label for="${id}">${label}*</label><input id="${id}" type="text" maxlength="255" aria-required="true">`).join("");
+  // Hand-authored from the read-only hosted form observed on 15 October. There
+  // is no named hidden option ID. ReactSelect changes placeholder/describedby
+  // and selected-label DOM; callbacks below simulate that normal UI behavior.
+  return `<!doctype html><html><head><title>Local typed control DOM reference</title><style>label,input{display:block;margin:8px}</style></head><body>
+  <form action="${portal}" method="get">${fields}
+  <label for="phone">Phone*</label><input id="phone" type="tel" maxlength="255" aria-required="true">
+  <label for="country">Country*</label><input id="country" role="combobox" aria-required="true">
+  <div class="select"><div class="select__container"><label id="${typedChoiceId}-label" for="${typedChoiceId}">Current Career Stage*</label>
+  <div class="select-shell"><span id="react-select-${typedChoiceId}-live-region"></span><span aria-live="polite" role="log"></span>
+  <div class="select__control remix-css-13cymwt-control"><div class="select__value-container"><div class="select__placeholder" id="react-select-${typedChoiceId}-placeholder">Select...</div>
+  <div class="select__input-container" data-value=""><input id="${typedChoiceId}" type="text" class="select__input" role="combobox" aria-expanded="false" aria-labelledby="${typedChoiceId}-label" aria-required="true" aria-describedby="react-select-${typedChoiceId}-placeholder ${typedChoiceId}-error" value=""></div></div>
+  <button type="button" aria-label="Toggle flyout" tabindex="-1">Open</button></div><input required tabindex="-1" aria-hidden="true" value=""></div></div></div>
+  <span id="${typedChoiceId}-error"></span><label for="resume">Resume/CV*</label><input id="resume" type="file"><button type="submit">Submit manually</button></form>
+  ${recorder}<script>
+  const input=document.getElementById(${JSON.stringify(typedChoiceId)}),widget=input.closest('div.select');window.observed.choice=[];window.observed.opens=0;
+  input.addEventListener('click',()=>{
+    window.observed.opens++;widget.querySelector('.select__control').className='select__control select__control--is-focused select__control--menu-is-open remix-css-yt0d77-control';input.setAttribute('aria-expanded','true');input.setAttribute('aria-controls','react-select-'+input.id+'-listbox');
+    const list=document.createElement('div');list.className='select__menu';list.id='react-select-'+input.id+'-listbox';list.setAttribute('role','listbox');
+    for(const label of ${JSON.stringify([...typedMapping.at(-1).options.map(({ label }) => label), ...(unknownOption ? ["Unexpected employer option"] : [])])}){
+      const option=document.createElement('div');option.className='select__option';option.setAttribute('role','option');option.setAttribute('aria-disabled','false');option.textContent=label;
+      option.addEventListener('click',()=>{window.observed.choice.push(label);widget.querySelector('.select__placeholder')?.remove();
+        const selected=document.createElement('div');selected.className='select__single-value';selected.textContent=label;widget.querySelector('.select__value-container').prepend(selected);
+        input.setAttribute('aria-describedby',input.id+'-error');input.setAttribute('aria-expanded','false');input.removeAttribute('aria-controls');list.remove();
+        if(${JSON.stringify(conditional)}){const extra=document.createElement('input');extra.id='new-conditional-required';extra.required=true;document.querySelector('form').append(extra);}});
+      list.append(option);
+    }widget.querySelector('.select-shell').append(list);
+  });</script></body></html>`;
+}
 function publicShape() {
   // Deliberately remove all synthetic root identity/policy markers. The adapter
   // must derive its context from actual DOM structure, never fixture attestation.
@@ -46,7 +86,7 @@ function currentMetadataShape() {
     .map(([id, label]) => `<label for="${id}">${label}*</label><input id="${id}" type="text" role="combobox" aria-required="true">`).join("");
   return `<!doctype html><html><head><title>Local current metadata DOM reference</title><style>label,input{display:block;margin:8px}</style></head><body><form action="${currentPortal}" method="get">${fields}<label for="phone">Phone*</label><input id="phone" type="tel" aria-required="true"><label for="resume">Resume/CV*</label><input id="resume" type="file" aria-required="true">${manual}<button type="submit">Submit manually</button></form>${recorder}</body></html>`;
 }
-async function fixture({ mapping = historicalMapping, html = publicShape(), values = answers, targetUrl = portal } = {}) {
+async function fixture({ mapping = historicalMapping, html = publicShape(), values = answers, targetUrl = portal, protocolVersion = 1 } = {}) {
   const directory = await mkdtemp(`${tmpdir()}/hirewiz-razorpay-dom-`); let context;
   const requests = []; const errors = [];
   try {
@@ -65,12 +105,12 @@ async function fixture({ mapping = historicalMapping, html = publicShape(), valu
     const page = await context.newPage(); page.on("pageerror", (error) => errors.push(error.message));
     await page.goto(targetUrl); await page.waitForFunction(() => Boolean(window.observed));
     const tab = await worker.evaluate(async (url) => (await chrome.tabs.query({ url }))[0].id, targetUrl);
-    const invoke = async (expected = null, action = null, suppliedIdentity = undefined) => worker.evaluate(async ({ tab, mapping, expected, action, suppliedIdentity }) => {
+    const invoke = async (expected = null, action = null, suppliedIdentity = undefined) => worker.evaluate(async ({ tab, mapping, protocolVersion, expected, action, suppliedIdentity }) => {
       const [probe] = await chrome.scripting.executeScript({ target: { tabId: tab, frameIds: [0] }, func: () => null });
-      const identity = suppliedIdentity === undefined ? { document_id: probe.documentId, frame_id: probe.frameId, field_mapping: mapping } : suppliedIdentity;
+      const identity = suppliedIdentity === undefined ? { document_id: probe.documentId, frame_id: probe.frameId, field_mapping: mapping, ...(protocolVersion === 2 ? { review_protocol_version: 2 } : {}) } : suppliedIdentity;
       const [result] = await chrome.scripting.executeScript({ target: { tabId: tab, documentIds: [probe.documentId] }, func: globalThis.adapter, args: [expected, action, identity] });
       return { result: result.result, chrome_document_id: result.documentId, chrome_frame_id: result.frameId };
-    }, { tab, mapping, expected, action, suppliedIdentity });
+    }, { tab, mapping, protocolVersion, expected, action, suppliedIdentity });
     const read = await invoke(); const review = read.result;
     const reviewed = { ...review, reviewed_answers: values, review_digest: hash("Synthetic native authority reviewed package; not server authorization"),
       reviewed_answers_sha256: hash(canonical({ context_digest: review.context_digest, reviewed_answers: values })) };
@@ -78,7 +118,9 @@ async function fixture({ mapping = historicalMapping, html = publicShape(), valu
     const fill = async (field = "first_name", extra = {}, expected = reviewed) => invoke({ ...expected, current_assisted_values: expected.current_assisted_values ?? expectedValues }, {
       field_id: field, value: values[field], expected_before: "", deadline: Date.now() + 1500,
       document_id: expected.document_id, frame_id: 0, context_digest: expected.context_digest,
-      review_digest: expected.review_digest, reviewed_answers_sha256: expected.reviewed_answers_sha256, ...extra,
+      review_digest: expected.review_digest, reviewed_answers_sha256: expected.reviewed_answers_sha256,
+      ...(protocolVersion === 2 ? { review_protocol_version: 2, control_type: mapping.find(({ id }) => id === field)?.type,
+        ...(mapping.find(({ id }) => id === field)?.type === "combobox" ? { option_label: mapping.find(({ id }) => id === field).options.find(({ value }) => value === values[field])?.label } : {}) } : {}), ...extra,
     }).then(({ result }) => { if (result.outcome === "filled_only") expectedValues[field] = values[field]; return result; });
     const noWrite = async () => assert.deepEqual(await page.evaluate(() => window.observed), { input: [], change: [], blur: [], submit: 0, file: 0 });
     return { page, worker, tab, review, reviewed, read, invoke, fill, noWrite,
@@ -316,5 +358,71 @@ test("child frame is rejected even when caller supplies a claimed top-frame iden
     const frame = f.page.frames().find((entry) => entry.parentFrame() === f.page.mainFrame());
     const result = await frame.evaluate(async ({ source, document_id }) => (0, eval)(`(${source})`)(null, null, { frame_id: 0, document_id }), { source, document_id: f.review.document_id });
     assert.equal(result.outcome, "blocked"); await f.noWrite();
+  } finally { await f.close(); }
+});
+
+test("typed phone and exact ReactSelect choice survive normal placeholder changes", async () => {
+  const f = await fixture({ mapping: typedMapping, html: typedShape(), values: typedAnswers, protocolVersion: 2 });
+  try {
+    assert.equal(f.review.outcome, "inspected", f.review.reason);
+    assert.equal(f.review.review_protocol_version, 2);
+    assert.equal((await f.fill("phone")).outcome, "filled_only");
+    const choice = await f.fill(typedChoiceId);
+    assert.equal(choice.outcome, "filled_only", choice.reason);
+    assert.equal((await f.invoke()).result.assisted_values[typedChoiceId], typedAnswers[typedChoiceId]);
+    const observed = await f.page.evaluate(() => window.observed);
+    assert.deepEqual(observed.choice, ["Experienced Professional"]);
+    assert.equal(observed.opens, 1);
+    assert.equal(observed.submit, 0);
+    assert.equal(observed.file, 0);
+  } finally { await f.close(); }
+});
+
+test("typed choice refuses an unknown employer option before selecting any answer", async () => {
+  const f = await fixture({ mapping: typedMapping, html: typedShape({ unknownOption: true }), values: typedAnswers, protocolVersion: 2 });
+  try {
+    assert.equal(f.review.outcome, "inspected", f.review.reason);
+    const result = await f.fill(typedChoiceId);
+    assert.equal(result.outcome, "unknown");
+    const observed = await f.page.evaluate(() => window.observed);
+    assert.deepEqual(observed.choice, []);
+    assert.equal(observed.submit, 0);
+    assert.equal(observed.file, 0);
+  } finally { await f.close(); }
+});
+
+test("typed conditional form change stops the approved sequence after the choice", async () => {
+  const f = await fixture({ mapping: typedMapping, html: typedShape({ conditional: true }), values: typedAnswers, protocolVersion: 2 });
+  try {
+    assert.equal(f.review.outcome, "inspected", f.review.reason);
+    assert.equal((await f.fill(typedChoiceId)).outcome, "unknown");
+    assert.equal((await f.fill("phone")).outcome, "blocked");
+    const observed = await f.page.evaluate(() => window.observed);
+    assert.deepEqual(observed.choice, ["Experienced Professional"]);
+    assert.deepEqual(observed.input, []);
+    assert.equal(observed.submit, 0);
+  } finally { await f.close(); }
+});
+
+test("typed widget behavior changes invalidate review before opening the dropdown", async () => {
+  const f = await fixture({ mapping: typedMapping, html: typedShape(), values: typedAnswers, protocolVersion: 2 });
+  try {
+    await f.page.locator('.select button').evaluate((node) => node.setAttribute('data-recipient', 'changed-after-review'));
+    assert.equal((await f.fill(typedChoiceId)).outcome, "blocked");
+    const observed = await f.page.evaluate(() => window.observed);
+    assert.equal(observed.opens, 0);
+    assert.deepEqual(observed.choice, []);
+    assert.deepEqual(observed.input, []);
+  } finally { await f.close(); }
+});
+
+test("typed controls never become available under a historical text-only identity", async () => {
+  const f = await fixture({ mapping: typedMapping, html: typedShape(), values: typedAnswers });
+  try {
+    assert.equal(f.review.outcome, "blocked");
+    const observed = await f.page.evaluate(() => window.observed);
+    assert.equal(observed.opens, 0);
+    assert.deepEqual(observed.choice, []);
+    assert.equal(observed.submit, 0);
   } finally { await f.close(); }
 });
