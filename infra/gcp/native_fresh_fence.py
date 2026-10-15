@@ -619,9 +619,12 @@ class NativeFreshFenceBoundary(fresh.FreshNativeBoundary):
             and cut <= created <= datetime.now(UTC),
             "fence_source_observer_issued_before_isolation",
         )
-        neon = self._module(
-            "backend/scripts/neon_direct_identity.py", "hirewiz_native_source_rebind_neon"
+        module = self._module(
+            "backend/scripts/monetary_cutover_preflight.py", "hirewiz_source_rebind_session"
         )
+        # Opaque native bindings belong to their exact module's private issuer.
+        # Acquire through the same owner that later verifies session identity.
+        neon = module.neon_identity
         binding, target = neon.collect_source_release_target(
             self,
             source.observer_secret,
@@ -647,9 +650,6 @@ class NativeFreshFenceBoundary(fresh.FreshNativeBoundary):
                 connection.exec_driver_sql("SET LOCAL statement_timeout='1000ms'")
                 neon.verify_transport(connection, binding)
                 neon.verify_native_target(connection, binding, 16391)
-                module = self._module(
-                    "backend/scripts/monetary_cutover_preflight.py", "hirewiz_source_rebind_session"
-                )
                 module._native_session_ids(connection, 16391, neon_binding=binding)
                 absence = connection.execute(
                     neon.text(

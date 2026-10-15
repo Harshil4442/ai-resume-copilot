@@ -167,7 +167,7 @@ def rebind(monkeypatch, *, password="new-password", absence=(0, 0, 0)):
         verify_transport=lambda *a: calls.append("transport"),
         verify_native_target=lambda *a: calls.append(("identity", a[2])),
     )
-    helper = SimpleNamespace(_native_session_ids=lambda *a, **k: calls.append("session"))
+    helper = SimpleNamespace(neon_identity=neon, _native_session_ids=lambda *a, **k: calls.append("session"))
     monkeypatch.setattr(
         native.NativeFreshFenceBoundary,
         "_module",
