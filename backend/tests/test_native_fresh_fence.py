@@ -189,6 +189,33 @@ def test_oldest_observation_expires_instead_of_final_stamp_refresh(prepared, mon
     assert boundary.retired_since is None
 
 
+def test_successful_transient_retry_cannot_extend_original_fence_window(prepared, monkeypatch):
+    boundary, source, _, responses = ready(prepared)
+    clock, attempts = [1.0], []
+    reads = module.SDKGoogleReads(Path("/inert/public-sdk"), "inert@example.com")
+
+    def request(*_args, **_kwargs):
+        attempts.append("GET")
+        return SimpleNamespace(status_code=503 if len(attempts) == 1 else 200,
+                               content=b'{}', headers={})
+
+    monkeypatch.setattr(reads, "_http", lambda: SimpleNamespace(session=SimpleNamespace(request=request)))
+    monkeypatch.setattr(module.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(module.time, "sleep", lambda seconds: clock.__setitem__(0, clock[0] + seconds))
+    original = responses.get
+
+    def near_expiry(api, path, params):
+        if not attempts:
+            clock[0] = 30.95  # Original closure deadline is still31.0, never reset.
+            assert reads.get("keys", OLD.name, {}) == {}
+        return original(api, path, params)
+
+    monkeypatch.setattr(responses, "get", near_expiry)
+    with pytest.raises(release.ReleaseDenied, match="^fence_native_observation_expired$"):
+        boundary.verify_fences(source)
+    assert attempts == ["GET", "GET"] and boundary.retired_since is None
+
+
 def test_tagged_zero_traffic_revision_is_checked(prepared):
     boundary, source, _, responses = ready(prepared)
     responses.tag = True
@@ -217,6 +244,10 @@ def test_positive_fresh_fence_never_authorizes_legacy_migration(prepared):
 def test_sdk_route_is_readonly_and_vendor_failure_is_sanitized(monkeypatch):
     reads = module.SDKGoogleReads(Path("/inert/public-sdk"), "inert@example.com")
     class HTTP:
+        @property
+        def session(self):
+            return self
+
         def request(self, *args, **kwargs):
             raise RuntimeError("synthetic-private-value-must-not-escape")
     monkeypatch.setattr(reads, "_http", lambda: HTTP())

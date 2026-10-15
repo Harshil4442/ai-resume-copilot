@@ -12,12 +12,14 @@ import hmac
 import json
 import os
 import re
+import ssl
 import sys
 import time
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from threading import local
 from typing import Any, cast
@@ -32,6 +34,9 @@ PARENT = f"projects/{release.PROJECT}/locations/{release.REGION}"
 MAX_BYTES = 4 * 1024 * 1024
 MAX_READS = 128
 WINDOW = 30
+GET_SECONDS = 3.0
+GET_ATTEMPTS = 3
+GET_RETRY_STATUSES = frozenset({429, 502, 503, 504})
 KEY = re.compile(r"projects/([1-9][0-9]{0,19})/locations/global/keys/[A-Za-z0-9_-]{1,63}")
 CONTAINER = re.compile(r"(?:projects|folders|organizations)/[1-9][0-9]{0,19}")
 SETUP_REFERENCES = {
@@ -70,11 +75,67 @@ def object_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
+def _transient_get_error(error: Exception) -> bool:
+    # Import only after _http() initialized the stock SDK. Do not preempt its
+    # bundled requests/urllib3 resolution merely to classify read failures.
+    import requests.exceptions as request_errors
+    from urllib3.exceptions import SSLError as Urllib3SSLError
+
+    # The installed stock SDK passes requests exceptions through. Exact types
+    # deliberately exclude SSL/proxy subclasses and auth/configuration errors.
+    if type(error) not in (
+        request_errors.ConnectionError, request_errors.ConnectTimeout,
+        request_errors.ReadTimeout, request_errors.Timeout,
+    ):
+        return False
+    pending: list[Any] = [error]
+    seen: set[int] = set()
+    while pending:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        if len(seen) > 16 or isinstance(current, (
+            ssl.SSLError, Urllib3SSLError, request_errors.SSLError,
+            request_errors.ProxyError,
+        )):
+            return False
+        if isinstance(current, BaseException):
+            pending.extend(current.args)
+            pending.extend((current.__cause__, current.__context__))
+            # urllib3 can retain the typed TLS failure as MaxRetryError.reason.
+            pending.append(getattr(current, "reason", None))
+    return True
+
+
+def _get_retry_delay(headers: Mapping[str, Any], attempt: int) -> float:
+    value = headers.get("Retry-After")
+    delay = 0.1 * (2 ** attempt)
+    if value is None:
+        return delay
+    need(type(value) is str and 1 <= len(value) <= 128,
+         "fence_native_read_unavailable")
+    if re.fullmatch(r"[0-9]{1,10}", value):
+        requested = float(value)
+    else:
+        try:
+            stamp = parsedate_to_datetime(value)
+            need(stamp.tzinfo is not None, "fence_native_read_unavailable")
+            requested = max(0.0, (stamp - datetime.now(UTC)).total_seconds())
+        except release.ReleaseDenied:
+            raise
+        except Exception:
+            raise release.ReleaseDenied("fence_native_read_unavailable") from None
+    return max(delay, requested)
+
+
 class SDKGoogleReads:
     """Normal retained SDK manager; read-only, canonical origins, no token reads.
 
     Each thread owns its stock HTTP transport. The SDK may refresh the retained
-    manager and replay its normal authentication challenge; no operator retry.
+    manager and replay its normal authentication challenge. Only get() adds up
+    to three transient read attempts inside one three-second observation budget;
+    shared transports and mutation callers retain their existing behavior.
     This does not create a login, enable an API or install the SDK.
     """
 
@@ -145,15 +206,42 @@ class SDKGoogleReads:
         need(allowed, "fence_native_route_refused")
         url = origins[api] + path + ("?" + urlencode(params, doseq=True) if params else "")
         try:
-            response, raw = self._http().request(
-                url, method="GET", body=None, headers={"Cache-Control": "no-cache"},
-                redirections=0,
-            )
-            need(int(response.status) == 200 and type(raw) is bytes and len(raw) <= MAX_BYTES,
-                 "fence_native_read_unavailable")
-            value = json.loads(raw, object_pairs_hook=object_pairs)
-            need(type(value) is dict, "fence_native_response_invalid")
-            return value
+            http = self._http()
+            deadline = time.monotonic() + GET_SECONDS
+            for attempt in range(GET_ATTEMPTS):
+                remaining = deadline - time.monotonic()
+                need(remaining > 0, "fence_native_read_unavailable")
+                try:
+                    # Same normal authenticated session used by the SDK's
+                    # apitools adapter; only this GET supplies a residual timeout.
+                    # Never install retry adapters or wrap the shared transport.
+                    response = http.session.request(
+                        "GET", url, data=None, headers={"Cache-Control": "no-cache"},
+                        stream=False, hooks={}, timeout=min(GET_SECONDS, remaining),
+                        allow_redirects=False,
+                    )
+                except Exception as error:
+                    if not _transient_get_error(error):
+                        raise
+                    delay = _get_retry_delay({}, attempt)
+                else:
+                    raw = response.content
+                    status = int(response.status_code)
+                    need(time.monotonic() < deadline and type(raw) is bytes
+                         and len(raw) <= MAX_BYTES and (status == 200 or status in GET_RETRY_STATUSES),
+                         "fence_native_read_unavailable")
+                    # Even a temporary status must have a bounded, valid native
+                    # JSON object. Corrupt/duplicate/unsafe responses never retry.
+                    value = json.loads(raw, object_pairs_hook=object_pairs)
+                    need(type(value) is dict, "fence_native_response_invalid")
+                    need(time.monotonic() < deadline, "fence_native_read_unavailable")
+                    if status == 200:
+                        return value
+                    delay = _get_retry_delay(response.headers, attempt)
+                need(attempt + 1 < GET_ATTEMPTS and delay < deadline - time.monotonic(),
+                     "fence_native_read_unavailable")
+                time.sleep(delay)
+            raise release.ReleaseDenied("fence_native_read_unavailable")
         except release.ReleaseDenied:
             raise
         except Exception:

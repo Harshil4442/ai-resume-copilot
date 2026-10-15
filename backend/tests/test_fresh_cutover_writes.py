@@ -24,6 +24,13 @@ class HTTP:
     def __init__(self):
         self.calls = []
         self.respond = lambda *_: (200, {})
+        self.session = SimpleNamespace(request=self.get_request)
+
+    def get_request(self, method, url, *, data, headers, stream, hooks, timeout, allow_redirects):
+        assert method == "GET" and data is None and stream is False and hooks == {}
+        assert 0 < timeout <= 3 and allow_redirects is False
+        response, raw = self.request(url, method=method, body=data, headers=headers, redirections=0)
+        return SimpleNamespace(status_code=response.status, content=raw, headers={})
 
     def request(self, url, *, method, body, headers, redirections):
         assert redirections == 0 and headers["Cache-Control"] == "no-cache"
