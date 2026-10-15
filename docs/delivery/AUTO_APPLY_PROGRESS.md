@@ -23,6 +23,22 @@ connection repair is live on the existing API image.
 
 Current development within these outcomes:
 
+- F6 passed its exact five-job CI run and both native image builds. Both private
+  document workers are ready with its source label. Its one supported cutover
+  attempt stopped at the second admission observation, during source quiescence,
+  with `fence_native_read_unavailable`. The owned container is absent and its
+  retained operation journal is empty: account isolation, credential retirement,
+  customer transfer and traffic promotion were not reached. No original owner
+  CREATE or unknown mutation is replayed as recovery.
+- A narrowly scoped, read-only Linux reproduction identified a real Cloud Tasks
+  `ReadTimeout` after 3.045 seconds. Two admission rounds passed; the third
+  reproduced the same fixed refusal. The current reader's three-second total
+  budget leaves no room to retry an ordinary three-second socket timeout.
+  This demonstrates a deployment-reader defect, without identifying the exact
+  failed request from the earlier stopped attempt. The next correction separates
+  the socket timeout from the logical retry budget, preserves original freshness
+  limits and adds safe fixed failure classifications. Complete native admission
+  and production migration are still required.
 - F5 passed its exact five-job CI run and both native image builds. These are
   supporting evidence, not completed development or deployment checkpoints.
   Its fresh migration attempt passed the retained-credential census and unused
@@ -33,7 +49,7 @@ Current development within these outcomes:
   production traffic were not changed by that attempt. The stopped journals are
   retained; no original disable or owner CREATE was replayed. See
   [IAM readback recovery](IAM_READBACK_RECOVERY_2026-10-15.md).
-- The next source release polls only IAM metadata after an acknowledged disable,
+- F6 polls only IAM metadata after an acknowledged disable,
   within the original deadline, with exact UID checks and no repeated POST.
   It also includes bounded transient metadata GET retries and the reviewed
   account-erasure cleanup: orphan upload fingerprints are deleted only after
@@ -44,9 +60,9 @@ Current development within these outcomes:
   schema18 migration. Upstash remains the login/cache provider; its missing
   Redis server identifier prevents using the stricter Redis pacing adapter.
   Native schema migration, feed activation and coverage acceptance remain open.
-- Both private document services match F5: DOCX revision
-  `hirewiz-document-inspector-00009-mbb` and LaTeX revision
-  `hirewiz-native-tex-00005-44t`. Existing images and empty service IAM are
+- Both private document services match F6: DOCX revision
+  `hirewiz-document-inspector-00010-krk` and LaTeX revision
+  `hirewiz-native-tex-00006-7q6`. Existing images and empty service IAM are
   preserved. Replacement API invocation and complete resume journeys remain open.
 - The staged production-target frontend is ready on Vercel, with unchanged
   frontend source between its build and F5. Public domains have not moved.
@@ -108,7 +124,7 @@ Current development within these outcomes:
   is not treated as a standing source restriction. The complete source-integrity check runs under current Full
   Access. After reconciling generated declarations and preserving existing
   notes, it verifies every tracked source file and the single reviewed migration chain.
-  The full migration executor has not run. No source files are excluded from
+  The full migration executor has not completed. No source files are excluded from
   that check. The separate GitHub
   builder replacement is prepared and reviewed. The actual regional GitHub
   trigger is held, with its previous build configuration preserved; replacement

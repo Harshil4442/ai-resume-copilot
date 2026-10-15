@@ -6,6 +6,7 @@ import hashlib
 import importlib
 import os
 import sys
+from concurrent.futures import Future
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -39,7 +40,7 @@ class Responses:
         self.created = datetime.now(UTC)
         self.key_value = "synthetic-google-key"
 
-    def get(self, api, path, params):
+    def get(self, api, path, params, *, deadline=None):
         self.calls.append((api, path, params))
         if self.unavailable:
             raise release.ReleaseDenied("fence_native_read_unavailable")
@@ -204,16 +205,88 @@ def test_successful_transient_retry_cannot_extend_original_fence_window(prepared
     monkeypatch.setattr(module.time, "sleep", lambda seconds: clock.__setitem__(0, clock[0] + seconds))
     original = responses.get
 
-    def near_expiry(api, path, params):
+    def near_expiry(api, path, params, **kwargs):
         if not attempts:
             clock[0] = 30.95  # Original closure deadline is still31.0, never reset.
             assert reads.get("keys", OLD.name, {}) == {}
-        return original(api, path, params)
+        return original(api, path, params, **kwargs)
 
     monkeypatch.setattr(responses, "get", near_expiry)
     with pytest.raises(release.ReleaseDenied, match="^fence_native_observation_expired$"):
         boundary.verify_fences(source)
     assert attempts == ["GET", "GET"] and boundary.retired_since is None
+
+
+def test_standalone_admission_rejects_complete_but_late_observation(prepared, monkeypatch):
+    boundary, _, _, responses, _ = prepared
+    clock, deadlines = [1.0], []
+    original = responses.get
+
+    # Run deterministic futures so each response advances the same clock.
+    # The real executor remains bounded and concurrent; no socket is opened.
+    class Pool:
+        def __init__(self, **_kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            pass
+
+        def submit(self, function, *args, **kwargs):
+            future = Future()
+            try:
+                future.set_result(function(*args, **kwargs))
+            except BaseException as error:
+                future.set_exception(error)
+            return future
+
+    def slow(api, path, params, *, deadline):
+        deadlines.append(deadline)
+        clock[0] += 3.1
+        return original(api, path, params)
+
+    monkeypatch.setattr(module, "ThreadPoolExecutor", Pool)
+    monkeypatch.setattr(module.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(responses, "get", slow)
+    with pytest.raises(release.ReleaseDenied, match="^fence_native_observation_expired$"):
+        boundary.verify_admission_closed()
+    assert len(deadlines) == 10 and set(deadlines) == {31.0}
+
+
+def test_standalone_admission_preserves_shorter_caller_deadline(prepared, monkeypatch):
+    boundary, _, _, responses, _ = prepared
+    deadlines = []
+    original = responses.get
+
+    def observed(api, path, params, *, deadline):
+        deadlines.append(deadline)
+        return original(api, path, params)
+
+    monkeypatch.setattr(module.time, "monotonic", lambda: 1.0)
+    monkeypatch.setattr(responses, "get", observed)
+    boundary.verify_admission_closed(deadline=1.5)
+    assert len(deadlines) == 10 and set(deadlines) == {1.5}
+    responses.calls.clear()
+    with pytest.raises(release.ReleaseDenied, match="^fence_native_read_budget_expired$"):
+        boundary.verify_admission_closed(deadline=1.0)
+    assert responses.calls == []
+
+
+def test_fresh_closure_propagates_one_original_deadline_to_cloud_reads(prepared, monkeypatch):
+    boundary, source, _, responses = ready(prepared)
+    deadlines = []
+    original = responses.get
+
+    def observed(api, path, params, *, deadline):
+        deadlines.append(deadline)
+        return original(api, path, params)
+
+    monkeypatch.setattr(module.time, "monotonic", lambda: 1.0)
+    monkeypatch.setattr(responses, "get", observed)
+    boundary.verify_fences(source)
+    assert deadlines and set(deadlines) == {31.0}
 
 
 def test_tagged_zero_traffic_revision_is_checked(prepared):
@@ -253,7 +326,7 @@ def test_sdk_route_is_readonly_and_vendor_failure_is_sanitized(monkeypatch):
     monkeypatch.setattr(reads, "_http", lambda: HTTP())
     with pytest.raises(release.ReleaseDenied) as error:
         reads.get("keys", OLD.name, {})
-    assert str(error.value) == "fence_native_read_unavailable"
+    assert str(error.value) == "fence_native_transport_unavailable"
     with pytest.raises(release.ReleaseDenied, match="fence_native_route_refused"):
         reads.get("keys", OLD.name + ":delete", {})
 
@@ -447,7 +520,7 @@ def test_auth_refuses_wrong_target_or_surviving_old_role_session(prepared, defec
 
 def test_concurrent_native_timeout_refuses_and_invalidates_cut(prepared, monkeypatch):
     boundary, source, *_ = ready(prepared)
-    def timeout(*_):
+    def timeout(*_, **_kwargs):
         raise TimeoutError("synthetic-private-vendor-detail")
     monkeypatch.setattr(boundary.reads, "get", timeout)
     with pytest.raises(release.ReleaseDenied, match="^fence_native_observation_expired$") as error:
@@ -470,7 +543,7 @@ def test_opaque_google_key_is_bound_by_lookup_metadata_account_and_exact_value(p
 def test_native_unbound_standard_key_remains_retirable_without_invented_issuer(prepared, monkeypatch):
     boundary, _, _, responses, _ = prepared
     original = responses.get
-    def unbound(api, path, params):
+    def unbound(api, path, params, **kwargs):
         row = original(api, path, params)
         if path == NEW.name:
             row.pop("serviceAccountEmail")
@@ -502,8 +575,8 @@ def test_native_opaque_key_binding_mismatch_refuses(prepared, monkeypatch, defec
     value = "AQ.synthetic-auth-key-in-RAM"
     responses.key_value = value
     original = responses.get
-    def changed(api, path, params):
-        row = original(api, path, params)
+    def changed(api, path, params, **kwargs):
+        row = original(api, path, params, **kwargs)
         if defect == "parent" and path == "keys:lookupKey":
             row["parent"] = "projects/999/locations/global"
         if defect == "value" and path.endswith("/keyString"):
@@ -544,8 +617,8 @@ def test_sdk_lookup_cannot_disclose_known_foreign_provider_key(monkeypatch, valu
 def test_bound_replacement_account_and_api_scope_drift_invalidate_fence(prepared, monkeypatch, defect):
     boundary, source, _, responses = ready(prepared)
     original = responses.get
-    def changed(api, path, params):
-        row = original(api, path, params)
+    def changed(api, path, params, **kwargs):
+        row = original(api, path, params, **kwargs)
         if path.endswith("/" + NEW_ISSUER):
             if defect == "issuer_uid":
                 row["uniqueId"] = "999999999999999999999"
@@ -628,7 +701,7 @@ def test_mixed_retained_census_keeps_all_foreign_values_and_origins_before_scope
     monkeypatch.setenv("HIREWIZ_TEST_MIXED_OPERATOR", "synthetic_operator")
     monkeypatch.setattr(boundary, "_capture_setup_passwords", lambda *_: None)
     native_get = responses.get
-    def google(api, key_path, params):
+    def google(api, key_path, params, **kwargs):
         if api == "keys" and key_path == "keys:lookupKey":
             responses.calls.append((api, key_path, params))
             return {"name": OLD.name, "parent": OLD.name.rsplit("/keys/", 1)[0]}

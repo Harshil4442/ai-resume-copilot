@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import math
 import os
 import re
 import ssl
@@ -34,7 +35,8 @@ PARENT = f"projects/{release.PROJECT}/locations/{release.REGION}"
 MAX_BYTES = 4 * 1024 * 1024
 MAX_READS = 128
 WINDOW = 30
-GET_SECONDS = 3.0
+GET_SECONDS = 10.0
+GET_SOCKET_SECONDS = 3.0
 GET_ATTEMPTS = 3
 GET_RETRY_STATUSES = frozenset({429, 502, 503, 504})
 KEY = re.compile(r"projects/([1-9][0-9]{0,19})/locations/global/keys/[A-Za-z0-9_-]{1,63}")
@@ -114,19 +116,46 @@ def _get_retry_delay(headers: Mapping[str, Any], attempt: int) -> float:
     if value is None:
         return delay
     need(type(value) is str and 1 <= len(value) <= 128,
-         "fence_native_read_unavailable")
+         "fence_native_retry_after_invalid")
     if re.fullmatch(r"[0-9]{1,10}", value):
         requested = float(value)
     else:
         try:
             stamp = parsedate_to_datetime(value)
-            need(stamp.tzinfo is not None, "fence_native_read_unavailable")
+            need(stamp.tzinfo is not None, "fence_native_retry_after_invalid")
             requested = max(0.0, (stamp - datetime.now(UTC)).total_seconds())
         except release.ReleaseDenied:
             raise
         except Exception:
-            raise release.ReleaseDenied("fence_native_read_unavailable") from None
+            raise release.ReleaseDenied("fence_native_retry_after_invalid") from None
     return max(delay, requested)
+
+
+def _read_failure(error: Exception) -> release.ReleaseDenied:
+    """Return only audited literal categories, never provider/exception text."""
+    import requests.exceptions as request_errors
+    from google.auth.exceptions import RefreshError, TransportError
+
+    if type(error) in (request_errors.ConnectTimeout, request_errors.ReadTimeout,
+                       request_errors.Timeout):
+        return release.ReleaseDenied("fence_native_read_timeout")
+    if isinstance(error, (RefreshError, TransportError)):
+        return release.ReleaseDenied("fence_native_authentication_unavailable")
+    return release.ReleaseDenied("fence_native_transport_unavailable")
+
+
+def _read_deadline(deadline: float | None, seconds: float) -> float:
+    now = time.monotonic()
+    valid = deadline is None
+    if type(deadline) in (int, float):
+        try:
+            valid = math.isfinite(deadline)
+        except OverflowError:
+            valid = False
+    need(valid, "fence_native_deadline_invalid")
+    result = now + seconds if deadline is None else min(now + seconds, deadline)
+    need(now < result, "fence_native_read_budget_expired")
+    return result
 
 
 class SDKGoogleReads:
@@ -134,8 +163,10 @@ class SDKGoogleReads:
 
     Each thread owns its stock HTTP transport. The SDK may refresh the retained
     manager and replay its normal authentication challenge. Only get() adds up
-    to three transient read attempts inside one three-second observation budget;
-    shared transports and mutation callers retain their existing behavior.
+    to three transient read attempts inside one ten-second observation budget,
+    each with a three-second residual socket timeout. A supplied caller deadline
+    can only shorten that budget; neither deadline restarts on retry.
+    Shared transports and mutation callers retain their existing behavior.
     This does not create a login, enable an API or install the SDK.
     """
 
@@ -177,7 +208,8 @@ class SDKGoogleReads:
             self.thread.pid = os.getpid()
         return self.thread.http
 
-    def get(self, api: str, path: str, params: Mapping[str, Any]) -> dict[str, Any]:
+    def get(self, api: str, path: str, params: Mapping[str, Any], *,
+            deadline: float | None = None) -> dict[str, Any]:
         origins = {
             "run": "https://run.googleapis.com/v2/",
             "project": "https://cloudresourcemanager.googleapis.com/v3/",
@@ -205,47 +237,66 @@ class SDKGoogleReads:
         )
         need(allowed, "fence_native_route_refused")
         url = origins[api] + path + ("?" + urlencode(params, doseq=True) if params else "")
+        deadline = _read_deadline(deadline, GET_SECONDS)
         try:
             http = self._http()
-            deadline = time.monotonic() + GET_SECONDS
             for attempt in range(GET_ATTEMPTS):
                 remaining = deadline - time.monotonic()
-                need(remaining > 0, "fence_native_read_unavailable")
+                need(remaining > 0, "fence_native_read_budget_expired")
                 try:
                     # Same normal authenticated session used by the SDK's
                     # apitools adapter; only this GET supplies a residual timeout.
                     # Never install retry adapters or wrap the shared transport.
                     response = http.session.request(
                         "GET", url, data=None, headers={"Cache-Control": "no-cache"},
-                        stream=False, hooks={}, timeout=min(GET_SECONDS, remaining),
+                        stream=False, hooks={}, timeout=min(GET_SOCKET_SECONDS, remaining),
                         allow_redirects=False,
                     )
                 except Exception as error:
                     if not _transient_get_error(error):
-                        raise
+                        raise _read_failure(error) from None
+                    failure = _read_failure(error)
                     delay = _get_retry_delay({}, attempt)
                 else:
-                    raw = response.content
-                    status = int(response.status_code)
-                    need(time.monotonic() < deadline and type(raw) is bytes
-                         and len(raw) <= MAX_BYTES and (status == 200 or status in GET_RETRY_STATUSES),
-                         "fence_native_read_unavailable")
+                    need(time.monotonic() < deadline, "fence_native_read_budget_expired")
+                    try:
+                        raw = response.content
+                        status = int(response.status_code)
+                    except Exception:
+                        raise release.ReleaseDenied("fence_native_response_invalid") from None
+                    need(type(raw) is bytes and len(raw) <= MAX_BYTES,
+                         "fence_native_response_invalid")
+                    if status == 401:
+                        raise release.ReleaseDenied("fence_native_http_unauthorized")
+                    if status == 403:
+                        raise release.ReleaseDenied("fence_native_http_permission_denied")
+                    if status == 404:
+                        raise release.ReleaseDenied("fence_native_http_not_found")
+                    need(status == 200 or status in GET_RETRY_STATUSES,
+                         "fence_native_http_refused")
                     # Even a temporary status must have a bounded, valid native
                     # JSON object. Corrupt/duplicate/unsafe responses never retry.
-                    value = json.loads(raw, object_pairs_hook=object_pairs)
+                    try:
+                        value = json.loads(raw, object_pairs_hook=object_pairs)
+                    except release.ReleaseDenied:
+                        raise
+                    except Exception:
+                        raise release.ReleaseDenied("fence_native_response_invalid") from None
                     need(type(value) is dict, "fence_native_response_invalid")
-                    need(time.monotonic() < deadline, "fence_native_read_unavailable")
+                    need(time.monotonic() < deadline, "fence_native_read_budget_expired")
                     if status == 200:
                         return value
+                    failure = release.ReleaseDenied("fence_native_http_retry_exhausted")
                     delay = _get_retry_delay(response.headers, attempt)
-                need(attempt + 1 < GET_ATTEMPTS and delay < deadline - time.monotonic(),
-                     "fence_native_read_unavailable")
+                need(delay < deadline - time.monotonic(), "fence_native_read_budget_expired")
+                if attempt + 1 == GET_ATTEMPTS:
+                    raise failure from None
                 time.sleep(delay)
-            raise release.ReleaseDenied("fence_native_read_unavailable")
+            raise release.ReleaseDenied("fence_native_read_budget_expired")
         except release.ReleaseDenied:
             raise
-        except Exception:
-            raise release.ReleaseDenied("fence_native_read_unavailable") from None
+        except Exception as error:
+            raise _read_failure(error) from None
 
 
 @dataclass(frozen=True)
@@ -297,8 +348,11 @@ class NativeFreshFenceBoundary(fresh.FreshNativeBoundary):
     def migrate(self, plan: release.Plan, expected: str, target: str) -> None:
         raise release.ReleaseDenied("fresh_native_fence_cannot_authorize_inplace_migration")
 
-    def _get(self, api: str, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
-        return self.reads.get(api, path, {} if params is None else params)
+    def _get(self, api: str, path: str, params: dict[str, Any] | None = None, *,
+             deadline: float | None = None) -> dict[str, Any]:
+        if deadline is None:
+            return self.reads.get(api, path, {} if params is None else params)
+        return self.reads.get(api, path, {} if params is None else params, deadline=deadline)
 
     def _key(self, name: str, module: Any) -> NativeKey:
         need(KEY.fullmatch(name), "fence_key_resource_unmapped")
@@ -627,12 +681,13 @@ class NativeFreshFenceBoundary(fresh.FreshNativeBoundary):
         need(value is not None, "fence_source_observer_secret_unavailable")
         return value
 
-    def verify_admission_closed(self) -> None:
+    def verify_admission_closed(self, *, deadline: float | None = None) -> None:
         """Same native predicates as the existing observer, with fixed SDK GETs.
 
         Complete lists are mandatory: no limit flag that silently truncates a
         nonempty page. Any queued task, schedule or incomplete execution refuses.
         """
+        deadline = _read_deadline(deadline, WINDOW)
         calls: list[tuple[str, str, dict[str, Any]]] = []
         for queue in release.QUEUES:
             path = PARENT + "/queues/" + queue
@@ -640,7 +695,16 @@ class NativeFreshFenceBoundary(fresh.FreshNativeBoundary):
         calls.extend((("scheduler", PARENT + "/jobs", {"pageSize": "100"}),
                       ("run", PARENT + "/jobs/-/executions", {"pageSize": "100"})))
         with ThreadPoolExecutor(max_workers=4) as pool:
-            values = list(pool.map(lambda call: self._get(*call), calls))
+            futures = [pool.submit(self._get, *call, deadline=deadline) for call in calls]
+            try:
+                values = [future.result(timeout=max(0.001, deadline - time.monotonic()))
+                          for future in futures]
+            except TimeoutError:
+                raise release.ReleaseDenied("fence_native_observation_expired") from None
+            except release.ReleaseDenied:
+                need(time.monotonic() < deadline, "fence_native_observation_expired")
+                raise
+        need(time.monotonic() < deadline, "fence_native_observation_expired")
         for index, queue in enumerate(release.QUEUES):
             path = PARENT + "/queues/" + queue
             row, tasks = values[2 * index:2 * index + 2]
@@ -656,6 +720,7 @@ class NativeFreshFenceBoundary(fresh.FreshNativeBoundary):
             need(all(type(item) is dict and (
                 item.get("state") == "PAUSED" if field == "jobs" else item.get("completionTime")
             ) for item in entries), "fence_schedule_or_execution_not_drained")
+        need(time.monotonic() < deadline, "fence_native_observation_expired")
 
     def begin_source_observer_isolation(self) -> None:
         """Conservative cloud-only issuance boundary; never a full writer Fence."""
@@ -821,10 +886,10 @@ class NativeFreshFenceBoundary(fresh.FreshNativeBoundary):
             need(created >= cut,
                  "fence_replacement_credential_issued_before_native_isolation")
 
-    def _cloud_closure(self, scope: BoundScope) -> None:
+    def _cloud_closure(self, scope: BoundScope, *, deadline: float | None = None) -> None:
         inventory_module = self._module("backend/scripts/legacy_credential_inventory.py", "hirewiz_native_fence_retained")
         for path, uid in scope.service_uids:
-            raw = self._get("run", path)
+            raw = self._get("run", path, deadline=deadline)
             need(raw.get("name") == path and raw.get("uid") == uid,
                  "fence_current_service_uid_drift")
             # Service template is prospective authority too, even if traffic0.
@@ -837,7 +902,7 @@ class NativeFreshFenceBoundary(fresh.FreshNativeBoundary):
                      "fence_routed_revision_unmapped")
                 revision = route["revision"]
                 revision_path = revision if "/" in revision else path + "/revisions/" + revision
-                value = self._get("run", revision_path)
+                value = self._get("run", revision_path, deadline=deadline)
                 need(value.get("name") == revision_path,
                      "fence_routed_revision_identity_drift")
                 configs.append(inventory_module._config(value, "revision"))
@@ -860,7 +925,7 @@ class NativeFreshFenceBoundary(fresh.FreshNativeBoundary):
                     "fence_new_reachable_admission_not_closed")
         # Native admission separately proves paused/drained queues, scheduler
         # state and completed executions; SQL closure is observed in parallel.
-        self.verify_admission_closed()
+        self.verify_admission_closed(deadline=deadline)
 
     def _observe_closure(self, source: release.Plan, *, replacements: bool) -> datetime:
         scope = self.scope
@@ -895,9 +960,9 @@ class NativeFreshFenceBoundary(fresh.FreshNativeBoundary):
         need(len(calls) + len(scope.foreign_keys) <= MAX_READS, "fence_fresh_read_bound_exceeded")
         with ThreadPoolExecutor(max_workers=4) as pool:
             sql = pool.submit(fresh.FreshNativeBoundary.verify_database, self, source, release.CUTOVER_CHAIN[0])
-            fleet = pool.submit(self._cloud_closure, scope)
+            fleet = pool.submit(self._cloud_closure, scope, deadline=deadline)
             providers = pool.submit(self.verify_foreign_model_retirement, deadline)
-            futures = [pool.submit(self._get, *call) for call in calls]
+            futures = [pool.submit(self._get, *call, deadline=deadline) for call in calls]
             try:
                 values = [future.result(timeout=max(0.001, deadline - time.monotonic())) for future in futures]
                 sql.result(timeout=max(0.001, deadline - time.monotonic()))
@@ -907,6 +972,9 @@ class NativeFreshFenceBoundary(fresh.FreshNativeBoundary):
                 # A concurrent wait may expire before the final freshness check.
                 # Refuse with the same fixed code; never refresh the start time.
                 raise release.ReleaseDenied("fence_native_observation_expired") from None
+            except release.ReleaseDenied:
+                need(time.monotonic() < deadline, "fence_native_observation_expired")
+                raise
         need(time.monotonic() < deadline, "fence_native_observation_expired")
         offset = 0
         for key in keys:

@@ -1,49 +1,66 @@
 # Bounded native metadata GET retries
 
-This is a resilience improvement for the release operator's existing
-`SDKGoogleReads.get` reader. It does not establish the cause of the F5
-`fence_native_read_unavailable` refusal or constitute a successful native
-preflight, credential retirement, customer migration or deployment.
+The release operator uses the retained normal Google SDK for live metadata
+observations. It must recover from ordinary transient reads without admitting
+stale observations or replaying a mutation.
 
-The fixed route allowlist, canonical URL construction, retained normal SDK
-manager, TLS configuration, no-proxy policy and response validation remain in
-place. The reader calls the same authenticated SDK session used by its stock
-requests-backed apitools adapter. Each attempt still sends only the original
-GET URL, no body and the no-cache header, with redirects explicitly disabled.
-The shared `_http()` transport, write clients, once markers and unknown-write
-reconciliation rules are unchanged. No retry adapter or session wrapper is
-installed.
+## Observed problem
 
-The reader permits at most three operator GET attempts within one three-second
-monotonic observation budget. Each attempt receives only the remaining socket
-timeout. A late response is refused; the budget is never restarted. Temporary
-HTTP 429/502/503/504 may retry only after the existing bounded JSON-object checks
-succeed. Explicit requests connection/connect-timeout/read-timeout/timeout
-types may retry; SSL/proxy subclasses and nested TLS failures do not. Redirects,
-permanent statuses, authentication/refresh failures, configuration errors,
-untyped exceptions, oversized bodies, malformed JSON and duplicate JSON keys
-stop without an added operator attempt. Exception text, credential-bearing
-lookup URLs and server bodies are not logged or returned.
+The F6 cutover stopped during source quiescence with
+`fence_native_read_unavailable`, before any mutation journal entry. Its exact
+failed request was not captured. A separate read-only Linux diagnostic ran the
+same admission check three times. Two rounds passed in 5.730 and 4.620 seconds;
+the third reproduced the refusal after a Cloud Tasks task-list `ReadTimeout`
+took 3.045 seconds. Successful Cloud Run execution-list responses took
+2.578–2.815 seconds and contained 674,564 bytes. These observations identify
+reader brittleness, rather than a missing permission or an altered database.
 
-Backoff starts at 0.1 seconds and then 0.2 seconds. A valid Retry-After delta or
-HTTP date can extend that wait within the original budget; it is never capped
-to a shorter wait to force another attempt. Invalid Retry-After or a requested
-delay that exhausts the budget refuses. The final result always comes from the
-successful server response, never an earlier error payload or cached receipt.
+F6 used the same three seconds for the whole logical GET budget and its first
+socket timeout. That left no practical retry opportunity after a normal socket
+timeout, despite allowing three attempts in source. Retrying a complete release
+without correcting this behavior is not a reliable recovery strategy.
 
-The original 600-second retained-census acceptance bound, 30-second fresh closure
-window, original observation timestamp and logical read limits are unchanged.
-These limits are not asserted to count every physical wire request: the stock
-SDK can perform its existing credential refresh/authentication challenge replay,
-and the new retry limit counts only operator attempts. A socket timeout and
-post-response deadline check are also not a hard process-return timer. Existing
-SDK authentication work and executor shutdown can take longer; no result is
-admitted by extending the original freshness window.
+## Correction and boundaries
 
-Synthetic focused controls cover transient success, exact attempts and residual
-deadlines, Retry-After, unsafe/permanent refusals, unchanged query encoding and
-GET arguments, shared transport identity, final-response provenance, and a
-successful retry crossing the original closure window. Existing write replay,
-cutover sequencing and rolling-deployment controls remain part of validation.
-No cloud, customer database, credential-manager or provider calls are needed for
-these tests. Actual native admission remains a separate release requirement.
+The next reader separates a ten-second logical observation budget from a
+three-second maximum socket timeout. At most three original GET attempts are
+allowed. Neither a retry nor a new response restarts the original budget.
+Caller deadlines further restrict the budget, and standalone admission checks
+must also finish within their original thirty-second freshness window.
+
+Canonical routes, query encoding, the retained normal SDK credential manager,
+TLS verification, no-proxy behavior, no-cache header and disabled redirects
+remain required. Responses must pass the existing size and JSON checks. A
+successful result comes only from the final validated server response.
+Conservative retry classification is retained: temporary 429/502/503/504 and
+typed connection/timeouts may retry. SSL, proxy, authentication, configuration,
+permanent HTTP and invalid response failures do not gain retries.
+
+Backoff begins at 0.1 seconds, then 0.2 seconds. A valid Retry-After delta or HTTP
+date may extend that wait, and is never shortened to force another attempt.
+Invalid headers or a wait exceeding the remaining budget refuse. Fixed failure
+classifications distinguish transport timeouts, HTTP failures, validation and
+exhausted deadlines; credential-bearing URLs, parameters, server bodies and raw
+exception messages must never leave the reader.
+
+The shared `_http()` transport and all write clients remain unchanged. There is
+no global retry adapter or session replacement. Existing mutation once markers
+and unknown-outcome reconciliation remain mandatory. The original 600-second
+retained-census bound, thirty-second closure, oldest observation timestamp and
+complete-list predicates remain in force.
+
+Socket timeouts and post-response deadline checks do not promise an exact
+process-return timer: stock authentication and worker shutdown can take longer.
+Their delay never makes an expired observation acceptable. Operator attempt
+counts also do not describe the SDK's internal authentication challenge replay.
+
+## Required verification
+
+Focused tests must cover a full three-second timeout followed by recovery,
+exhaustion of the original logical/caller deadline, Retry-After of three seconds,
+no request after deadline, late-success refusal, strict response validation,
+unchanged normal SDK/shared write transport, and the aggregate admission window.
+
+Native admission, preserved customer/financial transfer, complete runtime
+connectivity and production promotion remain unfinished. This fix and its
+diagnostics are supporting work within the original deployment outcome.
