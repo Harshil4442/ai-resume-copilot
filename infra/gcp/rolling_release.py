@@ -183,6 +183,9 @@ class RollingPlan:
     policies: PolicyPins
     services: tuple[ServicePin, ...]
 
+    def disabled_flags(self) -> tuple[str, ...]:
+        return OFF
+
     @property
     def image(self) -> str:
         return f"{release.REGION}-docker.pkg.dev/{release.PROJECT}/cloud-run-source-deploy/hirewiz@{self.image_digest}"
@@ -386,8 +389,10 @@ def stage_body(plan: RollingPlan, pin: ServicePin, current: dict[str, Any]) -> d
     verify_policy_bindings(plan.policies, pin, template)
     need(template.get("serviceAccount") == RUNTIME)
     env = environment(template)
-    need(all(env.get(name, {"value": "false"}).get("value") == "false" for name in OFF),
+    need(all(env.get(name, {"value": "false"}).get("value") == "false" for name in plan.disabled_flags()),
          "rolling_product_admission_not_closed")
+    for name in set(plan.disabled_flags()) - set(OFF):
+        env[name] = {"name": name, "value": "false"}
     need(env.get("SERVICE_ROLE", {}).get("value") == ("api" if pin.service == release.SERVICES[0] else "worker"))
     if pin.service != release.SERVICES[0]:
         expected_label = "analysis-worker" if pin.service == release.SERVICES[1] else "employer-worker"

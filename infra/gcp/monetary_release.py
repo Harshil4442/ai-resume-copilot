@@ -501,10 +501,16 @@ class NativeBoundary:
     def verify_source_image(self, *, release: str, image_digest: str, build_id: str,
                             ci_run_id: int) -> None:
         """Current Git/CI/native app-image proof, independent of database cutover."""
-        image = f"{REGION}-docker.pkg.dev/{PROJECT}/cloud-run-source-deploy/hirewiz@{image_digest}"
         tracked = source_guard.checked_files(self.root, release)
         if source_guard.migration_chain(self.root, tracked, allow_literal_sql=True) != CHAIN:
             raise ReleaseDenied("reviewed_schema16_chain_required")
+        self._verify_source_image_provenance(release=release, image_digest=image_digest,
+                                             build_id=build_id, ci_run_id=ci_run_id)
+
+    def _verify_source_image_provenance(self, *, release: str, image_digest: str,
+                                       build_id: str, ci_run_id: int) -> None:
+        """Shared immutable Git/CI/build proof; callers admit their exact schema first."""
+        image = f"{REGION}-docker.pkg.dev/{PROJECT}/cloud-run-source-deploy/hirewiz@{image_digest}"
         verify_ci_checkout_contract(self.root)
         ci = _json(self._command("gh", "run", "view", str(ci_run_id), "--repo", REPOSITORY,
                                  "--json", "headSha,status,conclusion,jobs,workflowName"))

@@ -176,6 +176,9 @@ class NativeRollingBoundary:
         self.observer = fresh.FreshNativeBoundary(self.root)
         self._run: NativeRun | None = None
 
+    def make_plan(self, *args, **kwargs):
+        return rolling.RollingPlan(*args, **kwargs)
+
     @property
     def run(self):
         if self._run is None:
@@ -341,7 +344,7 @@ class NativeRollingBoundary:
             api_env["LLM_MODEL"]["value"], api_env["LLM_API_BASE"]["value"])
         for pin in pins:
             rolling.verify_policy_bindings(policies, pin, templates[pin.service])
-        plan = rolling.RollingPlan(commit, image_digest, build_id, ci_run_id, nonce, uid,
+        plan = self.make_plan(commit, image_digest, build_id, ci_run_id, nonce, uid,
             runtime_reference, observer_secret, retired_migration_secret, workers_release,
             self._target(runtime_reference, observer_secret, retired_migration_secret), policies, tuple(pins))
         plan.validate()

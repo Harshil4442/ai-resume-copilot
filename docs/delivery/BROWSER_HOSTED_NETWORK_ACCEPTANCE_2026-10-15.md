@@ -2,6 +2,10 @@
 
 Source increment on `codex/application-form-completion`, disabled and undeployed. All six original delivery outcomes remain open. No real candidate data, employer upload/application, provider write, push, merge or deployment was used. Frozen F7/schema18 consumers remain unchanged; schema19 is a later additive release.
 
+The later schema19 source now has its own migration and rolling-release entrypoint;
+see the [schema19 release guide](BROWSER_TYPED_CONTROLS_SCHEMA19_RELEASE_2026-10-15.md).
+That local source work does not establish a production migration or activation.
+
 ## Concrete candidate journey
 
 Normal password signup and existing Google-only account enrollment use the protected-account/pairing source described in [normal activation](NORMAL_CANDIDATE_BROWSER_ACTIVATION_2026-10-15.md). Ordinary Google sign-in remains supported after linking. The candidate connects the same nonextractable browser key, chooses the saved application and original/custom/tailored resume, reviews known answers, and handles unsupported conditional controls, terms, login or CAPTCHA personally. A changed row/conditional requires current review; nothing is inferred.

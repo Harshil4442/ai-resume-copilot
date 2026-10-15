@@ -119,6 +119,9 @@ jobs:
           app/resume_upload_worker.py app/services/resume_upload_coordinator.py
           tests/test_resume_upload_coordinator.py tests/test_resume_upload_coordinator_postgres.py
           tests/test_database_transfer.py tests/test_database_transfer_postgres.py
+          ../infra/gcp/browser_schema19_release.py
+          tests/test_browser_schema19_contract.py tests/test_browser_schema19_release.py
+          tests/test_browser_schema19_step_postgres.py tests/test_neon_schema19_release_transport.py
       - name: Check modified legacy authentication imports
         working-directory: backend
         run: .venv/bin/ruff check --select I,F app/routers/auth.py app/security.py app/schemas.py
@@ -141,6 +144,8 @@ jobs:
           ../infra/gcp/document_worker.py
           app/resume_upload_worker.py app/services/resume_upload_coordinator.py
           scripts/database_transfer.py scripts/ci_database_transfer_clients.py
+          scripts/browser_schema19_contract.py scripts/browser_schema19_step.py
+          scripts/neon_direct_identity.py ../infra/gcp/browser_schema19_release.py
       - name: Compile backend
         run: backend/.venv/bin/python -m compileall -q backend/app
       - name: Configure verified public cache without restarting PostgreSQL
