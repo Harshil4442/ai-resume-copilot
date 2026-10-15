@@ -32,6 +32,8 @@ DATABASE_OID = 16391
 OLD_NAME, OLD_OID = "neondb_owner", 16387
 OWNER_NAME = "hirewiz_source_owner_20261014_r1"
 OBSERVER_NAME, OBSERVER_OID = "hirewiz_observer_20261010_r1", 1884182
+EXPORT_READ_ROLE, EXPORT_READ_OID = "pg_read_all_data", 6181
+EXPORT_GRANTOR, EXPORT_GRANTOR_OID = "neon_superuser", 16384
 RUNTIME_NAME, RUNTIME_OID = "hirewiz_runtime_20261010_r1", 1884178
 MIGRATOR_NAME, MIGRATOR_OID = "hirewiz_migrator_20261010_r1", 1884180
 OLD_SECRET = "projects/157225724590/secrets/hirewiz-database-url/versions/1"
@@ -268,6 +270,66 @@ def new_source_passwords() -> SourcePasswords:
     return SourcePasswords(secrets.token_urlsafe(48))
 
 
+def verify_export_grant_authority(connection: Any) -> None:
+    """Prove the surviving managed grantor before consuming the SQL once marker.
+
+    PostgreSQL selects the reachable ADMIN grantor for ordinary GRANT. Neon
+    forbids explicit SET ROLE to neon_superuser despite its catalog SET edge;
+    therefore this path never changes into that managed role.
+    """
+    roles = connection.execute(
+        "SELECT oid,rolname,rolsuper FROM pg_catalog.pg_roles WHERE oid IN (%s,%s) ORDER BY oid",
+        (EXPORT_READ_OID, EXPORT_GRANTOR_OID),
+    ).fetchall()
+    require(roles == [(EXPORT_READ_OID, EXPORT_READ_ROLE, False),
+                      (EXPORT_GRANTOR_OID, EXPORT_GRANTOR, False)],
+            "source_export_managed_role_identity")
+    authority = connection.execute(
+        "SELECT current_user,session_user,pg_catalog.pg_has_role(current_user,%s,'SET')",
+        (EXPORT_GRANTOR_OID,),
+    ).fetchone()
+    require(authority == (OLD_NAME, OLD_NAME, True), "source_export_managed_grantor_unreachable")
+    paths = connection.execute(
+        "SELECT roleid,member,admin_option,inherit_option,set_option FROM pg_catalog.pg_auth_members "
+        "WHERE roleid=%s AND member=%s ORDER BY grantor LIMIT 2",
+        (EXPORT_READ_OID, EXPORT_GRANTOR_OID),
+    ).fetchall()
+    require(paths == [(EXPORT_READ_OID, EXPORT_GRANTOR_OID, True, True, True)],
+            "source_export_read_admin_authority")
+    existing = connection.execute(
+        "SELECT count(*) FROM pg_catalog.pg_auth_members WHERE roleid=%s AND member=%s",
+        (EXPORT_READ_OID, OBSERVER_OID),
+    ).fetchone()
+    require(existing == (0,), "source_export_observer_grant_exists_reconcile_only")
+
+
+def grant_export_readonly(connection: Any) -> None:
+    """Read every source schema without owner, write, ADMIN or SET authority."""
+    # Direct GRANT lets PG17 select the surviving ADMIN grantor. An explicit
+    # SET to neon_superuser is rejected by Neon, so never introduce one here.
+    connection.execute(sql.SQL("GRANT {} TO {} WITH ADMIN FALSE, INHERIT TRUE, SET FALSE").format(
+        sql.Identifier(EXPORT_READ_ROLE), sql.Identifier(OBSERVER_NAME)))
+    verify_export_readonly(connection)
+
+
+def verify_export_readonly(connection: Any) -> None:
+    """Require the exact durable grantor and no other active observer role edge."""
+    membership = connection.execute(
+        "SELECT roleid,member,grantor,admin_option,inherit_option,set_option "
+        "FROM pg_catalog.pg_auth_members WHERE member=%s "
+        "AND (admin_option OR inherit_option OR set_option) ORDER BY roleid,grantor LIMIT 3",
+        (OBSERVER_OID,),
+    ).fetchall()
+    require(membership == [(EXPORT_READ_OID, OBSERVER_OID, EXPORT_GRANTOR_OID, False, True, False)],
+            "source_export_readonly_membership_drift")
+    attributes = connection.execute(
+        "SELECT rolname,rolcanlogin,rolinherit,rolsuper,rolcreatedb,rolcreaterole,rolreplication,rolbypassrls "
+        "FROM pg_catalog.pg_roles WHERE oid=%s", (OBSERVER_OID,),
+    ).fetchall()
+    require(attributes == [(OBSERVER_NAME, True, False, False, False, False, False, False)],
+            "source_export_observer_attributes_drift")
+
+
 @dataclass(frozen=True, slots=True, repr=False)
 class SQLTransition:
     owner: PreparedOwner
@@ -441,6 +503,7 @@ def transition_source(origin: transfer.BoundDatabase, owner: PreparedOwner,
             defaults = connection.execute("SELECT count(*) FROM pg_catalog.pg_default_acl WHERE defaclrole=16387").fetchone()
             require(tuple(defaults or ()) == (0,), "source_old_default_acl_requires_exact_cleanup")
             require(connection.execute("SELECT pg_catalog.has_function_privilege(%s,'pg_catalog.pg_control_system()','EXECUTE')", (OBSERVER_OID,)).fetchone() == (True,), "source_observer_control_permission_missing")
+            verify_export_grant_authority(connection)
         once(workdir, "source-owner-transition")
         with connection.transaction():
             connection.execute("SET TRANSACTION READ WRITE")
@@ -468,6 +531,10 @@ def transition_source(origin: transfer.BoundDatabase, owner: PreparedOwner,
             dependent = connection.execute("SELECT count(*) FROM pg_catalog.pg_shdepend WHERE refclassid='pg_catalog.pg_authid'::regclass AND refobjid=16387 AND classid<>'pg_catalog.pg_auth_members'::regclass").fetchone()
             require(tuple(dependent or ()) == (0,), "source_old_object_or_acl_dependencies_remain")
             connection.execute("RESET ROLE")
+            # Public-only grants cannot export separately owned managed schemas
+            # such as neon_auth. Preserve all schemas through the read-only
+            # predefined role; its surviving grantor remains after old deletion.
+            grant_export_readonly(connection)
             connection.execute("ALTER ROLE neondb_owner PASSWORD NULL")  # Own password; no false self-ADMIN assumption.
             remaining(deadline)
         # The own-password change has committed. This still-open authenticated
@@ -522,6 +589,7 @@ def verify_provider_delete_ready(observer: transfer.BoundDatabase, owner: Prepar
             sessions = connection.execute("SELECT count(*) FROM pg_catalog.pg_stat_activity WHERE usesysid=16387").fetchone()
             require(tuple(dependencies or ()) == (0,) and tuple(sessions or ()) == (0,),
                     "source_provider_delete_dependencies_or_sessions")
+            verify_export_readonly(connection)
     except SourceActionDenied:
         raise
     except Exception:
@@ -550,6 +618,7 @@ def verify_provider_delete_complete(observer: transfer.BoundDatabase, owner: Pre
             sessions = connection.execute("SELECT count(*) FROM pg_catalog.pg_stat_activity WHERE usesysid=16387").fetchone()
             require(tuple(roles or ()) == tuple(memberships or ()) == tuple(sessions or ()) == (0,),
                     "source_old_role_memberships_or_sessions_remain")
+            verify_export_readonly(connection)
     except SourceActionDenied:
         raise
     except Exception:
@@ -567,6 +636,7 @@ def preflight_source(origin: transfer.BoundDatabase) -> dict[str, Any]:
             connection.execute("SET TRANSACTION READ ONLY")
             connection.execute("SET LOCAL statement_timeout='1000ms'")
             roles, members = snapshot(connection)
+            verify_export_grant_authority(connection)
             defaults = connection.execute("SELECT count(*) FROM pg_catalog.pg_default_acl WHERE defaclrole=16387").fetchone()
             creator = next(row for row in roles if row[0] == OLD_OID)
             return {"source_database_oid": DATABASE_OID, "source_owner_oid": OLD_OID,

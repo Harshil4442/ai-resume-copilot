@@ -56,11 +56,13 @@ class Result:
 class Connection:
     def __init__(self):
         self.roles = [(10, "cloud_admin", True, True, True, True, True, True, True),
+            (6181, "pg_read_all_data", False, True, False, False, False, False, False),
+            (16384, "neon_superuser", False, True, False, True, True, False, False),
             (16387, "neondb_owner", True, True, False, True, True, False, False),
             (1884178, module.RUNTIME_NAME, False, False, False, False, False, False, False),
             (1884180, module.MIGRATOR_NAME, False, False, False, False, False, False, False),
             (1884182, module.OBSERVER_NAME, False, False, False, False, False, False, False)]
-        self.members = [(1884178, 16387, 10, True, False, False), (1884180, 16387, 10, True, False, False), (1884182, 16387, 10, True, False, False)]
+        self.members = [(6181, 16384, 10, True, True, True), (1884178, 16387, 10, True, False, False), (1884180, 16387, 10, True, False, False), (1884182, 16387, 10, True, False, False)]
         self.owner = 16387
         self.created = False
         self.closed = False
@@ -69,6 +71,7 @@ class Connection:
         self.dependencies = 0
         self.otherdb = 0
         self.session_rows = []
+        self.export_settable = True
         self.commands = []
 
     @contextmanager
@@ -87,6 +90,20 @@ class Connection:
             return Result(self.roles[:])
         if text == module.MEMBERS:
             return Result(self.members[:])
+        if text.startswith("SELECT oid,rolname,rolsuper FROM"):
+            return Result([(row[0], row[1], row[4]) for row in self.roles if row[0] in params])
+        if text.startswith("SELECT current_user,session_user,pg_catalog.pg_has_role"):
+            return Result([(module.OLD_NAME, module.OLD_NAME, self.export_settable)])
+        if text.startswith("SELECT roleid,member,admin_option,inherit_option,set_option"):
+            return Result([(row[0], row[1], *row[3:]) for row in self.members if row[:2] == params])
+        if text.startswith("SELECT rolname,rolcanlogin,rolinherit,rolsuper,rolcreatedb"):
+            return Result([(module.OBSERVER_NAME, True, False, False, False, False, False, False)])
+        if text.startswith("SELECT roleid,member,grantor,admin_option,inherit_option,set_option FROM pg_catalog.pg_auth_members WHERE member="):
+            return Result([row for row in self.members if row[1] == module.OBSERVER_OID and any(row[3:])])
+        if text.startswith('GRANT "pg_read_all_data"'):
+            self.members.append((6181, module.OBSERVER_OID, 16384, False, True, False))
+        if text.startswith("SELECT count(*) FROM pg_catalog.pg_auth_members WHERE roleid=%s AND member=%s"):
+            return Result([(sum(row[:2] == params for row in self.members),)])
         if text.startswith("SELECT oid,rolname,rolcanlogin"):
             return Result([row for row in self.roles if row[0] == params[0] or row[1] == params[1]])
         if text.startswith("SELECT roleid,member,grantor"):
@@ -368,9 +385,32 @@ def test_default_acl_refuses_without_drop_owned_or_write(prepared, monkeypatch):
     assert connection.owner == 16387 and not (workdir / "source-owner-transition.started.json").exists()
 
 
+@pytest.mark.parametrize("drift", ["managed_oid", "managed_superuser", "unreachable", "missing_admin", "existing_export"])
+def test_export_authority_drift_refuses_before_transition_marker_or_mutation(prepared, monkeypatch, drift):
+    origin, connection, workdir = prepared
+    owner = module.prepare_owner(origin, workdir)
+    monkeypatch.setattr(module, "verify_cloud_isolated", lambda _: None)
+    if drift == "managed_oid":
+        connection.roles = [row for row in connection.roles if row[0] != 16384]
+    elif drift == "managed_superuser":
+        connection.roles = [(*row[:4], True, *row[5:]) if row[0] == 16384 else row for row in connection.roles]
+    elif drift == "unreachable":
+        connection.export_settable = False
+    elif drift == "missing_admin":
+        connection.members = [row for row in connection.members if row[:2] != (6181, 16384)]
+    else:
+        connection.members.append((6181, module.OBSERVER_OID, 16384, False, False, False))
+    before = len(connection.commands)
+    with pytest.raises(module.SourceActionDenied, match="source_export_"):
+        module.transition_source(origin, owner, object(), workdir, module.new_source_passwords())
+    assert connection.owner == module.OLD_OID and not (workdir / "source-owner-transition.started.json").exists()
+    assert not any(command.startswith(("GRANT", "REVOKE", "REASSIGN", "ALTER")) for command in connection.commands[before:])
+
+
 def test_provider_delete_requires_native_zero_dependencies_and_sessions(prepared):
     origin, connection, _ = prepared
     connection.owner = 2000000
+    connection.members.append((6181, module.OBSERVER_OID, 16384, False, True, False))
     owner = module.PreparedOwner(2000000)
     transition = module.SQLTransition(owner, "synthetic-observer")
     observer = module.observer_target(origin, transition)
