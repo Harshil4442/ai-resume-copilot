@@ -447,8 +447,10 @@ def transition_source(origin: transfer.BoundDatabase, owner: PreparedOwner,
             connection.execute("SET LOCAL statement_timeout='5000ms'")
             connection.execute(sql.SQL("ALTER ROLE {} LOGIN PASSWORD {}").format(sql.Identifier(OBSERVER_NAME), sql.Literal(observer_password)))
             connection.execute(sql.SQL("GRANT {} TO {} WITH SET TRUE").format(sql.Identifier(OWNER_NAME), sql.Identifier(OLD_NAME)))
-            connection.execute(sql.SQL("GRANT {} TO {} WITH INHERIT FALSE").format(sql.Identifier(OWNER_NAME), sql.Identifier(OLD_NAME)))
+            # REASSIGN needs inherited receiving-role privileges, not SET alone.
+            connection.execute(sql.SQL("GRANT {} TO {} WITH INHERIT TRUE").format(sql.Identifier(OWNER_NAME), sql.Identifier(OLD_NAME)))
             connection.execute(sql.SQL("REASSIGN OWNED BY {} TO {}").format(sql.Identifier(OLD_NAME), sql.Identifier(OWNER_NAME)))
+            connection.execute(sql.SQL("GRANT {} TO {} WITH INHERIT FALSE").format(sql.Identifier(OWNER_NAME), sql.Identifier(OLD_NAME)))
             connection.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(OWNER_NAME)))
             transfer.verify_effective_role(connection, origin.identity, transfer.NativeRestoreRole(OWNER_NAME, owner.oid))
             for role in (OLD_NAME, RUNTIME_NAME, MIGRATOR_NAME, OBSERVER_NAME):
