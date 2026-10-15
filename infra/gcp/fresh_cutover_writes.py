@@ -545,12 +545,24 @@ class OfficialWrites:
             self._call(
                 "iam", "POST", "projects/-/serviceAccounts/" + account.uid + ":disable", body={}
             )
-            observed = self._call("iam", "GET", path)
-            self._account(observed, account.email, account.uid)
-            need(
-                observed is not None and observed.get("disabled") is True,
-                "write_old_principal_disable_unconfirmed",
-            )
+            # IAM can acknowledge the disable before GET reflects the new state.
+            # Poll metadata only inside the original action deadline; the POST
+            # and its durable attempt are never repeated, even on timeout.
+            confirmed = False
+            for _ in range(16):
+                need(time.monotonic() < deadline, "write_old_principal_disable_unconfirmed")
+                observed = self._call("iam", "GET", path)
+                self._account(observed, account.email, account.uid)
+                need(observed is not None and type(observed.get("disabled", False)) is bool,
+                     "write_old_principal_disable_unconfirmed")
+                assert observed is not None
+                if observed.get("disabled") is True:
+                    confirmed = True
+                    break
+                remaining = deadline - time.monotonic()
+                need(remaining > 0, "write_old_principal_disable_unconfirmed")
+                time.sleep(min(0.5, remaining))
+            need(confirmed, "write_old_principal_disable_unconfirmed")
             disabled.append(account)
         need(time.monotonic() < deadline, "write_action_deadline")
         return tuple(disabled)

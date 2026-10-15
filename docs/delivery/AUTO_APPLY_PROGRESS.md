@@ -36,10 +36,13 @@ record the original estimate and measured duration against these same six rows.
   with no stderr. The diagnostic archive was discarded; it was not a production
   backup or a completed migration. The permanent source fix is documented in
   [complete read-only export](SOURCE_COMPLETE_READONLY_EXPORT_2026-10-15.md).
-- Recovery is being prepared from the exact already-issued credential versions,
-  original cloud audit records and original key-creation operation. It must
-  freshly verify current authority and resume the remaining transfer/staging
-  steps without repeating completed credential issuance.
+- Recovery reused the exact already-issued credential versions, original cloud
+  audits and key-creation operation. It passed current authority checks, then
+  stopped before transfer on a cloud operation. The protected backup object is
+  absent; the bucket lacks the per-object retention capability required by the
+  upload. The exact original HTTP error is unavailable. Permanent enablement is
+  prepared in the console and awaiting the user's confirmation. No transfer or
+  traffic promotion has been verified, and issuance must not be repeated.
 - The four application queues, maintenance schedule, checkout and new-feature
   admissions remain held. The current production login and new user journeys
   require verification after the migration; a public HTML page or basic health
@@ -69,7 +72,10 @@ record the original estimate and measured duration against these same six rows.
   response with the exact approved file, destination and answers. Ordinary
   browser TLS validation is the trust boundary; the product does not claim
   certificate pinning or native raw-file introspection where Chrome omits it.
-  Installed browser integration and production acceptance remain unfinished.
+  The installed Chrome for Testing companion now passes the complete controlled
+  HTTPS upload/submission/credit journey and meaningful failure/recovery cases.
+  Ordinary production Chrome installation and real-resource acceptance remain
+  pending. See [hosted network acceptance](BROWSER_HOSTED_NETWORK_ACCEPTANCE_2026-10-15.md).
 - Private upload buckets and signing identities exist. The restricted coordinator
   SQL identity, workload, Scheduler and effective invocation grants still need
   activation after the migration, followed by genuine custody/scan/cleanup checks.

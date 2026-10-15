@@ -42,13 +42,15 @@ class FakeStore:
         self.signs = 0
         self.fail_retire = False
 
-    def _write(self, bucket, name, content, media, *, create=False, retired=False):
+    def _write(self, bucket, name, content, media, *, create=False, retired=False, retired_upload_id=None):
         with self.lock:
             if create and (bucket, name) in self.objects:
                 raise storage.StorageMismatch("synthetic_precondition_failed")
             self.serial += 1
             generation = str(self.serial)
-            self.objects[bucket, name] = (content, storage.ObjectInfo(generation, len(content), media, retired=retired))
+            self.objects[bucket, name] = (content, storage.ObjectInfo(
+                generation, len(content), media, retired=retired, retired_upload_id=retired_upload_id,
+                retired_metadata_only=retired))
             return generation
 
     def upload(self, row, content=CONTENT):
@@ -94,7 +96,8 @@ class FakeStore:
             existing = self.objects.get((bucket, name))
             if existing and existing[1].retired:
                 return existing[1].generation
-        return self._write(bucket, name, b"", "application/octet-stream", retired=True)
+        return self._write(bucket, name, b"", "application/octet-stream", retired=True,
+                           retired_upload_id=upload_id)
 
     def sign_read(self, row, expires_at):
         return "https://synthetic.invalid/clean?generation=" + row.clean_generation

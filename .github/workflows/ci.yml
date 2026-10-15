@@ -111,6 +111,8 @@ jobs:
           ../infra/gcp/document_worker.py tests/test_document_worker_deployment.py
           ../infra/gcp/fresh_cutover_execute.py ../infra/gcp/fresh_cutover_docker.py
           ../infra/gcp/fresh_cutover_writes.py ../infra/gcp/fresh_monetary_release.py
+          ../infra/gcp/native_fresh_fence.py tests/test_native_fresh_fence_reads.py
+          tests/test_resume_upload_erasure.py
           ../infra/gcp/github_builder.py ../infra/gcp/rolling_release.py ../infra/gcp/rolling_native.py
           tests/test_cutover_safe_observability.py tests/test_fresh_cutover_writes.py
           tests/test_fresh_worker_release.py tests/test_github_builder.py tests/test_rolling_release.py
