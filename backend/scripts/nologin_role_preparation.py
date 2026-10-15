@@ -22,7 +22,7 @@ from scripts import neon_direct_identity as neon_identity
 
 SOURCE_HEAD = "1c2519bc3989c60405dce5154d8e6bd73067d826"
 SCHEMA = "20261008_0009"
-RELEASE_SOURCE_SHA256 = "2d950360e9cfaee2000cf7e97bbb82faf0d267e190561370fbabb6dabb5fa5b3"
+RELEASE_SOURCE_SHA256 = "5719a0cb2b34e7ce2faba90293f3acc8b936bdcf26191489df3e7735b41dfc08"
 MAX_ROWS = 4096
 TABLE_NAMES = frozenset({
     "admin_audit_events", "alembic_version", "analysis_request_keys", "analysis_runs",
