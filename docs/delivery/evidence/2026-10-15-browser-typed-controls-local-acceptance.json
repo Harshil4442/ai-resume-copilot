@@ -1,0 +1,86 @@
+{
+  "status": "LOCAL_TYPED_CONTROLS_ACCEPTANCE_PASSED_RELEASE_NOT_ADMITTED",
+  "date": "2026-10-15",
+  "branch": "codex/application-form-completion",
+  "base_commit": "1a1fb2f0913607d8061ad67ebd5e5b26d1857b36",
+  "scope": "Owned synthetic data; installed Chromium MV3 with locally fulfilled HTTPS; real isolated SQL/crypto service; disposable local PostgreSQL full Alembic chain. No deployment or employer submission.",
+  "feature_flag_default": false,
+  "f7_schema_target": "20261015_0018",
+  "typed_controls_schema": "20261015_0019",
+  "schema18_release_allowlists_changed": false,
+  "source_hashes": {
+    "browser-companion/extension/assistance-runtime.js": "42013403b83d332171de1a57e5affa867242d0153d23b49f81faa914cc092bb2",
+    "backend/alembic/versions/20261015_0019_browser_typed_controls.py": "ee693227f412505ee88fa0a60c1e0f662c2416629ab65f04e637b026f560c68f",
+    "frontend/public/downloads/hirewiz-browser-companion-0.3.0.zip": "088107e95a4570f829ed32292ca520c9d29fff2d64966ae8f5daa1840a40f618",
+    "frontend/public/downloads/hirewiz-browser-companion-0.2.0.zip": "d7ac1d2abdfbcd0871aa1613b95f0cc2798249679d33101ddf49499679d463e8"
+  },
+  "verification": [
+    {
+      "command": "pytest -q tests/test_browser_assistance_isolated.py tests/test_browser_assistance_postgres.py tests/test_browser_typed_migration_postgres.py tests/test_monetary_current_chain.py tests/test_rolling_release.py tests/test_monetary_schema_step_postgres.py tests/test_alembic_schema.py",
+      "cwd": "backend",
+      "environment": "APP_ENV=test; DATABASE_URL=sqlite://; HIREWIZ_TEST_POSTGRES_URL bound to the owned loopback-only disposable database",
+      "passed": 180,
+      "failed": 0,
+      "skipped": 0,
+      "warnings": ["Existing passlib crypt deprecation", "Existing Starlette TestClient httpx deprecation"]
+    },
+    {"command": "npm test", "cwd": "browser-companion", "passed": 76, "failed": 0},
+    {"command": "node --test tests/razorpay-fixture.test.js", "cwd": "browser-companion", "passed": 5, "failed": 0},
+    {"command": "npm run test:assistance", "cwd": "browser-companion", "passed": 49, "failed": 0, "skipped": 0, "installed_mv3_cases": 9, "typed_installed_mv3_cases": 6},
+    {"command": "npm run check", "cwd": "browser-companion", "result": "PASS"},
+    {"command": "python3 scripts/package-reviewed.py (two builds), then --check", "cwd": "browser-companion", "result": "Identical archive SHA-256 across both builds; exact runtime-source byte verification PASS"},
+    {"command": "ruff check tests/test_browser_typed_migration_postgres.py tests/browser_assistance_chrome_bridge.py tests/test_monetary_current_chain.py", "cwd": "backend", "result": "PASS"},
+    {"command": "ruff check app/domains app/routers/v1 app/routers/worker.py scripts", "cwd": "backend", "result": "PASS"},
+    {"command": "git diff --check", "result": "PASS"}
+  ],
+  "installed_mv3_assertions": [
+    "Stable extension ID and actual chrome-extension Origin on device POSTs",
+    "Candidate approval required before any field lease or mutation",
+    "Twelve signed fields: seven original text fields, saved phone, four distinct approved option values and visible labels",
+    "Exact document/package/artifact/review/field/value/control bindings; fill-only action list and bounded lease deadline",
+    "Phone/text input/change events and disclosed email blur; exact four choices; Country/employment left empty",
+    "No attachment, submit event, reservation, credit charge or employer receipt",
+    "Unsigned transport alteration of an actual signed option label rejected before dropdown opens",
+    "Unknown option and conditional DOM changes stop at the first affected choice; no next lease or replay",
+    "Reviewed widget DOM drift blocks before first lease and candidate clear cancels the review",
+    "Lost typed begin acknowledgement stays unknown with one field intent, no DOM event and no replay",
+    "Durable checkpoint omits answer/package payloads"
+  ],
+  "postgresql": {
+    "version": "PostgreSQL 17.11 on aarch64-unknown-linux-musl",
+    "docker_image": "postgres:17-alpine",
+    "docker_image_id": "b0f9560a2de0",
+    "owned_container": "hirewiz-typed-controls-pg-20261015",
+    "exposed_address": "127.0.0.1:55433",
+    "database": "hirewiz_admission_test",
+    "migration_test_cases": 6,
+    "assertions": [
+      "Full historical Alembic chain to actual schema18, then explicit upgrade19; no metadata.create_all used as migration evidence",
+      "Retained v1 review rows, review columns and table inventory preserved",
+      "Schema18 rejects cursor 8; schema19 accepts 0/7/8/12 and rejects -1/13 at named SQL check constraint",
+      "Twelve actual signed service actions reach durable cursor 12 with zero fee/receipt",
+      "Retained v1-only cursor 7 round-trips to 18 and rejects cursor 8 again",
+      "Typed payload at cursor 0/7 and erased payload at cursor 8/12 refuse downgrade; marker/rows/12 bound remain unchanged"
+    ],
+    "owned_schema_count_after_tests": 0,
+    "container_removed_after_tests": true
+  },
+  "reproduced_and_fixed": [
+    "Installed unknown option and conditional outcome tests initially failed because stopped filling incorrectly displayed Approved answers filled; runtime now reports uncertain/stopped outcome",
+    "Existing clean SQLite Alembic head regression initially failed on unsupported constraint ALTER; migration19 now uses Alembic batch operations, preserving native PostgreSQL ALTER"
+  ],
+  "release_consumer_assessment": "docs/delivery/BROWSER_TYPED_CONTROLS_SCHEMA19_RELEASE_2026-10-15.md",
+  "independent_static_review": "No actionable findings; native PostgreSQL ALTER retained, installed v2 real signatures/SQL covered, schema18 production consumers unchanged",
+  "external_provider_gcp_neon_calls": 0,
+  "real_candidate_data_entered": false,
+  "production_permission_authentication_or_deployment_proven": false,
+  "full_paid_application_complete": false,
+  "remaining": [
+    "Later separately admitted additive schema19 release, migration and rollout",
+    "Production extension permission/authentication and permitted staged candidate journey",
+    "Country/employment/unsupported required controls",
+    "Exact reviewed attachment upload and actual upload acknowledgement",
+    "Final-submit approval bound to the complete application and one-shot submission",
+    "Genuine employer receipt/status reconciliation and paid-application settlement"
+  ]
+}

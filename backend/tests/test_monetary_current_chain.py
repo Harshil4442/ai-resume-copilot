@@ -28,9 +28,9 @@ step = load("hirewiz_current_chain_step", "backend/scripts/monetary_schema_step.
 observer = load("hirewiz_current_chain_observer", "backend/scripts/monetary_cutover_preflight.py")
 
 
-def test_exact_current_chain_and_forward_steps_agree():
+def test_typed_source_extends_the_frozen_schema18_release_without_expanding_its_forward_steps():
     tracked = {p.relative_to(ROOT).as_posix() for p in (ROOT / "backend/alembic/versions").glob("*.py")}
-    assert release.source_guard.migration_chain(ROOT, tracked, allow_literal_sql=True) == release.CHAIN
+    assert release.source_guard.migration_chain(ROOT, tracked, allow_literal_sql=True) == (*release.CHAIN, "20261015_0019")
     assert release.CUTOVER_CHAIN == step.CHAIN == observer.SCHEMA_ORDER
     assert step.CHAIN[0] == "20261008_0009" and step.CHAIN[-1] == "20261015_0018"
     assert len(step.CHAIN) == 10
@@ -107,6 +107,43 @@ def test_schema18_registry_and_native_reader_agree_without_changing_retained_sou
     assert inventory.candidate_schema == rolling.SCHEMA == step.CHAIN[-1] == "20261015_0018"
     assert {"20261008_0009", "20261014_0017", "20261015_0018"} <= neon.RELEASE_SCHEMAS
     assert inventory.provider_fencing_verified is inventory.protected_backup_verified is False
+
+
+def test_schema19_source_is_refused_before_schema18_release_reaches_external_consumers(monkeypatch):
+    tracked = {p.relative_to(ROOT).as_posix() for p in (ROOT / "backend/alembic/versions").glob("*.py")}
+    monkeypatch.setattr(release.source_guard, "checked_files", lambda *_: tracked)
+    boundary = release.NativeBoundary(ROOT)
+    monkeypatch.setattr(boundary, "_command", lambda *_: pytest.fail("Schema19 must be refused before CI/cloud calls"))
+    with pytest.raises(release.ReleaseDenied, match="reviewed_schema16_chain_required"):
+        boundary.verify_source_image(release="a" * 40, image_digest="sha256:" + "b" * 64,
+                                     build_id="synthetic", ci_run_id=1)
+
+
+@pytest.mark.parametrize("field", ["expected_database_schema", "candidate_schema"])
+def test_schema18_inventory_contract_refuses_schema19(field):
+    from pydantic import ValidationError
+
+    registry = load("hirewiz_typed_boundary_registry", "infra/gcp/fresh_cutover_registry.py")
+    raw, _ = registry.expected_registry("a" * 40, "sha256:" + "b" * 64, "2026-10-15T00:00:00+00:00")
+    inventory = json.loads(raw)
+    inventory[field] = "20261015_0019"
+    with pytest.raises(ValidationError):
+        observer.Inventory.model_validate(inventory)
+
+
+def test_schema19_is_outside_native_identity_reader_and_schema18_step_admission():
+    neon = load("hirewiz_typed_boundary_neon", "backend/scripts/neon_direct_identity.py")
+    rolling = load("hirewiz_typed_boundary_rolling", "infra/gcp/rolling_release.py")
+    assert "20261015_0019" not in neon.RELEASE_SCHEMAS
+    assert "20261015_0019" not in observer.SCHEMAS
+    assert rolling.SCHEMA == release.CHAIN[-1] == "20261015_0018"
+    with pytest.raises(observer.Denied, match="application_state_reader_identity_refused"):
+        observer.unresolved_application_sql("public", "20261015_0019")
+    # Only dialect metadata is available; a rejected step cannot obtain a connection.
+    with pytest.raises(step.StepDenied, match="migration_step_or_identity_invalid"):
+        step.upgrade_step(SimpleNamespace(dialect=SimpleNamespace(name="postgresql")),
+                          expected="20261015_0018", target="20261015_0019", identifier_hash="a" * 64,
+                          database_oid=1, namespace="public", migration_role="synthetic_migration")
 
 
 def test_schema18_keeps_candidate_reports_separate_from_paid_application_proof():

@@ -98,8 +98,9 @@ for name, columns in missing.items():
 
 class BrowserAssistanceFlow(unittest.TestCase):
     def setUp(self):
-        self.original = {key: os.environ.get(key) for key in ("BROWSER_ASSISTANCE_ENABLED", "BROWSER_ASSISTANCE_SIGNING_SECRET")}
-        os.environ.update(BROWSER_ASSISTANCE_ENABLED="true", BROWSER_ASSISTANCE_SIGNING_SECRET="synthetic-owned-test-signing-key-over-32-characters")
+        self.original = {key: os.environ.get(key) for key in ("BROWSER_ASSISTANCE_ENABLED", "BROWSER_ASSISTANCE_SIGNING_SECRET", "BROWSER_ASSISTANCE_TYPED_CONTROLS_ENABLED")}
+        os.environ.update(BROWSER_ASSISTANCE_ENABLED="true", BROWSER_ASSISTANCE_SIGNING_SECRET="synthetic-owned-test-signing-key-over-32-characters",
+                          BROWSER_ASSISTANCE_TYPED_CONTROLS_ENABLED="false")
         self.engine = create_engine("sqlite://", hide_parameters=True)
         Base.metadata.create_all(self.engine)
         self.db = sessionmaker(bind=self.engine, autoflush=False, expire_on_commit=False)()
@@ -178,17 +179,17 @@ class BrowserAssistanceFlow(unittest.TestCase):
         return {"review_id": review["id"], "review_digest": review["review_digest"], "index": index,
             "context_digest": review["payload"]["context_digest"], "document_id": "owned_chrome_document"}
 
-    def typed_review(self, *, protocol=2, omit_gender=False):
+    def configure_typed_application(self, *, omit_gender=False):
         fields = list(self.app.form["fields"])
         fields.append({"id": "phone", "label": "Phone", "type": "text", "required": True})
         answers = {**self.app.answers, "phone": "+919000000000"}
         for index, label in enumerate(service.CHOICE_LABELS):
             identity = f"question_{9132967005 + index * 1000}"
             fields.append({"id": identity, "label": label, "type": "single_select", "required": True,
-                           "options": [{"value": "owned-choice", "label": "Explicit candidate choice"},
-                                       {"value": "other-choice", "label": "Other candidate choice"}]})
+                           "options": [{"value": f"owned-choice-{index}", "label": f"Explicit candidate {label} choice"},
+                                       {"value": f"other-choice-{index}", "label": f"Other candidate {label} choice"}]})
             if not (omit_gender and label == "Gender"):
-                answers[identity] = "owned-choice"
+                answers[identity] = f"owned-choice-{index}"
         self.app.form = {**self.app.form, "fields": fields}
         self.app.answers = answers
         posting = self.db.get(employer.EmployerPosting, self.app.posting_id)
@@ -196,6 +197,10 @@ class BrowserAssistanceFlow(unittest.TestCase):
         artifact = self.db.get(employer.SealedApplicationArtifact, self.app.artifact_id)
         self.app.package_digest = employer_service._package_digest(self.app, posting, source, artifact)
         self.db.commit()
+
+    def typed_review(self, *, protocol=2, omit_gender=False):
+        self.configure_typed_application(omit_gender=omit_gender)
+        posting = self.db.get(employer.EmployerPosting, self.app.posting_id)
         self.paired()
         context = {"synthetic_typed_fixture": True}
         mapping = service.field_mapping(self.app, protocol)
@@ -225,7 +230,7 @@ class BrowserAssistanceFlow(unittest.TestCase):
                 self.assertEqual(lease["payload"]["value"], field["value"])
                 self.assertEqual(lease["payload"]["allowed_actions"], ["fill"])
                 if field["type"] == "combobox":
-                    self.assertEqual(lease["payload"]["option_label"], "Explicit candidate choice")
+                    self.assertEqual(lease["payload"]["option_label"], field["value_label"])
                 completed = self.call("outcome", {"review_id": review["id"], "action_id": lease["payload"]["action_id"],
                                                  "outcome": "filled"})
             self.assertEqual(completed["state"], "filled")

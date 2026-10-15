@@ -149,6 +149,8 @@ export class AssistanceRuntime {
         if (outcome !== "filled") break;
       }
       return { ...this.status(this.cancelled ? "Further text filling stopped. An already authorized field may have finished. Check the portal and clear this review before another inspection."
+        : this.state.phase === "unknown" ? "Filling stopped because a field outcome is uncertain. Check the company portal and clear this review before another inspection. No automatic retry occurred and no application fee was charged."
+        : this.state.phase !== "filled" ? "Filling stopped before all approved answers were filled. Check the company portal and clear this review before another inspection. No application fee was charged."
         : this.review.payload.review_protocol_version === 2 ? "Approved answers filled. Complete the remaining Country/employment or unsupported controls, attach your reviewed file and submit on the company portal yourself. No application fee was charged."
         : "Approved text filling finished. Complete the remaining fields, attach your reviewed file and submit on the company portal yourself. No application fee was charged."), busy: false };
     } catch (failure) {

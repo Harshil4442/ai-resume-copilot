@@ -44,15 +44,37 @@ receipt/reconciliation must be completed for the full paid application outcome.
 
 Focused source validation covers actual SQLite/cryptographic twelve-action
 leases, explicit missing sensitive answers, flag revocation, historical review
-isolation, browser widget changes and candidate UI review. These do not prove a
-successful real employer submission or production deployment. The actual
-installed-companion regression remains version-one flow evidence; a complete
-version-two installed-companion/SQL bridge case remains required.
+isolation, browser widget changes and candidate UI review. Installed Chromium
+MV3 now exercises the complete twelve-action version-two SQL/crypto bridge,
+including distinct approved values/labels for all four choices. The actual
+extension Origin, signed per-field bindings, phone, event sequence, zero
+reservations/charges and absence of a receipt are checked. Tampered signed
+choice labels, unknown options, conditional changes, DOM drift and lost begin
+acknowledgements stop without replay. Every HTTPS response is locally fulfilled;
+the installed test uses exact test-only origin grants rather than accepting a
+human permission dialog. This does not prove a real employer submission,
+production authentication, live permission acceptance or deployment.
+
+The negative installed tests exposed completion wording after an unknown or
+stopped outcome. The companion now says filling stopped and requires inspection;
+only a completed sequence says the approved answers were filled. The 0.3.0 source
+ZIP was rebuilt twice with identical SHA-256
+`088107e95a4570f829ed32292ca520c9d29fff2d64966ae8f5daa1840a40f618`
+and verified byte-for-byte against its runtime source. The 0.2.0 ZIP is unchanged.
 
 Migration `20261015_0019` expands only the durable review cursor constraint from
-seven to twelve. Its downgrade refuses to erase version-two history. Before
-integration, verify the migration on disposable PostgreSQL, update schema-specific
-release consumers and provide the reviewed schema18-to19 migration procedure.
-The frozen production-candidate release remains schema18. Do not enable typed
-controls against the old constraint or mark deployment complete from these local
-checks.
+seven to twelve. Its downgrade refuses retained version-two payloads or cursors
+above seven. Six actual PostgreSQL 17.11 cases execute the complete historical
+Alembic chain, verify row/shape preservation and both cursor bounds, run twelve
+real signed actions, round-trip retained v1 history and prove transactional
+downgrade refusal. The existing clean SQLite migration regression exposed its
+unsupported direct constraint ALTER; Alembic batch operations now preserve that
+development/test path while retaining native PostgreSQL ALTER behavior.
+
+The [schema19 release assessment and procedure](BROWSER_TYPED_CONTROLS_SCHEMA19_RELEASE_2026-10-15.md)
+identifies every schema-specific consumer. Their allowlists and release targets
+remain unchanged, with explicit tests that the schema18 path rejects schema19
+before external calls. F7 cutover still targets schema18. Schema19 needs a later
+additive release with its own admission, migration and rollout evidence. Do not
+enable typed controls against the old constraint or mark deployment complete
+from these local checks.
