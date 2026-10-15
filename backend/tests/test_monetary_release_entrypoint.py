@@ -234,13 +234,14 @@ def test_legacy_release_still_refuses_the_current_extended_chain(tmp_path):
     catalogue = 'backend/alembic/versions/20261011_0016_employer_catalogue_search.py'
     browser = 'backend/alembic/versions/20261014_0017_browser_assistance.py'
     pacing = 'backend/alembic/versions/20261015_0018_employer_host_pacing.py'
-    assert {catalogue, browser, pacing} <= tracked
+    typed = 'backend/alembic/versions/20261015_0019_browser_typed_controls.py'
+    assert {catalogue, browser, pacing, typed} <= tracked
     # Preserve the historical chain check in a finite copy before the catalogue
     # migration, whose module-level SQL constants fail the legacy parser closed.
     prefix = tmp_path / 'pre_catalogue'
     (prefix / 'backend/alembic/versions').mkdir(parents=True)
     (prefix / 'backend/alembic.ini').write_bytes((ROOT / 'backend/alembic.ini').read_bytes())
-    prefix_tracked = tracked - {catalogue, browser, pacing}
+    prefix_tracked = tracked - {catalogue, browser, pacing, typed}
     for path in sorted(prefix_tracked):
         (prefix / path).write_bytes((ROOT / path).read_bytes())
     chain = release.source_guard.migration_chain(prefix, prefix_tracked)
@@ -250,7 +251,7 @@ def test_legacy_release_still_refuses_the_current_extended_chain(tmp_path):
     for operation in (release.source_guard.migration_chain, release.source_guard.migration_head):
         with pytest.raises(release.source_guard.PreflightDenied, match="Unsupported module-level migration assignment"):
             operation(ROOT, tracked)
-    assert release.source_guard.migration_chain(ROOT, tracked, allow_literal_sql=True) == release.CHAIN
+    assert release.source_guard.migration_chain(ROOT, tracked, allow_literal_sql=True) == (*release.CHAIN, "20261015_0019")
 
 
 def native_identity(plan, monkeypatch, *, policy_update=None, ci_update=None, build_update=None):
@@ -441,7 +442,7 @@ def test_caller_backup_metadata_never_substitutes_for_native_owned_creation(plan
         boundary.verify_backup(plan, release.Fence(STAMP, STAMP - timedelta(minutes=5), True, True, True))
 
 
-@pytest.mark.parametrize("fault", [None, "retention", "changed_bytes", "bucket_missing", "bucket_acl", "bucket_pap"])
+@pytest.mark.parametrize("fault", [None, "wire_metadata", "retention", "retention_conflict", "changed_bytes", "bucket_missing", "bucket_acl", "bucket_pap", "bucket_retention_disabled"])
 def test_native_owned_backup_creation_and_exact_generation_verification(plan, monkeypatch, fault):
     import hashlib
     from types import SimpleNamespace
@@ -491,12 +492,18 @@ def test_native_owned_backup_creation_and_exact_generation_verification(plan, mo
         if arguments[:3] == ("storage", "buckets", "describe"):
             return {} if fault == "bucket_missing" else {
                 "uniform_bucket_level_access": fault != "bucket_acl",
-                "public_access_prevention": "inherited" if fault == "bucket_pap" else "enforced"}
+                "public_access_prevention": "inherited" if fault == "bucket_pap" else "enforced",
+                "per_object_retention": {} if fault == "bucket_retention_disabled" else {"mode": "Enabled"}}
         if arguments[:3] == ("storage", "buckets", "get-iam-policy"):
             return {"bindings": []}
-        return {"generation": "91919", "creation_time": stored["created"], "size": len(stored["bytes"]),
-                "retention": {"mode": "Unlocked" if fault == "retention" else "Locked",
-                              "retainUntilTime": (datetime.now(UTC) + timedelta(days=7)).isoformat()}}
+        metadata = {"generation": "91919", "creation_time": stored["created"], "size": len(stored["bytes"]),
+                    "retention_settings": {"mode": "Unlocked" if fault == "retention" else "Locked",
+                                           "retainUntilTime": (datetime.now(UTC) + timedelta(days=7)).isoformat()}}
+        if fault == "wire_metadata":
+            metadata["retention"] = metadata.pop("retention_settings")
+        elif fault == "retention_conflict":
+            metadata["retention"] = {**metadata["retention_settings"], "mode": "Unlocked"}
+        return metadata
     monkeypatch.setattr(release.subprocess, "run", process)
     monkeypatch.setattr(boundary, "_command", command)
     monkeypatch.setattr(boundary, "_cloud", cloud)
@@ -506,9 +513,15 @@ def test_native_owned_backup_creation_and_exact_generation_verification(plan, mo
         assert not any(call[0] == "pg_dump" or call[:3] == ("gcloud", "storage", "cp") for call in calls)
         assert boundary._owned_backup is None
         return
+    if fault == "bucket_retention_disabled":
+        with pytest.raises(release.ReleaseDenied, match="protected_backup_bucket_object_retention_not_enabled"):
+            boundary.create_backup(plan, fence)
+        assert not any(call[0] == "pg_dump" or call[:3] == ("gcloud", "storage", "cp") for call in calls)
+        assert boundary._owned_backup is None
+        return
     boundary.create_backup(plan, fence)
     assert boundary._owned_backup["sha256"] == hashlib.sha256(stored["bytes"]).hexdigest()
-    if fault:
+    if fault not in {None, "wire_metadata"}:
         with pytest.raises(release.ReleaseDenied):
             boundary.verify_backup(plan, fence)
     else:

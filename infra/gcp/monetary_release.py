@@ -804,6 +804,9 @@ class NativeBoundary:
         bucket = self._cloud("storage", "buckets", "describe", bucket_uri)
         if bucket.get("uniform_bucket_level_access") is not True or bucket.get("public_access_prevention") != "enforced":
             raise ReleaseDenied("protected_backup_bucket_privacy_controls_not_verified")
+        object_retention = bucket.get("per_object_retention")
+        if type(object_retention) is not dict or object_retention.get("mode") != "Enabled":
+            raise ReleaseDenied("protected_backup_bucket_object_retention_not_enabled")
         bucket_policy = self._cloud("storage", "buckets", "get-iam-policy", bucket_uri)
         if any(member in {"allUsers", "allAuthenticatedUsers"}
                for binding in bucket_policy.get("bindings", []) for member in binding.get("members", [])):
@@ -854,7 +857,13 @@ class NativeBoundary:
         uri = plan.backup_uri + "#" + receipt["generation"]
         backup = self._cloud("storage", "objects", "describe", uri)
         created = datetime.fromisoformat(backup["creation_time"].replace("Z", "+00:00"))
-        retention = backup.get("retention", {})
+        # gcloud's object serializer names the wire API's retention field
+        # retention_settings. Accept either complete native representation,
+        # but never resolve competing aliases by silently preferring one.
+        retention_fields = [backup[key] for key in ("retention_settings", "retention") if key in backup]
+        if len(retention_fields) != 1 or type(retention_fields[0]) is not dict:
+            raise ReleaseDenied("fresh_post_fence_protected_backup_not_verified")
+        retention = retention_fields[0]
         until = datetime.fromisoformat(retention.get("retain_until_time", retention.get("retainUntilTime", "")).replace("Z", "+00:00"))
         if (str(backup.get("generation")) != receipt["generation"]
                 or not receipt["started"] <= created <= datetime.now(UTC)
