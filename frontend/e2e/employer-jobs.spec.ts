@@ -4,6 +4,7 @@ import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import { createHash } from "node:crypto";
 import { encode } from "next-auth/jwt";
 
+import type { CreditBundleProduct } from "../lib/billingProducts";
 import { searchSummary, type EmployerApplication, type EmployerSearch, type JobServiceCatalog } from "../lib/employerJobs";
 import type { ServiceCreditHistoryPage } from "../lib/serviceCreditHistory";
 
@@ -43,11 +44,11 @@ function fixture() {
   const runs: Record<string, unknown>[] = [];
   const opportunity = { id: "opp_existing_fixture", title: "Backend Engineer", company: "Example Studio", location: "Remote", priority: "medium", stage: "saved", source: "manual", source_url: null, compensation: null, deadline_at: null, archived_at: null, created_at: now, updated_at: now, resume_id: 1, latest_match_id: null, latest_analysis_run_id: null, next_action: null, notes: "", outcome: null, outcome_notes: null, outcome_at: null, job_description: posting.description, job_snapshot: {}, activity: [], contacts: [], reminders: [], resume_versions: [] };
   const resumes = [{ id: 1, filename: "Taylor-resume.docx", source_available: true, source_format: "docx", created_at: now }, { id: 2, filename: "Custom-resume.docx", source_available: true, source_format: "docx", created_at: now }];
-  const products = [
+  const products = ([
     { sku: "starter_bundle", name: "Starter", description: "Finite prepaid pack", amount_minor: 64900, amount_display: "₹649", entitlement_quantity: 100, analysis_units: 2 },
     { sku: "growth_bundle", name: "Growth", description: "Finite prepaid pack", amount_minor: 109900, amount_display: "₹1,099", entitlement_quantity: 300, analysis_units: 6 },
     { sku: "scale_bundle", name: "Scale", description: "Finite prepaid pack", amount_minor: 219900, amount_display: "₹2,199", entitlement_quantity: 700, analysis_units: 15 },
-  ].map(p => ({ ...p, currency: "INR", billing_type: "one_time", duration_days: 0, entitlement_kind: "credit_bundle", auto_renews: false, catalog_visible: true, enabled_for_purchase: true }));
+  ] as const).map((p): CreditBundleProduct => ({ ...p, job_service_credits: p.entitlement_quantity, currency: "INR", billing_type: "one_time", duration_days: 0, entitlement_kind: "credit_bundle", auto_renews: false, catalog_visible: true, enabled_for_purchase: true }));
   function billingQuote(sku: string) {
     const product = products.find((item) => item.sku === sku);
     if (!product) throw new Error(`Unexpected billing fixture SKU: ${sku}`);
