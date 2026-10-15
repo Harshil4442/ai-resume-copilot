@@ -9,7 +9,7 @@ from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "browser-companion" / "extension"
-DESTINATION = ROOT / "frontend" / "public" / "downloads" / "hirewiz-browser-companion-0.3.0.zip"
+DESTINATION = ROOT / "frontend" / "public" / "downloads" / "hirewiz-browser-companion-0.4.0.zip"
 
 
 def main():
@@ -17,7 +17,7 @@ def main():
     parser.add_argument("--check", action="store_true", help="Verify the delivered ZIP without writing files")
     arguments = parser.parse_args()
     manifest = json.loads((SOURCE / "manifest.json").read_text())
-    if (manifest["version"] != "0.3.0" or manifest["host_permissions"] != []
+    if (manifest["version"] != "0.4.0" or manifest["host_permissions"] != []
             or manifest["optional_host_permissions"] != [
                 "https://www.hirewizhq.com/*", "https://job-boards.greenhouse.io/*"]):
         raise ValueError("reviewed_source_manifest_mismatch")
@@ -36,7 +36,7 @@ def main():
             for source, entry in zip(sources, entries, strict=True):
                 body = source.read_bytes()
                 if (entry.is_dir() or entry.file_size != len(body)
-                        or entry.date_time != (2026, 10, 14, 0, 0, 0)
+                        or entry.date_time != (2026, 10, 15, 0, 0, 0)
                         or entry.external_attr != 0o100644 << 16
                         or archive.read(entry) != body):
                     raise ValueError("reviewed_source_archive_bytes_mismatch")
@@ -44,7 +44,7 @@ def main():
         DESTINATION.parent.mkdir(parents=True, exist_ok=True)
         with ZipFile(DESTINATION, "w", compression=ZIP_DEFLATED, compresslevel=9) as archive:
             for source, name in zip(sources, names, strict=True):
-                entry = ZipInfo(name, date_time=(2026, 10, 14, 0, 0, 0))
+                entry = ZipInfo(name, date_time=(2026, 10, 15, 0, 0, 0))
                 entry.compress_type = ZIP_DEFLATED
                 entry.external_attr = 0o100644 << 16
                 archive.writestr(entry, source.read_bytes(), compress_type=ZIP_DEFLATED, compresslevel=9)

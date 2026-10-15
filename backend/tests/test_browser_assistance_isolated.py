@@ -75,8 +75,15 @@ function = next(node for node in tree.body if isinstance(node, ast.FunctionDef) 
 employer_service.payload_fingerprint = common.payload_fingerprint
 exec(compile(ast.fix_missing_locations(ast.Module(body=[function], type_ignores=[])), "actual_employer_package_digest", "exec"), employer_service.__dict__)
 sys.modules[employer_service.__name__] = employer_service
+artifact_reader = types.ModuleType(PREFIX + ".domains.employer.artifacts")
+artifact_reader.hashlib, artifact_reader.HTTPException = hashlib, HTTPException
+artifact_tree = ast.parse((ROOT / "domains/employer/artifacts.py").read_text())
+exec(compile(ast.fix_missing_locations(ast.Module(body=[node for node in artifact_tree.body
+    if isinstance(node, ast.FunctionDef) and node.name == "read"], type_ignores=[])), "actual_sealed_artifact_read", "exec"), artifact_reader.__dict__)
+sys.modules[artifact_reader.__name__] = artifact_reader
 models = load(PREFIX + ".domains.browser_assistance.models", ROOT / "domains/browser_assistance/models.py")
 schemas = load(PREFIX + ".domains.browser_assistance.schemas", ROOT / "domains/browser_assistance/schemas.py")
+attachments = load(PREFIX + ".domains.browser_assistance.attachments", ROOT / "domains/browser_assistance/attachments.py")
 service = load(PREFIX + ".domains.browser_assistance.service", ROOT / "domains/browser_assistance/service.py")
 manual_reporting = load(PREFIX + ".domains.employer.manual_reporting", ROOT / "domains/employer/manual_reporting.py")
 # Execute the real terminal-state fences, without loading provider/bootstrap code.
@@ -98,9 +105,9 @@ for name, columns in missing.items():
 
 class BrowserAssistanceFlow(unittest.TestCase):
     def setUp(self):
-        self.original = {key: os.environ.get(key) for key in ("BROWSER_ASSISTANCE_ENABLED", "BROWSER_ASSISTANCE_SIGNING_SECRET", "BROWSER_ASSISTANCE_TYPED_CONTROLS_ENABLED")}
+        self.original = {key: os.environ.get(key) for key in ("BROWSER_ASSISTANCE_ENABLED", "BROWSER_ASSISTANCE_SIGNING_SECRET", "BROWSER_ASSISTANCE_TYPED_CONTROLS_ENABLED", "BROWSER_ASSISTANCE_ATTACHMENT_ENABLED")}
         os.environ.update(BROWSER_ASSISTANCE_ENABLED="true", BROWSER_ASSISTANCE_SIGNING_SECRET="synthetic-owned-test-signing-key-over-32-characters",
-                          BROWSER_ASSISTANCE_TYPED_CONTROLS_ENABLED="false")
+                          BROWSER_ASSISTANCE_TYPED_CONTROLS_ENABLED="false", BROWSER_ASSISTANCE_ATTACHMENT_ENABLED="false")
         self.engine = create_engine("sqlite://", hide_parameters=True)
         Base.metadata.create_all(self.engine)
         self.db = sessionmaker(bind=self.engine, autoflush=False, expire_on_commit=False)()

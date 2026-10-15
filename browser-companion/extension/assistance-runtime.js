@@ -1,4 +1,4 @@
-import { canonical, digest } from "./protocol.js";
+import { base64url, canonical, digest } from "./protocol.js";
 
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const HEX = /^[a-f0-9]{64}$/;
@@ -8,7 +8,7 @@ const KEYS = ["version", "device_id", "phase", "review_id", "application_id", "f
 export class AssistanceRuntime {
   constructor({ transport, browser, store, now = () => Date.now() }) {
     Object.assign(this, { transport, browser, store, now });
-    this.state = null; this.inspection = null; this.review = null; this.busy = false; this.cancelled = false;
+    this.state = null; this.inspection = null; this.review = null; this.busy = false; this.cancelled = false; this.attachmentAvailable = false;
   }
   async initialise() {
     const saved = await this.store.read();
@@ -31,6 +31,7 @@ export class AssistanceRuntime {
   }
   status(message = "") {
     return { ...this.state, busy: this.busy, key_sha256: this.transport.identity.key_sha256,
+      attachment_available: this.attachmentAvailable, review_protocol_version: this.review?.review_protocol_version ?? this.review?.payload?.review_protocol_version ?? 1,
       review_url: this.state.review_id ? `${this.transport.configuration.websiteOrigin}/browser-companion?review=${this.state.review_id}`
         : `${this.transport.configuration.websiteOrigin}/browser-companion?device=${this.state.device_id}`,
       can_fill: !this.busy && !this.cancelled && this.state.phase === "approved" && Boolean(this.inspection && this.review), message };
@@ -38,12 +39,14 @@ export class AssistanceRuntime {
   async start() {
     if (this.busy || this.state.review_id) throw new Error("Cancel or inspect the current review before connecting again.");
     const device = await this.transport.device("prepare");
+    this.attachmentAvailable = device.attachment_available === true;
     await this.save({ phase: device.state });
     return this.status("Review this browser fingerprint on HireWiz, then check the connection.");
   }
   async check() {
     if (this.busy) return this.status("A field action is running. Cancel stops future fields.");
     const device = await this.transport.device("status", this.state.review_id);
+    this.attachmentAvailable = device.attachment_available === true;
     if (device.state !== "active") {
       this.inspection = this.review = null;
       await this.save({ phase: device.state }); return this.status();
@@ -63,30 +66,30 @@ export class AssistanceRuntime {
     const payload = review.payload;
     if (payload && Object.keys(payload).length) {
       const version = payload.review_protocol_version ?? 1;
-      if (![1, 2].includes(version) || !Number.isSafeInteger(version) || payload.fields?.length > (version === 1 ? 7 : 12)) throw new Error("The reviewed control version changed.");
+      if (![1, 2, 3].includes(version) || !Number.isSafeInteger(version) || payload.fields?.length > (version === 1 ? 7 : 12)) throw new Error("The reviewed control version changed.");
       if (await digest(canonical(payload)) !== review.review_digest || payload.application_id !== this.state.application_id
-        || canonical(payload.allowed_actions) !== '["fill"]' || payload.fee_credits !== 0
+        || canonical(payload.allowed_actions) !== (version === 3 ? '["attach"]' : '["fill"]') || payload.fee_credits !== 0
         || !HEX.test(payload.package_digest) || !HEX.test(payload.artifact?.sha256) || !HEX.test(payload.context_digest)
-        || !Array.isArray(payload.fields) || payload.fields.length < 1 || payload.fields.length > 12
-        || review.filled_count > payload.fields.length) throw new Error("The exact reviewed package changed.");
+        || !Array.isArray(payload.fields) || payload.fields.length < (version === 3 ? 0 : 1) || payload.fields.length > (version === 3 ? 0 : 12)
+        || review.filled_count > (version === 3 ? 1 : payload.fields.length)) throw new Error("The exact reviewed package changed.");
       if (this.inspection && (payload.context_digest !== this.inspection.context_digest
         || payload.document_id !== this.inspection.document_id || payload.frame_id !== 0 || payload.target_url !== this.inspection.url
         || canonical(payload.field_mapping) !== canonical(this.inspection.field_mapping))) throw new Error("The inspected browser document changed.");
     } else if (!["filled", "unknown", "cancelled", "expired"].includes(review.state)) throw new Error("The review payload is unavailable.");
     this.review = review;
   }
-  async prepare(applicationId) {
+  async prepare(applicationId, requestedVersion = 2) {
     if (this.busy || this.state.review_id || !["active", "filled", "cancelled", "expired"].includes(this.state.phase)
       || typeof applicationId !== "string" || !/^[A-Za-z0-9_-]{1,80}$/.test(applicationId)) throw new Error("Check the connected browser and clear the earlier review first.");
     this.busy = true; this.cancelled = false;
     try {
       const device = await this.transport.device();
       if (device.state !== "active") throw new Error("Approve this browser on HireWiz before inspecting an application.");
-      const app = await this.transport.request("application", { application_id: applicationId, review_protocol_version: 2 });
+      const app = await this.transport.request("application", { application_id: applicationId, review_protocol_version: requestedVersion });
       if (app.application_id !== applicationId || !Array.isArray(app.field_mapping)
         || !/^https:\/\/job-boards\.greenhouse\.io\/razorpaysoftwareprivatelimited\/jobs\/[0-9]+$/.test(app.target_url)) throw new Error("Only the selected current Razorpay portal is supported.");
       const version = app.review_protocol_version ?? 1;
-      if (![1, 2].includes(version) || !Number.isSafeInteger(version)) throw new Error("The application control version is unavailable.");
+      if (![1, 2, 3].includes(version) || !Number.isSafeInteger(version) || requestedVersion === 3 && version !== 3) throw new Error("The application control version is unavailable.");
       const inspection = await this.browser.inspect(app.target_url, app.field_mapping, null, version);
       if (inspection.outcome !== "inspected" || inspection.url !== app.target_url || inspection.frame_id !== 0
         || !HEX.test(inspection.context_digest) || await digest(canonical(inspection.context)) !== inspection.context_digest) throw new Error("The exact current form could not be inspected.");
@@ -96,7 +99,7 @@ export class AssistanceRuntime {
       const minimal = { outcome: "inspected", origin: inspection.origin, url: inspection.url, frame_id: 0,
         document_id: inspection.document_id, context_digest: inspection.context_digest, assisted_values: inspection.assisted_values,
         manual_fields: inspection.manual_fields.map(({ id, label, required }) => ({ id, label, required })),
-        ...(version === 2 ? { review_protocol_version: 2 } : {}) };
+        ...(version > 1 ? { review_protocol_version: version } : {}), ...(version === 3 ? { attachment: inspection.attachment } : {}) };
       const review = await this.transport.request("inspect", { application_id: applicationId, inspection: minimal });
       await this.acceptReview(review);
       await this.save({ review_id: review.id, phase: review.state, filled_count: review.filled_count });
@@ -112,6 +115,7 @@ export class AssistanceRuntime {
     if (this.busy || this.cancelled || this.state.phase === "unknown" || !this.inspection || !this.review || !this.state.review_id) throw new Error("A freshly inspected, approved review is required. Uncertain or cancelled actions cannot be resumed.");
     await this.check();
     if (!this.status().can_fill || this.review.expires_at_ms <= this.now()) throw new Error("Approve this exact review on HireWiz before filling.");
+    if (this.review.payload.review_protocol_version === 3) return this.attach();
     this.busy = true; this.cancelled = false;
     try {
       while (this.state.filled_count < this.review.payload.fields.length) {
@@ -157,6 +161,47 @@ export class AssistanceRuntime {
       if (this.state.phase === "running") await this.save({ phase: "unknown" });
       throw failure;
     } finally { this.busy = false; }
+  }
+  async attach() {
+    this.busy = true; this.cancelled = false;
+    let bytes;
+    try {
+      const payload = this.review.payload;
+      const current = await this.browser.inspect(payload.target_url, payload.field_mapping, this.inspection.document_id, 3);
+      if (current.context_digest !== payload.context_digest || current.document_id !== payload.document_id
+        || canonical(current.assisted_values) !== canonical(payload.assisted_values)
+        || canonical(current.attachment) !== canonical(payload.attachment)) throw new Error("The reviewed form, answers or empty resume input changed. Clear and inspect again.");
+      if (this.cancelled) throw new Error("Attachment cancelled before a new action.");
+      await this.save({ phase: "running" });
+      const begun = await this.transport.request("begin", { review_id: this.review.id, review_digest: this.review.review_digest,
+        index: 0, context_digest: payload.context_digest, document_id: payload.document_id });
+      if (begun.state !== "begun") throw new Error("The earlier attachment outcome needs inspection.");
+      const lease = await this.transport.verifyLease(begun.lease);
+      const bindings = { review_protocol_version: 3, review_id: this.review.id, application_id: payload.application_id,
+        package_digest: payload.package_digest, artifact_sha256: payload.artifact.sha256, target_url: payload.target_url,
+        context_digest: payload.context_digest, document_id: payload.document_id, frame_id: 0,
+        review_digest: this.review.review_digest, field_id: "resume", control_type: "file" };
+      if (Object.entries(bindings).some(([key, value]) => lease[key] !== value)
+        || canonical(lease.artifact) !== canonical(payload.artifact) || canonical(lease.attachment) !== canonical(payload.attachment)) throw new Error("The exact attachment authorization changed.");
+      let result = { outcome: "blocked" };
+      if (!this.cancelled && this.now() < lease.deadline) {
+        bytes = await this.transport.artifact(lease);
+        if (!this.cancelled && this.now() < lease.deadline) {
+          result = await this.browser.fill(payload.target_url, payload.field_mapping,
+            { ...this.inspection, artifact: payload.artifact, review_digest: this.review.review_digest, current_assisted_values: payload.assisted_values },
+            { ...lease, artifact_base64: base64url(bytes) });
+        }
+      }
+      const outcome = result.outcome === "selected_only" && result.field_id === "resume" ? "selected" : result.outcome === "blocked" ? "blocked" : "unknown";
+      const receipt = await this.transport.request("outcome", { review_id: this.review.id, action_id: lease.action_id, outcome });
+      await this.acceptReview(receipt);
+      await this.save({ phase: receipt.state, filled_count: receipt.filled_count });
+      return { ...this.status(outcome === "selected" ? "Exact resume selected locally. Employer upload acceptance is unconfirmed. Finish the remaining required controls and submit yourself. No application was submitted or charged."
+        : "Attachment stopped. Inspect the employer portal before clearing this review. No automatic resend, submission receipt or application fee was created."), busy: false };
+    } catch (failure) {
+      if (this.state.phase === "running") await this.save({ phase: "unknown" });
+      throw failure;
+    } finally { bytes?.fill(0); this.busy = false; }
   }
   async cancel() {
     this.cancelled = true;

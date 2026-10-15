@@ -8,8 +8,9 @@ the build, relabel the schema, broaden the old allowlists or enable typed contro
 as a workaround. A later additive schema19 release is required.
 
 The feature flag `BROWSER_ASSISTANCE_TYPED_CONTROLS_ENABLED` defaults to false.
-Fill-only assistance continues to charge zero credits. Country, employment,
-attachment, login/CAPTCHA, exact final-submit approval, one-shot submission and
+Fill-only assistance continues to charge zero credits. The separately disabled
+attachment action is described in [its local implementation report](BROWSER_ATTACHMENT_ASSISTANCE_2026-10-15.md).
+Country, employment, login/CAPTCHA, exact final-submit approval, one-shot submission and
 genuine employer receipt/reconciliation remain incomplete.
 
 ## Schema-specific consumer assessment
@@ -18,7 +19,7 @@ genuine employer receipt/reconciliation remain incomplete.
 | --- | --- | --- |
 | `infra/gcp/monetary_release.py`: `CUTOVER_CHAIN`, `CHAIN`, `verify_source_image` and entrypoint source admission | Exact chain through schema18; longer source refused | Review a separate additive release sequence and exact source/image admission. Preserve the existing F7 chain. |
 | `backend/scripts/monetary_schema_step.py`: `CHAIN`, `upgrade_step` | No schema18→19 step; a request is rejected before a DB connection | Add a reviewed bounded step for the later release with observed identity/schema, exclusive migration authority, advisory lock and post-commit verification. |
-| `backend/scripts/monetary_cutover_preflight.py`: `SCHEMA_ORDER`, `SCHEMAS`, `Inventory` literals, extension shape and application-state reader | Schema19 unsupported | Review schema19 inventory/readers. Because this migration adds no table or column, shape checks must explicitly observe the validated cursor check, rather than merely accepting the old table list. Preserve financial/manual-report predicates. |
+| `backend/scripts/monetary_cutover_preflight.py`: `SCHEMA_ORDER`, `SCHEMAS`, `Inventory` literals, extension shape and application-state reader | Schema19 unsupported | Review schema19 inventory/readers. Observe the durable `review_protocol_version` column/default/1–3 check and validated 0–12 cursor check, rather than merely accepting the old table list. Preserve financial/manual-report predicates. |
 | `backend/scripts/neon_direct_identity.py`: `RELEASE_SCHEMAS` and bound transport admission | Schema19 outside supported release schemas | Review schema19 identity/transport admission separately; no new credential or production connectivity is established by local tests. |
 | `infra/gcp/fresh_cutover_registry.py`: `expected_registry` | Candidate schema18 | Keep the F7 registry frozen. A later registry must bind its own reviewed schema19 release identity. |
 | `infra/gcp/rolling_release.py`: `SCHEMA`, plan validation and readbacks; `rolling_native.py` native adapter | Existing target must already be schema18; no migration login revival | Review a later schema19 rolling/rollback contract. The current schema18 capture/advance path must continue rejecting unsupported state. |
@@ -54,7 +55,8 @@ refuses 19 and the bounded schema18 migration step cannot open a connection for 
    table/lock window before admitting that operation. No data backfill, new
    grants, external form action or financial rewrite is required by this DDL.
 5. Observe commit, exact marker 19 and a validated `ck_browser_review_index` of
-   `next_index BETWEEN 0 AND 12`; check retained rows, other constraints and
+   `next_index BETWEEN 0 AND 12`, durable protocol marker/default/check and v2
+   backfill; check retained rows, other constraints and
    financial invariants. A lost acknowledgement requires observing the same
    database state before any decision. Do not replay an unknown migration or
    remove retained history to make a guard pass.
@@ -64,7 +66,7 @@ refuses 19 and the bounded schema18 migration step cannot open a connection for 
    journey. Enable typed controls only after those later-release gates pass.
 7. Keep the schema during rollback unless the reviewed guard and compatibility
    evidence explicitly permit a downgrade. Migration19 refuses downgrade when
-   a retained payload has `review_protocol_version=2` or a cursor exceeds7;
+   a retained durable protocol marker exceeds one or a cursor exceeds seven;
    failed downgrade leaves marker, rows and the 12 bound intact on PostgreSQL.
    Do not delete/cancel history solely to force a downgrade. Old binary/readback
    compatibility with 19 requires separate proof because current release readers
@@ -88,5 +90,5 @@ guards at typed payload cursors 0/7 and payload-erased cursors 8/12. The existin
 clean SQLite Alembic regression also passes after the batch-operation repair.
 
 No provider, GCP, Neon or employer endpoint was contacted. These checks do not
-close full upload, final-submit approval, automatic submission, employer receipt,
+close live employer upload acceptance, final-submit approval, automatic submission, employer receipt,
 paid-application settlement or production deployment gates.

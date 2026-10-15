@@ -16,25 +16,25 @@ export async function razorpayAdapter(expected = null, action = null, identity =
   const origin = "https://job-boards.greenhouse.io";
   const tenant = "razorpaysoftwareprivatelimited";
   const version = identity?.review_protocol_version ?? 1;
-  if (![1, 2].includes(version) || !Number.isSafeInteger(version)) return fail("Unsupported reviewed form protocol");
-  const adapterVersion = version === 2 ? "razorpay-greenhouse-controls-v2" : "razorpay-greenhouse-text-v1";
+  if (![1, 2, 3].includes(version) || !Number.isSafeInteger(version)) return fail("Unsupported reviewed form protocol");
+  const adapterVersion = version === 3 ? "razorpay-greenhouse-attachment-v3" : version === 2 ? "razorpay-greenhouse-controls-v2" : "razorpay-greenhouse-text-v1";
   const recipient = "https://email-address-validator.us.greenhouse.io/address/validate";
   const baseLabels = { first_name: "First Name", last_name: "Last Name", email: "Email" };
   const customLabels = new Set(["LinkedIn Profile", "Website", "Total Years of Experience", "Current Location"]);
   const choiceLabels = new Set(["Current Career Stage", "Gender", "Current Industry", "Current Designation"]);
-  const validChoice = (field) => version === 2 && field.type === "combobox" && choiceLabels.has(field.label)
+  const validChoice = (field) => version >= 2 && field.type === "combobox" && choiceLabels.has(field.label)
     && /^question_\d{1,20}$/.test(field.id) && Array.isArray(field.options) && field.options.length >= 1 && field.options.length <= 64
     && field.options.every((option) => option && Object.keys(option).sort().join(",") === "label,value"
       && [option.value, option.label].every((value) => typeof value === "string" && value.length > 0 && value.length <= 255 && value.isWellFormed()))
     && new Set(field.options.map(({ value }) => value)).size === field.options.length
     && new Set(field.options.map(({ label }) => label)).size === field.options.length;
   const supplied = identity?.field_mapping;
-  if (!Array.isArray(supplied) || supplied.length < 3 || supplied.length > (version === 2 ? 12 : 7)
+  if (!Array.isArray(supplied) || supplied.length < 3 || supplied.length > (version >= 2 ? 12 : 7)
     || supplied.some((field) => !field || typeof field !== "object" || Array.isArray(field)
       || Object.keys(field).sort().join(",") !== (field.type === "combobox" ? "id,label,options,required,type" : "id,label,required,type")
       || typeof field.id !== "string" || field.id.length > 128 || typeof field.label !== "string" || typeof field.required !== "boolean"
       || !(field.type === "text" && (Object.hasOwn(baseLabels, field.id) ? field.label === baseLabels[field.id] : /^question_\d+$/.test(field.id) && customLabels.has(field.label))
-        || version === 2 && field.type === "tel" && field.id === "phone" && field.label === "Phone" || validChoice(field)))
+        || version >= 2 && field.type === "tel" && field.id === "phone" && field.label === "Phone" || validChoice(field)))
     || new Set(supplied.map(({ id }) => id)).size !== supplied.length || new Set(supplied.map(({ label }) => label)).size !== supplied.length
     || Object.keys(baseLabels).some((id) => !supplied.some((field) => field.id === id))) return fail("Signed application mapping must contain only the reviewed text semantics and exact unique IDs");
   const fieldMapping = supplied.map(({ id, label, type, required, options }) => ({ id, label, type, required, ...(options ? { options } : {}) }));
@@ -102,7 +102,7 @@ export async function razorpayAdapter(expected = null, action = null, identity =
     }
     return bounded(clone.outerHTML, bounds.text);
   };
-  const read = (activeChoice = null) => {
+  const read = (activeChoice = null, selectedAttachment = null) => {
     // Raw manual state stays in this isolated execution. Local hashes bind
     // changes, not anonymity: low-entropy answers can still be guessed.
     const privateHashes = [];
@@ -156,7 +156,21 @@ export async function razorpayAdapter(expected = null, action = null, identity =
     });
     const form = assisted[0].form;
     if (assisted.some((node) => node.form !== form)) throw new Error("Reviewed fields must share one application form");
-    if ([...document.querySelectorAll("input[type=file]")].some((node) => node.files.length)) throw new Error("Selected manual attachment is unverified; finish text assistance before attachment");
+    const fileInputs = [...document.querySelectorAll("input[type=file]")];
+    if (version === 3) {
+      const resume = document.getElementById("resume");
+      if (fileInputs.length !== 1 || fileInputs[0] !== resume || !(resume instanceof HTMLInputElement)
+        || resume.form !== form || resume.multiple || resume.disabled || !visible(resume)
+        || normalise([...(resume.labels || [])].map((node) => node.textContent).join(" ")).replace(/\s*\*\s*$/, "") !== "Resume/CV") throw new Error("One known visible Resume/CV file input in the reviewed form is required");
+      const retainedUpload = [...form.querySelectorAll('input[type="hidden"]')].some((node) => /resume|attachment|upload/i.test(`${node.id} ${node.name}`) && Boolean(node.value))
+        || [form, ...form.querySelectorAll('[data-attachment-id],[data-upload-id],[data-file-id]')].some((node) => ["data-attachment-id", "data-upload-id", "data-file-id"].some((name) => Boolean(node.getAttribute(name))))
+        || [...form.querySelectorAll('button,[role="button"]')].some((node) => {
+          const description = `${normalise(node.textContent || "")} ${node.getAttribute("aria-label") || ""}`;
+          return /\b(remove|replace|delete)\b/i.test(description) && /\b(resume|attachment|file)\b/i.test(description);
+        }) || [...form.querySelectorAll('a[href]')].some((node) => node.hasAttribute("download") || /\.(pdf|docx)(?:[?#]|$)/i.test(node.href));
+      if (retainedUpload) throw new Error("An existing or ambiguous uploaded attachment must be handled manually");
+    }
+    if (fileInputs.some((node) => node.files.length && !(version === 3 && selectedAttachment === node && node.files.length === 1))) throw new Error("Selected manual attachment is unverified; finish assistance before attachment");
     const forms = [...document.forms].map((node) => {
       const entry = { path: path(node), attributes: attributes(node), action: node.action, method: node.method };
       const clone = node.cloneNode(true);
@@ -191,7 +205,7 @@ export async function razorpayAdapter(expected = null, action = null, identity =
       const target = controlled ? document.getElementById(controlled) : null;
       const controlledContext = target ? { path: path(target), attributes: attributes(target), text: bounded(normalise(target.textContent || "")) } : false;
       if (!allowed.has(node.id)) bindPrivate(control, "manual_value_sha256", {
-        value: node.type === "file" ? "" : bounded(node.value || ""), selected_count: node.type === "file" ? node.files.length : 0,
+        value: node.type === "file" ? "" : bounded(node.value || ""), selected_count: node.type === "file" && selectedAttachment !== node ? node.files.length : 0,
         checked: Boolean(node.checked), selected_value: bounded(node.dataset.selectedValue || ""),
         text: bounded(normalise(node.textContent || "")), attributes: attributes(node),
         selected_options: node instanceof HTMLSelectElement ? [...node.options].map((option) => option.selected) : [], controlled_context: controlledContext,
@@ -227,7 +241,7 @@ export async function razorpayAdapter(expected = null, action = null, identity =
   // Web Crypto yields. Recheck all state after it returns, before any events.
   try { const latest = read(); if (latest.serialized !== current.serialized) return fail("Form context changed during inspection"); current.assisted = latest.assisted; current.assistedValues = latest.assistedValues; } catch (error) { return fail(error.message); }
   const inspection = {
-    outcome: "inspected", ...(version === 2 ? { review_protocol_version: 2 } : {}), adapter_id: adapterVersion, origin, url: location.href, frame_id: 0, document_id: identity.document_id,
+    outcome: "inspected", ...(version > 1 ? { review_protocol_version: version } : {}), ...(version === 3 ? { attachment: { input_id: "resume", expected_empty: true } } : {}), adapter_id: adapterVersion, origin, url: location.href, frame_id: 0, document_id: identity.document_id,
     tenant_id: tenant, employer_key: "razorpay", canonical_opening_key: current.context.opening,
     form_version: `${adapterVersion}:${contextDigest}`, context_digest: contextDigest, context: current.context, fields: current.fields,
     assisted_fields: current.fields.filter((field) => allowed.has(field.id)), manual_fields: current.fields.filter((field) => !allowed.has(field.id)),
@@ -245,6 +259,49 @@ export async function razorpayAdapter(expected = null, action = null, identity =
   if (inspection.form_version !== expected.form_version) return fail("Reviewed form version changed");
   if (expected.document_id !== identity.document_id || action.document_id !== identity.document_id || action.frame_id !== 0) return fail("Chrome document or frame changed");
   if (["origin", "url", "tenant_id", "employer_key", "canonical_opening_key"].some((key) => inspection[key] !== expected[key])) return fail("Reviewed employer destination changed");
+  if (version === 3) {
+    const artifact = expected.artifact;
+    if (action.review_protocol_version !== 3 || action.control_type !== "file" || action.field_id !== "resume"
+      || !same(action.allowed_actions, ["attach"]) || !same(action.attachment, { input_id: "resume", expected_empty: true })
+      || !same(inspection.attachment, action.attachment) || !same(artifact, action.artifact)
+      || !digestPattern.test(expected.review_digest || "") || action.review_digest !== expected.review_digest
+      || !artifact || !digestPattern.test(artifact.sha256 || "") || action.artifact_sha256 !== artifact.sha256
+      || !Number.isSafeInteger(artifact.size_bytes) || artifact.size_bytes <= 0 || artifact.size_bytes > 10 * 1024 * 1024
+      || !["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"].includes(artifact.media_type)
+      || typeof artifact.filename !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/.test(artifact.filename)
+      || !Number.isSafeInteger(action.deadline) || action.deadline <= Date.now() || action.deadline - Date.now() > 10000
+      || action.cancelled === true || typeof action.artifact_base64 !== "string" || !/^[A-Za-z0-9_-]+$/.test(action.artifact_base64)
+      || action.artifact_base64.length > Math.ceil(10 * 1024 * 1024 * 4 / 3)) return fail("The exact approved sealed file and current attachment lease are required");
+    let bytes;
+    try { bytes = Uint8Array.from(atob(action.artifact_base64.replaceAll("-", "+").replaceAll("_", "/")), (character) => character.charCodeAt(0)); }
+    catch { return fail("The approved file bytes are malformed"); }
+    if (bytes.length !== artifact.size_bytes) return fail("The approved file size changed");
+    const hash = [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+    if (hash !== artifact.sha256) return fail("The approved file hash changed");
+    const file = new File([bytes], artifact.filename, { type: artifact.media_type, lastModified: 0 });
+    const transfer = new DataTransfer(); transfer.items.add(file);
+    let latest;
+    try { latest = read(); } catch (error) { return fail(error.message); }
+    if (latest.serialized !== current.serialized || !same(latest.assistedValues, expected.current_assisted_values)
+      || Date.now() >= action.deadline || action.cancelled === true) return fail("The reviewed form, answers or attachment lease changed before selection");
+    const control = document.getElementById("resume");
+    if (Date.now() >= action.deadline || action.cancelled === true) return fail("The attachment lease expired before file selection");
+    // No await from the final context/deadline checks through the only mutation.
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "files").set.call(control, transfer.files);
+    control.dispatchEvent(new Event("input", { bubbles: true }));
+    control.dispatchEvent(new Event("change", { bubbles: true }));
+    try {
+      const selectedList = control.files, selected = selectedList[0];
+      if (document.getElementById("resume") !== control || control.files.length !== 1 || selected.name !== artifact.filename
+        || selected.size !== artifact.size_bytes || selected.type !== artifact.media_type) throw new Error("The selected resume changed during the page callback");
+      const selectedHash = [...new Uint8Array(await crypto.subtle.digest("SHA-256", await selected.arrayBuffer()))].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+      const after = read(null, control);
+      if (document.getElementById("resume") !== control || control.files !== selectedList || control.files[0] !== selected
+        || selectedHash !== artifact.sha256 || after.serialized !== current.serialized
+        || !same(after.assistedValues, expected.current_assisted_values)) throw new Error("The file or form changed after selection; employer upload outcome is unknown");
+    } catch (error) { return { outcome: "unknown", field_id: "resume", reason: error.message }; }
+    return { outcome: "selected_only", field_id: "resume", message: "Exact resume selected locally. Employer upload acceptance is unconfirmed. No application was submitted or charged." };
+  }
   const reviewed = expected.reviewed_answers;
   if (!reviewed || typeof reviewed !== "object" || Array.isArray(reviewed) || !Object.keys(reviewed).length || Object.keys(reviewed).length > (version === 2 ? 12 : 7)
     || Object.keys(reviewed).some((key) => !allowed.has(key) || typeof reviewed[key] !== "string" || !reviewed[key].isWellFormed() || !reviewed[key].trim() || reviewed[key].length > 255)

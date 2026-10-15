@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 from ... import models as core
 from ..employer import models as employer
 from ..employer.service import _package_digest
+from . import attachments
 from .models import BrowserAssistanceDevice as Device
 from .models import BrowserAssistanceRequest as RequestRecord
 from .models import BrowserAssistanceReview as Review
@@ -116,7 +117,8 @@ def availability() -> dict:
     if not enabled():
         return {"enabled": False, "allowed_actions": [], "fee_credits": 0}
     public_signer()
-    return {"enabled": True, "allowed_actions": ["fill"], "fee_credits": 0, "portal_origin": ORIGIN, "tenant": TENANT}
+    return {"enabled": True, "allowed_actions": ["fill", *(["attach"] if attachments.enabled() else [])],
+            "fee_credits": 0, "portal_origin": ORIGIN, "tenant": TENANT}
 
 
 def _public_key(value: object) -> tuple[dict, ec.EllipticCurvePublicKey]:
@@ -153,13 +155,18 @@ def _owner_lock(db: Session, user_id: int) -> None:
 def _device_response(device: Device) -> dict:
     return {"id": device.id, "state": device.state, "key_sha256": device.key_sha256,
             "extension_id": device.extension_id, "expires_at_ms": _ms(device.pairing_expires_at),
-            "authority_key": public_signer()}
+            "authority_key": public_signer(), "attachment_available": attachments.enabled()}
 
 
 def _review_response(review: Review, *, include_payload: bool = True) -> dict:
-    return {"id": review.id, "state": review.state, "expires_at_ms": _ms(review.expires_at),
+    response = {"id": review.id, "state": review.state, "expires_at_ms": _ms(review.expires_at),
             "review_digest": review.review_digest, "filled_count": review.next_index,
             "payload": review.payload if include_payload else None}
+    if review.review_protocol_version > 1:
+        response["review_protocol_version"] = review.review_protocol_version
+    if review.review_protocol_version == 3:
+        response["attachment_status"] = "selected_upload_unconfirmed" if review.state == "filled" else "unknown"
+    return response
 
 
 def _expire(review: Review) -> None:
@@ -217,7 +224,10 @@ def _application(db: Session, review_or_id, user_id: int):
 
 def field_mapping(app, review_protocol_version: int = 1) -> list[dict]:
     """Exact job-specific semantics; v1 approvals never acquire v2 controls."""
-    require(type(review_protocol_version) is int and review_protocol_version in {1, 2})
+    require(type(review_protocol_version) is int and review_protocol_version in {1, 2, 3})
+    if review_protocol_version == 3:
+        require(attachments.enabled(), 503)
+        review_protocol_version = 2 if typed_controls_enabled() else 1
     require(review_protocol_version == 1 or typed_controls_enabled(), 503)
     fields = app.form.get("fields", [])
     require(isinstance(fields, list) and len(fields) <= 200)
@@ -237,6 +247,7 @@ def field_mapping(app, review_protocol_version: int = 1) -> list[dict]:
             kind = "combobox"
             options = field.get("options")
             require(isinstance(options, list) and 1 <= len(options) <= 64)
+            assert isinstance(options, list)
             require(all(isinstance(option, dict) and set(option) == {"value", "label"}
                         and all(isinstance(option[key], str) and 1 <= len(option[key]) <= 255 for key in ("value", "label"))
                         for option in options))
@@ -286,7 +297,8 @@ def candidate(db: Session, user_id: int, operation: str, request: CandidateReque
             device = db.query(Device).filter_by(id=review.device_id, user_id=user_id, state="active").first()
             require(device is not None and review.state == "draft" and bool(review.payload))
             _application(db, review, user_id)
-            require(review.payload.get("review_protocol_version", 1) == 1 or typed_controls_enabled(), 503)
+            version = review.review_protocol_version
+            require(version == 1 or version == 2 and typed_controls_enabled() or version == 3 and attachments.enabled(), 503)
             require(request.confirmed is True and request.review_digest == review.review_digest)
             review.state, review.approved_at = "approved", now()
         elif operation == "cancel":
@@ -315,6 +327,8 @@ def _inspection(body: dict, app, posting, artifact) -> dict:
     if "context" in inspection:
         require(isinstance(inspection["context"], dict) and inspection["context_digest"] == digest(inspection["context"]))
     require(all(isinstance(values[field], str) and len(values[field]) <= 255 for field in identities))
+    if version == 3:
+        return attachments.review_payload(inspection, app, posting, artifact, mapping)
     answers = {field["id"]: app.answers[field["id"]] for field in mapping if isinstance(app.answers.get(field["id"]), str) and app.answers[field["id"]]}
     require(bool(answers) and all(len(value) <= 255 for value in answers.values()))
     fields = []
@@ -355,7 +369,9 @@ def _inspection(body: dict, app, posting, artifact) -> dict:
     return payload
 
 
-def device(db: Session, origin: str, request: DeviceRequest) -> dict:
+def device(db: Session, origin: str, request: DeviceRequest) -> dict | attachments.BinaryDelivery:
+    if request.operation == "artifact":
+        return attachments.deliver(db, origin, request)
     require(enabled(), 503)
     require(re.fullmatch(r"chrome-extension://[a-p]{32}", origin or "") is not None, 403)
     require(len(canonical(request.model_dump(mode="json"))) <= 65_536, 422)
@@ -412,12 +428,13 @@ def device(db: Session, origin: str, request: DeviceRequest) -> dict:
         if request.operation == "application":
             require(set(request.body) <= {"application_id", "review_protocol_version"} and isinstance(request.body.get("application_id"), str))
             requested_version = request.body.get("review_protocol_version", 1)
-            require(type(requested_version) is int and requested_version in {1, 2})
-            version = 2 if requested_version == 2 and typed_controls_enabled() else 1
+            require(type(requested_version) is int and requested_version in {1, 2, 3})
+            require(requested_version != 3 or attachments.enabled(), 503)
+            version = 3 if requested_version == 3 else 2 if requested_version == 2 and typed_controls_enabled() else 1
             app, posting, _ = _application(db, request.body["application_id"], record.user_id)
             response = {"application_id": app.id, "target_url": posting.apply_url, "field_mapping": field_mapping(app, version)}
-            if version == 2:
-                response["review_protocol_version"] = 2
+            if version > 1:
+                response["review_protocol_version"] = version
         elif request.operation == "inspect":
             require(isinstance(request.body.get("application_id"), str))
             app, posting, artifact = _application(db, request.body["application_id"], record.user_id)
@@ -425,6 +442,7 @@ def device(db: Session, origin: str, request: DeviceRequest) -> dict:
             review = Review(id=str(uuid4()), user_id=record.user_id, device_id=identity, application_id=app.id,
                             package_digest=app.package_digest, artifact_sha256=artifact.sha256, context_digest=payload["context_digest"],
                             review_digest=digest(payload), payload=payload, state="draft", next_index=0,
+                            review_protocol_version=payload.get("review_protocol_version", 1),
                             expires_at=now() + timedelta(minutes=5))
             db.add(review)
             db.flush()
@@ -450,6 +468,11 @@ def _action(db: Session, record: Device, request: DeviceRequest) -> dict:
         return _review_response(review)
     require(review.state in {"approved", "running"} and bool(review.payload))
     _application(db, review, record.user_id)
+    if review.review_protocol_version == 3:
+        if request.operation == "begin":
+            return attachments.begin(db, record, review, body)
+        require(request.operation == "outcome")
+        return attachments.outcome(db, record, review, body)
     version = review.payload.get("review_protocol_version", 1)
     require(version == 1 or typed_controls_enabled(), 503)
     if request.operation == "begin":

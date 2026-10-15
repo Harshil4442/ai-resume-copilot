@@ -1,0 +1,152 @@
+{
+  "status": "LOCAL_ATTACHMENT_IMPLEMENTATION_VERIFIED_DISABLED_UNDEPLOYED",
+  "date": "2026-10-15",
+  "branch": "codex/application-form-completion",
+  "base_commit": "b1dd05fc154fe685a5f6a2f537b468f29614c1c7",
+  "scope": "Separate candidate-approved attachment action with synthetic owned data and locally fulfilled HTTPS only; no final submission or employer receipt.",
+  "review_protocol_version": 3,
+  "wire_signature_protocol_version": 1,
+  "flag": {
+    "name": "BROWSER_ASSISTANCE_ATTACHMENT_ENABLED",
+    "default": false
+  },
+  "f7_schema_target": "20261015_0018",
+  "undeployed_draft_schema": "20261015_0019",
+  "schema18_deployment_consumers_changed": false,
+  "source_hashes": {
+    "backend/app/domains/browser_assistance/attachments.py": "cc2b419d882c0b90ac00b8966bbce0c3d77160e5041b123bb24ef672c57f744f",
+    "backend/alembic/versions/20261015_0019_browser_typed_controls.py": "9e9664f6f90258e1abcad363b722dd18daf27bfdbd1c7e334fb36ae6d6f5ce6e",
+    "browser-companion/extension/assistance-runtime.js": "6a91a6e57260be78ff5e928ea77a7336cf7262f789c5edb1b04bf33b451c51c2",
+    "browser-companion/extension/assistance-transport.js": "8a2ac00459526f275df7ab9291cc3cbb4e72415fc490dcaec2c39d8781915f2b",
+    "browser-companion/extension/razorpay-adapter.js": "fa2b41cd9736085749ee40e5fbfc6312a219bbe52cb901c8c6762a998097d0cc",
+    "frontend/public/downloads/hirewiz-browser-companion-0.4.0.zip": "880f4510dacf4b6ea40f741322c1560067c5296209ba8f81553522aa76d9ab5d",
+    "frontend/public/downloads/hirewiz-browser-companion-0.3.0.zip": "088107e95a4570f829ed32292ca520c9d29fff2d64966ae8f5daa1840a40f618",
+    "frontend/public/downloads/hirewiz-browser-companion-0.2.0.zip": "d7ac1d2abdfbcd0871aa1613b95f0cc2798249679d33101ddf49499679d463e8"
+  },
+  "verification": [
+    {
+      "command": "pytest -q tests/test_browser_assistance_isolated.py tests/test_browser_assistance_postgres.py tests/test_browser_attachment_isolated.py tests/test_browser_attachment_postgres.py tests/test_browser_typed_migration_postgres.py tests/test_monetary_current_chain.py tests/test_rolling_release.py tests/test_monetary_schema_step_postgres.py tests/test_alembic_schema.py",
+      "cwd": "backend",
+      "passed": 256,
+      "failed": 0,
+      "skipped": 0,
+      "attachment_isolated_cases": 65,
+      "attachment_postgres_cases": 4,
+      "migration_cases": 13,
+      "warnings": [
+        "Existing passlib crypt deprecation",
+        "Existing Starlette TestClient httpx deprecation"
+      ]
+    },
+    {
+      "command": "npm test -- --no-cache --configLoader runner",
+      "cwd": "frontend",
+      "files_passed": 37,
+      "passed": 620,
+      "failed": 0
+    },
+    {
+      "command": "npm run typecheck && npm run lint",
+      "cwd": "frontend",
+      "result": "PASS"
+    },
+    {
+      "command": "NEXT_TELEMETRY_DISABLED=1 NEXTAUTH_SECRET=<synthetic local build-only value> NEXTAUTH_URL=https://www.hirewizhq.com npm run build -- --webpack",
+      "cwd": "frontend",
+      "result": "PASS",
+      "static_pages": 43,
+      "note": "Shared dependency symlink builds stalled. An owned materialized copy of the existing installed dependency tree compiled successfully. A missing build secret correctly refused page-data collection; final build used a synthetic non-production secret. Temporary worker diagnostic config was restored byte-for-byte; no build config change remains."
+    },
+    {
+      "command": "npm test",
+      "cwd": "browser-companion",
+      "passed": 76,
+      "failed": 0
+    },
+    {
+      "command": "node --test tests/razorpay-fixture.test.js",
+      "cwd": "browser-companion",
+      "passed": 5,
+      "failed": 0
+    },
+    {
+      "command": "npm run test:browser",
+      "cwd": "browser-companion",
+      "passed": 14,
+      "failed": 0
+    },
+    {
+      "command": "npm run test:assistance",
+      "cwd": "browser-companion",
+      "passed": 71,
+      "failed": 0,
+      "installed_mv3_cases": 25,
+      "new_installed_attachment_cases": 16,
+      "constructor_expiry_regressions": 2,
+      "existing_upload_marker_cases": 4
+    },
+    {
+      "command": "npm run check; two package-reviewed.py builds; package-reviewed.py --check",
+      "cwd": "browser-companion",
+      "result": "PASS; both builds identical; exact source bytes verified"
+    },
+    {
+      "command": "ruff check app/domains app/routers/v1 app/routers/worker.py scripts and changed focused tests",
+      "cwd": "backend",
+      "result": "PASS"
+    },
+    {
+      "command": "mypy app/domains app/routers/v1 app/routers/worker.py",
+      "cwd": "backend",
+      "files": 120,
+      "result": "PASS"
+    },
+    {
+      "command": "scripts/export_openapi.py; npm run api:generate",
+      "result": "PASS; generated contracts synchronized"
+    },
+    {
+      "command": "git diff --check",
+      "result": "PASS"
+    }
+  ],
+  "invariants": [
+    "V3 attachment-only approval cannot arise from historical v1/v2 fill reviews; no preapproval download or DOM mutation",
+    "Exact sealed original/custom/tailored artifact/source IDs, bytes hash, size, MIME, filename, opening, document, current form/answers and one known empty resume input are bound",
+    "Fresh owner/device/review/application/source/flag/expiry checks under locks before begin and again after unlocked storage I/O immediately before one-shot binary claim",
+    "Same signed request or fresh request ID for an already claimed action cannot obtain another binary response",
+    "Approval expiry caps the original ten-second lease; a late commit retains its claim and refuses late bytes",
+    "Storage generation/range/overflow/timeout/no-retry bounds; backend/BFF/companion exact length/MIME/hash checks; no URL or general blob proxy",
+    "Local cancellation/deadline/DOM/input/file checks before one native file assignment; File/DataTransfer construction precedes final checks",
+    "Existing or ambiguous upload markers remain manual even with an empty FileList",
+    "Unknown/lost binary or selection outcomes never silently resend or select/upload twice",
+    "Local selection is recorded as selected_upload_unconfirmed; no employer submission receipt, reservation or application fee is created",
+    "Durable protocol marker 1..3 survives completed/cancelled/expired v2/v3 payload erasure and blocks unsafe downgrade"
+  ],
+  "review_and_corrections": [
+    "Independent review reproduced file selection after lease expiry during File construction. Construction now occurs before final form/deadline checks; both File and DataTransfer clock-advance regressions pass.",
+    "New existing-upload-marker regression found form-level data marker was excluded from descendant queries; guard now includes the form itself and all four marker cases pass."
+  ],
+  "postgresql": {
+    "version": "PostgreSQL 17.11 on aarch64-unknown-linux-musl",
+    "image": "postgres:17-alpine",
+    "owned_container": "hirewiz-attachment-pg-20261015",
+    "address": "127.0.0.1:55433",
+    "database": "hirewiz_admission_test",
+    "remaining_owned_schemas_before_stop": 0,
+    "container_stopped_and_removed": true
+  },
+  "external_provider_gcp_neon_calls": 0,
+  "real_candidate_data_used": false,
+  "real_portal_fields_changed_or_files_uploaded": false,
+  "production_permission_authentication_or_deployment_proven": false,
+  "full_paid_application_complete": false,
+  "remaining": [
+    "Later separately admitted schema19 release and native rollout",
+    "Live employer upload acknowledgement/status and real permitted form compatibility",
+    "Country/employment/unsupported required fields and CAPTCHA/login",
+    "Exact final-submit approval and one-shot submission",
+    "Genuine employer receipt/status reconciliation and paid-application settlement"
+  ],
+  "report": "docs/delivery/BROWSER_ATTACHMENT_ASSISTANCE_2026-10-15.md"
+}

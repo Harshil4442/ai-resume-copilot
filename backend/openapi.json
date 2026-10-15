@@ -10337,6 +10337,7 @@
                 "application",
                 "inspect",
                 "begin",
+                "artifact",
                 "outcome",
                 "cancel"
               ],

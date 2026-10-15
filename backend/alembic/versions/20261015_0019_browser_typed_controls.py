@@ -10,16 +10,21 @@ depends_on = None
 
 
 def upgrade():
+    op.add_column("browser_assistance_reviews", sa.Column("review_protocol_version", sa.Integer(), nullable=False, server_default="1"))
+    op.execute(sa.text("UPDATE browser_assistance_reviews SET review_protocol_version=2 WHERE payload ->> 'review_protocol_version' = '2'"))
     # Native PostgreSQL ALTER; SQLite's supported development/test path needs
     # Alembic's copy-and-move batch operation to replace a check constraint.
     with op.batch_alter_table("browser_assistance_reviews") as batch:
         batch.drop_constraint("ck_browser_review_index", type_="check")
         batch.create_check_constraint("ck_browser_review_index", "next_index BETWEEN 0 AND 12")
+        batch.create_check_constraint("ck_browser_review_protocol", "review_protocol_version BETWEEN 1 AND 3")
 
 
 def downgrade():
-    if op.get_bind().execute(sa.text("SELECT 1 FROM browser_assistance_reviews WHERE next_index > 7 OR payload ->> 'review_protocol_version' = '2' LIMIT 1")).first():
+    if op.get_bind().execute(sa.text("SELECT 1 FROM browser_assistance_reviews WHERE next_index > 7 OR review_protocol_version > 1 OR payload ->> 'review_protocol_version' IN ('2','3') LIMIT 1")).first():
         raise RuntimeError("Typed-control review history must be retained; downgrade refused.")
     with op.batch_alter_table("browser_assistance_reviews") as batch:
+        batch.drop_constraint("ck_browser_review_protocol", type_="check")
         batch.drop_constraint("ck_browser_review_index", type_="check")
         batch.create_check_constraint("ck_browser_review_index", "next_index BETWEEN 0 AND 7")
+        batch.drop_column("review_protocol_version")

@@ -13,6 +13,12 @@ const deviceOrigin = "chrome-extension://abcdefghijklmnopabcdefghijklmnop";
 const identity = "00000000-0000-4000-8000-000000000001";
 const backendBearer = "synthetic-private-hirewiz-bearer";
 const upstream = vi.fn();
+const artifactBytes = new TextEncoder().encode("%PDF-1.4\nOwned synthetic resume\n%%EOF");
+const artifactHash = createHash("sha256").update(artifactBytes).digest("hex");
+function artifactResponse(headers: Record<string, string> = {}, bytes: Uint8Array<ArrayBuffer> = artifactBytes, status = 200) {
+  return new Response(bytes, { status, headers: { "Content-Type": "application/pdf", "Content-Length": String(bytes.byteLength),
+    "X-Artifact-SHA256": createHash("sha256").update(bytes).digest("hex"), "X-Artifact-Filename": "Owned-resume.pdf", ...headers } });
+}
 const { publicKey } = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
 const publicDevice = { id: identity, state: "pending", key_sha256: "b".repeat(64), extension_id: "abcdefghijklmnopabcdefghijklmnop",
   expires_at_ms: Date.now() + 60000, authority_key: publicKey.export({ format: "jwk" }) };
@@ -89,7 +95,7 @@ describe("browser assistance NextAuth and device transport boundaries", () => {
     expect(getToken).not.toHaveBeenCalled(); expect(upstream).not.toHaveBeenCalled();
   });
 
-  it.each(["login", "constructor", "../approve", "approve%2F..%2Flogin", "inspect", "application"])("candidate caller cannot choose device/issuer operation %s", async (operation) => {
+  it.each(["login", "constructor", "../approve", "approve%2F..%2Flogin", "inspect", "application", "artifact"])("candidate caller cannot choose device/issuer operation %s", async (operation) => {
     expect((await candidate(operation)).status).toBe(403); expect(upstream).not.toHaveBeenCalled(); expect(getToken).not.toHaveBeenCalled();
   });
 
@@ -144,5 +150,78 @@ describe("browser assistance NextAuth and device transport boundaries", () => {
   ].flatMap((result) => [{ isDevice: false, result }, { isDevice: true, result }]))("refuses arbitrary authentication/private-key material in successful candidate/device replies", async ({ result, isDevice }) => {
     upstream.mockResolvedValue(Response.json(result)); const response = isDevice ? await device("status") : await candidate("device");
     expect(response.status).toBe(503); privateResponse(response); expect(await response.text()).not.toContain("synthetic-private"); expect(upstream).toHaveBeenCalledTimes(1);
+  });
+
+  it("forwards one signed artifact request to its fixed route and returns verified bytes with only safe metadata", async () => {
+    const body = JSON.stringify({ operation: "artifact", signature: "synthetic-device-signature", body: { review_id: identity } });
+    upstream.mockResolvedValue(artifactResponse({ "Set-Cookie": "private-cookie", Authorization: "private-bearer", Location: "https://foreign.example/file" }));
+    const response = await device("artifact", { body });
+    expect(response.status).toBe(200); privateResponse(response);
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(artifactBytes);
+    expect(response.headers.get("Content-Length")).toBe(String(artifactBytes.byteLength));
+    expect(response.headers.get("Content-Type")).toBe("application/pdf"); expect(response.headers.get("X-Artifact-SHA256")).toBe(artifactHash);
+    expect(response.headers.get("X-Artifact-Filename")).toBe("Owned-resume.pdf");
+    expect(response.headers.has("Set-Cookie")).toBe(false); expect(response.headers.has("Authorization")).toBe(false); expect(response.headers.has("Location")).toBe(false);
+    expect(upstream).toHaveBeenCalledTimes(1); expect(getToken).not.toHaveBeenCalled();
+    const [url, init] = upstream.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("https://api.example/api/v1/browser-assistance/device/artifact");
+    expect(new TextDecoder().decode(init.body as Uint8Array)).toBe(body);
+    expect(init.redirect).toBe("error"); expect(init.credentials).toBe("omit"); expect(init.cache).toBe("no-store");
+    expect(new Headers(init.headers).get("Origin")).toBe(deviceOrigin); expect(new Headers(init.headers).has("Authorization")).toBe(false);
+  });
+
+  it.each<Record<string, string>>([
+    { "Content-Length": "" }, { "Content-Length": "0" }, { "Content-Length": "01" }, { "Content-Length": "10485761" },
+    { "Content-Length": String(artifactBytes.byteLength - 1) }, { "Content-Length": String(artifactBytes.byteLength + 1) },
+    { "Content-Type": "text/html" }, { "Content-Type": "application/pdf; charset=utf-8" }, { "Content-Encoding": "gzip" },
+    { "Content-Range": "bytes 0-39/100" }, { "X-Artifact-SHA256": "a".repeat(64) }, { "X-Artifact-SHA256": artifactHash.toUpperCase() },
+    { "X-Artifact-Filename": "" }, { "X-Artifact-Filename": "résumé.pdf" }, { "X-Artifact-Filename": "a".repeat(241) },
+  ])("refuses invalid artifact metadata or byte/hash mismatches without returning any file or retrying: %j", async (headers) => {
+    upstream.mockResolvedValue(artifactResponse(headers));
+    const response = await device("artifact"); expect(response.status).toBe(503); privateResponse(response);
+    expect(await response.text()).not.toContain("Owned synthetic resume"); expect(upstream).toHaveBeenCalledTimes(1);
+  });
+
+  it("accepts the exact 10 MiB maximum and DOCX MIME without the JSON response cap", async () => {
+    const bytes = new Uint8Array(10 * 1024 * 1024);
+    upstream.mockResolvedValue(artifactResponse({ "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "X-Artifact-Filename": "Owned-resume.docx" }, bytes));
+    const response = await device("artifact"); expect(response.status).toBe(200); privateResponse(response);
+    expect((await response.arrayBuffer()).byteLength).toBe(bytes.byteLength); expect(upstream).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses partial successful artifact responses and JSON credentials on the binary route", async () => {
+    upstream.mockResolvedValueOnce(artifactResponse({}, artifactBytes, 206)).mockResolvedValueOnce(Response.json({ access_token: "synthetic-private-token" }));
+    expect((await device("artifact")).status).toBe(503);
+    const response = await device("artifact"); expect(response.status).toBe(503); expect(await response.text()).not.toContain("synthetic-private-token");
+    expect(upstream).toHaveBeenCalledTimes(2);
+  });
+
+  it("cancels an artifact stream that exceeds its declared size and never forwards partial bytes", async () => {
+    const cancelled = vi.fn();
+    const body = new ReadableStream<Uint8Array>({ start(controller) { controller.enqueue(artifactBytes); }, cancel: cancelled });
+    upstream.mockResolvedValue(new Response(body, { headers: { "Content-Type": "application/pdf", "Content-Length": "1", "X-Artifact-SHA256": artifactHash, "X-Artifact-Filename": "Owned-resume.pdf" } }));
+    const response = await device("artifact"); expect(response.status).toBe(503); expect(cancelled).toHaveBeenCalledTimes(1); expect(upstream).toHaveBeenCalledTimes(1);
+    expect(await response.text()).not.toContain("Owned synthetic resume");
+  });
+
+  it("keeps artifact requests inside the signed JSON size/origin contract", async () => {
+    expect((await device("artifact", { body: JSON.stringify({ padding: "x".repeat(65536) }) })).status).toBe(503);
+    expect((await device("artifact", { cookie: "candidate-cookie" })).status).toBe(403);
+    expect((await device("artifact", { query: "?url=https://foreign.example/resume" })).status).toBe(403);
+    expect(upstream).not.toHaveBeenCalled(); expect(getToken).not.toHaveBeenCalled();
+  });
+
+  it("times out a stalled binary stream without retrying or exposing partial bytes", async () => {
+    vi.useFakeTimers();
+    try {
+      const cancelled = vi.fn();
+      const body = new ReadableStream<Uint8Array>({ cancel: cancelled });
+      upstream.mockResolvedValue(new Response(body, { headers: { "Content-Type": "application/pdf", "Content-Length": String(artifactBytes.byteLength), "X-Artifact-SHA256": artifactHash, "X-Artifact-Filename": "Owned-resume.pdf" } }));
+      const pending = device("artifact");
+      await vi.advanceTimersByTimeAsync(3001);
+      const response = await pending; expect(response.status).toBe(503); privateResponse(response);
+      expect(upstream).toHaveBeenCalledTimes(1); expect(cancelled).toHaveBeenCalledTimes(1);
+      expect(await response.text()).not.toContain("Owned synthetic resume");
+    } finally { vi.useRealTimers(); }
   });
 });

@@ -39,6 +39,7 @@ class BrowserAssistanceReview(Base):
     __table_args__ = (
         CheckConstraint("state IN ('draft','approved','running','filled','unknown','cancelled','expired')", name="ck_browser_review_state"),
         CheckConstraint("next_index BETWEEN 0 AND 12", name="ck_browser_review_index"),
+        CheckConstraint("review_protocol_version BETWEEN 1 AND 3", name="ck_browser_review_protocol"),
         Index("ix_browser_review_owner_application", "user_id", "application_id", "created_at"),
         Index("ix_browser_review_expiry", "expires_at"),
     )
@@ -53,6 +54,7 @@ class BrowserAssistanceReview(Base):
     payload = Column(JSON, nullable=False)
     state = Column(String(16), nullable=False, default="draft")
     next_index = Column(Integer, nullable=False, default=0)
+    review_protocol_version = Column(Integer, nullable=False, default=1)
     created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
     expires_at = Column(DateTime(timezone=True), nullable=False)
     approved_at = Column(DateTime(timezone=True), nullable=True)

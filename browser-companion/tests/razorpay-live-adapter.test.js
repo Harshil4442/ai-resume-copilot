@@ -426,3 +426,68 @@ test("typed controls never become available under a historical text-only identit
     assert.equal(observed.submit, 0);
   } finally { await f.close(); }
 });
+
+for (const constructor of ["File", "DataTransfer"]) {
+  test(`attachment expiry during ${constructor} construction blocks selection and every file event`, async () => {
+    const f = await fixture({ mapping: currentMapping, html: currentMetadataShape(), values: currentAnswers, targetUrl: currentPortal });
+    try {
+      const identity = { document_id: f.review.document_id, frame_id: 0, field_mapping: currentMapping, review_protocol_version: 3 };
+      const inspection = (await f.invoke(null, null, identity)).result;
+      assert.equal(inspection.outcome, "inspected", inspection.reason);
+      const bytes = Buffer.from("%PDF-1.4\nOwned synthetic attachment bytes\n%%EOF");
+      const artifact = { filename: "Synthetic.pdf", media_type: "application/pdf", size_bytes: bytes.length, sha256: hash(bytes) };
+      const expected = { ...inspection, artifact, review_digest: hash("Owned attachment deadline regression"), current_assisted_values: inspection.assisted_values };
+      const action = { review_protocol_version: 3, control_type: "file", field_id: "resume", allowed_actions: ["attach"],
+        attachment: { input_id: "resume", expected_empty: true }, artifact, artifact_sha256: artifact.sha256,
+        review_digest: expected.review_digest, context_digest: inspection.context_digest,
+        document_id: inspection.document_id, frame_id: 0, artifact_base64: bytes.toString("base64url"), deadline: Date.now() + 9000 };
+      await f.worker.evaluate(async ({ tab, documentId, constructor }) => {
+        await chrome.scripting.executeScript({ target: { tabId: tab, documentIds: [documentId] }, func: (name) => {
+          const Original = globalThis[name], originalNow = Date.now;
+          globalThis.attachmentConstructorCalls = 0;
+          globalThis[name] = class extends Original {
+            constructor(...arguments_) {
+              super(...arguments_);
+              globalThis.attachmentConstructorCalls++;
+              // Model time consumed inside native construction without a slow or
+              // scheduler-sensitive sleep. Earlier checks see an unexpired lease.
+              Date.now = () => originalNow() + 20_000;
+            }
+          };
+        }, args: [constructor] });
+      }, { tab: f.tab, documentId: inspection.document_id, constructor });
+      const result = (await f.invoke(expected, action, identity)).result;
+      assert.equal(result.outcome, "blocked");
+      const calls = await f.worker.evaluate(async ({ tab, documentId }) => {
+        const [result] = await chrome.scripting.executeScript({ target: { tabId: tab, documentIds: [documentId] }, func: () => globalThis.attachmentConstructorCalls });
+        return result.result;
+      }, { tab: f.tab, documentId: inspection.document_id });
+      assert.equal(calls, 1, `The regression must reach construction while the earlier lease check still passes: ${result.reason}`);
+      assert.match(result.reason, /attachment lease (?:changed|expired) before (?:file )?selection/);
+      assert.equal(await f.page.locator("#resume").evaluate((input) => input.files.length), 0);
+      await f.noWrite();
+    } finally { await f.close(); }
+  });
+}
+
+for (const marker of ["hidden-upload-reference", "remove-resume", "uploaded-file-link", "uploaded-data-attribute"]) {
+  test(`attachment inspection refuses an empty input with existing/ambiguous upload state: ${marker}`, async () => {
+    const f = await fixture({ mapping: currentMapping, html: currentMetadataShape(), values: currentAnswers, targetUrl: currentPortal });
+    try {
+      await f.page.evaluate((marker) => {
+        const form = document.querySelector("form");
+        if (marker === "hidden-upload-reference") {
+          const input = document.createElement("input"); input.type = "hidden"; input.name = "resume_upload_id"; input.value = "owned-existing-upload"; form.append(input);
+        } else if (marker === "remove-resume") {
+          const button = document.createElement("button"); button.type = "button"; button.textContent = "Remove resume"; form.append(button);
+        } else if (marker === "uploaded-file-link") {
+          const link = document.createElement("a"); link.href = "https://example.test/owned-existing.pdf"; link.textContent = "Existing resume"; form.append(link);
+        } else form.setAttribute("data-attachment-id", "owned-existing-upload");
+      }, marker);
+      const result = (await f.invoke(null, null, { document_id: f.review.document_id, frame_id: 0, field_mapping: currentMapping, review_protocol_version: 3 })).result;
+      assert.equal(result.outcome, "blocked"); assert.match(result.reason, /existing or ambiguous uploaded attachment/);
+      assert.equal(await f.page.locator("#resume").evaluate((input) => input.files.length), 0);
+      await f.noWrite();
+    } finally { await f.close(); }
+  });
+}

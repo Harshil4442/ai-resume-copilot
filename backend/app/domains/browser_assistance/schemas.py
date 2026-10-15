@@ -12,7 +12,7 @@ class DeviceRequest(StrictModel):
     protocol_version: Literal[1]
     device_id: UUID
     request_id: UUID
-    operation: Literal["prepare", "status", "application", "inspect", "begin", "outcome", "cancel"]
+    operation: Literal["prepare", "status", "application", "inspect", "begin", "artifact", "outcome", "cancel"]
     issued_at_ms: int = Field(strict=True, gt=0)
     body: dict[str, Any]
     signature: str = Field(min_length=80, max_length=100)

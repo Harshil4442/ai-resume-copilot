@@ -1,8 +1,9 @@
 # HireWiz candidate-reviewed Chrome companion
 
-The source package supports a Razorpay/Greenhouse text-assistance pilot. Production
-stays closed until the backend release, migration 17, dedicated signer and explicit
-feature flag are provisioned and accepted. Existing experimental native pairing
+The 0.4.0 source package supports separately reviewed Razorpay/Greenhouse answer
+and resume-attachment assistance. Production stays closed until a later schema19
+release, dedicated signer and explicit feature flags are accepted. The frozen F7
+release remains schema18. Existing experimental native pairing
 and independent-recovery factories remain disabled; this pilot uses the existing
 signed-in Google candidate session and a retained nonextractable browser key.
 
@@ -10,9 +11,21 @@ The candidate chooses a saved application and resume, connects this browser by
 reviewing its fingerprint on HireWiz, opens the exact company portal, and reviews
 the file, destination, supported answers and disclosure before filling. The
 backend issues a ten-second exact single-field signed lease only after approval.
-Unknown acknowledgements stop the sequence without replay. Attachment, custom and
-sensitive controls, CAPTCHA and final submission remain manual. Filling charges
-no application credits and creates no application confirmation.
+Unknown acknowledgements stop the sequence without replay. Version two adds only
+explicitly saved phone and four supported choices behind its own default-false
+flag. Missing sensitive answers remain manual.
+
+Attachment uses a separate version-three approval behind
+`BROWSER_ASSISTANCE_ATTACHMENT_ENABLED=false`. Clear the answer review and inspect
+the now-current form before reviewing an attachment. Approval binds the saved
+original/custom/tailored artifact, exact bytes/hash/size/MIME/filename, device,
+opening, document and empty Resume/CV input before any binary delivery. One signed
+action authorizes one bounded binary delivery and one local file selection within
+the same ten-second lease; it is never extended or silently resent. Selection can
+immediately upload the bytes through employer callbacks. The result confirms only
+local selection; employer upload acceptance is unconfirmed. Country, employment,
+unsupported controls, CAPTCHA/login and final submission remain manual. Neither
+assistance action charges application credits or creates an employer receipt.
 
 The shipping manifest has no granted hosts. It requests two optional origins,
 HireWiz and Greenhouse; each action additionally enforces the exact Razorpay tenant,
@@ -40,8 +53,9 @@ npm run package:reviewed
 `test:assistance` loads the actual MV3 package into owned temporary Chrome profiles,
 locally fulfills every HTTPS request, and uses actual isolated SQL/crypto service
 code. It verifies the Chrome-supplied extension Origin, explicit reviewed sequence,
-no upload/submit/charge, lost-begin no replay, permission refusal and DOM change
-boundaries. Narrow test-only granted origins avoid automating Chrome's human
+one approved file selection and exact-byte synthetic upload callback, no final
+submit/receipt/charge, lost responses without replay, permission refusal and DOM
+change boundaries. Narrow test-only granted origins avoid automating Chrome's human
 permission dialog; that dialog and deployed BFF/API compatibility remain staging
 acceptance work. These tests send no live employer or processor request.
 

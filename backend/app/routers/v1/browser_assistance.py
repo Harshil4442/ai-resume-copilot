@@ -3,7 +3,7 @@ import asyncio
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
@@ -32,7 +32,7 @@ def candidate(operation: Literal["device", "confirm", "revoke", "review", "appro
 
 @router.post("/device/{operation}")
 @limiter.limit("60/minute")
-async def device(request: Request, operation: Literal["prepare", "status", "application", "inspect", "begin", "outcome", "cancel"],
+async def device(request: Request, operation: Literal["prepare", "status", "application", "inspect", "begin", "artifact", "outcome", "cancel"],
                  db: Session = Depends(get_db)):
     if (request.headers.get("content-type") != "application/json" or request.headers.get("content-encoding")
             or request.headers.get("authorization") or request.headers.get("cookie") or request.url.query):
@@ -57,4 +57,8 @@ async def device(request: Request, operation: Literal["prepare", "status", "appl
     except Exception:
         db.rollback()
         return JSONResponse({"detail": service.ERROR}, status_code=503, headers=HEADERS)
+    if isinstance(result, service.attachments.BinaryDelivery):
+        return Response(result.content, media_type=result.descriptor["media_type"], headers={
+            **HEADERS, "X-Artifact-SHA256": result.descriptor["sha256"],
+            "X-Artifact-Filename": result.descriptor["filename"], "Content-Length": str(len(result.content))})
     return JSONResponse(result, headers=HEADERS)

@@ -121,6 +121,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       if (message.type === "assistance_connect") return current.start();
       if (message.type === "assistance_check") return current.check();
       if (message.type === "assistance_prepare") return current.prepare(message.application_id);
+      if (message.type === "assistance_prepare_attachment") return current.prepare(message.application_id, 3);
       if (message.type === "assistance_fill") return current.fill();
       if (message.type === "assistance_cancel") return current.cancel();
       throw new Error("Unsupported assistance operation");

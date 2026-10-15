@@ -6591,7 +6591,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                operation: "prepare" | "status" | "application" | "inspect" | "begin" | "outcome" | "cancel";
+                operation: "prepare" | "status" | "application" | "inspect" | "begin" | "artifact" | "outcome" | "cancel";
             };
             cookie?: never;
         };

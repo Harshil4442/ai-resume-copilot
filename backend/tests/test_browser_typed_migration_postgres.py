@@ -61,6 +61,26 @@ def columns(engine):
             for column in inspect(engine).get_columns("browser_assistance_reviews")]
 
 
+def seed_legacy_review(engine):
+    # Generate the historical signed review in an owned SQLite fixture, then
+    # insert only actual schema18 columns (which lack the new durable marker).
+    source = flow.BrowserAssistanceFlow()
+    source.setUp()
+    try:
+        source.approved()
+        metadata = MetaData()
+        metadata.reflect(bind=engine)
+        with source.engine.connect() as original, engine.begin() as target:
+            for name in ("browser_assistance_devices", "browser_assistance_reviews", "browser_assistance_requests"):
+                table = metadata.tables[name]
+                rows = [{key: value for key, value in dict(row).items() if key in table.c}
+                        for row in original.execute(flow.Base.metadata.tables[name].select()).mappings()]
+                if rows:
+                    target.execute(table.insert(), rows)
+    finally:
+        source.tearDown()
+
+
 def set_cursor(engine, index):
     with engine.begin() as db:
         db.execute(text("UPDATE browser_assistance_reviews SET next_index=:index"), {"index": index})
@@ -75,7 +95,7 @@ def assert_cursor_refused(engine, index):
 
 def test_actual_schema18_to19_preserves_v1_rows_and_only_expands_cursor_then_round_trips(migrated_browser):
     owned = migrated_browser
-    owned.approved()
+    seed_legacy_review(owned.engine)
     tables_before = set(inspect(owned.engine).get_table_names())
     columns_before = columns(owned.engine)
     before = copy.deepcopy(review_snapshot(owned.engine))
@@ -83,7 +103,12 @@ def test_actual_schema18_to19_preserves_v1_rows_and_only_expands_cursor_then_rou
     admission._migrate(owned.engine, "20261015_0019")
     assert version(owned.engine) == "20261015_0019"
     assert set(inspect(owned.engine).get_table_names()) == tables_before
-    assert columns(owned.engine) == columns_before
+    after_columns = columns(owned.engine)
+    assert [column for column in after_columns if column["name"] != "review_protocol_version"] == columns_before
+    protocol_column = next(column for column in after_columns if column["name"] == "review_protocol_version")
+    assert protocol_column["type"] == "INTEGER" and protocol_column["nullable"] is False
+    with owned.engine.connect() as db:
+        assert db.scalar(text("SELECT review_protocol_version FROM browser_assistance_reviews")) == 1
     assert review_snapshot(owned.engine) == before
     for index in (0, 7, 8, 12):
         set_cursor(owned.engine, index)
@@ -116,7 +141,7 @@ def test_actual_migrated_postgres_supports_twelve_signed_actions_without_charge_
     (7, {"review_protocol_version": 2}), (8, {}), (12, {})])
 def test_downgrade_guard_is_transactional_for_typed_payload_or_extended_cursor(migrated_browser, index, payload):
     owned = migrated_browser
-    owned.approved()
+    seed_legacy_review(owned.engine)
     admission._migrate(owned.engine, "20261015_0019")
     with owned.engine.begin() as db:
         db.execute(flow.models.BrowserAssistanceReview.__table__.update().values(next_index=index, payload=payload))
@@ -128,3 +153,38 @@ def test_downgrade_guard_is_transactional_for_typed_payload_or_extended_cursor(m
     # Failure must leave the schema19 constraint in place, without a partial DDL downgrade.
     set_cursor(owned.engine, 12)
     assert_cursor_refused(owned.engine, 13)
+
+
+def test_schema19_backfills_existing_typed_payload_marker(migrated_browser):
+    owned = migrated_browser
+    seed_legacy_review(owned.engine)
+    with owned.engine.begin() as db:
+        db.execute(text("UPDATE browser_assistance_reviews SET payload=CAST(:payload AS JSON)"), {"payload": '{"review_protocol_version":2}'})
+    admission._migrate(owned.engine, "20261015_0019")
+    with owned.engine.connect() as db:
+        assert db.scalar(text("SELECT review_protocol_version FROM browser_assistance_reviews")) == 2
+    with pytest.raises(RuntimeError, match="Typed-control review history must be retained"):
+        admission._migrate(owned.engine, "20261015_0018", direction="downgrade")
+
+
+@pytest.mark.parametrize("protocol", [2, 3])
+@pytest.mark.parametrize("state", ["filled", "cancelled", "expired"])
+def test_erased_completed_cancelled_or_expired_v2_v3_keeps_durable_marker_and_downgrade_guard(migrated_browser, protocol, state):
+    owned = migrated_browser
+    seed_legacy_review(owned.engine)
+    admission._migrate(owned.engine, "20261015_0019")
+    row = owned.db.query(flow.models.BrowserAssistanceReview).one()
+    row.review_protocol_version = protocol
+    row.payload = {"review_protocol_version": protocol}
+    row.state = "draft" if state == "expired" else state
+    if state == "cancelled":
+        flow.service.candidate(owned.db, 1, "cancel", flow.schemas.CandidateRequest(identity=row.id, confirmed=True))
+    else:
+        row.expires_at = flow.service.now() - flow.service.timedelta(seconds=1)
+        owned.db.commit()
+        flow.service.expire_reviews(owned.db)
+    owned.db.refresh(row)
+    assert row.payload == {} and row.review_protocol_version == protocol and row.state == state
+    owned.db.rollback()
+    with pytest.raises(RuntimeError, match="Typed-control review history must be retained"):
+        admission._migrate(owned.engine, "20261015_0018", direction="downgrade")

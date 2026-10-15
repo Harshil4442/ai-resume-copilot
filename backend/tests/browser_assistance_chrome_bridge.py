@@ -1,6 +1,7 @@
 """Owned stdin bridge for Chrome integration; actual SQL/crypto, no HTTP provider."""
 from __future__ import annotations
 
+import base64
 import json
 import os
 import runpy
@@ -20,6 +21,8 @@ try:
             operation = incoming["operation"]
             if operation == "device":
                 result = service.device(fixture.db, incoming["origin"], schemas.DeviceRequest(**incoming["body"]))
+                if isinstance(result, service.attachments.BinaryDelivery):
+                    result = {"binary_base64": base64.b64encode(result.content).decode("ascii"), "descriptor": result.descriptor}
             elif operation == "candidate":
                 result = service.candidate(fixture.db, 1, incoming["action"], schemas.CandidateRequest(**incoming["body"]))
             elif operation == "audit":
@@ -29,8 +32,34 @@ try:
                 if incoming.get("detailed"):
                     review = fixture.db.query(loaded["models"].BrowserAssistanceReview).one()
                     result.update(review_state=review.state, next_index=review.next_index,
+                                  review_protocol_version=review.review_protocol_version,
                                   receipt=fixture.app.receipt,
                                   reservation_count=fixture.db.query(loaded["employer"].ServiceCreditReservation).count())
+                    if incoming.get("attachment"):
+                        actions = fixture.db.query(loaded["models"].BrowserAssistanceRequest).filter_by(operation="attachment").all()
+                        result.update(attachment_count=len(actions),
+                            delivery_count=fixture.db.query(loaded["models"].BrowserAssistanceRequest).filter_by(operation="artifact").count(),
+                            delivery_claimed=any(action.response.get("delivery_claimed") for action in actions))
+            elif operation == "configure_attachment":
+                os.environ["BROWSER_ASSISTANCE_ATTACHMENT_ENABLED"] = "true"
+                result = {"field_mapping": service.field_mapping(fixture.app, 3), "answers": fixture.app.answers}
+            elif operation == "attachment_fault":
+                fault = incoming["fault"]
+                if fault == "revoke":
+                    fixture.db.query(loaded["models"].BrowserAssistanceDevice).one().state = "revoked"
+                elif fault == "cancel":
+                    review = fixture.db.query(loaded["models"].BrowserAssistanceReview).one()
+                    review.state, review.payload = "cancelled", {}
+                elif fault == "expired":
+                    fixture.db.query(loaded["models"].BrowserAssistanceReview).one().expires_at = service.now() - service.timedelta(seconds=1)
+                elif fault == "flag_off":
+                    os.environ["BROWSER_ASSISTANCE_ATTACHMENT_ENABLED"] = "false"
+                elif fault == "artifact_hash":
+                    fixture.db.query(loaded["employer"].SealedApplicationArtifact).one().content = b"Tampered synthetic bytes"
+                else:
+                    raise ValueError("Unsupported owned attachment fault")
+                fixture.db.commit()
+                result = {"fault_applied": True}
             elif operation == "configure_typed":
                 # Owned synthetic application only; no browser/candidate authority
                 # is manufactured here. Pairing and approval still use the real service.

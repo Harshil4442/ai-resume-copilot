@@ -2,7 +2,7 @@
 // value is supplied by the owned SQL application's real field mapping.
 const escape = (value) => String(value).replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 
-export function typedFixtureHtml(mapping, targetUrl, { unknownOption = false, conditional = false } = {}) {
+export function typedFixtureHtml(mapping, targetUrl, { unknownOption = false, conditional = false, attachmentUpload = false, attachmentConditional = false } = {}) {
   const fields = mapping.map((field) => field.type !== "combobox"
     ? `<label for="${field.id}">${escape(field.label)}*</label><input id="${field.id}" type="${field.type}" maxlength="255" aria-required="true">`
     : `<div class="select"><div class="select__container"><label id="${field.id}-label" for="${field.id}">${escape(field.label)}*</label>
@@ -20,6 +20,10 @@ export function typedFixtureHtml(mapping, targetUrl, { unknownOption = false, co
     form.addEventListener('input',e=>events.input.push(e.target.id));form.addEventListener('change',e=>events.change.push(e.target.id));
     document.querySelector('#email').addEventListener('blur',()=>events.blur.push('email'));
     form.addEventListener('submit',e=>{e.preventDefault();events.submit++});
+    if(${JSON.stringify(attachmentUpload)})document.getElementById('resume').addEventListener('change',event=>{
+      const file=event.target.files[0];if(file)window.uploadPromise=fetch(${JSON.stringify(targetUrl + "/owned-synthetic-upload")},{method:'POST',headers:{'Content-Type':file.type},body:file}).then(response=>response.json()).catch(()=>null);
+      if(${JSON.stringify(attachmentConditional)}){const extra=document.createElement('input');extra.id='attachment-conditional';extra.required=true;form.append(extra);}
+    });
     const mapping=${JSON.stringify(mapping)};
     for(const field of mapping.filter(field=>field.type==='combobox')){
       const input=document.getElementById(field.id),widget=input.closest('div.select');

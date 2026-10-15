@@ -16,18 +16,22 @@ export class AssistanceTransport {
     Object.assign(this, { configuration, identity, beforePost, now, fetcher });
     this.authorityKey = null;
   }
-  async request(operation, body) {
-    if (!["prepare", "status", "application", "inspect", "begin", "outcome", "cancel"].includes(operation)) throw new Error(unavailable);
+  async post(operation, body) {
+    if (!["prepare", "status", "application", "inspect", "begin", "artifact", "outcome", "cancel"].includes(operation)) throw new Error(unavailable);
     await this.beforePost();
     const unsigned = { protocol_version: 1, device_id: this.identity.device_id, request_id: crypto.randomUUID(),
       operation, issued_at_ms: this.now(), body };
     const signature = base64url(await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, this.identity.private_key, domain("request", unsigned)));
     const bytes = JSON.stringify({ ...unsigned, signature });
     if (encode.encode(bytes).byteLength > 65536) throw new Error("The inspected form exceeds the supported assistance size.");
-    const response = await this.fetcher(`${this.configuration.websiteOrigin}/api/browser-assistance/device/${operation}`, {
+    return this.fetcher(`${this.configuration.websiteOrigin}/api/browser-assistance/device/${operation}`, {
       method: "POST", credentials: "omit", redirect: "error", cache: "no-store", signal: AbortSignal.timeout(12000),
       headers: { "Content-Type": "application/json" }, body: bytes,
     });
+  }
+  async request(operation, body) {
+    if (operation === "artifact") throw new Error("Binary delivery requires the exact attachment action");
+    const response = await this.post(operation, body);
     if (!response.ok) { cancel(response.body); throw new Error(unavailable); }
     const reader = response.body?.getReader();
     if (!reader) throw new Error(unavailable);
@@ -47,6 +51,37 @@ export class AssistanceTransport {
     const result = JSON.parse(new TextDecoder("utf8", { fatal: true }).decode(all));
     if (!result || typeof result !== "object" || Array.isArray(result)) throw new Error(unavailable);
     return result;
+  }
+  async artifact(lease) {
+    if (lease.review_protocol_version !== 3 || canonical(lease.allowed_actions) !== '["attach"]') throw new Error(unavailable);
+    const response = await this.post("artifact", { review_id: lease.review_id, action_id: lease.action_id, review_digest: lease.review_digest });
+    const artifact = lease.artifact;
+    if (!response.ok || response.headers.get("content-type") !== artifact.media_type
+      || response.headers.get("content-length") !== String(artifact.size_bytes)
+      || response.headers.get("x-artifact-sha256") !== artifact.sha256
+      || response.headers.get("x-artifact-filename") !== artifact.filename
+      || response.headers.has("content-encoding") || response.headers.has("content-range")
+      || !Number.isSafeInteger(artifact.size_bytes) || artifact.size_bytes < 1 || artifact.size_bytes > 10 * 1024 * 1024) {
+      cancel(response.body); throw new Error("The exact sealed file delivery could not be verified. No automatic retry occurred.");
+    }
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error(unavailable);
+    const chunks = []; let size = 0; let timer;
+    const read = async () => {
+      for (;;) {
+        const next = await reader.read(); if (next.done) break;
+        size += next.value.byteLength;
+        if (size > artifact.size_bytes) throw new Error(unavailable);
+        chunks.push(next.value);
+      }
+    };
+    try { await Promise.race([read(), new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(unavailable)), 3000); })]); }
+    finally { clearTimeout(timer); cancel(reader); try { reader.releaseLock(); } catch { /* preserve unknown */ } }
+    if (size !== artifact.size_bytes) throw new Error(unavailable);
+    const bytes = new Uint8Array(size); let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+    if (await digest(bytes) !== artifact.sha256 || this.now() >= lease.deadline) throw new Error("The exact file hash or attachment lease changed. No automatic retry occurred.");
+    return bytes;
   }
   async device(operation = "status", reviewId = null) {
     const body = operation === "prepare" ? { public_key: publicKey(this.identity.public_key), extension_id: this.configuration.extensionId }
@@ -72,7 +107,7 @@ export class AssistanceTransport {
       || !Number.isSafeInteger(payload.issued_at_ms) || !Number.isSafeInteger(payload.deadline)
       || payload.issued_at_ms > this.now() + 2000 || payload.deadline <= this.now()
       || payload.deadline <= payload.issued_at_ms || payload.deadline - payload.issued_at_ms > 10000
-      || canonical(payload.allowed_actions) !== '["fill"]') throw new Error("The reviewed field action expired or changed.");
+      || canonical(payload.allowed_actions) !== (payload.review_protocol_version === 3 ? '["attach"]' : '["fill"]')) throw new Error("The reviewed field action expired or changed.");
     return payload;
   }
 }

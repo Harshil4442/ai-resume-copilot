@@ -143,12 +143,15 @@ def attach_upload(db, identity: str | None, *, user_id: int) -> None:
     db.delete(guard)  # Consumed in the same transaction that attaches the artifact.
 
 
-def read(artifact) -> bytes:
+def read(artifact, *, max_bytes: int | None = None) -> bytes:
+    if max_bytes is not None and (type(max_bytes) is not int or not 0 < artifact.size_bytes <= max_bytes <= 10 * 1024 * 1024):
+        raise HTTPException(409, "The saved application resume exceeds its delivery bound")
     if artifact.gcs_object:
         from google.cloud import storage
         bucket_name, object_name = artifact.gcs_object[5:].split("/", 1)
         blob = storage.Client().bucket(bucket_name).blob(object_name, generation=int(artifact.gcs_generation))
-        content = blob.download_as_bytes(if_generation_match=int(artifact.gcs_generation))
+        options = {"start": 0, "end": artifact.size_bytes, "timeout": 5, "retry": None} if max_bytes is not None else {}
+        content = blob.download_as_bytes(if_generation_match=int(artifact.gcs_generation), **options)
     else:
         content = bytes(artifact.content or b"")
     if len(content) != artifact.size_bytes or hashlib.sha256(content).hexdigest() != artifact.sha256:

@@ -115,16 +115,20 @@ async function showAssistance(value) {
   element("assistance-check").disabled = !permitted || value.busy || value.phase === "idle";
   element("assistance-review").disabled = !value.review_url || value.busy || value.phase === "idle";
   element("assistance-prepare").disabled = !permitted || value.busy || value.review_id || value.phase !== "active";
+  element("assistance-prepare-attachment").disabled = element("assistance-prepare").disabled || !value.attachment_available;
   element("assistance-fill").disabled = !permitted || !value.can_fill;
+  element("assistance-fill").textContent = value.review_protocol_version === 3 ? "Select approved resume" : "Fill approved answers";
   element("assistance-cancel").disabled = !value.review_id;
   const list = element("assistance-fingerprint"); list.replaceChildren();
   pair(list, "Browser key SHA-256", value.key_sha256);
-  element("assistance-state").textContent = value.message || `Current state: ${value.phase}. ${value.filled_count} approved text answers filled. Check the portal yourself before submission.`;
+  element("assistance-state").textContent = value.message || (value.review_protocol_version === 3
+    ? `Attachment state: ${value.phase}. Local selection does not confirm employer upload. Check the portal before final submission.`
+    : `Current state: ${value.phase}. ${value.filled_count} approved text answers filled. Check the portal yourself before submission.`);
 }
 function assistanceAction(id, type) {
   action(id, async () => {
-    const message = type === "assistance_prepare" ? { type, application_id: element("assistance-application").value.trim() } : { type };
-    if (assistance && ["assistance_fill", "assistance_prepare"].includes(type)) await showAssistance({ ...assistance, busy: true, can_fill: false, message: "Working on the reviewed application…" });
+    const message = ["assistance_prepare", "assistance_prepare_attachment"].includes(type) ? { type, application_id: element("assistance-application").value.trim() } : { type };
+    if (assistance && ["assistance_fill", "assistance_prepare", "assistance_prepare_attachment"].includes(type)) await showAssistance({ ...assistance, busy: true, can_fill: false, message: "Working on the reviewed application…" });
     try { await showAssistance(await request(message)); }
     catch (failure) { await showAssistance(await request({ type: "status" })); throw failure; }
   });
@@ -142,6 +146,7 @@ action("assistance-review", async () => {
 assistanceAction("assistance-connect", "assistance_connect");
 assistanceAction("assistance-check", "assistance_check");
 assistanceAction("assistance-prepare", "assistance_prepare");
+assistanceAction("assistance-prepare-attachment", "assistance_prepare_attachment");
 assistanceAction("assistance-fill", "assistance_fill");
 assistanceAction("assistance-cancel", "assistance_cancel");
 try {

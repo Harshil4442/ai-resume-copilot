@@ -62,9 +62,13 @@ ZIP was rebuilt twice with identical SHA-256
 `088107e95a4570f829ed32292ca520c9d29fff2d64966ae8f5daa1840a40f618`
 and verified byte-for-byte against its runtime source. The 0.2.0 ZIP is unchanged.
 
-Migration `20261015_0019` expands only the durable review cursor constraint from
-seven to twelve. Its downgrade refuses retained version-two payloads or cursors
-above seven. Six actual PostgreSQL 17.11 cases execute the complete historical
+The initial local migration `20261015_0019` expanded the durable review cursor
+constraint from seven to twelve. Its undeployed draft now also retains a
+`review_protocol_version` marker (1–3) for the separately approved
+[attachment action](BROWSER_ATTACHMENT_ASSISTANCE_2026-10-15.md). It backfills
+existing version-two payloads and preserves the marker when payloads are erased;
+downgrade refuses any retained marker above one or cursor above seven. The
+initial six PostgreSQL 17.11 cases executed the complete historical
 Alembic chain, verify row/shape preservation and both cursor bounds, run twelve
 real signed actions, round-trip retained v1 history and prove transactional
 downgrade refusal. The existing clean SQLite migration regression exposed its

@@ -34,6 +34,17 @@ function typedReview(state = "draft") {
     manual_fields: [{ id: "country", label: "Country", required: true }],
     disclosures: [...result.payload.disclosures, "Selecting this exact approved dropdown option can autosave before submission."] } };
 }
+function attachmentReview(state = "draft") {
+  const original = review(state);
+  return { ...original, filled_count: state === "filled" ? 1 : 0, review_protocol_version: 3,
+    attachment_status: state === "filled" ? "selected_upload_unconfirmed" : "unknown",
+    payload: { ...original.payload, review_protocol_version: 3, fields: [] as typeof original.payload.fields,
+      reviewed_answers: {} as Record<string, string>, allowed_actions: ["attach"],
+      artifact: { ...original.payload.artifact, artifact_id: "artifact_owned", resume_id: 7, resume_version_id: null as string | null, resume_choice: "original" },
+      attachment: { input_id: "resume", expected_empty: true },
+      manual_fields: [{ id: "country", label: "Country", required: true }],
+      disclosures: ["Selecting the file can upload it before final submission; the storage recipient is not verified."] } };
+}
 beforeEach(() => { vi.resetAllMocks(); vi.stubGlobal("fetch", request); vi.mocked(accountMutationHeaders).mockResolvedValue({ "Content-Type": "application/json", "X-Hirewiz-Account-CSRF": "9".repeat(64) }); vi.mocked(apiDownload).mockResolvedValue(); });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.useRealTimers(); });
 async function loadReview() {
@@ -47,6 +58,75 @@ async function acceptReview() {
 }
 
 describe("candidate reviewed browser assistance", () => {
+  it("requires explicit attachment approval before any file download or companion binary disclosure", async () => {
+    request.mockResolvedValueOnce(Response.json(attachmentReview())).mockResolvedValueOnce(Response.json(attachmentReview("approved")));
+    render(<BrowserAssistanceReview deviceId={null} reviewId={identity} applicationId={null} />);
+    await userEvent.click(screen.getByRole("button", { name: "Load exact application review" }));
+    const approve = await screen.findByRole("button", { name: "Approve exact attachment assistance" });
+    expect(approve).toBeDisabled(); expect(screen.getByRole("checkbox")).toBeEnabled();
+    expect(screen.getByText("original resume #7")).toBeVisible(); expect(screen.getByText("artifact_owned")).toBeVisible();
+    expect(screen.getByRole("link", { name: target })).toHaveAttribute("href", target);
+    expect(screen.getByText(/Selecting it can immediately disclose or upload its bytes/)).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Download exact review file" })).toBeNull(); expect(screen.queryByText("Answers to fill")).toBeNull();
+    expect(request).toHaveBeenCalledTimes(1); expect(apiDownload).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("checkbox")); await userEvent.click(approve);
+    expect(await screen.findByText(/Attachment assistance approved/)).toBeVisible(); expect(apiDownload).not.toHaveBeenCalled();
+    expect(request.mock.calls.map(([url]) => url)).toEqual(["/api/browser-assistance/candidate/review", "/api/browser-assistance/candidate/approve"]);
+    expect(JSON.parse(request.mock.calls[1][1].body)).toEqual({ identity, confirmed: true, review_digest: "b".repeat(64) });
+    expect(screen.queryByRole("button", { name: "Approve exact attachment assistance" })).toBeNull();
+  });
+
+  it("binds attachment approval to the exact saved source and rejects changed source metadata", async () => {
+    const changed = attachmentReview("approved"); changed.payload.artifact.resume_id = 8;
+    request.mockResolvedValueOnce(Response.json(attachmentReview())).mockResolvedValueOnce(Response.json(changed));
+    render(<BrowserAssistanceReview deviceId={null} reviewId={identity} applicationId={null} />);
+    await userEvent.click(screen.getByRole("button", { name: "Load exact application review" }));
+    await screen.findByRole("button", { name: "Approve exact attachment assistance" });
+    await userEvent.click(screen.getByRole("checkbox")); await userEvent.click(screen.getByRole("button", { name: "Approve exact attachment assistance" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("approved review changed");
+    expect(screen.queryByText(/Attachment assistance approved/)).toBeNull(); expect(screen.getByRole("checkbox")).toBeDisabled();
+    expect(apiDownload).not.toHaveBeenCalled(); expect(request).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(["fields", "answers", "action", "input", "expected-empty", "source", "filename", "version", "status", "count"])("refuses an invalid attachment %s before offering approval or fetching bytes", async (change) => {
+    const result = attachmentReview();
+    if (change === "fields") result.payload.fields = review().payload.fields;
+    if (change === "answers") result.payload.reviewed_answers = { first_name: "Unapproved text" };
+    if (change === "action") result.payload.allowed_actions = ["fill", "attach"];
+    if (change === "input") result.payload.attachment.input_id = "cover_letter";
+    if (change === "expected-empty") result.payload.attachment.expected_empty = false;
+    if (change === "source") result.payload.artifact.resume_choice = "tailored";
+    if (change === "filename") result.payload.artifact.filename = "résumé.pdf";
+    if (change === "version") result.review_protocol_version = 2;
+    if (change === "status") result.attachment_status = "uploaded";
+    if (change === "count") { result.state = "filled"; result.attachment_status = "selected_upload_unconfirmed"; }
+    request.mockResolvedValueOnce(Response.json(result));
+    render(<BrowserAssistanceReview deviceId={null} reviewId={identity} applicationId={null} />);
+    await userEvent.click(screen.getByRole("button", { name: "Load exact application review" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("response changed");
+    expect(screen.queryByRole("button", { name: "Approve exact attachment assistance" })).toBeNull();
+    expect(apiDownload).not.toHaveBeenCalled(); expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([false, true])("labels local attachment selection honestly, including after payload erasure (cleared=%s)", async (cleared) => {
+    const result = attachmentReview("filled");
+    request.mockResolvedValueOnce(Response.json(cleared ? { ...result, payload: {} } : result));
+    render(<BrowserAssistanceReview deviceId={null} reviewId={identity} applicationId={null} />);
+    await userEvent.click(screen.getByRole("button", { name: "Load exact application review" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Resume selected locally. Employer upload is unconfirmed.");
+    expect(screen.getByRole("status")).toHaveTextContent("No application receipt or fee is established");
+    expect(screen.queryByText(/answers filled/)).toBeNull(); expect(apiDownload).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Approve exact attachment assistance" })).toBeNull();
+  });
+
+  it.each(["unknown", "cancelled", "expired"])("retains attachment context for privacy-cleared %s status", async (state) => {
+    request.mockResolvedValueOnce(Response.json({ ...attachmentReview(state), payload: {} }));
+    render(<BrowserAssistanceReview deviceId={null} reviewId={identity} applicationId={null} />);
+    await userEvent.click(screen.getByRole("button", { name: "Load exact application review" }));
+    expect(await screen.findByRole("status")).toHaveTextContent(state === "unknown" ? "file selection or upload outcome is uncertain" : state === "cancelled" ? "attachment assistance cancelled" : "expired");
+    expect(screen.queryByRole("button", { name: "Approve exact attachment assistance" })).toBeNull(); expect(apiDownload).not.toHaveBeenCalled();
+  });
+
   it("shows and approves explicit typed answers only after the exact resume is reviewed", async () => {
     request.mockResolvedValueOnce(Response.json(typedReview())).mockResolvedValueOnce(Response.json(typedReview("approved")));
     render(<BrowserAssistanceReview deviceId={null} reviewId={identity} applicationId={null} />);
