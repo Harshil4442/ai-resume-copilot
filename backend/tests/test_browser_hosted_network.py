@@ -25,7 +25,7 @@ def exchange(kind, url, start, *, body_sha="a" * 64, size=500, context=None, doc
         "frame_id": 0 if kind == "submit" else -1, "document_id": document if kind == "submit" else None,
         "initiator": service.ORIGIN if kind == "submit" else "chrome-extension://" + service.EXTENSION_ID,
         "started_at_ms": start, "completed_at_ms": start, "browser_major": 151,
-        "status_code": 200, "tls_state": "secure", "certificate_sha256": "b" * 64,
+        "status_code": 200, "https_validation": "browser_default",
         "request_body_sha256": None if kind == "presign" else body_sha,
         "request_body_size": 0 if kind == "presign" else size,
         "from_cache": False, "redirected": False, "ip": "192.0.2.5",
@@ -114,7 +114,7 @@ def test_exact_native_upload_and_direct_secure200_settle_once_without_inventing_
 
 
 @pytest.mark.parametrize("field,value", [
-    ("status_code", 202), ("from_cache", True), ("redirected", True), ("tls_state", "insecure"),
+    ("status_code", 202), ("from_cache", True), ("redirected", True), ("https_validation", "insecure"),
     ("certificate_sha256", "bad"), ("ip", "not-an-IP"), ("method", "GET"), ("tab_id", 12),
     ("frame_id", 1), ("document_id", "other_document"), ("browser_major", 143),
     ("url", "https://boards.greenhouse.io/other/jobs/4740333005"), ("application_sha256", "0" * 64),
@@ -214,6 +214,17 @@ def test_native_upload_plan_refuses_unbound_or_stale_storage_metadata(owned, cha
 def test_final_exchange_cannot_extend_original_send_deadline(owned):
     _, lease, body = final_review(owned)
     body["receipt"]["native"]["completed_at_ms"] = lease["deadline"] + 1
+    with pytest.raises(HTTPException):
+        owned.device("reconcile", body)
+    owned.db.rollback()
+    assert owned.audit()["charged_credits"] == 0 and owned.audit()["receipt"] is None
+
+
+def test_certificate_contract_approval_cannot_be_retrofitted_to_browser_https(owned):
+    _, _, body = final_review(owned)
+    body["receipt"]["version"] = "greenhouse_hosted_direct_200_v1"
+    body["receipt"]["native"].pop("https_validation")
+    body["receipt"]["native"].update(tls_state="secure", certificate_sha256="b" * 64)
     with pytest.raises(HTTPException):
         owned.device("reconcile", body)
     owned.db.rollback()

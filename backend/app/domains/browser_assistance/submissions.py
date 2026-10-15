@@ -187,7 +187,7 @@ def review_payload(db, record, inspection, app, posting, artifact, mapping):
                        expected_application=expected, expected_application_sha256=s.digest(expected))
         payload["disclosures"][-2:] = [
             "The exact sealed resume was sent once through the separately approved storage recipient and complete multipart bytes; its native secure acknowledgement is bound to this review.",
-            "Only a complete direct secure employer HTTP 200 exchange for the exact reviewed serialized application verifies acceptance. A thank-you page, HTTP 202, missing network evidence or filename alone cannot settle the credits.",
+            "Only a complete direct employer HTTPS 200 exchange for the exact reviewed application, observed under the browser's standard HTTPS validation, verifies acceptance. A thank-you page, HTTP 202, missing native network evidence or filename alone cannot settle the credits.",
         ]
     else:
         s.require("native_context" not in inspection)

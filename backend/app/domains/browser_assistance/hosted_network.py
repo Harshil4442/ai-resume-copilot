@@ -2,7 +2,9 @@
 
 The paired companion reports Chrome-native network events under its device signature.
 These validators bind that report to the original one-shot lease and the complete
-reviewed application. They do not treat an HTTP status or filename alone as a receipt.
+reviewed application. HTTPS uses the ordinary browser trust store and validation;
+this contract makes no certificate-pinning or certificate-fingerprint claim. An
+HTTP status or filename alone never establishes a receipt.
 """
 from __future__ import annotations
 
@@ -14,13 +16,13 @@ from urllib.parse import quote, urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 PRESIGN_URL = "https://boards.greenhouse.io/uncacheable_attributes/presigned_fields?fields%5B%5D=resume"
-UPLOAD_VERSION = "greenhouse_owned_upload_v1"
-RECEIPT_VERSION = "greenhouse_hosted_direct_200_v1"
-TRANSPORT = "greenhouse-owned-upload-v1"
+UPLOAD_VERSION = "greenhouse_owned_upload_browser_https_v1"
+RECEIPT_VERSION = "greenhouse_hosted_browser_https_200_v1"
+TRANSPORT = "greenhouse-owned-upload-browser-https-v1"
 HEX = re.compile(r"[a-f0-9]{64}")
 NETWORK_KEYS = frozenset({
     "request_id", "method", "url", "tab_id", "frame_id", "document_id", "initiator",
-    "started_at_ms", "browser_major", "status_code", "tls_state", "certificate_sha256",
+    "started_at_ms", "browser_major", "status_code", "https_validation",
     "request_body_sha256", "request_body_size", "completed_at_ms", "from_cache", "redirected", "ip",
 })
 
@@ -68,7 +70,7 @@ def storage_origin(value) -> str:
 
 
 def network(value, *, url, kind, start, deadline, context=None, application_sha256=None) -> dict:
-    """Only the unique, direct, secure complete native exchange is accepted."""
+    """Only a complete native exchange under the browser's normal HTTPS policy."""
     from . import service as s
     keys = NETWORK_KEYS | ({"application_sha256"} if kind == "submit" else set())
     _require(isinstance(value, dict) and set(value) == keys)
@@ -76,7 +78,7 @@ def network(value, *, url, kind, start, deadline, context=None, application_sha2
     _require(isinstance(value["request_id"], str) and 1 <= len(value["request_id"]) <= 160)
     _require(value["url"] == url and value["method"] == ("GET" if kind == "presign" else "POST"))
     _require(_integer(value["browser_major"], 144, 999)
-             and value["tls_state"] == "secure" and _hex(value["certificate_sha256"])
+             and value["https_validation"] == "browser_default"
              and value["from_cache"] is False and value["redirected"] is False)
     _require(_integer(value["started_at_ms"], start, deadline)
              and _integer(value["completed_at_ms"], value["started_at_ms"], deadline))
