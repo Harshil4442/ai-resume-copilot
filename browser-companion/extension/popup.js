@@ -1,5 +1,6 @@
 import { CONFIG } from "./config.js";
 import { decode64 } from "./protocol.js";
+import { nativeStorageOrigin } from "./greenhouse-native-network.js";
 const element = (id) => document.getElementById(id);
 let review = null; let artifactUrl = null;
 let connection = null;
@@ -131,13 +132,19 @@ async function showAssistance(value) {
   element("assistance-review").disabled = !value.review_url || value.busy || value.phase === "idle";
   element("assistance-prepare").disabled = !permitted || value.busy || value.review_id || value.phase !== "active";
   element("assistance-prepare-attachment").disabled = element("assistance-prepare").disabled || !value.attachment_available;
+  element("assistance-prepare-native-upload").hidden=!nativeAssistance || !value.native_upload_available;
+  element("assistance-prepare-native-upload").disabled=element("assistance-prepare").disabled || !value.native_upload_available;
+  const storageOrigin=nativeStorageOrigin(value.storage_origin),storageAllowed=storageOrigin && await chrome.permissions.contains({origins:[`${storageOrigin}/*`]});
+  element("assistance-storage-permission").hidden=!storageOrigin || storageAllowed || !value.native_upload;
+  element("assistance-storage-permission").disabled=value.busy;
   element("assistance-prepare-submit").disabled = element("assistance-prepare").disabled || !value.submit_available;
   element("assistance-reconcile").disabled = !permitted || !value.can_reconcile;
-  element("assistance-fill").disabled = !permitted || !value.can_fill;
-  element("assistance-fill").textContent = value.review_protocol_version === 4 ? "Submit the approved application once" : value.review_protocol_version === 3 ? "Select approved resume" : "Fill approved answers";
+  element("assistance-fill").disabled = !permitted || !value.can_fill || value.native_upload && !storageAllowed;
+  element("assistance-fill").textContent = value.review_protocol_version === 4 ? "Submit the approved application once" : value.review_protocol_version === 3 ? value.native_upload ? "Upload approved resume once" : "Select approved resume" : "Fill approved answers";
   element("assistance-cancel").disabled = !value.review_id;
   const list = element("assistance-fingerprint"); list.replaceChildren();
   pair(list, "Browser key SHA-256", value.key_sha256);
+  if(storageOrigin)pair(list,"Reviewed employer storage",storageOrigin);
   element("assistance-state").textContent = value.message || (value.review_protocol_version === 4 ? `Submission state: ${value.phase}. A possible-send attempt cannot be replayed. Employer receipt is unverified; 20 credits stay held after an uncertain send.` : value.review_protocol_version === 3
     ? `Attachment state: ${value.phase}. Local selection does not confirm employer upload. Check the portal before final submission.`
     : `Current state: ${value.phase}. ${value.filled_count} approved text answers filled. Check the portal yourself before submission.`);
@@ -164,6 +171,18 @@ assistanceAction("assistance-connect", "assistance_connect");
 assistanceAction("assistance-check", "assistance_check");
 assistanceAction("assistance-prepare", "assistance_prepare");
 assistanceAction("assistance-prepare-attachment", "assistance_prepare_attachment");
+action("assistance-prepare-native-upload",async()=>{
+  const granted=await chrome.permissions.request({permissions:["webRequest"],origins:[`${CONFIG.websiteOrigin}/*`,`${CONFIG.portalOrigin}/*`,"https://boards.greenhouse.io/*"]});
+  if(!granted)throw new Error("The exact Greenhouse native network observation permission was not granted.");
+  await showAssistance(await request({type:"assistance_prepare_native_upload",application_id:element("assistance-application").value.trim()}));
+});
+action("assistance-storage-permission",async()=>{
+  const origin=nativeStorageOrigin(assistance?.storage_origin);
+  if(!origin || !assistance.native_upload)throw new Error("No exact reviewed employer storage origin is available.");
+  const granted=await chrome.permissions.request({origins:[`${origin}/*`]});
+  if(!granted)throw new Error("The exact reviewed storage origin permission was not granted. No upload occurred.");
+  await showAssistance(await request({type:"assistance_status"}));
+});
 assistanceAction("assistance-prepare-submit", "assistance_prepare_submit");
 assistanceAction("assistance-reconcile", "assistance_reconcile");
 assistanceAction("assistance-fill", "assistance_fill");

@@ -1,6 +1,6 @@
 # HireWiz candidate-reviewed Chrome companion
 
-The 0.7.0 source package supports separately reviewed Razorpay/Greenhouse answers,
+The 0.8.0 source package supports separately reviewed Razorpay/Greenhouse answers,
 resume attachment and one final submit action. Production stays closed until a
 later schema19 release, native resources, public key pins and explicit feature
 flags are accepted. The frozen F7 release remains schema18. A separately configured
@@ -14,7 +14,7 @@ the file, destination, supported answers and disclosure before filling. The
 backend issues a ten-second exact single-field signed lease only after approval.
 Unknown acknowledgements stop the sequence without replay. Version two supports explicitly saved phone and four supported choices, plus candidate-entered Phone Country and known employment controls, behind its default-false flag. Missing personal answers remain manual.
 
-Attachment uses a separate version-three approval behind
+Legacy file-selection attachment uses a separate version-three approval behind
 `BROWSER_ASSISTANCE_ATTACHMENT_ENABLED=false`. Clear the answer review and inspect
 the now-current form before reviewing an attachment. Approval binds the saved
 original/custom/tailored artifact, exact bytes/hash/size/MIME/filename, device,
@@ -25,10 +25,11 @@ immediately upload the bytes through employer callbacks. The result confirms onl
 local selection; employer upload acceptance is unconfirmed. The known hidden Resume/CV uploader and its transition are supported conservatively. Unreviewed or changed controls and CAPTCHA/login require the candidate. Neither
 assistance action charges application credits or creates an employer receipt.
 
-The shipping manifest has no granted hosts. It requests two optional origins,
-HireWiz and Greenhouse; each action additionally enforces the exact Razorpay tenant,
+The shipping manifest has no granted hosts. The optional request envelope includes HireWiz, the two Greenhouse origins, native webRequest observation and AWS storage. The popup requests only the exact reviewed legitimate storage origin; each action additionally enforces the exact Razorpay tenant,
 selected numeric opening, current top-frame Chrome document and reviewed values.
 It has no cookies, content scripts, external messages or broad host grants.
+
+The separately reviewed native v2 upload uses one private immutable multipart buffer and a genuine native direct HTTPS acknowledgement before invoking the known resume callback. A distinct v4 final review can bind one native direct HTTP 200 employer acknowledgement and settle exactly 20 reserved credits once. Parsed multipart events truthfully report owned-buffer provenance, not native raw-file visibility. Public thank-you DOM, 202, redirects, missing proof and lost outcomes remain unverified and never authorize resend. See [current acceptance](../docs/delivery/BROWSER_HOSTED_NETWORK_ACCEPTANCE_2026-10-15.md).
 
 ## Install the pilot
 

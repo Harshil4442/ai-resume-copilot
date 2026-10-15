@@ -1,5 +1,7 @@
 # Browser companion: disabled MV3 safety foundation
 
+Historical foundation: see the current disabled [0.8.0 hosted upload/receipt handoff](BROWSER_HOSTED_NETWORK_ACCEPTANCE_2026-10-15.md). The early limits below describe that older checkpoint.
+
 Date: 2026-10-08. Scope: local synthetic, fill-only development evidence for
 EX02 and parts of EX05–08 / G04A–D in
 [`JOB_SEARCH_AND_APPLICATION.md`](../requirements/JOB_SEARCH_AND_APPLICATION.md).

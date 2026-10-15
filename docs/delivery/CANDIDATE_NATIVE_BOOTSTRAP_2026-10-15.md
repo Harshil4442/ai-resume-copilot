@@ -20,7 +20,7 @@ The operator must supply a private absolute JSON plan file, owned by the current
 | `website_origin` | Exact approved HTTPS web origin |
 | `ingress_key_id` | Exact candidate ingress transport key id |
 
-Optional reviewed settings are `kms_protection_level` (`SOFTWARE` default, or `HSM`), `lanes` and `directory_shards` (2, 4, 8 or 16; default 8), `segment_size` (default 128), exact shipping `extension_id` (`pnjmegppacleipajnifjmbcopjjffklb` only), `executor_revision` (default `companion_0_7_0`) and `assertion_issuer` (default `hirewiz_candidate_password_v1`). The executor revision must also match the exact packaged companion and `BROWSER_ASSISTANCE_SUBMIT_EXECUTOR_REVISION`.
+Optional reviewed settings are `kms_protection_level` (`SOFTWARE` default, or `HSM`), `lanes` and `directory_shards` (2, 4, 8 or 16; default 8), `segment_size` (default 128), exact shipping `extension_id` (`pnjmegppacleipajnifjmbcopjjffklb` only), `executor_revision` (default `companion_0_8_0`) and `assertion_issuer` (default `hirewiz_candidate_password_v1`). The executor revision must also match the exact packaged companion and `BROWSER_ASSISTANCE_SUBMIT_EXECUTOR_REVISION`.
 
 The existing bucket must belong to the supplied actual project number, match the reviewed location, have uniform bucket-level access and versioning enabled, and have a **locked** retention period meeting the explicit plan minimum. The command checks these settings and never creates a bucket, locks or changes retention, changes IAM, enables APIs or changes network policy. Root must separately review whether its actual resource policy meets these prerequisites; a policy mismatch stops before any provider write.
 

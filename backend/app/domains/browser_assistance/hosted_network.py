@@ -16,14 +16,15 @@ from urllib.parse import quote, urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 PRESIGN_URL = "https://boards.greenhouse.io/uncacheable_attributes/presigned_fields?fields%5B%5D=resume"
-UPLOAD_VERSION = "greenhouse_owned_upload_browser_https_v1"
-RECEIPT_VERSION = "greenhouse_hosted_browser_https_200_v1"
-TRANSPORT = "greenhouse-owned-upload-browser-https-v1"
+UPLOAD_VERSION = "greenhouse_owned_upload_browser_https_v2"
+RECEIPT_VERSION = "greenhouse_hosted_browser_https_200_v2"
+TRANSPORT = "greenhouse-owned-upload-browser-https-v2"
 HEX = re.compile(r"[a-f0-9]{64}")
 NETWORK_KEYS = frozenset({
     "request_id", "method", "url", "tab_id", "frame_id", "document_id", "initiator",
     "started_at_ms", "browser_major", "status_code", "https_validation",
-    "request_body_sha256", "request_body_size", "completed_at_ms", "from_cache", "redirected", "ip",
+    "request_body_sha256", "request_body_size", "request_body_source", "native_body_crosscheck",
+    "completed_at_ms", "from_cache", "redirected", "ip",
 })
 
 
@@ -103,10 +104,13 @@ def network(value, *, url, kind, start, deadline, context=None, application_sha2
                  and value["initiator"] == "chrome-extension://" + s.EXTENSION_ID)
     if kind == "presign":
         _require(value["request_body_sha256"] is None and type(value["request_body_size"]) is int
-                 and value["request_body_size"] == 0)
+                 and value["request_body_size"] == 0 and value["request_body_source"] == "none"
+                 and value["native_body_crosscheck"] == "none")
     else:
         _require(_hex(value["request_body_sha256"])
                  and _integer(value["request_body_size"], 1, 65536 if kind == "submit" else 10 * 1024 * 1024 + 65536))
+        _require(value["request_body_source"] == ("native_raw" if kind == "submit" else "extension_owned_arraybuffer")
+                 and value["native_body_crosscheck"] in ({"raw"} if kind == "submit" else {"raw", "form_fields"}))
     return copy.deepcopy(value)
 
 
@@ -115,9 +119,10 @@ def upload_plan(value, *, now_ms) -> dict:
     _require(isinstance(value, dict) and set(value) == {
         "transport", "presign_url", "storage_origin", "storage_key", "policy_sha256", "fields_sha256",
         "presign_response_sha256", "expires_at_ms", "presign_evidence",
-        "resume_component_sha256",
+        "resume_component_sha256", "body_provenance",
     })
     _require(value["transport"] == TRANSPORT and value["presign_url"] == PRESIGN_URL)
+    _require(value["body_provenance"] == "extension_owned_arraybuffer")
     storage_origin(value["storage_origin"])
     key = value["storage_key"]
     _require(isinstance(key, str) and 1 <= len(key) <= 1024 and not key.startswith("/")

@@ -53,7 +53,8 @@ export class AssistanceTransport {
     return result;
   }
   async artifact(lease) {
-    if (lease.review_protocol_version !== 3 || canonical(lease.allowed_actions) !== '["attach"]') throw new Error(unavailable);
+    if (lease.review_protocol_version !== 3 || !['["attach"]','["upload_resume"]'].includes(canonical(lease.allowed_actions))
+      || canonical(lease.allowed_actions) === '["upload_resume"]' && lease.upload_plan?.transport !== "greenhouse-owned-upload-browser-https-v2") throw new Error(unavailable);
     const response = await this.post("artifact", { review_id: lease.review_id, action_id: lease.action_id, review_digest: lease.review_digest });
     const artifact = lease.artifact;
     if (!response.ok || response.headers.get("content-type") !== artifact.media_type
@@ -107,7 +108,7 @@ export class AssistanceTransport {
       || !Number.isSafeInteger(payload.issued_at_ms) || !Number.isSafeInteger(payload.deadline)
       || payload.issued_at_ms > this.now() + 2000 || payload.deadline <= this.now()
       || payload.deadline <= payload.issued_at_ms || payload.deadline - payload.issued_at_ms > 10000
-      || canonical(payload.allowed_actions) !== (payload.review_protocol_version === 4 ? '["submit"]' : payload.review_protocol_version === 3 ? '["attach"]' : '["fill"]')) throw new Error("The reviewed field action expired or changed.");
+      || canonical(payload.allowed_actions) !== (payload.review_protocol_version === 4 ? '["submit"]' : payload.review_protocol_version === 3 ? payload.upload_plan ? '["upload_resume"]' : '["attach"]' : '["fill"]')) throw new Error("The reviewed field action expired or changed.");
     if (payload.review_protocol_version === 4 && (payload.fee_credits !== 20 || payload.field_id !== "final-submit" || payload.control_type !== "submit" || !/^[a-f0-9]{64}$/.test(payload.native_proof_sha256 || ""))) throw new Error("The distinct final-submit authority is missing.");
     return payload;
   }

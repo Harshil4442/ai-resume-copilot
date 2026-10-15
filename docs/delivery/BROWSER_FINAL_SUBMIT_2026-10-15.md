@@ -1,5 +1,7 @@
 # Local final-submit increment — 2026-10-15
 
+Historical checkpoint: the later [0.8.0 hosted-network handoff](BROWSER_HOSTED_NETWORK_ACCEPTANCE_2026-10-15.md) supersedes the receipt and normal-user source gaps below. Native rollout and real paid acceptance remain open.
+
 This increment extends isolated branch `codex/application-form-completion` from clean `520cec9253a7e599d29a9f062c013500aa1989d6`. It is local, disabled and undeployed. It does not complete the paid direct-company application outcome. The frozen F7 source and its schema18 release consumers are unchanged; schema19 remains an additive draft for a later release.
 
 ## Implemented behavior

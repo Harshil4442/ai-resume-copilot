@@ -91,7 +91,7 @@ class BootstrapPlan(Contract):
     directory_shards: Literal[2, 4, 8, 16] = 8
     segment_size: int = Field(default=128, strict=True, ge=1, le=1024)
     extension_id: Literal["pnjmegppacleipajnifjmbcopjjffklb"] = EXTENSION
-    executor_revision: str = Field(default="companion_0_7_0", pattern=r"^[A-Za-z0-9_-]{1,160}$")
+    executor_revision: str = Field(default="companion_0_8_0", pattern=r"^[A-Za-z0-9_-]{1,160}$")
     assertion_issuer: str = Field(
         default="hirewiz_candidate_password_v1", pattern=r"^[A-Za-z0-9_-]{1,160}$"
     )
@@ -891,6 +891,8 @@ class Bootstrap:
                     "BROWSER_ASSISTANCE_ENABLED",
                     "BROWSER_ASSISTANCE_TYPED_CONTROLS_ENABLED",
                     "BROWSER_ASSISTANCE_SUBMIT_ENABLED",
+                    "BROWSER_ASSISTANCE_ATTACHMENT_ENABLED",
+                    "BROWSER_ASSISTANCE_NATIVE_UPLOAD_ENABLED",
                 )
             },
         }

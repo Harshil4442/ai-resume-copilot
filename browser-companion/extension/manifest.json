@@ -1,13 +1,15 @@
 {
   "manifest_version": 3,
   "name": "HireWiz — reviewed Razorpay assistance",
-  "version": "0.7.0",
+  "version": "0.8.0",
+  "minimum_chrome_version": "144",
   "description": "Review Razorpay answers, resume attachment or one final submit click with separate approvals. Final submission reserves 20 credits.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAknIUS4zTpI4aNq+Cpabv4nASrKkuNXI2Qk4PlrgX9jRReFJLSJussXl1vEMV2RqyHYIRdPpTqeWUlwvQmYZU1vy+/88KBMxUVaN4rqGI2wOr6gMEjkJregrc/0TCgkLtmvflQVtO64u4lvOpK3pBU47eBoXzmjGFSmcx/UUw7s0AXg1jznHLNEs6Ywm/xjsBeVYtCPZPjR6XWzIXye4SLtUCyPPVmXKO05/iG6Hq4HqvVhbYP6bFc6fplSg8wpbhbZv23s7bFBV9eWTiS7rRoMweO068MMh8Af8tH/VMrG+4KQpT/fqdvGGFVgh7aQ4TcM09I/U63aFluOnsjp6GGQIDAQAB",
   "permissions": ["scripting", "storage"],
   "host_permissions": [],
-  "optional_host_permissions": ["https://www.hirewizhq.com/*", "https://job-boards.greenhouse.io/*"],
+  "optional_permissions": ["webRequest"],
+  "optional_host_permissions": ["https://www.hirewizhq.com/*", "https://job-boards.greenhouse.io/*", "https://boards.greenhouse.io/*", "https://*.amazonaws.com/*"],
   "background": { "service_worker": "background.js", "type": "module" },
   "action": { "default_title": "HireWiz reviewed companion", "default_popup": "popup.html" },
-  "content_security_policy": { "extension_pages": "default-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'; frame-src blob:; connect-src 'self' https://www.hirewizhq.com" }
+  "content_security_policy": { "extension_pages": "default-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'; frame-src blob:; connect-src 'self' https://www.hirewizhq.com https://boards.greenhouse.io https://*.amazonaws.com" }
 }

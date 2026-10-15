@@ -175,18 +175,19 @@ def review_payload(db, record, inspection, app, posting, artifact, mapping):
         }
     )
     if "native_upload" in upload:
-        s.require(network.enabled() and action.response.get("native_upload") == upload["native_upload"]
-                  and action.response.get("upload_plan_sha256") == upload["upload_plan_sha256"]
-                  and upload["native_upload"]["artifact_sha256"] == artifact.sha256
-                  and upload["native_upload"]["document_id"] == inspection["document_id"]
-                  and upload["native_upload"]["target_url"] == posting.apply_url)
+        s.require(network.enabled())
+        s.require(action.response.get("native_upload") == upload["native_upload"])
+        s.require(action.response.get("upload_plan_sha256") == upload["upload_plan_sha256"])
+        s.require(upload["native_upload"]["artifact_sha256"] == artifact.sha256)
+        s.require(upload["native_upload"]["document_id"] == inspection["document_id"])
+        s.require(upload["native_upload"]["target_url"] == posting.apply_url)
         context = network.native_context(inspection.get("native_context"))
         s.require(context["tab_id"] == upload["native_upload"]["tab_id"])
         expected = network.expected_application(app, mapping, payload["reviewed_answers"], context, upload["native_upload"])
         payload.update(receipt_contract=network.RECEIPT_VERSION, native_context=context,
                        expected_application=expected, expected_application_sha256=s.digest(expected))
         payload["disclosures"][-2:] = [
-            "The exact sealed resume was sent once through the separately approved storage recipient and complete multipart bytes; its native secure acknowledgement is bound to this review.",
+            "The exact sealed resume was sent once as the companion's own immutable buffer to the separately approved storage recipient. Native Chrome events cross-check available raw bytes or approved nonfile form fields and the direct HTTPS acknowledgement; parsed form events do not expose native raw file bytes.",
             "Only a complete direct employer HTTPS 200 exchange for the exact reviewed application, observed under the browser's standard HTTPS validation, verifies acceptance. A thank-you page, HTTP 202, missing native network evidence or filename alone cannot settle the credits.",
         ]
     else:

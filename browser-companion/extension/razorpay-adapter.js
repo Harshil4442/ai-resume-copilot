@@ -393,8 +393,10 @@ export async function razorpayAdapter(expected = null, action = null, identity =
   }
   if (version === 3) {
     const artifact = expected.artifact;
+    const ownedUpload = same(action.allowed_actions,["upload_resume"]) && action.native_upload_completed === true
+      && action.upload_plan?.transport === "greenhouse-owned-upload-browser-https-v2" && same(action.upload_plan,expected.upload_plan);
     if (action.review_protocol_version !== 3 || action.control_type !== "file" || action.field_id !== "resume"
-      || !same(action.allowed_actions, ["attach"]) || !same(action.attachment, { input_id: "resume", expected_empty: true })
+      || !(same(action.allowed_actions,["attach"]) && !action.upload_plan || ownedUpload) || !same(action.attachment, { input_id: "resume", expected_empty: true })
       || !same(inspection.attachment, action.attachment) || !same(artifact, action.artifact)
       || !digestPattern.test(expected.review_digest || "") || action.review_digest !== expected.review_digest
       || !artifact || !digestPattern.test(artifact.sha256 || "") || action.artifact_sha256 !== artifact.sha256
@@ -425,6 +427,10 @@ export async function razorpayAdapter(expected = null, action = null, identity =
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "files").set.call(control, transfer.files);
     const selectedBefore = control.files[0];
     if (control.files.length !== 1 || selectedBefore !== file || selectedBefore.name !== artifact.filename || selectedBefore.size !== artifact.size_bytes || selectedBefore.type !== artifact.media_type) return {outcome:"unknown",field_id:"resume",reason:"The exact File selection could not be observed"};
+    if (ownedUpload) {
+      monitor?.dispatched();
+      return {outcome:"selected_only",field_id:"resume",selection_reported:true,message:"Exact File selected without dispatching the portal uploader; the known component callback requires the original native upload proof."};
+    }
     control.dispatchEvent(new Event("input", { bubbles: true }));
     control.dispatchEvent(new Event("change", { bubbles: true }));
     monitor?.dispatched();

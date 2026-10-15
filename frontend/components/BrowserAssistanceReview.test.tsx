@@ -5,6 +5,7 @@ import { signIn } from "next-auth/react";
 import { accountMutationHeaders } from "../lib/accountTransportClient";
 import { apiDownload } from "../lib/api";
 import BrowserAssistanceReview from "./BrowserAssistanceReview";
+import { isHostedReceiptReview } from "../lib/browserHostedNetworkReview";
 import countryOptions from "../../backend/app/domains/browser_assistance/hosted_country_options.json";
 
 vi.mock("next-auth/react", () => ({ signIn: vi.fn() }));
@@ -69,6 +70,37 @@ function finalSubmitReview(state = "draft") {
       submit_control: { form_id: "application-form", type: "submit", label: "Submit application" }, pricing: { unit_price: 20 }, admission: { policy_revision: "owned_policy" },
       disclosures: ["Reserve 20 credits for this exact final submission. Credits remain held while the employer outcome is unknown; settlement requires a verified employer receipt.",
         "One final Submit application click can immediately disclose every reviewed answer and resume. Cancellation cannot recall an authorized click; unknown outcomes are never resent automatically."] } };
+}
+function nativeNetwork(url: string, upload = false) {
+  return { request_id: "owned-native-network", method: upload ? "POST" : "GET", url, tab_id: -1, frame_id: -1, document_id: null,
+    initiator: "chrome-extension://pnjmegppacleipajnifjmbcopjjffklb", started_at_ms: Date.now() - 1000, completed_at_ms: Date.now() - 500,
+    browser_major: 151, status_code: 200, https_validation: "browser_default", request_body_source: upload ? "extension_owned_arraybuffer" : "none",
+    native_body_crosscheck: upload ? "raw" : "none", request_body_sha256: upload ? "8".repeat(64) : null,
+    request_body_size: upload ? 2048 : 0, from_cache: false, redirected: false, ip: "198.51.100.8" };
+}
+function nativeUploadReview(state = "draft") {
+  const base = attachmentReview(state);
+  return { ...base, attachment_status: state === "filled" ? "uploaded_native_verified" : "unknown",
+    payload: { ...base.payload, allowed_actions: ["upload_resume"], document_id: "owned-chrome-document", frame_id: 0,
+      native_context: { tab_id: 44, time_zone: "Asia/Kolkata" }, upload_plan: {
+        body_provenance: "extension_owned_arraybuffer", transport: "greenhouse-owned-upload-browser-https-v2", presign_url: "https://boards.greenhouse.io/uncacheable_attributes/presigned_fields?fields%5B%5D=resume",
+        storage_origin: "https://owned-resume.s3.amazonaws.com", storage_key: "owned/exact resume.pdf", policy_sha256: "1".repeat(64), fields_sha256: "2".repeat(64),
+        presign_response_sha256: "3".repeat(64), resume_component_sha256: "4".repeat(64), expires_at_ms: Date.now() + 60000,
+        presign_evidence: nativeNetwork("https://boards.greenhouse.io/uncacheable_attributes/presigned_fields?fields%5B%5D=resume") },
+      disclosures: ["This upload approval does not submit the application or charge application credits. Final submission needs a separate complete review."] } };
+}
+function nativeFinalReview(state = "draft") {
+  const base = finalSubmitReview(state), artifact = base.payload.artifact;
+  const native = { version: "greenhouse_owned_upload_browser_https_v2", review_id: identity, action_id: application, review_digest: "9".repeat(64),
+    artifact_sha256: artifact.sha256, artifact_size_bytes: artifact.size_bytes, filename: artifact.filename, target_url: base.payload.target_url,
+    document_id: base.payload.document_id, tab_id: 44, uploaded_url: "https://owned-resume.s3.amazonaws.com/owned/exact%20resume.pdf",
+    multipart_sha256: "8".repeat(64), multipart_size: 2048, native: nativeNetwork("https://owned-resume.s3.amazonaws.com/", true) };
+  return { ...base, payload: { ...base.payload, receipt_contract: "greenhouse_hosted_browser_https_200_v2", native_context: { tab_id: 44, time_zone: "Asia/Kolkata" },
+    upload: { ...base.payload.upload, native_upload: native, upload_plan_sha256: "5".repeat(64) }, expected_application_sha256: "6".repeat(64),
+    expected_application: { first_name: "Synthetic Alice", last_name: "Fixture", email: "synthetic@example.test", answers_attributes: {
+      "9132967005": { question_id: "9132967005", priority: 0, answer_selected_options_attributes: { "0": { question_option_id: "owned-choice" } } } },
+      demographic_answers: [], data_compliance: {}, attachments: {}, from_job_board_renderer: true, employments: [], mapped_url_token: null,
+      appcast_click_id: null, time_zone: "Asia/Kolkata", resume_url: native.uploaded_url, resume_url_filename: artifact.filename } } };
 }
 function hostedReview(rows = [{ index: 0, current_role: false }], withBaseActions = false) {
   const base = typedReview();
@@ -704,5 +736,152 @@ describe("candidate reviewed browser assistance", () => {
     fireEvent.click(screen.getByRole("button", { name: "Load exact application review" })); await waitFor(() => expect(request).toHaveBeenCalledTimes(1));
     const signal: AbortSignal = request.mock.calls[0][1].signal; view.unmount(); expect(signal.aborted).toBe(true);
     await act(async () => { resolve(Response.json(review())); }); expect(request).toHaveBeenCalledTimes(1);
+  });
+});
+
+
+describe("native exact resume upload and employer receipt review", () => {
+  async function load(value: unknown) {
+    request.mockResolvedValueOnce(Response.json(value));
+    render(<BrowserAssistanceReview deviceId={null} reviewId={identity} applicationId={application} />);
+    await userEvent.click(screen.getByRole("button", { name: "Load exact application review" }));
+  }
+  it("shows the exact recipient, key, hashes and expiry before separate zero-credit upload approval", async () => {
+    const draft = nativeUploadReview(); await load(draft);
+    const approve = await screen.findByRole("button", { name: "Approve exact resume upload" });
+    expect(approve).toBeDisabled();
+    expect(screen.getByText(draft.payload.upload_plan.storage_origin)).toBeVisible();
+    expect(screen.getByText("owned/exact resume.pdf")).toBeVisible();
+    for (const value of ["1", "2", "3", "4"]) expect(screen.getByText(value.repeat(64))).toBeVisible();
+    expect(screen.getByText(new Date(draft.payload.upload_plan.expires_at_ms).toISOString())).toBeVisible();
+    expect(screen.getByText(/0 application credits charged for this resume upload/)).toBeVisible();
+    expect(screen.getByRole("checkbox")).toHaveAccessibleName(/one upload.*does not authorize final submission/);
+    request.mockResolvedValueOnce(Response.json({ ...draft, state: "approved" }));
+    await userEvent.click(screen.getByRole("checkbox")); await userEvent.click(approve);
+    expect(await screen.findByRole("status")).toHaveTextContent("Exact resume upload approved");
+    expect(JSON.parse(request.mock.calls[1][1].body)).toEqual({ identity, confirmed: true, review_digest: draft.review_digest });
+    expect(apiDownload).not.toHaveBeenCalled(); expect(request).toHaveBeenCalledTimes(2);
+  });
+  it.each(["action", "transport", "origin", "key", "hash", "component", "extra-policy", "context", "time-zone", "ip", "cache", "https", "status", "expiry", "document", "provenance", "missing-provenance", "source", "crosscheck"])("rejects native upload %s tampering before consent", async change => {
+    const draft = nativeUploadReview(), plan = draft.payload.upload_plan;
+    if (change === "action") draft.payload.allowed_actions = ["attach"];
+    if (change === "transport") plan.transport = "greenhouse-owned-upload-browser-https-v1";
+    if (change === "origin") plan.storage_origin = "https://unreviewed.example";
+    if (change === "key") plan.storage_key = "../another.pdf";
+    if (change === "hash") plan.fields_sha256 = "not-a-hash";
+    if (change === "component") delete (plan as Partial<typeof plan>).resume_component_sha256;
+    if (change === "extra-policy") Object.assign(plan, { policy: "SECRET_RAW_POLICY", "x-amz-credential": "SECRET_AWS_CREDENTIAL" });
+    if (change === "context") draft.payload.native_context.tab_id = -1;
+    if (change === "time-zone") draft.payload.native_context.time_zone = "Wrong/TimeZone";
+    if (change === "ip") plan.presign_evidence.ip = "999.999.999.999";
+    if (change === "cache") plan.presign_evidence.from_cache = true;
+    if (change === "https") plan.presign_evidence.https_validation = "ignored_errors";
+    if (change === "status") plan.presign_evidence.status_code = 202;
+    if (change === "expiry") plan.expires_at_ms = plan.presign_evidence.completed_at_ms;
+    if (change === "document") draft.payload.document_id = "";
+    if (change === "provenance") plan.body_provenance = "page_owned_file";
+    if (change === "missing-provenance") delete (plan as Partial<typeof plan>).body_provenance;
+    if (change === "source") plan.presign_evidence.request_body_source = "native_raw";
+    if (change === "crosscheck") plan.presign_evidence.native_body_crosscheck = "raw";
+    await load(draft);
+    expect(await screen.findByRole("alert")).toHaveTextContent("response changed");
+    expect(screen.queryByRole("checkbox")).toBeNull(); expect(screen.queryByText("SECRET_RAW_POLICY")).toBeNull();
+    expect(screen.queryByText("SECRET_AWS_CREDENTIAL")).toBeNull(); expect(request).toHaveBeenCalledTimes(1);
+  });
+  it("closes approval before the shorter storage expiry without extending the review", async () => {
+    const draft = nativeUploadReview(); draft.payload.upload_plan.expires_at_ms = Date.now() + 9000;
+    await load(draft);
+    const approve = await screen.findByRole("button", { name: "Approve exact resume upload" });
+    await waitFor(() => expect(approve).toBeDisabled());
+    expect(await screen.findByText(/This review expired/)).toBeVisible(); expect(screen.getByRole("checkbox")).toBeDisabled();
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+  it.each(["key", "hash", "component", "context", "expiry", "proof"])("binds upload approval to unchanged %s", async change => {
+    const draft = nativeUploadReview(); await load(draft); await screen.findByRole("checkbox");
+    const result = structuredClone(draft); result.state = "approved";
+    if (change === "key") result.payload.upload_plan.storage_key = "another/exact.pdf";
+    if (change === "hash") result.payload.upload_plan.policy_sha256 = "a".repeat(64);
+    if (change === "component") result.payload.upload_plan.resume_component_sha256 = "a".repeat(64);
+    if (change === "context") result.payload.native_context.tab_id++;
+    if (change === "expiry") result.payload.upload_plan.expires_at_ms++;
+    if (change === "proof") result.payload.upload_plan.presign_evidence.request_id = "another-original-request";
+    request.mockResolvedValueOnce(Response.json(result));
+    await userEvent.click(screen.getByRole("checkbox")); await userEvent.click(screen.getByRole("button", { name: "Approve exact resume upload" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("approved review changed");
+    expect(screen.getByRole("checkbox")).toBeDisabled(); expect(request).toHaveBeenCalledTimes(2);
+  });
+  it("cannot upgrade an old attachment approval to native upload", async () => {
+    const draft = attachmentReview(), result = nativeUploadReview("approved");
+    result.payload.artifact = draft.payload.artifact;
+    await load(draft); await screen.findByRole("checkbox"); request.mockResolvedValueOnce(Response.json(result));
+    await userEvent.click(screen.getByRole("checkbox")); await userEvent.click(screen.getByRole("button", { name: "Approve exact attachment assistance" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("approved review changed");
+  });
+  it.each([false, true])("reports native storage acceptance without implying final receipt after payload erasure=%s", async erased => {
+    const result = nativeUploadReview("filled"); await load(erased ? { ...result, payload: {} } : result);
+    expect(await screen.findByRole("status")).toHaveTextContent("Resume upload verified");
+    expect(screen.getByRole("status")).toHaveTextContent("No application was submitted");
+    expect(screen.getByRole("status")).toHaveTextContent("no application credits were charged");
+    expect(screen.queryByText(/Employer upload is unconfirmed/)).toBeNull(); expect(screen.queryByRole("checkbox")).toBeNull();
+  });
+  it("reviews the native receipt contract and exact serialized application without inventing a receipt", async () => {
+    await load(nativeFinalReview());
+    expect(await screen.findByRole("button", { name: /Approve final submission/ })).toBeDisabled();
+    expect(screen.getByText(/backend-verified complete direct employer HTTPS 200/)).toBeVisible();
+    expect(screen.getByText("owned/exact resume.pdf")).toBeVisible(); expect(screen.getByText("6".repeat(64))).toBeVisible();
+    expect(screen.getByText(/Employer receipt unverified/)).toBeVisible();
+    expect(screen.queryByText(/0 application credits/)).toBeNull(); expect(screen.queryByText(/Employer application ID/)).toBeNull();
+  });
+  it.each(["missing-contract", "upload-id", "upload-hash", "upload-https", "upload-body", "answer", "time-zone", "extra-application", "priority", "upload-source", "upload-crosscheck"])("rejects mismatched native final %s", async change => {
+    const result = nativeFinalReview();
+    if (change === "missing-contract") delete (result.payload as Partial<typeof result.payload>).receipt_contract;
+    if (change === "upload-id") result.payload.upload.native_upload.action_id = identity;
+    if (change === "upload-hash") result.payload.upload.native_upload.artifact_sha256 = "1".repeat(64);
+    if (change === "upload-https") result.payload.upload.native_upload.native.https_validation = "ignored_errors";
+    if (change === "upload-body") result.payload.upload.native_upload.multipart_sha256 = "1".repeat(64);
+    if (change === "upload-source") result.payload.upload.native_upload.native.request_body_source = "native_raw";
+    if (change === "upload-crosscheck") result.payload.upload.native_upload.native.native_body_crosscheck = "none";
+    if (change === "answer") result.payload.expected_application.first_name = "Different candidate";
+    if (change === "time-zone") result.payload.native_context.time_zone = "UTC";
+    if (change === "extra-application") Object.assign(result.payload.expected_application, { unreviewed: true });
+    if (change === "priority") result.payload.expected_application.answers_attributes["9132967005"].priority = 1;
+    await load(result); expect(await screen.findByRole("alert")).toHaveTextContent("response changed");
+    expect(screen.queryByRole("checkbox")).toBeNull(); expect(request).toHaveBeenCalledTimes(1);
+  });
+  it("preserves distinct contiguous custom-question priorities supplied by the server rather than mapping order", () => {
+    const result = nativeFinalReview(), payload = result.payload;
+    const field = { id: "question_99", label: "Website", type: "text", required: false, value: "https://owned.example.test" };
+    payload.answers.push(field);
+    payload.field_mapping.push({ id: field.id, label: field.label, type: field.type, required: field.required });
+    payload.reviewed_answers[field.id] = field.value; payload.assisted_values[field.id] = field.value;
+    const entries = payload.expected_application.answers_attributes as Record<string, Record<string, unknown>>;
+    entries["9132967005"].priority = 1; entries["99"] = { question_id: "99", priority: 0, text_value: field.value };
+    expect(isHostedReceiptReview(payload)).toBe(true);
+    entries["99"].priority = 1; expect(isHostedReceiptReview(payload)).toBe(false);
+  });
+  it.each(["application-digest", "native-request", "upload-plan-digest", "context", "upload-crosscheck"])("binds final approval to unchanged %s", async change => {
+    const draft = nativeFinalReview(); await load(draft); await screen.findByRole("checkbox");
+    const result = structuredClone(draft); result.state = "approved";
+    if (change === "application-digest") result.payload.expected_application_sha256 = "7".repeat(64);
+    if (change === "native-request") result.payload.upload.native_upload.native.request_id = "another-native-request";
+    if (change === "upload-crosscheck") result.payload.upload.native_upload.native.native_body_crosscheck = "form_fields";
+    if (change === "upload-plan-digest") result.payload.upload.upload_plan_sha256 = "7".repeat(64);
+    if (change === "context") { result.payload.native_context.tab_id++; result.payload.upload.native_upload.tab_id++; }
+    request.mockResolvedValueOnce(Response.json(result));
+    await userEvent.click(screen.getByRole("checkbox")); await userEvent.click(screen.getByRole("button", { name: /Approve final submission/ }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("approved review changed");
+  });
+  it("accepts the qualified extension-owned upload with native form-field crosscheck only under the new contract", async () => {
+    const result = nativeFinalReview(); result.payload.upload.native_upload.native.native_body_crosscheck = "form_fields";
+    await load(result);
+    expect(await screen.findByRole("button", { name: /Approve final submission/ })).toBeDisabled();
+    expect(screen.getByText(/Employer receipt unverified/)).toBeVisible(); expect(screen.queryByRole("alert")).toBeNull();
+  });
+  it("shows a confirmed native final receipt only on consistent backend terminal metadata", async () => {
+    const result = nativeFinalReview("filled"); result.submission_status = "confirmed"; result.employer_confirmed = true; result.filled_count = 1;
+    await load(result);
+    expect(await screen.findByText(/Employer receipt independently verified/)).toHaveTextContent("20 credits charged");
+    expect(screen.queryByRole("checkbox")).toBeNull(); expect(screen.queryByRole("button", { name: /Approve final submission/ })).toBeNull();
+    expect(screen.queryByText(/Employer application ID/)).toBeNull();
   });
 });

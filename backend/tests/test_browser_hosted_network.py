@@ -28,6 +28,8 @@ def exchange(kind, url, start, *, body_sha="a" * 64, size=500, context=None, doc
         "status_code": 200, "https_validation": "browser_default",
         "request_body_sha256": None if kind == "presign" else body_sha,
         "request_body_size": 0 if kind == "presign" else size,
+        "request_body_source": "none" if kind == "presign" else "native_raw" if kind == "submit" else "extension_owned_arraybuffer",
+        "native_body_crosscheck": "none" if kind == "presign" else "raw",
         "from_cache": False, "redirected": False, "ip": "192.0.2.5",
     }
 
@@ -39,6 +41,7 @@ def plan():
             "policy_sha256": "c" * 64, "fields_sha256": "d" * 64,
             "presign_response_sha256": "e" * 64, "expires_at_ms": current + 295_000,
             "resume_component_sha256": "f" * 64,
+            "body_provenance": "extension_owned_arraybuffer",
             "presign_evidence": exchange("presign", network.PRESIGN_URL, current - 100)}
 
 
@@ -119,6 +122,7 @@ def test_exact_native_upload_and_direct_secure200_settle_once_without_inventing_
     ("frame_id", 1), ("document_id", "other_document"), ("browser_major", 143),
     ("url", "https://boards.greenhouse.io/other/jobs/4740333005"), ("application_sha256", "0" * 64),
     ("request_body_sha256", None), ("request_body_size", 0),
+    ("request_body_source", "extension_owned_arraybuffer"), ("native_body_crosscheck", "form_fields"),
 ])
 def test_incomplete_or_changed_native_exchange_never_settles_or_sends_again(owned, field, value):
     _, _, body = final_review(owned)
@@ -229,6 +233,35 @@ def test_certificate_contract_approval_cannot_be_retrofitted_to_browser_https(ow
         owned.device("reconcile", body)
     owned.db.rollback()
     assert owned.audit()["charged_credits"] == 0 and owned.audit()["receipt"] is None
+
+
+@pytest.mark.parametrize("field,value", [("body_provenance", "native_raw"), ("body_provenance", None),
+                                          ("transport", "greenhouse-owned-upload-browser-https-v1")])
+def test_owned_body_provenance_requires_a_distinct_fresh_review(owned, field, value):
+    reviewed = plan()
+    reviewed[field] = value
+    with pytest.raises(HTTPException):
+        network.upload_plan(reviewed, now_ms=service._ms(service.now()))
+
+
+def test_parsed_native_form_can_crosscheck_the_extension_owned_buffer_without_claiming_raw_file_proof(owned):
+    evidence, _ = native_upload(owned, report=False)
+    evidence["native"]["native_body_crosscheck"] = "form_fields"
+    report = {"review_id": evidence["review_id"], "action_id": evidence["action_id"],
+              "upload_evidence": evidence, "selection_reported": True}
+    assert owned.device("reconcile", report)["state"] == "filled"
+    assert owned.audit()["charged_credits"] == 0
+
+
+@pytest.mark.parametrize("field,value", [("request_body_source", "native_raw"), ("native_body_crosscheck", "none")])
+def test_upload_cannot_mislabel_its_body_provenance(owned, field, value):
+    evidence, _ = native_upload(owned, report=False)
+    evidence["native"][field] = value
+    with pytest.raises(HTTPException):
+        owned.device("reconcile", {"review_id": evidence["review_id"], "action_id": evidence["action_id"],
+                                   "upload_evidence": evidence, "selection_reported": True})
+    owned.db.rollback()
+    assert owned.audit()["charged_credits"] == 0
 
 
 def test_serializer_matches_feed_order_boolean_choice_employment_and_ignores_phone_country():
