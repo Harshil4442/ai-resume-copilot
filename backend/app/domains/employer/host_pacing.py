@@ -1,9 +1,8 @@
 """Required coordination for bounded, unauthenticated Lever API GETs.
 
-One fixed API host owns one lease, across tenants and worker processes. Redis
-server time owns cooldowns; missing state or a new server incarnation quarantines
-the host rather than trusting an old permit. This is pacing, not a claim that a
-lease can fence physical HTTP dispatch after arbitrary process suspension.
+PostgreSQL is the default shared authority. Explicit standard Redis remains an
+optional authority with its existing strict incarnation/noeviction requirements.
+This is cooperative pacing, not physical fencing after arbitrary suspension.
 """
 from __future__ import annotations
 
@@ -82,6 +81,9 @@ class Coordinator(Protocol):
 class Permit:
     host: str
     token: str
+
+    def check_dispatch_deadline(self) -> None:
+        """Optional local deadline; distributed ownership still needs verify."""
 
 
 class RedisCoordinator:
@@ -200,10 +202,15 @@ _local = LocalCoordinator()
 
 
 def coordinator() -> Coordinator:
-    mode = os.getenv("EMPLOYER_HOST_PACING_MODE", "redis").strip().lower()
+    mode = os.getenv("EMPLOYER_HOST_PACING_MODE", "postgres").strip().lower()
     environment = os.getenv("APP_ENV", "production").strip().lower()
     if mode == "local" and environment in {"local", "development", "test"}:
         return _local
+    if mode == "postgres":
+        from ...database import engine
+        from .postgres_host_pacing import PostgresCoordinator
+
+        return PostgresCoordinator(engine)
     if mode != "redis":
         raise PacingError("host_pacing_configuration_invalid")
     # A dedicated coordination authority avoids changing global cache/limiter

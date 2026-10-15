@@ -31,6 +31,7 @@ SCHEMA_ORDER = (
     "20261008_0009", "20261009_0010", "20261009_0011", "20261009_0012",
     "20261009_0013", "20261010_0014", "20261011_0015", "20261011_0016",
     "20261014_0017",
+    "20261015_0018",
 )
 SCHEMAS = set(SCHEMA_ORDER)
 FINANCIAL_SCHEMAS = SCHEMAS - {"20261008_0009"}
@@ -42,8 +43,20 @@ EXTENSION_COLUMNS = {
         ("service_credit_reservations", "cost_policy_snapshot"): ("json", False),
     },
     "20261011_0015": {("employer_searches", "history_revision"): ("bigint", True)},
+    "20261015_0018": {
+        ("employer_host_pacing", "host"): ("character varying(32)", True),
+        ("employer_host_pacing", "authority"): ("character varying(32)", True),
+        ("employer_host_pacing", "server_started_at"): ("timestamp with time zone", True),
+        ("employer_host_pacing", "owner_token"): ("character varying(32)", False),
+        ("employer_host_pacing", "phase"): ("character varying(8)", True),
+        ("employer_host_pacing", "pending_until"): ("timestamp with time zone", False),
+        ("employer_host_pacing", "lease_until"): ("timestamp with time zone", False),
+        ("employer_host_pacing", "last_observed_db_time"): ("timestamp with time zone", True),
+        ("employer_host_pacing", "recovery_required"): ("boolean", True),
+    },
 }
 EXTENSION_TABLES = {
+    "20261015_0018": {"employer_host_pacing"},
     "20261014_0017": {
         "browser_assistance_devices", "browser_assistance_reviews", "browser_assistance_requests",
     },
@@ -121,7 +134,7 @@ def unresolved_application_sql(namespace: str, version: str) -> str:
         raise Denied("application_state_reader_identity_refused")
     quoted = '"' + namespace + '"'
     terminal = "'needs_action','ready','approved','manual_handoff','confirmed','failed','cancelled'"
-    if version != "20261014_0017":
+    if SCHEMA_ORDER.index(version) < SCHEMA_ORDER.index("20261014_0017"):
         return f"SELECT count(*) FROM {quoted}.employer_applications WHERE status NOT IN ({terminal})"
     return f"""SELECT count(*) FROM {quoted}.employer_applications AS a
      WHERE a.status NOT IN ({terminal},'user_reported')
@@ -176,8 +189,8 @@ class Inventory(Strict):
     serving_commit: str = Field(pattern=r"^[a-f0-9]{40}$")
     candidate_commit: str = Field(pattern=r"^[a-f0-9]{40}$")
     candidate_image: str = Field(pattern=r"^sha256:[a-f0-9]{64}$")
-    expected_database_schema: Literal["20261008_0009", "20261009_0010", "20261009_0011", "20261009_0012", "20261009_0013", "20261010_0014", "20261011_0015", "20261011_0016", "20261014_0017"]
-    candidate_schema: Literal["20261009_0010", "20261009_0011", "20261009_0012", "20261009_0013", "20261010_0014", "20261011_0015", "20261011_0016", "20261014_0017"]
+    expected_database_schema: Literal["20261008_0009", "20261009_0010", "20261009_0011", "20261009_0012", "20261009_0013", "20261010_0014", "20261011_0015", "20261011_0016", "20261014_0017", "20261015_0018"]
+    candidate_schema: Literal["20261009_0010", "20261009_0011", "20261009_0012", "20261009_0013", "20261010_0014", "20261011_0015", "20261011_0016", "20261014_0017", "20261015_0018"]
     expected_system_identifier_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     expected_database_oid: int = Field(gt=0)
     database_namespace: str = Field(pattern=r"^[a-z][a-z0-9_]{0,62}$")

@@ -29,6 +29,26 @@ from ...database import Base
 from ..common import utcnow
 
 
+class EmployerHostPacing(Base):
+    """Two global API-host leases; operational state contains no candidate data."""
+    __tablename__ = "employer_host_pacing"
+    __table_args__ = (
+        CheckConstraint("host IN ('api.lever.co','api.eu.lever.co')", name="ck_host_pacing_host"),
+        CheckConstraint("length(authority) = 32 AND (owner_token IS NULL OR length(owner_token) = 32)", name="ck_host_pacing_tokens"),
+        CheckConstraint("phase IN ('idle','waiting','held')", name="ck_host_pacing_phase"),
+        CheckConstraint("(phase = 'idle' AND owner_token IS NULL AND pending_until IS NULL AND lease_until IS NULL) OR (phase = 'waiting' AND owner_token IS NOT NULL AND pending_until IS NOT NULL AND lease_until IS NULL) OR (phase = 'held' AND owner_token IS NOT NULL AND pending_until IS NULL AND lease_until IS NOT NULL)", name="ck_host_pacing_state"),
+    )
+    host = Column(String(32), primary_key=True)
+    authority = Column(String(32), nullable=False)
+    server_started_at = Column(DateTime(timezone=True), nullable=False)
+    owner_token = Column(String(32), nullable=True)
+    phase = Column(String(8), nullable=False)
+    pending_until = Column(DateTime(timezone=True), nullable=True)
+    lease_until = Column(DateTime(timezone=True), nullable=True)
+    last_observed_db_time = Column(DateTime(timezone=True), nullable=False)
+    recovery_required = Column(Boolean, nullable=False)
+
+
 class EmployerCatalogueClock(Base):
     """One committed publication watermark; never a financial owner lock."""
     __tablename__ = "employer_catalogue_clock"

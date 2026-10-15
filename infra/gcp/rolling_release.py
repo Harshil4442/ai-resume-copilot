@@ -1,4 +1,4 @@
-"""Schema17-only immutable rolling release; never a fresh cutover or migration.
+"""Schema18-only immutable rolling release; never a fresh cutover or migration.
 
 The production CLI uses only the native adapter. Protocol fixtures prove ordering
 and failure handling, never actual GCP, SQL, token, health or customer readiness.
@@ -22,7 +22,7 @@ from typing import Any, Protocol
 
 import monetary_release as release
 
-SCHEMA = "20261014_0017"
+SCHEMA = "20261015_0018"
 PARENT = f"projects/{release.PROJECT}/locations/{release.REGION}"
 RUNTIME = f"hirewiz-runtime-20261014@{release.PROJECT}.iam.gserviceaccount.com"
 OPERATION = re.compile(re.escape(PARENT) + r"/operations/[A-Za-z0-9._-]{1,200}\Z")
@@ -203,7 +203,7 @@ class RollingPlan:
         return next(pin for pin in self.services if pin.service == service)
 
     def validate(self) -> None:
-        need(release.CHAIN[-1] == SCHEMA, "rolling_schema17_only")
+        need(release.CHAIN[-1] == SCHEMA, "rolling_schema18_only")
         need(all(type(value) is str for value in (self.release, self.image_digest, self.build_id,
             self.nonce, self.runtime_uid, self.workers_release, self.financial_sha256)))
         need(re.fullmatch(r"[a-f0-9]{40}", self.release)
@@ -531,7 +531,7 @@ def advance(plan: RollingPlan, boundary: Boundary, journal: Journal) -> dict[str
                     return {"status": "same_native_operation_pending", "phase": phase,
                             "service": service, "rolling_release_complete": False, "replay_authorized": False}
         boundary.verify_global(plan)
-        return {"status": "joined_schema17_release_observed", "schema": SCHEMA,
+        return {"status": "joined_schema18_release_observed", "schema": SCHEMA,
                 "rolling_release_complete": True, "goal_complete": False,
                 "queue_admission": "closed", "migrations": 0, "data_transfers": 0,
                 "credential_retirements": 0, "source_owner_creations": 0}
@@ -564,5 +564,5 @@ def rollback(plan: RollingPlan, boundary: Boundary, journal: Journal) -> dict[st
                 return {"status": "same_native_operation_pending", "phase": "rollback",
                         "service": service, "replay_authorized": False}
         boundary.verify_global(plan)
-        return {"status": "prior_traffic_restored_schema17", "rolling_release_complete": False,
+        return {"status": "prior_traffic_restored_schema18", "rolling_release_complete": False,
                 "queue_admission": "closed", "replay_authorized": False, "goal_complete": False}

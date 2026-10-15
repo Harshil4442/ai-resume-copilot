@@ -139,7 +139,8 @@ def boundary(tmp_path, monkeypatch, phase):
     return value, state
 
 
-@pytest.mark.parametrize(('phase', 'schema'), [('migration', '20261011_0016'), ('serving', '20261008_0009')])
+@pytest.mark.parametrize(('phase', 'schema'), [('migration', '20261011_0016'), ('serving', '20261008_0009'),
+    ('migration', '20261015_0018'), ('serving', '20261015_0018')])
 def test_phase_is_explicit_and_source_schema_stays_nine(plan, target, tmp_path, monkeypatch, phase, schema):
     value, state = boundary(tmp_path, monkeypatch, phase)
     value.verify_fresh_database_phase(plan, target, schema, phase=phase)

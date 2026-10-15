@@ -12,6 +12,7 @@ import html
 import json
 import re
 import time
+from collections.abc import Callable
 from contextlib import asynccontextmanager, closing
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -310,10 +311,24 @@ class _LeverRead:
         self.coordinator = coordinator
         self.deadline = time.monotonic() + LEVER_SCAN_SECONDS
 
+    async def _coordinate(self, operation: Callable[..., Any], *args: Any) -> Any:
+        # Coordination may wait for a full recovery quarantine. It must not
+        # block another host's HTTP deadline/stream teardown on this event loop.
+        remaining = self.deadline - time.monotonic()
+        if remaining <= 0:
+            raise host_pacing.PacingError("host_pacing_wait_timeout")
+        try:
+            async with asyncio.timeout(remaining):
+                return await asyncio.to_thread(operation, *args)
+        except TimeoutError:
+            # Cancellation cannot stop an already running thread. An unknown
+            # late acquisition is never dispatched/released; its lease expires.
+            raise host_pacing.PacingError("host_pacing_wait_timeout") from None
+
     async def get(self, url: str, params: dict) -> list:
         host = urlsplit(url).hostname or ""
         for attempt in range(LEVER_READ_ATTEMPTS):
-            permit = self.coordinator.acquire(host, self.deadline)
+            permit = await self._coordinate(self.coordinator.acquire, host, self.deadline)
             delay = 0.5 * (attempt + 1)
             uncertain_close = False
             closed = [True]
@@ -326,7 +341,12 @@ class _LeverRead:
                     request.headers.pop(header, None)
                 # Fresh ownership immediately before dispatch. A cached grant
                 # cannot survive coordinator restart, loss, or lease expiry.
-                self.coordinator.verify(permit)
+                await self._coordinate(self.coordinator.verify, permit)
+                permit.check_dispatch_deadline()
+                remaining = min(host_pacing.REQUEST_SECONDS, self.deadline - time.monotonic())
+                if remaining <= 0:
+                    raise ConnectorError("scan_time_limit_exceeded")
+                request.extensions["timeout"] = httpx.Timeout(remaining).as_dict()
                 async with asyncio.timeout(remaining):
                     async with _lever_response(self.client, request, closed) as response:
                         if response.status_code == 404:
@@ -372,7 +392,7 @@ class _LeverRead:
                 # The stream context closes before releasing the lease. If this
                 # exchange is ambiguous, reject the whole scan; never close jobs.
                 if not uncertain_close and closed[0]:
-                    self.coordinator.release(permit)
+                    await self._coordinate(self.coordinator.release, permit)
             if time.monotonic() + delay >= self.deadline:
                 raise ConnectorError("scan_time_limit_exceeded")
             await asyncio.sleep(delay)

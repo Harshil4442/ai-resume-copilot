@@ -55,6 +55,7 @@ CUTOVER_CHAIN = (
     "20261011_0015",
     "20261011_0016",
     "20261014_0017",
+    "20261015_0018",
 )
 CHAIN = (*source_guard.ALLOWED_CHAIN[:-1], *CUTOVER_CHAIN)
 SAFE_ENV = {
@@ -1105,6 +1106,8 @@ def verify_runtime_permissions(connection: Any, namespace: str, runtime: str, mi
            or (row["relname"] in ERASABLE_TABLES and not row["can_delete"])
            for row in relations):
         raise ReleaseDenied("runtime_table_or_migration_ownership_permissions_missing")
+    if any(row["relname"] == "employer_host_pacing" and row["can_delete"] for row in relations):
+        raise ReleaseDenied("runtime_global_host_pacing_delete_forbidden")
     sequences = connection.execute(text(
         "SELECT has_sequence_privilege(:runtime,c.oid,'USAGE') FROM pg_class c "
         "JOIN pg_namespace n ON n.oid=c.relnamespace "

@@ -1,4 +1,4 @@
-# Updating the existing schema17 deployment
+# Updating the existing schema18 deployment
 
 The first preserved-data cutover and subsequent application releases have
 different responsibilities. `fresh_cutover_docker.py` performs the reviewed
@@ -10,10 +10,17 @@ and employer worker. Never repeat the fresh cutover to release ordinary code.
 
 Capture requires an exact clean Git commit, five successful CI jobs and native
 Git-source application Build/digest. It reads the actual target database at
-`20261014_0017`, current runtime UID, numeric runtime/observer secrets, disabled
+`20261015_0018`, current runtime UID, numeric runtime/observer secrets, disabled
 migrator secret, private document worker contracts and existing service state.
 It preserves the current financial row digest and checks financial invariants.
 No credential values or raw service environments are saved in the plan.
+
+The original cutover still transfers the preserved source at schema9, then
+applies each additive migration through schema18 before retiring the migration
+login. Schema18 adds global employer-host pacing state. Runtime access is
+SELECT/INSERT/UPDATE; the table is outside candidate erasure and receives no
+DELETE grant. A routine rolling release requires the completed schema18 target;
+it never runs a schema17-to18 migration or enables a retired migration credential.
 
 Use the existing normal host SDK session with file and HTTP logging disabled.
 Run `backend/.venv/bin/python -I -B infra/gcp/rolling_native.py --help` for the

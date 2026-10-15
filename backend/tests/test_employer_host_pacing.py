@@ -7,6 +7,7 @@ import subprocess
 import time
 import uuid
 from datetime import timedelta
+from threading import Event
 from urllib.parse import urlsplit
 
 import httpx
@@ -258,7 +259,7 @@ def test_production_never_falls_back_to_local(monkeypatch, environment):
 
 
 def test_missing_redis_is_retryable_and_never_dispatches(monkeypatch):
-    monkeypatch.delenv("EMPLOYER_HOST_PACING_MODE", raising=False)
+    monkeypatch.setenv("EMPLOYER_HOST_PACING_MODE", "redis")
     monkeypatch.delenv("EMPLOYER_HOST_PACING_REDIS_URL", raising=False)
     monkeypatch.delenv("REDIS_URL", raising=False)
     monkeypatch.delenv("RATE_LIMIT_STORAGE_URL", raising=False)
@@ -266,6 +267,105 @@ def test_missing_redis_is_retryable_and_never_dispatches(monkeypatch):
     with pytest.raises(connectors.ConnectorError, match="host_pacing_unavailable") as failure:
         scan(lambda request: calls.append(request) or httpx.Response(200, json=[]))
     assert failure.value.safe_to_retry and calls == []
+
+
+def test_default_authority_is_postgres_and_does_not_read_redis(monkeypatch):
+    from backend.app import database
+    from backend.app.domains.employer import postgres_host_pacing
+
+    monkeypatch.delenv("EMPLOYER_HOST_PACING_MODE", raising=False)
+    monkeypatch.setenv("REDIS_URL", "https://invalid.example/")
+    selected = []
+    expected = object()
+    monkeypatch.setattr(postgres_host_pacing, "PostgresCoordinator",
+                        lambda engine: selected.append(engine) or expected)
+    assert host_pacing.coordinator() is expected
+    assert selected == [database.engine]
+
+
+def test_blocking_host_recovery_does_not_delay_another_hosts_http_timeout(monkeypatch):
+    entered, unblock = Event(), Event()
+    releases = []
+
+    class BlockingCoordinator:
+        def acquire(self, host, deadline):
+            if host == HOST:
+                entered.set()
+                assert unblock.wait(2)
+            return host_pacing.Permit(host, uuid.uuid4().hex)
+
+        def verify(self, permit):
+            pass
+
+        def release(self, permit):
+            releases.append(permit.host)
+
+    async def scenario():
+        calls = []
+
+        async def stalled(request):
+            calls.append(request.url.host)
+            await asyncio.sleep(1)
+            return httpx.Response(200, json=[])
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(stalled)) as client:
+            coordinator = BlockingCoordinator()
+            blocked = asyncio.create_task(connectors._LeverRead(client, coordinator).get(
+                'https://api.lever.co/v0/postings/synthetic', {}))
+            assert await asyncio.to_thread(entered.wait, 1)
+            started = time.monotonic()
+            try:
+                with pytest.raises(connectors.ConnectorError, match='source_request_time_limit_exceeded'):
+                    await connectors._LeverRead(client, coordinator).get(
+                        'https://api.eu.lever.co/v0/postings/synthetic', {})
+                assert time.monotonic() - started < .2
+                assert calls == ['api.eu.lever.co']
+            finally:
+                blocked.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await blocked
+                unblock.set()
+        assert HOST not in releases
+
+    monkeypatch.setattr(host_pacing, 'REQUEST_SECONDS', .04)
+    asyncio.run(scenario())
+
+
+def test_cancelled_acquire_never_dispatches_or_releases_late_grant():
+    entered, unblock, returned = Event(), Event(), Event()
+    calls, releases = [], []
+
+    class LateCoordinator:
+        def acquire(self, host, deadline):
+            entered.set()
+            assert unblock.wait(2)
+            returned.set()
+            return host_pacing.Permit(host, uuid.uuid4().hex)
+
+        def verify(self, permit):
+            pytest.fail('unknown late grant was verified')
+
+        def release(self, permit):
+            releases.append(permit)
+
+    async def scenario():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(
+                lambda request: calls.append(request) or httpx.Response(200, json=[]))) as client:
+            reader = connectors._LeverRead(client, LateCoordinator())
+            task = asyncio.create_task(reader.get('https://api.lever.co/v0/postings/synthetic', {}))
+            assert await asyncio.to_thread(entered.wait, 1)
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+            unblock.set()
+            assert await asyncio.to_thread(returned.wait, 1)
+            await asyncio.sleep(.01)
+        assert calls == [] and releases == []
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        unblock.set()
 
 
 def test_dedicated_authority_does_not_change_cache_or_limiter(monkeypatch):

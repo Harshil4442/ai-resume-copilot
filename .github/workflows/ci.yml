@@ -45,6 +45,9 @@ jobs:
         run: |
           python -m pip install --disable-pip-version-check uv==0.11.32
           uv sync --project backend --frozen --all-groups
+      - name: Verify deployment source pin before native builds
+        working-directory: backend
+        run: .venv/bin/python -I -B -m pytest --noconftest -q tests/test_nologin_role_source_pin.py
       - name: Ruff modernized modules
         working-directory: backend
         run: >-
@@ -59,7 +62,7 @@ jobs:
           tests/test_ai_efficiency.py tests/test_dispatch_outbox.py tests/test_employer_services.py
           tests/test_employer_connectors.py tests/test_employer_artifact_lifecycle.py tests/test_learning_rag_privacy.py
           tests/test_employer_feed_adapters.py tests/test_employer_admissions.py tests/test_employer_admissions_postgres.py
-          tests/test_employer_host_pacing.py tests/test_employer_catalog_queries.py
+          tests/test_employer_host_pacing.py tests/test_postgres_host_pacing.py tests/test_employer_catalog_queries.py
           tests/test_employer_preference_metadata.py tests/test_employer_preference_metadata_r2.py
           tests/test_employer_preferences_postgres.py tests/test_employer_search_preferences.py
           tests/fixtures/recovery_authority.py tests/test_recovery_authority.py tests/test_recovery_authority_processes.py
@@ -99,6 +102,7 @@ jobs:
           tests/fixtures/cold_browser_app.py tests/test_cold_browser_runner.py
           ../infra/gcp/release_preflight.py ../infra/gcp/monetary_release.py ../tests/test_release_preflight.py
           tests/test_monetary_release_entrypoint.py tests/test_monetary_schema_step_postgres.py
+          tests/test_nologin_role_source_pin.py
           tests/test_model_key_revocation_observer.py tests/test_legacy_credential_inventory.py
           tests/test_ci_registry_cache.py
           app/services/document_ingestion.py ../infra/document-processing

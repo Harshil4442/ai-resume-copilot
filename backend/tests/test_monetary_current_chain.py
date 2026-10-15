@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -30,10 +32,10 @@ def test_exact_current_chain_and_forward_steps_agree():
     tracked = {p.relative_to(ROOT).as_posix() for p in (ROOT / "backend/alembic/versions").glob("*.py")}
     assert release.source_guard.migration_chain(ROOT, tracked, allow_literal_sql=True) == release.CHAIN
     assert release.CUTOVER_CHAIN == step.CHAIN == observer.SCHEMA_ORDER
-    assert step.CHAIN[0] == "20261008_0009" and step.CHAIN[-1] == "20261014_0017"
-    assert len(step.CHAIN) == 9
+    assert step.CHAIN[0] == "20261008_0009" and step.CHAIN[-1] == "20261015_0018"
+    assert len(step.CHAIN) == 10
     assert set(observer.EXTENSION_TABLES) == {
-        "20261010_0014", "20261011_0015", "20261011_0016", "20261014_0017",
+        "20261010_0014", "20261011_0015", "20261011_0016", "20261014_0017", "20261015_0018",
     }
 
 
@@ -92,3 +94,74 @@ def test_new_erasure_and_pruning_tables_require_delete_but_financial_ledgers_do_
             "employer_catalogue_snapshot_items", "employer_catalogue_winners",
             "employer_catalogue_source_revisions", "employer_catalogue_posting_revisions"} <= release.ERASABLE_TABLES
     assert {"model_cost_liabilities", "service_credit_reservations", "payment_orders"}.isdisjoint(release.ERASABLE_TABLES)
+    assert "employer_host_pacing" not in release.ERASABLE_TABLES
+
+
+def test_schema18_registry_and_native_reader_agree_without_changing_retained_source():
+    registry = load("hirewiz_current_chain_registry", "infra/gcp/fresh_cutover_registry.py")
+    neon = load("hirewiz_current_chain_neon", "backend/scripts/neon_direct_identity.py")
+    rolling = load("hirewiz_current_chain_rolling", "infra/gcp/rolling_release.py")
+    raw, _ = registry.expected_registry("a" * 40, "sha256:" + "b" * 64, "2026-10-15T00:00:00+00:00")
+    inventory = observer.Inventory.model_validate(json.loads(raw))
+    assert inventory.expected_database_schema == "20261008_0009"
+    assert inventory.candidate_schema == rolling.SCHEMA == step.CHAIN[-1] == "20261015_0018"
+    assert {"20261008_0009", "20261014_0017", "20261015_0018"} <= neon.RELEASE_SCHEMAS
+    assert inventory.provider_fencing_verified is inventory.protected_backup_verified is False
+
+
+def test_schema18_keeps_candidate_reports_separate_from_paid_application_proof():
+    assert observer.unresolved_application_sql("public", "20261015_0018") == observer.unresolved_application_sql("public", "20261014_0017")
+    assert "'user_reported'" not in observer.unresolved_application_sql("public", "20261011_0016")
+
+
+class ExtensionMetadata:
+    def __init__(self):
+        self.tables = [(name, "r") for name in sorted(set().union(*observer.EXTENSION_TABLES.values()))]
+        self.columns = [{"relname": table, "relkind": "r", "attname": name,
+            "column_type": shape[0], "attnotnull": shape[1]}
+            for columns in observer.EXTENSION_COLUMNS.values() for (table, name), shape in columns.items()]
+
+    def execute(self, statement, parameters):
+        assert parameters["namespace"] == 2200
+        assert str(statement).startswith("SELECT ")
+        if "format_type" in str(statement):
+            return SimpleNamespace(mappings=lambda: SimpleNamespace(all=lambda: self.columns))
+        return SimpleNamespace(all=lambda: self.tables)
+
+
+@pytest.mark.parametrize("fault", [None, "missing-table", "missing-column", "wrong-type", "nullable-guard", "old-marker"])
+def test_schema18_native_metadata_reader_refuses_missing_or_downgraded_pacing_state(fault):
+    connection = ExtensionMetadata()
+    if fault == "missing-table":
+        connection.tables = [row for row in connection.tables if row[0] != "employer_host_pacing"]
+    pacing = [row for row in connection.columns if row["relname"] == "employer_host_pacing"]
+    if fault == "missing-column":
+        connection.columns.remove(pacing[-1])
+    elif fault == "wrong-type":
+        pacing[0]["column_type"] = "text"
+    elif fault == "nullable-guard":
+        next(row for row in pacing if row["attname"] == "recovery_required")["attnotnull"] = False
+    if fault is None:
+        observer._extension_shape(connection, 2200, "20261015_0018")
+    else:
+        version = "20261014_0017" if fault == "old-marker" else "20261015_0018"
+        with pytest.raises(observer.Denied, match="database_extension_shape_mismatch"):
+            observer._extension_shape(connection, 2200, version)
+
+
+@pytest.mark.parametrize("delete", [False, True])
+def test_global_host_pacing_runtime_permissions_need_siu_but_forbid_delete(delete):
+    class Connection:
+        def execute(self, statement, parameters):
+            assert parameters["runtime"] == "synthetic-runtime"
+            if "can_select" in str(statement):
+                row = {"oid": 4242, "relname": "employer_host_pacing", "relkind": "r",
+                    "can_select": True, "can_insert": True, "can_update": True,
+                    "can_delete": delete, "migration_owns": True}
+                return SimpleNamespace(mappings=lambda: SimpleNamespace(all=lambda: [row]))
+            return SimpleNamespace(scalars=lambda: SimpleNamespace(all=list))
+    if delete:
+        with pytest.raises(release.ReleaseDenied, match="runtime_global_host_pacing_delete_forbidden"):
+            release.verify_runtime_permissions(Connection(), "public", "synthetic-runtime", "synthetic-migration")
+    else:
+        release.verify_runtime_permissions(Connection(), "public", "synthetic-runtime", "synthetic-migration")

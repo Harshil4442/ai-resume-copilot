@@ -114,7 +114,7 @@ def test_observation_only_has_no_mutations(plan):
 def test_complete_sequence_keeps_all_enablement_gates_closed(plan):
     boundary = Boundary()
     result = run(plan, boundary)
-    assert result["schema"] == "20261014_0017"
+    assert result["schema"] == "20261015_0018"
     assert result["queue_admission"] == "closed" and result["goal_complete"] is False
     assert result["optional_generation"] is result["automatic_submission"] is result["native_lifecycle"] is False
     assert mutations(boundary) == [("backup-create",),
@@ -126,6 +126,7 @@ def test_complete_sequence_keeps_all_enablement_gates_closed(plan):
         ("migrate", "20261010_0014", "20261011_0015"),
         ("migrate", "20261011_0015", "20261011_0016"),
         ("migrate", "20261011_0016", "20261014_0017"),
+        ("migrate", "20261014_0017", "20261015_0018"),
         *(('stage', service) for service in release.SERVICES),
         *(('promote', service) for service in (*release.SERVICES[1:], release.SERVICES[0])),
     ]
@@ -166,6 +167,7 @@ def test_missing_or_stale_fence_never_authorizes_a_mutation(plan, changes):
     ("migrate", "20261010_0014", "20261011_0015"),
     ("migrate", "20261011_0015", "20261011_0016"),
     ("migrate", "20261011_0016", "20261014_0017"),
+    ("migrate", "20261014_0017", "20261015_0018"),
     *(('stage', service) for service in release.SERVICES),
     *(('promote', service) for service in release.SERVICES),
 ])
@@ -231,13 +233,14 @@ def test_legacy_release_still_refuses_the_current_extended_chain(tmp_path):
     tracked = {path.relative_to(ROOT).as_posix() for path in (ROOT / 'backend/alembic/versions').glob('*.py')}
     catalogue = 'backend/alembic/versions/20261011_0016_employer_catalogue_search.py'
     browser = 'backend/alembic/versions/20261014_0017_browser_assistance.py'
-    assert {catalogue, browser} <= tracked
+    pacing = 'backend/alembic/versions/20261015_0018_employer_host_pacing.py'
+    assert {catalogue, browser, pacing} <= tracked
     # Preserve the historical chain check in a finite copy before the catalogue
     # migration, whose module-level SQL constants fail the legacy parser closed.
     prefix = tmp_path / 'pre_catalogue'
     (prefix / 'backend/alembic/versions').mkdir(parents=True)
     (prefix / 'backend/alembic.ini').write_bytes((ROOT / 'backend/alembic.ini').read_bytes())
-    prefix_tracked = tracked - {catalogue, browser}
+    prefix_tracked = tracked - {catalogue, browser, pacing}
     for path in sorted(prefix_tracked):
         (prefix / path).write_bytes((ROOT / path).read_bytes())
     chain = release.source_guard.migration_chain(prefix, prefix_tracked)

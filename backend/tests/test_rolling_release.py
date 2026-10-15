@@ -208,7 +208,7 @@ def test_finance_drift_and_missing_rollback_revision_refuse_before_patch(context
 def test_explicit_rollback_is_traffic_only_and_cannot_silently_promote_again(context):
     boundary, journal = context
     rolling.advance(boundary.plan, boundary, journal)
-    assert rolling.rollback(boundary.plan, boundary, journal)["status"] == "prior_traffic_restored_schema17"
+    assert rolling.rollback(boundary.plan, boundary, journal)["status"] == "prior_traffic_restored_schema18"
     assert [name for name, _, _ in boundary.writes[6:]] == [rolling.release.SERVICES[0],
         *reversed(rolling.release.SERVICES[1:])]
     assert all(mask == "traffic" and "template" not in body for _, body, mask in boundary.writes[6:])

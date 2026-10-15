@@ -33,6 +33,7 @@ def test_actual_forward_steps_observe_each_revision_and_nullable_expense_history
         assert connection.execute(text("SELECT count(*) FROM pg_indexes WHERE schemaname=current_schema() AND indexname IN ('ix_payment_orders_paid_at','ix_payment_refunds_processed_at','ix_model_liability_created','ix_model_liability_state_created','ix_service_reservations_state_created')")).scalar_one() == 5
         assert connection.execute(text("SELECT count(*) FROM information_schema.tables WHERE table_schema=current_schema() AND table_name IN ('resume_uploads','employer_paid_delivery_history','employer_search_preparations')")).scalar_one() == 3
         assert connection.execute(text("SELECT count(*) FROM information_schema.tables WHERE table_schema=current_schema() AND table_name IN ('browser_assistance_devices','browser_assistance_reviews','browser_assistance_requests')")).scalar_one() == 3
+        assert connection.execute(text("SELECT count(*) FROM information_schema.tables WHERE table_schema=current_schema() AND table_name='employer_host_pacing'")).scalar_one() == 1
 
 
 @pytest.mark.parametrize("updates,reason", [
@@ -139,6 +140,11 @@ def test_current_head_metadata_and_runtime_delete_paths_are_required(context):
             connection.execute(text(f'GRANT DELETE ON "{table}" TO "{runtime}"'))
         release.verify_runtime_permissions(connection, namespace, runtime, operator)
         assert connection.execute(text("SELECT has_table_privilege(:runtime,'model_cost_liabilities','DELETE')"), {"runtime": runtime}).scalar_one() is False
+        assert connection.execute(text("SELECT has_table_privilege(:runtime,'employer_host_pacing','DELETE')"), {"runtime": runtime}).scalar_one() is False
+        connection.execute(text(f'GRANT DELETE ON employer_host_pacing TO "{runtime}"'))
+        with pytest.raises(release.ReleaseDenied, match="runtime_global_host_pacing_delete_forbidden"):
+            release.verify_runtime_permissions(connection, namespace, runtime, operator)
+        connection.execute(text(f'REVOKE DELETE ON employer_host_pacing FROM "{runtime}"'))
         for table in ("employer_paid_delivery_history", "employer_catalogue_winners", "employer_catalogue_posting_revisions", "browser_assistance_devices", "browser_assistance_reviews", "browser_assistance_requests"):
             connection.execute(text(f'REVOKE DELETE ON "{table}" FROM "{runtime}"'))
             with pytest.raises(release.ReleaseDenied, match="runtime_table_or_migration_ownership_permissions_missing"):

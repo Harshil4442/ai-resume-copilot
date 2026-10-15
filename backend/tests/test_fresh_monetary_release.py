@@ -625,6 +625,7 @@ def test_grants_are_owned_bounded_and_never_delete_financial_history(
             ("alembic_version", "r", 24578),
             ("users", "r", 24578),
             ("payment_orders", "r", 24578),
+            ("employer_host_pacing", "r", 24578),
             ("users_id_seq", "S", 24578),
         ]
     )
@@ -666,6 +667,9 @@ def test_grants_are_owned_bounded_and_never_delete_financial_history(
         'GRANT SELECT,INSERT,UPDATE ON TABLE public."payment_orders" TO "fresh_runtime"'
         in grants
     )
+    assert 'GRANT SELECT,INSERT,UPDATE ON TABLE public."employer_host_pacing" TO "fresh_runtime"' in grants
+    assert 'GRANT SELECT ON TABLE public."employer_host_pacing" TO "fresh_observer"' in grants
+    assert not any('employer_host_pacing' in event and 'DELETE' in event for event in grants)
     assert not any(
         "TRUNCATE" in event or " WITH GRANT OPTION" in event for event in grants
     )

@@ -23,6 +23,15 @@ connection repair is live on the existing API image.
 
 Current development within these outcomes:
 
+- The latest replacement release is held. Its backend verification found a
+  missed whole-file integrity pin after the release code was refactored. That
+  dependency is corrected, and a fast source-only check now runs before native
+  builds so the same oversight fails early. Full release verification remains
+  required. A separate read-only production Redis compatibility check found that
+  Upstash omits the server identifier required by Lever feed coordination. The
+  correction uses two bounded PostgreSQL host rows and an additive schema18
+  migration; Upstash remains the login and cache provider. Native migration,
+  feed activation and release acceptance have not occurred.
 - The production-target frontend deployment is now ready on Vercel, but the
   public domain has not been moved to it. Its native deployment metadata binds
   the reviewed source and upload manifest. The shared `NEXTAUTH_URL` configuration
@@ -59,7 +68,7 @@ Current development within these outcomes:
   grants. This source support does not provision or activate the coordinator;
   its restricted database role, scheduler, runtime calls and upload acceptance
   remain pending. The initial no-binding and API-only phases are preserved.
-- Routine deployments now have a separate schema17-only source path. It reuses
+- Routine deployments now have a separate schema18-only source path. It reuses
   current native identities, numeric secrets and the existing database, verifies
   financial continuity, stages immutable revisions and retains traffic rollback.
   It does not repeat the fresh migration or credential retirement. Actual

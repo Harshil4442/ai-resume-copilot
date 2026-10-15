@@ -1,4 +1,4 @@
-"""Native-only adapter for a reviewed schema17 rolling release.
+"""Native-only adapter for a reviewed schema18 rolling release.
 
 No admission-opening, migration, fresh transfer, role/key/password change, secret
 publication, IAM grant, revision deletion, arbitrary transport/plugin, or retry.
