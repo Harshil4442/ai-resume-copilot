@@ -315,9 +315,9 @@ class BuilderRepairControls(unittest.TestCase):
         with self.assertRaises(repair.RepairDenied):
             repair.add_binding(self.native.policies["project"], "roles/logging.logWriter")
 
-    def test_sixth_old_worker_must_have_exact_native_uid_and_be_disabled_before_create(self):
-        worker = "hirewiz-worker@ai-resume-parser-482412.iam.gserviceaccount.com"
-        self.assertEqual(repair.OLD_PRINCIPALS[worker], "115123377998883908933")
+    def test_seventh_old_employer_worker_requires_exact_uid_and_disabled_before_create(self):
+        worker = "hirewiz-employer-worker@ai-resume-parser-482412.iam.gserviceaccount.com"
+        self.assertEqual(repair.OLD_PRINCIPALS[worker], "105594666905475527509")
         self.native.old_disabled = True
         self.native.trigger_row["disabled"] = True
         for override in ({"disabled": False}, {"uniqueId": "900000000000000000002"}):
@@ -349,8 +349,9 @@ class BuilderRepairControls(unittest.TestCase):
             self.assertEqual(len(native.mutations()), count)
 
     def test_new_builder_cannot_reuse_retired_worker_uid(self):
-        with self.assertRaisesRegex(repair.RepairDenied, "native_uid_invalid"):
-            repair.Builder("115123377998883908933").validate()
+        for uid in ("115123377998883908933", "105594666905475527509"):
+            with self.subTest(uid=uid), self.assertRaisesRegex(repair.RepairDenied, "native_uid_invalid"):
+                repair.Builder(uid).validate()
 
 
 if __name__ == "__main__":

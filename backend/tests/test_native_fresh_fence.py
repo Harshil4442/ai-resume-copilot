@@ -619,3 +619,117 @@ def test_mixed_retained_census_keeps_all_foreign_values_and_origins_before_scope
         assert boundary.scope is None
     assert tuple(item.value for item in observed) == values
     assert not any(params.get("keyString") in values for api, _, params in responses.calls if api == "keys")
+
+
+@pytest.fixture
+def historical_service_actor(prepared, monkeypatch):
+    """The employer actor is reachable but its DSN belongs to another cluster."""
+    boundary, source, _, responses, _ = prepared
+    boundary.scope = None
+    responses.active = True
+    original_modules = boundary._module
+    retained = original_modules("backend/scripts/legacy_credential_inventory.py", "actor_retained_test")
+    neon = original_modules("backend/scripts/neon_direct_identity.py", "actor_neon_test")
+    api = module.PARENT + "/services/ai-resume-parser"
+    employer = module.PARENT + "/services/hirewiz-employer-worker"
+    revision = employer + "/revisions/historical-employer"
+    actor = "hirewiz-employer-worker@ai-resume-parser-482412.iam.gserviceaccount.com"
+    actor_uid = "105594666905475527509"
+    configs = {
+        api: {"name": api, "uid": "service-uid", "template": {
+            "containers": [{"image": "retained-api"}], "serviceAccount": EMAIL}},
+        employer: {"name": employer, "uid": "employer-uid", "template": {
+            "containers": [{"image": "retained-employer"}], "serviceAccount": EMAIL},
+            "trafficStatuses": [{"revision": "historical-employer", "percent": 0, "tag": "old"}]},
+        revision: {"name": revision, "uid": "revision-uid", "service": employer,
+            "containers": [{"image": "retained-employer"}], "serviceAccount": EMAIL},
+    }
+    model_origin = retained.Origin(api, "service-uid", "service", 0, "LLM_API_KEY", 0)
+    db_origin = retained.Origin(api, "service-uid", "service", 0, "DATABASE_URL", 1)
+    historical_origin = retained.Origin(employer, "employer-uid", "service", 0, "DATABASE_URL", 0)
+    resources = [("service", api, "service-uid"), ("service", employer, "employer-uid"),
+                 ("revision", revision, "revision-uid")]
+    credentials = (
+        retained.Credential("model", (model_origin,), responses.key_value),
+        retained.Credential("database", (db_origin,),
+            f"postgresql://legacy_owner:synthetic-password@{neon.RELEASE_DIRECT_HOST}/neondb"),
+        retained.Credential("database", (historical_origin,),
+            "postgresql://historical_owner:synthetic-historical@historical.example.invalid/neondb"),
+    )
+    def collect(capture):
+        for _, name, _ in resources:
+            capture.get("run", name, {})
+        return retained.RetainedInventory(credentials, (), (), tuple(resources))
+    monkeypatch.setattr(retained, "collect_retained_credentials", collect)
+    registry = SimpleNamespace(role_env={"retired": "HIREWIZ_TEST_ACTOR_OLD_ROLE"},
+        database_operator_role_env=("HIREWIZ_TEST_ACTOR_OPERATOR",))
+    def modules(relative, name):
+        if relative.endswith("legacy_credential_inventory.py"):
+            return retained
+        if relative.endswith("monetary_cutover_preflight.py"):
+            return SimpleNamespace(load_inventory=lambda *args: (registry, {}))
+        if relative.endswith("neon_direct_identity.py"):
+            return neon
+        return original_modules(relative, name)
+    monkeypatch.setattr(boundary, "_module", modules)
+    monkeypatch.setenv("HIREWIZ_TEST_ACTOR_OLD_ROLE", "legacy_owner")
+    monkeypatch.setenv("HIREWIZ_TEST_ACTOR_OPERATOR", "synthetic_operator")
+    monkeypatch.setattr(boundary, "_capture_setup_passwords", lambda *_: None)
+    native_get = responses.get
+    account = {"email": actor, "uniqueId": actor_uid, "disabled": True}
+    def get(api_name, path, params):
+        if api_name == "run" and path in configs:
+            responses.calls.append((api_name, path, params))
+            return configs[path]
+        if api_name == "iam" and path.endswith("/" + actor):
+            responses.calls.append((api_name, path, params))
+            return dict(account)
+        if api_name == "keys" and path == "keys:lookupKey":
+            return {"name": OLD.name, "parent": OLD.name.rsplit("/keys/", 1)[0]}
+        return native_get(api_name, path, params)
+    monkeypatch.setattr(responses, "get", get)
+    return boundary, source, responses, configs, resources, actor, actor_uid, account
+
+
+@pytest.mark.parametrize("location", ["template", "routed_revision"])
+def test_reachable_actor_with_historical_database_is_acquired_and_freshly_fenced(
+    historical_service_actor, location,
+):
+    boundary, source, responses, configs, _, actor, uid, account = historical_service_actor
+    employer = module.PARENT + "/services/hirewiz-employer-worker"
+    config = (configs[employer]["template"] if location == "template"
+              else configs[employer + "/revisions/historical-employer"])
+    config["serviceAccount"] = actor
+    boundary.bind_authorities_once(source)
+    assert {item.email: item.uid for item in boundary.scope.principals} == {EMAIL: UID, actor: uid}
+    assert boundary.scope.retired_source_actors == ("legacy_owner",)
+    assert ("iam", "projects/-/serviceAccounts/" + actor, {}) in responses.calls
+    responses.active = False
+    boundary.establish_retirement_cut(source)
+    account["disabled"] = False
+    with pytest.raises(release.ReleaseDenied, match="^fence_old_automated_principal_still_enabled$"):
+        boundary._observe_closure(source, replacements=False)
+
+
+@pytest.mark.parametrize("defect", ["missing_revision", "cross_service_revision", "uid", "missing_actor"])
+def test_historical_reachable_actor_requires_complete_snapshot_and_native_identity(
+    historical_service_actor, defect,
+):
+    boundary, source, responses, configs, resources, actor, _, account = historical_service_actor
+    employer = module.PARENT + "/services/hirewiz-employer-worker"
+    configs[employer]["template"]["serviceAccount"] = actor
+    if defect == "missing_revision":
+        resources.pop()
+    elif defect == "cross_service_revision":
+        configs[employer]["trafficStatuses"][0]["revision"] = (
+            module.PARENT + "/services/ai-resume-parser/revisions/historical-employer")
+    elif defect == "uid":
+        account["uniqueId"] = "not-a-native-uid"
+    else:
+        del configs[employer]["template"]["serviceAccount"]
+    reason = ("fence_native_principal_identity_unmapped" if defect == "uid" else
+              "fence_retained_automated_principal_unmapped" if defect == "missing_actor" else
+              "fence_routed_revision_snapshot_unmapped")
+    with pytest.raises(release.ReleaseDenied, match="^" + reason + "$"):
+        boundary.bind_authorities_once(source)
+    assert boundary.scope is None

@@ -325,18 +325,40 @@ class NativeFreshFenceBoundary(fresh.FreshNativeBoundary):
         need(1 <= len(old_keys) <= 32, "fence_model_credential_scope_unavailable")
         emails = {key.issuer for key in old_keys.values() if key.issuer}
         service_uids: list[tuple[str, str]] = []
+        resource_kinds = {name: kind for kind, name, _ in retained.resources}
+        reachable_resources: set[str] = set()
+        for kind, name, uid in retained.resources:
+            if kind != "service" or name.rsplit("/", 1)[-1] not in release.SERVICES:
+                continue
+            service_uids.append((name, uid))
+            reachable_resources.add(name)
+            raw = captured[("run", name)]
+            routes = raw.get("trafficStatuses", [])
+            need(type(routes) is list and len(routes) <= 64,
+                 "fence_route_inventory_unavailable")
+            for route in routes:
+                need(type(route) is dict and type(route.get("revision")) is str,
+                     "fence_routed_revision_unmapped")
+                revision = route["revision"]
+                path = revision if "/" in revision else name + "/revisions/" + revision
+                need(inventory_module.REVISION.fullmatch(path)
+                     and path.startswith(name + "/revisions/")
+                     and resource_kinds.get(path) == "revision"
+                     and ("run", path) in captured,
+                     "fence_routed_revision_snapshot_unmapped")
+                reachable_resources.add(path)
         for kind, name, uid in retained.resources:
             raw = captured[("run", name)]
             config = inventory_module._config(raw, kind)
-            if name in relevant_resources:
+            # Main templates and routed revisions remain cloud authority even
+            # when every credential they retain belongs to a historical host.
+            if name in relevant_resources or name in reachable_resources:
                 email = config.get("serviceAccount")
                 need(
                     type(email) is str and SA_EMAIL.fullmatch(email),
                     "fence_retained_automated_principal_unmapped",
                 )
                 emails.add(email)
-            if kind == "service" and name.rsplit("/", 1)[-1] in release.SERVICES:
-                service_uids.append((name, uid))
         need(
             1 <= len(emails) <= 16 and len(service_uids) <= 16,
             "fence_relevant_authority_bound_exceeded",

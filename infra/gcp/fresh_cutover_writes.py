@@ -38,6 +38,7 @@ NEW_ACCOUNTS = ("hirewiz-runtime-20261014", "hirewiz-migrate-20261014", "hirewiz
 OLD_PRINCIPALS = {
     "hirewiz-api@ai-resume-parser-482412.iam.gserviceaccount.com": "101596337064821972716",
     "hirewiz-worker@ai-resume-parser-482412.iam.gserviceaccount.com": "115123377998883908933",
+    "hirewiz-employer-worker@ai-resume-parser-482412.iam.gserviceaccount.com": "105594666905475527509",
     "ais-gemini-key-43d738d3dfb9485@226979001779.iam.gserviceaccount.com": "100592881791239522151",
     "ais-gemini-key-41af2f49a3fb4b6@157225724590.iam.gserviceaccount.com": "117611807420650799123",
     "ais-gemini-key-7aeb7c91129947c@157225724590.iam.gserviceaccount.com": "103651370799427077361",

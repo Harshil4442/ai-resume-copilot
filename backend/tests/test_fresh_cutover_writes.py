@@ -587,7 +587,7 @@ def pristine_owner_fixture(writer, monkeypatch, defect=None):
 def test_prepared_owner_resume_pristine_uses_only_native_metadata_reads(writer, monkeypatch):
     writes, http = pristine_owner_fixture(writer, monkeypatch)
     writes.verify_prepared_owner_resume_pristine()
-    assert len(http.calls) == 19 and all(row[0] == "GET" for row in http.calls)
+    assert len(http.calls) == 20 and all(row[0] == "GET" for row in http.calls)
     assert any(url.endswith("/serviceAccounts/hirewiz-worker@" + module.PROJECT + ".iam.gserviceaccount.com")
                for _, url, _ in http.calls)
     assert not list(writer[2].iterdir())
@@ -624,9 +624,12 @@ def test_foreign_authentication_not_retired_prevents_any_google_isolation_write(
 
 @pytest.mark.parametrize("operation", ["pristine", "disable"])
 @pytest.mark.parametrize("defect", ["missing_worker", "worker_uid", "unknown_actor", "duplicate_worker"])
-def test_six_actor_scope_must_be_complete_and_exact_before_any_native_action(writer, monkeypatch, operation, defect):
+@pytest.mark.parametrize("worker", ["hirewiz-worker", "hirewiz-employer-worker"])
+def test_seven_actor_scope_must_be_complete_and_exact_before_any_native_action(
+    writer, monkeypatch, operation, defect, worker,
+):
     writes, http = pristine_owner_fixture(writer, monkeypatch)
-    worker = "hirewiz-worker@ai-resume-parser-482412.iam.gserviceaccount.com"
+    worker += "@ai-resume-parser-482412.iam.gserviceaccount.com"
     principals = list(writes.boundary.scope.principals)
     if defect == "missing_worker":
         principals = [principal for principal in principals if principal.email != worker]
@@ -646,12 +649,15 @@ def test_six_actor_scope_must_be_complete_and_exact_before_any_native_action(wri
 
 
 @pytest.mark.parametrize("defect", ["uid", "enabled"])
-def test_prepared_owner_pristine_rechecks_actual_sixth_worker_uid_and_enabled_state(writer, monkeypatch, defect):
+@pytest.mark.parametrize("worker", ["hirewiz-worker", "hirewiz-employer-worker"])
+def test_prepared_owner_pristine_rechecks_actual_workers_uid_and_enabled_state(
+    writer, monkeypatch, defect, worker,
+):
     writes, http = pristine_owner_fixture(writer, monkeypatch)
     original = http.respond
     def respond(method, url, body):
         status, row = original(method, url, body)
-        if url.endswith("/serviceAccounts/hirewiz-worker@" + module.PROJECT + ".iam.gserviceaccount.com"):
+        if url.endswith("/serviceAccounts/" + worker + "@" + module.PROJECT + ".iam.gserviceaccount.com"):
             row["uniqueId" if defect == "uid" else "disabled"] = "900000000000000000001" if defect == "uid" else True
         return status, row
     http.respond = respond
@@ -661,7 +667,7 @@ def test_prepared_owner_pristine_rechecks_actual_sixth_worker_uid_and_enabled_st
     assert all(method == "GET" for method, _, _ in http.calls) and not list(writer[2].iterdir())
 
 
-def six_actor_retirement_fixture(writer, monkeypatch, *, unknown_worker=False):
+def seven_actor_retirement_fixture(writer, monkeypatch, *, unknown_worker=None):
     writes, http, workdir = writer
     writes.boundary.scope.principals = tuple(module.native.NativePrincipal(email, uid)
         for email, uid in module.OLD_PRINCIPALS.items())
@@ -682,7 +688,7 @@ def six_actor_retirement_fixture(writer, monkeypatch, *, unknown_worker=False):
             uid = clean.rsplit("/", 1)[-1].removesuffix(":disable")
             email = next(email for email, expected_uid in module.OLD_PRINCIPALS.items() if expected_uid == uid)
             states[email] = True
-            if unknown_worker and email == "hirewiz-worker@" + module.PROJECT + ".iam.gserviceaccount.com":
+            if email == unknown_worker:
                 raise RuntimeError("synthetic-unknown-worker-disable")
             return 200, {}
         email = clean.rsplit("/", 1)[-1]
@@ -691,15 +697,17 @@ def six_actor_retirement_fixture(writer, monkeypatch, *, unknown_worker=False):
     return writes, http, workdir, states
 
 
-def test_all_six_actual_native_actors_are_disabled_with_exact_uid_and_durable_attempt(writer, monkeypatch):
-    writes, http, workdir, states = six_actor_retirement_fixture(writer, monkeypatch)
+def test_all_seven_actual_native_actors_are_disabled_with_exact_uid_and_durable_attempt(writer, monkeypatch):
+    writes, http, workdir, states = seven_actor_retirement_fixture(writer, monkeypatch)
     observed = writes.disable_old_principals()
     worker = "hirewiz-worker@ai-resume-parser-482412.iam.gserviceaccount.com"
     assert dict((account.email, account.uid) for account in observed) == module.OLD_PRINCIPALS
-    assert len(observed) == 6 and module.OLD_PRINCIPALS[worker] == "115123377998883908933"
-    assert all(states.values()) and len(list(workdir.glob("disable-*.started.json"))) == 6
+    assert len(observed) == 7 and module.OLD_PRINCIPALS[worker] == "115123377998883908933"
+    assert module.OLD_PRINCIPALS["hirewiz-employer-worker@" + module.PROJECT + ".iam.gserviceaccount.com"] == "105594666905475527509"
+    assert all(states.values()) and len(list(workdir.glob("disable-*.started.json"))) == 7
     mutations = [(index, url) for index, (method, url, _) in enumerate(http.calls) if method == "POST"]
-    assert len(mutations) == 6 and any(url.endswith("/115123377998883908933:disable") for _, url in mutations)
+    assert len(mutations) == 7 and any(url.endswith("/115123377998883908933:disable") for _, url in mutations)
+    assert any(url.endswith("/105594666905475527509:disable") for _, url in mutations)
     compute_index = next(index for index, url in mutations if url.endswith("/115689643755778240830:disable"))
     before_compute = http.calls[compute_index - 4:compute_index]
     assert all(method == "GET" for method, _, _ in before_compute)
@@ -707,23 +715,25 @@ def test_all_six_actual_native_actors_are_disabled_with_exact_uid_and_durable_at
     assert all("/builds?" in url for _, url, _ in before_compute[2:])
 
 
-def test_unknown_worker_disable_keeps_its_attempt_and_never_replays_any_disable(writer, monkeypatch):
-    writes, http, workdir, states = six_actor_retirement_fixture(writer, monkeypatch, unknown_worker=True)
+@pytest.mark.parametrize("worker", ["hirewiz-worker", "hirewiz-employer-worker"])
+def test_unknown_worker_disable_keeps_its_attempt_and_never_replays_any_disable(writer, monkeypatch, worker):
+    worker += "@ai-resume-parser-482412.iam.gserviceaccount.com"
+    writes, http, workdir, states = seven_actor_retirement_fixture(writer, monkeypatch, unknown_worker=worker)
     with pytest.raises(module.WriteDenied, match="write_native_result_unknown_reconcile_only"):
         writes.disable_old_principals()
-    worker = "hirewiz-worker@ai-resume-parser-482412.iam.gserviceaccount.com"
     marker = workdir / ("disable-" + module.hashlib.sha256(worker.encode()).hexdigest()[:16] + ".started.json")
     assert marker.is_file() and states[worker]
     count = sum(method == "POST" for method, _, _ in http.calls)
     with pytest.raises(module.WriteDenied, match="write_old_principal_already_disabled_reconcile_only"):
         writes.disable_old_principals()
     assert sum(method == "POST" for method, _, _ in http.calls) == count
-    assert sum(method == "POST" and url.endswith("/115123377998883908933:disable")
+    assert sum(method == "POST" and url.endswith("/" + module.OLD_PRINCIPALS[worker] + ":disable")
                for method, url, _ in http.calls) == 1
 
 
-def test_builder_restoration_requires_the_same_exact_six_retired_actors():
+def test_builder_restoration_requires_the_same_exact_seven_retired_actors():
     builder = importlib.import_module("github_builder")
     assert builder.OLD_PRINCIPALS == module.OLD_PRINCIPALS
-    assert len(builder.OLD_PRINCIPALS) == 6
+    assert len(builder.OLD_PRINCIPALS) == 7
     assert builder.OLD_PRINCIPALS["hirewiz-worker@ai-resume-parser-482412.iam.gserviceaccount.com"] == "115123377998883908933"
+    assert builder.OLD_PRINCIPALS["hirewiz-employer-worker@ai-resume-parser-482412.iam.gserviceaccount.com"] == "105594666905475527509"
