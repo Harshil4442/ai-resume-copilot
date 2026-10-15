@@ -1,0 +1,386 @@
+{
+  "attempt": 1,
+  "conclusion": "failure",
+  "corrections": {
+    "Redis_existing_readiness_cleanup_preserved": true,
+    "Redis_original_failure": "public_ECR_rate_limit_exit_125",
+    "SQL_assignment_behavior_preserved": true,
+    "inline_exceptions_added": false,
+    "new_corrected_commit_CI_pass": false,
+    "private_pinned_candidate_scan_findings": 0,
+    "redis_digest_preserved": true,
+    "redis_registry": "Docker_Hub_reference_uses_existing_verified_public_cache",
+    "scanner_rules_changed": false,
+    "secret_scan_classification": "SQL_public_identifier_and_two_source_hashes",
+    "secret_scan_original_findings": 3,
+    "source_hashes_represented_as_path_sha256_rows": true
+  },
+  "jobs": [
+    {
+      "conclusion": "failure",
+      "id": 114340466189,
+      "name": "backend",
+      "status": "completed",
+      "steps": [
+        {
+          "conclusion": "success",
+          "name": "Set up job"
+        },
+        {
+          "conclusion": "success",
+          "name": "Initialize containers"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run actions/checkout@v4"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run actions/setup-python@v5"
+        },
+        {
+          "conclusion": "success",
+          "name": "Node runtime for native HTTP to TypeScript contract checks"
+        },
+        {
+          "conclusion": "success",
+          "name": "Install uv and locked dependencies"
+        },
+        {
+          "conclusion": "success",
+          "name": "Configure verified public cache without restarting PostgreSQL"
+        },
+        {
+          "conclusion": "success",
+          "name": "Build and attest immutable native TeX test compiler"
+        },
+        {
+          "conclusion": "success",
+          "name": "Build and verify genuine native document engines"
+        },
+        {
+          "conclusion": "success",
+          "name": "Save sanitized native document engine proof"
+        },
+        {
+          "conclusion": "success",
+          "name": "Provision disposable admission test database"
+        },
+        {
+          "conclusion": "success",
+          "name": "Ruff modernized modules"
+        },
+        {
+          "conclusion": "success",
+          "name": "Check modified legacy authentication imports"
+        },
+        {
+          "conclusion": "success",
+          "name": "Type-check modernized modules"
+        },
+        {
+          "conclusion": "success",
+          "name": "Compile backend"
+        },
+        {
+          "conclusion": "success",
+          "name": "Validate PostgreSQL migrations"
+        },
+        {
+          "conclusion": "failure",
+          "name": "Provision disposable Lever pacing Redis"
+        },
+        {
+          "conclusion": "skipped",
+          "name": "Provision disposable Firestore data emulator"
+        },
+        {
+          "conclusion": "skipped",
+          "name": "Run backend tests"
+        },
+        {
+          "conclusion": "success",
+          "name": "Remove disposable Lever pacing Redis"
+        },
+        {
+          "conclusion": "success",
+          "name": "Remove disposable Firestore data emulator"
+        },
+        {
+          "conclusion": "skipped",
+          "name": "Check OpenAPI artifact drift"
+        },
+        {
+          "conclusion": "skipped",
+          "name": "Post Node runtime for native HTTP to TypeScript contract checks"
+        },
+        {
+          "conclusion": "skipped",
+          "name": "Post Run actions/setup-python@v5"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@v4"
+        },
+        {
+          "conclusion": "success",
+          "name": "Stop containers"
+        },
+        {
+          "conclusion": "success",
+          "name": "Complete job"
+        }
+      ]
+    },
+    {
+      "conclusion": "failure",
+      "id": 114340466313,
+      "name": "security-and-container",
+      "status": "completed",
+      "steps": [
+        {
+          "conclusion": "success",
+          "name": "Set up job"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run actions/checkout@v4"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run actions/setup-node@v4"
+        },
+        {
+          "conclusion": "success",
+          "name": "Audit production frontend dependencies"
+        },
+        {
+          "conclusion": "success",
+          "name": "Configure verified public cache before security Docker operations"
+        },
+        {
+          "conclusion": "failure",
+          "name": "Scan repository for committed secrets"
+        },
+        {
+          "conclusion": "skipped",
+          "name": "Build production container"
+        },
+        {
+          "conclusion": "skipped",
+          "name": "Post Run actions/setup-node@v4"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@v4"
+        },
+        {
+          "conclusion": "success",
+          "name": "Complete job"
+        }
+      ]
+    },
+    {
+      "conclusion": "success",
+      "id": 114340466389,
+      "name": "cold-browser-journey",
+      "status": "completed",
+      "steps": [
+        {
+          "conclusion": "success",
+          "name": "Set up job"
+        },
+        {
+          "conclusion": "success",
+          "name": "Initialize containers"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020"
+        },
+        {
+          "conclusion": "success",
+          "name": "Install both locked runtimes"
+        },
+        {
+          "conclusion": "success",
+          "name": "Check journey harness and manual review UI"
+        },
+        {
+          "conclusion": "success",
+          "name": "Install Chromium"
+        },
+        {
+          "conclusion": "success",
+          "name": "Verify complete cold no-AI browser journey"
+        },
+        {
+          "conclusion": "success",
+          "name": "Save sanitized workflow evidence"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Run actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Run actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262"
+        },
+        {
+          "conclusion": "success",
+          "name": "Stop containers"
+        },
+        {
+          "conclusion": "success",
+          "name": "Complete job"
+        }
+      ]
+    },
+    {
+      "conclusion": "success",
+      "id": 114340466390,
+      "name": "browser-companion",
+      "status": "completed",
+      "steps": [
+        {
+          "conclusion": "success",
+          "name": "Set up job"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run actions/checkout@v4"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run actions/setup-node@v4"
+        },
+        {
+          "conclusion": "success",
+          "name": "Install companion test dependencies"
+        },
+        {
+          "conclusion": "success",
+          "name": "Check disabled package and protocol regressions"
+        },
+        {
+          "conclusion": "success",
+          "name": "Verify synthetic Razorpay fixture contracts"
+        },
+        {
+          "conclusion": "success",
+          "name": "Install Playwright Chromium"
+        },
+        {
+          "conclusion": "success",
+          "name": "Verify local synthetic MV3 flow"
+        },
+        {
+          "conclusion": "success",
+          "name": "Verify native MV3 connection failure and restart boundaries"
+        },
+        {
+          "conclusion": "success",
+          "name": "Verify synthetic Razorpay browser boundary"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Run actions/setup-node@v4"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@v4"
+        },
+        {
+          "conclusion": "success",
+          "name": "Complete job"
+        }
+      ]
+    },
+    {
+      "conclusion": "success",
+      "id": 114340466454,
+      "name": "frontend",
+      "status": "completed",
+      "steps": [
+        {
+          "conclusion": "success",
+          "name": "Set up job"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run actions/checkout@v4"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run actions/setup-node@v4"
+        },
+        {
+          "conclusion": "success",
+          "name": "Install frontend dependencies"
+        },
+        {
+          "conclusion": "success",
+          "name": "Check generated API client drift"
+        },
+        {
+          "conclusion": "success",
+          "name": "Lint, type-check, and test"
+        },
+        {
+          "conclusion": "success",
+          "name": "Build frontend"
+        },
+        {
+          "conclusion": "success",
+          "name": "Install Playwright Chromium"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run responsive accessibility smoke tests"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Run actions/setup-node@v4"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@v4"
+        },
+        {
+          "conclusion": "success",
+          "name": "Complete job"
+        }
+      ]
+    }
+  ],
+  "proof_limits": {
+    "95_percent_worldwide_recall_proven": false,
+    "actual_OpenAPI_exporter": "skipped_after_Redis_failure",
+    "backend_runtime_tests": "skipped_after_Redis_failure",
+    "full_catalogue_expenses_measured": false,
+    "native_full_catalogue_concurrency_proven": false,
+    "paid_mode_active": false,
+    "production_deployed": false,
+    "production_migrated": false
+  },
+  "retained_prior_native_migration_sha256": "012e9d5e6b0dfdf7dc232bd59ecc7e70f8af05ae6f27a7d1e92f877a6ec24a94",
+  "run_id": 38095509980,
+  "run_url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38095509980",
+  "schema": 1,
+  "scope": "inactive_catalogue_source_CI_failure_and_narrow_correction",
+  "source_commit": "91bf10b0bd9a095fb499d9eced5b508cb311dbfc",
+  "status": "completed",
+  "updated_at": "2026-10-10T23:46:06Z"
+}

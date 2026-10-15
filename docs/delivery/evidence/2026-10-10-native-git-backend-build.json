@@ -1,0 +1,26 @@
+{
+  "source_commit": "ea2f801b5472b43f70d9201e9d2f2fb9557538e0",
+  "source_tree": "5e393b1658f04925274239648c39066bb7361c7f",
+  "build_id": "e8fc7935-1993-42e7-be6a-cc6b4fb27d2c",
+  "project": "ai-resume-parser-482412",
+  "region": "us-central1",
+  "status": "SUCCESS",
+  "finished_at_utc": "2026-10-09T20:55:39.642420Z",
+  "resolved_git_source": {
+    "url": "https://github.com/Harshil4442/ai-resume-copilot.git",
+    "revision": "ea2f801b5472b43f70d9201e9d2f2fb9557538e0",
+    "dir": "."
+  },
+  "exact_root_docker_build_push_steps": true,
+  "unexpected_step_or_build_environment_secrets": false,
+  "returned_image_count": 1,
+  "image": "us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz@sha256:a5d3ef4e892facf2ee2010ae18c2348705f49a724a495085c1b26d1457962725",
+  "native_release_tag_and_digest_agree": true,
+  "root_and_independent_verification": true,
+  "independent_report_sha256": "7eda7b9b225115bd046df7d76f51923d1cd7182b0ab9731d34d6bf9a98878074",
+  "slsa_level": "unknown",
+  "exact_source_ci_green": false,
+  "production_deployed": false,
+  "global_monetary_activation": "HOLD",
+  "new_ci_repair_requires_its_own_exact_source_proof": true
+}

@@ -1,0 +1,1212 @@
+{
+  "status": "PASS_LOCAL_RESPONSIVE_FIXTURE_COMPATIBILITY",
+  "base_commit": "0993b23443b13b56da8f2beba576cfb6c0ea501d",
+  "ci_run": 37939583249,
+  "ci_job": 113850234304,
+  "original_ci": {
+    "failed": 20,
+    "passed": 185,
+    "cause": "four existing employer-jobs tests failed across five widths; mocked profile requests no longer matched the reviewed dedicated account path"
+  },
+  "scope": "three existing mocked responsive fixture files only; all product/auth/UI/config source unchanged",
+  "changed_paths": [
+    "frontend/e2e/employer-batches.spec.ts",
+    "frontend/e2e/employer-jobs.spec.ts",
+    "frontend/e2e/resume-tailoring.spec.ts"
+  ],
+  "source_files": 690,
+  "other_source_files_unchanged": 687,
+  "original_assertion_lines_unchanged": 224,
+  "original_targeted": {
+    "startTime": "2026-10-09T14:19:14.019Z",
+    "duration": 34193.673,
+    "expected": 0,
+    "skipped": 0,
+    "unexpected": 4,
+    "flaky": 0
+  },
+  "repaired_targeted": {
+    "startTime": "2026-10-09T14:20:50.867Z",
+    "duration": 10676.046,
+    "expected": 4,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "repaired_full": {
+    "startTime": "2026-10-09T14:21:31.027Z",
+    "duration": 192566.92,
+    "expected": 205,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "five_width_census": {
+    "projects": {
+      "mobile-320": 41,
+      "mobile-390": 41,
+      "tablet-768": 41,
+      "laptop-1024": 41,
+      "desktop-1440": 41
+    },
+    "outcomes": {
+      "expected": 205
+    },
+    "max_attempts": 1,
+    "tests": [
+      {
+        "project": "mobile-320",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-320",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-320",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-320",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-320",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-320",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-320",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-390",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-390",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-390",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-390",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-390",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-390",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-390",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "tablet-768",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "tablet-768",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "tablet-768",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "tablet-768",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "tablet-768",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "tablet-768",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "tablet-768",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "laptop-1024",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "laptop-1024",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "laptop-1024",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "laptop-1024",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "laptop-1024",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "laptop-1024",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "laptop-1024",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "desktop-1440",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "desktop-1440",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "desktop-1440",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "desktop-1440",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "desktop-1440",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "desktop-1440",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "desktop-1440",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-320",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-320",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-320",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-320",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-320",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-320",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-320",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-320",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-320",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-320",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-320",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-320",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-320",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-320",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-320",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-390",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-390",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-390",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-390",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-390",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-390",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-390",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-390",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-390",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-390",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-390",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-390",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-390",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-390",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-390",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "tablet-768",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "tablet-768",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "tablet-768",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "tablet-768",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "tablet-768",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "tablet-768",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "tablet-768",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "tablet-768",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "tablet-768",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "tablet-768",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "tablet-768",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "tablet-768",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "tablet-768",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "tablet-768",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "tablet-768",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "laptop-1024",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "laptop-1024",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "laptop-1024",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "laptop-1024",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "laptop-1024",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "laptop-1024",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "laptop-1024",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "laptop-1024",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "laptop-1024",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "laptop-1024",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "laptop-1024",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "laptop-1024",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "laptop-1024",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "laptop-1024",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "laptop-1024",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "desktop-1440",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "desktop-1440",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "desktop-1440",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "desktop-1440",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "desktop-1440",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "desktop-1440",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "desktop-1440",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "desktop-1440",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "desktop-1440",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "desktop-1440",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "desktop-1440",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "desktop-1440",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "desktop-1440",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "desktop-1440",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "desktop-1440",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-320",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-390",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "tablet-768",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "laptop-1024",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "desktop-1440",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-320",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-320",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-320",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-390",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-390",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-390",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "tablet-768",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "tablet-768",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "tablet-768",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "laptop-1024",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "laptop-1024",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "laptop-1024",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "desktop-1440",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "desktop-1440",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "desktop-1440",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-320",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-320",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-320",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-320",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-320",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-320",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-320",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-320",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-320",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-320",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-320",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-320",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-320",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-320",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-320",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-390",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-390",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-390",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-390",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-390",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-390",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-390",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-390",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-390",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-390",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-390",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-390",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-390",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-390",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "mobile-390",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "tablet-768",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "tablet-768",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "tablet-768",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "tablet-768",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "tablet-768",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "tablet-768",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "tablet-768",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "tablet-768",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "tablet-768",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "tablet-768",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "tablet-768",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "tablet-768",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "tablet-768",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "tablet-768",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "tablet-768",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "laptop-1024",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "laptop-1024",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "laptop-1024",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "laptop-1024",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "laptop-1024",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "laptop-1024",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "laptop-1024",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "laptop-1024",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "laptop-1024",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "laptop-1024",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "laptop-1024",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "laptop-1024",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "laptop-1024",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "laptop-1024",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "laptop-1024",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "desktop-1440",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "desktop-1440",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "desktop-1440",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "desktop-1440",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "desktop-1440",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "desktop-1440",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "desktop-1440",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "desktop-1440",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "desktop-1440",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "desktop-1440",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "desktop-1440",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "desktop-1440",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "desktop-1440",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "desktop-1440",
+        "status": "expected",
+        "attempts": 1
+      },
+      {
+        "project": "desktop-1440",
+        "status": "expected",
+        "attempts": 1
+      }
+    ]
+  },
+  "checks": {
+    "eslint": "PASS",
+    "typecheck": "PASS",
+    "post_baseline_generated_type_index_restoration_typecheck": "PASS",
+    "patch_reverse_forward_all_sources": "PASS",
+    "raw_secret_scan": {
+      "image": "zricethezav/gitleaks@sha256:b5918eb91b8d2473cec722f066abb4352e4ffdc4ec9f4283ec143aba9ec9ebc4",
+      "exit": 0,
+      "findings": 0,
+      "network": "none",
+      "scope": "all three changed fixture files; default rules; no exclusions"
+    }
+  },
+  "diagnosis": {
+    "original_actual_unmatched_profile_requests": [
+      {
+        "path": "/api/account/profile",
+        "status": 503
+      },
+      {
+        "path": "/api/account/profile",
+        "status": 503
+      },
+      {
+        "path": "/api/account/profile",
+        "status": 503
+      },
+      {
+        "path": "/api/account/profile",
+        "status": 503
+      },
+      {
+        "path": "/api/account/profile",
+        "status": 503
+      },
+      {
+        "path": "/api/account/profile",
+        "status": 503
+      },
+      {
+        "path": "/api/account/profile",
+        "status": 503
+      },
+      {
+        "path": "/api/account/profile",
+        "status": 503
+      },
+      {
+        "path": "/api/account/profile",
+        "status": 503
+      },
+      {
+        "path": "/api/account/profile",
+        "status": 503
+      },
+      {
+        "path": "/api/account/profile",
+        "status": 503
+      },
+      {
+        "path": "/api/account/profile",
+        "status": 503
+      },
+      {
+        "path": "/api/account/profile",
+        "status": 503
+      },
+      {
+        "path": "/api/account/profile",
+        "status": 503
+      },
+      {
+        "path": "/api/account/profile",
+        "status": 503
+      },
+      {
+        "path": "/api/account/profile",
+        "status": 503
+      },
+      {
+        "path": "/api/account/profile",
+        "status": 503
+      },
+      {
+        "path": "/api/account/profile",
+        "status": 503
+      }
+    ],
+    "original_targeted_tests": 4,
+    "original_targeted_passed": 0,
+    "repaired_targeted_passed": 4,
+    "assertions_unchanged": true,
+    "production_files_unchanged": true
+  },
+  "owned_server_cleanup": {
+    "original-targeted": {
+      "group_id": 19071,
+      "verified_stopped": true,
+      "verification": "unreaped owned leader; no live group members"
+    },
+    "repaired-targeted": {
+      "group_id": 19938,
+      "verified_stopped": true,
+      "verification": "unreaped owned leader; no live group members"
+    },
+    "repaired-full": {
+      "group_id": 20160,
+      "verified_stopped": true,
+      "verification": "unreaped owned leader; no live group members"
+    }
+  },
+  "generated_type_index": {
+    "path": "frontend/next-env.d.ts",
+    "generated_sha256": "0f70629890b72a0a82e91972cc032c04b658b26c265373cb711cf576bfbf8fcc",
+    "restored_sha256": "1862ac4bbbc5192d4bf562161df66ea547ed3e67173100656ab606ae9797db2b",
+    "reason": "Next dev generated its own type index paths; restored exact baseline after owned server verified stopped",
+    "included_in_patch": false
+  },
+  "limitations": [
+    "Responsive suite uses its existing signed dummy NextAuth cookies and finite response fixtures; this is not real account/SQL/production proof",
+    "Separate five-path HTTPS cold journey proves the ordinary real browser/BFF/API/SQL workflow; do not combine the proof scopes",
+    "Original20-failure CI retained; new exact GitHub CI after integration remains required",
+    "No protected pairing review, native ingress change, real employer contact, payment, AI call, or cloud mutation",
+    "Frozen patch contains no generated next-env type-index change; its actual dev-generated bytes are retained as evidence"
+  ],
+  "freeze": "/var/folders/ck/cyzkgt2d1yx6hzpsdflcg83c0000gn/T/hirewiz-responsive-ci-compatibility-20261009-85s0xvri/review-freeze",
+  "freeze_manifest_sha256": "60dbd272342b3708fa46adaf02ad2d349b0aca6b631252615cc41e1c72b81e37",
+  "root_integration": "exact_three_path_preimage_and_result_verified; new_exact_CI_pending"
+}

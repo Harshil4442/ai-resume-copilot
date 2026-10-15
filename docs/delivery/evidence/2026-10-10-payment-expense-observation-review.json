@@ -1,0 +1,55 @@
+{
+  "base_commit": "29919c2de38fb9e2b45975fad7ea9d822b2442fb",
+  "source_review": "CLEAR for exact three-path R2",
+  "production_deployment": "PENDING",
+  "changes": [
+    {
+      "path": "backend/app/billing/cost_policy.py",
+      "before_sha256": "3249e6c7323418b6bd2ff73dea88456e44539cfa128383fdb12c2d2c61e8a4b7",
+      "after_sha256": "fd8b14de7f4bb89708e3d0b34a6c5f8da92063b6bd01825da17fbba21bf94059"
+    },
+    {
+      "path": "backend/app/billing/service.py",
+      "before_sha256": "1130ff9e37aa10886d32e8837713b55eed08cffaefc67fbecbc84ac694b7897a",
+      "after_sha256": "820dc94718e5b5a3044f8bc6003ee08bac033e62f0f5a1e54193abf25bf53941"
+    },
+    {
+      "path": "backend/tests/test_razorpay_billing.py",
+      "before_sha256": "96890ac4498ae3fd6e9257c8dc8015863f2a5c53d5a6fa1d01e813f9d7c7cf94",
+      "after_sha256": "872eef1d3879128210a1e1e66941e123c4c6801d48ec18dc31dd69f9ec0e2f5a"
+    }
+  ],
+  "root_packet": {
+    "patch_sha256": "3651d15bacca6e17d3e06f1e170d1d753daec7ba577ef41fd4f7bafd37c18511",
+    "report_sha256": "490c03f40feea916a59b47f4cd06283b3b41798c6a6ba414fe97c7c001c302e8",
+    "source_manifest_sha256": "65d3f9668808d19a33e29030494e99849b4df26efff6cf9bf710f164edd363e3",
+    "artifact_manifest_sha256": "fe2ee9877692bee65d57ba92de64583543edec1b29c223ca908af2da94ec3048"
+  },
+  "independent_report_sha256": "96eabf8b1db723dbb1e24146ca3ccd55a4d2b0d9ef36ead77ecbd3f4f42c6734",
+  "independent_artifact_manifest_sha256": "d1e267616979a42e4fdd5194984fcc9ca374944baad3c55157091e1842e9a76b",
+  "verification": {
+    "regression_passed": 88,
+    "actual_postgres_passed": 22,
+    "skipped": 0,
+    "former_counterexamples_passed": 5,
+    "observation_clock_controls_passed": 2,
+    "baseline_functions_unchanged": 37,
+    "all_R1_functions_unchanged": 40,
+    "ruff_F": "PASS",
+    "cost_policy_mypy": "PASS",
+    "service_mypy": "Two pre-existing baseline Optional datetime errors; no new errors. Not claimed green."
+  },
+  "preserved_boundaries": [
+    "Accepted capture/refund settlement and idempotent entitlements continue.",
+    "Original provider dates preserved; only authoritative server processing/insertion timestamps extend variance observation scope.",
+    "Unknown fee facts remain unknown; conflicting known reports retain conservative projections and immutable event provenance.",
+    "Full-refund-first paid_at can remain unknown; its recorded fee still affects new-work variance."
+  ],
+  "open_gates": [
+    "Exact composed source CI",
+    "Native external/provider consumer fencing, controlled migration and deployment",
+    "Actual invoice reconciliation; observed method list is not merchant fee contract"
+  ],
+  "cloud_mutations": 0,
+  "live_payment_mutations": 0
+}

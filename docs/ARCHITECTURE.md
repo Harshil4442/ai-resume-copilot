@@ -1,5 +1,17 @@
 # HireWiz Runtime Architecture
 
+## Proposed Employer Discovery and Application Extension
+
+The [employer discovery and application system design](EMPLOYER_DISCOVERY_APPLICATION_SYSTEM_DESIGN.md)
+records the proposed connector contracts, service choices, scaling budgets, candidate
+approval, submission reliability and deployment strategy, plus a read-only runtime
+audit dated 2026-10-07. It extends this architecture for planning review; the new
+discovery, browser and submission capabilities are not implemented by that document.
+
+The [AI call efficiency audit](AI_CALL_EFFICIENCY_AUDIT.md) distinguishes current
+generation paths from deterministic work and proposes result reuse, default basic
+fit without an LLM, and optional generation for useful interpretation and writing.
+
 ## Production Topology
 
 ```text

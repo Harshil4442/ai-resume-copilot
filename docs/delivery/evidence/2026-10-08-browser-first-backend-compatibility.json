@@ -1,0 +1,19 @@
+{
+  "phase": "before frontend-only promotion",
+  "frontend_candidate": "7c59578d169290a91f45d39552ad48d41ea40d16",
+  "backend_source": "ec52279d236e82813bc486b9d5de9eb97a80408d",
+  "http": 200,
+  "health": {
+    "ok": true,
+    "release": "ec52279d236e82813bc486b9d5de9eb97a80408d",
+    "revision": "ai-resume-parser-00257-tov"
+  },
+  "backend_sql_or_environment_mutations": false,
+  "old_tracked_backend_modules_dependency_locks_and_openapi_diff": "zero; only three new inactive recovery modules are added to candidate and are not deployed on GCP",
+  "post_promotion_health": {
+    "http": 200,
+    "release": "ec52279d236e82813bc486b9d5de9eb97a80408d",
+    "revision": "ai-resume-parser-00257-tov"
+  },
+  "post_promotion_observed_utc": "2026-10-08T18:17Z (minute precision)"
+}

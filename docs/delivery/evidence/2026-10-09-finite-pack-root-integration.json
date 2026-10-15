@@ -1,0 +1,373 @@
+{
+  "status": "INTEGRATED SOURCE; combined root verification and production rollout pending",
+  "source_review": "CLEAR",
+  "deployment": "HOLD",
+  "author_freeze": "/var/folders/ck/cyzkgt2d1yx6hzpsdflcg83c0000gn/T/hirewiz-cost-policy-bi08-20261009-61kinu3g/freeze-v2",
+  "review_report": "/var/folders/ck/cyzkgt2d1yx6hzpsdflcg83c0000gn/T/hirewiz-finite-pack-financial-independent-20261009-793m6e2y/final-independent-financial-report.json",
+  "review_report_sha256": "1a2c2fdefb006addb863b8e46e384e2bcf8b344813c5b9f3d666077807219efd",
+  "verified_author_source_files": 699,
+  "verified_independent_artifacts": 29,
+  "integrated_paths": 46,
+  "composition": {
+    "root": "/Users/harshil/.codex/worktrees/hirewiz-area-redesign/ai-resume-copilot",
+    "author_freeze": "/var/folders/ck/cyzkgt2d1yx6hzpsdflcg83c0000gn/T/hirewiz-cost-policy-bi08-20261009-61kinu3g/freeze-v2",
+    "verified_source_files": 699,
+    "candidate_directory": "/var/folders/ck/cyzkgt2d1yx6hzpsdflcg83c0000gn/T/hirewiz-root-cost-v2-composition-20261009-57p4aaey",
+    "status": "PRIVATE PREPARATION ONLY; formal review pending; no root mutation",
+    "root_results": {
+      "backend/alembic/versions/20261009_0013_expense_policy_snapshots.py": {
+        "root_preimage": null,
+        "author_result": "7587045c5264c1033cfc2ea4ad0a4a39938c8aa73e44a084d47def45b880c9e0",
+        "candidate_result": "7587045c5264c1033cfc2ea4ad0a4a39938c8aa73e44a084d47def45b880c9e0",
+        "conflicts": 0
+      },
+      "backend/app/billing/catalog.py": {
+        "root_preimage": "b1b88ee3c2bece49ee2397e62cc8162871060000bb93f04d2e798105a0ba94ee",
+        "author_result": "4e17c22f7018c32e388ef1ec33c3fca780c30e4bb8059caf6a51599454d15ba5",
+        "candidate_result": "4e17c22f7018c32e388ef1ec33c3fca780c30e4bb8059caf6a51599454d15ba5",
+        "conflicts": 0
+      },
+      "backend/app/billing/cost_policy.py": {
+        "root_preimage": null,
+        "author_result": "3249e6c7323418b6bd2ff73dea88456e44539cfa128383fdb12c2d2c61e8a4b7",
+        "candidate_result": "3249e6c7323418b6bd2ff73dea88456e44539cfa128383fdb12c2d2c61e8a4b7",
+        "conflicts": 0
+      },
+      "backend/app/billing/service.py": {
+        "root_preimage": "ab94acd176593c547f5d58ac3f40f754dde97ef59edb22eb6ab4bbbc610ec4ec",
+        "author_result": "15756db32983f0c8a8ae49f024c80beda952c2c467abbf07cc169a4c6491ffe2",
+        "candidate_result": "15756db32983f0c8a8ae49f024c80beda952c2c467abbf07cc169a4c6491ffe2",
+        "conflicts": 0
+      },
+      "backend/app/domains/analysis/service.py": {
+        "root_preimage": "9dff764120124f1ed663a7de5a82a6aad3f417373e3cadf7e6895503a21ccb18",
+        "author_result": "f3bb7e8ffd2c0d75fc5576cf13b3051215ddcb0226670d9b28781fe24d1deb90",
+        "candidate_result": "f3bb7e8ffd2c0d75fc5576cf13b3051215ddcb0226670d9b28781fe24d1deb90",
+        "conflicts": 0
+      },
+      "backend/app/domains/employer/config.py": {
+        "root_preimage": "4a1790e4915023f127530c97e35aca2d58c9512ef6c4fc4bd3a40718b77095c3",
+        "author_result": "dfc406334a026152840b6fa0d6360dc70f08d4d38f7182ccfc9c532686989cc6",
+        "candidate_result": "dfc406334a026152840b6fa0d6360dc70f08d4d38f7182ccfc9c532686989cc6",
+        "conflicts": 0
+      },
+      "backend/app/domains/employer/credits.py": {
+        "root_preimage": "2268b0066cb02d17f7b210e5b91e3a15fa0f8015f61385d4e348b2093d0d6d40",
+        "author_result": "d11988705a12ebbf644d25d194e05f4b4d07f87f415f28547dca023e6aacb40f",
+        "candidate_result": "d11988705a12ebbf644d25d194e05f4b4d07f87f415f28547dca023e6aacb40f",
+        "conflicts": 0
+      },
+      "backend/app/domains/employer/models.py": {
+        "root_preimage": "79a1e5dc732b21ccadd190c85365e2b3bc38c884f030f2b2382aba63b24c6371",
+        "author_result": "0b110bf426aaa4bb45ddae88c495e47d85c82b6936eec5a5dd43a2b9f92c1490",
+        "candidate_result": "e50521389d091ec2e6b96ae720f06bc12964a12dd9dd373843abe24b43d86b4f",
+        "conflicts": 0
+      },
+      "backend/app/domains/employer/service.py": {
+        "root_preimage": "445a3b1b926b644bd45e5053970a698c0f96609999211d39e2a2a6ab320a9318",
+        "author_result": "c364b04e9470910e33288f8a64058635ef95c1e312691fe38a2d89bcc8f0b4e3",
+        "candidate_result": "433ffa308aa255c9e8bb8cda7f3c3e43137b2ec759d5988b5114d2342fdcc6f2",
+        "conflicts": 0
+      },
+      "backend/app/domains/usage/service.py": {
+        "root_preimage": "5fd130769c37ca114d3ff942ad7991721aad19c2dcf7e0bf46a916b2b0f4853c",
+        "author_result": "5c12456ee650a9af8f5e5c573a2fd76eaf3c3494643dda9c010034e879cc5688",
+        "candidate_result": "5c12456ee650a9af8f5e5c573a2fd76eaf3c3494643dda9c010034e879cc5688",
+        "conflicts": 0
+      },
+      "backend/app/models.py": {
+        "root_preimage": "1803fbc5fd6ca00a52be9c20eae12fd80c8cd7370689043a530a052011725062",
+        "author_result": "92b00f650632effdd2c85f0e34549f9adfd6e9913914eae10a97fb11880579ad",
+        "candidate_result": "87ce9505a2487cfee294f71c9dc06891d77ee5f6db80cf6cbc0f92664d9b09dd",
+        "conflicts": 0
+      },
+      "backend/app/routers/billing.py": {
+        "root_preimage": "227b8339169c2d451fe74d8de579996fa6247bb219cc1370806621b2e57dd6f0",
+        "author_result": "5ec352a5447138f91b90260f250a2a3267db9b0dfbc3c61d43575f1aedca0377",
+        "candidate_result": "5ec352a5447138f91b90260f250a2a3267db9b0dfbc3c61d43575f1aedca0377",
+        "conflicts": 0
+      },
+      "backend/app/routers/jobs.py": {
+        "root_preimage": "3551ba27f7a1a0532293c0107a045ade01c7080e781e7ce1892314d11e3df8a4",
+        "author_result": "3e83085c71ce1ec7194644ca1ce2e7f6963f1513cb1cfb8a29a6038776ad431f",
+        "candidate_result": "171ebf9ba85b2636579960b0894b48bcabeef8a6c4f18c6fc22dcc27f9703722",
+        "conflicts": 0
+      },
+      "backend/app/services/generation_budget.py": {
+        "root_preimage": "a95ad4062851ceab7a9fbd248f2829295e95baebd94af7a5bf5cd00996539bd4",
+        "author_result": "8a43be2e80ff3c85cb9bffeb37ad5a2a3a8685b0979056c65e9d49733c98fdc9",
+        "candidate_result": "8a43be2e80ff3c85cb9bffeb37ad5a2a3a8685b0979056c65e9d49733c98fdc9",
+        "conflicts": 0
+      },
+      "backend/app/services/guardrails.py": {
+        "root_preimage": "84eb05291dbd12494be817d467c861410972d763d6e5e93cd3d8e2b5a6dcf213",
+        "author_result": "d555dc083c911f1e0a306e0ff2b55aa641425d520963c1bb1b827157a99f928c",
+        "candidate_result": "d555dc083c911f1e0a306e0ff2b55aa641425d520963c1bb1b827157a99f928c",
+        "conflicts": 0
+      },
+      "backend/app/services/model_cost_policy.py": {
+        "root_preimage": "8fba4c544faa9f03a58bb8381a4eabcfa4409e6abc4059732bea9e0e2085a12c",
+        "author_result": "96e470e23025d3b206bcf1651fca3890734901e0b2731429519aba92bf33165d",
+        "candidate_result": "96e470e23025d3b206bcf1651fca3890734901e0b2731429519aba92bf33165d",
+        "conflicts": 0
+      },
+      "backend/scripts/audit_expense_policy.py": {
+        "root_preimage": null,
+        "author_result": "f3ac60f66c3a5714adf16d78a76c9c1d9ea88d16c6bfb64ae3ef43f8919d9e09",
+        "candidate_result": "f3ac60f66c3a5714adf16d78a76c9c1d9ea88d16c6bfb64ae3ef43f8919d9e09",
+        "conflicts": 0
+      },
+      "backend/tests/conftest.py": {
+        "root_preimage": "4175aba6e4e6b39c10b461dc2bee1e35fa62647724811dbf3fdb86b3e54a52ed",
+        "author_result": "5cb8d429e09ef2e7496c4b1def669fbf4a9b7bb9718e3db60b268ec2be9ca2ee",
+        "candidate_result": "5cb8d429e09ef2e7496c4b1def669fbf4a9b7bb9718e3db60b268ec2be9ca2ee",
+        "conflicts": 0
+      },
+      "backend/tests/expense_policy_fixtures.py": {
+        "root_preimage": null,
+        "author_result": "ff9bdb7d4f3ece5067816f00d65470534d0f65b2eceee5136abffd74ec3d4d15",
+        "candidate_result": "ff9bdb7d4f3ece5067816f00d65470534d0f65b2eceee5136abffd74ec3d4d15",
+        "conflicts": 0
+      },
+      "backend/tests/test_analysis_runs.py": {
+        "root_preimage": "f62b1fea7c0f1aed146ff8a103031e51f38de448ec75e935036496e7d465bdb4",
+        "author_result": "3b335f4d5f3ae6396bad50a9101c12680352a4a70227d7467e15e66659303758",
+        "candidate_result": "3b335f4d5f3ae6396bad50a9101c12680352a4a70227d7467e15e66659303758",
+        "conflicts": 0
+      },
+      "backend/tests/test_employer_admissions.py": {
+        "root_preimage": "ce5680e6edf2b83513352900296d6a239f1be86e1a45a0e0c21c121404f69a03",
+        "author_result": "0c513ef19a60375972a867b2163c9e8433c7f44597fa0b3a51c6c7e06fbb0129",
+        "candidate_result": "0c513ef19a60375972a867b2163c9e8433c7f44597fa0b3a51c6c7e06fbb0129",
+        "conflicts": 0
+      },
+      "backend/tests/test_expense_budget.py": {
+        "root_preimage": null,
+        "author_result": "b1fe3a34fdf36ae56746f5c716562924f9ea7bdd754dedbb77d346998265fc08",
+        "candidate_result": "b1fe3a34fdf36ae56746f5c716562924f9ea7bdd754dedbb77d346998265fc08",
+        "conflicts": 0
+      },
+      "backend/tests/test_expense_budget_postgres.py": {
+        "root_preimage": null,
+        "author_result": "0601868b68917ddf1f47fc53408de4018669ca75601aeb0d03501aaea749caea",
+        "candidate_result": "0601868b68917ddf1f47fc53408de4018669ca75601aeb0d03501aaea749caea",
+        "conflicts": 0
+      },
+      "backend/tests/test_expense_policy.py": {
+        "root_preimage": null,
+        "author_result": "7dd752f7c5d276c2239373f95a3fbf2dc62b2617fe20c011fc3721388e08adc8",
+        "candidate_result": "7dd752f7c5d276c2239373f95a3fbf2dc62b2617fe20c011fc3721388e08adc8",
+        "conflicts": 0
+      },
+      "backend/tests/test_model_cost_budgets_postgres.py": {
+        "root_preimage": "8c305bcfbe77ee13792a94832ff8e670ecd29d948f2f46874777995c867297bd",
+        "author_result": "2c08e2d6f888a9367b5a5e24743ad40e13fe50c06fabdc8c6aff555bf247c4b6",
+        "candidate_result": "2c08e2d6f888a9367b5a5e24743ad40e13fe50c06fabdc8c6aff555bf247c4b6",
+        "conflicts": 0
+      },
+      "backend/tests/test_razorpay_billing.py": {
+        "root_preimage": "d0bfa20260a3424abf7662bc68685a8a29ba9e2167427468f59d0c82810275a3",
+        "author_result": "151542b1a76e3fb4c1b9a5d9ebe2db0976b3784e85d28f1c75c2c208b2a734af",
+        "candidate_result": "96890ac4498ae3fd6e9257c8dc8015863f2a5c53d5a6fa1d01e813f9d7c7cf94",
+        "conflicts": 0
+      },
+      "docs/delivery/FINITE_PACK_IMPLEMENTATION_2026-10-09.md": {
+        "root_preimage": null,
+        "author_result": "c6fc81c7cb2fe423f0eed7849192a466fc43546a81cb307f1ab53c1ad400ce57",
+        "candidate_result": "c6fc81c7cb2fe423f0eed7849192a466fc43546a81cb307f1ab53c1ad400ce57",
+        "conflicts": 0
+      },
+      "docs/examples/expense-policy-estimated-candidate-2026-10-09.json": {
+        "root_preimage": null,
+        "author_result": "139b5ec7fcd2be088fdd1f0fd74cb93e9a69bc193db6632261b2e21536446a87",
+        "candidate_result": "139b5ec7fcd2be088fdd1f0fd74cb93e9a69bc193db6632261b2e21536446a87",
+        "conflicts": 0
+      },
+      "frontend/app/billing/page.tsx": {
+        "root_preimage": "4f78efd3977777c5ecf144c151cd0fbf297776d5174107226adda7857985ea2c",
+        "author_result": "23bd35c2b1760fe774a0f2f5572106996fc5248a6fdebe90ac44e8a95330435b",
+        "candidate_result": "23bd35c2b1760fe774a0f2f5572106996fc5248a6fdebe90ac44e8a95330435b",
+        "conflicts": 0
+      },
+      "frontend/app/dashboard/page.tsx": {
+        "root_preimage": "23be56c99978cf726e36b552cb5291fd83806076c49799968333ea8927dde6ce",
+        "author_result": "005d11ad67f509582cc3a4995a926633d49aef56ce5b4ea2998064c029875137",
+        "candidate_result": "005d11ad67f509582cc3a4995a926633d49aef56ce5b4ea2998064c029875137",
+        "conflicts": 0
+      },
+      "frontend/app/digital-delivery/page.tsx": {
+        "root_preimage": "860c8a7d99fff73c3719b5ddae62cf4834ced6a81163fa36b9b335a8e9f07569",
+        "author_result": "e07c1d8b397e7e154cfdee368de8a2ed5cb92723531582edd11b2290e4356a62",
+        "candidate_result": "e07c1d8b397e7e154cfdee368de8a2ed5cb92723531582edd11b2290e4356a62",
+        "conflicts": 0
+      },
+      "frontend/app/page.tsx": {
+        "root_preimage": "8ba66cb5dbf06f53648ff2d9383af37286cde2a2a696a0a02f41bce81a6cb614",
+        "author_result": "518a098f8afac7a2a97366bfa2411f8ff5760d2cd1d82882ae66c31aa19559ec",
+        "candidate_result": "518a098f8afac7a2a97366bfa2411f8ff5760d2cd1d82882ae66c31aa19559ec",
+        "conflicts": 0
+      },
+      "frontend/app/pricing/page.tsx": {
+        "root_preimage": "c20d08ff7e415d6399d1b8c154a75d2262445da216db6d8933b611af4e035325",
+        "author_result": "37ae33871a200bb35dd5e96c31c98823df3f7a58ad7dfeba12c1ef3bb114e88a",
+        "candidate_result": "37ae33871a200bb35dd5e96c31c98823df3f7a58ad7dfeba12c1ef3bb114e88a",
+        "conflicts": 0
+      },
+      "frontend/app/profile/page.tsx": {
+        "root_preimage": "0766675354ccd7b310e245426d40fef55a44e86f0aa73ff9c6f9f61f8689e2c0",
+        "author_result": "4f99645336510e3b802b9b85f31c6dfb16acf795046c3a4f21b4c26042937ea3",
+        "candidate_result": "4f99645336510e3b802b9b85f31c6dfb16acf795046c3a4f21b4c26042937ea3",
+        "conflicts": 0
+      },
+      "frontend/app/refund/page.tsx": {
+        "root_preimage": "2b5d22da7605703aeaa7f944a7c244e7dcbf2eaf182ac47bb6dfae5c6b7498d4",
+        "author_result": "a3287803ca53e814e13d1078a621ebd8d0a01d8e9c0a549f164f0bbb1041b67e",
+        "candidate_result": "a3287803ca53e814e13d1078a621ebd8d0a01d8e9c0a549f164f0bbb1041b67e",
+        "conflicts": 0
+      },
+      "frontend/app/resume/page.tsx": {
+        "root_preimage": "941b3289e29ec399421c45b17ac4ae7d82cb4d427f2f1867d259e232a9c8130d",
+        "author_result": "5c34187456829bd50fcd16ef7d0895d9bfb6fb73d6647e4ed05f81a04ad196bf",
+        "candidate_result": "8b5bae1812d3a258dee6d148a9aa6ca924d0415f59f81809d1746e9a5d35defc",
+        "conflicts": 0
+      },
+      "frontend/app/terms/page.tsx": {
+        "root_preimage": "7721903254502ba43820f97e4f4827cd531bc66556f0306a8e999c45f0555702",
+        "author_result": "0dfe851a60b08bfc4fe73345fdaffbd6df3ccef1c01290e1958a3c3adef8df82",
+        "candidate_result": "0dfe851a60b08bfc4fe73345fdaffbd6df3ccef1c01290e1958a3c3adef8df82",
+        "conflicts": 0
+      },
+      "frontend/app/tools/[slug]/page.tsx": {
+        "root_preimage": "efc624b0755607ff1470a979f75ebe3888df5ed78536154f420b2a0a3e4c231b",
+        "author_result": "88e07a1e6484a61eaada0d684c1a31e484c8c7427375a4488023f72750969fb7",
+        "candidate_result": "88e07a1e6484a61eaada0d684c1a31e484c8c7427375a4488023f72750969fb7",
+        "conflicts": 0
+      },
+      "frontend/components/BulletOptimizer.tsx": {
+        "root_preimage": "ba251c3f04524c9b4e3f9a907c503b3a19b80f0443b354eb393135f26efeaeac",
+        "author_result": "05827c0e2e11886b08bcf473ad09ad697a35ba2875fb066a7a3ac669000b72a0",
+        "candidate_result": "05827c0e2e11886b08bcf473ad09ad697a35ba2875fb066a7a3ac669000b72a0",
+        "conflicts": 0
+      },
+      "frontend/components/EmployerBatchPanel.tsx": {
+        "root_preimage": "0beca9c8e940510ff3c71a5aaeeddff655bf221022eaf41f001e2ca16b9081a9",
+        "author_result": "d612138540050bbf6dc3dd82c2f942cb49cc11c1f7691b0710d9a7373633963f",
+        "candidate_result": "d612138540050bbf6dc3dd82c2f942cb49cc11c1f7691b0710d9a7373633963f",
+        "conflicts": 0
+      },
+      "frontend/components/Nav.tsx": {
+        "root_preimage": "9ad46ef5283bd016e209c00ca3b9b262436d06aaabf4ac124cb17947e85d2dc7",
+        "author_result": "786e50af3da78e940e50bc83fce4240c8b4d71f61a35fc72e70b6d706fa28701",
+        "candidate_result": "786e50af3da78e940e50bc83fce4240c8b4d71f61a35fc72e70b6d706fa28701",
+        "conflicts": 0
+      },
+      "frontend/e2e/employer-jobs.spec.ts": {
+        "root_preimage": "463010dd63cf0a81afd2c57eca0db5f49930bb617bf33f906f38939ad04a3068",
+        "author_result": "4e9b438a2890f2a59e2d59b08a73142a59b934089154ebf24fa6ba530c8a0c41",
+        "candidate_result": "b30c4437dd63a9276f6809a5cacceea3b7c1085776a7381108fd453eaf6ebf40",
+        "conflicts": 0
+      },
+      "frontend/lib/billingCatalog.ts": {
+        "root_preimage": "a68d36e0ea27af17dd5c4bbbd8cff211c8202b483eb944b2f32d2bf3b081b5e6",
+        "author_result": "976274a2d50d063238ea762bec129ff9c8cd7c529e4a3d512bed1ba04a1563b5",
+        "candidate_result": "976274a2d50d063238ea762bec129ff9c8cd7c529e4a3d512bed1ba04a1563b5",
+        "conflicts": 0
+      },
+      "backend/scripts/run_cold_browser_journey.py": {
+        "root_preimage": "ec5b0350c7e273c8a597dd44ab39b2e14ffef035e0811487d987f9bf85ba97f8",
+        "author_result": "c57d1fd6c6201f65a34098f0d653d91683501d0db91d12a5441100796fa9882a",
+        "candidate_result": "c57d1fd6c6201f65a34098f0d653d91683501d0db91d12a5441100796fa9882a",
+        "conflicts": 0
+      },
+      "backend/tests/fixtures/cold_browser_app.py": {
+        "root_preimage": "db6c3836db67a31440ea206713a92fa41026c317817ce0a327d7133cc19f110c",
+        "author_result": "23c5bd8b50d2c6f78fc9a23cb7b9f76f20b08435e73586a61fbb1384d4fd794c",
+        "candidate_result": "23c5bd8b50d2c6f78fc9a23cb7b9f76f20b08435e73586a61fbb1384d4fd794c",
+        "conflicts": 0
+      },
+      "frontend/journey/cold-no-ai.spec.ts": {
+        "root_preimage": "3ce4dffa78241d99c8a963b4c7daa43cb6519f40d80e0004b2494641d9560a84",
+        "author_result": "1618d71a1f4cf375271a249441783909411bb2180439f41f1c411e1cc1847fa9",
+        "candidate_result": "1618d71a1f4cf375271a249441783909411bb2180439f41f1c411e1cc1847fa9",
+        "conflicts": 0
+      }
+    },
+    "conflicting_paths": [],
+    "manual_resolution": {
+      "path": "backend/app/domains/employer/service.py",
+      "reason": "Finance lock_entitlement_owner composes with independently reviewed _search_input preference fingerprint; both retained. Native materialize_for_application wrappers and alias/metadata/evaluation/price quote hunks retain root semantics."
+    }
+  },
+  "remaining": [
+    "Exact composed root checks",
+    "Schema-head compatibility fixtures",
+    "Immutable CI",
+    "Production migration/expense-policy deployment and monitoring",
+    "Actual expense reconciliation"
+  ],
+  "composed_verification": {
+    "frontend_units": {
+      "passed": 240,
+      "log": "/tmp/hirewiz-root-final-frontend-unit-20261009.log"
+    },
+    "frontend_lint": "Final PASS",
+    "frontend_types": "Final PASS",
+    "frontend_production_build": {
+      "status": "PASS with explicit synthetic local auth fixture; first missing-fixture refusal retained",
+      "log": "/tmp/hirewiz-root-finite-frontend-build-fixture-20261009.log"
+    },
+    "backend_ci_ruff": "PASS",
+    "backend_ci_mypy": "PASS120files",
+    "financial_preferences_preflight": {
+      "passed": 251,
+      "failed": 1,
+      "reason": "New unit-price-only test used old subprocess compiler stub; native route requires compile_project boundary. Root changed only synthetic fixture and retained all assertion ASTs. Focused entire27case suite PASS.",
+      "log": "/tmp/hirewiz-root-finite-preferences-preflight-20261009.log"
+    },
+    "responsive": {
+      "passed": 210,
+      "failed": 5,
+      "reason": "Old exact custom-upload label after reviewed native source UI label change; original failures retained, narrow selector correction awaiting exact replay.",
+      "directory": "/var/folders/ck/cyzkgt2d1yx6hzpsdflcg83c0000gn/T/hirewiz-root-composed-verification-20261009-f00mldc5/responsive"
+    },
+    "cold": {
+      "status": "PASS",
+      "summary": "/var/folders/ck/cyzkgt2d1yx6hzpsdflcg83c0000gn/T/hirewiz-root-composed-verification-20261009-f00mldc5/cold-r3/summary.json",
+      "summary_sha256": "61422e23f176b5c34803880c55b273a5278fd7c814ca6a04048e99a7d1b78729",
+      "scope": "Production Next/Chromium\u2192actualBFF/API\u2192local synthetic migratedSQL; no live payment/model/employer write",
+      "cleanup": {
+        "owned_processes_stopped": true,
+        "group_verification": [
+          {
+            "group_id": 96551,
+            "verified_stopped": true,
+            "verification": "unreaped owned leader; no live group members"
+          },
+          {
+            "group_id": 96550,
+            "verified_stopped": true,
+            "verification": "unreaped owned leader; no live group members"
+          }
+        ],
+        "errors": [],
+        "own_schema_removed": true,
+        "owned_tls_private_key_removed": true
+      },
+      "earlier_root_failures_retained": true
+    },
+    "affected_responsive": {
+      "status": "PASS",
+      "stats": {
+        "startTime": "2026-10-09T17:59:49.269Z",
+        "duration": 93721.671,
+        "expected": 85,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "report": "/var/folders/ck/cyzkgt2d1yx6hzpsdflcg83c0000gn/T/hirewiz-root-composed-verification-20261009-f00mldc5/responsive-final-affected/playwright.json",
+      "report_sha256": "2c176587e3a3f55a97a5e32bb370d115f0cdf013bcec5f4263c29159eefcf03b"
+    },
+    "root_migration_boundaries": "4 actual PostgreSQL PASS0skip; original historical and current refusal checks"
+  }
+}

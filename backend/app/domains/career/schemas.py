@@ -284,6 +284,10 @@ class OpportunityMatchResponse(BaseModel):
     fit_summary: str
     improvement_tips: list[str]
     created_at: datetime
+    mode: str | None = None
+    provenance: str | None = None
+    scoring_version: str | None = None
+    uncertainties: list[str] = Field(default_factory=list)
 
 
 class UsageEventResponse(BaseModel):

@@ -1,0 +1,86 @@
+{
+  "observed_utc": "2026-10-08T16:19:34.545810+00:00",
+  "scope": "one temporary read-only PostgreSQL connection from local workstation; five serial SELECT 1 observations maximum",
+  "execution_origin": "local workstation, not Cloud Run or Vercel",
+  "customer_or_table_data_read": false,
+  "production_mutations": false,
+  "database_url_or_account_identifiers_recorded": false,
+  "topology_change_authorized": false,
+  "database_hostname_region_hint": "ap-southeast-1",
+  "database_provider_hint": "AWS from hostname suffix",
+  "hostname_region_semantics": "Inference from configured hostname only; not an independently verified database deployment region.",
+  "configured_database_vendor": "Neon",
+  "connect_ms": 440.072,
+  "serial_query_observations": [
+    {
+      "observation": 1,
+      "roundtrip_ms": 65.213,
+      "select_one_verified": true
+    },
+    {
+      "observation": 2,
+      "roundtrip_ms": 65.234,
+      "select_one_verified": true
+    },
+    {
+      "observation": 3,
+      "roundtrip_ms": 64.19,
+      "select_one_verified": true
+    },
+    {
+      "observation": 4,
+      "roundtrip_ms": 65.34,
+      "select_one_verified": true
+    },
+    {
+      "observation": 5,
+      "roundtrip_ms": 65.695,
+      "select_one_verified": true
+    }
+  ],
+  "result": "completed",
+  "limitations": [
+    "Single connection and at most five observations; no percentile, causal attribution, load or migration-duration conclusion.",
+    "Local client network includes distance to the database and cannot substitute for Cloud Run-to-database measurements.",
+    "Connection time includes client/DNS/TCP/TLS/provider factors; provider wake-up is not separately measured."
+  ],
+  "api_service_region": "us-central1",
+  "api_region_evidence": "Read-only Cloud Run ai-resume-parser metadata.labels[cloud.googleapis.com/location]",
+  "region_comparison": "API configured region and database hostname region hint differ; Cloud Run-to-database latency was not measured.",
+  "source_commit": "7cc49c2c08a296b33cb30f96e383b959caf214c0",
+  "catalog_static_analysis": {
+    "employer_catalog": {
+      "handler": "backend/app/routers/v1/employer.py:19",
+      "estimated_explicit_sql_statements": 3,
+      "queries": [
+        "get_current_user loads authenticated User",
+        "service.catalog queries the same User again",
+        "service.catalog fetches enabled EmployerSource rows"
+      ],
+      "avoidable_roundtrip": "The second User query does not refresh the shared cached identity. A future read-only catalog can use its already authenticated User while preserving the owner boundary.",
+      "per_source_query_loop": false
+    },
+    "public_billing_catalog": {
+      "handler": "backend/app/routers/billing.py:63",
+      "estimated_explicit_sql_statements": 0,
+      "work": "Environment/catalog construction; no database dependency or SQL in the handler."
+    },
+    "authenticated_billing_config": {
+      "handler": "backend/app/routers/billing.py:71",
+      "estimated_explicit_sql_statements": 1,
+      "work": "Authentication User read; handler otherwise uses the same static catalog construction."
+    },
+    "counts_scope": "Source-level explicit SELECT counts, not runtime tracing. Pool pre-ping, transaction setup/rollback, connection establishment and proxy/network hops can add work.",
+    "client_hop": "Frontend same-origin BFF forwards an uncached backend request; no additional production catalog request was made."
+  },
+  "prior_observations_supplied_by_release_owner": {
+    "authenticated_catalog_ms": [
+      4902,
+      1427
+    ],
+    "migration_execution_seconds": 269,
+    "migration_duration_includes_provisioning": true,
+    "comparability": "Prior catalog/migration observations have different origin and workload from these local SELECT 1 samples."
+  },
+  "next_diagnostic_recommendation": "Measure bounded connection and SQL timings from the deployed API region separately from BFF/network time before attributing latency; retain current GCP/Vercel/Neon topology."
+}

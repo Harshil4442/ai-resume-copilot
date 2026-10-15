@@ -1,11 +1,9 @@
+import datetime
 import io
 import re
-import datetime
-from typing import List, Dict, Tuple, Optional
 from functools import lru_cache
 
 import pdfplumber
-import spacy
 from rapidfuzz import fuzz
 
 try:
@@ -19,6 +17,8 @@ except ImportError:
 
 @lru_cache(maxsize=1)
 def get_nlp():
+    import spacy
+
     try:
         return spacy.load("en_core_web_sm")
     except Exception:
@@ -29,7 +29,7 @@ def get_nlp():
 # Section classification via rapidfuzz (no hardcoded exact matches)
 # ---------------------------------------------------------------------------
 
-CANONICAL_SECTIONS: Dict[str, List[str]] = {
+CANONICAL_SECTIONS: dict[str, list[str]] = {
     "summary":        ["summary", "profile", "objective", "about", "overview",
                        "professional summary", "career objective", "introduction"],
     "experience":     ["experience", "work experience", "employment", "work history",
@@ -54,7 +54,7 @@ CANONICAL_SECTIONS: Dict[str, List[str]] = {
 def classify_section_header(header_text: str) -> str:
     """Fuzzy-match a header line to a canonical section name. Returns 'other' if no good match."""
     header_lower = header_text.lower().strip()
-    best_match, best_score = "other", 0
+    best_match, best_score = "other", 0.0
 
     for canonical, aliases in CANONICAL_SECTIONS.items():
         for alias in aliases:
@@ -70,13 +70,13 @@ def classify_section_header(header_text: str) -> str:
 # PDF extraction with layout-aware header detection
 # ---------------------------------------------------------------------------
 
-def extract_text_and_sections_from_pdf(file_bytes: bytes) -> Tuple[str, Dict[str, str]]:
+def extract_text_and_sections_from_pdf(file_bytes: bytes) -> tuple[str, dict[str, str]]:
     """
     Extract raw text and classify sections from a PDF.
     Uses pdfplumber character-level font-size data to identify section headers,
     then rapidfuzz to classify them — no hardcoded section names required.
     """
-    tagged_lines: List[Tuple[str, bool]] = []  # (line_text, is_header_candidate)
+    tagged_lines: list[tuple[str, bool]] = []  # (line_text, is_header_candidate)
 
     with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
         for page in pdf.pages:
@@ -90,7 +90,7 @@ def extract_text_and_sections_from_pdf(file_bytes: bytes) -> Tuple[str, Dict[str
                 header_threshold = median_size * 1.15
 
                 # Group words into lines by rounded y-position
-                lines_map: Dict[int, List[dict]] = {}
+                lines_map: dict[int, list[dict]] = {}
                 for w in words:
                     y = round(w.get("top", 0) / 5) * 5
                     lines_map.setdefault(y, []).append(w)
@@ -117,9 +117,9 @@ def extract_text_and_sections_from_pdf(file_bytes: bytes) -> Tuple[str, Dict[str
     return _build_sections(tagged_lines)
 
 
-def _build_sections(tagged_lines: List[Tuple[str, bool]]) -> Tuple[str, Dict[str, str]]:
-    raw_parts: List[str] = []
-    sections: Dict[str, List[str]] = {"other": []}
+def _build_sections(tagged_lines: list[tuple[str, bool]]) -> tuple[str, dict[str, str]]:
+    raw_parts: list[str] = []
+    sections: dict[str, list[str]] = {"other": []}
     current = "other"
 
     for line_text, is_header_candidate in tagged_lines:
@@ -146,7 +146,7 @@ def extract_text_from_docx(file_bytes: bytes) -> str:
         raise RuntimeError("python-docx not installed.")
     doc = DocxDocument(io.BytesIO(file_bytes))
 
-    def block_text(container) -> List[str]:
+    def block_text(container) -> list[str]:
         parts = []
         for block in container.iter_inner_content():
             if isinstance(block, Paragraph):
@@ -170,9 +170,9 @@ def extract_text_from_docx(file_bytes: bytes) -> str:
     return "\n".join(block_text(doc))
 
 
-def _heuristic_sections_fuzzy(text: str) -> Dict[str, str]:
+def _heuristic_sections_fuzzy(text: str) -> dict[str, str]:
     """Section detection for plain text / DOCX (no font-size data)."""
-    sections: Dict[str, List[str]] = {"other": []}
+    sections: dict[str, list[str]] = {"other": []}
     current = "other"
     for line in text.splitlines():
         s = line.strip()
@@ -192,7 +192,7 @@ def _heuristic_sections_fuzzy(text: str) -> Dict[str, str]:
 # Contact info extraction
 # ---------------------------------------------------------------------------
 
-def extract_contact_info(text: str) -> Dict[str, Optional[str]]:
+def extract_contact_info(text: str) -> dict[str, str | None]:
     """Extract name, email, phone, LinkedIn, GitHub using regex + spaCy NER."""
     header = text[:2000]
 
@@ -206,20 +206,16 @@ def extract_contact_info(text: str) -> Dict[str, Optional[str]]:
     gh = re.search(r"github\.com/([a-zA-Z0-9\-]+)", header, re.I)
     github = f"github.com/{gh.group(1)}" if gh else None
 
-    # Name: spaCy PERSON entity first, then first short line without digits/@
+    # Deterministic header candidate. Ambiguous/missing names remain reviewable
+    # rather than loading a learned model during routine extraction.
     name = None
-    nlp = get_nlp()
-    doc = nlp(header)
-    for ent in doc.ents:
-        if ent.label_ == "PERSON":
-            name = ent.text
+    for line in text.splitlines()[:3]:
+        s = line.strip()
+        if (s and 1 < len(s.split()) <= 4 and not re.search(r"[@\d|:]", s)
+                and classify_section_header(s) == "other"
+                and s.casefold() not in {"curriculum vitae", "software engineer", "software developer"}):
+            name = s
             break
-    if not name:
-        for line in text.splitlines()[:5]:
-            s = line.strip()
-            if s and 1 < len(s.split()) <= 4 and not re.search(r"[@\d]", s):
-                name = s
-                break
 
     return {"name": name, "email": email, "phone": phone, "linkedin": linkedin, "github": github}
 
@@ -237,31 +233,47 @@ _MONTH_PAT = (
     r"|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?"
     r"|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)"
 )
-_YEAR_PAT   = r"(20\d{2}|19\d{2})"
-_END_PAT    = r"(20\d{2}|19\d{2}|present|current|now)"
 _DATE_RANGE = re.compile(
-    rf"(?:{_MONTH_PAT}\s+)?{_YEAR_PAT}\s*[-\u2013\u2014/to]+\s*(?:{_MONTH_PAT}\s+)?{_END_PAT}",
+    rf"(?:(?P<start_month>{_MONTH_PAT})\s+)?(?P<start_year>20\d{{2}}|19\d{{2}})"
+    rf"\s*(?:[-\u2013\u2014]|to)\s*"
+    rf"(?:(?P<end_month>{_MONTH_PAT})\s+)?(?P<end_year>20\d{{2}}|19\d{{2}}|present|current|now)",
     re.IGNORECASE,
 )
+_MONTHS = {name: index for index, name in enumerate(
+    ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"), 1
+)}
 
 
-def _extract_intervals(text: str) -> List[Tuple[int, int]]:
-    """Pull (start_year, end_year) pairs from a text block."""
-    current_year = datetime.datetime.now().year
-    intervals: List[Tuple[int, int]] = []
+def _extract_intervals(text: str) -> list[tuple[int, int]]:
+    """Pull half-open month intervals; retain conservative year-only estimates."""
+    today = datetime.datetime.now()
+    current_year = today.year
+    intervals: list[tuple[int, int]] = []
     for m in _DATE_RANGE.finditer(text):
-        start_raw, end_raw = m.group(1), m.group(2)
+        start_raw, end_raw = m.group("start_year"), m.group("end_year")
         try:
-            start = int(start_raw)
-            end   = current_year if end_raw.lower() in ("present", "current", "now") else int(end_raw)
+            start_year = int(start_raw)
+            ongoing = end_raw.lower() in ("present", "current", "now")
+            end_year = current_year if ongoing else int(end_raw)
         except (ValueError, AttributeError):
             continue
-        if 1970 <= start <= end <= current_year + 1:
+        if not 1970 <= start_year <= end_year <= current_year + 1:
+            continue
+        start_month = m.group("start_month")
+        end_month = m.group("end_month")
+        start = start_year * 12 + (_MONTHS[start_month[:3].lower()] - 1 if start_month else 0)
+        if ongoing:
+            end = current_year * 12 + today.month
+        elif end_month:
+            end = end_year * 12 + _MONTHS[end_month[:3].lower()]
+        else:
+            end = end_year * 12
+        if end >= start:
             intervals.append((start, end))
     return intervals
 
 
-def _merge_and_sum(intervals: List[Tuple[int, int]]) -> float:
+def _merge_and_sum(intervals: list[tuple[int, int]]) -> float:
     """Merge overlapping job periods so concurrent jobs aren't double-counted."""
     if not intervals:
         return 0.0
@@ -272,7 +284,7 @@ def _merge_and_sum(intervals: List[Tuple[int, int]]) -> float:
             merged[-1][1] = max(merged[-1][1], end)
         else:
             merged.append([start, end])
-    return min(float(sum(e - s for s, e in merged)), 40.0)
+    return min(round(sum(e - s for s, e in merged) / 12, 2), 40.0)
 
 
 # Work-context phrases for explicit "X years" fallback
@@ -284,7 +296,7 @@ _WORK_YEAR_RE = re.compile(
 
 def estimate_experience_years(
     text: str,
-    sections: Optional[Dict[str, str]] = None,
+    sections: dict[str, str] | None = None,
 ) -> float:
     """
     Estimate WORK experience years only.
@@ -325,29 +337,33 @@ def estimate_experience_years(
 
 
 # ---------------------------------------------------------------------------
-# Skill extraction — heuristic fallback (LLM preferred, see llm_client.py)
+# Skill extraction — bounded catalog by default, explicit optional enrichment
 # ---------------------------------------------------------------------------
 
-SKILL_VOCAB = {
-    "python", "java", "javascript", "typescript", "c++", "c#", "go", "rust",
-    "swift", "kotlin", "ruby", "php", "scala", "r",
-    "react", "vue", "angular", "next.js", "svelte", "html", "css", "tailwind",
-    "fastapi", "django", "flask", "node.js", "express", "spring boot",
-    "pytorch", "tensorflow", "keras", "scikit-learn", "pandas", "numpy",
-    "machine learning", "deep learning", "nlp", "computer vision", "llm",
-    "langchain", "rag", "fine-tuning", "hugging face", "openai",
-    "aws", "gcp", "azure", "docker", "kubernetes", "terraform", "ci/cd",
-    "github actions", "jenkins", "linux", "bash",
-    "postgresql", "mysql", "mongodb", "redis", "elasticsearch", "sqlite",
-    "dynamodb", "supabase", "neon",
-    "git", "rest", "graphql", "grpc", "kafka", "rabbitmq", "spark",
-    "sql", "data analysis", "api", "microservices", "agile", "scrum",
-}
+
+def extract_skills_heuristic(text: str) -> list[str]:
+    from .market.skill_extractor import extract_skill_mentions
+
+    return sorted({item["skill"] for item in extract_skill_mentions(text)}, key=str.casefold)
 
 
-def extract_skills_heuristic(text: str) -> List[str]:
-    text_lower = text.lower()
-    return sorted({s for s in SKILL_VOCAB if s in text_lower})
+def enrich_resume_skills(raw_text: str, skills: list[str]) -> list[str]:
+    """Explicit enrichment only adds source-present, non-negated terminology."""
+    from .llm_client import extract_skills_llm
+    from .market.skill_extractor import _NEGATION, _term_pattern
+    from .market.skill_taxonomy import canonical_skill
+
+    enriched = extract_skills_llm(raw_text)
+    supported = set(skills)
+    for skill in enriched:
+        if not isinstance(skill, str) or not skill.strip():
+            continue
+        for match in _term_pattern(skill).finditer(raw_text):
+            prefix = raw_text[max(0, match.start() - 80):match.start()]
+            if not _NEGATION.search(prefix):
+                supported.add(canonical_skill(skill))
+                break
+    return sorted(supported, key=str.casefold)
 
 
 # ---------------------------------------------------------------------------
@@ -357,8 +373,8 @@ def extract_skills_heuristic(text: str) -> List[str]:
 def parse_resume_file(
     file_bytes: bytes,
     filename: str = "",
-    use_llm: bool = True,
-) -> Tuple[str, Dict[str, str], List[str], float, Dict]:
+    use_llm: bool = False,
+) -> tuple[str, dict[str, str], list[str], float, dict]:
     """
     Parse a resume file (PDF or DOCX).
 
@@ -366,7 +382,11 @@ def parse_resume_file(
         raw_text, sections, skills, experience_years, contact_info
     """
     # Step 1: Text + sections
-    if filename.lower().endswith(".docx"):
+    if filename.lower().endswith((".tex", ".zip")):
+        from .native_tex import compile_project
+        pdf, _image = compile_project(file_bytes, "tex" if filename.lower().endswith(".tex") else "texzip")
+        raw_text, sections = extract_text_and_sections_from_pdf(pdf)
+    elif filename.lower().endswith(".docx"):
         raw_text = extract_text_from_docx(file_bytes)
         sections = _heuristic_sections_fuzzy(raw_text)
     else:
@@ -375,12 +395,12 @@ def parse_resume_file(
     # Step 2: Contact info
     contact_info = extract_contact_info(raw_text)
 
-    # Step 3: Skills — LLM preferred, heuristic fallback
+    # Step 3: Catalog mentions first. Optional enrichment cannot remove locally
+    # found skills and is constrained to terms actually present in the source.
     skills = extract_skills_heuristic(raw_text)  # default
     if use_llm:
         try:
-            from .llm_client import extract_skills_llm
-            skills = extract_skills_llm(raw_text)
+            skills = enrich_resume_skills(raw_text, skills)
         except Exception:
             pass  # silently use heuristic
 

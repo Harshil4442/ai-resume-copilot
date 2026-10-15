@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "observed_source": "native GCP Cloud Build describe and independent Artifact Registry reads",
+  "build_id": "86f7e701-d583-4e96-874b-5059e46d3424",
+  "project": "ai-resume-parser-482412",
+  "region": "us-central1",
+  "status": "SUCCESS",
+  "finish_time": "2026-10-09T21:22:13.894738Z",
+  "git_source": {
+    "dir": ".",
+    "revision": "0fb478446ad1265c32946eef84211924bf3c8c76",
+    "url": "https://github.com/Harshil4442/ai-resume-copilot.git"
+  },
+  "source_tree": "546c48e1aa65f91ef1585971bbef15d0247d0581",
+  "requested_images": [
+    "us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz:0fb478446ad1265c32946eef84211924bf3c8c76"
+  ],
+  "result_images": [
+    {
+      "artifactRegistryPackage": "projects/ai-resume-parser-482412/locations/us-central1/repositories/cloud-run-source-deploy/packages/hirewiz/versions/sha256:f8b71f8214053416294df1a0ee8ea4a14183916924040cd0dca0cba76af49dd2",
+      "digest": "sha256:f8b71f8214053416294df1a0ee8ea4a14183916924040cd0dca0cba76af49dd2",
+      "name": "us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz:0fb478446ad1265c32946eef84211924bf3c8c76",
+      "pushTiming": {
+        "endTime": "2026-10-09T21:22:13.342448094Z",
+        "startTime": "2026-10-09T21:22:12.181597784Z"
+      }
+    }
+  ],
+  "docker_step_statuses": [
+    "SUCCESS",
+    "SUCCESS"
+  ],
+  "independent_review_sha256": "4051723c002d1e5ff6da8b5805599090153aa43ea270cb2a0c052b6e8cd5cf85",
+  "independent_native_image_identity": "CLEAR",
+  "slsa_level": "unknown",
+  "production_deployed": false,
+  "full_exact_ci_passed": false,
+  "joins_future_source_ci": false,
+  "model_calls": 0,
+  "payment_calls": 0,
+  "employer_submissions": 0
+}

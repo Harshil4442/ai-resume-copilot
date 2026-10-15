@@ -1,0 +1,237 @@
+{
+  "schema": "bounded_catalog_timing_v1",
+  "expected_backend_release": "6f380203c55b8574d2d345420de6ac5e3da1b784",
+  "expected_backend_revision": "ai-resume-parser-00262-fim",
+  "expected_frontend_release": null,
+  "frontend_identity_basis": "not_collected",
+  "health_before": {
+    "status": 200,
+    "release": "6f380203c55b8574d2d345420de6ac5e3da1b784",
+    "revision": "ai-resume-parser-00262-fim",
+    "matches_expected": true,
+    "failure": null
+  },
+  "health_after": {
+    "status": 200,
+    "release": "6f380203c55b8574d2d345420de6ac5e3da1b784",
+    "revision": "ai-resume-parser-00262-fim",
+    "matches_expected": true,
+    "failure": null
+  },
+  "samples": [
+    {
+      "ordinal": 1,
+      "transport": "backend",
+      "status": 200,
+      "generated_correlation_id": "11e3556445364f56a11bdaba4e8ddb49",
+      "header_phases_ms": {
+        "auth_lookup_ms": 436.2,
+        "backend_headers_ms": 881.2,
+        "catalog_owner_lookup_ms": 0.1,
+        "catalog_render_ms": 1.0,
+        "catalog_sources_ms": 221.1,
+        "db_acquire_ms": 217.7,
+        "dependency_jwt_ms": 0.3,
+        "middleware_jwt_ms": 0.4
+      },
+      "client_headers_ms": 1195.353,
+      "client_total_ms": 1198.396,
+      "body_shape": {
+        "root": "object",
+        "expected_fields": {
+          "search_credits_per_job": "integer",
+          "apply_credits_per_job": "integer",
+          "max_search_jobs": "integer",
+          "pricing_version": "string",
+          "enabled": "boolean",
+          "auto_submit_enabled": "boolean",
+          "sources": "array",
+          "admission_limits": "object",
+          "credit_policy": "string",
+          "coverage": "object"
+        },
+        "matches_expected": true
+      },
+      "source_count": 4,
+      "failure": null,
+      "acquisition_measurement": "composite",
+      "db_connect_ms": null,
+      "db_ping_ms": null,
+      "serving_release": null,
+      "serving_revision": null,
+      "serving_identity_basis": "unproved_until_fixed_event_revision_correlation"
+    },
+    {
+      "ordinal": 2,
+      "transport": "backend",
+      "status": 200,
+      "generated_correlation_id": "0020bfdaa93543fe8d24f8dbd5a5158b",
+      "header_phases_ms": {
+        "auth_lookup_ms": 501.9,
+        "backend_headers_ms": 991.9,
+        "catalog_owner_lookup_ms": 0.1,
+        "catalog_render_ms": 0.3,
+        "catalog_sources_ms": 221.2,
+        "db_acquire_ms": 264.1,
+        "dependency_jwt_ms": 0.2,
+        "middleware_jwt_ms": 0.3
+      },
+      "client_headers_ms": 1302.713,
+      "client_total_ms": 1303.001,
+      "body_shape": {
+        "root": "object",
+        "expected_fields": {
+          "search_credits_per_job": "integer",
+          "apply_credits_per_job": "integer",
+          "max_search_jobs": "integer",
+          "pricing_version": "string",
+          "enabled": "boolean",
+          "auto_submit_enabled": "boolean",
+          "sources": "array",
+          "admission_limits": "object",
+          "credit_policy": "string",
+          "coverage": "object"
+        },
+        "matches_expected": true
+      },
+      "source_count": 4,
+      "failure": null,
+      "acquisition_measurement": "composite",
+      "db_connect_ms": null,
+      "db_ping_ms": null,
+      "serving_release": null,
+      "serving_revision": null,
+      "serving_identity_basis": "unproved_until_fixed_event_revision_correlation"
+    },
+    {
+      "ordinal": 3,
+      "transport": "backend",
+      "status": 200,
+      "generated_correlation_id": "58e3d8f7ef844cfb9b0b22b03adc6b27",
+      "header_phases_ms": {
+        "auth_lookup_ms": 436.8,
+        "backend_headers_ms": 878.8,
+        "catalog_owner_lookup_ms": 0.1,
+        "catalog_render_ms": 0.2,
+        "catalog_sources_ms": 219.4,
+        "db_acquire_ms": 217.6,
+        "dependency_jwt_ms": 0.2,
+        "middleware_jwt_ms": 0.3
+      },
+      "client_headers_ms": 1196.429,
+      "client_total_ms": 1196.537,
+      "body_shape": {
+        "root": "object",
+        "expected_fields": {
+          "search_credits_per_job": "integer",
+          "apply_credits_per_job": "integer",
+          "max_search_jobs": "integer",
+          "pricing_version": "string",
+          "enabled": "boolean",
+          "auto_submit_enabled": "boolean",
+          "sources": "array",
+          "admission_limits": "object",
+          "credit_policy": "string",
+          "coverage": "object"
+        },
+        "matches_expected": true
+      },
+      "source_count": 4,
+      "failure": null,
+      "acquisition_measurement": "composite",
+      "db_connect_ms": null,
+      "db_ping_ms": null,
+      "serving_release": null,
+      "serving_revision": null,
+      "serving_identity_basis": "unproved_until_fixed_event_revision_correlation"
+    },
+    {
+      "ordinal": 4,
+      "transport": "backend",
+      "status": 200,
+      "generated_correlation_id": "c47f18c2c79846f7af4602ffb606e919",
+      "header_phases_ms": {
+        "auth_lookup_ms": 434.9,
+        "backend_headers_ms": 878.4,
+        "catalog_owner_lookup_ms": 0.1,
+        "catalog_render_ms": 0.6,
+        "catalog_sources_ms": 219.1,
+        "db_acquire_ms": 217.4,
+        "dependency_jwt_ms": 0.3,
+        "middleware_jwt_ms": 0.4
+      },
+      "client_headers_ms": 1206.359,
+      "client_total_ms": 1206.645,
+      "body_shape": {
+        "root": "object",
+        "expected_fields": {
+          "search_credits_per_job": "integer",
+          "apply_credits_per_job": "integer",
+          "max_search_jobs": "integer",
+          "pricing_version": "string",
+          "enabled": "boolean",
+          "auto_submit_enabled": "boolean",
+          "sources": "array",
+          "admission_limits": "object",
+          "credit_policy": "string",
+          "coverage": "object"
+        },
+        "matches_expected": true
+      },
+      "source_count": 4,
+      "failure": null,
+      "acquisition_measurement": "composite",
+      "db_connect_ms": null,
+      "db_ping_ms": null,
+      "serving_release": null,
+      "serving_revision": null,
+      "serving_identity_basis": "unproved_until_fixed_event_revision_correlation"
+    },
+    {
+      "ordinal": 5,
+      "transport": "backend",
+      "status": 200,
+      "generated_correlation_id": "a06c84e478af4e07a9357f2f74ecd2e5",
+      "header_phases_ms": {
+        "auth_lookup_ms": 435.6,
+        "backend_headers_ms": 883.8,
+        "catalog_owner_lookup_ms": 0.1,
+        "catalog_render_ms": 1.1,
+        "catalog_sources_ms": 221.5,
+        "db_acquire_ms": 220.1,
+        "dependency_jwt_ms": 0.2,
+        "middleware_jwt_ms": 0.3
+      },
+      "client_headers_ms": 1234.678,
+      "client_total_ms": 1234.776,
+      "body_shape": {
+        "root": "object",
+        "expected_fields": {
+          "search_credits_per_job": "integer",
+          "apply_credits_per_job": "integer",
+          "max_search_jobs": "integer",
+          "pricing_version": "string",
+          "enabled": "boolean",
+          "auto_submit_enabled": "boolean",
+          "sources": "array",
+          "admission_limits": "object",
+          "credit_policy": "string",
+          "coverage": "object"
+        },
+        "matches_expected": true
+      },
+      "source_count": 4,
+      "failure": null,
+      "acquisition_measurement": "composite",
+      "db_connect_ms": null,
+      "db_ping_ms": null,
+      "serving_release": null,
+      "serving_revision": null,
+      "serving_identity_basis": "unproved_until_fixed_event_revision_correlation"
+    }
+  ],
+  "scope": "up_to_five_sequential_catalog_GETs_no_retries_no_session_minting",
+  "measurement_limit": "bounded_lab_samples_not_percentiles_or_causal_diagnosis",
+  "bff_coverage": "unproved_no_existing_session_used",
+  "collection_complete": true
+}

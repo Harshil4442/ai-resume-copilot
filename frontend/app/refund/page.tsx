@@ -41,9 +41,9 @@ export default function RefundPolicyPage() {
           <section>
             <h3 className="text-lg font-bold text-foreground mb-4">1. Product covered</h3>
             <p>
-              HireWiz currently sells one digital product for customers in India: a one-time Premium pass providing
-              30 days of access. It is not an automatically renewing subscription. HireWiz does not currently sell
-              standalone analysis-unit packs. Access is delivered to the purchasing account after confirmed payment;
+              HireWiz offers three finite prepaid packs with separate job service credits and AI analysis units.
+              No pack automatically renews. Accepted older orders retain their purchased terms.
+              Balances are delivered to the purchasing account after verified captured payment;
               no physical goods are shipped.
             </p>
           </section>
@@ -51,7 +51,7 @@ export default function RefundPolicyPage() {
           <section>
             <h3 className="text-lg font-bold text-foreground mb-4">2. Cancellation and expiry</h3>
             <ul className="list-disc pl-6 space-y-2 text-muted-foreground">
-              <li>There is no recurring charge or renewal mandate to cancel. The pass expires at the end of its 30-day period unless you choose to buy another pass.</li>
+              <li>There is no recurring charge or renewal mandate to cancel. Balances are finite and do not refresh automatically. Accepted legacy access expires according to its original paid term.</li>
               <li>You can end Premium access early through Profile or by contacting support. Ending access early does not by itself create a refund entitlement.</li>
               <li>Deleting your account ends access and removes active application data as described in the Privacy Policy; deletion does not automatically create a refund.</li>
             </ul>
@@ -62,8 +62,8 @@ export default function RefundPolicyPage() {
             <p>We will review a refund request where:</p>
             <ul className="list-disc pl-6 mt-4 space-y-2 text-muted-foreground">
               <li>the same order was charged more than once because of a technical or processing error;</li>
-              <li>payment was confirmed but Premium access was not delivered, and support could not correct the activation;</li>
-              <li>a material HireWiz service failure substantially prevented use of the paid pass and support could not provide a reasonable remedy;</li>
+              <li>payment was confirmed but Premium access or purchased service credits were not delivered, and support could not correct delivery;</li>
+              <li>a material HireWiz service failure substantially prevented use of the paid product and support could not provide a reasonable remedy;</li>
               <li>the payment was unauthorized, subject to reasonable identity, account, and payment-provider review; or</li>
               <li>a refund is required by applicable law or expressly offered in the final order terms.</li>
             </ul>
@@ -71,6 +71,19 @@ export default function RefundPolicyPage() {
               Because access is digital and begins after payment confirmation, a change of mind, unused time, or
               dissatisfaction with informational AI output is generally not refundable after access is delivered,
               except where applicable law or the circumstances above require otherwise.
+            </p>
+          </section>
+
+          <section>
+            <h3 className="text-lg font-bold text-foreground mb-4">Service-credit reservations</h3>
+            <p>
+              A search charges only for new qualifying jobs actually delivered. Unused reservations are returned
+              to your service-credit balance. Preparing a package or using a manual employer-portal handoff does
+              not incur an automatic-application charge. A supported application charge is committed only after
+              verified complete submission; uncertain outcomes keep credits reserved until reconciliation.
+              Returning a reservation restores service credits and is separate from refunding a purchase to your
+              payment method. An approved purchase refund removes the corresponding credits, including credits
+              already spent; this can leave a negative balance and pause new paid operations until resolved.
             </p>
           </section>
 

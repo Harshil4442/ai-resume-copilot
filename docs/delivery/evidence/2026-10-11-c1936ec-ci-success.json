@@ -1,0 +1,38 @@
+{
+  "schema": 1,
+  "source_head": "c1936ec932e924e45708991f69e48c138b7fe2ed",
+  "source_tree": "0158d104f8cbac582540fcedb99c8078eaf4d904",
+  "run_id": 38098385720,
+  "attempt": 1,
+  "run_url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38098385720",
+  "status": "completed",
+  "conclusion": "success",
+  "jobs": {
+    "backend": 114348985330,
+    "frontend": 114348985440,
+    "security_and_container": 114348985498,
+    "browser_companion": 114348985509,
+    "cold_browser": 114348985517
+  },
+  "all_five_jobs_success": true,
+  "backend": {
+    "passed": 3551,
+    "warnings": 455,
+    "pytest_seconds": 925.44,
+    "zero_skips_independently_established": false,
+    "historical_postgres_round_trip": "passed",
+    "actual_openapi_drift_gate": "passed"
+  },
+  "root_independently_read_job_and_step_metadata": true,
+  "agent_evidence_manifest_sha256": "7bf4c8f28793039843418e6e147e181ca8524cb11653f6cc92c7547230cc9255",
+  "earlier_failure_retained": {
+    "run_id": 38096543842,
+    "source_head": "1ea40fb693fbe2dfb295c6b28e7d372133f67d03",
+    "passed": 3549,
+    "failed": 2
+  },
+  "deployment": false,
+  "production_financial_concurrency_acceptance": false,
+  "bi02_upfront_reservation_correction": "private-development-not-yet-integrated",
+  "protected_integration_hold_unchanged": true
+}

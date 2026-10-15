@@ -1,0 +1,15 @@
+FROM us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz-release-operator@sha256:a86ea8a74c3f03d2da896eae68d7daf5c69872205376084a33852fac5252ca5a
+ARG RELEASE_SHA
+LABEL org.opencontainers.image.revision=$RELEASE_SHA
+ENV PATH=/google-cloud-sdk/bin:/opt/hirewiz-release/checkout/backend/.venv/bin:/usr/lib/postgresql/17/bin:$PATH
+RUN test "${#RELEASE_SHA}" = 40 && ! printf '%s' "$RELEASE_SHA" | LC_ALL=C grep -q '[^a-f0-9]' \
+    && git init /opt/hirewiz-release/checkout \
+    && git -C /opt/hirewiz-release/checkout remote add origin https://github.com/Harshil4442/ai-resume-copilot.git \
+    && git -C /opt/hirewiz-release/checkout -c credential.helper= fetch --depth=1 --no-tags origin "$RELEASE_SHA" \
+    && git -C /opt/hirewiz-release/checkout checkout --detach FETCH_HEAD \
+    && test "$(git -C /opt/hirewiz-release/checkout rev-parse HEAD)" = "$RELEASE_SHA" \
+    && uv sync --project /opt/hirewiz-release/checkout/backend --frozen --all-groups --no-install-project \
+    && test -z "$(git -C /opt/hirewiz-release/checkout status --porcelain)"
+USER 0:0
+WORKDIR /opt/hirewiz-release/checkout
+ENTRYPOINT ["/opt/hirewiz-release/checkout/backend/.venv/bin/python", "-I", "-B", "/opt/hirewiz-release/checkout/infra/gcp/fresh_cutover_auth.py"]

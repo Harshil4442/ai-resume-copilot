@@ -1,0 +1,288 @@
+{
+  "clean": {
+    "ACK_and_fresh_readback_etag": "CAM=",
+    "after_CAS_metageneration": "3",
+    "application_actor_effectiveness_proved": false,
+    "birth_metageneration": "1",
+    "bucket": "hirewiz-rup-c-482412-a6b1e85408b341eb",
+    "create_settings_steps": [
+      20,
+      21
+    ],
+    "four_selected_human_metadata_permissions_recognized": [
+      "storage.buckets.get",
+      "storage.buckets.getIamPolicy",
+      "storage.buckets.setIamPolicy",
+      "storage.buckets.update"
+    ],
+    "generation": "1791646407947806117",
+    "native_policy_ack_and_fresh_readback": true,
+    "original_step22_executed": false,
+    "permanent_bindings": [
+      {
+        "canonical_complete_row_sha256": "ac61112980f81e095b629a82d33248cc60d13704ffa7f95fc09dd27fef5595dc",
+        "members": [
+          {
+            "kind": "selected_human",
+            "principal_sha256": "44a65d7de6e01583680435638e604443e31f7ef627ddc53eb37281139bb18edc"
+          }
+        ],
+        "role": "projects/ai-resume-parser-482412/roles/hwRupBucketAdmin_a6b1e854"
+      },
+      {
+        "canonical_complete_row_sha256": "79b43c8baed3d6a8eb0c8afa909f7874f3805b8035a40bd2d1a5e695cae60c72",
+        "condition": {
+          "expression": "resource.type == \"storage.googleapis.com/Object\" && resource.name.startsWith(\"projects/_/buckets/hirewiz-rup-c-482412-a6b1e85408b341eb/objects/clean/rup_\") && resource.name.endsWith(\"/source\")",
+          "title": "resume-source-prefix"
+        },
+        "members": [
+          "serviceAccount:hirewiz-resume-coordinator@ai-resume-parser-482412.iam.gserviceaccount.com"
+        ],
+        "role": "projects/ai-resume-parser-482412/roles/hwRupCoordinate_a6b1e854"
+      },
+      {
+        "canonical_complete_row_sha256": "b47a92a09178c24e44e8cb2bb6bb249a5b6590b5f0525f3669c4f850122a6d7e",
+        "condition": {
+          "expression": "resource.type == \"storage.googleapis.com/Object\" && resource.name.startsWith(\"projects/_/buckets/hirewiz-rup-c-482412-a6b1e85408b341eb/objects/clean/rup_\") && resource.name.endsWith(\"/source\")",
+          "title": "resume-source-prefix"
+        },
+        "members": [
+          "serviceAccount:hirewiz-rup-get-a6b1e854@ai-resume-parser-482412.iam.gserviceaccount.com"
+        ],
+        "role": "projects/ai-resume-parser-482412/roles/hwRupRead_a6b1e854"
+      }
+    ],
+    "permanent_policy_version": 3,
+    "recorded_high_level_CAS_operation_count": 1,
+    "request_etag": "CAI=",
+    "reviewed_UTC_V3": {
+      "accepted_suffixes": [
+        "Z",
+        "+00:00"
+      ],
+      "birth_current_exact_full_string_equality": true,
+      "normalization": false,
+      "offline_independent_passed": 93
+    },
+    "settings": {
+      "cors": [
+        {
+          "maxAgeSeconds": 300,
+          "method": [
+            "GET"
+          ],
+          "origin": [
+            "https://hirewizhq.com",
+            "https://www.hirewizhq.com"
+          ],
+          "responseHeader": [
+            "Content-Type",
+            "Content-Length"
+          ]
+        }
+      ],
+      "default_event_based_hold": false,
+      "location": "US-CENTRAL1",
+      "public_access_prevention": "enforced",
+      "soft_delete_retention_seconds": "0",
+      "storage_class": "STANDARD",
+      "uniform_bucket_level_access": true,
+      "versioning_enabled": false
+    },
+    "timeCreated": "2026-10-10T15:33:28.023000+00:00"
+  },
+  "current_verified_source": {
+    "CI_jobs_passed": 5,
+    "CI_run": 38057690476,
+    "backend_image_digest": "3d4d7f7a9ada1873949998d91c89b1a0109f4997e89300ecd5398232ec4d3052",
+    "backend_passed": 3389,
+    "backend_skipped": 0,
+    "built_not_customer_promoted": true,
+    "commit": "a162890ff50a606f9c23493ea11266d32ad416d6",
+    "native_build": "46109105-22e2-4800-975a-a86fbd4abf30",
+    "tree": "7d9608d221f8cdc1704f802171b1968d7ed36f6e"
+  },
+  "date": "2026-10-10",
+  "limits": [
+    "Nonsecret resource identities/permissions and hashes only; selected-human principal redacted to stableSHA256. Full canonical binding-row digests preserve exact underlying grants.",
+    "One recorded high-level SDK CAS operation does not establish SDK/provider internal wire request counts.",
+    "Metadata permission recognition is distinct from effective application object rights.",
+    "Successful current-source CI/backend build does not establish private scanner runtime or customer deployment.",
+    "No native calls, test/CI reruns, SQL/model/employer calls or code/credential mutations by this documentation audit."
+  ],
+  "original_failure_evidence_retained": [
+    "Original Q convenience-owner authority denial and first provider-order wrapper refusal",
+    "Original clean missing-admin/order/UTC false-refusal controls",
+    "grvwv,bbk2d,r8nc7,c9zll native failed runs",
+    "Original Workflow API/converter/compiler/privateHTTP403/finalnegative503 outcomes"
+  ],
+  "project": {
+    "id": "ai-resume-parser-482412",
+    "number": "157225724590"
+  },
+  "quarantine": {
+    "both_owned_project_leases_retired": true,
+    "bucket": "hirewiz-rup-q-482412-a6b1e85408b341eb",
+    "generation": "1791642323742081048",
+    "metadata_permissions_recognized_after_second_lease_expiry": [
+      "storage.buckets.get",
+      "storage.buckets.getIamPolicy",
+      "storage.buckets.setIamPolicy",
+      "storage.buckets.update"
+    ],
+    "native_policy_ack_and_fresh_readback": true,
+    "permanent_bindings": [
+      {
+        "canonical_complete_row_sha256": "ac61112980f81e095b629a82d33248cc60d13704ffa7f95fc09dd27fef5595dc",
+        "members": [
+          {
+            "kind": "selected_human",
+            "principal_sha256": "44a65d7de6e01583680435638e604443e31f7ef627ddc53eb37281139bb18edc"
+          }
+        ],
+        "role": "projects/ai-resume-parser-482412/roles/hwRupBucketAdmin_a6b1e854"
+      },
+      {
+        "canonical_complete_row_sha256": "93aa20b85a74794ac50dfcf6046a62130362ad7330bfd1ab36984bbc7e165212",
+        "condition": {
+          "expression": "resource.type == \"storage.googleapis.com/Object\" && resource.name.startsWith(\"projects/_/buckets/hirewiz-rup-q-482412-a6b1e85408b341eb/objects/quarantine/rup_\") && resource.name.endsWith(\"/source\")",
+          "title": "resume-source-prefix"
+        },
+        "members": [
+          "serviceAccount:hirewiz-resume-coordinator@ai-resume-parser-482412.iam.gserviceaccount.com"
+        ],
+        "role": "projects/ai-resume-parser-482412/roles/hwRupCoordinate_a6b1e854"
+      },
+      {
+        "canonical_complete_row_sha256": "fc0a55ff24c7b37888b71319f41869521f2564e7b507a8ed47163b880ba2fee0",
+        "condition": {
+          "expression": "resource.type == \"storage.googleapis.com/Object\" && resource.name.startsWith(\"projects/_/buckets/hirewiz-rup-q-482412-a6b1e85408b341eb/objects/quarantine/rup_\") && resource.name.endsWith(\"/source\")",
+          "title": "resume-source-prefix"
+        },
+        "members": [
+          "serviceAccount:hirewiz-rup-put-a6b1e854@ai-resume-parser-482412.iam.gserviceaccount.com"
+        ],
+        "role": "projects/ai-resume-parser-482412/roles/hwRupCreate_a6b1e854"
+      }
+    ],
+    "permanent_policy_etag": "CAQ=",
+    "permanent_policy_version": 3,
+    "post_expiry_observation": "2026-10-10T15:48:45.155472+00:00",
+    "second_lease_expiry": "2026-10-10T15:43:54+00:00",
+    "settings": {
+      "cors": [
+        {
+          "maxAgeSeconds": 300,
+          "method": [
+            "PUT"
+          ],
+          "origin": [
+            "https://hirewizhq.com",
+            "https://www.hirewizhq.com"
+          ],
+          "responseHeader": [
+            "Content-Type",
+            "x-goog-if-generation-match",
+            "x-goog-content-length-range"
+          ]
+        }
+      ],
+      "location": "US-CENTRAL1",
+      "public_access_prevention": "enforced",
+      "soft_delete_retention_seconds": "0",
+      "storage_class": "STANDARD",
+      "uniform_bucket_level_access": true,
+      "versioning_enabled": false
+    },
+    "settings_snapshot_scope": "Before later metadata-admin continuity CAS; not claimed latest bucket metageneration.",
+    "timeCreated": "2026-10-10T14:25:23.825000+00:00",
+    "unrelated_project_bindings_preserved": 19
+  },
+  "receipt_sha256": {
+    "Q_permanent_policy_readback": "8496446e4c9775ea23bbeeb329719d8d87cb6bf6a3f683b030cdafeeb61cecdb",
+    "Q_post_expiry_permission_source": "2a7665ee7bc3655289a02136a46db6c63c281572b71380da2aa84ce41a23e689",
+    "Q_post_expiry_permission_stdout": "9cbf5512cbef8b77cd7c84a7408a61906348be5a527d5fabad041d2b9e37b9ea",
+    "Q_post_expiry_project_policy": "e0b1a227bc392d55c945856b5abcc798f16c6a60825401db0081b7abdf27f344",
+    "c9zll_native_terminal_verdict": "91b003bd84e4a9b4fb2d3f9ec63821fbba026163d2d06051f3e47af63f105c32",
+    "c9zll_offline_source_addendum": "faccfcf0e93ab8621f66623167874d6622e431c919259e5c675e98cf25bcc11f",
+    "clean_CAS_ACK_stdout": "946956e457ef6c9b9f1e0fa8137d59bd522b0cf8ff7a213cbcc6e9d882e06aba",
+    "clean_CAS_SDK_source": "7a40db21a58284d2880db0d4267fe1239cd32342a1d3337e77bcc93796b4718a",
+    "clean_CAS_request_body": "a2ab5b1e2194b1fac302607e5880d506d91f4b0f4a8c1f84e5be7fd6675e30d9",
+    "clean_CAS_result": "699d4c2d3f668f045bb2a1958272b34c539ef717e70e64cbf6ff9bcd5ddfa59e",
+    "clean_V3_source_manifest": "4c1dea753997573c3ee6df83aef23543d8e3377925a8c1f8554ddc456046dc78",
+    "clean_after_CAS_settings": "64347eddfd4d0d2fa6ca64e41843de66d28550eee10f51514a0297f92f5f7ccd",
+    "clean_apply_operator": "543345fb48e70b066eb90852268c1109722872395b45c444d60bce46c6164c65",
+    "clean_four_permissions_SDK_source": "69683ab7311c90eb9ab3f8e48b9bee088a4a442929cc452bd23a654a74c91588",
+    "clean_four_permissions_result": "f4bc41983ecde57510714ca260892e566a970ffba4908657681cf3bcb6ced8af",
+    "clean_four_permissions_stdout": "838c59c63baa671fb76b2d6400d43960d5ea7c9509b473fa2090d00f76f32978",
+    "clean_fresh_readback_stdout": "946956e457ef6c9b9f1e0fa8137d59bd522b0cf8ff7a213cbcc6e9d882e06aba",
+    "clean_independent_native_CAS_verdict": "0c51a199b20950a0b2d08651fac732937be91ecc5e0aa458c0cee7e9925b37dd",
+    "clean_permission_smoke_independent_verdict": "33d01232dc20ba71c4e28c858f750c0a8e92f7bde3408d52e925f7e880251619",
+    "clean_prepare_operator": "bd52de6bf0fb2ed2be31ea38a295ac936731ac441f2c8026afa9bb549b2765cb",
+    "clean_root_permission_verdict": "068a189b401153ed5ed7ec6fc2982d1d3ecdaa72f1cce9d90ee28b2033703a48",
+    "clean_saved_policy_readback": "ad831096bab9607068092a64cd1dc38e34736c62be3cb98f7e376be340c45eee",
+    "r8nc7_native_terminal_verdict": "3c05f76ee32f7363932aa107d53cbe90ab2560c34d16c6f8ab541a6a2270ce34"
+  },
+  "remaining_gates": [
+    "Effective application actors and generation/size/hash-bound signed-object probes",
+    "Real browser CORS upload/download and complete5MiB workflow",
+    "Scanner actual child isolation/corpus/timeout and positive private service HTTP acceptance",
+    "Native scan/cleanup coordinator/scheduler and retention/deletion/failure drills",
+    "Restricted SQL grants/schema0014 rollout with old-consumer/provider fencing",
+    "Existing serving API signing steps23/24 remain held",
+    "Protected pairing/monetary integration and finite paid-plan/customer release remain held"
+  ],
+  "scanner": {
+    "c9zll": {
+      "cloud_isolation_proven": false,
+      "create_delete_acknowledged": true,
+      "exec_exit_codes": [
+        1,
+        1,
+        1
+      ],
+      "exec_stderr_bytes": [
+        78,
+        78,
+        78
+      ],
+      "exec_stdout_bytes": [
+        0,
+        0,
+        0
+      ],
+      "execution": "hirewiz-document-sdk-smoke-c9zll",
+      "exit_code": 1,
+      "failed_exec_phases": [
+        "echo",
+        "python",
+        "after_delete"
+      ],
+      "followup_missing_hint": false,
+      "job_uid": "005e23a5-565f-4efd-918d-936c03b5845e",
+      "native_sandbox_absence_proved": false,
+      "probe_sha256": "c9cf234f7f5bf8beed15b3952210a26829b775dff0fab41a6fd8c019f24403f5",
+      "runtime_service_byte_sha256": "fd65733bfb959cfa6af9283d92170a22debe4765a662be5430a2486a6b2b43c2",
+      "scanner_acceptance": false,
+      "status": "FAILED",
+      "stderr_class": "unclassified",
+      "uid": "fc169525-9955-4c7f-9bde-c080b339010f",
+      "underlying_cause_proved": false
+    },
+    "immutable_image_digest": "edc8f5fc3000a40237ed3888c563c5f5ef175008e5ef3c4fb5007976119934e1",
+    "policy_sha256": "425fd4b326554d8fee8d2686f423c8e2b499eaaa1bd7858eb69f7759ac526bdf",
+    "r8nc7": {
+      "SDK_exit_code": 1,
+      "corpus_and_timeout_acceptance_reached": false,
+      "execution": "hirewiz-document-isolation-probe-r8nc7",
+      "probe_sha256": "fabeb5cc9575cc9fa67259a85f4c93ddac883286886337810e1962ee9016e767",
+      "stdout_bytes": 0,
+      "timeout": false,
+      "uid": "97d996e2-7b34-4715-a47e-6eb0df9aff32"
+    },
+    "runtime_acceptance": "HOLD"
+  },
+  "schema_version": 1,
+  "scope": "Sanitized retained native receipt checkpoint; reviewer performed offline audits only. SDK/CLI metadata JSON projections are not asserted literal HTTP wire bytes.",
+  "status": "PARTIAL_NATIVE_STORAGE_METADATA_AND_IAM_VERIFIED_SCANNER_CUSTOMER_HOLD"
+}

@@ -1,0 +1,87 @@
+{
+  "recorded_at_utc": "2026-10-11T13:40:41.208442+00:00",
+  "base_commit": "68b824254187690d23b80bfe94a54aae6ffd3bdf",
+  "retained_ci": {
+    "run_id": 38141212783,
+    "status": "completed",
+    "conclusion": "failure",
+    "backend_failed": 32,
+    "backend_passed": 3520,
+    "backend_warnings": 455,
+    "backend_skips_independently_verified": false,
+    "other_four_jobs": "success",
+    "actual_openapi_exporter": "skipped",
+    "elapsed_seconds": 897,
+    "failure_metadata_sha256": "ca30288405c7814b496705a58b9cdcec7e4c648eb31305eba78827e3d626bcf4"
+  },
+  "runtime_correction": "Optional retention cannot prune without a catalogue clock. Abandonment refunds remain independent; source refresh no longer fails merely because inactive catalogue metadata has no singleton. No clock or retention authority is invented.",
+  "test_alignment": [
+    "Upfront requested-count hold remains visible even when all delivered jobs are free or none match; unused credits return.",
+    "Insufficient balances refuse admission before paid work.",
+    "History waiting retains the funded original quote and resumes it without repricing.",
+    "Safe failures retain a failed request, refund the whole hold and preserve audit events; replay does not create another debit.",
+    "Unfinished staged bodies remain hidden through public result readers.",
+    "Two fully funded empty requests exhaust a derived retained legacy cash cap; the next request refuses before index scanning while old completed replay stays free."
+  ],
+  "local_verification": {
+    "actual_isolated_sql_shipping_functions_passed": 19,
+    "clock_shipping_controls_passed": 2,
+    "clock_preimage_counterexamples": "both NoResultFound",
+    "configured_ruff_files": 6,
+    "configured_ruff": "pass after eight import-order findings were corrected",
+    "model_aware_mypy_sources": 3,
+    "model_aware_mypy": "pass",
+    "global_initializers_or_conftest_imported": false,
+    "full_http_or_configured_pytest_proved": false,
+    "first_isolated_result_retained": "8 passed, 11 assertion failures; bounded authority fields and public/private staged-result expectations corrected",
+    "new_full_ci_required": true
+  },
+  "cost_review_open": {
+    "scope": "synthetic actual reserve/cost-policy review only; not production invoices or pricing authority",
+    "count": 1,
+    "funding": "legacy/unproven balance",
+    "variable_search_cost_minor": 25,
+    "preparation_cost_minor": 50,
+    "contingency_bps": 2000,
+    "retained_cash_minor": 30,
+    "contingent_preparation_minor": 60,
+    "preparation_cost_covered_by_retained_cash": false,
+    "assumption_requiring_review": "Preparation cost is an independent unsuccessful-request expense, consistent with its existing policy field. The legacy positive-count path currently budgets variable cost only.",
+    "source_path": "backend/app/billing/cost_policy.py",
+    "source_sha256": "fd8b14de7f4bb89708e3d0b34a6c5f8da92063b6bd01825da17fbba21bf94059",
+    "provider_calls": 0,
+    "production_mutations": 0,
+    "checkpoint": "Billing costs/failure recovery/load",
+    "complete": false
+  },
+  "source_pins": [
+    {
+      "path": "backend/app/domains/employer/catalogue_search.py",
+      "sha256": "138e135e1df18e96c81c668b4f3df1170b30e85d797cca2cd7ba7301c7794a8b"
+    },
+    {
+      "path": "backend/tests/test_employer_catalogue_search.py",
+      "sha256": "aa970b30eb3ed4905cc3942903ad513d216b69eb8d0daef4c9d367c74242407f"
+    },
+    {
+      "path": "backend/tests/test_employer_search_new_results.py",
+      "sha256": "e61459e943daaf0ab8a4475ed2bb7be93638731ece457f396c7ea9bf7a703ce9"
+    },
+    {
+      "path": "backend/tests/test_employer_delivery_history.py",
+      "sha256": "f82fdeb3b0d2622ed32c29e2fda99c18c1f07b82608d05b1e3311415b7a2e7c7"
+    },
+    {
+      "path": "backend/tests/test_employer_search_pages.py",
+      "sha256": "72bc54a963d6595a546a4434ef9ff102bbfaf2309188546669790b71d0595006"
+    },
+    {
+      "path": "backend/tests/test_expense_budget.py",
+      "sha256": "d735ef4381ffbd91d81ae54abdcad995e2669437a83240ef055d765978d47c84"
+    }
+  ],
+  "provider_mutations": 0,
+  "production_deployed": false,
+  "protected_integration_changed": false,
+  "completed_major_checkpoints": 0
+}

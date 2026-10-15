@@ -11,10 +11,12 @@ from sqlalchemy import or_
 from ... import models
 from ...database import SessionLocal
 from ...observability import correlation_id_var
+from ...services.result_commit import ResultOwnerGone, begin_result_commit
 from ..common import utcnow
 from ..notifications import enqueue_notification
 from ..usage import commit_run_usage, release_run_usage
 from .operations import execute_operation
+from .tailoring_failures import persist_tailoring_failure
 
 log = logging.getLogger("hirewiz.analysis.tasks")
 TERMINAL_STATES = {"succeeded", "failed", "cancelled"}
@@ -27,6 +29,8 @@ class RetryableRunError(RuntimeError):
 def _retryable(exc: Exception) -> bool:
     current: BaseException | None = exc
     while current is not None:
+        if getattr(current, "budget_exhausted", False):
+            return False
         if getattr(current, "retryable", False):
             return True
         message = str(current).lower()
@@ -79,6 +83,15 @@ def enqueue_cloud_task(run_id: str) -> str:
 def process_analysis_run(run_id: str) -> str:
     db = SessionLocal()
     try:
+        from ...services.generation_gate import require_operation_generation
+
+        previous = db.query(
+            models.AnalysisRun.operation, models.AnalysisRun.input_payload, models.AnalysisRun.status,
+        ).filter(models.AnalysisRun.id == run_id).first()
+        if previous and previous.status not in TERMINAL_STATES:
+            # Refuse before the claim/attempt increment; paused work and its
+            # product reservation stay available for reviewed recovery.
+            require_operation_generation(previous.operation, previous.input_payload)
         stale_before = utcnow() - timedelta(minutes=20)
         claimed = (
             db.query(models.AnalysisRun)
@@ -107,8 +120,17 @@ def process_analysis_run(run_id: str) -> str:
             existing = db.query(models.AnalysisRun).filter(models.AnalysisRun.id == run_id).first()
             return existing.status if existing else "missing"
 
-        run = db.query(models.AnalysisRun).filter(models.AnalysisRun.id == run_id).one()
+        run = db.query(models.AnalysisRun).filter(models.AnalysisRun.id == run_id).one_or_none()
+        if run is None:
+            return "missing"
+        owner_id = run.user_id
         if run.cancel_requested:
+            try:
+                begin_result_commit(db, owner_id, run_id, allow_cancelled=True)
+            except ResultOwnerGone:
+                db.rollback()
+                return "missing"
+            db.refresh(run)
             run.status = "cancelled"
             run.cancelled_at = utcnow()
             run.updated_at = utcnow()
@@ -117,9 +139,17 @@ def process_analysis_run(run_id: str) -> str:
             return run.status
 
         try:
-            result = execute_operation(db, run)
+            from ...services.generation_budget import persistent_run_budget
+
+            with persistent_run_budget(SessionLocal, run.id):
+                result = execute_operation(db, run)
+            begin_result_commit(db, owner_id, run_id, allow_cancelled=True)
             db.flush()
             db.refresh(run)
+            if run.status in TERMINAL_STATES:
+                status = run.status
+                db.rollback()
+                return status
             if run.cancel_requested:
                 run.status = "cancelled"
                 run.cancelled_at = utcnow()
@@ -150,15 +180,34 @@ def process_analysis_run(run_id: str) -> str:
             return run.status
         except Exception as exc:
             db.rollback()
+            try:
+                begin_result_commit(db, owner_id, run_id, allow_cancelled=True)
+            except ResultOwnerGone:
+                db.rollback()
+                return "missing"
             run = (
                 db.query(models.AnalysisRun)
                 .filter(models.AnalysisRun.id == run_id)
-                .with_for_update()
+                .populate_existing()
                 .one()
             )
+            if run.status in TERMINAL_STATES:
+                status = run.status
+                db.rollback()
+                return status
             run.error_code = type(exc).__name__[:80]
-            run.error_message = str(exc)[:500]
+            run.error_message = (
+                persist_tailoring_failure(exc)
+                if run.operation == "resume_tailor"
+                else str(exc)[:500]
+            )
             run.updated_at = utcnow()
+            if run.cancel_requested:
+                run.status = "cancelled"
+                run.cancelled_at = utcnow()
+                release_run_usage(db, run, reason="Cancelled during execution")
+                db.commit()
+                return run.status
             if _retryable(exc) and run.attempt_count < 3:
                 run.status = "queued"
                 db.commit()
@@ -167,7 +216,11 @@ def process_analysis_run(run_id: str) -> str:
             run.completed_at = utcnow()
             release_run_usage(db, run, reason=f"Analysis failed: {type(exc).__name__}")
             db.commit()
-            log.exception("Analysis run %s failed", run_id)
+            if run.operation == "resume_tailor":
+                # A traceback may contain source text, paths or provider output.
+                log.error("Analysis run %s failed code=%s reason=%s", run_id, run.error_code, run.error_message)
+            else:
+                log.exception("Analysis run %s failed", run_id)
             return run.status
     finally:
         db.close()

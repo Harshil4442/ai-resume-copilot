@@ -1,0 +1,256 @@
+{
+  "reviewed_at": "2026-10-08",
+  "status": "Proposed; requires root/operator registry review. Not a seeded catalog or permission to apply.",
+  "scope": "Three additional verified employer-origin public discovery sources, India/global technical-role pilot; no worldwide recall claim.",
+  "sources": [
+    {
+      "employer": "Freshworks",
+      "platform": "smartrecruiters",
+      "board_token": "Freshworks",
+      "region": "global",
+      "careers_url": "https://www.freshworks.com/company/careers/",
+      "allowed_hosts": [
+        "www.freshworks.com"
+      ],
+      "verification_url": "https://www.freshworks.com/company/careers/",
+      "verification_note": "Verified 8 October 2026: the official careers page Explore jobs link targets https://careers.smartrecruiters.com/Freshworks. The public documented listing API returns Freshworks technical roles in India and other countries. Discovery only; no submission permission or credential is supplied.",
+      "submission_enabled": false,
+      "form_parity_verified": false
+    },
+    {
+      "employer": "Figma",
+      "platform": "greenhouse",
+      "board_token": "figma",
+      "region": "global",
+      "careers_url": "https://www.figma.com/careers/",
+      "allowed_hosts": [
+        "www.figma.com"
+      ],
+      "verification_url": "https://www.figma.com/careers/",
+      "verification_note": "Verified 8 October 2026: official careers Job Openings links include https://boards.greenhouse.io/figma/jobs/5707966004, redirecting to the same figma tenant on job-boards.greenhouse.io. The public board API returns published openings. Discovery only; no employer write permission or credential is supplied.",
+      "submission_enabled": false,
+      "form_parity_verified": false
+    },
+    {
+      "employer": "Supabase",
+      "platform": "ashby",
+      "board_token": "supabase",
+      "region": "global",
+      "careers_url": "https://supabase.com/careers",
+      "allowed_hosts": [
+        "supabase.com"
+      ],
+      "verification_url": "https://supabase.com/careers",
+      "verification_note": "Verified 8 October 2026: the official careers page Software Engineer - Auth link targets https://jobs.ashbyhq.com/supabase/e569b7f7-fa8f-4139-86f6-4f52b456882d. The public job-board API returns global/region-scoped remote technical openings. Discovery only; no write permission or credential is supplied.",
+      "submission_enabled": false,
+      "form_parity_verified": false
+    }
+  ],
+  "origin_evidence": [
+    {
+      "employer": "Freshworks",
+      "official_careers_page": "https://www.freshworks.com/company/careers/",
+      "visible_link_label": "Explore jobs",
+      "ats_destination": "https://careers.smartrecruiters.com/Freshworks"
+    },
+    {
+      "employer": "Figma",
+      "official_careers_page": "https://www.figma.com/careers/",
+      "visible_link_label": "AI Applied Scientist (Job Openings)",
+      "ats_destination": "https://boards.greenhouse.io/figma/jobs/5707966004?gh_jid=5707966004",
+      "resolved_destination": "https://job-boards.greenhouse.io/figma/jobs/5707966004?gh_jid=5707966004",
+      "future_execution_policy_note": "The observed employer application page limits candidates to five applications in a rolling 30-day period and restricts reapplication. Any future permitted executor needs employer-specific admissions; this discovery proposal grants no write capability."
+    },
+    {
+      "employer": "Supabase",
+      "official_careers_page": "https://supabase.com/careers",
+      "visible_link_label": "Software Engineer - Auth",
+      "ats_destination": "https://jobs.ashbyhq.com/supabase/e569b7f7-fa8f-4139-86f6-4f52b456882d"
+    }
+  ],
+  "bounded_feed_observations": [
+    {
+      "employer_key": "freshworks",
+      "observed_at": "2026-10-08T12:12:36.801500+00:00",
+      "endpoint": "https://api.smartrecruiters.com/v1/companies/Freshworks/postings?limit=100&offset=0",
+      "status_code": 200,
+      "returned_postings": 100,
+      "provider_total": 126,
+      "body_bytes": 114071,
+      "sha256": "8611996df86a38d3d5d81fb5db6b4a1a8645398687202f84765fa54c21b7f59b",
+      "technical_samples": [
+        {
+          "id": "744000154405299",
+          "title": "Lead Software Engineer - Systems",
+          "location": {
+            "city": "Chennai",
+            "country": "in",
+            "remote": false,
+            "hybrid": false,
+            "fullLocation": "Chennai, , India"
+          },
+          "destination": "https://api.smartrecruiters.com/v1/companies/Freshworks/postings/744000154405299"
+        },
+        {
+          "id": "744000154351019",
+          "title": "Staff Engineer - Full Stack",
+          "location": {
+            "city": "Chennai",
+            "country": "in",
+            "remote": false,
+            "hybrid": false,
+            "fullLocation": "Chennai, , India"
+          },
+          "destination": "https://api.smartrecruiters.com/v1/companies/Freshworks/postings/744000154351019"
+        }
+      ],
+      "no_authentication_or_submission": true
+    },
+    {
+      "employer_key": "figma",
+      "observed_at": "2026-10-08T12:12:36.881486+00:00",
+      "endpoint": "https://boards-api.greenhouse.io/v1/boards/figma/jobs?content=true",
+      "status_code": 200,
+      "returned_postings": 150,
+      "provider_total": 150,
+      "body_bytes": 1788971,
+      "sha256": "5830538cc646aa297980359060ef99684b4e0d35216bd3c2cc8547ae32f7802c",
+      "technical_samples": [
+        {
+          "id": "5707966004",
+          "title": "AI Applied Scientist",
+          "location": {
+            "name": "San Francisco, CA \u2022 New York, NY \u2022 United States"
+          },
+          "destination": "https://boards.greenhouse.io/figma/jobs/5707966004?gh_jid=5707966004"
+        },
+        {
+          "id": "6178851004",
+          "title": "Data Engineer Intern (2027)",
+          "location": {
+            "name": "San Francisco, CA \u2022 New York, NY"
+          },
+          "destination": "https://boards.greenhouse.io/figma/jobs/6178851004?gh_jid=6178851004"
+        }
+      ],
+      "no_authentication_or_submission": true
+    },
+    {
+      "employer_key": "supabase",
+      "observed_at": "2026-10-08T12:12:36.939713+00:00",
+      "endpoint": "https://api.ashbyhq.com/posting-api/job-board/supabase",
+      "status_code": 200,
+      "returned_postings": 53,
+      "provider_total": null,
+      "body_bytes": 739680,
+      "sha256": "102bfd66e2d81eaccfb4ed9a16c1dfb260899a8295abead78ec6d02902db0870",
+      "technical_samples": [
+        {
+          "id": "3b5d54ca-741b-45ac-bd3f-31605a0d3541",
+          "title": "AI Platform Engineer",
+          "location": "Remote, Global",
+          "destination": "https://jobs.ashbyhq.com/supabase/3b5d54ca-741b-45ac-bd3f-31605a0d3541"
+        },
+        {
+          "id": "d5573afa-636c-4219-832f-386f498243bf",
+          "title": "Customer Solution Architect (AMER)",
+          "location": "Remote, AMER",
+          "destination": "https://jobs.ashbyhq.com/supabase/d5573afa-636c-4219-832f-386f498243bf"
+        }
+      ],
+      "no_authentication_or_submission": true
+    }
+  ],
+  "limitations": [
+    "Counts are observation-time values and will change. This is source identity/public-discovery verification, not an independent coverage sample.",
+    "No submission grant, credentials, form-parity validation or complete-application receipt contract was obtained.",
+    "Publication/freshness fields retain existing provider-specific uncertainty; remote does not establish individual candidate country/work-authorization eligibility.",
+    "Employer/site terms and public API limits require recurring operator review before production indexing."
+  ],
+  "not_proposed": [
+    {
+      "employer": "BrowserStack",
+      "official_careers_page": "https://www.browserstack.com/careers",
+      "reason": "The visible View open positions link points to browserstack.wd3.myworkdayjobs.com; Workday is outside the current adapter families."
+    },
+    {
+      "employer": "Postman",
+      "official_careers_page": "https://www.postman.com/company/careers/open-positions/",
+      "reason": "An exact current ATS tenant link was not visibly established on the reviewed official page; an indexed Greenhouse board alone is insufficient origin evidence."
+    },
+    {
+      "employer": "Linear",
+      "official_careers_page": "https://linear.app/careers",
+      "reason": "Official job details were verified, but Apply resolves within the employer site and did not visibly identify an exact supported ATS tenant; not guessed."
+    }
+  ],
+  "adapter_observations": [
+    {
+      "employer_key": "freshworks",
+      "observed_at": "2026-10-08T12:14:23.600034+00:00",
+      "adapter_scan_complete": true,
+      "normalized_openings": 126,
+      "elapsed_seconds": 67.0,
+      "manifest_sha256": "f1771d2b808d6a9d28655deecab3bc5097cea37072b1924aba5d952db028f96e",
+      "technical_samples": [
+        {
+          "external_id": "744000154405299",
+          "title": "Lead Software Engineer - Systems",
+          "location": "Chennai, in",
+          "canonical_url": "https://jobs.smartrecruiters.com/Freshworks/744000154405299-lead-software-engineer-systems"
+        },
+        {
+          "external_id": "744000154351019",
+          "title": "Staff Engineer - Full Stack",
+          "location": "Chennai, in",
+          "canonical_url": "https://jobs.smartrecruiters.com/Freshworks/744000154351019-staff-engineer-full-stack"
+        }
+      ]
+    },
+    {
+      "employer_key": "figma",
+      "observed_at": "2026-10-08T12:13:17.186673+00:00",
+      "adapter_scan_complete": true,
+      "normalized_openings": 150,
+      "elapsed_seconds": 0.58,
+      "manifest_sha256": "423348d7249bb55c8c4ae9e2bf96c675806ee52d867b96584544e362443d976a",
+      "technical_samples": [
+        {
+          "external_id": "5707966004",
+          "title": "AI Applied Scientist",
+          "location": "San Francisco, CA \u2022 New York, NY \u2022 United States",
+          "canonical_url": "https://boards.greenhouse.io/figma/jobs/5707966004?gh_jid=5707966004"
+        },
+        {
+          "external_id": "6178851004",
+          "title": "Data Engineer Intern (2027)",
+          "location": "San Francisco, CA \u2022 New York, NY",
+          "canonical_url": "https://boards.greenhouse.io/figma/jobs/6178851004?gh_jid=6178851004"
+        }
+      ]
+    },
+    {
+      "employer_key": "supabase",
+      "observed_at": "2026-10-08T12:13:17.005919+00:00",
+      "adapter_scan_complete": true,
+      "normalized_openings": 53,
+      "elapsed_seconds": 0.4,
+      "manifest_sha256": "9e07af3746db50007a9d8ff9eccad2290a049a6995b4097cc5359bf9a201e8c5",
+      "technical_samples": [
+        {
+          "external_id": "3b5d54ca-741b-45ac-bd3f-31605a0d3541",
+          "title": "AI Platform Engineer",
+          "location": "Remote, Global",
+          "canonical_url": "https://jobs.ashbyhq.com/supabase/3b5d54ca-741b-45ac-bd3f-31605a0d3541"
+        },
+        {
+          "external_id": "d5573afa-636c-4219-832f-386f498243bf",
+          "title": "Customer Solution Architect (AMER)",
+          "location": "Remote, AMER",
+          "canonical_url": "https://jobs.ashbyhq.com/supabase/d5573afa-636c-4219-832f-386f498243bf"
+        }
+      ]
+    }
+  ],
+  "validated_source_create_count": 3
+}

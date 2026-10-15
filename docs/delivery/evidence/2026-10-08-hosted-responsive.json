@@ -1,0 +1,55 @@
+{
+  "origin": "https://www.hirewizhq.com",
+  "phase": "final",
+  "completedAt": "2026-10-08T13:08:37.816Z",
+  "caseCount": 20,
+  "widths": [
+    320,
+    390,
+    768,
+    1024,
+    1440
+  ],
+  "routes": [
+    "/",
+    "/pricing",
+    "/login",
+    "/employer-jobs"
+  ],
+  "httpStatuses": [
+    200
+  ],
+  "runtimeErrorCount": 0,
+  "consoleErrorCount": 0,
+  "axeViolationCount": 0,
+  "blockedWriteCount": 0,
+  "horizontalOverflowCases": 0,
+  "application_commit": "7980b624d2fd5a93994621538eb610e2ee4e5181",
+  "vercel_deployment": "dpl_FjoBZciN93ukkuXdH2xYcooX5FhM",
+  "protocol": "Fresh anonymous Chromium contexts; unthrottled local network; public routes only; no production mutations; one independent visible-field login follow-up.",
+  "route_medians_ms": {
+    "home": {
+      "DCL": 466,
+      "LCP": 548
+    },
+    "pricing": {
+      "DCL": 748,
+      "LCP": 1028
+    },
+    "login": {
+      "DCL": 770,
+      "LCP": 740
+    },
+    "jobs_handoff": {
+      "DCL": 513,
+      "LCP": 580
+    }
+  },
+  "maximum_CLS": 0.04594184027777778,
+  "limitations": [
+    "Not field p75, production p95, INP or a load test.",
+    "No authenticated application submission is proved.",
+    "Aborted Next.js navigation prefetch requests observed; no core asset failures.",
+    "Mobile menu target is 40 by 40 px; ergonomic advisory."
+  ]
+}

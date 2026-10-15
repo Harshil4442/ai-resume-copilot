@@ -1,0 +1,99 @@
+{
+  "status": "ESTIMATED_PROPOSAL_ARITHMETIC_PASS_NOT_ACTIVATED",
+  "actual_invoices_used": false,
+  "owner_authorized_estimates": true,
+  "assumptions": {
+    "gross_inclusive_sale_tax_reserve": "18% (planning assumption, not legal tax determination)",
+    "payment_cost": "3.54% of gross",
+    "refund_and_chargeback_reserve": "5% of gross",
+    "fixed_and_marketing_cost_inr_monthly": 15000,
+    "paid_pack_forecast": 100,
+    "fixed_allocation_inr_per_pack": 150,
+    "contingency": "20%",
+    "target_contribution_margin": "40%",
+    "search_cost_bound_inr": ".25 per delivered job",
+    "confirmed_application_cost_bound_inr": "5 per application, requiring20jobcredits",
+    "ai_unit_cost_bound_inr": "25.50; tailoring2units, operation-total providercapUSD.50, adverseFX100INR/USD"
+  },
+  "candidate_bundles": [
+    {
+      "name": "Starter",
+      "gross_inr": 649,
+      "service_credits": 100,
+      "analysis_units": 2,
+      "net_receipts_minor": 49457,
+      "bounded_cost_minor": 27120,
+      "estimated_margin_percent": "45.17",
+      "volume_scenarios": [
+        {
+          "packs_per_month": 10,
+          "net_contribution_after_fixed_minor": -1396624
+        },
+        {
+          "packs_per_month": 50,
+          "net_contribution_after_fixed_minor": 216877
+        },
+        {
+          "packs_per_month": 100,
+          "net_contribution_after_fixed_minor": 2233754
+        }
+      ],
+      "break_even_packs_if_only_this_pack": 45
+    },
+    {
+      "name": "Growth",
+      "gross_inr": 1099,
+      "service_credits": 300,
+      "analysis_units": 6,
+      "net_receipts_minor": 83750,
+      "bounded_cost_minor": 45360,
+      "estimated_margin_percent": "45.84",
+      "volume_scenarios": [
+        {
+          "packs_per_month": 10,
+          "net_contribution_after_fixed_minor": -1236098
+        },
+        {
+          "packs_per_month": 50,
+          "net_contribution_after_fixed_minor": 1019506
+        },
+        {
+          "packs_per_month": 100,
+          "net_contribution_after_fixed_minor": 3839013
+        }
+      ],
+      "break_even_packs_if_only_this_pack": 32
+    },
+    {
+      "name": "Pro",
+      "gross_inr": 2199,
+      "service_credits": 700,
+      "analysis_units": 15,
+      "net_receipts_minor": 167576,
+      "bounded_cost_minor": 84900,
+      "estimated_margin_percent": "49.34",
+      "volume_scenarios": [
+        {
+          "packs_per_month": 10,
+          "net_contribution_after_fixed_minor": -793235
+        },
+        {
+          "packs_per_month": 50,
+          "net_contribution_after_fixed_minor": 3233823
+        },
+        {
+          "packs_per_month": 100,
+          "net_contribution_after_fixed_minor": 8267647
+        }
+      ],
+      "break_even_packs_if_only_this_pack": 18
+    }
+  ],
+  "limits": [
+    "Operation-cost bounds and atomic bundle runtime not yet independently verified.",
+    "Global providers/documents/fleet budget guards required.",
+    "Tax/gateway/hosting assumptions must be reconciled with actual contracts/bills.",
+    "Positive forecast margin does not imply profit below break-even volume.",
+    "Accepted old orders/quotes retained."
+  ]
+}

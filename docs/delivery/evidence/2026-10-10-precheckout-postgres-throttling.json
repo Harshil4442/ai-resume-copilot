@@ -1,0 +1,77 @@
+{
+  "created_at_utc": "2026-10-09T21:25:42.075224+00:00",
+  "sha": "0fb478446ad1265c32946eef84211924bf3c8c76",
+  "tree": "546c48e1aa65f91ef1585971bbef15d0247d0581",
+  "repository": "Harshil4442/ai-resume-copilot",
+  "run_id": 37992358635,
+  "attempt": 1,
+  "run_url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37992358635",
+  "workflow_path": ".github/workflows/ci.yml",
+  "conclusion": "failure",
+  "actual_checkout_count": 3,
+  "precheckout_failure_count": 2,
+  "five_actual_checkout_requirement_met": false,
+  "verified_runtime_registry_steps": {
+    "scope": "security-and-container lane only",
+    "configure_step": "success",
+    "dockerd_native_validate": "configuration OK",
+    "validated_HUP_step": "success",
+    "live_mirror_activation_verifier": "success; exact-head helper checks native docker info RegistryConfig.Mirrors for https://mirror.gcr.io",
+    "helper_native_git_blob": "211dda1f29c5c96d32f7d8005f3b5612ced4d26d",
+    "official_GHCR_Gitleaks_digest": "sha256:b5918eb91b8d2473cec722f066abb4352e4ffdc4ec9f4283ec143aba9ec9ebc4",
+    "secret_scan": {
+      "commits_scanned": 193,
+      "result": "no leaks found"
+    },
+    "production_container_build": "success",
+    "PostgreSQL_continuity": "not observed; two PostgreSQL lanes failed during service initialization before cache setup",
+    "native_TeX_prepull_and_compiler": "not reached; backend failed before checkout"
+  },
+  "successful_test_counts": {
+    "frontend": {
+      "unit_tests_passed": 240,
+      "unit_test_files_passed": 22,
+      "responsive_accessibility_cases_passed": 215,
+      "reported_test_skips": 0
+    },
+    "browser-companion": {
+      "node_batches": [
+        76,
+        5,
+        14,
+        6,
+        35
+      ],
+      "counts": {
+        "tests": 136,
+        "pass": 136,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    }
+  },
+  "skip_distinction": "Successful frontend/browser tests completed without reported skipped test cases. Backend and cold journey did not execute checkout or tests; later workflow steps were skipped due to service initialization failure. This is not a globally zero-skip or five-lane green run.",
+  "security_warning": "The frontend dependency audit reported seven noncritical vulnerabilities (two moderate, five high); the configured critical-severity audit gate passed. No new remediation is claimed.",
+  "not_proved": [
+    "No actual full-head checkout occurred for backend or cold-browser-journey.",
+    "PostgreSQL continuity, compiler prepull/build, backend tests and complete cold journey were not reached.",
+    "This failed run does not meet the release five-lane exact-source CI gate or prove native Cloud Build/deployment."
+  ],
+  "mutations": "Read-only GitHub metadata/public source/job-log downloads and own private artifacts only. No source/shared edit, rerun, cloud/build/payment/model/employer mutation.",
+  "schema_version": 1,
+  "independent_report_sha256": "a0d795f99d037f9c8dc9d2e65bd1ee3d45d175b0453745be1d5e4c2f97dcedeb",
+  "original_log_manifest_sha256": "212cef88a8705b00b21549f27833880390e517a034dad58f5b6ec98f27f4eaf0",
+  "failed_lanes": [
+    "backend",
+    "cold-browser-journey"
+  ],
+  "failure_reason": "Docker Hub rate limit during postgres:17-alpine service initialization before checkout",
+  "passed_lanes": [
+    "security-and-container",
+    "frontend",
+    "browser-companion"
+  ],
+  "production_activation": false
+}

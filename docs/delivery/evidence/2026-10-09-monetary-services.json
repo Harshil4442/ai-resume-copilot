@@ -1,0 +1,147 @@
+{
+  "checked_at_utc": "2026-10-09T00:02:53.928546+00:00",
+  "project": "ai-resume-parser-482412",
+  "kind": "services",
+  "all_region_list_property_unset": true,
+  "records": [
+    {
+      "name": "ai-resume-parser",
+      "region": "us-central1",
+      "credential_bindings": [
+        {
+          "environment_name": "DATABASE_URL",
+          "inline_present": true,
+          "secret_reference": null
+        },
+        {
+          "environment_name": "LLM_API_KEY",
+          "inline_present": true,
+          "secret_reference": null
+        }
+      ],
+      "safe_environment": {
+        "APP_RELEASE": "b306f135fcd5d8f10336c8cfb4174c71ac028649",
+        "OPTIONAL_AI_GENERATION_ENABLED": "false"
+      },
+      "traffic": [
+        {
+          "revision": "ai-resume-parser-00267-xot",
+          "percent": 100,
+          "tag": "release-candidate"
+        },
+        {
+          "revision": "ai-resume-parser-00270-veb",
+          "percent": 0,
+          "tag": "generation-quiesce"
+        }
+      ],
+      "latest_execution_name": null,
+      "known_conditions": [
+        {
+          "type": "Ready",
+          "status": "True"
+        },
+        {
+          "type": "ConfigurationsReady",
+          "status": "True"
+        },
+        {
+          "type": "RoutesReady",
+          "status": "True"
+        }
+      ]
+    },
+    {
+      "name": "hirewiz-analysis-worker",
+      "region": "us-central1",
+      "credential_bindings": [
+        {
+          "environment_name": "DATABASE_URL",
+          "inline_present": true,
+          "secret_reference": null
+        },
+        {
+          "environment_name": "LLM_API_KEY",
+          "inline_present": true,
+          "secret_reference": null
+        }
+      ],
+      "safe_environment": {
+        "APP_RELEASE": "b306f135fcd5d8f10336c8cfb4174c71ac028649",
+        "OPTIONAL_AI_GENERATION_ENABLED": "false"
+      },
+      "traffic": [
+        {
+          "revision": "hirewiz-analysis-worker-00021-5zd",
+          "percent": 100,
+          "tag": null
+        },
+        {
+          "revision": "hirewiz-analysis-worker-00022-qut",
+          "percent": 0,
+          "tag": "generation-quiesce"
+        }
+      ],
+      "latest_execution_name": null,
+      "known_conditions": [
+        {
+          "type": "Ready",
+          "status": "True"
+        },
+        {
+          "type": "ConfigurationsReady",
+          "status": "True"
+        },
+        {
+          "type": "RoutesReady",
+          "status": "True"
+        }
+      ]
+    },
+    {
+      "name": "hirewiz-employer-worker",
+      "region": "us-central1",
+      "credential_bindings": [
+        {
+          "environment_name": "DATABASE_URL",
+          "inline_present": false,
+          "secret_reference": {
+            "name": "hirewiz-database-url",
+            "version": "latest"
+          }
+        }
+      ],
+      "safe_environment": {
+        "APP_RELEASE": "e7d8f2ba0435fd3d4a504ccdce83fac365ec6835"
+      },
+      "traffic": [
+        {
+          "revision": "hirewiz-employer-worker-00012-lmz",
+          "percent": 100,
+          "tag": null
+        }
+      ],
+      "latest_execution_name": null,
+      "known_conditions": [
+        {
+          "type": "Ready",
+          "status": "True"
+        },
+        {
+          "type": "ConfigurationsReady",
+          "status": "True"
+        },
+        {
+          "type": "RoutesReady",
+          "status": "True"
+        }
+      ]
+    }
+  ],
+  "retained_revision_coverage": false,
+  "other_projects_and_local_processes": false,
+  "mutation_performed": false,
+  "secret_values_retained": false,
+  "writer_retirement_proven": false,
+  "safe_environment_scope": "Latest service/job template; not proof of serving-revision environment"
+}

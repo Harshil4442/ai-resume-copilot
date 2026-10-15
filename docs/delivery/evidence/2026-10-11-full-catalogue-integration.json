@@ -1,0 +1,142 @@
+{
+  "author_v2_manifest_sha256": "b9383db56fee6bf8f6da889aff1193e9059a1a6378de0126c846f6f547653498",
+  "base_commit": "d5c51846e8ac8ff2224d4cca6a99c32b00aa5f53",
+  "checks": {
+    "configured_mypy_11": true,
+    "configured_ruff_11": true,
+    "configured_ruff_3_test_bodies": true,
+    "frontend_build_before_additive_202_type_regeneration": true,
+    "frontend_build_configuration": "temporary_synthetic_secret_in_process_only",
+    "frontend_lint": true,
+    "frontend_typecheck_final_contract": true,
+    "full_backend_exporter": false,
+    "new_commit_ci": false,
+    "production_activation": false,
+    "production_migration": false
+  },
+  "document_diagnostic": {
+    "customer_release": false,
+    "fresh_readonly_GCP_preflight_verified": true,
+    "new_native_create_or_run": false,
+    "requests": 7,
+    "scanner_acceptance": false
+  },
+  "durable_test_overlay": {
+    "durable_test_execution": "remote_CI_pending",
+    "files": {
+      "backend/tests/test_dispatch_outbox.py": "f0c3749e350f2c9060cf6f42677c33bcc9c34c2b485701e601aeb97a70a75731",
+      "backend/tests/test_employer_catalogue_search.py": "8eb02ea5b33d78e53b3b12c406428e94c840cf0552da37e4e41efdea30b22b89",
+      "backend/tests/test_monetary_release_entrypoint.py": "a72f81051edb5b0186f43166a14199ec2f3266b620859e3ee60d08cd179eb7d7"
+    },
+    "global_imports_executed": false,
+    "manifest_sha256": "39203af9afc29e3dcada5879502f7cb4f3fb303b8133408c8f3ffc60809ee299",
+    "original_test_bodies_preserved": true,
+    "release_guard_changed": false,
+    "scope": "three_reviewed_ordinary_test_bodies"
+  },
+  "independent_controls_reported": {
+    "async_202_contract_controls": 4,
+    "descriptor_metadata_and_sqlite_readers": 7,
+    "initial_two_path_contract_controls": 4,
+    "not_unique_suite_total": true,
+    "parser_checkpoint_comparisons": 48
+  },
+  "native_components": {
+    "full_native_financial_concurrency": false,
+    "native_item_cases": 2,
+    "native_item_source_sha256": "ba971ff29a2845527dd7ee767ca542340bb771d7ffdb4170053d7e46e9b76c9b",
+    "owned_fixture_removed_and_absent": true,
+    "schema_cases": 8,
+    "schema_migration_sha256": "012e9d5e6b0dfdf7dc232bd59ecc7e70f8af05ae6f27a7d1e92f877a6ec24a94",
+    "schema_model_sha256": "a0ef34b30727331b149f4522e3a2f36286c84e8b8441bc7e6a60e1d72a059702"
+  },
+  "native_full_catalogue_cost_proven": false,
+  "protected_body_reads_by_this_integration": false,
+  "release_guards_unchanged": true,
+  "retained_original_failures": [
+    "same_chunk_alias_duplicate_primary_key_with_autoflush_false",
+    "ruff_B905",
+    "mypy_16_errors",
+    "missing_local_build_auth_secret",
+    "previous_deadline_and_remover_failures"
+  ],
+  "retained_root_tool_preflight_errors": [
+    "overstrict_test_AST_module_prefix",
+    "test_manifest_key_mismatch",
+    "structural_correction_precondition_refused_before_writes"
+  ],
+  "schema": 2,
+  "scope": "inactive_full_catalogue_source_integration",
+  "source_sha256": [
+    {
+      "path": "backend/alembic/versions/20261011_0016_employer_catalogue_search.py",
+      "sha256": "db91fb4d078befd67237dc038edcc3b2ae3fcda150de23eaa6baef83eec3474e"
+    },
+    {
+      "path": "backend/app/domains/dispatch/service.py",
+      "sha256": "269467a8188c0e9da8774af40975c6890bf08651c34a701581e8a95e5d6287e4"
+    },
+    {
+      "path": "backend/app/domains/employer/catalogue_search.py",
+      "sha256": "796d3ca15b32b45e2d12b846041a86c19ad820c9ac6f64db27dee1444043d206"
+    },
+    {
+      "path": "backend/app/domains/employer/config.py",
+      "sha256": "ec195e104d542d99c2973cc337e59721ee551c23e90f3538bf3436af09905b78"
+    },
+    {
+      "path": "backend/app/domains/employer/delivery_history.py",
+      "sha256": "2c0d3667e7269740b1a293c1aa023c4a6eba3557811193c0d0ff03e924b84052"
+    },
+    {
+      "path": "backend/app/domains/employer/models.py",
+      "sha256": "82e29e2ea05e27d42be6aa2894c50cdf570a4d44aff6a1359cdbfdd8a2778759"
+    },
+    {
+      "path": "backend/app/domains/employer/privacy.py",
+      "sha256": "bbc8afcf7f6fb7c2a30997e7f7d48753f6f55c2bf27f9e55f74b227d00de6f61"
+    },
+    {
+      "path": "backend/app/domains/employer/search_pages.py",
+      "sha256": "68143b905a2e34c7229fc65113460c4c9f75cc5fbb1f5aa68eaeb92e67b65ad1"
+    },
+    {
+      "path": "backend/app/domains/employer/search_preferences.py",
+      "sha256": "acf5b1349e9b65747ad9468300eb8edc86bb56fb8f2756460ac4c806962e0852"
+    },
+    {
+      "path": "backend/app/domains/employer/service.py",
+      "sha256": "e1d74f05841e7b013a63c645e0a4768ee3ce34ea712dca9a3adb5380c697f7a6"
+    },
+    {
+      "path": "backend/app/domains/employer/tasks.py",
+      "sha256": "00337cceaf747254a87213b3c2b7b13217a025e55ae3e4ff9b43b818203ea55c"
+    },
+    {
+      "path": "backend/app/routers/v1/employer.py",
+      "sha256": "676767a3de8e9110e903fb92341dd80cd4a1067954171aa7c1aab5ea6db52417"
+    },
+    {
+      "path": "backend/openapi.json",
+      "sha256": "9f7895815b0aa2b60917060fa8de19bd03c499779de239663d747ac7ac5cb9a7"
+    },
+    {
+      "path": "frontend/app/employer-jobs/page.tsx",
+      "sha256": "8788802212271b57a177b4436db75dbd495012961f0f2e9edd4cfe095b9091c6"
+    },
+    {
+      "path": "frontend/components/EmployerSavedSearches.tsx",
+      "sha256": "4874f79a314f044db61326cacf1308d32031bd40abb09d57eb6b76cc5f91cbc7"
+    },
+    {
+      "path": "frontend/lib/employerJobs.ts",
+      "sha256": "6f3cdac51345526fc2c9c420884a8a9cada1bfc82f48865dab5d9c95a1e46bb0"
+    },
+    {
+      "path": "frontend/lib/generated/api.ts",
+      "sha256": "19785af8904056cf602eea8c085ec6af053b355752585c30ef17f42d726a19b5"
+    }
+  ],
+  "source_sha256_format": "path-sha256-rows-v1",
+  "worldwide_coverage_proven": false
+}

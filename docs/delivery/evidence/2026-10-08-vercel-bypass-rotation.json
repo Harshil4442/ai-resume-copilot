@@ -1,0 +1,27 @@
+{
+  "checked_at": "2026-10-08T18:31:04.480882+00:00",
+  "project_id": "prj_yM58wylX64Ehx97cYUPdBhXvXI3J",
+  "deployment_id": "dpl_3p7SbZsNbSGDbvK47qpTQodwzfMa",
+  "action": "Generate/select replacement and revoke exposed automation-bypass entries through dedicated API",
+  "exposed_entries_revoked": 1,
+  "replacement_selected": true,
+  "protection_mode": "all_except_custom_domains",
+  "protection_policy_unchanged": true,
+  "custom_alias_unchanged": true,
+  "protected_deployment_without_bypass_status": 302,
+  "protected_deployment_old_bypass_statuses": [
+    302
+  ],
+  "protected_redirect_destination": {
+    "hostname": "vercel.com",
+    "path": "/sso-api",
+    "query_retained": false
+  },
+  "protected_deployment_new_bypass_status": 200,
+  "public_custom_domain_status": 200,
+  "credential_values_retained_in_evidence": false,
+  "verification_history": "Initial checker expected HTTP401 and stopped after successful revocation; a read-only verification confirmed the documented SSO flow redirects with HTTP302. No rotation mutation was retried.",
+  "repository_consumers": "No references to managed automation variable or bypass header in .github, frontend, backend/scripts or docs before this incident note",
+  "existing_deployments": "Historical injected values are revoked; any consumer would require redeployment. No repository consumer was found. Future deployments receive the selected replacement.",
+  "private_files_removed": true
+}

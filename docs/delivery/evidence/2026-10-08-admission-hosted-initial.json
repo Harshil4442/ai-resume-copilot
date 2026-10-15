@@ -1,0 +1,631 @@
+{
+  "origin": "https://www.hirewizhq.com",
+  "phase": "next-7cc49c2",
+  "applicationCommit": "7cc49c2c08a296b33cb30f96e383b959caf214c0",
+  "vercelDeployment": "dpl_Ddh2JvT25wWFBFbQWiibfES9B37e",
+  "releaseIdentitySource": "Supplied by release owner after exact deployment promotion; public UI alone does not prove the commit.",
+  "completedAt": "2026-10-08T16:26:41.812Z",
+  "publicCatalogReads": [
+    {
+      "index": 0,
+      "status": 200,
+      "elapsedMs": 1966,
+      "cacheControl": "private, no-store, max-age=0",
+      "catalogVersion": "inr-2026-10-08-v2",
+      "checkoutEnabled": true,
+      "products": [
+        {
+          "sku": "premium_30d",
+          "amount_minor": 99900,
+          "amount_display": "\u20b9999",
+          "currency": "INR",
+          "duration_days": 30,
+          "entitlement_quantity": 30,
+          "catalog_visible": true,
+          "enabled_for_purchase": true
+        },
+        {
+          "sku": "job_service_500",
+          "amount_minor": 49900,
+          "amount_display": "\u20b9499",
+          "currency": "INR",
+          "duration_days": 0,
+          "entitlement_quantity": 500,
+          "catalog_visible": true,
+          "enabled_for_purchase": true
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "status": 200,
+      "elapsedMs": 647,
+      "cacheControl": "private, no-store, max-age=0",
+      "catalogVersion": "inr-2026-10-08-v2",
+      "checkoutEnabled": true,
+      "products": [
+        {
+          "sku": "premium_30d",
+          "amount_minor": 99900,
+          "amount_display": "\u20b9999",
+          "currency": "INR",
+          "duration_days": 30,
+          "entitlement_quantity": 30,
+          "catalog_visible": true,
+          "enabled_for_purchase": true
+        },
+        {
+          "sku": "job_service_500",
+          "amount_minor": 49900,
+          "amount_display": "\u20b9499",
+          "currency": "INR",
+          "duration_days": 0,
+          "entitlement_quantity": 500,
+          "catalog_visible": true,
+          "enabled_for_purchase": true
+        }
+      ]
+    }
+  ],
+  "catalogFailures": [],
+  "caseCount": 20,
+  "widths": [
+    320,
+    390,
+    768,
+    1024,
+    1440
+  ],
+  "failures": [
+    {
+      "route": "/pricing",
+      "width": 320,
+      "failures": [
+        "locator.getAttribute: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('button', { name: 'Close navigation', exact: true })\u001b[22m\n"
+      ]
+    },
+    {
+      "route": "/login",
+      "width": 320,
+      "failures": [
+        "Browser console errors",
+        "Public page attempted a private or unexpected API read; request blocked"
+      ]
+    },
+    {
+      "route": "/employer-jobs",
+      "width": 320,
+      "failures": [
+        "locator.waitFor: Timeout 5000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('navigation', { name: 'Mobile navigation', exact: true }) to be visible\u001b[22m\n",
+        "Browser console errors",
+        "Public page attempted a private or unexpected API read; request blocked"
+      ]
+    },
+    {
+      "route": "/login",
+      "width": 390,
+      "failures": [
+        "Browser console errors",
+        "Public page attempted a private or unexpected API read; request blocked"
+      ]
+    },
+    {
+      "route": "/employer-jobs",
+      "width": 390,
+      "failures": [
+        "Browser console errors",
+        "Public page attempted a private or unexpected API read; request blocked"
+      ]
+    },
+    {
+      "route": "/login",
+      "width": 768,
+      "failures": [
+        "Browser console errors",
+        "Public page attempted a private or unexpected API read; request blocked"
+      ]
+    },
+    {
+      "route": "/employer-jobs",
+      "width": 768,
+      "failures": [
+        "Browser console errors",
+        "Public page attempted a private or unexpected API read; request blocked"
+      ]
+    },
+    {
+      "route": "/login",
+      "width": 1024,
+      "failures": [
+        "Browser console errors",
+        "Public page attempted a private or unexpected API read; request blocked"
+      ]
+    },
+    {
+      "route": "/employer-jobs",
+      "width": 1024,
+      "failures": [
+        "Browser console errors",
+        "Public page attempted a private or unexpected API read; request blocked"
+      ]
+    },
+    {
+      "route": "/login",
+      "width": 1440,
+      "failures": [
+        "Browser console errors",
+        "Public page attempted a private or unexpected API read; request blocked"
+      ]
+    },
+    {
+      "route": "/employer-jobs",
+      "width": 1440,
+      "failures": [
+        "Browser console errors",
+        "Public page attempted a private or unexpected API read; request blocked"
+      ]
+    }
+  ],
+  "runtimeErrorCount": 0,
+  "consoleErrorCount": 60,
+  "blockedWrites": [
+    {
+      "method": "POST",
+      "url": "https://www.hirewizhq.com/api/auth/_log"
+    },
+    {
+      "method": "POST",
+      "url": "https://www.hirewizhq.com/api/auth/_log"
+    },
+    {
+      "method": "POST",
+      "url": "https://www.hirewizhq.com/api/auth/_log"
+    },
+    {
+      "method": "POST",
+      "url": "https://www.hirewizhq.com/api/auth/_log"
+    },
+    {
+      "method": "POST",
+      "url": "https://www.hirewizhq.com/api/auth/_log"
+    },
+    {
+      "method": "POST",
+      "url": "https://www.hirewizhq.com/api/auth/_log"
+    },
+    {
+      "method": "POST",
+      "url": "https://www.hirewizhq.com/api/auth/_log"
+    },
+    {
+      "method": "POST",
+      "url": "https://www.hirewizhq.com/api/auth/_log"
+    },
+    {
+      "method": "POST",
+      "url": "https://www.hirewizhq.com/api/auth/_log"
+    },
+    {
+      "method": "POST",
+      "url": "https://www.hirewizhq.com/api/auth/_log"
+    },
+    {
+      "method": "POST",
+      "url": "https://www.hirewizhq.com/api/auth/_log"
+    },
+    {
+      "method": "POST",
+      "url": "https://www.hirewizhq.com/api/auth/_log"
+    },
+    {
+      "method": "POST",
+      "url": "https://www.hirewizhq.com/api/auth/_log"
+    },
+    {
+      "method": "POST",
+      "url": "https://www.hirewizhq.com/api/auth/_log"
+    },
+    {
+      "method": "POST",
+      "url": "https://www.hirewizhq.com/api/auth/_log"
+    },
+    {
+      "method": "POST",
+      "url": "https://www.hirewizhq.com/api/auth/_log"
+    },
+    {
+      "method": "POST",
+      "url": "https://www.hirewizhq.com/api/auth/_log"
+    },
+    {
+      "method": "POST",
+      "url": "https://www.hirewizhq.com/api/auth/_log"
+    },
+    {
+      "method": "POST",
+      "url": "https://www.hirewizhq.com/api/auth/_log"
+    },
+    {
+      "method": "POST",
+      "url": "https://www.hirewizhq.com/api/auth/_log"
+    }
+  ],
+  "blockedPrivateReads": [
+    {
+      "method": "GET",
+      "url": "https://www.hirewizhq.com/api/auth/providers"
+    },
+    {
+      "method": "GET",
+      "url": "https://www.hirewizhq.com/api/auth/providers"
+    },
+    {
+      "method": "GET",
+      "url": "https://www.hirewizhq.com/api/auth/providers"
+    },
+    {
+      "method": "GET",
+      "url": "https://www.hirewizhq.com/api/auth/providers"
+    },
+    {
+      "method": "GET",
+      "url": "https://www.hirewizhq.com/api/auth/providers"
+    },
+    {
+      "method": "GET",
+      "url": "https://www.hirewizhq.com/api/auth/providers"
+    },
+    {
+      "method": "GET",
+      "url": "https://www.hirewizhq.com/api/auth/providers"
+    },
+    {
+      "method": "GET",
+      "url": "https://www.hirewizhq.com/api/auth/providers"
+    },
+    {
+      "method": "GET",
+      "url": "https://www.hirewizhq.com/api/auth/providers"
+    },
+    {
+      "method": "GET",
+      "url": "https://www.hirewizhq.com/api/auth/providers"
+    },
+    {
+      "method": "GET",
+      "url": "https://www.hirewizhq.com/api/auth/providers"
+    },
+    {
+      "method": "GET",
+      "url": "https://www.hirewizhq.com/api/auth/providers"
+    },
+    {
+      "method": "GET",
+      "url": "https://www.hirewizhq.com/api/auth/providers"
+    },
+    {
+      "method": "GET",
+      "url": "https://www.hirewizhq.com/api/auth/providers"
+    },
+    {
+      "method": "GET",
+      "url": "https://www.hirewizhq.com/api/auth/providers"
+    },
+    {
+      "method": "GET",
+      "url": "https://www.hirewizhq.com/api/auth/providers"
+    },
+    {
+      "method": "GET",
+      "url": "https://www.hirewizhq.com/api/auth/providers"
+    },
+    {
+      "method": "GET",
+      "url": "https://www.hirewizhq.com/api/auth/providers"
+    },
+    {
+      "method": "GET",
+      "url": "https://www.hirewizhq.com/api/auth/providers"
+    },
+    {
+      "method": "GET",
+      "url": "https://www.hirewizhq.com/api/auth/providers"
+    }
+  ],
+  "resourceWarnings": [
+    {
+      "url": "https://www.hirewizhq.com/register",
+      "type": "fetch",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://www.hirewizhq.com/login",
+      "type": "fetch",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://www.hirewizhq.com/api/auth/providers",
+      "type": "fetch",
+      "failure": "net::ERR_BLOCKED_BY_CLIENT.Inspector"
+    },
+    {
+      "url": "https://www.hirewizhq.com/api/auth/_log",
+      "type": "ping",
+      "failure": "net::ERR_BLOCKED_BY_CLIENT.Inspector"
+    },
+    {
+      "url": "https://www.hirewizhq.com/register",
+      "type": "fetch",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://www.hirewizhq.com/api/auth/providers",
+      "type": "fetch",
+      "failure": "net::ERR_BLOCKED_BY_CLIENT.Inspector"
+    },
+    {
+      "url": "https://www.hirewizhq.com/api/auth/_log",
+      "type": "ping",
+      "failure": "net::ERR_BLOCKED_BY_CLIENT.Inspector"
+    },
+    {
+      "url": "https://www.hirewizhq.com/pricing",
+      "type": "fetch",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://www.hirewizhq.com/api/auth/providers",
+      "type": "fetch",
+      "failure": "net::ERR_BLOCKED_BY_CLIENT.Inspector"
+    },
+    {
+      "url": "https://www.hirewizhq.com/api/auth/_log",
+      "type": "ping",
+      "failure": "net::ERR_BLOCKED_BY_CLIENT.Inspector"
+    },
+    {
+      "url": "https://www.hirewizhq.com/pricing",
+      "type": "fetch",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://www.hirewizhq.com/api/auth/providers",
+      "type": "fetch",
+      "failure": "net::ERR_BLOCKED_BY_CLIENT.Inspector"
+    },
+    {
+      "url": "https://www.hirewizhq.com/api/auth/_log",
+      "type": "ping",
+      "failure": "net::ERR_BLOCKED_BY_CLIENT.Inspector"
+    },
+    {
+      "url": "https://www.hirewizhq.com/register",
+      "type": "fetch",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://www.hirewizhq.com/register",
+      "type": "fetch",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://www.hirewizhq.com/api/auth/providers",
+      "type": "fetch",
+      "failure": "net::ERR_BLOCKED_BY_CLIENT.Inspector"
+    },
+    {
+      "url": "https://www.hirewizhq.com/api/auth/_log",
+      "type": "ping",
+      "failure": "net::ERR_BLOCKED_BY_CLIENT.Inspector"
+    },
+    {
+      "url": "https://www.hirewizhq.com/api/auth/providers",
+      "type": "fetch",
+      "failure": "net::ERR_BLOCKED_BY_CLIENT.Inspector"
+    },
+    {
+      "url": "https://www.hirewizhq.com/api/auth/_log",
+      "type": "ping",
+      "failure": "net::ERR_BLOCKED_BY_CLIENT.Inspector"
+    },
+    {
+      "url": "https://www.hirewizhq.com/pricing",
+      "type": "fetch",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://www.hirewizhq.com/api/auth/providers",
+      "type": "fetch",
+      "failure": "net::ERR_BLOCKED_BY_CLIENT.Inspector"
+    },
+    {
+      "url": "https://www.hirewizhq.com/api/auth/_log",
+      "type": "ping",
+      "failure": "net::ERR_BLOCKED_BY_CLIENT.Inspector"
+    },
+    {
+      "url": "https://www.hirewizhq.com/api/auth/providers",
+      "type": "fetch",
+      "failure": "net::ERR_BLOCKED_BY_CLIENT.Inspector"
+    },
+    {
+      "url": "https://www.hirewizhq.com/api/auth/_log",
+      "type": "ping",
+      "failure": "net::ERR_BLOCKED_BY_CLIENT.Inspector"
+    },
+    {
+      "url": "https://www.hirewizhq.com/login",
+      "type": "fetch",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://www.hirewizhq.com/login",
+      "type": "fetch",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://www.hirewizhq.com/api/auth/providers",
+      "type": "fetch",
+      "failure": "net::ERR_BLOCKED_BY_CLIENT.Inspector"
+    },
+    {
+      "url": "https://www.hirewizhq.com/api/auth/_log",
+      "type": "ping",
+      "failure": "net::ERR_BLOCKED_BY_CLIENT.Inspector"
+    },
+    {
+      "url": "https://www.hirewizhq.com/api/auth/providers",
+      "type": "fetch",
+      "failure": "net::ERR_BLOCKED_BY_CLIENT.Inspector"
+    },
+    {
+      "url": "https://www.hirewizhq.com/api/auth/_log",
+      "type": "ping",
+      "failure": "net::ERR_BLOCKED_BY_CLIENT.Inspector"
+    },
+    {
+      "url": "https://www.hirewizhq.com/api/auth/providers",
+      "type": "fetch",
+      "failure": "net::ERR_BLOCKED_BY_CLIENT.Inspector"
+    },
+    {
+      "url": "https://www.hirewizhq.com/api/auth/_log",
+      "type": "ping",
+      "failure": "net::ERR_BLOCKED_BY_CLIENT.Inspector"
+    },
+    {
+      "url": "https://www.hirewizhq.com/api/auth/providers",
+      "type": "fetch",
+      "failure": "net::ERR_BLOCKED_BY_CLIENT.Inspector"
+    },
+    {
+      "url": "https://www.hirewizhq.com/api/auth/_log",
+      "type": "ping",
+      "failure": "net::ERR_BLOCKED_BY_CLIENT.Inspector"
+    },
+    {
+      "url": "https://www.hirewizhq.com/api/auth/providers",
+      "type": "fetch",
+      "failure": "net::ERR_BLOCKED_BY_CLIENT.Inspector"
+    },
+    {
+      "url": "https://www.hirewizhq.com/api/auth/_log",
+      "type": "ping",
+      "failure": "net::ERR_BLOCKED_BY_CLIENT.Inspector"
+    },
+    {
+      "url": "https://www.hirewizhq.com/api/auth/providers",
+      "type": "fetch",
+      "failure": "net::ERR_BLOCKED_BY_CLIENT.Inspector"
+    },
+    {
+      "url": "https://www.hirewizhq.com/api/auth/_log",
+      "type": "ping",
+      "failure": "net::ERR_BLOCKED_BY_CLIENT.Inspector"
+    },
+    {
+      "url": "https://www.hirewizhq.com/api/auth/providers",
+      "type": "fetch",
+      "failure": "net::ERR_BLOCKED_BY_CLIENT.Inspector"
+    },
+    {
+      "url": "https://www.hirewizhq.com/api/auth/_log",
+      "type": "ping",
+      "failure": "net::ERR_BLOCKED_BY_CLIENT.Inspector"
+    },
+    {
+      "url": "https://www.hirewizhq.com/register",
+      "type": "fetch",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://www.hirewizhq.com/api/auth/providers",
+      "type": "fetch",
+      "failure": "net::ERR_BLOCKED_BY_CLIENT.Inspector"
+    },
+    {
+      "url": "https://www.hirewizhq.com/api/auth/_log",
+      "type": "ping",
+      "failure": "net::ERR_BLOCKED_BY_CLIENT.Inspector"
+    },
+    {
+      "url": "https://www.hirewizhq.com/login",
+      "type": "fetch",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://www.hirewizhq.com/api/auth/providers",
+      "type": "fetch",
+      "failure": "net::ERR_BLOCKED_BY_CLIENT.Inspector"
+    },
+    {
+      "url": "https://www.hirewizhq.com/api/auth/_log",
+      "type": "ping",
+      "failure": "net::ERR_BLOCKED_BY_CLIENT.Inspector"
+    },
+    {
+      "url": "https://www.hirewizhq.com/api/auth/providers",
+      "type": "fetch",
+      "failure": "net::ERR_BLOCKED_BY_CLIENT.Inspector"
+    },
+    {
+      "url": "https://www.hirewizhq.com/api/auth/_log",
+      "type": "ping",
+      "failure": "net::ERR_BLOCKED_BY_CLIENT.Inspector"
+    },
+    {
+      "url": "https://www.hirewizhq.com/login",
+      "type": "fetch",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://www.hirewizhq.com/pricing",
+      "type": "fetch",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://www.hirewizhq.com/api/auth/providers",
+      "type": "fetch",
+      "failure": "net::ERR_BLOCKED_BY_CLIENT.Inspector"
+    },
+    {
+      "url": "https://www.hirewizhq.com/api/auth/_log",
+      "type": "ping",
+      "failure": "net::ERR_BLOCKED_BY_CLIENT.Inspector"
+    },
+    {
+      "url": "https://www.hirewizhq.com/api/auth/providers",
+      "type": "fetch",
+      "failure": "net::ERR_BLOCKED_BY_CLIENT.Inspector"
+    },
+    {
+      "url": "https://www.hirewizhq.com/api/auth/_log",
+      "type": "ping",
+      "failure": "net::ERR_BLOCKED_BY_CLIENT.Inspector"
+    }
+  ],
+  "routeMediansMs": {
+    "home": {
+      "DCL_median_ms": 570,
+      "LCP_median_ms": 1092
+    },
+    "pricing": {
+      "DCL_median_ms": 818,
+      "LCP_median_ms": 952
+    },
+    "login": {
+      "DCL_median_ms": 809,
+      "LCP_median_ms": 920
+    },
+    "jobs-handoff": {
+      "DCL_median_ms": 768,
+      "LCP_median_ms": 876
+    }
+  },
+  "maxObservedCLS": 0.0009792968961927627,
+  "limitations": [
+    "One navigation per route and width in unthrottled headless Chromium on the local network; no field/p75/p95, INP or load measurement.",
+    "Automated accessibility and keyboard/visual smoke is not a complete accessibility audit.",
+    "No account authentication, payment, application or personal data; non-GET/HEAD/OPTIONS browser requests blocked."
+  ]
+}

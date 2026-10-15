@@ -1,0 +1,168 @@
+{
+  "observed_at": "2026-10-09T01:18:07.040981+00:00",
+  "parent_commit": "aab73dae8d3311debc6d9dba2abe4362238ab18b",
+  "source_hashes": [
+    {
+      "path": "backend/scripts/run_cold_browser_journey.py",
+      "sha256": "c6c438bf4a4bfffefab212b17619a715dec1ecf41e9bacd579458f0b79788227"
+    },
+    {
+      "path": "backend/tests/test_cold_browser_runner.py",
+      "sha256": "b5a2aa750ce83b8d37bf2596f0adb3a23cc40abb59052fda89333ce8fcb321b8"
+    },
+    {
+      "path": "frontend/app/billing/page.tsx",
+      "sha256": "4f78efd3977777c5ecf144c151cd0fbf297776d5174107226adda7857985ea2c"
+    },
+    {
+      "path": "frontend/app/employer-jobs/page.tsx",
+      "sha256": "5af8916811005ec37b188cea9903acd3945f3826cf969995ce18fcaf52de374f"
+    },
+    {
+      "path": "frontend/components/EmployerApplicationPanel.tsx",
+      "sha256": "41cb2fbb49417c5a9f992d2d848bc89a0c73dae6767b89dcb49077ac71b3bf83"
+    },
+    {
+      "path": "frontend/e2e/employer-jobs.spec.ts",
+      "sha256": "34c29a730542c06fdfca11cabc708f10503c0f3e3237594ea51390a9ad795d54"
+    },
+    {
+      "path": "frontend/journey/cold-no-ai.spec.ts",
+      "sha256": "667de1a0f5516decca58ab3f5458c1887ce3cd298e18be33c7c3d5e0df5c2ece"
+    }
+  ],
+  "patches": [
+    {
+      "scope": "selection repair",
+      "sha256": "4d5d0b71fd16d7bced04442c7dee0c8400b7402eba12cc1a118cc37d9a694371"
+    },
+    {
+      "scope": "failure-only sanitized diagnostics",
+      "sha256": "a2368c2d309bb4692f91cb7805cede0cda96cb6897cbf436041a686b5132606f"
+    }
+  ],
+  "prior_exact_ci": {
+    "observed_at": "2026-10-09T00:55:05.963646+00:00",
+    "run_id": 37865771266,
+    "commit": "aab73dae8d3311debc6d9dba2abe4362238ab18b",
+    "status": "completed",
+    "conclusion": "failure",
+    "jobs": [
+      {
+        "name": "frontend",
+        "databaseId": 113612014845,
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "cold-browser-journey",
+        "databaseId": 113612015156,
+        "status": "completed",
+        "conclusion": "failure"
+      },
+      {
+        "name": "security-and-container",
+        "databaseId": 113612015170,
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "backend",
+        "databaseId": 113612015284,
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "browser-companion",
+        "databaseId": 113612015500,
+        "status": "completed",
+        "conclusion": "success"
+      }
+    ],
+    "all_required_checks_passed": false,
+    "backend_test_summary": [
+      "1604 passed, 239 warnings in 230.05s"
+    ],
+    "backend_type_summary": [
+      "Success: no issues found in 87 source files"
+    ],
+    "raw_log_retained": false
+  },
+  "new_exact_ci": "pending; no all-five success assertion",
+  "verification": {
+    "runner_tests": 11,
+    "runner_skips": 0,
+    "runner_junit_sha256": "1d31ce9cfa99bf40c83dcc9f74aac08f4abce4603b32140fb5dbbae8f32cb489",
+    "runner_ruff": "passed",
+    "runner_mypy_files": 1,
+    "frontend_lint": "passed",
+    "frontend_types": "passed",
+    "frontend_units": 72,
+    "targeted_responsive_cases": 15,
+    "targeted_retries": 0,
+    "widths": [
+      320,
+      390,
+      768,
+      1024,
+      1440
+    ],
+    "qa_sha256": "233cefb4f2e2e67d4786e9f23c18d36fec2f9a2997ac21101c54b69d18a84ac1",
+    "actual_cold_sha256": "1f5d20e34649fcde8b131ec019a0bf60989939873fde88bc1a0e5157c491376c",
+    "linux_selection_proof_sha256": "fe93c660047bb22ddd1e352a201510f96fdfdb10620a72efc80e220f761e7748",
+    "local_scope": "Real local NextAuth/BFF/API/PostgreSQL; finite synthetic payment/feed; no model/real payment/employer send",
+    "manual_application_fee": 0
+  },
+  "earlier_staged_deployment": {
+    "id": "dpl_6FDvzKCvx79BPTC8GDjtzASjEdYo",
+    "commit": "aab73dae8d3311debc6d9dba2abe4362238ab18b",
+    "ready": true,
+    "custom_domain_promoted": false,
+    "public_view_count": 15,
+    "private_cookie_free_denials": 4,
+    "screenshots_inspected": [
+      "320",
+      "1440"
+    ],
+    "scope": "Earlier source GET-only; no authenticated application or current billing-repair proof",
+    "reports": [
+      {
+        "scope": "aab73da",
+        "status": "failed",
+        "sha256": "af2923a29737f007c3a1ec793c94db19146fe7ee2da174798d29ddd8c7f8e801"
+      },
+      {
+        "scope": "aab73da-diagnostic-v2",
+        "status": "passed",
+        "sha256": "1c3a4d140cd130f623ff76c60a755a4b29835fd099fb03357f97b07362a50cdc"
+      },
+      {
+        "scope": "aab73da-original-confirmation",
+        "status": "passed",
+        "sha256": "7f59c374b956593829e8c0503badaef742e6daa482aaa3e602685e7c6cf2f5e1"
+      }
+    ]
+  },
+  "held_backend_proposals": {
+    "proposals": [
+      {
+        "scope": "Protected denial",
+        "patch_sha256": "d83ff958e4cdcd28b1a3381ea15ce18c3daab09a0f5cb42d8cd1753c8dde4616",
+        "review_sha256": "78e0d4dadd5654bb2742c33ba81ba43855b786dbf7f6c96e78f9c71fea023ecd"
+      },
+      {
+        "scope": "Monetary SQL preflight",
+        "patch_sha256": "6bdf974ef86c41237b41be1fc90e5e2512caeba1703ee423de889abb83f5b21a",
+        "review_sha256": "27e1cdb3c523e1511a4bb89cb773973d94873cd5ffbb685b5437d442ecb2e5c8"
+      }
+    ],
+    "integrated": false,
+    "production_activated": false
+  },
+  "production_backend": {
+    "release": "e7d8f2ba0435fd3d4a504ccdce83fac365ec6835",
+    "schema": "20261008_0009",
+    "new_monetary_migration": false
+  },
+  "full_goal_complete": false
+}

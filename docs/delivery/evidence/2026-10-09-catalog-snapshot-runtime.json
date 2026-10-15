@@ -1,0 +1,256 @@
+{
+  "checked_utc": "2026-10-08T21:00:55.135922+00:00",
+  "release": "e7d8f2ba0435fd3d4a504ccdce83fac365ec6835",
+  "services": [
+    {
+      "name": "ai-resume-parser",
+      "revision": "ai-resume-parser-00267-xot",
+      "image": "us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz@sha256:cf2cb125a72c79a7b41f9c263c1a999521363d6c944affb3c017e0dc5e112f4d",
+      "ready": true,
+      "traffic_percent": 100,
+      "anonymous_health_status": 200,
+      "env_names": [
+        "ADZUNA_APP_ID",
+        "ADZUNA_APP_KEY",
+        "ANALYSIS_TASKS_LOCATION",
+        "ANALYSIS_TASKS_MODE",
+        "ANALYSIS_TASKS_QUEUE",
+        "ANALYSIS_TASKS_SERVICE_ACCOUNT",
+        "ANALYSIS_TASK_TOKEN",
+        "ANALYSIS_WORKER_URL",
+        "APP_ENV",
+        "APP_RELEASE",
+        "AUTO_DB_MIGRATE",
+        "DATABASE_URL",
+        "DB_MAX_OVERFLOW",
+        "DB_POOL_SIZE",
+        "EMPLOYER_APPLICATION_TASKS_QUEUE",
+        "EMPLOYER_APPLICATION_WORKER_URL",
+        "EMPLOYER_APPLY_CREDITS_PER_JOB",
+        "EMPLOYER_ARTIFACT_BUCKET",
+        "EMPLOYER_AUTO_SUBMIT_ENABLED",
+        "EMPLOYER_DISCOVERY_ENABLED",
+        "EMPLOYER_INGESTION_TASKS_QUEUE",
+        "EMPLOYER_INGESTION_WORKER_URL",
+        "EMPLOYER_SEARCH_CREDITS_PER_JOB",
+        "EMPLOYER_SEARCH_TASKS_QUEUE",
+        "EMPLOYER_SEARCH_WORKER_URL",
+        "FEATURE_ASYNC_ANALYSIS_ENABLED",
+        "FEATURE_ASYNC_ANALYSIS_ROLLOUT_PERCENT",
+        "FEATURE_CAREER_WORKSPACE_ENABLED",
+        "FEATURE_CAREER_WORKSPACE_ROLLOUT_PERCENT",
+        "FEATURE_EVIDENCE_TAILORING_ENABLED",
+        "FEATURE_EVIDENCE_TAILORING_ROLLOUT_PERCENT",
+        "FEATURE_REFERRAL_CREDIT_ENABLED",
+        "FEATURE_REFERRAL_CREDIT_ROLLOUT_PERCENT",
+        "FRONTEND_ORIGINS",
+        "FRONTEND_URL",
+        "GOOGLE_CLIENT_ID",
+        "GOOGLE_CLOUD_PROJECT",
+        "HF_HUB_DISABLE_XET",
+        "JOOBLE_API_KEY",
+        "JWT_SECRET",
+        "LLM_API_BASE",
+        "LLM_API_KEY",
+        "LLM_MODEL",
+        "LOG_FORMAT",
+        "LOG_LEVEL",
+        "MARKET_CACHE_TTL_SECONDS",
+        "PAYMENTS_GO_LIVE_REVIEW_COMPLETE",
+        "PAYPAL_CLIENT_ID",
+        "PAYPAL_CLIENT_SECRET",
+        "PAYPAL_MODE",
+        "RAZORPAY_ACCOUNT_APPROVED",
+        "RAZORPAY_CHECKOUT_ENABLED",
+        "RAZORPAY_KEY_ID",
+        "RAZORPAY_KEY_SECRET",
+        "RAZORPAY_MODE",
+        "RAZORPAY_WEBHOOK_SECRET",
+        "REDIS_URL",
+        "SERVICE_ROLE",
+        "THEIRSTACK_API_KEY",
+        "USE_SENTENCE_TRANSFORMER"
+      ],
+      "nonsecret_values": {
+        "SERVICE_ROLE": "api",
+        "APP_RELEASE": "e7d8f2ba0435fd3d4a504ccdce83fac365ec6835",
+        "EMPLOYER_DISCOVERY_ENABLED": "true",
+        "EMPLOYER_AUTO_SUBMIT_ENABLED": "false",
+        "EMPLOYER_SEARCH_CREDITS_PER_JOB": "1",
+        "EMPLOYER_APPLY_CREDITS_PER_JOB": "5",
+        "DB_POOL_SIZE": "4",
+        "DB_MAX_OVERFLOW": "2"
+      },
+      "health_verification": {
+        "ok": true,
+        "release": "e7d8f2ba0435fd3d4a504ccdce83fac365ec6835",
+        "mode": "anonymous_public"
+      }
+    },
+    {
+      "name": "hirewiz-analysis-worker",
+      "revision": "hirewiz-analysis-worker-00021-5zd",
+      "image": "us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz@sha256:cf2cb125a72c79a7b41f9c263c1a999521363d6c944affb3c017e0dc5e112f4d",
+      "ready": true,
+      "traffic_percent": 100,
+      "anonymous_health_status": 403,
+      "env_names": [
+        "ANALYSIS_TASKS_LOCATION",
+        "ANALYSIS_TASKS_MODE",
+        "ANALYSIS_TASKS_QUEUE",
+        "ANALYSIS_TASKS_SERVICE_ACCOUNT",
+        "ANALYSIS_TASK_TOKEN",
+        "ANALYSIS_WORKER_URL",
+        "APP_ENV",
+        "APP_RELEASE",
+        "DATABASE_URL",
+        "DB_MAX_OVERFLOW",
+        "DB_POOL_SIZE",
+        "EMPLOYER_APPLICATION_TASKS_QUEUE",
+        "EMPLOYER_APPLICATION_WORKER_URL",
+        "EMPLOYER_AUTO_SUBMIT_ENABLED",
+        "EMPLOYER_DISCOVERY_ENABLED",
+        "EMPLOYER_INGESTION_TASKS_QUEUE",
+        "EMPLOYER_INGESTION_WORKER_URL",
+        "EMPLOYER_SEARCH_TASKS_QUEUE",
+        "EMPLOYER_SEARCH_WORKER_URL",
+        "FRONTEND_URL",
+        "GOOGLE_CLOUD_PROJECT",
+        "JWT_SECRET",
+        "LLM_API_BASE",
+        "LLM_API_KEY",
+        "LLM_MODEL",
+        "LOG_FORMAT",
+        "LOG_LEVEL",
+        "SERVICE_ROLE",
+        "WORKER_ALLOWED_TOPICS"
+      ],
+      "nonsecret_values": {
+        "SERVICE_ROLE": "worker",
+        "APP_RELEASE": "e7d8f2ba0435fd3d4a504ccdce83fac365ec6835",
+        "WORKER_ALLOWED_TOPICS": "analysis.run",
+        "DB_POOL_SIZE": "2",
+        "DB_MAX_OVERFLOW": "0",
+        "EMPLOYER_DISCOVERY_ENABLED": "true",
+        "EMPLOYER_AUTO_SUBMIT_ENABLED": "false"
+      },
+      "health_verification": {
+        "ok": true,
+        "release": "e7d8f2ba0435fd3d4a504ccdce83fac365ec6835",
+        "mode": "existing_operator_identity"
+      }
+    },
+    {
+      "name": "hirewiz-employer-worker",
+      "revision": "hirewiz-employer-worker-00012-lmz",
+      "image": "us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz@sha256:cf2cb125a72c79a7b41f9c263c1a999521363d6c944affb3c017e0dc5e112f4d",
+      "ready": true,
+      "traffic_percent": 100,
+      "anonymous_health_status": 403,
+      "env_names": [
+        "ANALYSIS_TASKS_LOCATION",
+        "ANALYSIS_TASKS_MODE",
+        "ANALYSIS_TASKS_QUEUE",
+        "ANALYSIS_TASKS_SERVICE_ACCOUNT",
+        "ANALYSIS_TASK_TOKEN",
+        "ANALYSIS_WORKER_URL",
+        "APP_ENV",
+        "APP_RELEASE",
+        "DATABASE_URL",
+        "DB_MAX_OVERFLOW",
+        "DB_POOL_SIZE",
+        "EMPLOYER_APPLICATION_TASKS_QUEUE",
+        "EMPLOYER_APPLICATION_WORKER_URL",
+        "EMPLOYER_ARTIFACT_BUCKET",
+        "EMPLOYER_AUTO_SUBMIT_ENABLED",
+        "EMPLOYER_DISCOVERY_ENABLED",
+        "EMPLOYER_INGESTION_TASKS_QUEUE",
+        "EMPLOYER_INGESTION_WORKER_URL",
+        "EMPLOYER_SEARCH_TASKS_QUEUE",
+        "EMPLOYER_SEARCH_WORKER_URL",
+        "GOOGLE_CLOUD_PROJECT",
+        "JWT_SECRET",
+        "LIFECYCLE_EMAILS_ENABLED",
+        "LOG_FORMAT",
+        "SERVICE_ROLE",
+        "WORKER_ALLOWED_TOPICS",
+        "WORKER_LABEL"
+      ],
+      "nonsecret_values": {
+        "SERVICE_ROLE": "worker",
+        "WORKER_LABEL": "employer-worker",
+        "APP_RELEASE": "e7d8f2ba0435fd3d4a504ccdce83fac365ec6835",
+        "WORKER_ALLOWED_TOPICS": "employer.search,employer.refresh,employer.apply,employer.artifact-delete",
+        "EMPLOYER_DISCOVERY_ENABLED": "true",
+        "EMPLOYER_AUTO_SUBMIT_ENABLED": "false",
+        "DB_POOL_SIZE": "2",
+        "DB_MAX_OVERFLOW": "0"
+      },
+      "health_verification": {
+        "ok": true,
+        "release": "e7d8f2ba0435fd3d4a504ccdce83fac365ec6835",
+        "mode": "existing_operator_identity"
+      }
+    }
+  ],
+  "database": {
+    "schema": "20261008_0009",
+    "sources": [
+      {
+        "employer": "Figma",
+        "platform": "greenhouse",
+        "status": "healthy",
+        "last_error_code": null,
+        "submission_enabled": false
+      },
+      {
+        "employer": "Freshworks",
+        "platform": "smartrecruiters",
+        "status": "healthy",
+        "last_error_code": null,
+        "submission_enabled": false
+      },
+      {
+        "employer": "Razorpay Software Private Limited",
+        "platform": "greenhouse",
+        "status": "healthy",
+        "last_error_code": null,
+        "submission_enabled": false
+      },
+      {
+        "employer": "Supabase",
+        "platform": "ashby",
+        "status": "healthy",
+        "last_error_code": null,
+        "submission_enabled": false
+      }
+    ],
+    "open_postings": [
+      {
+        "employer": "Figma",
+        "open_count": 151
+      },
+      {
+        "employer": "Freshworks",
+        "open_count": 126
+      },
+      {
+        "employer": "Razorpay Software Private Limited",
+        "open_count": 27
+      },
+      {
+        "employer": "Supabase",
+        "open_count": 52
+      }
+    ]
+  },
+  "legacy_trigger_disabled": true,
+  "scope": "Read-only health/private-worker access, selected runtime and source metadata; no catalog request, candidate/payment/application changes",
+  "credential_values_retained": false,
+  "verification_adjustment": {
+    "prior_probe": "task principal impersonation command failed before private health request",
+    "repair": "existing operator identity health plus exact task-principal invoker IAM binding",
+    "iam_changes": 0,
+    "task_oidc_delivery_exercised": false
+  }
+}

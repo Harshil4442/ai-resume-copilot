@@ -6,6 +6,13 @@
 > Last updated: 2026-08-03
 > Planning horizon: 6 to 7 months, delivered incrementally
 
+> Planning extension, 2026-10-07: See the proposed
+> [employer discovery and application system design](EMPLOYER_DISCOVERY_APPLICATION_SYSTEM_DESIGN.md)
+> for employer-origin discovery, candidate-controlled application preparation,
+> permitted submission, scaling trade-offs and deployment gates. This extends the
+> earlier scope; it does not mark these new capabilities as implemented or change
+> the baseline status above.
+
 ## Executive Summary
 
 HireWiz should evolve from a collection of AI job-search tools into an evidence-backed Career Workspace. The product should help a candidate move an opportunity from discovery through application, interview preparation, and outcome tracking while preserving the exact evidence, resume version, learning plan, and decisions attached to that opportunity.

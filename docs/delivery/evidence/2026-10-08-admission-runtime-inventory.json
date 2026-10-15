@@ -1,0 +1,245 @@
+{
+  "observed_utc": "2026-10-08T16:50:19.895331+00:00",
+  "release": "7cc49c2c08a296b33cb30f96e383b959caf214c0",
+  "project": "ai-resume-parser-482412",
+  "region": "us-central1",
+  "read_only": true,
+  "credential_values_retained": false,
+  "services": [
+    {
+      "service": "ai-resume-parser",
+      "ready_revision": "ai-resume-parser-00252-vor",
+      "created_revision": "ai-resume-parser-00252-vor",
+      "traffic": [
+        {
+          "revision": "ai-resume-parser-00252-vor",
+          "percent": 100
+        }
+      ],
+      "image_digest": "sha256:114be58f48e523cd22cae14e47a498556d1b4a76cdccd57ec4aa0220b5581afe",
+      "digest_pinned": true,
+      "runtime_settings": {
+        "APP_ENV": "production",
+        "SERVICE_ROLE": "api",
+        "APP_RELEASE": "7cc49c2c08a296b33cb30f96e383b959caf214c0",
+        "ANALYSIS_TASKS_MODE": "cloud_tasks",
+        "GOOGLE_CLOUD_PROJECT": "ai-resume-parser-482412",
+        "ANALYSIS_TASKS_LOCATION": "us-central1",
+        "EMPLOYER_DISCOVERY_ENABLED": "true",
+        "EMPLOYER_AUTO_SUBMIT_ENABLED": "false",
+        "DB_POOL_SIZE": "4",
+        "DB_MAX_OVERFLOW": "2"
+      },
+      "secret_environment_names": [
+        "ANALYSIS_TASK_TOKEN"
+      ],
+      "environment_names": [
+        "ADZUNA_APP_ID",
+        "ADZUNA_APP_KEY",
+        "ANALYSIS_TASKS_LOCATION",
+        "ANALYSIS_TASKS_MODE",
+        "ANALYSIS_TASKS_QUEUE",
+        "ANALYSIS_TASKS_SERVICE_ACCOUNT",
+        "ANALYSIS_TASK_TOKEN",
+        "ANALYSIS_WORKER_URL",
+        "APP_ENV",
+        "APP_RELEASE",
+        "AUTO_DB_MIGRATE",
+        "DATABASE_URL",
+        "DB_MAX_OVERFLOW",
+        "DB_POOL_SIZE",
+        "EMPLOYER_APPLICATION_TASKS_QUEUE",
+        "EMPLOYER_APPLICATION_WORKER_URL",
+        "EMPLOYER_APPLY_CREDITS_PER_JOB",
+        "EMPLOYER_ARTIFACT_BUCKET",
+        "EMPLOYER_AUTO_SUBMIT_ENABLED",
+        "EMPLOYER_DISCOVERY_ENABLED",
+        "EMPLOYER_INGESTION_TASKS_QUEUE",
+        "EMPLOYER_INGESTION_WORKER_URL",
+        "EMPLOYER_SEARCH_CREDITS_PER_JOB",
+        "EMPLOYER_SEARCH_TASKS_QUEUE",
+        "EMPLOYER_SEARCH_WORKER_URL",
+        "FEATURE_ASYNC_ANALYSIS_ENABLED",
+        "FEATURE_ASYNC_ANALYSIS_ROLLOUT_PERCENT",
+        "FEATURE_CAREER_WORKSPACE_ENABLED",
+        "FEATURE_CAREER_WORKSPACE_ROLLOUT_PERCENT",
+        "FEATURE_EVIDENCE_TAILORING_ENABLED",
+        "FEATURE_EVIDENCE_TAILORING_ROLLOUT_PERCENT",
+        "FEATURE_REFERRAL_CREDIT_ENABLED",
+        "FEATURE_REFERRAL_CREDIT_ROLLOUT_PERCENT",
+        "FRONTEND_ORIGINS",
+        "FRONTEND_URL",
+        "GOOGLE_CLIENT_ID",
+        "GOOGLE_CLOUD_PROJECT",
+        "HF_HUB_DISABLE_XET",
+        "JOOBLE_API_KEY",
+        "JWT_SECRET",
+        "LLM_API_BASE",
+        "LLM_API_KEY",
+        "LLM_MODEL",
+        "LOG_FORMAT",
+        "LOG_LEVEL",
+        "MARKET_CACHE_TTL_SECONDS",
+        "PAYMENTS_GO_LIVE_REVIEW_COMPLETE",
+        "PAYPAL_CLIENT_ID",
+        "PAYPAL_CLIENT_SECRET",
+        "PAYPAL_MODE",
+        "RAZORPAY_ACCOUNT_APPROVED",
+        "RAZORPAY_CHECKOUT_ENABLED",
+        "RAZORPAY_KEY_ID",
+        "RAZORPAY_KEY_SECRET",
+        "RAZORPAY_MODE",
+        "RAZORPAY_WEBHOOK_SECRET",
+        "REDIS_URL",
+        "SERVICE_ROLE",
+        "THEIRSTACK_API_KEY",
+        "USE_SENTENCE_TRANSFORMER"
+      ]
+    },
+    {
+      "service": "hirewiz-analysis-worker",
+      "ready_revision": "hirewiz-analysis-worker-00018-k66",
+      "created_revision": "hirewiz-analysis-worker-00018-k66",
+      "traffic": [
+        {
+          "revision": "hirewiz-analysis-worker-00018-k66",
+          "percent": 100
+        }
+      ],
+      "image_digest": "sha256:114be58f48e523cd22cae14e47a498556d1b4a76cdccd57ec4aa0220b5581afe",
+      "digest_pinned": true,
+      "runtime_settings": {
+        "SERVICE_ROLE": "worker",
+        "APP_ENV": "production",
+        "APP_RELEASE": "7cc49c2c08a296b33cb30f96e383b959caf214c0",
+        "WORKER_ALLOWED_TOPICS": "analysis.run",
+        "DB_POOL_SIZE": "2",
+        "DB_MAX_OVERFLOW": "0",
+        "EMPLOYER_DISCOVERY_ENABLED": "true",
+        "EMPLOYER_AUTO_SUBMIT_ENABLED": "false",
+        "ANALYSIS_TASKS_MODE": "cloud_tasks",
+        "GOOGLE_CLOUD_PROJECT": "ai-resume-parser-482412",
+        "ANALYSIS_TASKS_LOCATION": "us-central1"
+      },
+      "secret_environment_names": [
+        "ANALYSIS_TASK_TOKEN",
+        "JWT_SECRET"
+      ],
+      "environment_names": [
+        "ANALYSIS_TASKS_LOCATION",
+        "ANALYSIS_TASKS_MODE",
+        "ANALYSIS_TASKS_QUEUE",
+        "ANALYSIS_TASKS_SERVICE_ACCOUNT",
+        "ANALYSIS_TASK_TOKEN",
+        "ANALYSIS_WORKER_URL",
+        "APP_ENV",
+        "APP_RELEASE",
+        "DATABASE_URL",
+        "DB_MAX_OVERFLOW",
+        "DB_POOL_SIZE",
+        "EMPLOYER_APPLICATION_TASKS_QUEUE",
+        "EMPLOYER_APPLICATION_WORKER_URL",
+        "EMPLOYER_AUTO_SUBMIT_ENABLED",
+        "EMPLOYER_DISCOVERY_ENABLED",
+        "EMPLOYER_INGESTION_TASKS_QUEUE",
+        "EMPLOYER_INGESTION_WORKER_URL",
+        "EMPLOYER_SEARCH_TASKS_QUEUE",
+        "EMPLOYER_SEARCH_WORKER_URL",
+        "FRONTEND_URL",
+        "GOOGLE_CLOUD_PROJECT",
+        "JWT_SECRET",
+        "LLM_API_BASE",
+        "LLM_API_KEY",
+        "LLM_MODEL",
+        "LOG_FORMAT",
+        "LOG_LEVEL",
+        "SERVICE_ROLE",
+        "WORKER_ALLOWED_TOPICS"
+      ]
+    },
+    {
+      "service": "hirewiz-employer-worker",
+      "ready_revision": "hirewiz-employer-worker-00006-bj4",
+      "created_revision": "hirewiz-employer-worker-00006-bj4",
+      "traffic": [
+        {
+          "revision": "hirewiz-employer-worker-00006-bj4",
+          "percent": 100
+        }
+      ],
+      "image_digest": "sha256:114be58f48e523cd22cae14e47a498556d1b4a76cdccd57ec4aa0220b5581afe",
+      "digest_pinned": true,
+      "runtime_settings": {
+        "SERVICE_ROLE": "worker",
+        "APP_ENV": "production",
+        "APP_RELEASE": "7cc49c2c08a296b33cb30f96e383b959caf214c0",
+        "ANALYSIS_TASKS_MODE": "cloud_tasks",
+        "GOOGLE_CLOUD_PROJECT": "ai-resume-parser-482412",
+        "ANALYSIS_TASKS_LOCATION": "us-central1",
+        "WORKER_ALLOWED_TOPICS": "employer.search,employer.refresh,employer.apply,employer.artifact-delete",
+        "EMPLOYER_DISCOVERY_ENABLED": "true",
+        "EMPLOYER_AUTO_SUBMIT_ENABLED": "false",
+        "DB_POOL_SIZE": "2",
+        "DB_MAX_OVERFLOW": "0"
+      },
+      "secret_environment_names": [
+        "ANALYSIS_TASK_TOKEN",
+        "DATABASE_URL",
+        "JWT_SECRET"
+      ],
+      "environment_names": [
+        "ANALYSIS_TASKS_LOCATION",
+        "ANALYSIS_TASKS_MODE",
+        "ANALYSIS_TASKS_QUEUE",
+        "ANALYSIS_TASKS_SERVICE_ACCOUNT",
+        "ANALYSIS_TASK_TOKEN",
+        "ANALYSIS_WORKER_URL",
+        "APP_ENV",
+        "APP_RELEASE",
+        "DATABASE_URL",
+        "DB_MAX_OVERFLOW",
+        "DB_POOL_SIZE",
+        "EMPLOYER_APPLICATION_TASKS_QUEUE",
+        "EMPLOYER_APPLICATION_WORKER_URL",
+        "EMPLOYER_ARTIFACT_BUCKET",
+        "EMPLOYER_AUTO_SUBMIT_ENABLED",
+        "EMPLOYER_DISCOVERY_ENABLED",
+        "EMPLOYER_INGESTION_TASKS_QUEUE",
+        "EMPLOYER_INGESTION_WORKER_URL",
+        "EMPLOYER_SEARCH_TASKS_QUEUE",
+        "EMPLOYER_SEARCH_WORKER_URL",
+        "GOOGLE_CLOUD_PROJECT",
+        "JWT_SECRET",
+        "LIFECYCLE_EMAILS_ENABLED",
+        "LOG_FORMAT",
+        "SERVICE_ROLE",
+        "WORKER_ALLOWED_TOPICS",
+        "WORKER_LABEL"
+      ]
+    }
+  ],
+  "migration_execution": {
+    "name": "hirewiz-schema-migration-f6645",
+    "completed": true,
+    "completion_time": "2026-10-08T16:08:40.725016Z",
+    "succeeded_count": 1,
+    "conditions": [
+      {
+        "type": "Completed",
+        "status": "True"
+      },
+      {
+        "type": "ResourcesAvailable",
+        "status": "True"
+      },
+      {
+        "type": "Started",
+        "status": "True"
+      },
+      {
+        "type": "ContainerReady",
+        "status": "True"
+      }
+    ]
+  }
+}

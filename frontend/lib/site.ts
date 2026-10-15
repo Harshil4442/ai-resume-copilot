@@ -11,8 +11,8 @@ export const SITE = {
   businessLocation: "Surat, Gujarat 395010, India",
   grievanceContactName: "Harshil Yogeshbhai Savaliya",
   grievanceContactRole: "Grievance Officer, HireWiz",
-  policyEffectiveDate: "11 July 2026",
-  policyVersion: "2026-07-11",
+  policyEffectiveDate: "8 October 2026",
+  policyVersion: "2026-10-08",
 } as const;
 
 export const publicOperatorStatement = `HireWiz is ${SITE.operatorStatement}.`;

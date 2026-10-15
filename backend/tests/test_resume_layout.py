@@ -12,6 +12,7 @@ import pytest
 import reportlab
 from backend.app.services.resume_layout import (
     ResumeLayoutError,
+    _apply_docx,
     apply_source_edits,
     extract_source_units,
 )
@@ -511,8 +512,9 @@ def _without_text(xml: bytes) -> bytes:
 
 
 def test_docx_edit_retains_runs_bold_hyperlinks_tables_headers_footers_and_zip_parts():
+    # Native patch invariants are separate from actual private render validation.
     source = _docx()
-    result = apply_source_edits(source, "docx", [_edit(_first_unit(source, "docx"))])
+    result = _apply_docx(source, [_edit(_first_unit(source, "docx"))])
     with ZipFile(BytesIO(source)) as before, ZipFile(BytesIO(result)) as after:
         assert before.namelist() == after.namelist()
         for name in before.namelist():
@@ -533,21 +535,24 @@ def test_docx_edit_retains_runs_bold_hyperlinks_tables_headers_footers_and_zip_p
         assert hyperlink.find(f"{W}r/{W}t").text == "SQL"
 
 
-def test_docx_rejects_growth_and_protects_nonbody_parts():
+def test_docx_native_patch_cannot_certify_render_fit_or_edit_nonbody_parts(monkeypatch):
     source = _docx()
     units = extract_source_units(source, "docx")
     assert all("header" not in unit["text"] and "footer" not in unit["text"] for unit in units)
-    with pytest.raises(ResumeLayoutError, match="too long"):
-        apply_source_edits(
-            source, "docx", [_edit(_first_unit(source, "docx"), ORIGINAL + " with API monitoring")]
-        )
+    edit = _edit(_first_unit(source, "docx"), ORIGINAL + " with API monitoring")
+    assert _apply_docx(source, [edit]) != source
+    # A syntactically valid native patch is not a fit receipt. With no configured
+    # renderer, the public path must refuse before any identity/provider call.
+    monkeypatch.setenv("DOCUMENT_WORKER_URL", "")
+    with pytest.raises(ResumeLayoutError, match="private DOCX renderer"):
+        apply_source_edits(source, "docx", [edit])
 
 
 def test_docx_native_font_allows_new_ascii_letters_without_changing_styles():
     source = _docx()
     replacement = "Built robust systems with Python and SQL."
     assert "r" in replacement and "r" not in ORIGINAL
-    result = apply_source_edits(source, "docx", [_edit(_first_unit(source, "docx"), replacement)])
+    result = _apply_docx(source, [_edit(_first_unit(source, "docx"), replacement)])
     with ZipFile(BytesIO(result)) as archive:
         tree = etree.fromstring(archive.read("word/document.xml"))
         paragraph = list(tree.find(f"{W}body").iter(f"{W}p"))[3]
@@ -633,3 +638,152 @@ def test_employer_role_and_emphasized_identity_lines_remain_protected():
     data = BytesIO()
     document.save(data)
     assert [unit["text"] for unit in extract_source_units(data.getvalue(), "docx")] == [ORIGINAL]
+
+
+# Link-association regressions use actual synthetic native documents, not provider calls.
+def _docx_hyperlink_source(*, external=True, split_label=False, second_paragraph=False):
+    from docx.opc.constants import RELATIONSHIP_TYPE
+
+    document = Document()
+    paragraph = document.add_paragraph()
+    paragraph.add_run("Built scalable systems with Python and ")
+    hyperlink = OxmlElement("w:hyperlink")
+    if external:
+        identity = paragraph.part.relate_to(
+            "https://example.invalid/sql-guide", RELATIONSHIP_TYPE.HYPERLINK, is_external=True
+        )
+        hyperlink.set(qn("r:id"), identity)
+    else:
+        hyperlink.set(qn("w:anchor"), "skills")
+    for label in (["SQ", "L"] if split_label else ["SQL"]):
+        run = OxmlElement("w:r")
+        properties = OxmlElement("w:rPr")
+        properties.append(OxmlElement("w:i"))
+        run.append(properties)
+        text = OxmlElement("w:t")
+        text.text = label
+        run.append(text)
+        hyperlink.append(run)
+    paragraph._p.append(hyperlink)
+    paragraph.add_run(".")
+    if second_paragraph:
+        document.add_paragraph("Developed automated quality checks for reliable releases.")
+    output = BytesIO()
+    document.save(output)
+    return output.getvalue()
+
+
+@pytest.mark.parametrize("external", [True, False])
+@pytest.mark.parametrize("split_label", [True, False])
+@pytest.mark.parametrize("replacement", [
+    "Built systems with Python and Go.",
+    "Built systems with Python and robust SQL.",
+])
+def test_docx_link_labels_and_styled_boundaries_cannot_receive_replacement_text(
+    external, split_label, replacement
+):
+    source = _docx_hyperlink_source(external=external, split_label=split_label)
+    unit = _first_unit(source, "docx")
+    with pytest.raises(ResumeLayoutError, match="hyperlink label") as rejected:
+        apply_source_edits(source, "docx", [_edit(unit, replacement)])
+    assert rejected.value.unit_id == unit["unit_id"]
+    assert "Keep existing hyperlink labels exactly" in rejected.value.repair_hint
+    assert ORIGINAL not in rejected.value.repair_hint
+    assert _first_unit(source, "docx")["text"] == ORIGINAL
+    assert apply_source_edits(source, "docx", []) is source
+
+
+@pytest.mark.parametrize("external", [True, False])
+@pytest.mark.parametrize("split_label", [True, False])
+def test_docx_surrounding_body_edits_preserve_exact_link_nodes_and_relationships(
+    external, split_label
+):
+    source = _docx_hyperlink_source(external=external, split_label=split_label)
+    result = _apply_docx(source, [_edit(_first_unit(source, "docx"))])
+    with ZipFile(BytesIO(source)) as before, ZipFile(BytesIO(result)) as after:
+        assert before.namelist() == after.namelist()
+        for name in before.namelist():
+            if name != "word/document.xml":
+                assert before.read(name) == after.read(name)
+        original = etree.fromstring(before.read("word/document.xml"))
+        saved = etree.fromstring(after.read("word/document.xml"))
+        assert etree.tostring(next(original.iter(f"{W}hyperlink")), method="c14n") == etree.tostring(
+            next(saved.iter(f"{W}hyperlink")), method="c14n"
+        )
+        assert _without_text(before.read("word/document.xml")) == _without_text(after.read("word/document.xml"))
+        assert "".join(node.text or "" for node in saved.iter(f"{W}t")) == REPLACEMENT
+
+
+def test_docx_link_refusal_is_atomic_and_attributed_for_retaining_another_safe_edit():
+    source = _docx_hyperlink_source(second_paragraph=True)
+    units = extract_source_units(source, "docx")
+    linked = next(unit for unit in units if unit["text"] == ORIGINAL)
+    other = next(unit for unit in units if unit["text"].startswith("Developed"))
+    edits = [_edit(other, "Developed quality checks for reliable releases."),
+             _edit(linked, "Built systems with Python and robust SQL.")]
+    with pytest.raises(ResumeLayoutError, match="hyperlink label") as refused:
+        apply_source_edits(source, "docx", edits)
+    assert refused.value.unit_id == linked["unit_id"]
+    assert extract_source_units(source, "docx") == units
+    retained = [edit for edit in edits if edit["unit_id"] != refused.value.unit_id]
+    result = _apply_docx(source, retained)
+    assert [unit["text"] for unit in extract_source_units(result, "docx")] == [
+        ORIGINAL, "Developed quality checks for reliable releases."
+    ]
+
+
+def _pdf_hyperlink_source(text, *, extra=False):
+    output = BytesIO()
+    canvas = Canvas(output, pagesize=(612, 792), invariant=True)
+    canvas.setFont("Times-Roman", 11)
+    canvas.drawString(60, 620, text)
+    left = 60 + pdfmetrics.stringWidth(text[:text.index("SQL")], "Times-Roman", 11)
+    right = left + pdfmetrics.stringWidth("SQL", "Times-Roman", 11)
+    canvas.linkURL("https://example.invalid/sql-guide", (left, 616, right, 633), thickness=0)
+    if extra:
+        canvas.drawString(60, 580, "Developed automated quality checks for reliable releases.")
+    canvas.save()
+    return output.getvalue()
+
+
+def test_pdf_edit_after_link_preserves_clickable_text_and_original_destination():
+    original = "Built SQL systems with reliable Python tools."
+    replacement = "Built SQL systems with Python tools."
+    source = _pdf_hyperlink_source(original)
+    unit = extract_source_units(source, "pdf")[0]
+    result = apply_source_edits(source, "pdf", [_edit(unit, replacement)])
+    import backend.app.services.resume_layout as layout
+
+    with pdfium.PdfDocument(source) as before, pdfium.PdfDocument(result) as after:
+        with closing(before[0]) as old_page, closing(after[0]) as new_page:
+            assert layout._pdf_link_text(old_page) == layout._pdf_link_text(new_page)
+            assert layout._pdf_link_text(old_page)[0][2] == "SQL "
+            assert layout._pdf_link_text(new_page)[0][2] == "SQL "
+            assert layout._page_structure(old_page, before) == layout._page_structure(new_page, after)
+    assert replacement in _pdf_snapshot(result)[0]["text"]
+
+
+def test_pdf_changed_link_label_is_refused_without_a_template_or_overlay():
+    source = _pdf_hyperlink_source(ORIGINAL)
+    unit = _first_unit(source, "pdf")
+    with pytest.raises(ResumeLayoutError, match="original PDF link") as refused:
+        apply_source_edits(source, "pdf", [_edit(unit, "Built systems with Python and Go.")])
+    assert refused.value.unit_id == unit["unit_id"]
+    assert "original clickable rectangle" in refused.value.repair_hint
+    assert ORIGINAL not in refused.value.repair_hint
+    assert _pdf_snapshot(source)[0]["text"] == ORIGINAL
+
+
+def test_pdf_link_movement_refusal_preserves_an_unrelated_useful_edit():
+    source = _pdf_hyperlink_source(ORIGINAL, extra=True)
+    units = extract_source_units(source, "pdf")
+    linked = next(unit for unit in units if unit["text"] == ORIGINAL)
+    other = next(unit for unit in units if unit["text"].startswith("Developed"))
+    edits = [_edit(linked), _edit(other, "Developed quality checks for reliable releases.")]
+    with pytest.raises(ResumeLayoutError, match="original PDF link") as refused:
+        apply_source_edits(source, "pdf", edits)
+    assert refused.value.unit_id == linked["unit_id"]
+    assert extract_source_units(source, "pdf") == units
+    result = apply_source_edits(source, "pdf", [edit for edit in edits if edit["unit_id"] != refused.value.unit_id])
+    saved_text = _pdf_snapshot(result)[0]["text"]
+    assert ORIGINAL in saved_text and "Developed quality checks for reliable releases." in saved_text

@@ -1,0 +1,153 @@
+{
+  "observed_utc": "2026-10-08T23:26:26.015865+00:00",
+  "tracked_base": "49abdeb06a987e23b9484cb3fd6437a2ac6d5b73",
+  "frozen_patches": [
+    {
+      "component": "durable_admission",
+      "sha256": "bd35e142fb3ca28b5678abef9cb77ad8d4f6c943c9e42119f7edea769f3f01be"
+    },
+    {
+      "component": "kms_v2",
+      "sha256": "bf685545ae20e2d30478f5eccc2196e73f81a7177fd23aaeb5ec22914a3c121a"
+    },
+    {
+      "component": "recent_password_v2",
+      "sha256": "e45b2f8cc33063a159f919ea35e2240231ac3cafdba9f7614d4f63aad614b72f"
+    }
+  ],
+  "source_sha256": [
+    {
+      "path": "backend/app/domains/recovery/gcp_pairing.py",
+      "sha256": "5a395de7336a084882a758a107ec15516ee0ed47ac56c19f5c73d10c78f79b02"
+    },
+    {
+      "path": "backend/app/domains/recovery/gcp_pairing_contracts.py",
+      "sha256": "2e1ae9005c6252766f58f318467a300e6d1b28712a0ae8a455f5e5b6a4ceb7f5"
+    },
+    {
+      "path": "backend/app/domains/recovery/gcp_pairing_attempts.py",
+      "sha256": "700ea816530fc14deb4dd23d2ed532e0128cf23462dfcb49fe93145eaed5688c"
+    },
+    {
+      "path": "backend/app/domains/recovery/password_reauth.py",
+      "sha256": "3f77de6ed92fb69d0b0aaca5f3ceced2d7480d12b064d477bfd503f5ca0a8ec5"
+    },
+    {
+      "path": "backend/app/domains/recovery/pairing_kms.py",
+      "sha256": "6c50e4e44e588c5d5825293014b96af06075199447d48e22f84d163d0a1499c1"
+    },
+    {
+      "path": "backend/tests/test_gcp_pairing_emulator.py",
+      "sha256": "271281356eb95b65c86897f40e7ae2bd1f11889ac17fd926280d4f61c859041d"
+    },
+    {
+      "path": "backend/tests/test_gcp_pairing_admission_emulator.py",
+      "sha256": "ea0c031e54b5bcc2261fa06567307eec093984d394ee6a4aebcee220a60ecc71"
+    },
+    {
+      "path": "backend/tests/test_password_reauth.py",
+      "sha256": "ee2636b62042338f22a7dd8330dd1390ad193ce65fa1e1e207e5878930a067cb"
+    },
+    {
+      "path": "backend/tests/test_pairing_kms.py",
+      "sha256": "3779c994642a395862cc655fca201698f9e9ec2a7f3286e2fa476af0e168ae57"
+    },
+    {
+      "path": "backend/pyproject.toml",
+      "sha256": "97bc65d06c086da65406229ebe97e26b3a05538d797799a490fd105529644b2c"
+    },
+    {
+      "path": "backend/uv.lock",
+      "sha256": "fe04ce18237db0ded1a122e26962b86347eb72999b7aaf9ae1a3042e1cb564cb"
+    },
+    {
+      "path": "backend/requirements.txt",
+      "sha256": "98c9f5108b7e9e075a70e486043c5461c318f0490d930fc54740d891965f1f49"
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "sha256": "1c0f79986a5375f210f3d502a5a7c7e5a578d2d3f1566c912468f4982ec2f90c"
+    }
+  ],
+  "runtime_versions": {
+    "google-cloud-kms": "3.18.0",
+    "google-cloud-firestore": "2.34.0",
+    "google-cloud-storage": "3.13.0",
+    "google-api-core": "2.33.0",
+    "google-auth": "2.56.2",
+    "grpcio": "1.83.0"
+  },
+  "verification": {
+    "combined_default_backend": {
+      "junit": "/tmp/hirewiz-pairing-auth-kms-root-20261009.xml",
+      "tests": 1459,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "affected_recent_auth_after_root_type_repair": {
+      "junit": "/tmp/hirewiz-reauth-root-posttype-20261009.xml",
+      "tests": 71,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "kms_against_canonical_locked_runtime": {
+      "junit": "/tmp/hirewiz-kms-root-20261009.xml",
+      "tests": 213,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "mypy": {
+      "source_files": 80,
+      "passed": true
+    },
+    "ruff_passed": true,
+    "compile_passed": true,
+    "prompt_cases": 6,
+    "openapi_drift": false
+  },
+  "root_augmentations": [
+    "strict usable hash preserved with an explicit isinstance qualification for full-CI typing",
+    "dedicated actual PostgreSQL test URL and required CI flag",
+    "canonical KMS lock/export; no existing dependency versions upgraded",
+    "prior parent integration addendum retained"
+  ],
+  "prior_exact_ci": {
+    "run_id": 37856297492,
+    "head": "49abdeb06a987e23b9484cb3fd6437a2ac6d5b73",
+    "all_four_jobs": "success",
+    "covers_this_followup": false
+  },
+  "historical_validation": {
+    "initial_password_run": {
+      "junit": "/tmp/hirewiz-reauth-root-20261009.xml",
+      "passed": 68,
+      "skipped": 3,
+      "reason": "dedicated password PostgreSQL URL not supplied; corrected and rerun"
+    },
+    "isolated_typing_missed_error": true,
+    "whole_run_import_preceded_type_only_qualification": true,
+    "initial_added_scan": {
+      "findings": 3,
+      "classification": "SHA-256 identity fields with credential-word map labels; reformatted as explicit path/component and sha256 records",
+      "report": "/var/folders/ck/cyzkgt2d1yx6hzpsdflcg83c0000gn/T/hirewiz-auth-integration-scan-20261009-euwj50vp/reports/added.json"
+    }
+  },
+  "production": {
+    "serving_source": "e7d8f2ba0435fd3d4a504ccdce83fac365ec6835",
+    "schema": "20261008_0009",
+    "pairing_enabled": false,
+    "new_monetary_schema_promoted": false,
+    "real_kms_calls": 0,
+    "real_candidate_submissions": 0
+  },
+  "remaining": [
+    "native candidate dispatch and account/session lifecycle writers",
+    "challenge-scoped durable admission before candidate assertion signing",
+    "actual cloud IAM, key identity, protected history and restore proofs",
+    "authenticated BFF/MV3 and real portal acceptance",
+    "independent liability preservation after account deletion and safe model writer retirement"
+  ]
+}

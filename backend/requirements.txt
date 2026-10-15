@@ -78,18 +78,28 @@ fastapi==0.141.1
 google-api-core==2.33.0
     # via
     #   google-cloud-core
+    #   google-cloud-firestore
+    #   google-cloud-kms
     #   google-cloud-storage
     #   google-cloud-tasks
 google-auth==2.56.2
     # via
     #   google-api-core
     #   google-cloud-core
+    #   google-cloud-firestore
+    #   google-cloud-kms
     #   google-cloud-storage
     #   google-cloud-tasks
     #   google-genai
     #   hirewiz-backend
 google-cloud-core==2.6.0
-    # via google-cloud-storage
+    # via
+    #   google-cloud-firestore
+    #   google-cloud-storage
+google-cloud-firestore==2.34.0
+    # via hirewiz-backend
+google-cloud-kms==3.18.0
+    # via hirewiz-backend
 google-cloud-storage==3.13.0
     # via hirewiz-backend
 google-cloud-tasks==2.23.0
@@ -110,10 +120,14 @@ googleapis-common-protos==1.75.0
 greenlet==3.5.4 ; platform_machine == 'AMD64' or platform_machine == 'WIN32' or platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'ppc64le' or platform_machine == 'win32' or platform_machine == 'x86_64'
     # via sqlalchemy
 grpc-google-iam-v1==0.14.4
-    # via google-cloud-tasks
+    # via
+    #   google-cloud-kms
+    #   google-cloud-tasks
 grpcio==1.83.0
     # via
     #   google-api-core
+    #   google-cloud-firestore
+    #   google-cloud-kms
     #   google-cloud-tasks
     #   googleapis-common-protos
     #   grpc-google-iam-v1
@@ -188,10 +202,14 @@ preshed==3.0.13
 proto-plus==1.28.2
     # via
     #   google-api-core
+    #   google-cloud-firestore
+    #   google-cloud-kms
     #   google-cloud-tasks
 protobuf==7.35.1
     # via
     #   google-api-core
+    #   google-cloud-firestore
+    #   google-cloud-kms
     #   google-cloud-tasks
     #   googleapis-common-protos
     #   grpc-google-iam-v1

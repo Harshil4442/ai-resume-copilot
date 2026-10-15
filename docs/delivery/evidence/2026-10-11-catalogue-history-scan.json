@@ -1,0 +1,77 @@
+{
+  "current_source_structural_corrections_retained": true,
+  "dedicated_file": ".gitleaksignore.catalogue",
+  "dedicated_file_sha256": "fe296416560e9f005fff29c92c422ed4273ec17f97ba562411f8f9c57ffece40",
+  "earlier_failed_and_inconsistent_combined_ignore_controls_retained": true,
+  "exclusion_scope": "exact_commit_path_rule_line_only",
+  "full_history_and_rules_unchanged": true,
+  "historical_control": {
+    "actual_commit_OID_preserved": true,
+    "default_Docker_CWD_and_exact_flag_used": true,
+    "exit": 0,
+    "findings": 0,
+    "only_two_allowed_source_blobs": true,
+    "scanner_pinned_image": "sha256:b5918eb91b8d2473cec722f066abb4352e4ffdc4ec9f4283ec143aba9ec9ebc4"
+  },
+  "independent_receipt_sha256": "efffcbb18957da840a52fc16e23bab98ba0cfdbfe9833e54aa3c3f79b44a805f",
+  "new_corrected_commit_CI_pass": false,
+  "observed_at_UTC": "2026-10-11T00:04:45.549654+00:00",
+  "observed_run": {
+    "conclusion": null,
+    "id": 38096543842,
+    "jobs": [
+      {
+        "conclusion": "failure",
+        "id": 114343498036,
+        "name": "security-and-container",
+        "status": "completed"
+      },
+      {
+        "conclusion": "success",
+        "id": 114343498168,
+        "name": "cold-browser-journey",
+        "status": "completed"
+      },
+      {
+        "conclusion": "success",
+        "id": 114343498193,
+        "name": "browser-companion",
+        "status": "completed"
+      },
+      {
+        "conclusion": null,
+        "id": 114343498194,
+        "name": "backend",
+        "status": "in_progress"
+      },
+      {
+        "conclusion": "success",
+        "id": 114343498237,
+        "name": "frontend",
+        "status": "completed"
+      }
+    ],
+    "source_commit": "1ea40fb693fbe2dfb295c6b28e7d372133f67d03",
+    "status": "in_progress"
+  },
+  "original_owned_append_restored_before_dedicated_proposal": true,
+  "preexisting_ignore_file_unchanged_and_not_newly_loaded": true,
+  "production_changed": false,
+  "protected_bodies_read": false,
+  "retained_failed_security_job": 114343498036,
+  "retained_history_findings": 3,
+  "reviewed_categories": [
+    "public_SQL_identifier",
+    "two_source_file_SHA256_values"
+  ],
+  "schema": 1,
+  "scope": "exact_historical_catalogue_false_positive_fingerprints",
+  "source_historical_commit": "91bf10b0bd9a095fb499d9eced5b508cb311dbfc",
+  "synthetic_other_commit_control": {
+    "exit": 1,
+    "findings": 1,
+    "rule": "generic-api-key",
+    "same_evidence_path_and_line": true
+  },
+  "workflow_argument": "--gitleaks-ignore-path /repo/.gitleaksignore.catalogue"
+}

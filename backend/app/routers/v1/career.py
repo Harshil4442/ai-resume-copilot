@@ -272,6 +272,8 @@ def list_resume_versions(
             "description": "Resume version in its preserved source format",
             "content": {
                 "application/pdf": {"schema": {"type": "string", "format": "binary"}},
+                "application/x-tex": {"schema": {"type": "string", "format": "binary"}},
+                "application/zip": {"schema": {"type": "string", "format": "binary"}},
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document": {
                     "schema": {"type": "string", "format": "binary"}
                 },
@@ -281,7 +283,7 @@ def list_resume_versions(
 )
 def download_resume_version(
     version_id: str,
-    artifact_format: Literal["pdf", "docx"] = Query(default="pdf", alias="format"),
+    artifact_format: Literal["pdf", "docx", "tex", "texzip"] = Query(default="pdf", alias="format"),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):

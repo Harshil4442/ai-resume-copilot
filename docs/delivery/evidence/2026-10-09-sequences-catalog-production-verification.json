@@ -1,0 +1,138 @@
+{
+  "observations": [
+    {
+      "check": "api_health",
+      "http": 200,
+      "result": {
+        "ok": true,
+        "release": "6f380203c55b8574d2d345420de6ac5e3da1b784",
+        "revision": "ai-resume-parser-00262-fim"
+      },
+      "server_timing": "app;dur=1.2",
+      "elapsed_ms": 368
+    },
+    {
+      "check": "private_worker",
+      "service": "hirewiz-analysis-worker",
+      "anonymous_http": 403,
+      "authenticated_http": 200,
+      "result": {
+        "ok": true,
+        "role": "analysis-worker",
+        "release": "6f380203c55b8574d2d345420de6ac5e3da1b784"
+      },
+      "allowed_topics": "analysis.run"
+    },
+    {
+      "check": "private_worker",
+      "service": "hirewiz-employer-worker",
+      "anonymous_http": 403,
+      "authenticated_http": 200,
+      "result": {
+        "ok": true,
+        "role": "employer-worker",
+        "release": "6f380203c55b8574d2d345420de6ac5e3da1b784"
+      },
+      "allowed_topics": "employer.search,employer.refresh,employer.apply,employer.artifact-delete"
+    },
+    {
+      "check": "production_database",
+      "schema": "20261008_0009",
+      "sources": [
+        {
+          "employer": "Figma",
+          "platform": "greenhouse",
+          "status": "healthy",
+          "last_error_code": null,
+          "submission_enabled": false
+        },
+        {
+          "employer": "Freshworks",
+          "platform": "smartrecruiters",
+          "status": "healthy",
+          "last_error_code": null,
+          "submission_enabled": false
+        },
+        {
+          "employer": "Razorpay Software Private Limited",
+          "platform": "greenhouse",
+          "status": "healthy",
+          "last_error_code": null,
+          "submission_enabled": false
+        },
+        {
+          "employer": "Supabase",
+          "platform": "ashby",
+          "status": "healthy",
+          "last_error_code": null,
+          "submission_enabled": false
+        }
+      ],
+      "open_postings": [
+        {
+          "employer": "Figma",
+          "open_count": 151
+        },
+        {
+          "employer": "Freshworks",
+          "open_count": 126
+        },
+        {
+          "employer": "Razorpay Software Private Limited",
+          "open_count": 27
+        },
+        {
+          "employer": "Supabase",
+          "open_count": 52
+        }
+      ],
+      "dispatch": [
+        {
+          "topic": "employer.refresh",
+          "status": "cancelled",
+          "count": 4
+        },
+        {
+          "topic": "employer.refresh",
+          "status": "completed",
+          "count": 14
+        }
+      ]
+    },
+    {
+      "check": "authenticated_catalog",
+      "http": 200,
+      "enabled": true,
+      "auto_submit_enabled": false,
+      "search_credits_per_job": 1,
+      "apply_credits_per_job": 5,
+      "admission_limits": {
+        "version": "employer-admissions-v1",
+        "daily_limit": 10,
+        "rolling_limit": 50,
+        "rolling_days": 30,
+        "pending_limit": 10,
+        "daily_credit_limit": 100,
+        "rolling_credit_limit": 500,
+        "batch_limit": 10,
+        "batch_credit_limit": 100,
+        "quote_hours": 24,
+        "day_boundary": "UTC",
+        "counting_policy": "pending_and_unknown_plus_possible_sends_in_window"
+      },
+      "source_count": 4,
+      "application_modes": [
+        "manual"
+      ],
+      "coverage": {
+        "scope": "Verified enabled employer sources",
+        "worldwide_recall_verified": false
+      },
+      "server_timing": "auth_lookup;dur=506.6, backend_headers;dur=4264.7, catalog_owner_lookup;dur=0.2, catalog_render;dur=0.4, catalog_sources;dur=225.1, db_acquire;dur=3365.6, dependency_jwt;dur=0.3, middleware_jwt;dur=8.3",
+      "elapsed_ms": 4597
+    }
+  ],
+  "log_sha256": "49dad7188647ee4658f38120bd2ea45bc22c3ffd408ce7074df95030cc3ece60",
+  "credential_values_retained": false,
+  "scope": "Read-only existing operator catalog, health/private workers, selected database inventory; no application/payment mutation"
+}

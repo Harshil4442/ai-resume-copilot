@@ -1,0 +1,32 @@
+{
+  "headSha": "ec52279d236e82813bc486b9d5de9eb97a80408d",
+  "status": "completed",
+  "conclusion": "success",
+  "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37813652329",
+  "jobs": [
+    {
+      "name": "frontend",
+      "conclusion": "success"
+    },
+    {
+      "name": "browser-companion",
+      "conclusion": "success"
+    },
+    {
+      "name": "security-and-container",
+      "conclusion": "success"
+    },
+    {
+      "name": "backend",
+      "conclusion": "success"
+    }
+  ],
+  "extracted_log_checks": {
+    "backend545": true,
+    "frontend190": true,
+    "companion55": true,
+    "companion14": true,
+    "no_backend_skips": true,
+    "frontend55_units": true
+  }
+}

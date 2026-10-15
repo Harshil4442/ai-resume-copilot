@@ -1,9 +1,8 @@
 "use client";
 
 import { AlertCircle, BriefcaseBusiness, CheckCircle2, Crown, Download, Link as LinkIcon, Save, ShieldOff, Trash2, User } from "lucide-react";
-import { signOut } from "next-auth/react";
+import { guardedSignOut } from "../../lib/candidateAuthClient";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import CareerMemoryPanel from "../../components/CareerMemoryPanel";
@@ -38,7 +37,6 @@ function splitSkills(text: string) {
 }
 
 export default function ProfilePage() {
-  const router = useRouter();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [form, setForm] = useState<ProfileForm>(emptyForm);
   const [loading, setLoading] = useState(true);
@@ -104,9 +102,9 @@ export default function ProfilePage() {
     try {
       await apiPostJson("/auth/delete-account", {});
       trackEvent("account_deleted");
+      await guardedSignOut();
       resetAnalyticsIdentity();
-      await signOut({ redirect: false });
-      router.push("/register");
+      window.location.replace(new URL("/register", window.location.origin).href);
     } catch (accountError) {
       setError(accountError instanceof Error ? accountError.message : "Could not delete account.");
       setAccountBusy(false);
@@ -181,7 +179,7 @@ export default function ProfilePage() {
           <p className="eyebrow">Account controls</p>
           <div className="mt-5 divide-y divide-border border-y border-border">
             <div className="grid gap-4 py-5 sm:grid-cols-[1fr_auto] sm:items-center"><div><h2 className="font-display font-normal text-foreground">Export account data</h2><p className="mt-1 text-sm text-muted-foreground">Download your profile, career records, usage history, and payment references.</p></div><Button variant="secondary" onClick={exportAccount} disabled={accountBusy}><Download size={16} /> Export JSON</Button></div>
-            <div className="grid gap-4 py-5 sm:grid-cols-[1fr_auto] sm:items-center"><div><h2 className="font-display flex items-center gap-2 font-normal text-foreground"><Crown size={17} className="text-primary" /> Premium access</h2><p className="mt-1 text-sm text-muted-foreground">{profile?.tier === "premium" ? (profile.premium_until ? `Active until ${new Date(profile.premium_until).toLocaleDateString("en-IN")}. No automatic renewal.` : "Premium access is active.") : "Free access is active."}</p></div>{profile?.tier === "premium" ? (!confirmEndPremium ? <Button variant="secondary" onClick={() => setConfirmEndPremium(true)}><ShieldOff size={16} /> End access</Button> : <div className="flex gap-2"><Button variant="danger" onClick={endPremium} disabled={accountBusy}>Confirm</Button><Button variant="ghost" onClick={() => setConfirmEndPremium(false)}>Cancel</Button></div>) : <Button asChild><Link href="/billing">View Premium</Link></Button>}</div>
+            <div className="grid gap-4 py-5 sm:grid-cols-[1fr_auto] sm:items-center"><div><h2 className="font-display flex items-center gap-2 font-normal text-foreground"><Crown size={17} className="text-primary" /> Premium access</h2><p className="mt-1 text-sm text-muted-foreground">{profile?.tier === "premium" ? (profile.premium_until ? `Active until ${new Date(profile.premium_until).toLocaleDateString("en-IN")}. No automatic renewal.` : "Premium access is active.") : "Free access is active."}</p></div>{profile?.tier === "premium" ? (!confirmEndPremium ? <Button variant="secondary" onClick={() => setConfirmEndPremium(true)}><ShieldOff size={16} /> End access</Button> : <div className="flex gap-2"><Button variant="danger" onClick={endPremium} disabled={accountBusy}>Confirm</Button><Button variant="ghost" onClick={() => setConfirmEndPremium(false)}>Cancel</Button></div>) : <Button asChild><Link href="/billing">View credit packs</Link></Button>}</div>
             <div className="grid gap-4 py-5 sm:grid-cols-[1fr_auto] sm:items-center"><div><h2 className="font-display font-normal text-coral">Delete account</h2><p className="mt-1 max-w-2xl text-sm text-muted-foreground">Delete career data and unlink retained accounting records. This cannot be undone.</p></div>{!confirmDelete ? <Button variant="danger" onClick={() => setConfirmDelete(true)}><Trash2 size={16} /> Delete account</Button> : <div className="flex flex-wrap gap-2"><Button variant="danger" onClick={deleteAccount} disabled={accountBusy}>{accountBusy ? "Deleting..." : "Permanently delete"}</Button><Button variant="ghost" onClick={() => setConfirmDelete(false)} disabled={accountBusy}>Cancel</Button></div>}</div>
           </div>
         </section>

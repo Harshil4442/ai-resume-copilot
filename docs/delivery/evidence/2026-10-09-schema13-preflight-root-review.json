@@ -1,0 +1,29 @@
+{
+  "status": "ROOT_OWNED_SOURCE_MATCHES_INDEPENDENT_CLEAR_FINAL_MIGRATION_AND_RELEASE_HOLD",
+  "base": "b50d9f7433698d534af63940f1f010a409d270af",
+  "verified_source_count": 724,
+  "verified_artifact_count": 751,
+  "independent_report_sha256": "39b50e061519c12e2ce60d9c8261e1659e4952bcea32ace932ecf0ee0b38b815",
+  "source_manifest_sha256": "897a667a97be40564950ff59ddac6a337895b4463f2f7bb2a8ecac3d0ec01203",
+  "artifact_manifest_sha256": "27111007e890737a087ceb0106454c49803ac4a1d15ed13a199e5c6c254ac9a3",
+  "owned_result_sha256": {
+    "backend/scripts/monetary_cutover_preflight.py": "77bf963025ccf63d29c8f4da4079b99489501699d398a5ca1a934faca4c884c0",
+    "backend/tests/test_monetary_cutover_schema13_postgres.py": "4dc3a7d0afab6e44fd0af6eb7b575c11b9e659a91e6ac2ff3ece240e313a14e4"
+  },
+  "checks": {
+    "unchanged_actual_postgresql_and_cli": 131,
+    "distinct_actual_postgresql": 52,
+    "failed": 0,
+    "skipped": 0,
+    "ruff": "PASS",
+    "mypy": "PASS"
+  },
+  "boundaries": [
+    "Metadata-only nullableJSON schema12/13 observation never certifies cloud cutover or expense funding.",
+    "Historical absent expense provenance retains exact cost arithmetic; partial/null/malformed triples preserve fullhold.",
+    "Actual repeatable-read and private-column revoked CLI checks verify values not loaded or leaked.",
+    "Final0013index migration and merged root must be reverified; validation-only borrowed migration retained.",
+    "No production inventory/fencing/backup/credential/cloud changes performed."
+  ],
+  "local_evidence": "/var/folders/ck/cyzkgt2d1yx6hzpsdflcg83c0000gn/T/hirewiz-schema13-preflight-independent-20261009-aw5tu9el"
+}

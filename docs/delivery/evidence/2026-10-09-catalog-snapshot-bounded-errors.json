@@ -1,0 +1,18 @@
+{
+  "release": "e7d8f2ba0435fd3d4a504ccdce83fac365ec6835",
+  "project": "ai-resume-parser-482412",
+  "start_utc": "2026-10-08T20:52:40.518698Z",
+  "end_utc": "2026-10-08T21:03:33.711941Z",
+  "revisions": [
+    "ai-resume-parser-00267-xot",
+    "hirewiz-analysis-worker-00021-5zd",
+    "hirewiz-employer-worker-00012-lmz"
+  ],
+  "filter": "exact serving revisions; ERROR-or-higher or HTTP500-or-higher",
+  "matching_entries": 0,
+  "read_cap": 201,
+  "truncated_or_cap_reached": false,
+  "entries": [],
+  "limits": "Bounded observation only; not load, sustained availability or recovery proof",
+  "credentials_or_log_text_retained": false
+}

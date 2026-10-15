@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import base64
+import hashlib
+import json
 from contextlib import closing
 from io import BytesIO
 from zipfile import ZipFile
@@ -73,6 +76,78 @@ def _pdf_text_snapshot(content):
                     if obj.type == pdfium_raw.FPDF_PAGEOBJ_TEXT
                 ])
         return snapshots
+
+
+def _synthetic_docx_worker(monkeypatch):
+    """Contract adapter only; genuine Linux Writer/AV corpus is separate.
+
+    Keep actual native patch, comparator, preparation, custody and seal validators
+    active. Identity/HTTP and remote scanner/renderer execution are synthetic;
+    ReportLab comparison PDFs are not claims that Writer rendered these files.
+    """
+    from backend.app.services import document_ingestion, docx_artifact
+    from backend.app.services.docx_layout_validation import RendererIdentity, validate_docx_layout
+    from backend.app.services.resume_layout import _apply_docx
+
+    image = "registry.invalid/synthetic-docx@sha256:" + "d" * 64
+    policy = hashlib.sha256(b"synthetic-career-policy").hexdigest()
+    fonts = hashlib.sha256(b"synthetic-career-font-manifest").hexdigest()
+    version = "Synthetic career HTTP renderer fixture 1"
+    origin = "https://synthetic-docx-fixture.run.app"
+    for key, value in {"DOCUMENT_WORKER_URL": origin + "/inspect", "DOCUMENT_WORKER_IMAGE_DIGEST": image,
+                       "DOCUMENT_WORKER_POLICY_SHA256": policy, "DOCUMENT_WORKER_DOCX_RENDERER_VERSION": version,
+                       "DOCUMENT_WORKER_DOCX_FONT_MANIFEST_SHA256": fonts}.items():
+        monkeypatch.setenv(key, value)
+
+    def synthetic_pdf(experience):
+        output = BytesIO()
+        page = Canvas(output, pagesize=(612, 792), invariant=True)
+        page.setFont("Times-Bold", 16)
+        page.drawString(50, 750, "Owner")
+        page.setFont("Times-Bold", 11)
+        page.drawString(50, 710, "Experience")
+        page.line(50, 704, 540, 704)
+        page.drawString(50, 682, "Acme Engineer")
+        page.drawRightString(540, 682, "Remote | 2023-2025")
+        prefix, emphasized, suffix = experience.partition("reliable Python services")
+        x = 50
+        for text, face in ((prefix, "Times-Roman"), (emphasized, "Times-Bold"), (suffix, "Times-Roman")):
+            page.setFont(face, 10)
+            page.drawString(x, 656, text)
+            x += page.stringWidth(text, face, 10)
+        page.setFont("Times-Roman", 10)
+        page.drawString(50, 50, "Original footer")
+        page.save()
+        return output.getvalue()
+
+    calls = []
+    def identity(audience):
+        assert audience == origin
+        return "synthetic-identity-only"
+
+    async def http(config, payload, token, expected, edits):
+        assert len(payload) <= 7 * 1024 * 1024 and token == "synthetic-identity-only"
+        assert config.audience == origin and config.image == image and config.policy == policy
+        request = json.loads(payload)
+        source = base64.b64decode(request["content_base64"], validate=True)
+        assert request["edits"] == edits and len(edits) == 1
+        assert request["sha256"] == hashlib.sha256(source).hexdigest()
+        candidate = _apply_docx(source, edits)
+        assert request["candidate_sha256"] == hashlib.sha256(candidate).hexdigest()
+        assert request["candidate_size_bytes"] == len(candidate)
+        receipt = validate_docx_layout(source_docx=source, candidate_docx=candidate, edits=edits,
+            before_pdf=synthetic_pdf(SOURCE_EXPERIENCE), after_pdf=synthetic_pdf(TAILORED_EXPERIENCE),
+            renderer=RendererIdentity(image, policy, version, fonts))
+        scan = {"engine": "ClamAV", "version": "1.4.3", "definitions": "12345/synthetic-test-only"}
+        calls.append({"source_sha256": request["sha256"], "candidate_sha256": request["candidate_sha256"]})
+        output = json.dumps({**expected, "worker_image": image, "policy_sha256": policy,
+                            "scan": scan, "candidate_scan": scan, "layout": receipt.to_dict()}).encode()
+        assert len(output) <= 32768
+        return output
+
+    monkeypatch.setattr(document_ingestion, "_identity_token", identity)
+    monkeypatch.setattr(docx_artifact, "_worker_http", http)
+    return calls
 
 
 def _client(source_format="docx"):
@@ -261,7 +336,8 @@ def test_applied_stage_requires_exact_resume_version():
 
 
 @pytest.mark.parametrize("source_format", ["pdf", "docx"])
-def test_resume_version_native_download_preserves_layout_and_rejects_cross_format(source_format):
+def test_resume_version_native_download_preserves_layout_and_rejects_cross_format(source_format, monkeypatch):
+    worker_calls = _synthetic_docx_worker(monkeypatch) if source_format == "docx" else None
     engine, factory, client = _client(source_format)
     try:
         with factory() as db:
@@ -313,6 +389,14 @@ def test_resume_version_native_download_preserves_layout_and_rejects_cross_forma
         )
         assert version.status_code == 201, version.text
         version_id = version.json()["id"]
+        if worker_calls is not None:
+            assert len(worker_calls) == 1
+            seal = version.json()["structured_content"]["sealed_native_artifact"]
+            assert seal["validation"]["layout"]["renderer"]["renderer_version"] == "Synthetic career HTTP renderer fixture 1"
+            approved = client.patch(f"/api/v1/resume-versions/{version_id}", json={"approval_state": "approved"})
+            assert approved.status_code == 200, approved.text
+            assert approved.json()["approval_state"] == "approved"
+            assert len(worker_calls) == 1  # Approval verifies exact local bytes.
 
         downloaded = client.get(f"/api/v1/resume-versions/{version_id}/download?format={source_format}")
         assert downloaded.status_code == 200, downloaded.text
@@ -348,6 +432,7 @@ def test_resume_version_native_download_preserves_layout_and_rejects_cross_forma
                 for name in source.namelist():
                     if name != "word/document.xml":
                         assert source.read(name) == output.read(name)
+            assert len(worker_calls) == 1  # Download never calls a renderer.
         with factory() as db:
             assert db.get(Resume, 10).source_document == original
 
@@ -372,6 +457,8 @@ def test_resume_version_native_download_preserves_layout_and_rejects_cross_forma
             )
             assert unchanged.status_code == 200, unchanged.text
             assert unchanged.content == original
+            if worker_calls is not None:
+                assert len(worker_calls) == 1
 
         with factory() as db:
             db.add(
@@ -434,7 +521,12 @@ def test_resume_download_rejects_missing_source_old_templates_and_unsafe_edits()
         assert "old resume template" in generic.json()["detail"]
         unsafe = client.get("/api/v1/resume-versions/rsv_unsafe_edit/download?format=docx")
         assert unsafe.status_code == 409
-        assert "too long" in unsafe.json()["detail"]
+        assert "sealed render validation" in unsafe.json()["detail"]
+        approval = client.patch("/api/v1/resume-versions/rsv_unsafe_edit", json={"approval_state": "approved"})
+        assert approval.status_code == 409, approval.text
+        assert "sealed render validation" in approval.json()["detail"]
+        with factory() as db:
+            assert db.get(ResumeVersion, "rsv_unsafe_edit").approval_state == "draft"
     finally:
         client.close()
         engine.dispose()

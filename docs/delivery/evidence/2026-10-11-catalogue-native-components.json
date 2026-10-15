@@ -1,0 +1,121 @@
+{
+  "date": "2026-10-11 Asia/Kolkata",
+  "status": "component_controls_pass; private runtime not integrated",
+  "schema_controls": {
+    "scope": "owned-postgresql-0016-schema-component-only",
+    "runner_sha256": "2fe942b18b9ba8e0bf435b38eaf02172de8b630c3cc2ccafc123a9e4e8ce711c",
+    "native_postgresql": "17.11 ARM64",
+    "source_pins": {
+      "models": "a0ef34b30727331b149f4522e3a2f36286c84e8b8441bc7e6a60e1d72a059702",
+      "0016": "012e9d5e6b0dfdf7dc232bd59ecc7e70f8af05ae6f27a7d1e92f877a6ec24a94",
+      "0015_function_dependency": "e125f006091c72947445bb5ba1376b237ce00a54c2ffe277f364e0f6ddabc306"
+    },
+    "exit_code": 0,
+    "tests_run": 8,
+    "seconds": 2.345,
+    "test_results": [
+      {
+        "name": "test_clock_gate_blocks_pin_before_publisher_commit",
+        "outcome": "ok"
+      },
+      {
+        "name": "test_content_and_ready_projection_null_checks_immutability",
+        "outcome": "ok"
+      },
+      {
+        "name": "test_item_aggregate_proof_and_proven_immutability",
+        "outcome": "ok"
+      },
+      {
+        "name": "test_publication_intervals_pinned_watermark_savepoint",
+        "outcome": "ok"
+      },
+      {
+        "name": "test_published_retention_then_search_erasure_allows_cascade",
+        "outcome": "ok"
+      },
+      {
+        "name": "test_reservation_cascade_then_owner_cleanup",
+        "outcome": "ok"
+      },
+      {
+        "name": "test_resume_cascade_missing_parent_branch_retains_reservation",
+        "outcome": "ok"
+      },
+      {
+        "name": "test_search_pointer_owner_count_accessors_and_source_invalidation",
+        "outcome": "ok"
+      }
+    ],
+    "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stderr_sha256": "8be89678eb622457f7e78c7f78aef5a15e577a3b82a83acc5379f484b408969f",
+    "production": false,
+    "full_0015_migration_executed": false,
+    "full_runtime_acceptance": false,
+    "global_application_or_conftest_imported": false,
+    "provider_credentials_used": false,
+    "scope_limits": [
+      "Synthetic C metadata baseline; only one pinned C function dependency.",
+      "Eight schema controls only; catalogue/dispatch/privacy runtime and production rollout are separate."
+    ]
+  },
+  "item_builder_controls": {
+    "scope": "native SQL item body builder with stubbed submission capability; no settlement",
+    "source": {
+      "source_sha256": "ba971ff29a2845527dd7ee767ca542340bb771d7ffdb4170053d7e46e9b76c9b",
+      "path": "/var/folders/ck/cyzkgt2d1yx6hzpsdflcg83c0000gn/T/hirewiz-stage-d-native-root-20261011-xnr8k7xi/catalogue-item-component-ba971ff29a2845527dd7ee767ca542340bb771d7ffdb4170053d7e46e9b76c9b.py",
+      "review_scope": [
+        "_native_item",
+        "_item_recipe"
+      ],
+      "production": false
+    },
+    "runner_sha256": "91e86ffee7550c35066b400c0713c03709d0107bc700ed21c8595c1e52c7a126",
+    "exit_code": 0,
+    "tests_run": 2,
+    "seconds": 1.146,
+    "test_results": [
+      {
+        "name": "test_actual_native_builder_paid_body_only",
+        "outcome": "ok"
+      },
+      {
+        "name": "test_actual_native_builder_seen_body_only",
+        "outcome": "ok"
+      }
+    ],
+    "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stderr_sha256": "bdd80d5facfa2eb3a652ba4f0880b7c4412714250d6aef385dc86ea3d4497969",
+    "production": false,
+    "full_runtime_acceptance": false
+  },
+  "cleanup": {
+    "id": "ab73919cc7634229b5fa95b8c59ef9bea257fb8af7a1ccb91e72dbcc8daac1cc",
+    "name": "hirewiz-stage-d-root-20261011-275f2d45de6b",
+    "independent_absence_verified": true,
+    "observations": [
+      {
+        "reference": "ab73919cc7634229b5fa95b8c59ef9bea257fb8af7a1ccb91e72dbcc8daac1cc",
+        "absent": true,
+        "inspect_exit_code": 1
+      },
+      {
+        "reference": "hirewiz-stage-d-root-20261011-275f2d45de6b",
+        "absent": true,
+        "inspect_exit_code": 1
+      }
+    ],
+    "production": false
+  },
+  "original_failures_retained": {
+    "schema_runner": "3 pass / 5 errors from untyped fixture recipe bind; corrected only CAST(:recipe AS text)",
+    "item_builder": "mutable source pin refused locally before native connection; replaced with reviewed immutable root snapshot",
+    "cleanup_preflight": "database keyword mapped to psycopg dbname before first Docker mutation",
+    "absence_preflight": "Docker lowercase error text corrected; removal not repeated"
+  },
+  "production_migration_performed": false,
+  "provider_credentials_used": false,
+  "financial_settlement_or_application_submission_tested": false,
+  "full_catalogue_runtime_acceptance": false,
+  "native_toast_cost_measured": false
+}

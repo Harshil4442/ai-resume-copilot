@@ -1,0 +1,27 @@
+{
+  "date_utc": "2026-10-08",
+  "scope": "root worktree integration, localhost synthetic only",
+  "package_check_passed": true,
+  "protocol_cases": {
+    "passed": 55,
+    "failed": 0,
+    "skipped": 0
+  },
+  "real_chromium_mv3_cases": {
+    "passed": 14,
+    "failed": 0,
+    "skipped": 0
+  },
+  "dependency_audit_vulnerabilities": 0,
+  "production_mode": "disabled",
+  "required_host_permissions": [],
+  "optional_host_permissions": [],
+  "employer_requests": 0,
+  "real_candidate_data_used": false,
+  "upload_or_submit_action_exists": false,
+  "limits": [
+    "No production owner/device authority or independent recovery service is implemented.",
+    "Local fixture permission and receipts do not authorize a real employer portal.",
+    "These cases do not close the full G04/G05 acceptance gates."
+  ]
+}

@@ -1,0 +1,74 @@
+{
+  "created_at_utc": "2026-10-11T15:10:37.440166+00:00",
+  "agreed_checkpoint": "Resume worker output + PDF/DOCX/LaTeX fidelity",
+  "original_estimate": "4\u20138 additional active hours",
+  "checkpoint_complete": false,
+  "scope": "One fixed 18-byte synthetic native stdin transport experiment; no resume content.",
+  "manifest_sha256": "763d5fb96de0f7d249aec7b9d5408c8360ccfc5ff3151f676c9534465305181d",
+  "probe_sha256": "addda1f3501d174558afeecba9574a23e7a4a0ed24ecdb0027d92bbc396ac074",
+  "image": "us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz-document-inspector@sha256:1fd697ba1ad7870c75068876aff5b9d151e151e8943418bb86072975f762ef98",
+  "job_name": "hirewiz-doc-stdin-addda1f3501d",
+  "job_uid": "f9458938-6c2a-4f6d-90da-e7d8132a75f7",
+  "execution_name": "hirewiz-doc-stdin-addda1f3501d-n9xwg",
+  "execution_uid": "3f7eedf3-cd95-4b3e-9c5d-bf25e099c634",
+  "actual_run_count": 1,
+  "task_retry_count": 0,
+  "execution_observation": {
+    "body_source_join_verified": true,
+    "completed_at": "2026-10-11T14:50:59.000376Z",
+    "conditions": [
+      {
+        "reason": "",
+        "status": "True",
+        "type": "Completed"
+      },
+      {
+        "reason": "",
+        "status": "True",
+        "type": "ResourcesAvailable"
+      },
+      {
+        "reason": "",
+        "status": "True",
+        "type": "Started"
+      },
+      {
+        "reason": "",
+        "status": "True",
+        "type": "ContainerReady"
+      }
+    ],
+    "counts": {
+      "cancelledCount": 0,
+      "failedCount": 0,
+      "retriedCount": 0,
+      "runningCount": 0,
+      "succeededCount": 1
+    },
+    "created_at": "2026-10-11T14:48:47.486584Z",
+    "customer_release": false,
+    "execution_restarts": 0,
+    "job_uid": "f9458938-6c2a-4f6d-90da-e7d8132a75f7",
+    "name": "hirewiz-doc-stdin-addda1f3501d-n9xwg",
+    "scanner_acceptance": false,
+    "started_at": "2026-10-11T14:49:12.009803Z",
+    "status": "observed_same_execution",
+    "uid": "3f7eedf3-cd95-4b3e-9c5d-bf25e099c634"
+  },
+  "bounded_result_observation": {
+    "native_mutations": 0,
+    "native_outcome": "inconclusive",
+    "status": "result_observation_refused"
+  },
+  "source_join": "All seven current managed runtime source files match the pinned image build source. No runtime change adopted.",
+  "prior_guard_refusal": "The first wrapper refused before Run because an old guard expected 600 seconds while the accepted synthetic Job had 120 seconds. Actual Job read proved zero executions before the one reviewed Run. Original seals/refusals retained.",
+  "success_predicate": "The pinned probe exits zero only when the fixed byte count and digest match and its child cleanup command returns zero. Native task success is observed, but an explicit bounded stdout result was not validated.",
+  "runtime_adopted": false,
+  "production_activation": false,
+  "limitations": [
+    "The result observer returned inconclusive; no repeated Run or blind result retry is performed.",
+    "Successful cleanup return does not prove independently observed sandbox absence.",
+    "This does not verify PDF/DOCX/LaTeX fidelity, scanner acceptance, child isolation or private HTTP custody.",
+    "The old failed archive experiment remains retained separately."
+  ]
+}

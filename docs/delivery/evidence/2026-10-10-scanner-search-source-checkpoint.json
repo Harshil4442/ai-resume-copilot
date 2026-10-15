@@ -1,0 +1,67 @@
+{
+  "scope": "Integrated scanner lifecycle and search delivery source; native scanner acceptance and customer rollout remain open",
+  "date": "2026-10-10",
+  "published_parent": "01f88fd4a515e29a76f82cd920278633e4a81ace",
+  "new_source_ci_verified": false,
+  "native_scanner_acceptance_verified": false,
+  "production_activation": false,
+  "scanner": {
+    "service_sha256": "040710f23e83ce61a8401338b52defb613b51e4344bf1bb2a4a063ce39962d11",
+    "policy_sha256": "e7d6680ee78da0cda5a8e4d9abfaf178ce5684b8b55ebcc5c168b69e3ece8e34",
+    "lifecycle": "One named synchronous do/import, with explicit finally deletion; fail closed on unverified cleanup",
+    "launcher_phase_seconds": {"do": 55, "delete": 5},
+    "root_independent_source_cases": 143,
+    "configuration_review_cases": 56,
+    "helper_source_custody_controls": 2,
+    "managed_affected_replay": {
+      "passed": 376,
+      "failed": 0,
+      "errors": 0,
+      "skipped_disposable_postgresql": 44,
+      "junit_sha256": "39d57bc71ed76948746ee1e363cd62baec12607d744a1180f015204235bd7dbb"
+    },
+    "original_stale_policy_failures": {
+      "failed": 49,
+      "junit_sha256": "37f21e6833ec716deabedadf7915c2c720700a93c551a4b9148d1a95da4a5faf",
+      "retained": true,
+      "resolved_by_exact_two_policy_pin_replacements": true
+    },
+    "real_native_do_marker_only": {
+      "job": "hirewiz-document-sdk-do-diagnostic",
+      "execution": "hirewiz-document-sdk-do-diagnostic-rp5hg",
+      "execution_uid": "04bde1eb-6b2f-4909-8c7c-89241ee40cde",
+      "exit_code": 0,
+      "marker_matched": true,
+      "stdout_bytes": 25,
+      "stderr_bytes": 0,
+      "independent_verdict_sha256": "78c12d52b32a6907ad74e75fb02c3468af55a60d78a4b1c02d440331ab35015b",
+      "proves_document_scanning": false,
+      "proves_isolation": false,
+      "proves_sandbox_retirement": false
+    },
+    "pending": ["new committed-source CI and immutable scanner image", "real scanner corpus, isolation, deadline and deletion checks", "positive private HTTP acceptance"]
+  },
+  "search": {
+    "service_sha256": "1d0a6132034368a80f6195c971b6a72a630c8ff4640af0abe333b5fe204fbf57",
+    "behavior": "Unseen qualifying canonical openings precede already delivered matches; paid legacy identity comes from the same owner's saved search snapshot",
+    "uncertain_history": "409 legacy_delivery_identity_unavailable before a new paid reservation; no identity guessed from current posting fields",
+    "independent_functional_cases": 44,
+    "managed_unfiltered_cases": 54,
+    "managed_failed": 0,
+    "managed_skipped": 0,
+    "managed_junit_sha256": "53b405e7c7888ed0fe3013d847d2be783a2e6b0d4e44618dfe29410218eb66b8",
+    "corrected_independent_custody_verdict_sha256": "964c1d29b22dd355eb03eef9510a6e45ace93f9ff37316fb29fbc0ac833e5243",
+    "original_manifest_packaging_error_retained": true,
+    "financial_calls_and_owner_locking_unchanged": true,
+    "ai_calls": 0,
+    "candidate_limit": 1000,
+    "worldwide_recall_verified": false,
+    "pending": ["large legacy-history query cost and latency", "current-source PostgreSQL concurrency and hosted CI", "broader coverage and production release"]
+  },
+  "root_managed_source_receipt_sha256": "c9bf4a68a736476999c4deba71239525d0486d8ef9e018e0deb7ce44eb75949f",
+  "limits": [
+    "Passing source tests with synthetic sandbox transport do not establish native isolation, malware scanning or cleanup",
+    "Test families have different scopes; their counts are not summed as a distinct global suite",
+    "Production schema remains 0009 and paid activation, protected pairing and consumer/provider fencing remain open"
+  ]
+}

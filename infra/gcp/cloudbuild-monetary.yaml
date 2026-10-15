@@ -1,0 +1,18 @@
+# Submit a native Git source at its full reviewed revision with --git-source-dir=.
+# _RELEASE must be that same full SHA. NativeBoundary verifies the returned source,
+# exact root step directories/arguments and image digest; this config cannot admit release.
+steps:
+  - name: gcr.io/cloud-builders/docker
+    dir: .
+    args:
+      - build
+      - --tag
+      - us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz:${_RELEASE}
+      - .
+  - name: gcr.io/cloud-builders/docker
+    dir: .
+    args:
+      - push
+      - us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz:${_RELEASE}
+images:
+  - us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz:${_RELEASE}

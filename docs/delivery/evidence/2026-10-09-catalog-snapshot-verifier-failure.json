@@ -1,0 +1,9 @@
+{
+  "error": "runtime_verification_failed_details_suppressed",
+  "class": "RuntimeError",
+  "local_lines": [
+    56,
+    39,
+    11
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "checked_at_utc": "2026-10-09T00:02:53.927501+00:00",
+  "project": "ai-resume-parser-482412",
+  "kind": "jobs",
+  "all_region_list_property_unset": true,
+  "records": [
+    {
+      "name": "hirewiz-schema-migration",
+      "region": "us-central1",
+      "credential_bindings": [
+        {
+          "environment_name": "DATABASE_URL",
+          "inline_present": false,
+          "secret_reference": {
+            "name": "hirewiz-database-url",
+            "version": "latest"
+          }
+        }
+      ],
+      "safe_environment": {
+        "APP_RELEASE": "e7d8f2ba0435fd3d4a504ccdce83fac365ec6835"
+      },
+      "traffic": [],
+      "latest_execution_name": "hirewiz-schema-migration-6267x",
+      "known_conditions": [
+        {
+          "type": "Ready",
+          "status": "True"
+        }
+      ]
+    }
+  ],
+  "retained_revision_coverage": false,
+  "other_projects_and_local_processes": false,
+  "mutation_performed": false,
+  "secret_values_retained": false,
+  "writer_retirement_proven": false,
+  "safe_environment_scope": "Latest service/job template; not proof of serving-revision environment"
+}

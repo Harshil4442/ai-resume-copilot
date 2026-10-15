@@ -1,0 +1,36 @@
+{
+  "observed_at": "2026-10-09T09:06:54.762600+00:00",
+  "project": "ai-resume-parser-482412",
+  "requested_services": [
+    "firestore.googleapis.com",
+    "cloudkms.googleapis.com"
+  ],
+  "enable_exit_code": 0,
+  "scope": "API prerequisites only; no database, bucket, key, retention lock, explicit IAM edit, application or serving-revision change requested. Provider-managed effects of API activation are not certified as absent.",
+  "verified_enabled": {
+    "firestore.googleapis.com": true,
+    "cloudkms.googleapis.com": true
+  },
+  "status": "passed",
+  "database_observation": {
+    "observed_at": "2026-10-09T09:09:06.907657+00:00",
+    "project": "ai-resume-parser-482412",
+    "exit_code": 0,
+    "status": "observed",
+    "databases_count": 0,
+    "databases": []
+  },
+  "source_reports_sha256": {
+    "hirewiz-protected-authority-api-prerequisites-20261009.json": "23a5bdb7246056b2c7a511d9942aa8c8ae7f870b511fe117b139f47f913693bd",
+    "hirewiz-protected-authority-databases-after-api-20261009.json": "894bd89e18d53394166a87b77352e2aef870ee12b8a9078e7cef19a7b3ebee9c"
+  },
+  "production_authority_enabled": false,
+  "full_goal_complete": false,
+  "remaining": [
+    "restricted authority database and journal provisioning",
+    "signing key and scoped runtime identity",
+    "reviewed production dependency wiring",
+    "restore/retention and permission evidence",
+    "exact composed browser flow and controlled release"
+  ]
+}

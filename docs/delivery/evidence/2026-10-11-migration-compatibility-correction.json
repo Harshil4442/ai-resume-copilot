@@ -1,0 +1,103 @@
+{
+  "scope": "SQLite paid-history migration compatibility and exact migration invariant tests",
+  "base_commit": "65dc276af1d3f704635c3f0ce664542f50a06922",
+  "original_ci_run": 38089438723,
+  "original_backend_summary": {
+    "failed": 8,
+    "passed": 3535,
+    "warnings": 455
+  },
+  "original_sqlite_counterexample": {
+    "source_sha256": "216a579c0539017028978c66f969262b28d6523cb08aa82859901187b2fd3f1c",
+    "counterexample": "SQLite constraint creation needs table batch mode",
+    "exception_type": "NotImplementedError",
+    "original_failure_retained": true,
+    "global_app_or_conftest_imported": false,
+    "provider_calls": 0
+  },
+  "sqlite_verification": {
+    "scope": "direct full finite SQLite migration chain without global app imports",
+    "checks": [
+      "full_15_revision_upgrade_preserves_legacy_resume",
+      "new_paid_history_tables_and_composite_constraints_present",
+      "empty_history_downgrade_upgrade_preserves_legacy_resume",
+      "populated_downgrade_refuses_before_any_table_drop"
+    ],
+    "passed": 4,
+    "migration_sha256": "e125f006091c72947445bb5ba1376b237ce00a54c2ffe277f364e0f6ddabc306",
+    "actual_postgresql_executed": false,
+    "production_changed": false,
+    "foreign_keys_default_sqlite_setting": true,
+    "global_app_or_conftest_imported": false
+  },
+  "postgresql_ast_preservation": {
+    "postgresql_sqlalchemy_operations_and_guard_bodies_unchanged": true,
+    "sqlite_constraint_batch_mode_only": true,
+    "migration_sha256": "e125f006091c72947445bb5ba1376b237ce00a54c2ffe277f364e0f6ddabc306",
+    "native_postgresql_rerun": false,
+    "protected_reads": false
+  },
+  "files": [
+    {
+      "path": "backend/alembic/versions/20261011_0015_employer_paid_history.py",
+      "sha256": "e125f006091c72947445bb5ba1376b237ce00a54c2ffe277f364e0f6ddabc306"
+    },
+    {
+      "path": "backend/tests/test_candidate_lifetime_migration_postgres.py",
+      "sha256": "732c76d3d47da3eebfce71d51609cf3e7406a6ca24dbb0db98793462b879278e"
+    },
+    {
+      "path": "backend/tests/test_employer_admissions_postgres.py",
+      "sha256": "c424848b9b5f5bd5a81b74e333fbf0a9e19ce19ec69928bc0ec3d0f3124bf905"
+    },
+    {
+      "path": "backend/tests/test_expense_budget_postgres.py",
+      "sha256": "7194448490e64da238cb62e4dfac431ce3d75d70059fd1252a8bb5e43eb7bca3"
+    },
+    {
+      "path": "backend/tests/test_model_cost_liabilities_postgres.py",
+      "sha256": "7e171e07a8789077b50939d6ccd2c81db1c3ee502f32cbf68d05099a48eb0847"
+    },
+    {
+      "path": "backend/tests/test_monetary_release_entrypoint.py",
+      "sha256": "79ebac44131dc2cfee3ac87560a2621672f1653403bf7bc6849a7ce264eeeb0a"
+    },
+    {
+      "path": "backend/tests/test_employer_history_migration.py",
+      "sha256": "7b26758de4be4963478d6622c61d25577054efc8710023d3b5b7373bcb0d384f"
+    }
+  ],
+  "actual_full_corrected_ci_complete": false,
+  "protected_source_bodies_read": false,
+  "global_app_or_conftest_imported_locally": false,
+  "production_changed": false,
+  "source_release_allowance_expanded": false,
+  "log_evidence_scope": "only pytest short-summary identifiers and aggregate counts emitted; raw tracebacks were not emitted or retained",
+  "sqlite_financial_conservation": {
+    "scope": "direct SQLite legacy paid rows and constraint conservation",
+    "checks": [
+      "legacy_search_quote_delivery_amount_time_and_constraints_preserved_on_upgrade",
+      "legacy_search_quote_and_delivery_preserved_on_empty_projection_downgrade"
+    ],
+    "passed": 2,
+    "global_app_or_conftest_imported": false,
+    "production_changed": false,
+    "fixture_failure_retained": true,
+    "foreign_keys_default_sqlite_setting": true
+  },
+  "regression_tests": {
+    "file": "backend/tests/test_employer_history_migration.py",
+    "sha256": "7b26758de4be4963478d6622c61d25577054efc8710023d3b5b7373bcb0d384f",
+    "passed": 2,
+    "runtime": "real SQLite migration; private exact-source copy; no global conftest",
+    "seconds": 0.21
+  },
+  "fixture_bind_failure_retained": {
+    "scope": "private fixture setup only",
+    "exception_type": "StatementError",
+    "reason": "unparameterized JSON colon was interpreted as SQLAlchemy bind",
+    "migration_started": false,
+    "source_changed": false,
+    "corrected_by": "bound JSON parameter"
+  }
+}

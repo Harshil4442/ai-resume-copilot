@@ -1,0 +1,77 @@
+{
+  "schema": 1,
+  "retained_ci": {
+    "source": "1ea40fb693fbe2dfb295c6b28e7d372133f67d03",
+    "run_id": 38096543842,
+    "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38096543842",
+    "status": "completed",
+    "conclusion": "failure",
+    "backend": {
+      "passed": 3549,
+      "failed": 2,
+      "warnings": 455,
+      "pytest_duration_seconds": 937.65,
+      "zero_skips_independently_established": false,
+      "failures": [
+        {
+          "test": "tests/test_employer_preferences_postgres.py::test_actual_migration_0012_round_trip_keeps_old_postings_unknown",
+          "closed_category": "RuntimeError: Refusing to discard populated durable catalogue/search state"
+        },
+        {
+          "test": "tests/test_monetary_release_entrypoint.py::test_legacy_release_still_refuses_the_current_extended_chain",
+          "closed_category": "PreflightDenied: Unsupported module-level migration assignment"
+        }
+      ],
+      "migration_validation": "success",
+      "redis_provisioning": "success",
+      "firestore_provisioning": "success",
+      "redis_cleanup": "success",
+      "firestore_cleanup": "success",
+      "openapi_drift": "skipped"
+    },
+    "frontend": "success",
+    "browser_companion": "success",
+    "cold_browser_journey": "success",
+    "security": "failure_three_retained_historical_false_positives",
+    "production_container_build": "skipped"
+  },
+  "correction_files": [
+    {
+      "path": "backend/tests/test_employer_preferences_postgres.py",
+      "sha256": "c9fec6e5ba7c1cd9b1865f9b7f3ce1a9afdb0c5a86b65d04aba8affb7b763421",
+      "change": "Use a fresh schema at 0012 and reflect historical columns when seeding existing synthetic rows; preserve six original assertions and require the final missing-column error to name preference_metadata."
+    },
+    {
+      "path": "backend/tests/test_monetary_release_entrypoint.py",
+      "sha256": "d9ad9af54001a24bf24e7d46b3b2a692565721e8702e1437993010477758ce69",
+      "change": "Verify historical chain and schema0009 denial on a finite pre-catalogue copy; verify both legacy parser entrypoints refuse the actual extended source."
+    }
+  ],
+  "verification": {
+    "syntax": "pass",
+    "configured_ruff_two_tests": "pass",
+    "independent_semantic_review": "pass",
+    "posting_model_matches_schema0012_columns": 23,
+    "only_missing_posting_column_at0011": "preference_metadata",
+    "isolated_release_controls": {
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "duration_seconds": 1.25,
+      "original_failure_reproduced": true,
+      "relaxed_parser_detected": true,
+      "relaxed_schema0009_guard_detected": true
+    },
+    "actual_postgres_round_trip_locally_executed": false,
+    "corrected_source_full_ci": "pending",
+    "corrected_source_actual_openapi_exporter": "pending"
+  },
+  "scope": {
+    "production_runtime_or_release_guard_changes": false,
+    "production_mutations": false,
+    "protected_body_reads_in_this_correction": false,
+    "local_global_app_or_conftest_imports": false,
+    "real_applications_or_payments": false,
+    "goal_complete": false
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "headSha": "7cc49c2c08a296b33cb30f96e383b959caf214c0",
+  "status": "completed",
+  "conclusion": "success",
+  "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37801625745",
+  "jobs": [
+    {
+      "name": "security-and-container",
+      "conclusion": "success"
+    },
+    {
+      "name": "frontend",
+      "conclusion": "success"
+    },
+    {
+      "name": "backend",
+      "conclusion": "success"
+    },
+    {
+      "name": "browser-companion",
+      "conclusion": "success"
+    }
+  ]
+}

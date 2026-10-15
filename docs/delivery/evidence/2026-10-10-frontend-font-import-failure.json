@@ -1,0 +1,260 @@
+{
+  "status": "EXACT_HEAD_BACKEND_CLEAR_FRONTEND_BUILD_FAILED",
+  "created_at_utc": "2026-10-09T22:03:19.436673+00:00",
+  "sha": "7d07b5575e9a6a1189dc55b71bea648e497d313c",
+  "tree": "35e9f477fd05868c5dbb9f6588ea18dffe79f0a8",
+  "repository": "Harshil4442/ai-resume-copilot",
+  "run_id": 37995768231,
+  "attempt": 1,
+  "run_url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37995768231",
+  "workflow_path": ".github/workflows/ci.yml",
+  "conclusion": "failure",
+  "all_five_actual_checkout_outputs_verified": true,
+  "checkouts": [
+    {
+      "job": "browser-companion",
+      "job_id": 114041322067,
+      "conclusion": "success",
+      "outputs": [
+        {
+          "command_line": 122,
+          "output_line": 123,
+          "sha": "7d07b5575e9a6a1189dc55b71bea648e497d313c"
+        }
+      ]
+    },
+    {
+      "job": "frontend",
+      "job_id": 114041322202,
+      "conclusion": "failure",
+      "outputs": [
+        {
+          "command_line": 122,
+          "output_line": 123,
+          "sha": "7d07b5575e9a6a1189dc55b71bea648e497d313c"
+        }
+      ]
+    },
+    {
+      "job": "cold-browser-journey",
+      "job_id": 114041322214,
+      "conclusion": "success",
+      "outputs": [
+        {
+          "command_line": 210,
+          "output_line": 211,
+          "sha": "7d07b5575e9a6a1189dc55b71bea648e497d313c"
+        }
+      ]
+    },
+    {
+      "job": "security-and-container",
+      "job_id": 114041322248,
+      "conclusion": "success",
+      "outputs": [
+        {
+          "command_line": 142,
+          "output_line": 143,
+          "sha": "7d07b5575e9a6a1189dc55b71bea648e497d313c"
+        }
+      ]
+    },
+    {
+      "job": "backend",
+      "job_id": 114041322324,
+      "conclusion": "success",
+      "outputs": [
+        {
+          "command_line": 209,
+          "output_line": 210,
+          "sha": "7d07b5575e9a6a1189dc55b71bea648e497d313c"
+        }
+      ]
+    }
+  ],
+  "PostgreSQL_initialization": [
+    {
+      "job": "backend",
+      "image": "public.ecr.aws/docker/library/postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24",
+      "native_pull_digest": "sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24",
+      "healthy": true
+    },
+    {
+      "job": "cold-browser-journey",
+      "image": "public.ecr.aws/docker/library/postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24",
+      "native_pull_digest": "sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24",
+      "healthy": true
+    }
+  ],
+  "backend": {
+    "job": "success",
+    "configured_Ruff_checks": "passed",
+    "configured_Mypy_source_files": 124,
+    "compile_backend": "passed",
+    "PostgreSQL_migrations": "upgrade to0013, downgrade to0001, upgrade to0013 passed",
+    "runtime_cache": "native validate/HUP/live mirror and PG identity/running/PID/health continuity passed",
+    "actual_official_ECR_debian_pull_digest": "sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587",
+    "actual_official_ECR_redis_pull_digest": "sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499",
+    "strict_fresh_AMD64_compiler_attestation": {
+      "image_id": "sha256:04205bdbd94bbb1624f6dce2e7c5a81bac16a8f2f6dcce88576a6f4f2d882066",
+      "platform": "linux/amd64",
+      "source_sha256": {
+        "Dockerfile": "fa796f995995c9dad57a078edc913034f37b097c528d2027d447dc9e90720be7",
+        "processor.py": "23bf30c70dbe4ea5778deea8b4101eddb71e427cab5174d2771b9328f7209188",
+        "service.py": "b2fa0b220bf8e78f799d816e55d337237cf90aa75a99963185601b48b90f111a"
+      },
+      "worker_sha256": {
+        "processor.py": "23bf30c70dbe4ea5778deea8b4101eddb71e427cab5174d2771b9328f7209188",
+        "service.py": "b2fa0b220bf8e78f799d816e55d337237cf90aa75a99963185601b48b90f111a"
+      }
+    },
+    "attestation_hardening": "Native exact-head helper verifies imageId/OS/architecture/source labels and worker bytes inside --pull=never --network=none --read-only --cap-drop=ALL --security-opt=no-new-privileges --user=65534:65534 with fixed resource limits; local test attestation, not production isolation proof.",
+    "full_tests_passed": 2529,
+    "warnings": 453,
+    "elapsed_seconds": 480.19,
+    "reported_test_skips": 0,
+    "Redis_Firestore_emulator_cleanup": "passed",
+    "OpenAPI_drift": "passed"
+  },
+  "frontend": {
+    "unit_tests_passed": 240,
+    "unit_files_passed": 22,
+    "build": "failed",
+    "responsive_215_case_step": "not run; skipped due build failure"
+  },
+  "failure": {
+    "job": "frontend",
+    "job_id": 114041322202,
+    "failed_step": "Build frontend",
+    "class": "Turbopack generated Roboto Mono font import mapping failure",
+    "Next_version": "16.4.0",
+    "build_errors": 12,
+    "exit_code": 1,
+    "import_trace": "./app/layout.tsx",
+    "native_error": "Can't resolve '@vercel/turbopack-next/internal/font/google/font'; next/font/google queries have exactly one entry",
+    "evidence": [
+      {
+        "line": 256,
+        "text": "2026-10-09T21:50:52.6939925Z Error: Turbopack build failed with 12 errors:"
+      },
+      {
+        "line": 258,
+        "text": "2026-10-09T21:50:52.6941397Z Error: Module not found: Can't resolve '@vercel/turbopack-next/internal/font/google/font'"
+      },
+      {
+        "line": 267,
+        "text": "2026-10-09T21:50:52.6948761Z next/font/google queries have exactly one entry"
+      },
+      {
+        "line": 274,
+        "text": "2026-10-09T21:50:52.6951990Z - next/font/google queries have exactly one entry"
+      },
+      {
+        "line": 275,
+        "text": "2026-10-09T21:50:52.6952600Z Error while looking up import map: next/font/google queries have exactly one entry"
+      },
+      {
+        "line": 279,
+        "text": "2026-10-09T21:50:52.6954295Z - next/font/google queries have exactly one entry"
+      },
+      {
+        "line": 286,
+        "text": "2026-10-09T21:50:52.6956100Z     ./app/layout.tsx"
+      },
+      {
+        "line": 292,
+        "text": "2026-10-09T21:50:52.6990995Z Error: Module not found: Can't resolve '@vercel/turbopack-next/internal/font/google/font'"
+      },
+      {
+        "line": 301,
+        "text": "2026-10-09T21:50:52.7000891Z next/font/google queries have exactly one entry"
+      },
+      {
+        "line": 308,
+        "text": "2026-10-09T21:50:52.7005503Z - next/font/google queries have exactly one entry"
+      },
+      {
+        "line": 309,
+        "text": "2026-10-09T21:50:52.7006532Z Error while looking up import map: next/font/google queries have exactly one entry"
+      },
+      {
+        "line": 313,
+        "text": "2026-10-09T21:50:52.7009444Z - next/font/google queries have exactly one entry"
+      },
+      {
+        "line": 320,
+        "text": "2026-10-09T21:50:52.7011413Z     ./app/layout.tsx"
+      },
+      {
+        "line": 326,
+        "text": "2026-10-09T21:50:52.7013419Z Error: Module not found: Can't resolve '@vercel/turbopack-next/internal/font/google/font'"
+      },
+      {
+        "line": 335,
+        "text": "2026-10-09T21:50:52.7023911Z next/font/google queries have exactly one entry"
+      }
+    ],
+    "proven_network_timeout": false,
+    "responsive_accessibility_step": "not reached/skipped by build failure",
+    "original_log_sha256": "4a9b1ed975075bb81bd75266f9b5d40e6a8ed965fab541efc7d1c4849014de24"
+  },
+  "other_successful_lanes": {
+    "browser-companion": {
+      "tests": 136,
+      "pass": 136,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    "security-and-container": {
+      "full_history_commits_scanned": 195,
+      "leaks_found": 0,
+      "production_container_build": "success"
+    },
+    "cold-browser-journey": {
+      "harness_tests_passed": 14,
+      "native_artifact_id": 11647276489,
+      "native_zip_digest_verified": "sha256:7f97741cb77d0b643044e4804f7ba68d16ba17c189b872ae2f7485091052f8c6",
+      "summary_sha256": "6105970db6b695ee752f0d6ffd51c308e69bec59bf948fc2d730c0f5c87ec9ea",
+      "actual_disposable_FastAPI_Next_Chromium_SQL": true,
+      "production_proof": false,
+      "real_payment": false,
+      "real_employer_contact": false,
+      "model_calls": 0,
+      "analysis_runs": 0,
+      "AI_operation_debits": 0,
+      "analysis_grant": 2,
+      "analysis_balance_after_no_AI_work": 52,
+      "schema": "20261009_0013",
+      "final_status": "manual_handoff",
+      "automatic_application_charge": 0,
+      "employer_submit_receipt": null,
+      "five_widths": [
+        320,
+        390,
+        768,
+        1024,
+        1440
+      ],
+      "Axe_violations": 0,
+      "page_errors": 0,
+      "server_errors": 0,
+      "owned_process_groups_schema_TLS_key_cleanup": "complete; errors empty"
+    }
+  },
+  "skip_distinction": "Full backend2529, frontend unit240, browser136 and cold14 completed without reported skipped test cases. Frontend responsive smoke step was skipped by build failure. This is not a globally zero-skip or five-lane green run.",
+  "security_warning": "Existing audit noncritical warnings retained under its configured critical-severity gate; no vulnerability remediation claimed.",
+  "not_proved": [
+    "Frontend production build and215responsive suite did not pass or execute; no proven network timeout explanation is asserted.",
+    "This run does not satisfy the five-lane release CI gate or prove native Cloud Build/deployment/payment/employer/provider-fence readiness."
+  ],
+  "mutations": "Read-only native GitHub metadata/public source/log/artifact downloads and private evidence only. No rerun, source/shared edit, cloud/build/deployment/model/payment/employer action.",
+  "retention": "All five raw logs plus exact native compiler receipt, native cold ZIP/summary/screenshots and preceding failed run evidence remain preserved0600.",
+  "schema_version": 1,
+  "independent_report_sha256": "b1df64654232388e4995201ab84a2c798f0426a1537c23e06461da7c8d618e21",
+  "original_artifact_manifest_sha256": "00773c344fd6cebf0f37003612c51cbc2765a9bf9370afd49d53766df9210632",
+  "actual_checkout_count": 5,
+  "full_five_lane_gate_passed": false,
+  "production_activation": false
+}

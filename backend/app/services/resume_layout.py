@@ -99,8 +99,8 @@ def _format(source_bytes: bytes, source_format: str) -> str:
     if not isinstance(source_bytes, bytes) or not source_bytes or len(source_bytes) > _MAX_BYTES:
         raise ResumeLayoutError("The original resume document is missing or too large.")
     kind = source_format.lower().lstrip(".") if isinstance(source_format, str) else ""
-    if kind not in {"pdf", "docx"}:
-        raise ResumeLayoutError("Layout-preserving tailoring supports PDF and DOCX sources.")
+    if kind not in {"pdf", "docx", "tex", "texzip"}:
+        raise ResumeLayoutError("Layout-preserving tailoring supports PDF, DOCX and supported native TeX projects.")
     return kind
 
 
@@ -178,6 +178,9 @@ def _validated_edits(units: list[dict[str, Any]], edits: list[dict]) -> dict[str
 def extract_source_units(source_bytes: bytes, source_format: str) -> list[dict]:
     """Return eligible source text and stable identities for concise local edits."""
     kind = _format(source_bytes, source_format)
+    if kind in {"tex", "texzip"}:
+        from .native_tex import source_units
+        return source_units(source_bytes, kind, _candidate)
     if kind == "pdf":
         with _PDF_LOCK:
             try:
@@ -209,6 +212,10 @@ def apply_source_edits(source_bytes: bytes, source_format: str, edits: list[dict
         raise ResumeLayoutError("The source edit list is invalid.")
     if not edits:
         return source_bytes
+    if kind in {"tex", "texzip"}:
+        from .native_tex import prepare_artifact, sealed_bytes
+        seal = prepare_artifact(source_bytes, kind, edits)
+        return sealed_bytes(seal, source_bytes, kind, edits, kind)
     if kind == "pdf":
         with _PDF_LOCK:
             try:
@@ -220,7 +227,9 @@ def apply_source_edits(source_bytes: bytes, source_format: str, edits: list[dict
                     "The PDF edit could not preserve the original layout."
                 ) from exc
     try:
-        return _apply_docx(source_bytes, edits)
+        from .docx_artifact import prepare_artifact, sealed_bytes
+        seal = prepare_artifact(source_bytes, edits)
+        return sealed_bytes(seal, source_bytes, edits)
     except ResumeLayoutError:
         raise
     except (BadZipFile, KeyError, etree.XMLSyntaxError, OSError) as exc:
@@ -863,6 +872,7 @@ def _verify_pdf(
                 closing(original[page_index]) as source_page,
                 closing(document[page_index]) as saved_page,
             ):
+                _verify_pdf_link_text(source_page, saved_page, snapshots.get(page_index))
                 if _page_structure(source_page, original) != _page_structure(saved_page, document):
                     raise ResumeLayoutError(
                         "The PDF page geometry or link targets changed during editing."
@@ -881,6 +891,50 @@ def _verify_pdf(
                     raise ResumeLayoutError(
                         "An untouched PDF page changed visually during editing."
                     )
+
+
+def _pdf_link_text(page: Any) -> tuple[tuple[int, tuple[float, ...], str], ...]:
+    """Bind the visible text within each original clickable rectangle."""
+    links = []
+    with closing(page.get_textpage()) as textpage:
+        for index in range(raw.FPDFPage_GetAnnotCount(page)):
+            annotation = raw.FPDFPage_GetAnnot(page, index)
+            if not annotation:
+                raise ResumeLayoutError("The original PDF annotations cannot be verified.")
+            try:
+                if raw.FPDFAnnot_GetSubtype(annotation) != raw.FPDF_ANNOT_LINK:
+                    continue
+                rect = raw.FS_RECTF()
+                if not raw.FPDFAnnot_GetRect(annotation, ctypes.byref(rect)):
+                    raise ResumeLayoutError("The PDF annotation bounds cannot be verified.")
+                bounds = (rect.left, rect.bottom, rect.right, rect.top)
+                if not all(math.isfinite(value) for value in bounds):
+                    raise ResumeLayoutError("The PDF annotation bounds cannot be verified.")
+                links.append((index, bounds, textpage.get_text_bounded(*bounds)))
+            finally:
+                raw.FPDFPage_CloseAnnot(annotation)
+    return tuple(links)
+
+
+def _verify_pdf_link_text(source_page: Any, saved_page: Any, snapshot: dict | None) -> None:
+    original = _pdf_link_text(source_page)
+    saved = _pdf_link_text(saved_page)
+    if original == saved:
+        return
+    current = {index: (bounds, text) for index, bounds, text in saved}
+    affected = set()
+    if snapshot is not None:
+        for index, bounds, text in original:
+            if current.get(index) == (bounds, text):
+                continue
+            for object_index, unit_id in snapshot["unit_ids"].items():
+                if _intersection(snapshot["texts"][object_index][1], bounds) is not None:
+                    affected.add(unit_id)
+    raise ResumeLayoutError(
+        "The replacement changes text covered by an original PDF link.",
+        unit_id=next(iter(affected)) if len(affected) == 1 else None,
+        repair_hint="Keep existing linked text inside its original clickable rectangle. Edit another passage or use the original/custom resume.",
+    )
 
 
 def _page_structure(page: Any, document: Any) -> tuple[Any, ...]:
@@ -1053,19 +1107,12 @@ def _distribute_text(nodes: list[Any], original: str, replacement: str) -> list[
     return output
 
 
-def _docx_fit(original: str, replacement: str) -> bool:
-    # DOCX is a flowing format, not a fixed PDF slot. Restrict new glyph advance
-    # conservatively and never add lines/tabs or grow a paragraph. Native Word
-    # fonts resolve new letters; PDF subset encoding constraints do not apply.
-    def advance(text: str) -> float:
-        return sum(
-            0.3 if char in " ilI.,'`:;!|" else 1.1 if char in "MW@%" else 0.65 for char in text
-        )
-
-    return len(replacement) <= len(original) and advance(replacement) <= advance(original)
-
-
 def _apply_docx(source_bytes: bytes, edits: list[dict]) -> bytes:
+    """Deterministic native patch only, never rendered-fit certification.
+
+    The public edit path requires the private actual-render receipt and seal.
+    The same patch runs inside that worker to verify exact candidate bytes.
+    """
     with ZipFile(BytesIO(source_bytes)) as archive:
         tree = _docx_tree(archive)
         units = _docx_units(tree, source_bytes)
@@ -1078,14 +1125,19 @@ def _apply_docx(source_bytes: bytes, edits: list[dict]) -> bytes:
             replacement = replacements.get(unit["unit_id"])
             if replacement is None:
                 continue
-            if not _docx_fit(unit["text"], replacement):
-                raise ResumeLayoutError(
-                    "The replacement is too long for its original DOCX paragraph.",
-                    unit_id=unit["unit_id"],
-                )
             paragraph = paragraphs[unit["paragraph_index"]]
             nodes = _paragraph_nodes(paragraph)
             values = _distribute_text(nodes, unit["text"], replacement)
+            if any(
+                value != (node.text or "")
+                and any(parent.tag == f"{_W}hyperlink" for parent in node.iterancestors())
+                for node, value in zip(nodes, values, strict=True)
+            ):
+                raise ResumeLayoutError(
+                    "The replacement changes an original DOCX hyperlink label.",
+                    unit_id=unit["unit_id"],
+                    repair_hint="Keep existing hyperlink labels exactly. Edit only surrounding unlinked wording, choose another passage or use the original/custom resume.",
+                )
             for node, value in zip(nodes, values, strict=True):
                 if value != (node.text or ""):
                     node.text = value

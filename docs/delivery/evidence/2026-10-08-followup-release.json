@@ -1,0 +1,91 @@
+{
+  "application_commit": "3565655712c2ceee431bee8306678a020b2f462d",
+  "status": "promoted_followup",
+  "evidence_recorded_utc": "2026-10-08T14:53:48.900675+00:00",
+  "evidence_source": "Release-operator rollout observations and existing local sanitized verification artifacts; no new network checks performed while compiling this record.",
+  "github_ci": {
+    "run_id": "37789610598",
+    "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37789610598",
+    "jobs_passed": 3,
+    "backend_tests_passed": 455,
+    "frontend_unit_tests_passed": 45,
+    "browser_cases_passed": 155
+  },
+  "gcp": {
+    "project": "ai-resume-parser-482412",
+    "region": "us-central1",
+    "cloud_build_id": "664bcd48-d110-40bb-b2f9-1583bad245c9",
+    "cloud_build_status": "SUCCESS",
+    "cloud_build_completed_utc": "2026-10-08T14:26:16.401Z",
+    "image_digest": "sha256:7cbb1bd8c78ffc0266e8b6796397102ec3877c7673624dd53677d4083694b924",
+    "migration_execution": "hirewiz-schema-migration-tsf5n",
+    "migration_status": "SUCCEEDED",
+    "migration_completed_utc": "2026-10-08T14:24:31.190Z",
+    "migration_head": "20261008_0008",
+    "api_revision": "ai-resume-parser-00247-val",
+    "api_traffic_percent": 100,
+    "analysis_worker_revision": "hirewiz-analysis-worker-00017-tk5",
+    "employer_worker_revision": "hirewiz-employer-worker-00004-bbc",
+    "serving_image_preparation": {
+      "direct_asgi_command": true,
+      "observed_healthy": true,
+      "startup_migration_performed": false
+    },
+    "automatic_submission_enabled": false
+  },
+  "vercel": {
+    "deployment_id": "dpl_HAp5ndXqK92w6rAURv57qF128yoF",
+    "status": "Ready",
+    "custom_domain_promoted": true,
+    "origin": "https://www.hirewizhq.com",
+    "next_version": "16.4.0"
+  },
+  "protected_pre_migration_backup": {
+    "generation": "1791467340797255",
+    "bytes": 843805,
+    "sha256": "0645174330c7e84911df46dcb42992539ac32334ec6f12006f38d5aef8238168",
+    "schema": "20261008_0008",
+    "created": "2026-10-08T13:49:00+0000",
+    "format_checked": true,
+    "catalogue_checked": true,
+    "restore_verified": false,
+    "object_reference": "Protected pre-follow-up PostgreSQL backup; storage object URL intentionally omitted from this public delivery record."
+  },
+  "error_log_observation": {
+    "start_utc": "2026-10-08T14:26:17Z",
+    "checked_at_approximately_utc": "2026-10-08T14:37:00Z",
+    "cloud_run_services": [
+      "ai-resume-parser",
+      "hirewiz-analysis-worker",
+      "hirewiz-employer-worker"
+    ],
+    "filter": "severity >= ERROR OR HTTP status >= 500",
+    "matching_entries": 0,
+    "expected_anonymous_worker_403_warnings_excluded": true,
+    "limitation": "A bounded post-rollout log observation, not proof of sustained error-free operation or a load/recovery drill."
+  },
+  "authenticated_owner_catalog_get_observations": [
+    {
+      "elapsed_ms": 4902,
+      "server_elapsed_ms": 4527.8
+    },
+    {
+      "elapsed_ms": 1427,
+      "server_elapsed_ms": 1065.4
+    }
+  ],
+  "authenticated_owner_catalog_observation_limit": "Two read-only observations. No causal, cold-start or percentile conclusion is established.",
+  "public_catalog_get_evidence": "2026-10-08-followup-hosted-responsive.json",
+  "dispatch_postgres_evidence": "2026-10-08-followup-dispatch-postgres.json",
+  "actual_public_refresh_evidence": "2026-10-08-followup-production-refresh.json",
+  "material_limits": [
+    "Four reviewed employers remain the live discovery catalog; the last full recorded source snapshot held 356 open jobs at 2026-10-08T13:45Z. Counts can change.",
+    "Sixteen additional source proposals with 969 observed openings remain proposed_not_enrolled and are not a live catalog claim.",
+    "Subsequent admissions/batch and disabled companion foundation candidate is under development and has not been deployed. Production migration head remains 0008.",
+    "No live employer application, test payment or artificial receipt was used. Automatic submission remains disabled.",
+    "Protected backup creation, archive-format and catalogue checks do not establish a verified restore.",
+    "Browser performance measurements are unthrottled hosted lab observations, not field p75/p95, INP or load verification.",
+    "Worldwide recall greater than 95 percent, tenant submission grants, independent recovery authority, device endpoints and wider security/recovery drills remain unproved."
+  ],
+  "extended_error_log_observation": "2026-10-08-followup-extended-errors.json"
+}
