@@ -28,6 +28,25 @@ afterEach(() => {
 });
 
 describe("public billing catalog request deadline", () => {
+  it("keeps only finite offers with consistent server-owned allowances", async () => {
+    const product = {
+      sku: "starter_bundle", name: "Starter", description: "Finite credits",
+      amount_minor: 64900, amount_display: "₹649", currency: "INR", billing_type: "one_time",
+      duration_days: 0, entitlement_kind: "credit_bundle", entitlement_quantity: 100,
+      analysis_units: 2, job_service_credits: 100, auto_renews: false,
+      catalog_visible: true, enabled_for_purchase: true,
+    };
+    fetchCatalog.mockResolvedValueOnce(Response.json({ ...catalog, products: [
+      { ...product, sku: "premium_30d", entitlement_kind: "premium_access" },
+      { ...product, sku: "growth_bundle", job_service_credits: 99 },
+      product,
+    ] }));
+
+    expect(await getPublicBillingCatalog()).toEqual({ ...catalog, products: [product] });
+    expect(fetchCatalog).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("keeps each successful price/checkout read fresh and clears the deadline", async () => {
     fetchCatalog.mockResolvedValueOnce(Response.json(catalog));
     fetchCatalog.mockResolvedValueOnce(Response.json({ ...catalog, catalog_version: "fixture-newer", checkout_enabled: true }));

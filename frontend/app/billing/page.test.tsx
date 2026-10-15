@@ -37,7 +37,7 @@ function catalog(quote = originalQuote) {
       sku: "starter_bundle", name: "Starter", description: "Finite prepaid test pack",
       amount_minor: quote.amount_minor, amount_display: "₹649", currency: quote.currency,
       billing_type: "one_time", duration_days: 0, entitlement_kind: "credit_bundle",
-      entitlement_quantity: quote.job_service_credits, analysis_units: quote.analysis_units,
+      entitlement_quantity: quote.job_service_credits, job_service_credits: quote.job_service_credits, analysis_units: quote.analysis_units,
       auto_renews: false, catalog_visible: true, enabled_for_purchase: true,
     }],
   };
@@ -101,6 +101,32 @@ beforeEach(() => {
 afterEach(() => { cleanup(); delete window.Razorpay; });
 
 describe("billing checkout quote acceptance", () => {
+  it.each(["legacy", "missing allowance", "inconsistent allowance", "duplicate SKU"])("never starts checkout for a catalog containing only %s offers", async (failure) => {
+    const response = catalog();
+    const product = response.products[0];
+    const products = failure === "legacy" ? [{ ...product, entitlement_kind: "premium_access" }]
+      : failure === "missing allowance" ? [{ ...product, job_service_credits: undefined }]
+        : failure === "inconsistent allowance" ? [{ ...product, job_service_credits: 99 }]
+          : [product, { ...product, amount_minor: 69900 }];
+    state.get.mockImplementation((url: string) => url === "/public/billing/catalog"
+      ? Promise.resolve({ ...response, products }) : read(url));
+
+    render(<BillingPage />);
+    await screen.findByText("No paid product is currently available.");
+    expect(screen.queryByRole("button", { name: /Pay with Razorpay/ })).not.toBeInTheDocument();
+    expect(state.post).not.toHaveBeenCalled();
+    expectNoHostedCheckout();
+  });
+
+  it("requires a boolean checkout decision rather than a truthy string", async () => {
+    state.get.mockImplementation((url: string) => url === "/public/billing/catalog"
+      ? Promise.resolve({ ...catalog(), checkout_enabled: "true" }) : read(url));
+    render(<BillingPage />);
+    expect(await screen.findByRole("button", { name: "Checkout unavailable" })).toBeDisabled();
+    expect(state.post).not.toHaveBeenCalled();
+    expectNoHostedCheckout();
+  });
+
   it.each([
     { label: "service credits", job_service_credits: 90, analysis_units: 2 },
     { label: "analysis units", job_service_credits: 100, analysis_units: 1 },

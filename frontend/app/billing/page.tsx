@@ -23,32 +23,17 @@ import { Button } from "../../components/ui/Button";
 import { LoadingBlock } from "../../components/ui/LoadingBlock";
 import { ServiceCreditHistory } from "../../components/billing/ServiceCreditHistory";
 import { trackEvent } from "../../lib/analytics";
+import { finiteCreditBundles, isFiniteBundleSku as isSupportedSku, type CreditBundleProduct, type FiniteBundleSku } from "../../lib/billingProducts";
 
 const RAZORPAY_CHECKOUT_SRC = "https://checkout.razorpay.com/v1/checkout.js";
-const SUPPORTED_SKUS = ["starter_bundle", "growth_bundle", "scale_bundle"] as const;
 const CONFIRMATION_ATTEMPTS = 24;
 const CONFIRMATION_INTERVAL_MS = 2500;
 
-type SupportedSku = (typeof SUPPORTED_SKUS)[number];
+type SupportedSku = FiniteBundleSku;
 type CheckoutPhase = "idle" | "opening" | "confirming" | "pending" | "confirmed";
 type PurchaseQuoteAcceptance = components["schemas"]["PurchaseQuoteAcceptance"];
 
-interface BillingProduct {
-  sku: SupportedSku;
-  name: string;
-  description: string;
-  amount_minor: number;
-  amount_display: string;
-  currency: "INR";
-  billing_type: "one_time";
-  duration_days: number;
-  entitlement_kind: "credit_bundle" | "premium_access" | "job_service_credits";
-  analysis_units: number;
-  entitlement_quantity: number;
-  auto_renews: false;
-  catalog_visible: boolean;
-  enabled_for_purchase: boolean;
-}
+type BillingProduct = CreditBundleProduct;
 
 interface BillingCatalog {
   catalog_version: string;
@@ -63,7 +48,7 @@ type CreateOrderResponse = components["schemas"]["CheckoutOrderResponse"];
 
 function acceptedPurchaseQuote(catalog: BillingCatalog, product: BillingProduct): PurchaseQuoteAcceptance {
   return { catalog_version: catalog.catalog_version, amount_minor: product.amount_minor,
-    currency: product.currency, job_service_credits: product.entitlement_quantity, analysis_units: product.analysis_units };
+    currency: product.currency, job_service_credits: product.job_service_credits, analysis_units: product.analysis_units };
 }
 
 function samePurchaseQuote(actual: PurchaseQuoteAcceptance | undefined, accepted: PurchaseQuoteAcceptance): boolean {
@@ -157,10 +142,6 @@ declare global {
 }
 
 let checkoutScriptPromise: Promise<void> | null = null;
-
-function isSupportedSku(value: unknown): value is SupportedSku {
-  return typeof value === "string" && SUPPORTED_SKUS.includes(value as SupportedSku);
-}
 
 function loadHostedCheckout(): Promise<void> {
   if (typeof window === "undefined") {
@@ -277,18 +258,7 @@ function BillingContent({ requestedSku }: { requestedSku: string | null }) {
     if (response.market !== "IN" || typeof response.catalog_version !== "string") {
       throw new Error("The India billing catalog is temporarily unavailable.");
     }
-    const products = Array.isArray(response.products)
-      ? response.products.filter(
-          (product): product is BillingProduct =>
-            Boolean(product) &&
-            isSupportedSku(product.sku) &&
-            product.currency === "INR" &&
-            product.billing_type === "one_time" &&
-            product.auto_renews === false &&
-            Number.isInteger(product.amount_minor) &&
-            product.amount_minor > 0,
-        )
-      : [];
+    const products = finiteCreditBundles(response.products);
     setCatalog({ ...response, products });
     setPriceRefreshRequired(false);
   }, []);
@@ -343,11 +313,11 @@ function BillingContent({ requestedSku }: { requestedSku: string | null }) {
   );
   const retainedQuote = recoverablePurchase?.sku === catalogProduct?.sku ? recoverablePurchase?.acceptedQuote : null;
   const selectedProduct = useMemo(() => catalogProduct && retainedQuote ? { ...catalogProduct, amount_minor: retainedQuote.amount_minor,
-    entitlement_quantity: retainedQuote.job_service_credits, analysis_units: retainedQuote.analysis_units } : catalogProduct,
+    entitlement_quantity: retainedQuote.job_service_credits, job_service_credits: retainedQuote.job_service_credits, analysis_units: retainedQuote.analysis_units } : catalogProduct,
   [catalogProduct, retainedQuote]);
 
   const checkoutEnabled = Boolean(
-    catalog?.checkout_enabled && catalog.provider === "razorpay",
+    catalog?.checkout_enabled === true && catalog.provider === "razorpay",
   );
   const purchaseAllowed = Boolean(
     checkoutEnabled &&

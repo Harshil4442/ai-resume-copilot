@@ -21,6 +21,7 @@ import { LoadingBlock } from "../../components/ui/LoadingBlock";
 import { StatusBadge } from "../../components/ui/StatusBadge";
 import { apiGet } from "../../lib/api";
 import { trackEvent } from "../../lib/analytics";
+import { finiteCreditBundles } from "../../lib/billingProducts";
 import type { OpportunityList, Reminder } from "../../lib/career";
 import { stageLabels, stageTone } from "../../lib/career";
 import type { AnalyticsSummary, UserProfile } from "../../lib/types";
@@ -28,7 +29,8 @@ import type { AnalyticsSummary, UserProfile } from "../../lib/types";
 type FeatureResponse = { features: Record<string, { enabled: boolean }> };
 type BillingCatalog = {
   checkout_enabled: boolean;
-  products: { sku: string; name: string; amount_minor: number; currency: string; entitlement_quantity: number; analysis_units: number }[];
+  provider: "razorpay" | null;
+  products: unknown;
 };
 
 function firstName(profile: UserProfile | undefined) {
@@ -63,7 +65,9 @@ export default function DashboardPage() {
   ];
   const activated = activation.filter((item) => item.complete).length;
   const nextActivation = activation.find((item) => !item.complete);
-  const upgradeProduct = billingCatalog.data?.checkout_enabled ? billingCatalog.data.products[0] : undefined;
+  const upgradeProduct = billingCatalog.data?.checkout_enabled === true && billingCatalog.data.provider === "razorpay"
+    ? finiteCreditBundles(billingCatalog.data.products).find((product) => product.catalog_visible && product.enabled_for_purchase)
+    : undefined;
 
   useEffect(() => {
     if (!upgradeProduct || upgradeTracked.current) return;

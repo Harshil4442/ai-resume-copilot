@@ -1,22 +1,8 @@
 import "server-only";
 
-export type PublicCatalogProduct = {
-  sku: "starter_bundle" | "growth_bundle" | "scale_bundle";
-  name: string;
-  description: string;
-  amount_minor: number;
-  amount_display: string;
-  currency: "INR";
-  billing_type: "one_time";
-  duration_days: number;
-  entitlement_kind: "credit_bundle";
-  analysis_units: number;
-  job_service_credits: number;
-  entitlement_quantity: number;
-  auto_renews: false;
-  catalog_visible: boolean;
-  enabled_for_purchase: boolean;
-};
+import { finiteCreditBundles, type CreditBundleProduct } from "./billingProducts";
+
+export type PublicCatalogProduct = CreditBundleProduct;
 
 export type PublicBillingCatalog = {
   catalog_version: string;
@@ -71,7 +57,7 @@ export async function getPublicBillingCatalog(): Promise<PublicBillingCatalog | 
         if (!response.ok) return null;
 
         const data: unknown = await response.json();
-        return isCatalog(data) ? data : null;
+        return isCatalog(data) ? { ...data, products: finiteCreditBundles(data.products) } : null;
       })(),
       deadline,
     ]);
