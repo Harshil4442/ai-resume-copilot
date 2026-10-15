@@ -149,7 +149,7 @@ def _read_deadline(deadline: float | None, seconds: float) -> float:
     valid = deadline is None
     if type(deadline) in (int, float):
         try:
-            valid = math.isfinite(deadline)
+            valid = math.isfinite(cast(float, deadline))
         except OverflowError:
             valid = False
     need(valid, "fence_native_deadline_invalid")
@@ -384,7 +384,7 @@ class NativeFreshFenceBoundary(fresh.FreshNativeBoundary):
         observed = self._get("keys", cast(str, name) + "/keyString")
         native_value = observed.get("keyString")
         need(key_string_envelope(native_value)
-             and hmac.compare_digest(value.encode(), native_value.encode()),
+             and hmac.compare_digest(value.encode(), cast(str, native_value).encode()),
              "fence_model_credential_native_value_mismatch")
         return key
 
@@ -489,7 +489,7 @@ class NativeFreshFenceBoundary(fresh.FreshNativeBoundary):
                      and ("run", path) in captured,
                      "fence_routed_revision_snapshot_unmapped")
                 reachable_resources.add(path)
-        for kind, name, uid in retained.resources:
+        for kind, name, _uid in retained.resources:
             raw = captured[("run", name)]
             config = inventory_module._config(raw, kind)
             # Main templates and routed revisions remain cloud authority even

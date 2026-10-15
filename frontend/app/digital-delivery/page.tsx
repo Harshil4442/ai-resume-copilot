@@ -45,7 +45,7 @@ export default function DigitalDeliveryPage() {
           <div>
             <h3 className="text-lg font-bold text-foreground mb-3">1. What you receive</h3>
             <ul className="list-disc pl-6 space-y-2 text-muted-foreground">
-              <li><strong>Finite prepaid packs:</strong> the displayed job service credits and separate AI analysis units are added together after verified captured payment. Employer search and optional AI have separately displayed costs. The current application pilot provides reviewed preparation and supported text assistance, with manual attachment and final submission. Automatic submission is unavailable in this pilot; filling and manual handoff have no automatic-application fee.</li>
+              <li><strong>Finite prepaid packs:</strong> the displayed job service credits and separate AI analysis units are added together after verified captured payment. Employer search and optional AI have separately displayed costs. Filling supported answers, resume upload and manual handoff do not charge application credits. Where final submission assistance is offered, a separate review shows the exact employer destination, file, answers and fee before approval. The fee is reserved before the approved action and charged only after verified complete employer acceptance. Unknown outcomes remain reserved until reconciled.</li>
               <li><strong>Accepted older orders:</strong> existing paid entitlements retain their purchased terms. No new unlimited-access product is offered.</li>
               <li><strong>Free accounts:</strong> 50 finite complimentary analysis units are provided at account creation. Optional AI depends on the available promotional funding pool.</li>
             </ul>

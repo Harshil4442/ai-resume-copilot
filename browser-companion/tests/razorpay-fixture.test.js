@@ -47,17 +47,25 @@ test("loopback recorder distinguishes email, manual file and manual submit witho
 test("shipping package requests only optional reviewed origins; legacy factories and scaffold authority remain disabled", async () => {
   const manifest = JSON.parse(await readFile(new URL("../extension/manifest.json", import.meta.url)));
   assert.deepEqual(manifest.host_permissions, []);
-  assert.deepEqual(manifest.optional_host_permissions, ["https://www.hirewizhq.com/*", "https://job-boards.greenhouse.io/*"]);
+  // 0.8.0 declares the reviewed native-network/upload envelope as optional.
+  // Runtime permission requests still bind storage to the exact reviewed origin;
+  // declaring this envelope never pre-grants any employer or storage access.
+  assert.deepEqual(manifest.optional_host_permissions, ["https://www.hirewizhq.com/*", "https://job-boards.greenhouse.io/*",
+    "https://boards.greenhouse.io/*", "https://*.amazonaws.com/*"]);
+  assert.deepEqual(manifest.permissions, ["scripting", "storage"]);
+  assert.deepEqual(manifest.optional_permissions, ["webRequest"]);
   assert.equal(manifest.content_scripts, undefined);
   assert.deepEqual(CONFIG, { mode: "reviewed_assistance", websiteOrigin: "https://www.hirewizhq.com",
     portalOrigin: "https://job-boards.greenhouse.io", extensionId: "pnjmegppacleipajnifjmbcopjjffklb" });
   assert.equal(Object.isFrozen(CONFIG), true);
   const background = await readFile(new URL("../extension/background.js", import.meta.url), "utf8");
-  const legacy = background.match(/const nativeMode = \(\) => (\[[^;\n]+\])\.includes\(CONFIG\.mode\);/);
+  const legacy = background.match(/const nativeMode = \(\) => (\[[^;\n]+\])\.includes\(CONFIG\.mode\) \|\| nativeAssistance\(\);/);
   assert.ok(legacy, "Legacy factory admission must remain explicit");
   const legacyModes = JSON.parse(legacy[1]);
   assert.deepEqual(legacyModes, ["pairing_only", "local_native_fixture"]);
   assert.equal(legacyModes.includes(CONFIG.mode), false);
+  assert.match(background, /const nativeAssistance = \(\) => CONFIG\.mode === "reviewed_assistance" && CONFIG\.nativePairing != null;/);
+  assert.equal(CONFIG.nativePairing, undefined, "The shipping default must not adopt native pairing authority");
   const server = await readFile(new URL("../fixtures/razorpay/server.js", import.meta.url), "utf8");
   assert.doesNotMatch(server, /fixtureAuthority|fetch\(|device-action|recover|enroll/);
 });
