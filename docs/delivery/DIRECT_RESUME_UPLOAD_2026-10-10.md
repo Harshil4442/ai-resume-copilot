@@ -36,6 +36,43 @@ V1 author tests:63 new controls, zero skips,34.54s, actual uniquely named dispos
 
 Retained zero-byte closure markers and associated cleanup metadata currently have no finite disposal policy. Removing them requires verified retirement of all upload grants and in-flight generation0 writes; deleting them immediately would permit payload resurrection. This is a deliberate safety/retention trade-off, not a claim of complete retention closure. Physical erasure also depends on actual bucket versioning/soft-delete settings. Cleanup removes the new GCS payloads; existing inline Resume deletion remains owned by the existing account/resume lifecycle.
 
+### Account-erasure metadata minimization follow-up
+
+After account deletion unlinks an upload owner, cleanup now removes the orphaned
+`resume_uploads` and `resume_upload_cleanups` SQL rows only after fresh reads of
+**both** original object names confirm the exact returned generations, zero bytes,
+closure metadata bound to that upload, octet-stream type and no content encoding.
+The custom metadata key set must be exactly the two closure fields; a retained
+filename content-disposition or extra custom metadata also withholds purge.
+This removes the retained document SHA-256, request/idempotency fingerprints,
+format/size, timestamps and object linkage instead of fabricating replacement
+hashes. Unknown or partial retirement retains the durable rows and retries;
+SQL commit uncertainty cannot remove the live object barriers. Account deletion
+during cleanup rearms a later tick for fresh orphan proof.
+
+Both zero-byte objects remain at their original opaque upload names. Their
+`resume-retired=1` and redundant opaque `resume-upload-id` metadata contain no
+document bytes, filename or content hash, but external logs/backups may still
+correlate their identifiers; this is not an anonymity or finite-retention claim.
+Deleting a marker could reopen an older generation-match-zero upload or delayed
+clean write. URL expiry, application lease expiry and client timeout are not proof
+that a provider has completed every already accepted write.
+
+This is deliberately limited to account-erased uploads (`user_id IS NULL`).
+Resume-only deletion and still-linked cancelled uploads retain the existing
+records, including fingerprints, because those rows also enforce the rolling
+twenty-admissions-per-user limit. Scrubbing them while preserving that quota, or
+scrubbing orphan fingerprints before provider cleanup succeeds, requires a
+separate schema/retention change. Finite marker disposal and backup/restore
+retention remain open requirements; this follow-up does not close full retention
+acceptance or authorize production activation.
+
+The cleanup coordinator additionally needs `DELETE` on exactly `resume_uploads`
+and `resume_upload_cleanups`, alongside its existing read/update permissions.
+No account, resume, payment or financial-table delete privilege is required.
+Those grants belong to the future reviewed coordinator provisioning contract;
+this source follow-up does not silently change a held F5 deployment plan.
+
 Optional skill enrichment is unavailable on this coordinator path and is reported explicitly, with zero units charged; it is not silently run. The preserved original PDF/DOCX format is the exact uploaded byte sequence. This slice does not implement or close legacy TeX/ZIP projects, old unscanned stored-source admission, tailoring/export rendering, browser auto-apply, global job coverage, or monetary cutover.
 
 Requests use fixed GCS/IAM endpoints, explicit trusted CA/TLS context, no environment proxy, bounded per-operation/auth timeouts and bounded IAM response output. Native performance, cost and platform deadline acceptance have not been measured here. The document client independently supplies its absolute75s network deadline; this packet does not invent native scanner or sandbox evidence.

@@ -32,6 +32,8 @@ class ObjectInfo:
     media_type: str
     encoding: str | None = None
     retired: bool = False
+    retired_upload_id: str | None = None
+    retired_metadata_only: bool = False
 
 
 @dataclass(frozen=True)
@@ -182,8 +184,11 @@ class GCSObjectStore:
             generation = str(blob.generation)
             if not valid_generation(generation) or type(blob.size) is not int or blob.size < 0:
                 raise StorageMismatch("storage_metadata_mismatch")
+            metadata = blob.metadata or {}
             return ObjectInfo(generation, blob.size, blob.content_type or "", blob.content_encoding,
-                              (blob.metadata or {}).get("resume-retired") == "1")
+                              metadata.get("resume-retired") == "1", metadata.get("resume-upload-id"),
+                              set(metadata) == {"resume-retired", "resume-upload-id"}
+                              and blob.content_disposition is None)
 
     def read(self, bucket, name, generation, size):
         self._target(bucket, name)

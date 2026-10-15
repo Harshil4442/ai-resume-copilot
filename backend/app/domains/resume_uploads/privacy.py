@@ -10,7 +10,18 @@ from sqlalchemy.orm import Session
 
 from ..common import utcnow
 from .models import ResumeUpload, ResumeUploadCleanup
-from .storage import ObjectStore, StorageMismatch, StorageUnavailable
+from .storage import ObjectStore, StorageMismatch, StorageUnavailable, valid_generation
+
+
+def _closed_marker(store: ObjectStore, bucket: str, name: str, generation: str, upload_id: str) -> None:
+    """Fresh native facts, never a saved cleanup flag or an upload ACK alone."""
+    info = store.inspect_object(bucket, name)
+    if (not valid_generation(generation) or info is None or info.generation != generation
+            or type(info.size_bytes) is not int or info.size_bytes != 0
+            or info.retired is not True or info.retired_upload_id != upload_id
+            or info.retired_metadata_only is not True
+            or info.media_type != "application/octet-stream" or info.encoding is not None):
+        raise StorageMismatch("cleanup_closure_unverified")
 
 
 def ensure_cleanup(db: Session, row: ResumeUpload) -> ResumeUploadCleanup:
@@ -58,6 +69,7 @@ def run_cleanup(factory, upload_id: str, store: ObjectStore) -> bool:
         if row is None or work is None or work.next_attempt_at > now or (work.lease_until and work.lease_until > now):
             return False
         live = row.state == "released" and row.user_id is not None and row.result_resume_id is not None
+        orphaned = row.user_id is None
         if row.state in ("awaiting_upload", "queued", "inspecting") and row.user_id is not None and row.expires_at > now:
             return False
         work.lease_token, work.lease_until = token, now + timedelta(seconds=300)
@@ -68,6 +80,11 @@ def run_cleanup(factory, upload_id: str, store: ObjectStore) -> bool:
     try:
         quarantine = store.retire(target.quarantine_bucket, target.quarantine_name, target.id)
         clean = None if live else store.retire(target.clean_bucket, target.clean_name, target.id)
+        if orphaned:
+            if clean is None:
+                raise StorageMismatch("cleanup_closure_unverified")
+            _closed_marker(store, target.quarantine_bucket, target.quarantine_name, quarantine, target.id)
+            _closed_marker(store, target.clean_bucket, target.clean_name, clean, target.id)
     except (StorageUnavailable, StorageMismatch):
         with factory() as db:
             work = db.query(ResumeUploadCleanup).filter_by(upload_id=upload_id, lease_token=token).with_for_update().one_or_none()
@@ -84,12 +101,22 @@ def run_cleanup(factory, upload_id: str, store: ObjectStore) -> bool:
         if row is None or work is None:
             return False
         still_live = row.state == "released" and row.user_id is not None and row.result_resume_id is not None
+        if orphaned and row.user_id is None:
+            # Markers remain live at both original names. The SQL rows are no
+            # longer needed to block old generation0 capabilities, and retaining
+            # their document/request fingerprints serves no account purpose.
+            db.delete(work)
+            db.delete(row)
+            db.commit()
+            return True
         work.quarantine_closed_generation = quarantine
         if clean is not None:
             work.clean_closed_generation, work.payload_retired_at = clean, utcnow()
         work.last_error_code = None
         work.lease_token = work.lease_until = None
-        work.next_attempt_at = utcnow() if clean is None and not still_live else utcnow() + timedelta(hours=24)
+        # Deletion may win during the external calls. A later tick must obtain
+        # fresh proof for the newly orphaned row before purging its fingerprints.
+        work.next_attempt_at = utcnow() if row.user_id is None or (clean is None and not still_live) else utcnow() + timedelta(hours=24)
         db.commit()
     return True
 
