@@ -18,16 +18,21 @@ type Payload = {
     artifact_id?: string; resume_id?: number; resume_version_id?: string | null; resume_choice?: "original" | "tailored" | "custom" };
   context_digest: string; reviewed_answers_sha256: string;
   document_id?: string; frame_id?: number; field_mapping?: Control[];
-  review_protocol_version?: 2 | 3;
+  review_protocol_version?: 2 | 3 | 4;
   reviewed_answers?: Record<string, string>;
   hosted?: Hosted;
   attachment?: { input_id: "resume"; expected_empty: true };
   fields: Field[];
   manual_fields: { id: string; label: string; required: boolean }[];
-  disclosures: string[]; allowed_actions: ["fill"] | ["attach"]; fee_credits: 0;
+  answers?: (Control & { value:string })[]; assisted_values?: Record<string,string>;
+  candidate_id?:number; company?:string; job?:{posting_id:string;external_id:string;title:string;content_sha256:string};
+  upload?:{review_id:string;action_id:string;filename:string;status:"portal_reports_uploaded"};
+  upload_continuity?:{review_id:string;action_id:string;artifact_sha256:string;document_id:string;target_url:string};
+  submit_control?:{form_id:"application-form";type:"submit";label:"Submit application"}; pricing?:Record<string,unknown>; admission?:Record<string,unknown>;
+  disclosures: string[]; allowed_actions: ["fill"] | ["attach"] | ["submit"]; fee_credits: 0 | 20;
 };
 type Review = { id: string; state: string; expires_at_ms: number; payload?: Payload; review_digest: string; filled_count: number;
-  review_protocol_version?: 2 | 3; attachment_status?: "selected_upload_unconfirmed" | "unknown" };
+  review_protocol_version?: 2 | 3 | 4; attachment_status?: "selected_upload_unconfirmed" | "unknown"; submission_status?: "unknown" | "not_launched" | "confirmed" | "verified_not_submitted"; employer_confirmed?:boolean; fee_credits?:20 };
 type Props = { deviceId: string | null; reviewId: string | null; applicationId: string | null };
 type Operation = "device" | "confirm" | "revoke" | "review" | "revise" | "approve" | "cancel";
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
@@ -128,20 +133,53 @@ function isDevice(value: unknown, id: string): value is Device {
   return object(value) && value.id === id && text(value.state) && DEVICE_STATES.has(value.state)
     && text(value.key_sha256) && SHA256.test(value.key_sha256) && text(value.extension_id, 128) && value.extension_id.length > 0 && integer(value.expires_at_ms);
 }
+function isFinalPayload(payload:Record<string,unknown>): boolean {
+  if (payload.review_protocol_version!==4 || payload.fee_credits!==20 || !same(payload.allowed_actions,["submit"])
+    || !integer(payload.candidate_id) || payload.candidate_id<1 || !text(payload.company) || !payload.company
+    || !object(payload.job) || !text(payload.job.posting_id) || !text(payload.job.external_id) || !/^[0-9]+$/.test(payload.job.external_id)
+    || !text(payload.target_url) || payload.target_url.split("/").at(-1)!==payload.job.external_id
+    || !text(payload.job.title) || !payload.job.title || !text(payload.job.content_sha256) || !SHA256.test(payload.job.content_sha256)
+    || !object(payload.artifact) || !text(payload.artifact.artifact_id) || !IDENTIFIER.test(payload.artifact.artifact_id)
+    || !integer(payload.artifact.resume_id) || payload.artifact.resume_id<1 || !["original","custom","tailored"].includes(payload.artifact.resume_choice as string)
+    || (payload.artifact.resume_choice==="tailored" ? !text(payload.artifact.resume_version_id) || !IDENTIFIER.test(payload.artifact.resume_version_id) : payload.artifact.resume_version_id!==null)
+    || !object(payload.upload) || !text(payload.upload.review_id) || !UUID.test(payload.upload.review_id) || !text(payload.upload.action_id) || !UUID.test(payload.upload.action_id)
+    || payload.upload.status!=="portal_reports_uploaded" || payload.upload.filename!==payload.artifact.filename
+    || !same(payload.upload_continuity,{review_id:payload.upload.review_id,action_id:payload.upload.action_id,artifact_sha256:payload.artifact.sha256,document_id:payload.document_id,target_url:payload.target_url})
+    || !same(payload.submit_control,{form_id:"application-form",type:"submit",label:"Submit application"})
+    || !object(payload.pricing) || payload.pricing.unit_price!==20 || !object(payload.admission)
+    || !Array.isArray(payload.fields) || payload.fields.length || !Array.isArray(payload.manual_fields) || payload.manual_fields.length
+    || !Array.isArray(payload.field_mapping) || payload.field_mapping.length<3 || payload.field_mapping.length>64
+    || !Array.isArray(payload.answers) || payload.answers.length<3 || payload.answers.length>64 || !object(payload.reviewed_answers) || !object(payload.assisted_values)) return false;
+  const mapping=payload.field_mapping.filter((field)=>object(field)&&field.type!=="button");
+  if (mapping.length!==payload.answers.length || new Set(mapping.map((field)=>field.id)).size!==mapping.length
+    || payload.answers.some((field,index)=>!object(field) || !same({...field,value:undefined},{...mapping[index],value:undefined}) || !text(field.value)
+      || field.required && !field.value || field.type==="combobox" && (!Array.isArray(field.options) || !field.options.some((option)=>object(option)&&option.value===field.value))
+      || field.type==="checkbox" && !["true","false"].includes(field.value))) return false;
+  return same(payload.reviewed_answers,Object.fromEntries(payload.answers.map((field)=>[field.id,field.value])))
+    && payload.answers.every((field)=>payload.assisted_values && (payload.assisted_values as Record<string,unknown>)[field.id]===field.value)
+    && Array.isArray(payload.disclosures) && payload.disclosures.length>0 && payload.disclosures.length<=32 && payload.disclosures.every((entry)=>text(entry,2048));
+}
 function isReview(value: unknown, id: string): value is Review {
   if (!object(value) || value.id !== id || !text(value.state) || !REVIEW_STATES.has(value.state) || !integer(value.expires_at_ms)
     || !integer(value.filled_count) || value.filled_count > 64 || !text(value.review_digest) || !SHA256.test(value.review_digest)) return false;
-  if (value.review_protocol_version !== undefined && ![2, 3].includes(value.review_protocol_version as number)) return false;
+  if (value.review_protocol_version !== undefined && ![2, 3, 4].includes(value.review_protocol_version as number)) return false;
   if (value.review_protocol_version === 3 && (value.filled_count > 1 || (value.state === "filled" && value.filled_count !== 1)
     || value.attachment_status !== (value.state === "filled" ? "selected_upload_unconfirmed" : "unknown"))) return false;
-  if (["filled", "unknown", "cancelled", "expired"].includes(value.state) && (value.payload == null || (object(value.payload) && !Object.keys(value.payload).length))) return value.filled_count <= (value.review_protocol_version === 2 ? 64 : value.review_protocol_version === 3 ? 1 : 7);
+  if (value.review_protocol_version===4 && (value.fee_credits!==20 || !["unknown","not_launched","confirmed","verified_not_submitted"].includes(value.submission_status as string)
+    || value.employer_confirmed!==(value.submission_status==="confirmed") || value.filled_count!==(value.submission_status==="confirmed"?1:0)
+    || value.submission_status==="confirmed" && value.state!=="filled")) return false;
+  if (["filled", "unknown", "cancelled", "expired"].includes(value.state) && (value.payload == null || (object(value.payload) && !Object.keys(value.payload).length))) return value.filled_count <= (value.review_protocol_version === 2 ? 64 : [3,4].includes(value.review_protocol_version as number) ? 1 : 7);
   if (!object(value.payload)) return false;
   const payload = value.payload;
   if (!text(payload.application_id, 128) || !IDENTIFIER.test(payload.application_id) || !destination(payload.target_url)
     || !text(payload.package_digest) || !SHA256.test(payload.package_digest) || !text(payload.context_digest) || !SHA256.test(payload.context_digest)
-    || !text(payload.reviewed_answers_sha256) || !SHA256.test(payload.reviewed_answers_sha256) || payload.fee_credits !== 0
+    || !text(payload.reviewed_answers_sha256) || !SHA256.test(payload.reviewed_answers_sha256) || payload.fee_credits !== (payload.review_protocol_version===4 ? 20 : 0)
     || !Array.isArray(payload.allowed_actions) || payload.allowed_actions.length !== 1 || !object(payload.artifact)) return false;
   const version = payload.review_protocol_version ?? 1;
+  if (version===4) return value.review_protocol_version===4
+    && text(payload.artifact.filename,512) && Boolean(payload.artifact.filename) && text(payload.artifact.media_type) && fileTypes.has(payload.artifact.media_type)
+    && integer(payload.artifact.size_bytes) && payload.artifact.size_bytes>0 && payload.artifact.size_bytes<=10*1024*1024
+    && text(payload.artifact.sha256) && SHA256.test(payload.artifact.sha256) && isFinalPayload(payload);
   if (![1, 2, 3].includes(version as number) || payload.allowed_actions[0] !== (version === 3 ? "attach" : "fill")) return false;
   if (value.filled_count > (version === 2 ? 64 : version === 3 ? 1 : 7)
     || (payload.hosted !== undefined && (version !== 2 || !isHosted(payload.hosted)))) return false;
@@ -189,7 +227,7 @@ function payloadIdentity(payload: Payload): string {
   return canonical([payload.application_id, payload.target_url, payload.package_digest, payload.artifact.filename,
     payload.artifact.media_type, payload.artifact.size_bytes, payload.artifact.sha256, payload.context_digest, payload.reviewed_answers_sha256,
     payload.document_id, payload.frame_id, payload.field_mapping,
-    payload.review_protocol_version ?? 1, payload.attachment, payload.reviewed_answers, payload.hosted && [payload.hosted.rows,
+    payload.review_protocol_version ?? 1, payload.attachment, payload.reviewed_answers, payload.answers, payload.candidate_id,payload.company,payload.job,payload.upload,payload.upload_continuity,payload.submit_control,payload.pricing,payload.admission, payload.hosted && [payload.hosted.rows,
       payload.hosted.controls.map(controlIdentity), payload.hosted.values, payload.hosted.draft_answers],
     payload.artifact.artifact_id, payload.artifact.resume_id, payload.artifact.resume_version_id, payload.artifact.resume_choice,
     payload.fields.map(({ id, label, type, value, expected_before, options, value_label, expected_before_label }) => [id, label, type, value, expected_before, options, value_label, expected_before_label]),
@@ -209,6 +247,7 @@ function revisedReviewMatches(previous: Review, result: Review, answers: Record<
 function hostedLabel(control: Control): string {
   if (control.id === "country") return "Country (phone country code)";
   if (control.type === "button") return `Add another employment row (${Number(control.id.split("-").at(-1)) + 1} total)`;
+  if (!/^(company-name|title|start-date-month|start-date-year|end-date-month|end-date-year|current-role)-[0-4](?:_1)?$/.test(control.id)) return control.label;
   return `${control.label} · employment ${Number(control.id.split("-").at(-1)!.split("_")[0]) + 1}`;
 }
 
@@ -238,11 +277,12 @@ export default function BrowserAssistanceReview({ deviceId, reviewId, applicatio
   const validReview = Boolean(reviewId && UUID.test(reviewId));
   const validApplication = Boolean(applicationId && IDENTIFIER.test(applicationId));
   const attachmentReview = (review?.review_protocol_version ?? review?.payload?.review_protocol_version) === 3;
-  const fileReviewed = attachmentReview || downloaded;
+  const submitReview = (review?.review_protocol_version ?? review?.payload?.review_protocol_version) === 4;
+  const fileReviewed = attachmentReview || submitReview || downloaded;
   const hosted = review?.payload?.hosted;
   const hostedDirty = Boolean(hosted && answerIdentity(hostedAnswers) !== answerIdentity(hosted.draft_answers ?? {}));
   const hostedValid = Boolean(hosted && validHostedAnswers(hosted, hostedAnswers));
-  const hasActions = attachmentReview || Boolean(review?.payload?.fields.length);
+  const hasActions = attachmentReview || submitReview || Boolean(review?.payload?.fields.length);
   const invalid = Boolean((deviceId && !validDevice) || (reviewId && !validReview) || (applicationId && !validApplication) || (deviceId && reviewId));
   const returnUrl = validDevice ? `/browser-companion?device=${deviceId}` : validReview ? `/browser-companion?review=${reviewId}`
     : validApplication ? `/browser-companion?application=${encodeURIComponent(applicationId!)}` : "/browser-companion";
@@ -290,14 +330,14 @@ export default function BrowserAssistanceReview({ deviceId, reviewId, applicatio
         if (operation === "confirm") setNotice("Device confirmation saved. Return to your companion. You will approve each application separately.");
         if (operation === "revoke") setNotice("Device access revoked. Already disclosed answers cannot be recalled.");
       } else {
-        if (!isReview(result, identity) || (validApplication && result.payload && result.payload.application_id !== applicationId)) throw new Error("The application review response changed. Load the current status; no automatic retry will occur.");
+        if (!isReview(result, identity) || (validApplication && result.payload && Object.keys(result.payload).length && result.payload.application_id !== applicationId)) throw new Error("The application review response changed. Load the current status; no automatic retry will occur.");
         if (operation === "approve" && (!review || result.review_digest !== review.review_digest || !["approved", "running", "filled"].includes(result.state)
           || (result.payload && review.payload && payloadIdentity(result.payload) !== payloadIdentity(review.payload)))) throw new Error("The approved review changed. Load the current status; no automatic retry will occur.");
         if (operation === "revise" && (!review || !revisedReviewMatches(review, result, hostedAnswers))) throw new Error("The saved answer review changed. Load the current status; no automatic retry will occur.");
         setReview({ ...result, payload: object(result.payload) && Object.keys(result.payload).length ? result.payload : undefined }); setAccepted(false);
         setHostedAnswers(result.payload?.hosted?.draft_answers ?? {});
         if (operation === "revise") setNotice("Exact answers saved for this review. Review the updated answers below and approve them separately before your companion fills anything.");
-        if (operation === "approve") setNotice(attachmentReview ? "Attachment assistance approved. Return to your companion to fetch and select this exact saved file. Selection may upload it immediately. Employer upload remains unconfirmed; submit the application yourself."
+        if (operation === "approve") setNotice(submitReview ? "Final submission approved and 20 credits reserved. Return to the companion for the single approved Submit application click. An uncertain outcome will never be resent automatically." : attachmentReview ? "Attachment assistance approved. Return to your companion to fetch and select this exact saved file. Selection may upload it immediately. Employer upload remains unconfirmed; submit the application yourself."
           : result.payload?.review_protocol_version === 2 ? "Form assistance approved. Return to your companion to fill the exact reviewed answers and choices. Attach the file and submit yourself." : "Text assistance approved. Return to your companion to fill the reviewed answers. Attach the file and submit yourself.");
         if (operation === "cancel") setNotice(attachmentReview ? "Further attachment assistance cancelled. File bytes already disclosed may remain with the employer. An already authorized selection may finish within ten seconds."
           : "Further assistance cancelled. Answers already filled or disclosed may remain with the employer. A field already authorized may finish within ten seconds; future fields are stopped.");
@@ -336,7 +376,7 @@ export default function BrowserAssistanceReview({ deviceId, reviewId, applicatio
   }
 
   return <section className="surface space-y-6 p-5 sm:p-8" aria-busy={busy}>
-    <div><p className="eyebrow">Candidate-reviewed browser assistance</p><h1 className="mt-3 font-display text-3xl sm:text-4xl">{validDevice ? "Connect this browser" : validReview ? attachmentReview ? "Review your exact attachment" : "Review your exact answers" : "Prepare your browser companion"}</h1>
+    <div><p className="eyebrow">Candidate-reviewed browser assistance</p><h1 className="mt-3 font-display text-3xl sm:text-4xl">{validDevice ? "Connect this browser" : validReview ? submitReview ? "Review final submission" : attachmentReview ? "Review your exact attachment" : "Review your exact answers" : "Prepare your browser companion"}</h1>
       <p className="mt-4 text-sm leading-7 text-muted-foreground">Use your signed-in HireWiz account to approve a device and each application separately. Each Razorpay review authorizes only its listed action for the selected job. Enter any supported country and employment answers yourself; unsupported controls and final submission stay with you.</p></div>
     {invalid ? <p role="alert" className="text-sm text-coral">Open a valid device or application review from your companion.</p> : validDevice ? <div className="space-y-5">
       <Button variant="secondary" disabled={busy} onClick={() => void perform("device")}>{busy ? "Loading…" : device ? "Load current device status" : "Review device connection"}</Button>
@@ -345,7 +385,16 @@ export default function BrowserAssistanceReview({ deviceId, reviewId, applicatio
         {!["revoked", "expired"].includes(device.state) ? <Button variant="danger" size="sm" disabled={busy} onClick={() => void perform("revoke")}>Revoke this device</Button> : null}</div> : null}
     </div> : validReview ? <div className="space-y-5">
       <Button variant="secondary" disabled={busy} onClick={() => void perform("review")}>{busy ? "Loading…" : review ? "Load current review status" : "Load exact application review"}</Button>
-      {review && review.payload ? <div className="space-y-5"><p className="text-sm">Assistance status: <span className="font-semibold">{review.state}</span>{attachmentReview ? " · attachment only" : ` · ${review.filled_count} answers filled`}</p>
+      {review && review.payload && submitReview ? <div className="space-y-5">
+        <p className="text-sm">Final submission status: <strong>{review.submission_status}</strong>. {review.employer_confirmed ? "Employer receipt independently verified. 20 credits charged." : "Employer receipt unverified."}</p>
+        <div className="rounded-xl border border-border p-4"><h2 className="font-semibold">Candidate, company and opening</h2><p className="mt-2 text-sm">Candidate #{review.payload.candidate_id} · {review.payload.company} · {review.payload.job?.title}</p><p className="text-xs">Opening {review.payload.job?.external_id} · Application {review.payload.application_id}</p><a className="mt-2 block break-all text-sm text-primary underline" href={review.payload.target_url} target="_blank" rel="noopener noreferrer">{review.payload.target_url}</a></div>
+        <div className="rounded-xl border border-border p-4"><h2 className="font-semibold">Exact previously approved resume</h2><p className="mt-2 text-sm">{review.payload.artifact.filename} · {review.payload.artifact.resume_choice} resume #{review.payload.artifact.resume_id}{review.payload.artifact.resume_version_id ? ` · version ${review.payload.artifact.resume_version_id}` : ""}</p><p className="text-xs">{review.payload.artifact.size_bytes} bytes · {review.payload.artifact.media_type}</p><p className="mt-2 break-all font-mono text-xs">SHA-256: {review.payload.artifact.sha256}</p><p className="mt-2 text-sm">The portal reports this filename uploaded after your separately approved exact-file selection. This is browser-observed upload state.</p></div>
+        <div><h2 className="font-semibold">Every reviewed answer</h2><dl className="mt-3 divide-y divide-border rounded-xl border border-border px-4">{review.payload.answers?.map((answer)=><div key={answer.id} className="py-3"><dt className="text-sm font-semibold">{hostedLabel(answer)}</dt><dd className="mt-1 whitespace-pre-wrap break-words text-sm">{answer.type==="combobox" ? answer.options?.find((option)=>option.value===answer.value)?.label : answer.type==="checkbox" ? answer.value==="true" ? "Yes" : "No" : answer.value || "Empty"}</dd></div>)}</dl></div>
+        <div className="rounded-xl border border-border p-4"><h2 className="font-semibold">20-credit final submission</h2><ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-6">{review.payload.disclosures.map((entry,index)=><li key={index}>{entry}</li>)}</ul></div>
+        {review.state==="draft" ? <><label className="flex items-start gap-3 text-sm leading-6"><input type="checkbox" className="mt-1 h-4 w-4 shrink-0 accent-primary" checked={accepted} disabled={busy || expired || requiresReload} onChange={(event)=>setAccepted(event.target.checked)} />I reviewed every answer, candidate, opening, employer destination and exact resume above. I authorize one final Submit application click and the 20-credit reservation policy. Information may be disclosed immediately; cancellation cannot undo a click already authorized.</label><Button disabled={busy || expired || requiresReload || !accepted} onClick={()=>void perform("approve")}>Approve final submission · reserve 20 credits</Button></> : null}
+        {!["cancelled","expired"].includes(review.state) ? <Button variant="danger" disabled={busy} onClick={()=>void perform("cancel")}>Cancel future submission actions</Button> : null}
+        {["unknown","running"].includes(review.state) ? <p role="status" className="text-sm leading-6">The attempt may have reached the employer. No verified receipt is available; 20 credits remain held. Inspect status from the companion without another submit click. Do not resend automatically.</p> : null}
+      </div> : review && review.payload ? <div className="space-y-5"><p className="text-sm">Assistance status: <span className="font-semibold">{review.state}</span>{attachmentReview ? " · attachment only" : ` · ${review.filled_count} answers filled`}</p>
         <div className="rounded-xl border border-border p-4"><h2 className="font-semibold">Exact destination and file</h2><a href={review.payload.target_url} target="_blank" rel="noopener noreferrer" className="mt-2 block break-all text-sm text-primary underline underline-offset-4">{review.payload.target_url}</a><p className="mt-3 break-words text-sm font-semibold">{review.payload.artifact.filename}</p><p className="mt-1 text-xs text-muted-foreground">{(review.payload.artifact.size_bytes / 1024).toFixed(1)} KB · {review.payload.artifact.media_type}</p><p className="mt-3 break-all font-mono text-xs">SHA-256: {review.payload.artifact.sha256}</p>
           {attachmentReview ? <dl className="mt-3 space-y-2 break-words text-xs"><div><dt className="font-semibold">Saved resume source</dt><dd>{review.payload.artifact.resume_choice} resume #{review.payload.artifact.resume_id}{review.payload.artifact.resume_version_id ? ` · version ${review.payload.artifact.resume_version_id}` : ""}</dd></div><div><dt className="font-semibold">Sealed artifact</dt><dd>{review.payload.artifact.artifact_id}</dd></div><div><dt className="font-semibold">Portal file input</dt><dd>Resume/CV · resume · currently empty</dd></div></dl>
             : <Button variant="secondary" size="sm" className="mt-3" disabled={busy} onClick={() => void download()}>Download exact review file</Button>}</div>
@@ -375,8 +424,8 @@ export default function BrowserAssistanceReview({ deviceId, reviewId, applicatio
         {!["cancelled", "expired", "filled"].includes(review.state) ? <Button variant="danger" disabled={busy} onClick={() => void perform("cancel")}>Cancel further assistance</Button> : null}
         {review.state === "unknown" ? <p role="status" className="text-sm leading-6 text-muted-foreground">{attachmentReview ? "The file selection or upload outcome is uncertain. Inspect the employer portal. No automatic retry will occur." : "A previous fill outcome is uncertain. Inspect the employer portal before continuing. No automatic retry will occur."}</p> : null}
         {review.state === "filled" ? <p role="status" className="text-sm leading-6 text-muted-foreground">{attachmentReview ? "Resume selected locally. Employer upload is unconfirmed. No application receipt or fee is established. Check the portal and submit the application yourself." : "Reviewed answers filled only. HireWiz has not submitted this application. Finish the remaining fields, attachment and submission yourself."}</p> : null}
-      </div> : review ? <p role="status" className="text-sm leading-6 text-muted-foreground">{review.state === "filled" ? attachmentReview ? "Resume selected locally. Employer upload is unconfirmed. No application receipt or fee is established. Check the portal and submit the application yourself." : "Reviewed answers filled only. Finish the remaining fields, attachment and final submission yourself." : review.state === "unknown" ? attachmentReview ? "The file selection or upload outcome is uncertain. Inspect the employer portal; no automatic retry will occur." : "A previous fill outcome is uncertain. Inspect the employer portal before continuing; no automatic retry will occur." : review.state === "cancelled" ? attachmentReview ? "Further attachment assistance cancelled. File bytes already disclosed may remain with the employer." : "Further assistance cancelled. Already disclosed answers may remain with the employer." : "This review expired. Start a fresh request from your companion."}</p> : null}
-    </div> : <div className="space-y-4"><div className="rounded-xl border border-border p-4"><h2 className="font-semibold">Install the Chrome pilot</h2><p className="mt-2 text-sm leading-7">On your laptop or desktop, download and unzip the companion. Open Chrome&apos;s Extensions page, turn on Developer mode, choose Load unpacked, and select the extracted hirewiz-browser-companion folder. Pin HireWiz to your toolbar. The pilot asks for HireWiz and Greenhouse access when you choose to connect.</p><a className="mt-3 inline-block text-sm font-semibold text-primary underline underline-offset-4" href="/downloads/hirewiz-browser-companion-0.5.0.zip" download>Download HireWiz companion 0.5.0</a><p className="mt-3 text-xs leading-6 text-muted-foreground">Chrome desktop only. On mobile, use the company portal manually. Supported answers require a fill review. Attachment assistance requires a separate exact-file review when available; final submission stays manual.</p></div><ol className="list-decimal space-y-3 pl-5 text-sm leading-7"><li>Open your saved application and the matching Razorpay employer portal.</li><li>Open the HireWiz companion in Chrome and connect this device.</li><li>Inspect the portal and return here to review the exact file and listed action.</li><li>Approve the reviewed assistance, then check the employer portal and submit the application yourself.</li></ol>{validApplication ? <div className="rounded-xl border border-border p-4"><p className="text-sm font-semibold">Application ID for your companion</p><code className="mt-2 block break-all text-xs">{applicationId}</code><Button variant="secondary" size="sm" className="mt-2" onClick={() => void copyApplication()}>Copy application ID</Button>{copied ? <p role="status" className="mt-2 text-xs text-primary">Application ID copied.</p> : null}</div> : null}<p className="text-sm leading-6 text-muted-foreground">Open a device connection or application review from the installed companion. This page does not start an employer action by itself.</p></div>}
+      </div> : review && submitReview ? <p role="status" className="text-sm leading-6 text-muted-foreground">{review.submission_status==="confirmed" ? "Employer receipt independently verified. 20 application credits charged. No further submit action is available." : review.submission_status==="verified_not_submitted" ? "Independent reconciliation verified that this application was not submitted. The 20-credit hold was returned." : review.submission_status==="unknown" ? "The submission outcome is uncertain and no verified employer receipt is available. 20 credits remain held for reconciliation. Inspect the portal without resubmitting; no automatic retry will occur." : "This final submission review ended before a send claim. No final click is authorized."}</p> : review ? <p role="status" className="text-sm leading-6 text-muted-foreground">{review.state === "filled" ? attachmentReview ? "Resume selected locally. Employer upload is unconfirmed. No application receipt or fee is established. Check the portal and submit the application yourself." : "Reviewed answers filled only. Finish the remaining fields, attachment and final submission yourself." : review.state === "unknown" ? attachmentReview ? "The file selection or upload outcome is uncertain. Inspect the employer portal; no automatic retry will occur." : "A previous fill outcome is uncertain. Inspect the employer portal before continuing; no automatic retry will occur." : review.state === "cancelled" ? attachmentReview ? "Further attachment assistance cancelled. File bytes already disclosed may remain with the employer." : "Further assistance cancelled. Already disclosed answers may remain with the employer." : "This review expired. Start a fresh request from your companion."}</p> : null}
+    </div> : <div className="space-y-4"><div className="rounded-xl border border-border p-4"><h2 className="font-semibold">Install the Chrome pilot</h2><p className="mt-2 text-sm leading-7">On your laptop or desktop, download and unzip the companion. Open Chrome&apos;s Extensions page, turn on Developer mode, choose Load unpacked, and select the extracted hirewiz-browser-companion folder. Pin HireWiz to your toolbar. The pilot asks for HireWiz and Greenhouse access when you choose to connect.</p><a className="mt-3 inline-block text-sm font-semibold text-primary underline underline-offset-4" href="/downloads/hirewiz-browser-companion-0.6.0.zip" download>Download HireWiz companion 0.6.0</a><p className="mt-3 text-xs leading-6 text-muted-foreground">Chrome desktop only. On mobile, use the company portal manually. Supported answers require a fill review. Attachment requires a separate exact-file review. Final submission requires another complete review and a 20-credit reservation when enabled.</p></div><ol className="list-decimal space-y-3 pl-5 text-sm leading-7"><li>Open your saved application and the matching Razorpay employer portal.</li><li>Open the HireWiz companion in Chrome and connect this device.</li><li>Inspect the portal and return here to review the exact file and listed action.</li><li>Approve each listed action separately. Check the portal, then request a final submission review when available.</li></ol>{validApplication ? <div className="rounded-xl border border-border p-4"><p className="text-sm font-semibold">Application ID for your companion</p><code className="mt-2 block break-all text-xs">{applicationId}</code><Button variant="secondary" size="sm" className="mt-2" onClick={() => void copyApplication()}>Copy application ID</Button>{copied ? <p role="status" className="mt-2 text-xs text-primary">Application ID copied.</p> : null}</div> : null}<p className="text-sm leading-6 text-muted-foreground">Open a device connection or application review from the installed companion. This page does not start an employer action by itself.</p></div>}
     {expired ? <p role="status" className="text-sm leading-6 text-muted-foreground">This review expired. Load the current status or start a fresh request from your companion.</p> : null}
     {notice ? <p role="status" className="text-sm leading-6 text-primary">{notice}</p> : null}
     {error ? <p role="alert" className="text-sm leading-6 text-coral">{error}</p> : null}

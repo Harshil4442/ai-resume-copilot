@@ -116,19 +116,21 @@ async function showAssistance(value) {
   element("assistance-review").disabled = !value.review_url || value.busy || value.phase === "idle";
   element("assistance-prepare").disabled = !permitted || value.busy || value.review_id || value.phase !== "active";
   element("assistance-prepare-attachment").disabled = element("assistance-prepare").disabled || !value.attachment_available;
+  element("assistance-prepare-submit").disabled = element("assistance-prepare").disabled || !value.submit_available;
+  element("assistance-reconcile").disabled = !permitted || !value.can_reconcile;
   element("assistance-fill").disabled = !permitted || !value.can_fill;
-  element("assistance-fill").textContent = value.review_protocol_version === 3 ? "Select approved resume" : "Fill approved answers";
+  element("assistance-fill").textContent = value.review_protocol_version === 4 ? "Submit the approved application once" : value.review_protocol_version === 3 ? "Select approved resume" : "Fill approved answers";
   element("assistance-cancel").disabled = !value.review_id;
   const list = element("assistance-fingerprint"); list.replaceChildren();
   pair(list, "Browser key SHA-256", value.key_sha256);
-  element("assistance-state").textContent = value.message || (value.review_protocol_version === 3
+  element("assistance-state").textContent = value.message || (value.review_protocol_version === 4 ? `Submission state: ${value.phase}. A possible-send attempt cannot be replayed. Employer receipt is unverified; 20 credits stay held after an uncertain send.` : value.review_protocol_version === 3
     ? `Attachment state: ${value.phase}. Local selection does not confirm employer upload. Check the portal before final submission.`
     : `Current state: ${value.phase}. ${value.filled_count} approved text answers filled. Check the portal yourself before submission.`);
 }
 function assistanceAction(id, type) {
   action(id, async () => {
-    const message = ["assistance_prepare", "assistance_prepare_attachment"].includes(type) ? { type, application_id: element("assistance-application").value.trim() } : { type };
-    if (assistance && ["assistance_fill", "assistance_prepare", "assistance_prepare_attachment"].includes(type)) await showAssistance({ ...assistance, busy: true, can_fill: false, message: "Working on the reviewed application…" });
+    const message = ["assistance_prepare", "assistance_prepare_attachment", "assistance_prepare_submit"].includes(type) ? { type, application_id: element("assistance-application").value.trim() } : { type };
+    if (assistance && ["assistance_fill", "assistance_prepare", "assistance_prepare_attachment", "assistance_prepare_submit"].includes(type)) await showAssistance({ ...assistance, busy: true, can_fill: false, message: "Working on the reviewed application…" });
     try { await showAssistance(await request(message)); }
     catch (failure) { await showAssistance(await request({ type: "status" })); throw failure; }
   });
@@ -147,6 +149,8 @@ assistanceAction("assistance-connect", "assistance_connect");
 assistanceAction("assistance-check", "assistance_check");
 assistanceAction("assistance-prepare", "assistance_prepare");
 assistanceAction("assistance-prepare-attachment", "assistance_prepare_attachment");
+assistanceAction("assistance-prepare-submit", "assistance_prepare_submit");
+assistanceAction("assistance-reconcile", "assistance_reconcile");
 assistanceAction("assistance-fill", "assistance_fill");
 assistanceAction("assistance-cancel", "assistance_cancel");
 try {

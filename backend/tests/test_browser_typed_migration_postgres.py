@@ -202,3 +202,20 @@ def test_actual_migrated_postgres_supports_one_review_with_five_hosted_employmen
     assert review_snapshot(owned.engine)[0]["next_index"] == 38
     with pytest.raises(RuntimeError, match="Typed-control review history must be retained"):
         admission._migrate(owned.engine, "20261015_0018", direction="downgrade")
+
+
+@pytest.mark.parametrize("state",["filled","cancelled","expired"])
+def test_schema19_backfills_and_retains_final_submit_version_after_private_payload_erasure(migrated_browser,state):
+    owned=migrated_browser
+    seed_legacy_review(owned.engine)
+    with owned.engine.begin() as db:
+        db.execute(text("UPDATE browser_assistance_reviews SET payload=CAST(:payload AS JSON)"),{"payload":'{"review_protocol_version":4}'})
+    admission._migrate(owned.engine,"20261015_0019")
+    with owned.engine.begin() as db:
+        assert db.scalar(text("SELECT review_protocol_version FROM browser_assistance_reviews"))==4
+        db.execute(text("UPDATE browser_assistance_reviews SET state=:state,payload=CAST('{}' AS JSON),next_index=:index"),{"state":state,"index":1 if state=="filled" else 0})
+    with pytest.raises(RuntimeError,match="Typed-control review history must be retained"):
+        admission._migrate(owned.engine,"20261015_0018",direction="downgrade")
+    with owned.engine.connect() as db:
+        assert db.scalar(text("SELECT review_protocol_version FROM browser_assistance_reviews"))==4
+        assert db.scalar(text("SELECT state FROM browser_assistance_reviews"))==state

@@ -17,7 +17,7 @@ export class AssistanceTransport {
     this.authorityKey = null;
   }
   async post(operation, body) {
-    if (!["prepare", "status", "application", "inspect", "begin", "artifact", "outcome", "cancel"].includes(operation)) throw new Error(unavailable);
+    if (!["prepare", "status", "application", "inspect", "begin", "artifact", "outcome", "reconcile", "cancel"].includes(operation)) throw new Error(unavailable);
     await this.beforePost();
     const unsigned = { protocol_version: 1, device_id: this.identity.device_id, request_id: crypto.randomUUID(),
       operation, issued_at_ms: this.now(), body };
@@ -107,7 +107,8 @@ export class AssistanceTransport {
       || !Number.isSafeInteger(payload.issued_at_ms) || !Number.isSafeInteger(payload.deadline)
       || payload.issued_at_ms > this.now() + 2000 || payload.deadline <= this.now()
       || payload.deadline <= payload.issued_at_ms || payload.deadline - payload.issued_at_ms > 10000
-      || canonical(payload.allowed_actions) !== (payload.review_protocol_version === 3 ? '["attach"]' : '["fill"]')) throw new Error("The reviewed field action expired or changed.");
+      || canonical(payload.allowed_actions) !== (payload.review_protocol_version === 4 ? '["submit"]' : payload.review_protocol_version === 3 ? '["attach"]' : '["fill"]')) throw new Error("The reviewed field action expired or changed.");
+    if (payload.review_protocol_version === 4 && (payload.fee_credits !== 20 || payload.field_id !== "final-submit" || payload.control_type !== "submit" || !/^[a-f0-9]{64}$/.test(payload.native_proof_sha256 || ""))) throw new Error("The distinct final-submit authority is missing.");
     return payload;
   }
 }

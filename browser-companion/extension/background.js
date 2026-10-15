@@ -25,7 +25,7 @@ async function assistanceEngine() {
       return tabs[0];
     };
     const browser = {
-      async inspect(url, mapping, documentId = null, version = 1) {
+      async inspect(url, mapping, documentId = null, version = 1, upload = null) {
         const tab = await targetTab(url);
         if (!documentId) {
           const [identity] = await chrome.scripting.executeScript({ target: { tabId: tab.id, frameIds: [0] }, func: () => true });
@@ -33,14 +33,29 @@ async function assistanceEngine() {
         }
         if (!documentId) throw new Error("Chrome document identity is unavailable");
         const [result] = await chrome.scripting.executeScript({ target: { tabId: tab.id, documentIds: [documentId] }, func: razorpayAdapter,
-          args: [null, null, { document_id: documentId, frame_id: 0, field_mapping: mapping, review_protocol_version: version }] });
+          args: [null, null, { document_id: documentId, frame_id: 0, field_mapping: mapping, review_protocol_version: version, upload }] });
         if (result?.documentId !== documentId || result?.result?.outcome !== "inspected") throw new Error(result?.result?.reason || "The exact current portal form is not supported");
         return result.result;
+      },
+      async observe(url) {
+        await permission(CONFIG.portalOrigin);
+        if (!/^https:\/\/job-boards\.greenhouse\.io\/razorpaysoftwareprivatelimited\/jobs\/[0-9]+$/.test(url)) throw new Error("Unknown submit destination");
+        const tabs=await chrome.tabs.query({url:[url,url+"/confirmation"]});
+        if (tabs.length!==1 || !Number.isInteger(tabs[0].id)) throw new Error("Open exactly one tab for this attempted application or its confirmation page.");
+        const [result]=await chrome.scripting.executeScript({target:{tabId:tabs[0].id,frameIds:[0]},func:(expected)=> {
+          if (![expected,expected+"/confirmation"].includes(location.href) || window!==window.top) return null;
+          const confirmation=location.href===expected+"/confirmation" && Boolean(document.querySelector(".confirmation .confirmation__content"));
+          const waiting=Boolean(document.querySelector('input[type="password"],iframe[title*="challenge"],dialog[open]'));
+          const validation=[...document.querySelectorAll('[role="alert"],.field-error')].some((node)=>node.getClientRects().length && node.textContent.trim());
+          return {status:confirmation?"confirmation_observed":waiting?"waiting_user":validation?"validation_error":"unknown",url:location.href};
+        },args:[url]});
+        if (!result?.result || !result.documentId) throw new Error("The current portal status could not be inspected.");
+        return {...result.result,document_id:result.documentId};
       },
       async fill(url, mapping, expected, action) {
         const tab = await targetTab(url);
         const [result] = await chrome.scripting.executeScript({ target: { tabId: tab.id, documentIds: [expected.document_id] }, func: razorpayAdapter,
-          args: [expected, action, { document_id: expected.document_id, frame_id: 0, field_mapping: mapping, review_protocol_version: expected.review_protocol_version ?? 1 }] });
+          args: [expected, action, { document_id: expected.document_id, frame_id: 0, field_mapping: mapping, review_protocol_version: expected.review_protocol_version ?? 1, upload: action.upload }] });
         return result?.documentId === expected.document_id && result?.result ? result.result : { outcome: "blocked", reason: "The reviewed document is no longer available" };
       },
     };
@@ -122,6 +137,8 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       if (message.type === "assistance_check") return current.check();
       if (message.type === "assistance_prepare") return current.prepare(message.application_id);
       if (message.type === "assistance_prepare_attachment") return current.prepare(message.application_id, 3);
+      if (message.type === "assistance_prepare_submit") return current.prepare(message.application_id, 4);
+      if (message.type === "assistance_reconcile") return current.reconcile();
       if (message.type === "assistance_fill") return current.fill();
       if (message.type === "assistance_cancel") return current.cancel();
       throw new Error("Unsupported assistance operation");

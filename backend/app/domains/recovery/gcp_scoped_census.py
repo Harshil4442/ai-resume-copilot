@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 
 from .contracts import Binding, fingerprint
+from .gcp_contracts import JournalReceipt
 from .gcp_partitioned_contracts import (
     GenerationHistory,
     PartitionedRecord,
@@ -14,6 +15,8 @@ from .gcp_partitioned_contracts import (
     ScopedPasswordReset,
     ScopedSession,
     ScopedSubject,
+    ScopedSubmitBegin,
+    ScopedSubmitDeviceEnrollment,
     ScopedTombstone,
 )
 from .gcp_password_lifetime_contracts import (
@@ -21,11 +24,14 @@ from .gcp_password_lifetime_contracts import (
     EnrollPasswordAccount,
     LifetimeGrantEvidence,
 )
+from .gcp_submit_contracts import SubmitDeviceRegistration
 from .store import GuardUnavailable
 
 SCOPED_NAMESPACES = {"v3_activations", "v3_subjects", "v3_account_owners", "v3_candidate_owners",
     "v3_generation_history", "v3_sessions", "v3_session_tombstones", "v3_account_tombstones",
-    "v3_subject_tombstones", "v3_pending_session_denials", "v3_pending_subject_denials", "v3_begins", "v3_reset_completions"}
+    "v3_subject_tombstones", "v3_pending_session_denials", "v3_pending_subject_denials", "v3_begins", "v3_reset_completions",
+    "v3_submit_devices", "v3_submit_key_owners", "v3_submit_device_tombstones",
+    "v3_submit_reservations", "v3_submit_begins", "v3_submit_exports"}
 
 
 def validate_scoped_rows(values: dict[tuple[str, str], dict]) -> set[tuple[str, str]]:
@@ -90,6 +96,37 @@ def validate_scoped_rows(values: dict[tuple[str, str], dict]) -> set[tuple[str, 
         intent = ScopedJournalIntent.model_validate(record.intent)
         command = intent.command
         subject = subjects.get(str(command.subject.subject_uuid))
+        if isinstance(command, (ScopedSubmitDeviceEnrollment, ScopedSubmitBegin)):
+            if (subject is None or command.subject.enrollment_operation != subject.enrollment_operation
+                    or command.subject.account_binding_id != subject.account_binding_id
+                    or command.subject.candidate_id != subject.candidate_id
+                    or command.subject.principal_sha256 != subject.principal_sha256):
+                raise GuardUnavailable("Submit census lost its exact protected subject enrollment")
+            if isinstance(command, ScopedSubmitDeviceEnrollment):
+                device_key = "v3_submit_devices", str(command.grant.device_id)
+                if device_key in values:
+                    device = SubmitDeviceRegistration(operation_id=intent.operation_id,
+                        grant=command.grant, grant_pin=command.grant_pin)
+                    expect(*device_key, device.model_dump(mode="json"))
+                    expect("v3_submit_key_owners", command.grant.key_sha256, {"device_id": str(command.grant.device_id),
+                        "subject_uuid": str(command.subject.subject_uuid), "registration_operation": key})
+            else:
+                device = command.device
+                if values.get(("v3_submit_devices", str(device.grant.device_id))) != device.model_dump(mode="json"):
+                    raise GuardUnavailable("Submit census lost its original protected device registration")
+                expected_begin = {"operation_id": key, "intent_sha256": record.reference.sha256}
+                expect("v3_submit_reservations", command.action.opening_claim_key(subject.subject_uuid), expected_begin)
+                begin = values.get(("v3_submit_begins", key))
+                if begin is not None:
+                    receipt = JournalReceipt.model_validate(begin.get("journal"))
+                    if receipt.path != record.reference.path or receipt.sha256 != record.reference.sha256:
+                        raise GuardUnavailable("Submit census journal receipt lost its exact full original intent")
+                    expect("v3_submit_begins", key, {**expected_begin, "journal": receipt.model_dump(mode="json")})
+                if ("v3_submit_exports", key) in values:
+                    if begin is None:
+                        raise GuardUnavailable("Submit census export has no original native BEGIN")
+                    expect("v3_submit_exports", key, expected_begin)
+            continue
         if (subject is None or command.subject.enrollment_operation != subject.enrollment_operation
                 or command.subject.account_binding_id != subject.account_binding_id
                 or command.subject.candidate_id != subject.candidate_id

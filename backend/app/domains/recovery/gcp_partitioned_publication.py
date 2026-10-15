@@ -24,6 +24,7 @@ from .gcp_partitioned_contracts import (
     PartitionedResource,
     PartitionedRoot,
     ScopedJournalIntent,
+    ScopedSubmitBegin,
     SegmentRegistration,
     SegmentState,
 )
@@ -125,6 +126,11 @@ class PartitionedPublicationCoordinator:
         key = str(reference.operation_id)
         if tx.get("v3_records", key) is not None:
             raise GuardUnavailable("V3 retained original publication cannot be adopted")
+        if reference.kind == "scoped_admission":
+            scoped = ScopedJournalIntent.model_validate(intent)
+            if isinstance(scoped.command, ScopedSubmitBegin):
+                from .gcp_submit import retain_submit_reservation
+                retain_submit_reservation(tx, scoped, self.resource)
         lane_id = self._lane(reference.operation_id)
         lane = LaneHead.model_validate(tx.get("v3_lanes", str(lane_id)))
         if lane.lane != lane_id:

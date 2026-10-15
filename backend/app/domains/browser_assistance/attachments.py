@@ -163,12 +163,17 @@ def deliver(db: Session, origin, request) -> BinaryDelivery:
 def outcome(db, record, review, body):
     from . import service as s
 
-    s.require(set(body) == {"review_id", "action_id", "outcome"})
+    s.require(set(body) in ({"review_id", "action_id", "outcome"}, {"review_id", "action_id", "outcome", "selection_reported"}))
+    s.require("selection_reported" not in body or type(body["selection_reported"]) is bool)
     s.require(body["outcome"] in {"selected", "blocked", "unknown"})
     action = db.query(s.RequestRecord).filter_by(id=body["action_id"], device_id=record.id,
         review_id=review.id, operation="attachment", field_index=0).with_for_update().first()
     s.require(action is not None and action.state == "begun" and review.next_index == 0)
     s.require(body["outcome"] != "selected" or action.response == {"delivery_claimed": True})
+    if body.get("selection_reported") is True:
+        s.require(body["outcome"] == "selected" and action.response.get("delivery_claimed") is True)
+        action.response = {**action.response, "selection_reported": True, "selection_document_id":review.payload["document_id"],
+                           "selection_target_url":review.payload["target_url"], "selection_artifact_sha256":review.artifact_sha256}
     action.state = "filled" if body["outcome"] == "selected" else body["outcome"]
     review.state = "filled" if body["outcome"] == "selected" else "cancelled" if body["outcome"] == "blocked" else "unknown"
     if body["outcome"] == "selected":

@@ -12,6 +12,12 @@ from .gcp_contracts import Generation, RegistryPin
 from .gcp_password_contracts import PasswordSigningMarker
 from .gcp_password_lifetime_contracts import PasswordLifetimeEffects
 from .gcp_publication_contracts import PublicationPin
+from .gcp_submit_contracts import (
+    SubmitBinding,
+    SubmitDeviceGrant,
+    SubmitDeviceRegistration,
+    SubmitGrantPin,
+)
 from .pairing_contracts import PositiveInteger
 
 Ordinal = Annotated[int, Field(strict=True, ge=0, le=2**53 - 1)]
@@ -254,12 +260,44 @@ class ScopedBegin(PartitionedContract):
         return self
 
 
+class ScopedSubmitDeviceEnrollment(PartitionedContract):
+    kind: Literal["scoped_submit_device_enrollment"] = "scoped_submit_device_enrollment"
+    subject: ScopedSubject
+    grant: SubmitDeviceGrant
+    grant_pin: SubmitGrantPin
+
+    @model_validator(mode="after")
+    def exact(self) -> ScopedSubmitDeviceEnrollment:
+        if (self.grant_pin.path != f"authority-submit-device-grants/{self.grant.device_id}.json"
+                or self.grant_pin.sha256 != fingerprint(self.grant.model_dump(mode="json"))
+                or self.grant.context.model_dump(mode="json") != self.subject.model_dump(mode="json", exclude={"enrollment_operation"})):
+            raise ValueError("Submit device enrollment requires its exact protected owner revision")
+        return self
+
+
+class ScopedSubmitBegin(PartitionedContract):
+    kind: Literal["scoped_submit_begin"] = "scoped_submit_begin"
+    subject: ScopedSubject
+    device: SubmitDeviceRegistration
+    action: SubmitBinding
+
+    @model_validator(mode="after")
+    def exact(self) -> ScopedSubmitBegin:
+        grant, action = self.device.grant, self.action
+        if (grant.context.model_dump(mode="json") != self.subject.model_dump(mode="json", exclude={"enrollment_operation"})
+                or action.candidate_id != self.subject.candidate_id or action.device_id != grant.device_id
+                or action.device_key_sha256 != grant.key_sha256 or action.device_key_generation != grant.key_generation
+                or action.executor_revision != grant.executor_revision):
+            raise ValueError("Submit BEGIN requires one exact protected owner and independently enrolled device")
+        return self
+
+
 class ScopedJournalIntent(PartitionedContract):
     version: Literal[3] = 3
     kind: Literal["scoped_admission"] = "scoped_admission"
     operation_id: UUID
     pin: RegistryPin
-    command: Annotated[ScopedDenial | ScopedPasswordReset | ScopedBegin, Field(discriminator="kind")]
+    command: Annotated[ScopedDenial | ScopedPasswordReset | ScopedBegin | ScopedSubmitDeviceEnrollment | ScopedSubmitBegin, Field(discriminator="kind")]
     created_at_ms: Timestamp
     deadline_ms: Timestamp
 

@@ -16,6 +16,7 @@ from .gcp_closure_contracts import closure_path
 from .gcp_contracts import JournalIntent, JournalReceipt, RegistryPin, WitnessBody, WitnessPin
 from .gcp_media import BoundedSink, DownloadClient
 from .gcp_pairing_contracts import PairingJournalIntent
+from .gcp_partitioned_contracts import ScopedJournalIntent
 from .store import GuardDenied, GuardUnavailable
 
 if TYPE_CHECKING:
@@ -103,7 +104,7 @@ class GcsJournal:
         self.publication = publication
 
     @staticmethod
-    def _intent_bytes(intent: JournalIntent | PairingJournalIntent) -> tuple[str, bytes]:
+    def _intent_bytes(intent: JournalIntent | PairingJournalIntent | ScopedJournalIntent) -> tuple[str, bytes]:
         raw = canonical(intent.model_dump(mode="json")).encode("utf-8")
         if len(raw) > 65_536:
             raise GuardDenied("Journal intent byte budget exceeded")
@@ -111,7 +112,7 @@ class GcsJournal:
         path = f"authority-intents/{authority}/{intent.partition}/{intent.operation_id}.json"
         return path, raw
 
-    def verify(self, intent: JournalIntent | PairingJournalIntent, receipt: JournalReceipt) -> None:
+    def verify(self, intent: JournalIntent | PairingJournalIntent | ScopedJournalIntent, receipt: JournalReceipt) -> None:
         path, raw = self._intent_bytes(intent)
         if (receipt.bucket != self.bucket.name or receipt.path != path
                 or receipt.sha256 != hashlib.sha256(raw).hexdigest()):
@@ -122,7 +123,7 @@ class GcsJournal:
         except (GoogleAPICallError, RetryError, OSError, TimeoutError) as exc:
             raise GuardUnavailable("Generation-bound journal receipt is unavailable") from exc
 
-    def write(self, intent: JournalIntent | PairingJournalIntent) -> JournalReceipt:
+    def write(self, intent: JournalIntent | PairingJournalIntent | ScopedJournalIntent) -> JournalReceipt:
         path, raw = self._intent_bytes(intent)
         _sdk_configuration(self.bucket)
         from .gcp_publication import retain_before_upload

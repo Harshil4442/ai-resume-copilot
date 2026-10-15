@@ -32,7 +32,7 @@ def candidate(operation: Literal["device", "confirm", "revoke", "review", "revis
 
 @router.post("/device/{operation}")
 @limiter.limit("60/minute")
-async def device(request: Request, operation: Literal["prepare", "status", "application", "inspect", "begin", "artifact", "outcome", "cancel"],
+async def device(request: Request, operation: Literal["prepare", "status", "application", "inspect", "begin", "artifact", "outcome", "reconcile", "cancel"],
                  db: Session = Depends(get_db)):
     if (request.headers.get("content-type") != "application/json" or request.headers.get("content-encoding")
             or request.headers.get("authorization") or request.headers.get("cookie") or request.url.query):

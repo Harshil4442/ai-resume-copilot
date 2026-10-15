@@ -50,6 +50,26 @@ type HostedControl = { id: string; label: string; type: string; required: boolea
 type HostedField = { id: string; label: string; type: string; value: string; expected_before: string;
   required?: boolean; options?: { value: string; label: string }[]; value_label?: string; expected_before_label?: string };
 const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"].map((value) => ({ value, label: value }));
+function finalSubmitReview(state = "draft") {
+  const base = attachmentReview(state);
+  const answers = [
+    { id: "first_name", label: "First Name", type: "text", required: true, value: "Synthetic Alice" },
+    { id: "last_name", label: "Last Name", type: "text", required: true, value: "Fixture" },
+    { id: "email", label: "Email", type: "text", required: true, value: "synthetic@example.test" },
+    { id: "question_9132967005", label: "Current Career Stage", type: "combobox", required: true, value: "owned-choice", options: [{ value: "owned-choice", label: "Candidate selected career stage" }] },
+  ];
+  return { ...base, review_protocol_version: 4, filled_count: 0, submission_status: state === "unknown" ? "unknown" : "not_launched", employer_confirmed: false, fee_credits: 20,
+    payload: { ...base.payload, review_protocol_version: 4, allowed_actions: ["submit"], fee_credits: 20,
+      target_url: "https://job-boards.greenhouse.io/razorpaysoftwareprivatelimited/jobs/4740333005", candidate_id: 17, company: "Razorpay",
+      job: { posting_id: "owned_posting", external_id: "4740333005", title: "Lead Software Development Engineer", content_sha256: "a".repeat(64) },
+      document_id: "owned-chrome-document", frame_id: 0, field_mapping: answers.map(({ id, label, type, required, options }) => ({ id, label, type, required, ...options ? { options } : {} })), answers,
+      reviewed_answers: Object.fromEntries(answers.map(({ id, value }) => [id, value])), assisted_values: Object.fromEntries(answers.map(({ id, value }) => [id, value])),
+      manual_fields: [] as { id: string; label: string; required: boolean }[], upload: { review_id: identity, action_id: application, filename: base.payload.artifact.filename, status: "portal_reports_uploaded" },
+      upload_continuity: { review_id: identity, action_id: application, artifact_sha256: base.payload.artifact.sha256, document_id: "owned-chrome-document", target_url: "https://job-boards.greenhouse.io/razorpaysoftwareprivatelimited/jobs/4740333005" },
+      submit_control: { form_id: "application-form", type: "submit", label: "Submit application" }, pricing: { unit_price: 20 }, admission: { policy_revision: "owned_policy" },
+      disclosures: ["Reserve 20 credits for this exact final submission. Credits remain held while the employer outcome is unknown; settlement requires a verified employer receipt.",
+        "One final Submit application click can immediately disclose every reviewed answer and resume. Cancellation cannot recall an authorized click; unknown outcomes are never resent automatically."] } };
+}
 function hostedReview(rows = [{ index: 0, current_role: false }], withBaseActions = false) {
   const base = typedReview();
   const controls: HostedControl[] = [{ id: "country", label: "Country", type: "combobox", required: true, options: structuredClone(countryOptions) }];
@@ -91,6 +111,132 @@ async function acceptReview() {
   await userEvent.click(screen.getByRole("button", { name: "Download exact review file" }));
   await userEvent.click(screen.getByRole("checkbox"));
 }
+
+describe("separate exact final-submit approval", () => {
+  const approve = () => screen.getByRole("button", { name: "Approve final submission · reserve 20 credits" });
+  const consent = () => screen.getByRole("checkbox", { name: /I reviewed every answer, candidate, opening/ });
+  async function load(result = finalSubmitReview()) {
+    request.mockResolvedValueOnce(Response.json(result));
+    render(<BrowserAssistanceReview deviceId={null} reviewId={identity} applicationId={application} />);
+    await userEvent.click(screen.getByRole("button", { name: "Load exact application review" }));
+    await screen.findByRole("heading", { name: "Review final submission" });
+  }
+
+  it("shows the candidate, employer, opening, current answers and exact resume source before an independent 20-credit approval", async () => {
+    const draft = finalSubmitReview();
+    await load(draft);
+    expect(approve()).toBeDisabled(); expect(consent()).not.toBeChecked(); expect(consent()).toBeEnabled();
+    expect(screen.getByText(/Candidate #17 · Razorpay · Lead Software Development Engineer/)).toBeVisible();
+    expect(screen.getByText(/Opening 4740333005/)).toBeVisible();
+    expect(screen.getByRole("link", { name: draft.payload.target_url })).toHaveAttribute("href", draft.payload.target_url);
+    for (const label of ["First Name", "Last Name", "Email", "Current Career Stage"]) expect(screen.getByText(label, { selector: "dt" })).toBeVisible();
+    for (const answer of ["Synthetic Alice", "Fixture", "synthetic@example.test", "Candidate selected career stage"]) expect(screen.getByText(answer)).toBeVisible();
+    expect(screen.getByText(/Synthetic exact resume.pdf · original resume #7/)).toBeVisible();
+    expect(screen.getByText(`SHA-256: ${"d".repeat(64)}`)).toBeVisible();
+    expect(screen.getByText(/settlement requires a verified employer receipt/)).toBeVisible();
+    expect(screen.getByText(/This is browser-observed upload state/)).toBeVisible();
+    expect(screen.queryByText(/0 application credits/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Download exact review file" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Approve exact attachment assistance" })).toBeNull();
+    expect(apiDownload).not.toHaveBeenCalled(); expect(request).toHaveBeenCalledTimes(1);
+    request.mockResolvedValueOnce(Response.json({ ...draft, state: "approved" }));
+    await userEvent.click(consent()); expect(approve()).toBeEnabled(); await userEvent.click(approve());
+    expect(await screen.findByText(/Final submission approved and 20 credits reserved/)).toBeVisible();
+    expect(JSON.parse(request.mock.calls[1][1].body)).toEqual({ identity, confirmed: true, review_digest: draft.review_digest });
+    expect(request.mock.calls[1][1].headers["X-Hirewiz-Account-CSRF"]).toBe("9".repeat(64));
+    expect(request.mock.calls.map(([url]) => url)).toEqual(["/api/browser-assistance/candidate/review", "/api/browser-assistance/candidate/approve"]);
+    expect(screen.queryByRole("checkbox")).toBeNull(); expect(screen.queryByText(/0 application credits/)).toBeNull();
+  });
+
+  it.each(["fee", "pricing", "action", "upload-name", "upload-status", "upload-review", "upload-continuity", "answer", "assisted", "mapping", "required", "source", "candidate", "opening", "opening-destination"])("rejects tampered %s before presenting final-submit consent", async (change) => {
+    const result = finalSubmitReview();
+    if (change === "fee") result.payload.fee_credits = 0;
+    if (change === "pricing") result.payload.pricing.unit_price = 0;
+    if (change === "action") result.payload.allowed_actions = ["fill"];
+    if (change === "upload-name") result.payload.upload.filename = "Another resume.pdf";
+    if (change === "upload-status") result.payload.upload.status = "selected_upload_unconfirmed";
+    if (change === "upload-review") result.payload.upload.review_id = "not-a-review-id";
+    if (change === "upload-continuity") result.payload.upload_continuity.document_id = "another_chrome_document";
+    if (change === "answer") result.payload.reviewed_answers.first_name = "A different candidate";
+    if (change === "assisted") result.payload.assisted_values.first_name = "Unapproved answer";
+    if (change === "mapping") result.payload.field_mapping[0].label = "Different field";
+    if (change === "required") result.payload.answers[0].value = "";
+    if (change === "source") result.payload.artifact.resume_version_id = "unexpected_version";
+    if (change === "candidate") result.payload.candidate_id = 0;
+    if (change === "opening") result.payload.job.external_id = "not-an-opening";
+    if (change === "opening-destination") result.payload.job.external_id = "4740333006";
+    request.mockResolvedValueOnce(Response.json(result));
+    render(<BrowserAssistanceReview deviceId={null} reviewId={identity} applicationId={application} />);
+    await userEvent.click(screen.getByRole("button", { name: "Load exact application review" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("response changed");
+    expect(screen.queryByRole("checkbox")).toBeNull(); expect(screen.queryByRole("button", { name: /Approve final submission/ })).toBeNull();
+    expect(request).toHaveBeenCalledTimes(1); expect(apiDownload).not.toHaveBeenCalled();
+  });
+
+  it("requires a fresh status load after an uncertain approval without issuing a submit or retry", async () => {
+    await load(); request.mockResolvedValueOnce(Response.json({}, { status: 503 }));
+    await userEvent.click(consent()); await userEvent.click(approve());
+    expect(await screen.findByRole("alert")).toHaveTextContent("no automatic retry");
+    expect(consent()).not.toBeChecked(); expect(consent()).toBeDisabled(); expect(approve()).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Load current review status" })).toBeEnabled();
+    expect(request).toHaveBeenCalledTimes(2); expect(apiDownload).not.toHaveBeenCalled();
+  });
+
+  it("refuses an approval response that replaces the exact final resume or answers", async () => {
+    const draft = finalSubmitReview(); await load(draft);
+    const changed = structuredClone(draft); changed.state = "approved";
+    changed.payload.artifact.sha256 = "1".repeat(64);
+    changed.payload.upload_continuity.artifact_sha256 = changed.payload.artifact.sha256;
+    request.mockResolvedValueOnce(Response.json(changed));
+    await userEvent.click(consent()); await userEvent.click(approve());
+    expect(await screen.findByRole("alert")).toHaveTextContent("approved review changed");
+    expect(screen.queryByText(/Final submission approved and 20 credits reserved/)).toBeNull();
+    expect(consent()).toBeDisabled(); expect(approve()).toBeDisabled(); expect(request).toHaveBeenCalledTimes(2);
+  });
+
+  it("reports an unknown employer outcome and held credits truthfully without approval or automatic resend", async () => {
+    await load(finalSubmitReview("unknown"));
+    expect(screen.getByRole("status")).toHaveTextContent("No verified receipt is available; 20 credits remain held");
+    expect(screen.getByRole("status")).toHaveTextContent("Do not resend automatically");
+    expect(screen.queryByRole("checkbox")).toBeNull(); expect(screen.queryByRole("button", { name: /Approve final submission/ })).toBeNull();
+    expect(screen.queryByText(/0 application credits/)).toBeNull(); expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it("retains final-submit uncertainty and credit disclosure after the private durable payload is erased", async () => {
+    request.mockResolvedValueOnce(Response.json({ ...finalSubmitReview("unknown"), payload: {} }));
+    render(<BrowserAssistanceReview deviceId={null} reviewId={identity} applicationId={application} />);
+    await userEvent.click(screen.getByRole("button", { name: "Load exact application review" }));
+    expect(await screen.findByRole("status")).toHaveTextContent(/20 credits.*held/);
+    expect(screen.getByRole("status")).toHaveTextContent(/no.*receipt|receipt.*unverified/i);
+    expect(screen.getByRole("status")).toHaveTextContent(/no.*resend|no.*retry/i);
+    expect(screen.queryByText("Synthetic Alice")).toBeNull(); expect(screen.queryByRole("checkbox")).toBeNull();
+    expect(screen.queryByText(/fill outcome|filled only/)).toBeNull(); expect(screen.queryByRole("alert")).toBeNull(); expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["fee", "employer", "count", "status"])("rejects inconsistent erased final-submit %s metadata", async (change) => {
+    const result = { ...finalSubmitReview("unknown"), payload: {} };
+    if (change === "fee") result.fee_credits = 0;
+    if (change === "employer") result.employer_confirmed = true;
+    if (change === "count") result.filled_count = 1;
+    if (change === "status") result.submission_status = "confirmed";
+    request.mockResolvedValueOnce(Response.json(result));
+    render(<BrowserAssistanceReview deviceId={null} reviewId={identity} applicationId={null} />);
+    await userEvent.click(screen.getByRole("button", { name: "Load exact application review" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("response changed");
+    expect(screen.queryByRole("status")).toBeNull(); expect(screen.queryByRole("checkbox")).toBeNull(); expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["confirmed", "verified_not_submitted"])("renders independently reconciled %s terminal state without presenting another submit action", async (status) => {
+    const confirmed = status === "confirmed";
+    request.mockResolvedValueOnce(Response.json({ ...finalSubmitReview(confirmed ? "filled" : "cancelled"), payload: {},
+      filled_count: confirmed ? 1 : 0, submission_status: status, employer_confirmed: confirmed }));
+    render(<BrowserAssistanceReview deviceId={null} reviewId={identity} applicationId={application} />);
+    await userEvent.click(screen.getByRole("button", { name: "Load exact application review" }));
+    expect(await screen.findByRole("status")).toHaveTextContent(confirmed ? /receipt.*verified|verified.*receipt/i : /verified.*no application was submitted|verified.*not.*submitted|verified.*non.*submission/i);
+    expect(screen.queryByText(/20 credits.*held/)).toBeNull(); expect(screen.queryByRole("checkbox")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Approve final submission/ })).toBeNull(); expect(screen.queryByRole("alert")).toBeNull(); expect(request).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe("candidate-entered hosted country and employment review", () => {
   async function load(result: ReturnType<typeof hostedReview>) {

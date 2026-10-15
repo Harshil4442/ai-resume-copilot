@@ -18,3 +18,11 @@ for(const changed of ['application_id','target_url','review_protocol_version','h
   r.browser.inspect=async()=>{inspections++;return{hosted_rows:[{index:0,current_role:false}],document_id:'owned-document'}};
   await assert.rejects(r.prepare('apply_test'),/hosted controls changed/);assert.equal(inspections,1);assert.equal(requests,2);
 });
+for(const [state,status,confirmed,count,accept] of [
+  ['unknown','unknown',false,0,true],['filled','confirmed',true,1,true],['cancelled','verified_not_submitted',false,0,true],
+  ['unknown','confirmed',true,1,false],['unknown','unknown',true,0,false],['unknown','unknown',false,1,false],
+])test(`durable erased v4 ${state}/${status} keeps exact authoritative outcome and fee policy (${accept})`,async()=>{
+  const r=await runtime();const result={id:review,state,review_protocol_version:4,review_digest:'a'.repeat(64),filled_count:count,expires_at_ms:Date.now()-1000,payload:{},submission_status:status,employer_confirmed:confirmed,fee_credits:20};
+  if(accept)await r.acceptReview(result);else await assert.rejects(r.acceptReview(result));
+  await assert.rejects(r.acceptReview({...result,fee_credits:0}));
+});

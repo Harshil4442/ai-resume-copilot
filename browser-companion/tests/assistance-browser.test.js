@@ -11,6 +11,7 @@ import { createHash } from "node:crypto";
 import { chromium, expect } from "@playwright/test";
 import { fixtureHtml } from "../fixtures/razorpay/form.js";
 import { hostedFixtureHtml } from "../fixtures/razorpay/hosted-form.js";
+import { submitFixtureHtml } from "../fixtures/razorpay/submit-form.js";
 import { typedFixtureHtml } from "../fixtures/razorpay/typed-form.js";
 
 const ROOT = new URL("../../", import.meta.url);
@@ -20,15 +21,15 @@ const EXTENSION = "pnjmegppacleipajnifjmbcopjjffklb";
 const message = (popup, value) => popup.evaluate((input) => chrome.runtime.sendMessage(input), value);
 async function fixture({ granted = true, loseBegin = false, typed = false, unknownOption = false, conditional = false, tamperChoiceLease = false,
   attachment = false, tamperBinary = false, loseArtifact = false, loseAttachmentOutcome = false, attachmentFault = null, tamperAttachmentLease = false,
-  pauseArtifact = false, attachmentConditional = false, hosted = false, hostedRows = 1, wrongCountryFlag = false, currentRoleConditional = true } = {}) {
+  pauseArtifact = false, attachmentConditional = false, hosted = false, hostedRows = 1, wrongCountryFlag = false, currentRoleConditional = true, submission = false, loseSubmitOutcome = false, tamperSubmitLease = false } = {}) {
   const directory = await mkdtemp(`${tmpdir()}/hirewiz-reviewed-assistance-`);
   const pending = []; const requests = []; const leases = []; const uploads = []; let errors = ""; let context;
   let releaseArtifact; let signalArtifact;
   const artifactStarted = new Promise((resolve) => { signalArtifact = resolve; });
   const artifactGate = pauseArtifact ? new Promise((resolve) => { releaseArtifact = resolve; }) : null;
   const python = spawn(new URL("backend/.venv/bin/python", ROOT).pathname,
-    ["-I", new URL("backend/tests/browser_assistance_chrome_bridge.py", ROOT).pathname],
-    { cwd: new URL("backend/", ROOT).pathname, stdio: ["pipe", "pipe", "pipe"] });
+    ["-I", new URL(submission ? "backend/tests/browser_submit_chrome_bridge.py" : "backend/tests/browser_assistance_chrome_bridge.py", ROOT).pathname],
+    { cwd: new URL("backend/", ROOT).pathname, stdio: ["pipe", "pipe", "pipe"], env: {...process.env,PYTHONWARNINGS:"ignore::DeprecationWarning",PYTHONDONTWRITEBYTECODE:"1"} });
   python.stderr.on("data", (chunk) => { errors += chunk.toString(); });
   createInterface({ input: python.stdout }).on("line", (line) => pending.shift()?.resolve(JSON.parse(line)));
   python.on("exit", () => { for (const waiter of pending.splice(0)) waiter.reject(new Error("Owned SQL bridge exited")); });
@@ -38,8 +39,8 @@ async function fixture({ granted = true, loseBegin = false, typed = false, unkno
     python.stdin.write(`${JSON.stringify(value)}\n`);
   });
   try {
-    const typedApplication = hosted ? await bridge({ operation: "configure_hosted", rows: hostedRows }) : attachment ? await bridge({ operation: "configure_attachment" }) : typed ? await bridge({ operation: "configure_typed" }) : null;
-    if (typed || attachment || hosted) assert.equal(typedApplication.status, 200);
+    const typedApplication = submission ? await bridge({operation:"configure_submit"}) : hosted ? await bridge({ operation: "configure_hosted", rows: hostedRows }) : attachment ? await bridge({ operation: "configure_attachment" }) : typed ? await bridge({ operation: "configure_typed" }) : null;
+    if (typed || attachment || hosted || submission) assert.equal(typedApplication.status, 200);
     const extension = `${directory}/extension`;
     await cp(new URL("../extension/", import.meta.url), extension, { recursive: true });
     const manifest = JSON.parse(await readFile(`${extension}/manifest.json`, "utf8"));
@@ -57,16 +58,18 @@ async function fixture({ granted = true, loseBegin = false, typed = false, unkno
       if (url.startsWith("chrome-extension:")) return route.continue();
       requests.push({ url, method: request.method(), origin: request.headers().origin ?? null });
       if (url === PORTAL && request.method() === "GET") {
-        const html = hosted ? hostedFixtureHtml(typedApplication.body.field_mapping, PORTAL, { extraConditional: conditional, wrongCountryFlag, currentRoleConditional }) : typed || attachment ? typedFixtureHtml(typedApplication.body.field_mapping, PORTAL, { unknownOption, conditional, attachmentUpload: attachment, attachmentConditional })
+        const html = submission ? submitFixtureHtml(typedApplication.body.field_mapping,typedApplication.body.answers,PORTAL) : hosted ? hostedFixtureHtml(typedApplication.body.field_mapping, PORTAL, { extraConditional: conditional, wrongCountryFlag, currentRoleConditional }) : typed || attachment ? typedFixtureHtml(typedApplication.body.field_mapping, PORTAL, { unknownOption, conditional, attachmentUpload: attachment, attachmentConditional })
           : fixtureHtml().replace(/<main[^>]*>/, "<main>").replace(/<script type="module">[\s\S]*?<\/script>/,
           `<script>window.events={input:[],change:[],blur:[],submit:0};document.querySelector('form').addEventListener('input',e=>events.input.push(e.target.id));document.querySelector('form').addEventListener('change',e=>events.change.push(e.target.id));document.querySelector('#email').addEventListener('blur',()=>events.blur.push('email'));document.querySelector('form').addEventListener('submit',e=>{e.preventDefault();events.submit++});</script>`)
           .replace('action="/fixture/razorpay-like/apply"', `action="${PORTAL}"`);
         return route.fulfill({ status: 200, contentType: "text/html", body: html });
       }
-      if (attachment && url === `${PORTAL}/owned-synthetic-upload` && request.method() === "POST") {
+      if ((attachment || submission) && url === `${PORTAL}/owned-synthetic-upload` && request.method() === "POST") {
         uploads.push(request.postDataBuffer());
         return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ owned_synthetic_only: true }) });
       }
+      if (submission && url===`${PORTAL}/owned-synthetic-submit` && request.method()==="POST") return route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({owned_synthetic_ack:true})});
+      if (submission && url===`${PORTAL}/confirmation` && request.method()==="GET") return route.fulfill({status:200,contentType:"text/html",body:'<div class="confirmation"><div class="confirmation__content">Thank you</div></div>'});
       if (url.startsWith(`${WEBSITE}/api/browser-assistance/device/`) && request.method() === "POST") {
         const origin = request.headers().origin;
         if (pauseArtifact && url.endsWith("/artifact")) { signalArtifact(); await artifactGate; }
@@ -78,10 +81,11 @@ async function fixture({ granted = true, loseBegin = false, typed = false, unkno
             // Alter the actual signed label in transport, keeping its signature.
             result.body.lease.payload.option_label = "Unapproved transport choice";
           }
+          if (tamperSubmitLease && result.body.lease.payload.review_protocol_version === 4) result.body.lease.payload.fee_credits=0;
           if (tamperAttachmentLease && result.body.lease.payload.review_protocol_version === 3) result.body.lease.payload.artifact.filename = "Unapproved.pdf";
         }
-        if (loseBegin && !dropped && url.endsWith("/begin") && result.status === 200) { dropped = true; return route.abort("failed"); }
-        if (loseAttachmentOutcome && !dropped && url.endsWith("/outcome") && result.status === 200) { dropped = true; return route.abort("failed"); }
+        if (loseBegin && (!submission || result.body.lease?.payload.review_protocol_version === 4) && !dropped && url.endsWith("/begin") && result.status === 200) { dropped = true; return route.abort("failed"); }
+        if ((loseAttachmentOutcome || loseSubmitOutcome && result.body.review_protocol_version === 4) && !dropped && url.endsWith("/outcome") && result.status === 200) { dropped = true; return route.abort("failed"); }
         if (result.body.binary_base64) {
           if (loseArtifact) return route.abort("failed");
           const bytes = Buffer.from(result.body.binary_base64, "base64");
@@ -108,8 +112,8 @@ async function fixture({ granted = true, loseBegin = false, typed = false, unkno
       const checked = await message(popup, { type: "status" }); assert.equal(checked.ok, true, checked.error); assert.equal(checked.value.phase, "active");
     };
     const prepare = async () => {
-      await popup.locator("#assistance-application").fill("apply_test");
-      await popup.locator(attachment ? "#assistance-prepare-attachment" : "#assistance-prepare").click();
+      await popup.locator("#assistance-application").fill(submission ? "apply_owned" : "apply_test");
+      await popup.locator(attachment || submission ? "#assistance-prepare-attachment" : "#assistance-prepare").click();
       await expect(popup.locator("#assistance-review")).toBeEnabled();
       const result = await message(popup, { type: "status" }); assert.equal(result.ok, true, result.error);
       const reviewed = await bridge({ operation: "candidate", action: "review", body: { identity: result.value.review_id } });
@@ -128,7 +132,9 @@ async function fixture({ granted = true, loseBegin = false, typed = false, unkno
         assert.equal(errors, "");
         await rm(directory, { recursive: true, force: true }); await assert.rejects(stat(directory), { code: "ENOENT" });
         assert.ok(requests.every(({ url, method }) => url === PORTAL && method === "GET"
-          || attachment && url === `${PORTAL}/owned-synthetic-upload` && method === "POST"
+          || (attachment || submission) && url === `${PORTAL}/owned-synthetic-upload` && method === "POST"
+          || submission && url === `${PORTAL}/owned-synthetic-submit` && method === "POST"
+          || submission && url === `${PORTAL}/confirmation` && method === "GET"
           || url.startsWith(`${WEBSITE}/api/browser-assistance/device/`) && method === "POST"), "All requests are owned local fulfillments; no employer or processor requests");
       } };
   } catch (error) { await context?.close(); python.kill(); await rm(directory, { recursive: true, force: true }); throw error; }
@@ -476,5 +482,73 @@ test('installed MV3 current-role toggle always ends the sequence even with no co
     const result=await message(f.popup,{type:'assistance_fill'});assert.equal(result.ok,true,result.error);assert.equal(result.value.phase,'unknown');
     assert.equal(await f.portal.locator('#current-role-0_1').isChecked(),true);assert.equal(await f.portal.locator('#end-date-year-0').count(),1);assert.equal(await f.portal.evaluate(()=>events.add),0);
     assert.equal((await message(f.popup,{type:'assistance_fill'})).ok,false);assert.equal(await f.portal.evaluate(()=>events.current.length),1);
+  }finally{await f.close();}
+});
+
+
+async function finalReview(f) {
+  await f.connect(); const attachment=await f.prepare(); await f.approve(attachment);
+  const selected=await message(f.popup,{type:"assistance_fill"}); assert.equal(selected.ok,true,selected.error); assert.equal(selected.value.phase,"filled");
+  await expect(f.portal.locator('.file-upload__filename p')).toHaveText('Owned.pdf');
+  assert.equal(f.uploads.length,1); assert.equal(createHash('sha256').update(f.uploads[0]).digest('hex'),attachment.payload.artifact.sha256);
+  assert.equal((await message(f.popup,{type:"assistance_cancel"})).ok,true);
+  const result=await message(f.popup,{type:"assistance_prepare_submit",application_id:"apply_owned"}); assert.equal(result.ok,true,result.error);
+  const review=await f.bridge({operation:"candidate",action:"review",body:{identity:result.value.review_id}}); assert.equal(review.status,200);
+  assert.equal(review.body.payload.fee_credits,20); assert.deepEqual(review.body.payload.allowed_actions,["submit"]);
+  return review.body;
+}
+test("installed MV3 v4 binds actual exact-file selection, complete review, 20-credit hold and one final click; public confirmation never settles",async()=>{
+  const f=await fixture({submission:true}); try {
+    const review=await finalReview(f);
+    assert.equal((await message(f.popup,{type:"assistance_fill"})).ok,false);
+    assert.equal((await f.bridge({operation:"audit"})).body.credits,100);
+    await f.approve(review); assert.equal((await f.bridge({operation:"audit"})).body.credits,80);
+    const sent=await message(f.popup,{type:"assistance_fill"}); assert.equal(sent.ok,true,sent.error); assert.equal(sent.value.phase,"unknown");
+    await f.portal.waitForURL(PORTAL+'/confirmation');
+    assert.equal(f.requests.filter(({url})=>url.endsWith('/owned-synthetic-submit')).length,1);
+    assert.equal(f.leases.filter(({payload})=>payload.review_protocol_version===4).length,1);
+    assert.equal((await message(f.popup,{type:"assistance_fill"})).ok,false);
+    const inspected=await message(f.popup,{type:"assistance_reconcile"}); assert.equal(inspected.ok,true,inspected.error); assert.match(inspected.value.message,/does not verify receipt/);
+    const audit=(await f.bridge({operation:"audit"})).body;
+    assert.equal(audit.native_calls,1); assert.equal(audit.submit_actions,1); assert.equal(audit.attempts,1); assert.equal(audit.receipt,null); assert.equal(audit.charged_credits,0);
+    assert.deepEqual(audit.reservations,[{state:'reserved',reserved:20,committed:0,released:0}]);
+  } finally {await f.close();}
+});
+for(const fault of ['loseBegin','loseSubmitOutcome','tamperSubmitLease']) test(`installed MV3 v4 ${fault} never repeats native reserve or final click`,async()=>{
+  const f=await fixture({submission:true,[fault]:true}); try {
+    const review=await finalReview(f); await f.approve(review);
+    const result=await message(f.popup,{type:"assistance_fill"}); assert.equal(result.ok,false);
+    assert.equal((await message(f.popup,{type:"status"})).value.phase,'unknown');
+    assert.equal((await message(f.popup,{type:"assistance_fill"})).ok,false);
+    const clicks=f.requests.filter(({url})=>url.endsWith('/owned-synthetic-submit')).length;
+    assert.equal(clicks,fault==='loseSubmitOutcome'?1:0);
+    const audit=(await f.bridge({operation:"audit"})).body;
+    assert.equal(audit.native_calls,1); assert.equal(audit.submit_actions,1); assert.equal(audit.credits,80); assert.equal(audit.receipt,null);
+  } finally {await f.close();}
+});
+test("installed MV3 v4 changed answer after final approval stops before native claim or click",async()=>{
+  const f=await fixture({submission:true});try {
+    const review=await finalReview(f);await f.approve(review);
+    await f.portal.locator('#first_name').fill('Changed after review');
+    const result=await message(f.popup,{type:'assistance_fill'});assert.equal(result.ok,false);
+    assert.equal(f.requests.filter(({url})=>url.endsWith('/owned-synthetic-submit')).length,0);
+    assert.equal((await f.bridge({operation:'audit'})).body.native_calls,0);
+    assert.equal((await message(f.popup,{type:'assistance_cancel'})).ok,true);
+    assert.equal((await f.bridge({operation:'audit'})).body.credits,100);
+  }finally{await f.close();}
+});
+
+test('installed MV3 v4 rejects different manually uploaded bytes with identical approved filename in same document',async()=>{
+  const f=await fixture({submission:true});try {
+    const review=await finalReview(f);await f.approve(review);
+    await f.portal.locator('.file-upload').evaluate(group=>{group.innerHTML='<label for="resume">Attach</label><input class="visually-hidden" id="resume" type="file">';});
+    await f.portal.locator('#resume').setInputFiles({name:'Owned.pdf',mimeType:'application/pdf',buffer:Buffer.from('%PDF-1.4\nDIFFERENT OWNED SYNTHETIC BYTES\n%%EOF')});
+    await expect(f.portal.locator('.file-upload__filename p')).toHaveText('Owned.pdf');
+    assert.equal(f.uploads.length,2);assert.notEqual(createHash('sha256').update(f.uploads[1]).digest('hex'),review.payload.artifact.sha256);
+    const result=await message(f.popup,{type:'assistance_fill'});assert.equal(result.ok,false);
+    assert.equal(f.requests.filter(({url})=>url.endsWith('/owned-synthetic-submit')).length,0);
+    assert.equal((await f.bridge({operation:'audit'})).body.native_calls,0);
+    assert.equal((await message(f.popup,{type:'assistance_cancel'})).ok,true);
+    assert.equal((await f.bridge({operation:'audit'})).body.credits,100);
   }finally{await f.close();}
 });

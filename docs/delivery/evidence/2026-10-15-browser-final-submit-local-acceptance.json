@@ -1,0 +1,71 @@
+{
+  "date": "2026-10-15",
+  "base_commit": "520cec9253a7e599d29a9f062c013500aa1989d6",
+  "branch": "codex/application-form-completion",
+  "scope": "disabled local v4 explicit final-submit source; full paid apply remains open",
+  "production_calls": 0,
+  "real_candidate_field_changes": 0,
+  "real_candidate_uploads": 0,
+  "real_candidate_submissions": 0,
+  "provider_receipts_created": 0,
+  "credits_settled_from_browser_observations": 0,
+  "pushes_merges_deployments": 0,
+  "default_false_flags": [
+    "BROWSER_ASSISTANCE_ENABLED",
+    "BROWSER_ASSISTANCE_TYPED_CONTROLS_ENABLED",
+    "BROWSER_ASSISTANCE_ATTACHMENT_ENABLED",
+    "BROWSER_ASSISTANCE_SUBMIT_ENABLED",
+    "BROWSER_SUBMIT_NATIVE_ENABLED"
+  ],
+  "schema": {
+    "frozen_release": "20261015_0018",
+    "draft": "20261015_0019",
+    "durable_review_versions": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "cursor_range": [
+      0,
+      64
+    ],
+    "old_fill_binding_action": "fill",
+    "new_native_binding_action": "submit",
+    "downgrade_refuses_erased_new_protocol_history": true
+  },
+  "tests": {
+    "backend_selected": 215,
+    "native_actual_sdk_and_rpc_intercepted": 90,
+    "postgres_legacy_and_migration": 44,
+    "postgres_final_credit_races": 3,
+    "frontend": 691,
+    "frontend_files": 37,
+    "installed_mv3_and_adapter_and_runtime": 106,
+    "companion_legacy_unit": 76,
+    "companion_legacy_browser": 14,
+    "frontend_build_pages": 43,
+    "mypy_source_files": 125,
+    "ruff": "passed",
+    "frontend_lint_typecheck": "passed",
+    "openapi_contract_generation": "passed"
+  },
+  "unavailable_checks": [
+    "Existing Firestore-emulator-dependent journal/census regression suites: authorized localhost127.0.0.1:58877 unavailable. Actual SDK fully intercepted native tests passed."
+  ],
+  "package": {
+    "version": "0.6.0",
+    "sha256": "901fd8723544fa42c691f616c9498ed9463c06c923ae4cb25407f81d471ecfe9",
+    "deterministic_check": true,
+    "prior_archives_unchanged": true
+  },
+  "remaining_full_journey_gaps": [
+    "Implement normal-user protected fresh password registration and explicit genuine Google-owner linking; current production account factory unavailable.",
+    "Complete scoped protected pairing signing guards and public device completion-to-submit enrollment bridge; operator pilot grant is insufficient.",
+    "Provision actual native backing resources, signing/credential/IAM inputs and independently verified owners/devices after frozen F7 release.",
+    "Verify live hosted Country/employment callbacks, hidden resume uploader compatibility and required conditional controls with explicit candidate authority in staging.",
+    "Establish an authenticated complete employer acknowledgement/receipt contract, exact request/application/artifact correlation and legitimate grant before20credit settlement.",
+    "Deploy later additive schema19/coordinated BFF/API/companion cohort, defaultfalse activation, rollback/health and actual candidate acceptance."
+  ],
+  "full_paid_direct_company_apply_complete": false
+}

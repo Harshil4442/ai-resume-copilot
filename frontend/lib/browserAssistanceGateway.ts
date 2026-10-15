@@ -5,7 +5,7 @@ import { candidateAuthSecret, csrfMatches, websiteOrigin } from "./candidateAuth
 import { boundedPairingBytes } from "./browserPairingGateway";
 
 const CANDIDATE = new Set(["device", "confirm", "revoke", "review", "revise", "approve", "cancel"]);
-const DEVICE = new Set(["prepare", "status", "application", "inspect", "begin", "outcome", "cancel", "artifact"]);
+const DEVICE = new Set(["prepare", "status", "application", "inspect", "begin", "outcome", "cancel", "artifact", "reconcile"]);
 const HEADERS = { "Cache-Control": "private, no-store", Pragma: "no-cache", "X-Content-Type-Options": "nosniff" };
 const ARTIFACT_TYPES = new Set(["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"]);
 const MAX_ARTIFACT_BYTES = 10 * 1024 * 1024;

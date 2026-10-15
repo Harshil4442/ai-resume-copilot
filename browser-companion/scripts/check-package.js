@@ -16,4 +16,4 @@ const identity = [...createHash("sha256").update(Buffer.from(manifest.key, "base
 assert.equal(identity, CONFIG.extensionId);
 assert.equal(manifest.content_security_policy.extension_pages,
   "default-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'; frame-src blob:; connect-src 'self' https://www.hirewizhq.com");
-console.log("Reviewed MV3 pilot: stable identity, two optional exact origins; separate approved attachment capability, no cookies, broad host grants, content scripts, external messages or final submission.");
+console.log("Reviewed MV3 pilot: stable identity, two optional exact origins; separate exact attachment and disabled native final-submit capabilities; no cookies, broad host grants, content scripts or external messages.");

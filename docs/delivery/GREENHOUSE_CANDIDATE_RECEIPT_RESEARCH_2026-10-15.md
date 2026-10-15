@@ -1,0 +1,44 @@
+# Greenhouse candidate receipt research — 2026-10-15
+
+Scope: official Greenhouse documentation and public, cookie-free GET requests only. No candidate data, file selection, upload, application POST, authenticated employer API call, or provider mutation was used.
+
+## Candidate-visible confirmation and reconciliation
+
+- Greenhouse documents its application confirmation page as the page shown after submission that confirms the organization received the application. Employers can edit this message per board. [Official confirmation-page documentation](https://support.greenhouse.io/hc/en-us/articles/115005516483-Edit-application-confirmation-page).
+- Email templates include a “Thank you for applying” type for submitted applications. Confirmation-email delivery is configurable on each job post; an absent email does not establish rejection or non-submission. These docs do not promise an exact-file hash or application identifier in that email. [Email templates](https://support.greenhouse.io/hc/en-us/articles/115002573326-Email-template-types), [confirmation-email setting](https://support.greenhouse.io/hc/en-us/articles/28630224743323-Enable-Greenhouse-Verified-Features).
+- MyGreenhouse supports email-verified candidate accounts and application tracking. Employer-shared status/tasks are conditional; a missing application can reflect employer sharing, a third-party application path, or a different email. A previously submitted resume may not be visible. Contacting the employer is the fallback for unavailable status. [Candidate FAQ](https://support.greenhouse.io/hc/en-us/articles/43418495049499-MyGreenhouse-FAQ-for-Candidates), [candidate portal](https://support.greenhouse.io/hc/en-us/articles/28688386131739-MyGreenhouse-candidate-portal).
+
+## Observed public Razorpay form and source
+
+The old fixture opening `4723040005` currently redirects to the board with `?error=true`. A current public [Lead Software Development Engineer opening](https://job-boards.greenhouse.io/razorpaysoftwareprivatelimited/jobs/4740333005) was inspected without entering data. Its initial HTML has `form#application-form`, method `get`, the exact opening path as action, `input#resume[type=file]` accepting PDF/DOC/DOCX/TXT/RTF, and one submit-type button labelled Submit application. Submission relies on the page's JavaScript handler; raw `form.submit()` would bypass that handler and its validation.
+
+Public assets linked by that page:
+
+- [Application route](https://job-boards.cdn.greenhouse.io/assets/_url_token_.jobs_._job_post_id-Bh7MTGHV.js), SHA-256 `201a6c1d458d857bf92d8c2c6649cae4b158f2fa76ad30fa4c8c1b1bb3aa1868`.
+- [Shared application client](https://job-boards.cdn.greenhouse.io/assets/entry.client-ClhIqXFJ.js), SHA-256 `2d91ca7cbf9d71723d90a17f9acce597de5a788a081059e13d02cad79b4db858`.
+- [Route manifest](https://job-boards.cdn.greenhouse.io/assets/manifest-dc5ec512.js), SHA-256 `194a8e240edfd33b11e041bebb8c9b40902309f226c6c67c740ef08a146000bc`.
+- [Confirmation route](https://job-boards.cdn.greenhouse.io/assets/_url_token_.jobs_._job_post_id_.confirmation-Bxj_rgpa.js), SHA-256 `a0b4aa116141335d36d33baa3c8c75ed1b188030255a541d08d13a7589f0f79b`.
+
+The shared client requests `${JBEN_URL}/uncacheable_attributes/presigned_fields?fields[]=resume`, POSTs the selected File through XHR/FormData to returned storage fields, and treats HTTP 2xx as successful upload. It saves a filename and storage URL in React state; serialization uses `resume_url` and `resume_url_filename`. The DOM success representation is `.file-upload[aria-labelledby="upload-label-resume"] .file-upload__filename`, containing the filename and a Remove file button. The initial file input is visually hidden and labelled Attach; Resume/CV is the group's label. The input unmounts while uploading and after completion. Filename state can also be initialized through application autofill, so this DOM alone does not identify an exact newly uploaded object. No server-returned content hash is surfaced. Submission uses JSON POST to the page-provided submit path (observed here as `https://boards.greenhouse.io/razorpaysoftwareprivatelimited/jobs/4740333005`), existing security/anti-bot handling, an OK-response redirect, and no success-body application ID read. CAPTCHA/security-code failures remain candidate checkpoints.
+
+## Decisive confirmation-path limitation
+
+A fresh, cookie-free GET to [the exact confirmation path](https://job-boards.greenhouse.io/razorpaysoftwareprivatelimited/jobs/4740333005/confirmation) returned HTTP 200 with `.confirmation`, `.confirmation__content`, the thank-you message, a Back to job post link, and a tracking prompt, despite no application submission. The route module uses board-configured message data and the public job ID. Therefore a confirmation URL, matching text, or screenshot cannot independently establish that this candidate submitted an application. A post-click transition can be reported as a browser observation; visiting the page later cannot reconcile a lost POST outcome.
+
+## Employer-authenticated evidence
+
+Public Job Board GET endpoints expose job data, not candidate application status. Its application POST requires an employer Job Board API key using Basic authentication; the docs warn that the secret belongs on a server. No candidate-accessible status/receipt API is documented there. [Job Board API](https://docs.greenhouse.io/job-board.html#submit-an-application).
+
+Current Harvest v3 reads require scoped employer/partner OAuth authorization. Its applications endpoint supports filtering by candidate, job, job-post and application IDs and lifecycle status. [Harvest authentication](https://harvestdocs.greenhouse.io/docs/authentication), [applications](https://harvestdocs.greenhouse.io/reference/get_v3-applications).
+
+An employer-configured application-created webhook carries application/candidate/job identifiers and status. Greenhouse documents HMAC verification over the exact raw body with the configured secret and an event ID. This is a possible authenticated receipt source only with a legitimately provisioned employer integration, correct correlation and replay handling; it is not available from a candidate browser alone. Attachment metadata in these events is not an exact-file content hash. [Official recruiting webhooks](https://docs.greenhouse.io/webhooks.html#application-created).
+
+## Implementation consequence
+
+A candidate's signed approval can establish consent to a precise one-shot action. A device signature, DOM hash, filename marker, or local upload/submission observation establishes only what that device reports; it does not authenticate employer application creation or prove the bytes retained by the employer. Independently authenticated employer evidence and exact correlation are still required before an employer receipt or a 20-credit settlement may be established. Keep receipt/settlement false when that proof is unavailable, and never retry an uncertain submission automatically.
+
+## Minimum browser-network observation grant
+
+Chrome's [official webRequest reference](https://developer.chrome.com/docs/extensions/reference/api/webRequest) supports correlating the exact outgoing POST and response lifecycle by request ID, tab/frame/document, destination, initiator, request body, status, headers and cache indication. It requires `webRequest` plus host access to both the request destination and initiator: here the exact `boards.greenhouse.io` endpoint and `job-boards.greenhouse.io` page. It does not expose response-body bytes. Request IDs are browser-session identifiers, not employer application IDs; a correlated 2xx still does not define employer acceptance semantics.
+
+Chrome's [debugger API](https://developer.chrome.com/docs/extensions/reference/api/debugger) can target a tab and use the [CDP Network domain](https://chromedevtools.github.io/devtools-protocol/tot/Network/#method-getResponseBody) to obtain the response body after the matching request completes. This needs the additional `debugger` permission and a deliberate attachment; the current companion has no such grant. A future exact connector could bind the observed outgoing payload, opening, approved attempt, transport/security/cache/service-worker details and actual response body to an explicitly documented employer success contract. No such hosted success-body schema or application-ID contract was established by this read-only research: the current public client ignores that body. Page-provided `postMessage`, a public confirmation navigation, or a guessed fixture success body cannot supply that missing contract. Extra network permissions alone must not enable receipt settlement.
