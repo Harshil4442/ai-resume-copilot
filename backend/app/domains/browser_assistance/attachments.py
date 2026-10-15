@@ -38,6 +38,7 @@ def descriptor(app, artifact) -> dict:
 
 
 def review_payload(inspection, app, posting, artifact, mapping) -> dict:
+    from . import hosted_network as network
     from . import service as s
 
     s.require(enabled(), 503)
@@ -51,7 +52,7 @@ def review_payload(inspection, app, posting, artifact, mapping) -> dict:
                   and isinstance(field["label"], str) and len(field["label"]) <= 256
                   and type(field["required"]) is bool for field in manual))
     answers: dict[str, str] = {}
-    return {"review_protocol_version": 3, "application_id": app.id, "package_digest": app.package_digest,
+    payload = {"review_protocol_version": 3, "application_id": app.id, "package_digest": app.package_digest,
             "target_url": posting.apply_url, "artifact": descriptor(app, artifact),
             "attachment": {"input_id": "resume", "expected_empty": True},
             "context_digest": inspection["context_digest"], "field_mapping": mapping,
@@ -65,9 +66,24 @@ def review_payload(inspection, app, posting, artifact, mapping) -> dict:
                 "Cancellation or revocation stops future delivery/actions. An action already authorized may finish within its ten-second lease; the lease is never extended.",
                 "Only local file selection can be observed here. Employer upload acceptance is unconfirmed; no employer-submission receipt or application fee is created.",
                 "Country, employment, unsupported required controls, CAPTCHA/login and final submission remain yours."]}
+    if "upload_plan" in inspection:
+        payload["upload_plan"] = network.upload_plan(inspection["upload_plan"], now_ms=s._ms(s.now()))
+        payload["native_context"] = network.native_context(inspection.get("native_context"))
+        payload["allowed_actions"] = ["upload_resume"]
+        payload["disclosures"] = [
+            "This approval sends the exact sealed resume bytes once to the reviewed employer storage recipient and object key, then updates this opening's Resume/CV control only after a direct secure storage acknowledgement.",
+            "The complete resume can be disclosed before final submission. Review the exact storage origin, filename and saved resume before approving. Earlier disclosure cannot be recalled.",
+            "Only the approved, extension-owned complete multipart bytes may be uploaded. An uncertain upload or lost response is never automatically repeated.",
+            "Cancellation or revocation stops future actions. An action already authorized may finish within its ten-second lease, which is never extended.",
+            "This upload approval does not submit the application or charge application credits. Final submission needs a separate complete review.",
+        ]
+    else:
+        s.require("native_context" not in inspection)
+    return payload
 
 
 def begin(db: Session, record, review, body) -> dict:
+    from . import hosted_network as network
     from . import service as s
 
     s.require(enabled() and review.review_protocol_version == 3, 503)
@@ -93,14 +109,24 @@ def begin(db: Session, record, review, body) -> dict:
                "review_digest": review.review_digest, "field_id": "resume", "control_type": "file",
                "attachment": review.payload["attachment"], "allowed_actions": ["attach"],
                "issued_at_ms": s._ms(issued), "deadline": s._ms(expires)}
+    response = {}
+    if "upload_plan" in review.payload:
+        s.require(network.enabled() and review.payload["upload_plan"]["expires_at_ms"] > payload["deadline"], 503)
+        payload.update(upload_plan=review.payload["upload_plan"], native_context=review.payload["native_context"],
+                       allowed_actions=["upload_resume"])
+        response = {"upload_lease": {"issued_at_ms": payload["issued_at_ms"], "deadline": payload["deadline"]},
+                    "upload_binding": {key: copy.deepcopy(review.payload[key]) for key in (
+                        "upload_plan", "native_context", "target_url", "document_id", "artifact")}}
+        response["upload_binding"]["review_digest"] = review.review_digest
     db.add(s.RequestRecord(id=identity, device_id=record.id, request_id=identity, operation="attachment",
                           request_sha256=s.digest(payload), review_id=review.id, field_index=0,
-                          state="begun", response={}, lease_expires_at=expires))
+                          state="begun", response=response, lease_expires_at=expires))
     review.state = "running"
     return {"state": "begun", "lease": s._signature(payload)}
 
 
 def _authorize_delivery(db, origin, request):
+    from . import hosted_network as network
     from . import service as s
 
     s.require(s.enabled() and enabled(), 503)
@@ -127,8 +153,11 @@ def _authorize_delivery(db, origin, request):
     s.require(descriptor(app, artifact) == review.payload["artifact"])
     action = db.query(s.RequestRecord).filter_by(id=body["action_id"], device_id=record.id,
         review_id=review.id, operation="attachment", field_index=0).populate_existing().with_for_update().first()
-    s.require(action is not None and action.state == "begun" and not action.response
+    s.require(action is not None and action.state == "begun"
+              and (set(action.response) == {"upload_lease", "upload_binding"} if "upload_plan" in review.payload else not action.response)
               and action.lease_expires_at is not None and s._aware(action.lease_expires_at) > s.now())
+    if "upload_plan" in review.payload:
+        s.require(network.enabled() and review.payload["upload_plan"]["expires_at_ms"] > s._ms(action.lease_expires_at), 503)
     return record, review, action, artifact, request_sha
 
 
@@ -151,7 +180,7 @@ def deliver(db: Session, origin, request) -> BinaryDelivery:
     s.require(s.enabled() and enabled(), 503)
     s.require(s._aware(review.expires_at) > claim_time and s._aware(action.lease_expires_at) > claim_time)
     deadline = s._aware(action.lease_expires_at)
-    action.response = {"delivery_claimed": True}
+    action.response = {**action.response, "delivery_claimed": True}
     db.add(s.RequestRecord(id=str(uuid4()), device_id=record.id, request_id=str(request.request_id),
                           operation="artifact", request_sha256=request_sha, review_id=review.id,
                           response={}, state="completed"))
@@ -161,15 +190,28 @@ def deliver(db: Session, origin, request) -> BinaryDelivery:
 
 
 def outcome(db, record, review, body):
+    from . import hosted_network as network
     from . import service as s
 
-    s.require(set(body) in ({"review_id", "action_id", "outcome"}, {"review_id", "action_id", "outcome", "selection_reported"}))
+    s.require({"review_id", "action_id", "outcome"} <= set(body)
+              and set(body) <= {"review_id", "action_id", "outcome", "selection_reported", "upload_evidence"})
     s.require("selection_reported" not in body or type(body["selection_reported"]) is bool)
     s.require(body["outcome"] in {"selected", "blocked", "unknown"})
     action = db.query(s.RequestRecord).filter_by(id=body["action_id"], device_id=record.id,
         review_id=review.id, operation="attachment", field_index=0).with_for_update().first()
     s.require(action is not None and action.state == "begun" and review.next_index == 0)
-    s.require(body["outcome"] != "selected" or action.response == {"delivery_claimed": True})
+    native = "upload_plan" in review.payload
+    expected = {"upload_lease", "upload_binding", "delivery_claimed"} if native else {"delivery_claimed"}
+    s.require(body["outcome"] != "selected" or set(action.response) == expected and action.response.get("delivery_claimed") is True)
+    if "upload_evidence" in body:
+        s.require(native and body["outcome"] == "selected" and body.get("selection_reported") is True)
+        app, _, artifact = s._application(db, review, record.user_id)
+        evidence = network.upload_evidence(body["upload_evidence"], review=review, action=action,
+                                           artifact=artifact, lease=action.response["upload_lease"])
+        action.response = {**action.response, "native_upload": evidence,
+                           "upload_plan_sha256": s.digest(review.payload["upload_plan"])}
+    if native and body["outcome"] == "selected":
+        s.require("native_upload" in action.response)
     if body.get("selection_reported") is True:
         s.require(body["outcome"] == "selected" and action.response.get("delivery_claimed") is True)
         action.response = {**action.response, "selection_reported": True, "selection_document_id":review.payload["document_id"],
@@ -178,4 +220,46 @@ def outcome(db, record, review, body):
     review.state = "filled" if body["outcome"] == "selected" else "cancelled" if body["outcome"] == "blocked" else "unknown"
     if body["outcome"] == "selected":
         review.next_index = 1
-    return s._review_response(review)
+    return status(db, review)
+
+
+def reconcile(db, record, review, body):
+    """Record original captured upload proof only; never redeliver or upload again."""
+    from . import hosted_network as network
+    from . import service as s
+
+    s.require(set(body) == {"review_id", "action_id", "upload_evidence", "selection_reported"}
+              and body["selection_reported"] is True and review.review_protocol_version == 3)
+    action = db.query(s.RequestRecord).filter_by(id=body["action_id"], device_id=record.id,
+        review_id=review.id, operation="attachment", field_index=0).with_for_update().one_or_none()
+    s.require(action is not None and action.response.get("delivery_claimed") is True)
+    binding = action.response.get("upload_binding")
+    s.require(isinstance(binding, dict) and action.response.get("upload_lease"))
+    app, _, artifact = s._application(db, review.application_id, record.user_id)
+    s.require(descriptor(app, artifact) == binding["artifact"]
+              and artifact.sha256 == review.artifact_sha256 and binding["review_digest"] == review.review_digest)
+    original = SimpleNamespace(id=review.id, review_digest=review.review_digest,
+                               payload={key: binding[key] for key in (
+                                   "upload_plan", "native_context", "target_url", "document_id")})
+    evidence = network.upload_evidence(body["upload_evidence"], review=original, action=action,
+                                       artifact=artifact, lease=action.response["upload_lease"])
+    if "native_upload" in action.response:
+        s.require(action.response["native_upload"] == evidence)
+    action.response = {**action.response, "native_upload": evidence,
+                       "upload_plan_sha256": s.digest(binding["upload_plan"]), "selection_reported": True,
+                       "selection_document_id": binding["document_id"], "selection_target_url": binding["target_url"],
+                       "selection_artifact_sha256": artifact.sha256}
+    # Erased review payloads stay erased; no approval or future action is created.
+    action.state, review.state, review.next_index = "filled", "filled", 1
+    return status(db, review)
+
+
+def status(db, review):
+    from . import service as s
+    result = s._review_response(review)
+    if review.state == "filled":
+        action = db.query(s.RequestRecord).filter_by(review_id=review.id,
+            device_id=review.device_id, operation="attachment", field_index=0).first()
+        if action and action.response.get("native_upload") and action.response.get("selection_reported") is True:
+            result["attachment_status"] = "uploaded_native_verified"
+    return result

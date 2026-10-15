@@ -1,4 +1,4 @@
-"""Separately approved one-shot browser submit; observations never settle credits."""
+"""One-shot reviewed submit; only exact native employer acceptance settles credits."""
 
 from __future__ import annotations
 
@@ -52,6 +52,7 @@ def prepare(db, app, posting, artifact):
 
 def review_payload(db, record, inspection, app, posting, artifact, mapping):
     from . import attachments
+    from . import hosted_network as network
     from . import service as s
 
     s.require(enabled() and app.application_mode == "browser" and app.credit_cost == FEE, 503)
@@ -74,7 +75,10 @@ def review_payload(db, record, inspection, app, posting, artifact, mapping):
     s.require(inspection.get("ready") is True and inspection.get("manual_fields") == [])
     upload = inspection.get("upload")
     s.require(
-        isinstance(upload, dict) and set(upload) == {"review_id", "action_id", "filename", "status"}
+        isinstance(upload, dict) and set(upload) in (
+            {"review_id", "action_id", "filename", "status"},
+            {"review_id", "action_id", "filename", "status", "native_upload", "upload_plan_sha256"},
+        )
     )
     s.require(
         upload["status"] == "portal_reports_uploaded" and upload["filename"] == artifact.filename
@@ -170,6 +174,23 @@ def review_payload(db, record, inspection, app, posting, artifact, mapping):
             "reviewed_answers": payload["reviewed_answers"],
         }
     )
+    if "native_upload" in upload:
+        s.require(network.enabled() and action.response.get("native_upload") == upload["native_upload"]
+                  and action.response.get("upload_plan_sha256") == upload["upload_plan_sha256"]
+                  and upload["native_upload"]["artifact_sha256"] == artifact.sha256
+                  and upload["native_upload"]["document_id"] == inspection["document_id"]
+                  and upload["native_upload"]["target_url"] == posting.apply_url)
+        context = network.native_context(inspection.get("native_context"))
+        s.require(context["tab_id"] == upload["native_upload"]["tab_id"])
+        expected = network.expected_application(app, mapping, payload["reviewed_answers"], context, upload["native_upload"])
+        payload.update(receipt_contract=network.RECEIPT_VERSION, native_context=context,
+                       expected_application=expected, expected_application_sha256=s.digest(expected))
+        payload["disclosures"][-2:] = [
+            "The exact sealed resume was sent once through the separately approved storage recipient and complete multipart bytes; its native secure acknowledgement is bound to this review.",
+            "Only a complete direct secure employer HTTP 200 exchange for the exact reviewed serialized application verifies acceptance. A thank-you page, HTTP 202, missing network evidence or filename alone cannot settle the credits.",
+        ]
+    else:
+        s.require("native_context" not in inspection)
     return payload
 
 
@@ -357,6 +378,15 @@ def begin(db, record, review, request, request_sha):
             "lease_exported": False,
         },
     )
+    if review.payload.get("receipt_contract"):
+        from . import hosted_network as network
+        s.require(network.enabled() and review.payload["receipt_contract"] == network.RECEIPT_VERSION, 503)
+        action.response = {**action.response, "hosted_receipt_binding": {
+            "receipt_contract": network.RECEIPT_VERSION,
+            "native_context": copy.deepcopy(review.payload["native_context"]),
+            "expected_application_sha256": review.payload["expected_application_sha256"],
+            "upload_evidence_sha256": s.digest(review.payload["upload"]["native_upload"]),
+        }}
     db.add(action)
     db.add(
         s.RequestRecord(
@@ -461,6 +491,11 @@ def begin(db, record, review, request, request_sha):
             "issued_at_ms": binding.issued_at_ms,
             "deadline": binding.deadline_ms,
         }
+        if current.payload.get("receipt_contract"):
+            from . import hosted_network as network
+            s.require(network.enabled(), 503)
+            lease.update({key: copy.deepcopy(current.payload[key]) for key in (
+                "receipt_contract", "expected_application", "expected_application_sha256", "native_context")})
         action.response = {**action.response, "lease_exported": True, "native_proof": proof}
         db.commit()  # A lost lease response cannot re-export or resubmit.
         s.require(s.now() < deadline)
@@ -528,7 +563,8 @@ def status(db, review):
 def observe(db, record, review, body):
     from . import service as s
 
-    s.require(set(body) == {"review_id", "action_id", "observation"})
+    s.require(set(body) in ({"review_id", "action_id", "observation"},
+                           {"review_id", "action_id", "observation", "receipt"}))
     action = (
         db.query(s.RequestRecord)
         .filter_by(
@@ -571,6 +607,28 @@ def observe(db, record, review, body):
         .one()
     )
     if reconciled(db, review, app):
+        return status(db, review)
+    if "receipt" in body:
+        from ..employer import admissions, credits
+        from . import hosted_network as network
+        # The original immutable action binding survives review TTL/cancellation.
+        # This only adjudicates an already captured exchange; it never sends.
+        receipt = network.submit_receipt(body["receipt"], review=review, action=action)
+        reservation = db.query(s.employer.ServiceCreditReservation).filter_by(
+            id=app.reservation_id, user_id=record.user_id, source_id=app.id,
+            operation="job_application").with_for_update().one()
+        s.require(reservation.state == "reserved" and reservation.unit_price == FEE
+                  and reservation.reserved_amount == FEE and reservation.requested_count == 1)
+        app.status, attempt.state, action.state = "confirmed", "confirmed", "filled"
+        app.receipt = attempt.receipt = receipt
+        attempt.response_status, attempt.completed_at, attempt.error_code = 200, s.now(), None
+        app.error_code = app.error_message = None
+        credits.settle(db, reservation, completed_count=1, reason="Exact reviewed Greenhouse hosted application accepted over a direct secure native exchange")
+        app.charged_credits = reservation.committed_amount
+        admissions.finish(db, app, "confirmed")
+        action.response = {**action.response, "observation": observation,
+                           "employer_confirmed": True, "receipt_sha256": s.digest(receipt)}
+        review.state, review.next_index = "filled", 1
         return status(db, review)
     attempt.state, app.status, review.state = "unknown", "unknown", "unknown"
     attempt.completed_at = s.now()
@@ -713,10 +771,14 @@ def upload_provenance(db, record, app, artifact):
             and action.response.get("delivery_claimed") is True
             and action.response.get("selection_reported") is True
         ):
-            return {
+            result = {
                 "review_id": prior.id,
                 "action_id": action.id,
                 "filename": artifact.filename,
                 "status": "portal_reports_uploaded",
             }
+            if action.response.get("native_upload"):
+                result.update(native_upload=copy.deepcopy(action.response["native_upload"]),
+                              upload_plan_sha256=action.response["upload_plan_sha256"])
+            return result
     return None

@@ -85,6 +85,7 @@ models = load(PREFIX + ".domains.browser_assistance.models", ROOT / "domains/bro
 schemas = load(PREFIX + ".domains.browser_assistance.schemas", ROOT / "domains/browser_assistance/schemas.py")
 hosted = load(PREFIX + ".domains.browser_assistance.hosted", ROOT / "domains/browser_assistance/hosted.py")
 attachments = load(PREFIX + ".domains.browser_assistance.attachments", ROOT / "domains/browser_assistance/attachments.py")
+load(PREFIX + ".domains.browser_assistance.hosted_network", ROOT / "domains/browser_assistance/hosted_network.py")
 submissions = load(PREFIX + ".domains.browser_assistance.submissions", ROOT / "domains/browser_assistance/submissions.py")
 service = load(PREFIX + ".domains.browser_assistance.service", ROOT / "domains/browser_assistance/service.py")
 manual_reporting = load(PREFIX + ".domains.employer.manual_reporting", ROOT / "domains/employer/manual_reporting.py")

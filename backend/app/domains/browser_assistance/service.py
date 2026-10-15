@@ -3,8 +3,9 @@
 PostgreSQL owns revocation, review expiry and one-shot field outcomes. TLS and a
 nonextractable device key identify the caller; signed leases bind exact actions.
 Fill and attachment approvals never submit. A separate disabled final-submit
-protocol reserves credits and dispatches one native-authorized attempt; browser
-observations never confirm employer receipt or settle that reservation.
+protocol reserves credits and dispatches one native-authorized attempt. Ordinary
+browser observations never settle it; an exact reviewed native secure exchange
+can verify acceptance under the separately versioned hosted receipt contract.
 """
 from __future__ import annotations
 
@@ -188,9 +189,11 @@ def _owner_lock(db: Session, user_id: int) -> None:
 
 
 def _device_response(device: Device) -> dict:
+    from . import hosted_network
     return {"id": device.id, "state": device.state, "key_sha256": device.key_sha256,
             "extension_id": device.extension_id, "expires_at_ms": _ms(device.pairing_expires_at),
-            "authority_key": public_signer(), "attachment_available": attachments.enabled(), "submit_available": submissions.enabled()}
+            "authority_key": public_signer(), "attachment_available": attachments.enabled(), "submit_available": submissions.enabled(),
+            "native_upload_available": attachments.enabled() and hosted_network.enabled()}
 
 
 def _review_response(review: Review, *, include_payload: bool = True) -> dict:
@@ -382,7 +385,8 @@ def candidate(db: Session, user_id: int, operation: str, request: CandidateReque
                 review.state, review.payload = "cancelled", {}
         else:
             require(operation == "review", 404)
-        response = submissions.status(db,review) if review.review_protocol_version == 4 else _review_response(review)
+        response = (submissions.status(db, review) if review.review_protocol_version == 4 else
+                    attachments.status(db, review) if review.review_protocol_version == 3 else _review_response(review))
     db.commit()
     return response
 
@@ -516,7 +520,8 @@ def device(db: Session, origin: str, request: DeviceRequest) -> dict | attachmen
                 if review.state != "filled":
                     review.state="expired"
             _expire(review)
-            response["review"] = submissions.status(db,review) if review.review_protocol_version == 4 else _review_response(review)
+            response["review"] = (submissions.status(db, review) if review.review_protocol_version == 4 else
+                                  attachments.status(db, review) if review.review_protocol_version == 3 else _review_response(review))
             if review.review_protocol_version == 4:
                 action=db.query(RequestRecord).filter_by(review_id=review.id,operation="submit").first()
                 if action:
@@ -536,6 +541,9 @@ def device(db: Session, origin: str, request: DeviceRequest) -> dict | attachmen
             response = {"application_id": app.id, "target_url": posting.apply_url, "field_mapping": field_mapping(app, version, request.body.get("hosted_rows"))}
             if version == 4:
                 response["upload"] = submissions.upload_provenance(db,record,app,artifact)
+            if version == 3:
+                from . import hosted_network
+                response["native_upload_available"] = hosted_network.enabled()
             if version in {2, 4}:
                 response["hosted_controls_available"] = True
             if version > 1:
@@ -564,7 +572,10 @@ def device(db: Session, origin: str, request: DeviceRequest) -> dict | attachmen
                     submissions.cancel(db, selected)
                     response = submissions.status(db,selected)
             else:
-                response = _action(db, record, request)
+                if selected is not None and selected.review_protocol_version == 3 and request.operation == "reconcile":
+                    response = attachments.reconcile(db, record, selected, request.body)
+                else:
+                    response = _action(db, record, request)
     if request.operation != "status":
         db.add(RequestRecord(id=str(uuid4()), device_id=identity, request_id=request_id, operation=request.operation,
                             request_sha256=request_sha, response=response, state="completed"))
