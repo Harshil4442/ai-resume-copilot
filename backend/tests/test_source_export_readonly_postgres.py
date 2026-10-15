@@ -7,6 +7,7 @@ This tests PostgreSQL semantics, not Neon's independent native permission hooks.
 from __future__ import annotations
 
 import importlib
+import json
 import os
 import re
 import shutil
@@ -20,6 +21,8 @@ import pytest
 from psycopg import sql
 from sqlalchemy.engine import make_url
 
+from scripts import ci_database_transfer_clients as transfer_clients
+
 ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT / "infra/gcp"), str(ROOT / "backend")]
 source = importlib.import_module("fresh_source_authority")
@@ -32,21 +35,96 @@ def _tool(tool, arguments, *, database, actor, port, content=None):
     environment = {key: value for key, value in os.environ.items() if not key.startswith("PG")}
     environment.update(PGHOST="127.0.0.1", PGPORT=str(port), PGDATABASE=database,
                        PGUSER=actor, PGPASSWORD=PASSWORD if actor != "hirewiz" else "hirewiz", PGSSLMODE="disable")
-    if container:
+    docker = shutil.which("docker") or "/Applications/Docker.app/Contents/Resources/bin/docker"
+    if os.getenv("GITHUB_ACTIONS") == "true":
+        # The transfer wrapper deliberately admits only its custom-format UUID
+        # transfer contract. This separate regression needs the actual PG17
+        # pg_dump/psql clients in the already-owned CI service instead.
+        container = os.getenv("CI_POSTGRES_CONTAINER_ID", "")
+        assert os.getenv("RUNNER_OS") == "Linux" and re.fullmatch(r"[a-f0-9]{64}", container)
+        work = Path(os.environ["HIREWIZ_TRANSFER_WORKDIR"])
+        config = work.parent / "docker-config"
+        assert work.is_absolute() and work.is_dir() and not work.is_symlink()
+        assert config.is_dir() and not config.is_symlink()
+        prefix = [docker, "--config", str(config), "--host", "unix:///var/run/docker.sock"]
+        observed = subprocess.run([*prefix, "inspect", "--format",
+            "[{{json .Id}},{{json .Config.Image}},{{json .State.Running}},{{json .State.Health.Status}}]",
+            container], capture_output=True, env=environment, timeout=10, check=True)
+        assert len(observed.stdout) <= 4096
+        assert json.loads(observed.stdout) == [container, transfer_clients.IMAGE, True, "healthy"]
+        environment["PGPORT"] = "5432"
+        command = [*prefix, "exec", "-i"]
+        for name in ("PGHOST", "PGPORT", "PGDATABASE", "PGUSER", "PGPASSWORD", "PGSSLMODE"):
+            command.extend(["--env", name])
+        command.extend([container, tool, *arguments])
+    elif container:
         assert re.fullmatch(r"hirewiz-source-export-local-[a-z0-9-]{1,48}", container)
-        docker = shutil.which("docker") or "/Applications/Docker.app/Contents/Resources/bin/docker"
         environment["PGPORT"] = "5432"
         command = [docker, "exec", "-i"]
         for name in ("PGHOST", "PGPORT", "PGDATABASE", "PGUSER", "PGPASSWORD", "PGSSLMODE"):
             command.extend(["--env", name])
         command.extend([container, tool, *arguments])
     else:
-        executable = os.getenv("HIREWIZ_TRANSFER_PG_DUMP") if tool == "pg_dump" else None
-        executable = executable or shutil.which(tool)
+        executable = shutil.which(tool)
         assert executable, "Actual matching PG17 dump and psql clients are required"
         command = [executable, *arguments]
     return subprocess.run(command, input=content, capture_output=True,
                           env=environment, timeout=20, check=False)
+
+
+@pytest.mark.parametrize("tool", ["pg_dump", "psql"])
+def test_ci_export_client_routes_to_exact_service_without_transfer_wrapper(monkeypatch, tmp_path, tool):
+    """Inert command selection only; the database test below proves actual SQL."""
+    container = "c" * 64
+    work, config = tmp_path / "work", tmp_path / "docker-config"
+    work.mkdir()
+    config.mkdir()
+    for name, value in {"GITHUB_ACTIONS": "true", "RUNNER_OS": "Linux",
+                        "CI_POSTGRES_CONTAINER_ID": container, "HIREWIZ_TRANSFER_WORKDIR": str(work),
+                        "HIREWIZ_TRANSFER_PG_DUMP": "/never-select-the-restricted-transfer-wrapper"}.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setattr(shutil, "which", lambda name: "/owned-ci/docker" if name == "docker" else None)
+    calls = []
+    def run(command, **kwargs):
+        calls.append((command, kwargs))
+        output = (json.dumps([container, transfer_clients.IMAGE, True, "healthy"]).encode()
+                  if "inspect" in command else b"inert-command-route-only")
+        return subprocess.CompletedProcess(command, 0, output, b"")
+    monkeypatch.setattr(subprocess, "run", run)
+    arguments = ["--format=plain", "--no-owner", "--no-privileges", "--no-password"] if tool == "pg_dump" else ["-X", "--set", "ON_ERROR_STOP=1", "--no-password"]
+    result = _tool(tool, arguments, database="hw_export_db_" + "a" * 20,
+                   actor="hw_export_observer_" + "a" * 20, port=55433, content=None)
+    assert result.returncode == 0 and len(calls) == 2
+    assert all(command[:5] == ["/owned-ci/docker", "--config", str(config), "--host", "unix:///var/run/docker.sock"] for command, _ in calls)
+    command, kwargs = calls[-1]
+    assert command[-len(arguments)-2:] == [container, tool, *arguments]
+    assert kwargs["env"]["PGPORT"] == "5432" and kwargs["env"]["PGUSER"].startswith("hw_export_observer_")
+    assert PASSWORD not in command and "/never-select-the-restricted-transfer-wrapper" not in command
+
+
+@pytest.mark.parametrize("change", ["id", "image", "running", "health"])
+def test_ci_export_client_refuses_service_identity_drift_before_exec(monkeypatch, tmp_path, change):
+    container = "c" * 64
+    work, config = tmp_path / "work", tmp_path / "docker-config"
+    work.mkdir()
+    config.mkdir()
+    for name, value in {"GITHUB_ACTIONS": "true", "RUNNER_OS": "Linux",
+                        "CI_POSTGRES_CONTAINER_ID": container, "HIREWIZ_TRANSFER_WORKDIR": str(work)}.items():
+        monkeypatch.setenv(name, value)
+    native = [container, transfer_clients.IMAGE, True, "healthy"]
+    native[{"id": 0, "image": 1, "running": 2, "health": 3}[change]] = {
+        "id": "d" * 64, "image": "unreviewed:latest", "running": False, "health": "starting",
+    }[change]
+    calls = []
+    def run(command, **kwargs):
+        calls.append(command)
+        assert "inspect" in command, "A changed service must never dispatch a PG client"
+        return subprocess.CompletedProcess(command, 0, json.dumps(native).encode(), b"")
+    monkeypatch.setattr(subprocess, "run", run)
+    with pytest.raises(AssertionError):
+        _tool("pg_dump", ["--format=plain"], database="hw_export_db_" + "a" * 20,
+              actor="hw_export_observer_" + "a" * 20, port=55433)
+    assert len(calls) == 1
 
 
 @pytest.fixture

@@ -262,6 +262,7 @@ jobs:
       - name: Run backend tests
         working-directory: backend
         env:
+          CI_POSTGRES_CONTAINER_ID: ${{ job.services.postgres.id }}
           HIREWIZ_TEST_POSTGRES_URL: postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55433/hirewiz_admission_test
           HIREWIZ_TRANSFER_POSTGRES_REQUIRED: "true"
           PAIRING_PASSWORD_TEST_POSTGRES_ADMIN_URL: postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55433/postgres
