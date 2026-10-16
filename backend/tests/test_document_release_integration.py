@@ -464,3 +464,28 @@ def test_native_run_route_is_fixed_to_document_service_and_iam(method, suffix, a
         with pytest.raises(Denied, match="write_fixed_route_or_call_bound_refused"):
             writer._call("run", method, worker.RESOURCE + suffix)
         assert calls == []
+
+
+def test_successor_image_needs_explicit_fresh_read_only_release_proof_before_snapshot(monkeypatch):
+    snapshot = snapshots()
+    image = documents.ACCEPTED_IMAGE[:-64] + "f" * 64
+    for row in (snapshot["service"]["template"]["containers"][0], snapshot["revision"]["containers"][0]):
+        row["image"] = image
+        next(item for item in row["env"] if item["name"] == "DOCUMENT_WORKER_IMAGE_DIGEST")["value"] = image
+    calls = []
+    def genuine_proof(selected, metadata):
+        calls.append((selected, metadata["uid"]))
+        return SimpleNamespace(image=selected)
+    monkeypatch.setitem(__import__("sys").modules, "document_refresh_probe",
+                        SimpleNamespace(verify_current_successor_for_release=genuine_proof))
+    boundary, _ = native_configuration(snapshot)
+    report = boundary.verify_document_configuration(SimpleNamespace(runtime_service_account=documents.API_INVOKER, release="a" * 40))
+    assert calls == [(image, "synthetic-service")]
+    assert report["configuration_matches"] is True
+    assert report["runtime_isolation_proven"] is False
+    def refused(*args):
+        raise RuntimeError("synthetic native proof unavailable")
+    monkeypatch.setitem(__import__("sys").modules, "document_refresh_probe",
+                        SimpleNamespace(verify_current_successor_for_release=refused))
+    with pytest.raises(Denied):
+        boundary.verify_document_configuration(SimpleNamespace(runtime_service_account=documents.API_INVOKER, release="a" * 40))

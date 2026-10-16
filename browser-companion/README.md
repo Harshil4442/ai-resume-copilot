@@ -65,10 +65,13 @@ and native experiment tests remain separate and do not constitute production pro
 
 For the normal candidate cohort, build with `python3 scripts/package-reviewed.py
 --native-config /absolute/path/to/reviewed-public-pins.json`. The bounded JSON has
-exactly `executorRevision: "companion_0_7_0"` and `authorityKey`, the actual public
+exactly `executorRevision: "companion_0_8_0"` and `authorityKey`, the actual public
 P-256 claim JWK from the configured KMS version. Use the same argument with
 `--check`. This replaces only public `config.js` bytes in the archive; it supplies
-no account, device or action grant. Publish the digest of that configured build.
+no account, device or action grant. For a production release, commit the same
+reviewed public values into `extension/config.js` and regenerate the default
+archive so the ordinary CI `--check` also reproduces the published package.
+Publish the digest of that configured build.
 See [normal candidate activation](../docs/delivery/NORMAL_CANDIDATE_BROWSER_ACTIVATION_2026-10-15.md).
 
 The current disabled v2 draft can bind the known Phone Country selector and up to

@@ -1,0 +1,138 @@
+# Immutable document-definition maintenance
+
+This is part of the existing resume/deployment outcome. Source implementation is
+available; the dedicated identity, WIF environment, alerts and the first native
+successor must be provisioned and accepted before maintenance is active. No source
+test or local Docker report establishes Cloud Run acceptance.
+
+## Runtime and exact acceptance
+
+`.github/workflows/document-refresh.yml` is the unattended runtime. It runs on the
+default branch only, with an environment named `document-maintenance`, serialized
+runs, pinned Actions, standard Google WIF credentials and the existing SDK/Docker
+checker. It never uses the retained human SDK session. Configure these environment
+variables after the coordinator baseline is complete:
+
+- `DOCUMENT_REFRESH_WIF_PROVIDER`: reviewed provider restricted to this repository,
+  default branch and workflow/environment.
+- `DOCUMENT_REFRESH_SERVICE_ACCOUNT`: exactly
+  `hirewiz-document-refresh@ai-resume-parser-482412.iam.gserviceaccount.com`.
+- `DOCUMENT_REFRESH_CONTROLLER_UID`: actual independently read 21-digit native UID
+  of that account. There is no source placeholder UID that authorizes deployment.
+
+The controller rejects a different ADC identity, disabled/replaced account, proxy,
+CA override, redirect or mutation retry. Standard WIF/metadata refresh is used;
+there is no downloaded service-account private key or token in artifacts.
+
+`refresh.Dockerfile` always starts from the immutable renderer
+`624597726ce2fefa2b3574fbf0a8ec4ccdc02a826380d76c5edc8ebbd59aa107`.
+Only `/var/lib/clamav` changes. The prior definition directory is replaced, rather
+than merged, and the final user remains 65534. No package/font/Python/renderer
+updates occur in this pipeline. Every new build has a fresh nonce, generation-bound
+one-file GCS archive and native Cloud Build result using the existing repaired
+builder. A genuine original 21-case local check must pass with all twelve source
+hashes, renderer/font/policy and exact pulled digest unchanged. Definitions must
+be younger than 24 hours; the runtime's original three-day refusal remains.
+
+Next, a new owned Cloud Run Job executes the exact original accepted six-case
+payload with only its image literal changed. Native Job/Execution UIDs, singleton
+execution, actual logs, runtime eleven hashes, font manifest, sandbox policy,
+cleanup and native identity/IAM are joined to the Build and generation-bound GCS
+source. The consumed historical d2ba job/journal is never used again. Serializing
+`NativeAcceptance` does not create authority: fresh native reads are required.
+
+## Controlled maintenance window
+
+The controller freshly checks the worker and all three consumers:
+`ai-resume-parser`, `hirewiz-analysis-worker`, and `hirewiz-resume-coordinator`.
+It then performs these existing deployment operations with conditional native
+ETags, unique revisions, metadata-only once markers and actual LRO readbacks:
+
+1. Capture and close direct-upload/optional-generation admission on API/analysis,
+   and scan/direct-upload admission on the coordinator. Coordinator cleanup stays
+   enabled exactly as it was.
+2. Freshly reverify the native successor, promote the document worker to it, and
+   validate its original complete configuration, IAM, Ready revision and 100%
+   untagged traffic.
+3. Roll the four exact document image/policy/renderer/font pins on all three
+   callers, preserving application images, secrets, networking and other settings.
+4. Freshly verify the complete native worker/caller join, restore each captured
+   flag (including previously absent flags), and verify it again.
+
+This is a bounded **fail-closed maintenance window**, not a claim that synchronous
+callers drained. An older in-flight caller may finish against the older worker or
+receive the new image and reject its receipt. A short 503/retry interval is allowed.
+A mismatched upload creates no resume, analysis reservation or charge. A mismatched
+DOCX tailoring result creates no version and releases its existing reservation
+exactly once. Existing approved artifacts retain their historical sealed receipts.
+No digest range, runtime updater, audience override or weakened receipt is used.
+
+An unknown PATCH/Create/Run/Delete stops immediately. The journal retains the
+original request hash and exact acknowledged native handle; missing ACK means
+unknown. `--mode reconcile --transition-journal /private/prior/transition` makes
+only GETs and never reopens flags, starts a new mutation or authorizes a resend.
+If interruption leaves mixed pins, a new run refuses before any further transition.
+A prior failed refresh artifact also blocks a new Build before any new operation;
+that original unknown run must be reconciled explicitly.
+A root-reviewed remaining-only recovery is required; deleting the journal is not
+recovery. A completed native acceptance Job is retained while its image serves.
+
+## Schedule, proof retention and alerts
+
+The daily 01:37 UTC run executes **the full refresh**, not candidate publication
+alone. The hourly `:17` run checks the actual serving image and fresh native immutable-image
+definition receipt (the initial baseline uses its actual image header). Successors
+avoid an hourly multi-GB registry download, limiting monitoring egress and runtime.
+The GitHub artifact retains all metadata-only JSON journals for fourteen days.
+The next daily run retrieves up to the three newest owned refresh artifacts and
+retains its byte-exact prior native journal inside the new artifact (including any
+new Delete once/ACK), and uses it for UID/etag-scoped cleanup only after the new
+worker and all three serving caller pins are independently verified. Missing prior
+history alerts rather than inventing ACKs. Native Job cleanup does not delete the
+current Job. Protect the fixed base, current accepted image and rollback image;
+retain prior image/source objects under the reviewed registry/storage policy.
+Image deletion is outside this controller; there is no broad registry delete right.
+
+The monitor writes only a fixed nonsecret status/heartbeat to
+`projects/ai-resume-parser-482412/logs/hirewiz-document-refresh`. At 24 hours before
+the unchanged three-day deadline, or on expiry/unavailable state, it emits attention.
+A failed operation makes a separate bounded best-effort unavailable notification;
+it never retries the failed mutation. Missing monitor/auth/logging also triggers
+absence monitoring.
+
+`infra/gcp/document_refresh_alerts.tf` is opt-in, disabled by default, and requires
+reviewed notification-channel IDs. Its alerts cover attention events and a missing
+heartbeat for two hours. Root must activate those resources and exercise the
+notification route; source presence is not a delivered alert.
+
+## Identity/resource provisioning
+
+Root provisions the dedicated keyless account and protected GitHub WIF/environment
+only after the coordinator baseline. Use custom permissions/resource bindings for:
+
+- Native account/project/worker/coordinator identity, user-key and IAM inventories.
+- Build create/get and the existing repaired builder's `actAs`, without adding new
+  builder grants; exact registry repository read and source-prefix create/get.
+- Conditional updates on the document worker and the three consumer services;
+  worker `actAs` and the corresponding exact existing consumer accounts.
+- Fresh `hirewiz-doc-six-<nonce>` Job create/run/get/delete, singleton executions,
+  regional operation GETs and synthetic Job log reads. Job creation is a parent
+  operation: resource-level IAM limits must be tested against Google's actual IAM
+  support rather than advertised as an unsupported name-prefix guarantee.
+- Fixed maintenance log writes; GitHub token has read-only Actions artifact access.
+
+No database, Secret Manager access, user/customer storage access, IAM write,
+API-key creation, payment action, employer submission or registry delete is needed.
+The local adapter also fixes every resource/method and denies those mutation routes.
+Provisioning and an actual native full maintenance run remain root release actions.
+
+## Ordinary future application releases
+
+The baseline accepted image keeps its original verification path. A successor is
+admitted only through `verify_current_successor_for_release`, using the existing
+normal retained SDK manager's unchanged account/project/CA/proxy/credential guards.
+That explicit read-only entrypoint verifies the same native Build/GCS/Job/log and
+full worker configuration proof. It does not require maintenance ADC/controller UID
+and cannot Create/Run/Delete/PATCH or publish a Build. Maintenance mutations keep
+the separate exact WIF identity. Labels only locate evidence; they never authorize
+an image or substitute for native proof.

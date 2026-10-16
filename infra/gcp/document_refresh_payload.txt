@@ -1,0 +1,411 @@
+"""Private fixed native probe; held until root review and actual Build joins.
+
+Run only as the reviewed immutable image Job's /usr/local/bin/python3 -I -c
+command. It has no SDK/provider client, accepts no argv or arbitrary content,
+and never changes production source, native launchers, fixtures or gates.
+"""
+from __future__ import annotations
+
+import base64
+import hashlib
+import importlib.util
+import io
+import json
+import os
+import re
+import sys
+import time
+import uuid
+from pathlib import Path
+from zipfile import ZIP_DEFLATED, ZipFile
+
+IMMUTABLE_IMAGE = 'us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz-document-inspector@sha256:624597726ce2fefa2b3574fbf0a8ec4ccdc02a826380d76c5edc8ebbd59aa107'
+POLICY_SHA256 = 'dbd15ce3120bb6211bb6c1d7b166aaddbd8b80e00a72d564e6274ef10db3aaf1'
+MAX_REPORT = 16 * 1024
+CASE_NAMES = ("clean_pdf", "clean_docx", "eicar_exact_file", "eicar_direct_detection",
+              "styled_multipage_fit", "rendered_reflow_refusal")
+REFLOW_REASONS = frozenset({"line_wrap_changed", "page_geometry_changed", "paragraph_page_changed",
+                           "paragraph_overflow", "hyperlink_changed"})
+RUN_OUTCOMES = frozenset({"pending", "returned", "failed", "deadline", "unexpected_exit", "reap_failed", "not_started"})
+PROCESSOR_OUTCOMES = frozenset({"not_validated", "clean", "refused", "unavailable"})
+VALIDATION_PHASES = frozenset({"not_started", "decode", "binding", "outcome", "complete"})
+FAILURE_PHASES = frozenset({"admission", "launcher", "validation", "processor", "cleanup", "response"})
+ACTIVATION_FLAGS = {"api_wiring_enabled": False, "candidate_submission_enabled": False,
+                    "checkout_enabled": False, "customer_processing_enabled": False,
+                    "deployment_proven": False, "checkpoint_complete": False}
+EICAR = (b"X5O!P%@AP[4" + bytes([92]) + b"PZX54(P^)7CC)7}$"
+         + b"EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*")
+
+
+class ProbeRefused(ValueError):
+    pass
+
+
+# Name retained solely so the original fixed public generator is unchanged.
+DocumentImageError = ProbeRefused
+
+
+def require(condition):
+    if condition is not True:
+        raise ProbeRefused()
+
+
+def pairs(items):
+    result = {}
+    for key, value in items:
+        require(key not in result)
+        result[key] = value
+    return result
+
+
+def parse(raw, limit):
+    require(type(raw) is bytes and 0 < len(raw) <= limit)
+    result = json.loads(raw, object_pairs_hook=pairs,
+                        parse_constant=lambda _: (_ for _ in ()).throw(ProbeRefused()))
+    require(type(result) is dict)
+    return result
+
+
+def same_binding(result, expected):
+    return type(result) is dict and all(type(result.get(k)) is type(v) and result.get(k) == v
+                                        for k, v in expected.items())
+
+
+def scan_projection(scan):
+    require(type(scan) is dict and set(scan) == {"engine", "version", "definitions"} and scan["engine"] == "ClamAV")
+    require(all(type(scan[k]) is str and 0 < len(scan[k]) <= 128
+                and all(32 <= ord(c) <= 126 for c in scan[k]) for k in ("version", "definitions")))
+    return {k: scan[k] for k in ("engine", "version", "definitions")}
+
+
+def diagnostic_projection(diagnostic):
+    result = {}
+    for key, allowed in (("launcher", RUN_OUTCOMES), ("cleanup", RUN_OUTCOMES | {"not_required"}),
+                         ("processor", PROCESSOR_OUTCOMES), ("validation", VALIDATION_PHASES)):
+        value = getattr(diagnostic, key)
+        require(type(value) is str and value in allowed)
+        result[key] = value
+    phase = diagnostic.failure_phase
+    require(phase is None or (type(phase) is str and phase in FAILURE_PHASES))
+    result["failure_phase"] = phase
+    for key in ("launcher_code", "cleanup_code"):
+        value = getattr(diagnostic, key)
+        require(value is None or (type(value) is int and -255 <= value <= 255))
+        result[key] = value
+    for key in ("launcher_elapsed_ms", "cleanup_elapsed_ms"):
+        value = getattr(diagnostic, key)
+        require(value is None or (type(value) is int and 0 <= value <= 120000))
+        result[key] = value
+    return result
+
+
+def cleanup_success(diagnostic):
+    return diagnostic.cleanup == "returned" and type(diagnostic.cleanup_code) is int and diagnostic.cleanup_code == 0
+
+
+def auxiliary(service, program, diagnostic):
+    """Same owned launcher/delete and bounds; no launcher replacement."""
+    name = "document-" + uuid.uuid4().hex
+    cleanup_required = True
+    try:
+        diagnostic.begin_run()
+        try:
+            code, raw = service._run([service.SANDBOX, "do", "--sandbox-name=" + name, "--write", "--",
+                "/usr/local/bin/python3", "-I", "-c", program], timeout=55, limit=16384, allow_outcome=True)
+        except BaseException as exc:
+            diagnostic.end_run(error=exc)
+            if isinstance(exc, service._LauncherRefused):
+                cleanup_required = exc.authorized
+            raise
+        diagnostic.end_run(code)
+        require(type(code) is int and code == 0)
+        return parse(raw, 16384)
+    finally:
+        if cleanup_required:
+            diagnostic.begin_run(cleanup=True)
+            try:
+                cleanup_code, _ = service._run([service.SANDBOX, "delete", name, "--force"],
+                                               timeout=5, limit=65536, cleanup=True)
+            except BaseException as exc:
+                diagnostic.end_run(error=exc, cleanup=True)
+                raise
+            else:
+                diagnostic.end_run(cleanup_code, cleanup=True)
+                require(type(cleanup_code) is int and cleanup_code == 0)
+
+
+EXPECTED_RUNTIME_HASHES = {'/opt/document/app/services/docx_layout_validation.py': 'b1e9c9027851d11422c3de5199943416807c2e5eb7bdbcd04ec4ca38c74a03b9', '/opt/document/app/services/market/security.py': 'a440f4ea26a5fb5982690da8399c75983e9133a23501d12e1973a985487200f6', '/opt/document/app/services/market/skill_extractor.py': '765824e77d2e9e0bfc88c910134a5009dd3ded52eccc958407d8173039746f54', '/opt/document/app/services/market/skill_taxonomy.py': 'e210d0c2b97567fae690d4710ffffb1a5a93bb5bb732badcff47cc2839296366', '/opt/document/app/services/parsing.py': 'c2533930bbeff9eb226abfb4b71720b6eb29dfaf805f6c2939e57c73226442a8', '/opt/document/app/services/pdf_streams.py': '72c43333a814a309622d7465e858118b3727ee958078775727a6560a0a7c5389', '/opt/document/app/services/resume_layout.py': '860af45f6ba27d41e0be5526b87d64900468c617d07c1e03f2246ff345121b8e', '/opt/document/docx_renderer.py': 'b11d0b9e9ce3cd079df2d77272e19d9d29c2acc4183471590fa2d9493f0a6ce9', '/opt/document/processor.py': '45a462190850480b800c3647549283c0cd328cbfddd497c3d4b9f094031351b0', '/opt/document/service.py': '65c66d6c158a869b9ec89f96a1d9a834c3b7af5e622ae79dbfd2037e93169cb8', '/opt/document/writer_owner.py': '2431048a9cf0867a7c016da912c54df54c683b9b3244309cfe36e5e4ee39b16e'}
+PREFLIGHT_PROGRAM = 'import hashlib,json,os,platform,re,stat,sys,time\nfrom pathlib import Path\nsys.path.insert(0,"/opt/document")\nimport docx_renderer\nexpected = {\'/opt/document/app/services/docx_layout_validation.py\': \'b1e9c9027851d11422c3de5199943416807c2e5eb7bdbcd04ec4ca38c74a03b9\', \'/opt/document/app/services/market/security.py\': \'a440f4ea26a5fb5982690da8399c75983e9133a23501d12e1973a985487200f6\', \'/opt/document/app/services/market/skill_extractor.py\': \'765824e77d2e9e0bfc88c910134a5009dd3ded52eccc958407d8173039746f54\', \'/opt/document/app/services/market/skill_taxonomy.py\': \'e210d0c2b97567fae690d4710ffffb1a5a93bb5bb732badcff47cc2839296366\', \'/opt/document/app/services/parsing.py\': \'c2533930bbeff9eb226abfb4b71720b6eb29dfaf805f6c2939e57c73226442a8\', \'/opt/document/app/services/pdf_streams.py\': \'72c43333a814a309622d7465e858118b3727ee958078775727a6560a0a7c5389\', \'/opt/document/app/services/resume_layout.py\': \'860af45f6ba27d41e0be5526b87d64900468c617d07c1e03f2246ff345121b8e\', \'/opt/document/docx_renderer.py\': \'b11d0b9e9ce3cd079df2d77272e19d9d29c2acc4183471590fa2d9493f0a6ce9\', \'/opt/document/processor.py\': \'45a462190850480b800c3647549283c0cd328cbfddd497c3d4b9f094031351b0\', \'/opt/document/service.py\': \'65c66d6c158a869b9ec89f96a1d9a834c3b7af5e622ae79dbfd2037e93169cb8\', \'/opt/document/writer_owner.py\': \'2431048a9cf0867a7c016da912c54df54c683b9b3244309cfe36e5e4ee39b16e\'}\nactual={name:hashlib.sha256(Path(name).read_bytes()).hexdigest() for name in expected}\nif actual!=expected or platform.machine()!="x86_64": raise SystemExit(1)\nuid,gid=os.getuid(),os.getgid()\nif type(uid) is not int or type(gid) is not int or not 0<=uid<=4294967295 or not 0<=gid<=4294967295: raise SystemExit(1)\nmanifest=docx_renderer.MANIFEST\nreadonly=(not manifest.is_symlink() and manifest.is_file() and stat.S_IMODE(manifest.stat().st_mode)==0o444)\nif not readonly: raise SystemExit(1)\nversion,fonts=docx_renderer.font_manifest(deadline=time.monotonic()+45)\nif actual!={name:hashlib.sha256(Path(name).read_bytes()).hexdigest() for name in expected}: raise SystemExit(1)\nprint(json.dumps({"runtime_hashes":actual,"architecture":platform.machine(),"runtime_uid":uid,"runtime_gid":gid,\n"readonly_font_manifest":readonly,"font_manifest_process_writable":os.access(manifest,os.W_OK),\n"renderer_version":version,"font_manifest_sha256":fonts},separators=(",",":"),allow_nan=False))\n'
+EICAR_DIRECT_PROGRAM = 'import hashlib,json,pathlib,sys,tempfile\nsys.path.insert(0,"/opt/document")\nimport processor\ncontent=(b"X5O!P%@AP[4"+bytes([92])+b"PZX54(P^)7CC)7}$"+b"EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*")\nif len(content)!=68: raise SystemExit(1)\ndetected=False\nwith tempfile.TemporaryDirectory(prefix="eicar-native-",dir="/tmp") as temporary:\n directory=pathlib.Path(temporary);directory.chmod(0o700)\n target=directory/"antivirus-test.pdf";target.write_bytes(content);target.chmod(0o600)\n try: processor.scan_original(target)\n except processor.InspectionDenied: detected=True\n unchanged=target.read_bytes()==content\n if not detected or not unchanged: raise SystemExit(1)\n print(json.dumps({"sha256":hashlib.sha256(content).hexdigest(),"size_bytes":len(content),\n "exact_file_unchanged":unchanged,"coherent_eicar_detection":detected},separators=(",",":"),allow_nan=False))\n'
+
+def corpus() -> list[tuple[str, str, bytes, str]]:
+    from docx import Document
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    from pypdf import PdfWriter
+
+    def pdf(active=False):
+        writer = PdfWriter()
+        writer.add_blank_page(200, 200)
+        if active:
+            writer.add_js("this.print();")
+        stream = io.BytesIO()
+        writer.write(stream)
+        return stream.getvalue()
+    def docx(field=None):
+        document = Document()
+        document.add_paragraph("Candidate Example")
+        document.add_paragraph("SKILLS")
+        document.add_paragraph("Python, SQL")
+        if field:
+            node = OxmlElement("w:fldSimple")
+            node.set(qn("w:instr"), field)
+            document.add_paragraph()._p.append(node)
+        stream = io.BytesIO()
+        document.save(stream)
+        return stream.getvalue()
+    clean_docx = docx()
+    infected = io.BytesIO()
+    with ZipFile(io.BytesIO(clean_docx)) as original, ZipFile(infected, "w", ZIP_DEFLATED) as output:
+        for entry in original.infolist():
+            output.writestr(entry, original.read(entry))
+        output.writestr("word/standalone-antivirus-test.txt", EICAR)
+    if len(EICAR) != 68:
+        raise DocumentImageError()
+    return [("clean_pdf", "pdf", pdf(), "clean"), ("clean_docx", "docx", clean_docx, "clean"),
+            ("page_counter", "docx", docx("PAGE"), "clean"),
+            ("active_pdf", "pdf", pdf(True), "refused"),
+            ("includetext", "docx", docx('INCLUDETEXT "https://fixture.invalid/candidate.docx"'), "refused"),
+            ("eicar_exact_file", "pdf", EICAR, "detected"),
+            ("eicar_zip_member", "docx", infected.getvalue(), "detected"),
+            ("missing_definitions", "pdf", pdf(), "missing")]
+
+def docx_layout_corpus(image: str) -> list[tuple[str, bytes, dict]]:
+    """One genuine styled two-page fit and one genuine reflow refusal.
+
+    The fixture is synthetic; the expected candidate is the exact source-pinned
+    native patch, not a template or a purported Word render produced on the host.
+    """
+    from docx import Document
+    from docx.opc.constants import RELATIONSHIP_TYPE
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    from docx.shared import Pt
+    spec = importlib.util.spec_from_file_location("document_native_docx_patch", Path("/opt/document/app/services/resume_layout.py"))
+    if spec is None or spec.loader is None:
+        raise DocumentImageError()
+    layout = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = layout
+    spec.loader.exec_module(layout)
+    original = "Built scalable systems with Python and SQL."
+    document = Document()
+    document.styles["Normal"].font.name = "Cambria"
+    document.styles["Normal"].font.size = Pt(11)
+    document.add_paragraph("Taylor Example")
+    paragraph = document.add_paragraph()
+    paragraph.add_run("Built scalable systems with ")
+    paragraph.add_run("Python").bold = True
+    paragraph.add_run(" and ")
+    paragraph.add_run("SQL").italic = True
+    paragraph.add_run(".")
+    document.add_paragraph("Reduced API latency by 40% through focused profiling.")
+    link_paragraph = document.add_paragraph()
+    link = OxmlElement("w:hyperlink")
+    link.set(qn("r:id"), document.part.relate_to("https://example.test/portfolio", RELATIONSHIP_TYPE.HYPERLINK, is_external=True))
+    run = OxmlElement("w:r")
+    text = OxmlElement("w:t")
+    text.text = "Portfolio"
+    run.append(text)
+    link.append(run)
+    link_paragraph._p.append(link)
+    document.add_page_break()
+    document.add_paragraph("Original education and second-page running content.")
+    stream = io.BytesIO()
+    document.save(stream)
+    source = stream.getvalue()
+    unit = next(unit for unit in layout.extract_source_units(source, "docx") if unit["text"] == original)
+    policy = POLICY_SHA256
+    rows = []
+    for name, replacement in (("styled_multipage_fit", "Built systems with Python and SQL."),
+                              ("rendered_reflow_refusal", original + " reusable systems" * 40)):
+        edits = [{"unit_id": unit["unit_id"], "original_text": original, "replacement_text": replacement}]
+        candidate = layout._apply_docx(source, edits)
+        expected = {"version": 1, "operation": "docx_layout", "sha256": hashlib.sha256(source).hexdigest(),
+            "size_bytes": len(source), "source_format": "docx", "candidate_sha256": hashlib.sha256(candidate).hexdigest(),
+            "candidate_size_bytes": len(candidate), "edits_sha256": hashlib.sha256(json.dumps(edits, sort_keys=True,
+                separators=(",", ":"), ensure_ascii=True).encode()).hexdigest()}
+        request = {"version": 1, "source_format": "docx", "sha256": expected["sha256"],
+            "content_base64": base64.b64encode(source).decode(), "edits": edits,
+            "candidate_sha256": expected["candidate_sha256"], "candidate_size_bytes": len(candidate),
+            "worker_image": image, "policy_sha256": policy}
+        rows.append((name, json.dumps(request).encode(), expected))
+    return rows
+
+def inspection(service, payload, *, docx_layout=False):
+    diagnostic = service._RequestDiagnostic()
+    token = service._REQUEST_DIAGNOSTIC.set(diagnostic)
+    result = None
+    try:
+        result = service.inspect_in_sandbox(payload, docx_layout=docx_layout)
+    except Exception:
+        pass
+    finally:
+        service._REQUEST_DIAGNOSTIC.reset(token)
+    return result, diagnostic
+
+
+def envelope(kind, content):
+    binding = {"version": 1, "sha256": hashlib.sha256(content).hexdigest(),
+               "size_bytes": len(content), "source_format": kind}
+    payload = {"version": 1, "sha256": binding["sha256"], "source_format": kind,
+               "content_base64": base64.b64encode(content).decode()}
+    return json.dumps(payload).encode(), binding
+
+
+def case_row(name, binding, result, diagnostic):
+    return {"case": name, "passed": False, "attempted": True, "binding": binding,
+            "binding_match": same_binding(result, binding), "diagnostic": diagnostic_projection(diagnostic),
+            "cleanup_passed": cleanup_success(diagnostic)}
+
+
+def main():
+    started = time.monotonic()
+    report = {"event": "hirewiz_document_native_six_case_v1", "version": 1,
+              "activation_flags": ACTIVATION_FLAGS.copy(), "identity_preflight": {"passed": False},
+              "cases": [], "all_six_passed": False, "failure_stage": "configuration"}
+    exit_code = 1
+    try:
+        require(sys.argv[1:] == [])
+        execution = os.environ.get("CLOUD_RUN_EXECUTION", "")
+        require(type(execution) is str and len(execution) <= 63
+                and re.fullmatch(r"hirewiz-doc-six-[a-f0-9]{12}-[a-z0-9]{1,20}", execution) is not None)
+        report["execution_name"] = execution
+        require(re.fullmatch(r"us-central1-docker\.pkg\.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz-document-inspector@sha256:[a-f0-9]{64}", IMMUTABLE_IMAGE) is not None)
+        require(re.fullmatch(r"[a-f0-9]{64}", POLICY_SHA256) is not None)
+        sys.path.insert(0, "/opt/document")
+        import service
+        require(service.configuration() == (IMMUTABLE_IMAGE, POLICY_SHA256))
+        require(os.getuid() == 65534 and os.getgid() == 65534)
+        report.update(worker_image=IMMUTABLE_IMAGE, policy_sha256=POLICY_SHA256, outer_runtime_user_verified=True)
+        report["failure_stage"] = "identity_preflight"
+        diagnostic = service._RequestDiagnostic()
+        try:
+            identity = auxiliary(service, PREFLIGHT_PROGRAM, diagnostic)
+        finally:
+            report["identity_preflight"]["diagnostic"] = diagnostic_projection(diagnostic)
+            report["identity_preflight"]["cleanup_passed"] = cleanup_success(diagnostic)
+        require(set(identity) == {"runtime_hashes", "architecture", "runtime_uid", "runtime_gid", "readonly_font_manifest",
+                                  "font_manifest_process_writable", "renderer_version", "font_manifest_sha256"})
+        require(identity["runtime_hashes"] == EXPECTED_RUNTIME_HASHES)
+        require(identity["architecture"] == "x86_64" and identity["readonly_font_manifest"] is True and cleanup_success(diagnostic))
+        require(all(type(identity[key]) is int and 0 <= identity[key] <= 4294967295 for key in ("runtime_uid", "runtime_gid")))
+        require(type(identity["font_manifest_process_writable"]) is bool)
+        require(type(identity["renderer_version"]) is str and len(identity["renderer_version"]) <= 200
+                and re.fullmatch(r"LibreOffice [0-9]+\.[0-9]+\.[0-9]+(?:\.[0-9]+)*(?: [ -~]+)?", identity["renderer_version"]) is not None)
+        require(type(identity["font_manifest_sha256"]) is str and re.fullmatch(r"[a-f0-9]{64}", identity["font_manifest_sha256"]) is not None)
+        report["identity_preflight"].update(identity, passed=True)
+        report["failure_stage"] = "corpus"
+        fixed = {name: (kind, content, outcome) for name, kind, content, outcome in corpus()}
+        require(len(fixed) == 8 and len(EICAR) == 68)
+        layout_cases = docx_layout_corpus(IMMUTABLE_IMAGE)
+        require(tuple(name for name, _, _ in layout_cases) == CASE_NAMES[-2:])
+        for name in CASE_NAMES[:3]:
+            report["failure_stage"] = name
+            kind, content, outcome = fixed[name]
+            require(outcome == ("detected" if name == "eicar_exact_file" else "clean"))
+            payload, binding = envelope(kind, content)
+            result, diagnostic = inspection(service, payload)
+            row = case_row(name, binding, result, diagnostic)
+            report["cases"].append(row)
+            if result is not None and row["binding_match"] and row["cleanup_passed"]:
+                require(result.get("worker_image") == IMMUTABLE_IMAGE and result.get("policy_sha256") == POLICY_SHA256)
+                if name == "eicar_exact_file":
+                    row["worker_refused"] = result.get("error") == "document_inspection_refused"
+                    row["passed"] = (row["worker_refused"] and diagnostic.processor == "refused"
+                                     and diagnostic.launcher_code == 1 and diagnostic.validation == "complete")
+                elif "error" not in result:
+                    row["scan"] = scan_projection(result.get("scan"))
+                    row["python_skill_present"] = (name != "clean_docx" or "Python" in result.get("parsed", {}).get("skills", []))
+                    row["passed"] = (diagnostic.processor == "clean" and diagnostic.launcher_code == 0
+                                     and diagnostic.validation == "complete" and row["python_skill_present"])
+            require(row["cleanup_passed"])
+        report["failure_stage"] = "eicar_direct_detection"
+        diagnostic = service._RequestDiagnostic()
+        row = {"case": "eicar_direct_detection", "passed": False, "attempted": True,
+               "binding": {"sha256": hashlib.sha256(EICAR).hexdigest(), "size_bytes": len(EICAR)}}
+        report["cases"].append(row)
+        direct = None
+        try:
+            direct = auxiliary(service, EICAR_DIRECT_PROGRAM, diagnostic)
+        except Exception:
+            pass
+        finally:
+            row.update(diagnostic=diagnostic_projection(diagnostic), cleanup_passed=cleanup_success(diagnostic))
+        if direct is not None:
+            require(set(direct) == {"sha256", "size_bytes", "exact_file_unchanged", "coherent_eicar_detection"})
+            row["binding_match"] = same_binding(direct, row["binding"])
+            row["exact_file_unchanged"] = direct["exact_file_unchanged"] is True
+            row["coherent_eicar_detection"] = direct["coherent_eicar_detection"] is True
+            row["passed"] = (row["binding_match"] and row["exact_file_unchanged"] and row["coherent_eicar_detection"]
+                              and row["cleanup_passed"] and diagnostic.launcher_code == 0)
+        require(row["cleanup_passed"])
+        for name, payload, binding in layout_cases:
+            report["failure_stage"] = name
+            result, diagnostic = inspection(service, payload, docx_layout=True)
+            row = case_row(name, binding, result, diagnostic)
+            report["cases"].append(row)
+            if result is not None and row["binding_match"] and row["cleanup_passed"]:
+                require(result.get("worker_image") == IMMUTABLE_IMAGE and result.get("policy_sha256") == POLICY_SHA256)
+                if name == "styled_multipage_fit" and "error" not in result:
+                    receipt = result.get("layout", {})
+                    renderer = receipt.get("renderer", {})
+                    row["layout"] = {key: receipt.get(key) for key in ("validator", "pages", "unchanged_links",
+                        "outside_changed_regions_pixel_delta", "before_pdf_sha256", "after_pdf_sha256",
+                        "rendered_fonts_sha256", "changed_paragraphs", "protected_glyphs", "unchanged_graphics",
+                        "max_protected_geometry_delta_points")}
+                    row["renderer_binding_match"] = (renderer.get("image_digest") == IMMUTABLE_IMAGE
+                        and renderer.get("policy_sha256") == POLICY_SHA256
+                        and renderer.get("renderer_version") == identity["renderer_version"]
+                        and renderer.get("font_manifest_sha256") == identity["font_manifest_sha256"])
+                    row["scan"] = scan_projection(result.get("scan"))
+                    row["candidate_scan_equal"] = result.get("candidate_scan") == result.get("scan")
+                    # Original public case acceptance remains unchanged; pin join and cleanup are additional.
+                    row["passed"] = (diagnostic.launcher_code == 0 and diagnostic.processor == "clean"
+                        and diagnostic.validation == "complete" and receipt.get("validator") == "hirewiz-docx-layout-v1"
+                        and receipt.get("pages") == 2 and receipt.get("unchanged_links") == 1
+                        and receipt.get("outside_changed_regions_pixel_delta") == 0
+                        and result.get("scan", {}).get("engine") == "ClamAV"
+                        and row["candidate_scan_equal"] and row["renderer_binding_match"])
+                elif name == "rendered_reflow_refusal":
+                    reason = result.get("reason")
+                    row["reason"] = reason if type(reason) is str and reason in REFLOW_REASONS else None
+                    requested = json.loads(payload)
+                    unit = result.get("unit_id")
+                    row["matching_unit_or_none"] = unit is None or any(unit == edit["unit_id"] for edit in requested["edits"])
+                    row["passed"] = (diagnostic.launcher_code == 1 and diagnostic.processor == "refused"
+                        and diagnostic.validation == "complete" and result.get("error") == "docx_layout_refused"
+                        and row["reason"] is not None and row["matching_unit_or_none"])
+            require(row["cleanup_passed"])
+        require(tuple(row["case"] for row in report["cases"]) == CASE_NAMES)
+        report["all_six_passed"] = all(row["passed"] is True for row in report["cases"])
+        if report["all_six_passed"]:
+            report["failure_stage"] = None
+            exit_code = 0
+    except BaseException:
+        # No payload, native output, exception message, traceback or arbitrary path is reported.
+        pass
+    observed = {row["case"] for row in report["cases"]}
+    report["cases"].extend({"case": name, "passed": False, "attempted": False} for name in CASE_NAMES if name not in observed)
+    report["elapsed_ms"] = min(600000, max(0, int((time.monotonic() - started) * 1000)))
+    raw = json.dumps(report, separators=(",", ":"), allow_nan=False).encode()
+    if len(raw) + 1 > MAX_REPORT:
+        raw = json.dumps({"event": "hirewiz_document_native_six_case_v1", "version": 1,
+                          "all_six_passed": False, "failure_stage": "report_size",
+                          "activation_flags": ACTIVATION_FLAGS}, separators=(",", ":")).encode()
+        exit_code = 1
+    sys.stdout.buffer.write(raw + b"\n")
+    raise SystemExit(exit_code)
+
+
+if __name__ == "__main__":
+    main()

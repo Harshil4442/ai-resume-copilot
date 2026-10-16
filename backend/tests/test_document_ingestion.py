@@ -495,3 +495,28 @@ def test_receipt_refuses_before_authentication_and_disclosure(worker, monkeypatc
         ingestion.inspect_resume_document_with_receipt(source, source_format="pdf")
     assert caught.value.status_code == (422 if variant == "empty" else 503)
     assert not worker[1] and not worker[2] and not worker[3]
+
+
+def test_maintenance_new_worker_image_receipt_returns503_without_resume_or_charge(worker, monkeypatch):
+    engine, factory, client = _client()
+    source = _source_bytes("pdf")
+    calls = []
+    def new_worker(request):
+        calls.append(request)
+        data = _response(source=source)
+        data["worker_image"] = IMAGE.replace("a" * 64, "c" * 64)
+        return httpx.Response(200, json=data)
+    worker[0](new_worker)
+    monkeypatch.setattr(resume, "enrich_resume_skills", lambda *a, **kw: pytest.fail("Mismatch must precede enrichment"))
+    try:
+        response = client.post("/api/resume/parse", files={"file": ("source.pdf", source, "application/pdf")},
+                               data={"enrich_skills": "true"})
+        assert response.status_code == 503 and "no analysis units were charged" in response.json()["detail"]
+        assert len(calls) == 1
+        with factory() as db:
+            assert db.query(models.Resume).count() == 2
+            assert db.query(models.AnalysisRun).count() == db.query(models.UsageEvent).count() == 0
+            assert db.get(models.User, 1).ai_credits == 50
+    finally:
+        client.close()
+        engine.dispose()

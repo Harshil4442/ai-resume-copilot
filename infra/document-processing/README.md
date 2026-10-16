@@ -441,3 +441,11 @@ was corrected for replay; no source or image was rebuilt. The predecessor regist
 See [sanitized registry evidence](../../docs/delivery/evidence/2026-10-10-document-registry-image.json).
 
 Internal DOCX comparison PDFs use untagged Writer output so passive structure attributes are not interpreted as actions by the conservative comparison guard. The downloaded artifact remains the exact sealed DOCX; uploaded-PDF validation and all active-content checks remain unchanged. CI observed `pdf_active_content` with tagged output; the exact triggering Linux PDF object was not retained, and resolution still requires genuine CI and native acceptance.
+
+## Definition-only maintenance implementation
+
+The controlled fixed-renderer successor build, native six-case acceptance,
+three-consumer pin transition, retained proof cleanup and expiry/heartbeat alerts
+are documented in [the maintenance runbook](../../docs/delivery/DOCUMENT_DEFINITION_MAINTENANCE.md).
+The workflow requires explicit root-provisioned WIF/SA UID and notification
+activation; source and synthetic tests alone do not establish live maintenance.

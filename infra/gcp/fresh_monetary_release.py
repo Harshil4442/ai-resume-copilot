@@ -18,7 +18,6 @@ from typing import Any, Protocol
 from urllib.parse import urlsplit
 
 import monetary_release as release
-
 from scripts import database_transfer as transfer_protocol
 from scripts.neon_execution_files import LinuxExecutionFiles
 
@@ -953,8 +952,17 @@ class FreshNativeBoundary(release.NativeBoundary):
                 if type(coordinator_keys) is not list:
                     raise release.ReleaseDenied("fresh_upload_coordinator_key_inventory_invalid")
                 snapshot["upload_coordinator_service_account_keys"] = {"keys": coordinator_keys}
+            image = service.get("template", {}).get("containers", [{}])[0].get("image")
+            if image != documents.ACCEPTED_IMAGE:
+                # Labels select a proof; only fresh native Build/GCS/Job/log and
+                # original full worker configuration checks admit that exact image.
+                from document_refresh_probe import verify_current_successor_for_release
+
+                accepted = verify_current_successor_for_release(image, service)
+                if accepted.image != image:
+                    raise release.ReleaseDenied("fresh_document_successor_identity_mismatch")
             report = documents.check_snapshot(
-                snapshot, documents.ACCEPTED_IMAGE, source.release, api_phase=runtime_phase,
+                snapshot, image, source.release, api_phase=runtime_phase,
                 coordinator_phase=coordinator_phase,
             )
             tex = release.native_tex
