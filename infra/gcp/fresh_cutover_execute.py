@@ -121,6 +121,12 @@ def stopped_event(error: BaseException, stage: str, codes: frozenset[str],
             and _CODE.fullmatch(error.args[0])):
         result.update(stage=stage if type(stage) is str and stage in STAGES else "unclassified",
                       fixed_code=error.args[0])
+        if (result["stage"] == "transfer_migration_staging"
+                and result["fixed_code"] == "fresh_final_transfer_not_verified_reconcile_only"):
+            try:
+                result["transfer"] = fresh.transfer_projection(error.__dict__.get("transfer"))
+            except ValueError:
+                pass  # The fixed failure remains observable without raw diagnostics.
     return result
 
 
@@ -130,12 +136,21 @@ def stopped_projection(value: Any, codes: frozenset[str]) -> dict[str, Any]:
         raise ValueError("cutover_observability_projection_refused")
     if set(value) == set(_BASE_STOPPED):
         return dict(_BASE_STOPPED)
-    if (set(value) != set(_BASE_STOPPED) | {"stage", "fixed_code"}
+    fields = set(_BASE_STOPPED) | {"stage", "fixed_code"}
+    if (set(value) not in (fields, fields | {"transfer"})
             or type(value.get("stage")) is not str or value["stage"] not in STAGES
             or type(value.get("fixed_code")) is not str or value["fixed_code"] not in codes
             or not _CODE.fullmatch(value["fixed_code"])):
         raise ValueError("cutover_observability_projection_refused")
-    return {**_BASE_STOPPED, "stage": value["stage"], "fixed_code": value["fixed_code"]}
+    result = {**_BASE_STOPPED, "stage": value["stage"], "fixed_code": value["fixed_code"]}
+    if (value["stage"] == "transfer_migration_staging"
+            and value["fixed_code"] == "fresh_final_transfer_not_verified_reconcile_only"
+            and "transfer" in value):
+        try:
+            result["transfer"] = fresh.transfer_projection(value["transfer"])
+        except ValueError:
+            pass  # Never reflect a malformed observation from the child protocol.
+    return result
 
 
 def need(value: Any, code: str) -> None:

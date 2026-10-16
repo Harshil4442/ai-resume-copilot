@@ -18,6 +18,12 @@ CONTROLLED = (entry.native.release.ReleaseDenied, entry.writes.WriteDenied,
 CODE = "write_owner_resume_captured_authority_incomplete"
 CODES = frozenset({CODE})
 BASE = {"event": "cutover_stopped_reconcile_only", "automatic_replay": False, "goal_complete": False}
+TRANSFER_CODE = "fresh_final_transfer_not_verified_reconcile_only"
+TRANSFER = {
+    "status": "reconcile_required", "phase": "owned_transfer_observation_unavailable_reconcile_before_retry",
+    "attempt_started": None, "cleanup": "group_absent_anchor_reaped", "native_cut_observed": False,
+    "table_count": 0, "row_count": 0, "sequence_count": 0,
+}
 
 
 def test_actual_controlled_refusal_exposes_only_literal_stage_and_code():
@@ -93,3 +99,57 @@ def test_literal_catalogue_parses_trusted_source_without_executing_it(tmp_path):
 
 def test_committed_pristine_refusal_is_in_literal_catalogue():
     assert CODE in entry.literal_codes(ROOT)
+
+
+@pytest.mark.parametrize("started", [None, False, True])
+def test_transfer_refusal_retains_only_exact_safe_observation_through_host_projection(started):
+    diagnostic = {**TRANSFER, "attempt_started": started}
+    error = entry.native.release.ReleaseDenied(TRANSFER_CODE)
+    error.__dict__["transfer"] = diagnostic
+    error.__dict__["provider_body"] = "DO_NOT_EMIT"
+    codes = CODES | {TRANSFER_CODE}
+    expected = {**BASE, "stage": "transfer_migration_staging", "fixed_code": TRANSFER_CODE,
+                "transfer": diagnostic}
+    event = entry.stopped_event(error, "transfer_migration_staging", codes, CONTROLLED)
+    assert event == expected and entry.stopped_projection(event, codes) == expected
+    assert "DO_NOT_EMIT" not in json.dumps(event)
+    assert event["automatic_replay"] is event["goal_complete"] is False
+
+
+@pytest.mark.parametrize(("field", "value"), [
+    ("status", "https://DO_NOT_EMIT"), ("phase", "DO_NOT_EMIT"), ("cleanup", "DO_NOT_EMIT"),
+    ("attempt_started", 1), ("native_cut_observed", 1), ("table_count", True),
+    ("row_count", -1), ("sequence_count", 257), ("row_count", 1_000_001),
+])
+def test_malformed_transfer_observation_falls_back_to_same_fixed_refusal_without_reflection(field, value):
+    diagnostic = {**TRANSFER, field: value}
+    error = entry.native.release.ReleaseDenied(TRANSFER_CODE)
+    error.__dict__["transfer"] = diagnostic
+    codes = CODES | {TRANSFER_CODE}
+    expected = {**BASE, "stage": "transfer_migration_staging", "fixed_code": TRANSFER_CODE}
+    assert entry.stopped_event(error, "transfer_migration_staging", codes, CONTROLLED) == expected
+    assert entry.stopped_projection({**expected, "transfer": diagnostic}, codes) == expected
+    assert "DO_NOT_EMIT" not in json.dumps(expected)
+
+
+@pytest.mark.parametrize("diagnostic", [{**TRANSFER, "provider_body": "DO_NOT_EMIT"}, None, [], {}])
+def test_transfer_observation_requires_exact_fields_and_plain_object(diagnostic):
+    with pytest.raises(ValueError, match="^cutover_observability_projection_refused$"):
+        entry.fresh.transfer_projection(diagnostic)
+
+
+@pytest.mark.parametrize(("stage", "code"), [("identity_and_policy", TRANSFER_CODE), ("transfer_migration_staging", CODE)])
+def test_transfer_observation_cannot_be_attached_to_another_stage_or_refusal(stage, code):
+    error = entry.native.release.ReleaseDenied(code)
+    error.__dict__["transfer"] = TRANSFER
+    codes = CODES | {TRANSFER_CODE}
+    expected = {**BASE, "stage": stage, "fixed_code": code}
+    assert entry.stopped_event(error, stage, codes, CONTROLLED) == expected
+    assert entry.stopped_projection({**expected, "transfer": TRANSFER}, codes) == expected
+
+
+def test_transfer_projection_uses_existing_finite_worker_phases_and_bounded_counts():
+    for phase in entry.fresh.transfer_protocol._OWNER_PHASES:
+        value = {**TRANSFER, "phase": phase, "table_count": 256, "row_count": 1_000_000, "sequence_count": 256}
+        assert entry.fresh.transfer_projection(value) == value
+    assert TRANSFER_CODE in entry.literal_codes(ROOT)

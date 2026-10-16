@@ -580,6 +580,25 @@ def test_real_transfer_adapter_does_not_require_destination_marker_before_copy(
         assert "owned-final-transfer" not in events
         assert events[-1] == "native-destination-close"
     native_owner[0] = (16391, 2200, 6171)
+    diagnostic = {
+        "status": "reconcile_required", "phase": "owned_transfer_observation_unavailable_reconcile_before_retry",
+        "attempt_started": None, "cleanup": "group_absent_anchor_reaped", "native_cut_observed": False,
+        "table_count": 0, "row_count": 0, "sequence_count": 0,
+    }
+    failed = {**diagnostic, "purpose": "final", "schema": release.CUTOVER_CHAIN[0],
+              "production_released": False, "provider_body": "DO_NOT_EMIT"}
+    monkeypatch.setattr(library, "owned_transfer", lambda *args, **kwargs: failed)
+    with pytest.raises(release.ReleaseDenied, match="^fresh_final_transfer_not_verified_reconcile_only$") as refusal:
+        boundary.transfer_fresh(source, target, transfer, fence)
+    assert refusal.value.args == ("fresh_final_transfer_not_verified_reconcile_only",)
+    assert refusal.value.__dict__["transfer"] == diagnostic
+    for invalid in ({**failed, "phase": "https://DO_NOT_EMIT"}, {**failed, "table_count": True},
+                    {name: value for name, value in failed.items() if name != "attempt_started"}, []):
+        monkeypatch.setattr(library, "owned_transfer", lambda *args, invalid=invalid, **kwargs: invalid)
+        with pytest.raises(release.ReleaseDenied, match="^fresh_final_transfer_not_verified_reconcile_only$") as malformed:
+            boundary.transfer_fresh(source, target, transfer, fence)
+        assert malformed.value.__dict__ == {}
+    monkeypatch.setattr(library, "owned_transfer", owned)
     monkeypatch.setattr(
         boundary,
         "verify_fences",

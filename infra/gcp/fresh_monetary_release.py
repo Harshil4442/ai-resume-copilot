@@ -19,7 +19,37 @@ from urllib.parse import urlsplit
 
 import monetary_release as release
 
+from scripts import database_transfer as transfer_protocol
 from scripts.neon_execution_files import LinuxExecutionFiles
+
+_TRANSFER_FIELDS = frozenset({
+    "status", "phase", "attempt_started", "cleanup", "native_cut_observed",
+    "table_count", "row_count", "sequence_count",
+})
+_TRANSFER_PARENT_PHASES = frozenset({
+    "owned_transfer_launch_refused", "owned_transfer_deadline_reconcile_before_retry",
+    "owned_transfer_cancelled_reconcile_before_retry",
+    "owned_transfer_observation_unavailable_reconcile_before_retry",
+    "owned_transfer_cleanup_unconfirmed",
+})
+
+
+def transfer_projection(value: Any) -> dict[str, Any]:
+    """Fixed transfer diagnostics only; this never certifies a remote outcome."""
+    if (type(value) is not dict or set(value) != _TRANSFER_FIELDS
+            or type(value.get("status")) is not str
+            or value["status"] not in {"verified", "refused", "reconcile_required", "cancelled"}
+            or type(value.get("phase")) is not str
+            or value["phase"] not in set(transfer_protocol._OWNER_PHASES) | _TRANSFER_PARENT_PHASES
+            or not (value.get("attempt_started") is None or type(value["attempt_started"]) is bool)
+            or type(value.get("cleanup")) is not str
+            or value["cleanup"] not in {"not_launched", "group_absent_anchor_reaped", "anchor_reap_unconfirmed",
+                                        "anchor_reaped_group_unconfirmed", "cleanup_deadline_unconfirmed"}
+            or type(value.get("native_cut_observed")) is not bool
+            or any(type(value.get(name)) is not int or not 0 <= value[name] <= maximum
+                   for name, maximum in (("table_count", 256), ("row_count", 1_000_000), ("sequence_count", 256)))):
+        raise ValueError("cutover_observability_projection_refused")
+    return {name: value[name] for name in sorted(_TRANSFER_FIELDS)}
 
 
 class FreshSourcePlan(release.Plan):
@@ -607,7 +637,8 @@ class FreshNativeBoundary(release.NativeBoundary):
             old, new, tools, transfer.workdir, purpose="final", native_cut=NativeCut()
         )
         if (
-            result.get("status") != "verified"
+            type(result) is not dict
+            or result.get("status") != "verified"
             or result.get("purpose") != "final"
             or result.get("schema") != release.CUTOVER_CHAIN[0]
             or result.get("native_cut_observed") is not True
@@ -615,9 +646,17 @@ class FreshNativeBoundary(release.NativeBoundary):
             or result.get("cleanup") != "group_absent_anchor_reaped"
             or result.get("production_released") is not False
         ):
-            raise release.ReleaseDenied(
+            refusal = release.ReleaseDenied(
                 "fresh_final_transfer_not_verified_reconcile_only"
             )
+            if type(result) is dict and _TRANSFER_FIELDS <= result.keys():
+                try:
+                    refusal.__dict__["transfer"] = transfer_projection(
+                        {name: result[name] for name in _TRANSFER_FIELDS}
+                    )
+                except ValueError:
+                    pass  # Invalid observations retain the original fixed refusal.
+            raise refusal
 
     def _fresh_connection(
         self,
