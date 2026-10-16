@@ -1097,6 +1097,9 @@ def reconcile_application(db: Session, identity: str, admin, payload: schemas.Re
         raise HTTPException(404, "Application not found")
     if application.status != "unknown":
         raise HTTPException(409, "Only an unknown application needs this reconciliation")
+    if application.application_mode != "api":
+        raise HTTPException(409, {"code": "native_browser_reconciliation_required",
+            "message": "Browser submissions require their original native recovery evidence. This API reconciliation cannot release a possible browser send."})
     posting = _posting(db, application.posting_id)
     if payload.employer_posting_id != posting.external_id:
         raise HTTPException(422, "The verified employer receipt does not match this posting")
@@ -1121,6 +1124,15 @@ def reconcile_application(db: Session, identity: str, admin, payload: schemas.Re
         application.error_code, application.error_message = None, None
         admissions.finish(db, application, "confirmed")
     else:
+        attempts = db.query(models.EmployerApplicationAttempt).filter_by(
+            application_id=application.id).with_for_update().limit(2).all()
+        if (len(attempts) != 1 or attempts[0].package_digest != application.package_digest
+                or attempts[0].completed_at is None or attempts[0].state != "unknown"):
+            # Redelivery can mark the application unknown while its original
+            # sender is still inside the one external POST. Neither elapsed
+            # time nor a missing worker proves that sender has stopped.
+            raise HTTPException(409, {"code": "application_sender_outcome_unresolved",
+                "message": "The original sender has no recorded completed outcome. Credits and the application hold remain reserved; use manual support without resending."})
         credits.settle(db, reservation, completed_count=0, reason="Provider verified no application was submitted")
         application.status, application.active_key = "failed", None
         application.approved_digest = None

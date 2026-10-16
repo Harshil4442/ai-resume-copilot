@@ -254,20 +254,29 @@ def execute_application(application_id: str) -> str:
             return "missing"
         attempt.response_status, attempt.completed_at = status, utcnow()
         if receipt:
+            attempt.state, attempt.receipt, attempt.error_code = "confirmed", receipt, None
+        elif failure and failure.startswith("submission_rejected_"):
+            attempt.state, attempt.error_code = "failed", failure
+        else:
+            attempt.state, attempt.error_code = "unknown", failure or "receipt_not_verified"
+        if application.status == "confirmed":
+            # Independent positive reconciliation may win while this request
+            # is in flight. Retain its receipt, paid settlement and admission;
+            # this late worker result records only the original attempt outcome.
+            db.commit()
+            return application.status
+        if receipt:
             # A verified late receipt can resolve an uncertain/cancelled-in-flight send.
             application.status = "confirmed"
-            application.receipt, attempt.receipt = receipt, receipt
+            application.receipt = receipt
             application.error_code, application.error_message = None, None
-            attempt.state = "confirmed"
             reservation = db.query(models.ServiceCreditReservation).filter_by(id=application.reservation_id).with_for_update().one()
             credits.settle(db, reservation, completed_count=1, reason="Verified complete employer application")
             application.charged_credits = reservation.committed_amount
             admissions.finish(db, application, "confirmed")
         elif failure and failure.startswith("submission_rejected_"):
-            attempt.state, attempt.error_code = "failed", failure
             _settle_failure(db, application, failure, "The employer rejected the request before application completion; credits were returned.")
         else:
-            attempt.state, attempt.error_code = "unknown", failure or "receipt_not_verified"
             _mark_unknown(db, application, failure or "receipt_not_verified")
         db.commit()
         return application.status

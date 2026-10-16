@@ -16,7 +16,7 @@ from decimal import MAX_EMAX, MIN_ETINY, Decimal
 from types import SimpleNamespace
 
 from fastapi import HTTPException
-from sqlalchemy import Text, and_, cast, event, func, literal_column, or_, text
+from sqlalchemy import Text, and_, cast, event, func, literal_column, or_, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import load_only
@@ -797,26 +797,40 @@ def _selected(db, plan):
 
 
 def _current_selected(db, plan, selected, *, fence=False):
-    """Completion-time freshness and exact canonical recipe, bounded to 100."""
+    """Fence the selected immutable revisions against current jobs, at most 100."""
     source_ids = sorted({winner.source_id for winner in selected})
     posting_ids = sorted(winner.posting_id for winner in selected)
     source_fields = ("id", "enabled", "platform", "region", "board_token", "employer_key", "submission_enabled",
         "form_parity_verified", "submission_grant", "credential_env")
     receipt = text("COALESCE(employer_sources.receipt_contract::jsonb NOT IN ('null'::jsonb,'{}'::jsonb,'[]'::jsonb,'false'::jsonb,'0'::jsonb,'\"\"'::jsonb),false)") if db.get_bind().dialect.name == "postgresql" else text("COALESCE(employer_sources.receipt_contract NOT IN ('null','{}','[]','false','0','\"\"'),0)")
-    sources = db.query(*(getattr(models.EmployerSource, field) for field in source_fields), receipt).filter(models.EmployerSource.id.in_(source_ids)).order_by(models.EmployerSource.id)
-    postings = db.query(models.EmployerPosting).options(load_only(*(getattr(models.EmployerPosting, field) for field in
+    source_revision = select(models.EmployerCatalogueSourceRevision.valid_from).where(
+        models.EmployerCatalogueSourceRevision.source_id == models.EmployerSource.id,
+        models.EmployerCatalogueSourceRevision.valid_to.is_(None)).scalar_subquery()
+    posting_revision = select(models.EmployerCataloguePostingRevision.valid_from).where(
+        models.EmployerCataloguePostingRevision.posting_id == models.EmployerPosting.id,
+        models.EmployerCataloguePostingRevision.valid_to.is_(None)).scalar_subquery()
+    sources = db.query(*(getattr(models.EmployerSource, field) for field in source_fields), receipt, source_revision).filter(models.EmployerSource.id.in_(source_ids)).order_by(models.EmployerSource.id)
+    postings = db.query(models.EmployerPosting, posting_revision).options(load_only(*(getattr(models.EmployerPosting, field) for field in
         ("id", "source_id", "external_id", "requisition_id", "last_checked_at", "is_open")))).filter(
         models.EmployerPosting.id.in_(posting_ids)).order_by(_id_sort(db, models.EmployerPosting.id)).populate_existing()
     if fence:
         sources, postings = sources.with_for_update(read=True, nowait=True), postings.with_for_update(read=True, nowait=True)
-    source_map = {row[0]: SimpleNamespace(**dict(zip(source_fields, row[:-1], strict=True)), receipt_contract=bool(row[-1])) for row in sources.all()}
-    posting_map = {posting.id: posting for posting in postings.all()}
+    source_map = {row[0]: SimpleNamespace(**dict(zip(source_fields, row[:-2], strict=True)),
+        receipt_contract=bool(row[-2]), catalogue_revision=row[-1]) for row in sources.all()}
+    current_postings = postings.all()
+    posting_map = {posting.id: posting for posting, _ in current_postings}
+    revisions = {posting.id: revision for posting, revision in current_postings}
     stale = []
     cutoff = utcnow() - timedelta(hours=plan.max_source_age_hours)
     for winner in selected:
         source, posting = source_map.get(winner.source_id), posting_map.get(winner.posting_id)
         if (source is None or posting is None or not source.enabled or not posting.is_open
                 or posting.source_id != winner.source_id or _utc(posting.last_checked_at) < cutoff
+                # A later revision may change role, location, remote status or
+                # preference facts. Keep the accepted snapshot; discard its old
+                # winner rather than silently substituting a newer paid result.
+                or source.catalogue_revision != winner.source_revision
+                or revisions.get(winner.posting_id) != winner.posting_revision
                 or admissions.opening_identity(posting, source) != winner.opening_key):
             stale.append(winner)
     return source_map, posting_map, stale
