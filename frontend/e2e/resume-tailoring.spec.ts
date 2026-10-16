@@ -231,7 +231,7 @@ test("approved evidence with a missing original explains both disabled actions a
   await expect(status).toContainText("Your evidence is approved, but the selected resume's original file is missing.");
   await expect(generate).toBeDisabled();
   await expect(snapshot).toBeDisabled();
-  await expect(generate).toHaveAttribute("aria-describedby", "resume-actions-status");
+  await expect(generate).toHaveAttribute("aria-describedby", "tailoring-price resume-actions-status");
   await expect(snapshot).toHaveAttribute("aria-describedby", "resume-actions-status");
   await expect(page.getByRole("link", { name: "Upload source again", exact: true })).toHaveAttribute("href", `/resume?opportunity=${opportunityId}`);
   await expect(resume.locator("option[value='1']")).toHaveText(`${sourceFile.name} · #1 · needs upload`);
