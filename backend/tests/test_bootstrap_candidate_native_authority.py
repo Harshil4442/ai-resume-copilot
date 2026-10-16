@@ -14,7 +14,7 @@ import pytest
 import requests
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
-from google.api_core.exceptions import NotFound, ServiceUnavailable
+from google.api_core.exceptions import DeadlineExceeded, NotFound, ServiceUnavailable
 from google.auth.credentials import AnonymousCredentials
 from google.cloud import kms_v1, storage
 from google.cloud.firestore_admin_v1.types import Database
@@ -68,6 +68,7 @@ def native(monkeypatch, plan, tmp_path):
         keys={},
         rings={},
         writes=[],
+        write_options=[],
         native_calls=[],
         fault=None,
         fault_after=None,
@@ -107,6 +108,8 @@ def native(monkeypatch, plan, tmp_path):
             create_time=Timestamp(seconds=1_800_000_000),
         )
         c.databases[name] = actual
+        if c.fault_after == "database":
+            raise DeadlineExceeded("Synthetic acknowledgement lost after accepted database creation")
         packed = Any()
         packed.Pack(actual._pb)
         return Operation(
@@ -143,7 +146,7 @@ def native(monkeypatch, plan, tmp_path):
             }
             c.documents[write.update.name] = body
         if c.fault_after == "records":
-            raise ServiceUnavailable("Synthetic acknowledgement lost after durable commit")
+            raise DeadlineExceeded("Synthetic acknowledgement lost after durable commit")
         return CommitResponse(
             commit_time=Timestamp(seconds=1_800_000_000),
             write_results=[
@@ -177,7 +180,7 @@ def native(monkeypatch, plan, tmp_path):
     def http(method, url, **kwargs):
         from urllib.parse import parse_qs, unquote, urlsplit
 
-        assert kwargs["timeout"] == 2.0
+        assert kwargs["timeout"] == (30.0 if method == "POST" else 2.0)
         parsed = urlsplit(url)
         query = parse_qs(parsed.query)
         if parsed.path.endswith("/b/" + plan.journal_bucket):
@@ -207,6 +210,8 @@ def native(monkeypatch, plan, tmp_path):
                 data.split(b"\r\n\r\n")[2].rsplit(b"\r\n--", 1)[0],
                 str(100 + len(c.objects)),
             )
+            if c.fault_after == "object":
+                raise DeadlineExceeded("Synthetic acknowledgement lost after accepted object creation")
         else:
             path = unquote(parsed.path.split("/o/", 1)[1])
         raw, generation = c.objects[path]
@@ -229,6 +234,15 @@ def native(monkeypatch, plan, tmp_path):
     c.storage = storage.Client(
         project=plan.project, credentials=AnonymousCredentials(), _http=http_session
     )
+    upload = storage.Blob.upload_from_string
+
+    def upload_once(blob, *args, **kwargs):
+        assert kwargs["retry"] is None and kwargs["timeout"] == 30.0
+        assert kwargs["if_generation_match"] == 0
+        c.write_options.append(("upload_from_string", kwargs["retry"], kwargs["timeout"]))
+        return upload(blob, *args, **kwargs)
+
+    monkeypatch.setattr(storage.Blob, "upload_from_string", upload_once)
     transport = create_autospec(KeyManagementServiceGrpcTransport, instance=True)
     transport.host = "local-contract.invalid:443"
     transport._credentials = None
@@ -237,6 +251,8 @@ def native(monkeypatch, plan, tmp_path):
         check_write("ring")
         name = request.parent + "/keyRings/" + request.key_ring_id
         c.rings[name] = kms_v1.KeyRing(name=name)
+        if c.fault_after == "ring":
+            raise DeadlineExceeded("Synthetic acknowledgement lost after accepted ring creation")
         return c.rings[name]
 
     def get_ring(request, **kwargs):
@@ -249,6 +265,8 @@ def native(monkeypatch, plan, tmp_path):
         name = request.parent + "/cryptoKeys/" + request.crypto_key_id
         assert not request.skip_initial_version_creation
         c.keys[name] = ec.generate_private_key(ec.SECP256R1())
+        if c.fault_after == "key":
+            raise DeadlineExceeded("Synthetic acknowledgement lost after accepted key creation")
         return kms_v1.CryptoKey(
             name=name,
             purpose=request.crypto_key.purpose,
@@ -313,7 +331,11 @@ def native(monkeypatch, plan, tmp_path):
             original = getattr(client, name)
 
             def checked(*args, _method=original, _name=name, **kwargs):
-                assert kwargs.get("retry", "missing") is None and kwargs["timeout"] == 2.0
+                write = _name in {"create_database", "commit", "create_key_ring", "create_crypto_key"}
+                assert kwargs.get("retry", "missing") is None
+                assert kwargs["timeout"] == (30.0 if write else 2.0)
+                if write:
+                    c.write_options.append((_name, kwargs["retry"], kwargs["timeout"]))
                 c.native_calls.append(_name)
                 return _method(*args, **kwargs)
 
@@ -339,6 +361,12 @@ def test_full_actual_sdk_bootstrap_has_only_operator_baselines_and_public_disabl
         == ["database"] * 3 + ["records"] * 3 + ["object"] * 3 + ["ring"] + ["key"] * 2
     )
     assert native.guard.call_count == len(native.writes)
+    assert bootstrap.WRITE_RPC_TIMEOUT == 30.0 and bootstrap.RPC_TIMEOUT == 2.0
+    assert [name for name, _, _ in native.write_options] == (
+        ["create_database"] * 3 + ["commit"] * 3 + ["upload_from_string"] * 3
+        + ["create_key_ring"] + ["create_crypto_key"] * 2
+    )
+    assert all(retry is None and timeout == 30.0 for _, retry, timeout in native.write_options)
     account = result["CANDIDATE_ACCOUNT_NATIVE_CONFIG"]
     assert (
         account["execution_witness_pin"]["registry"]["database_uid"]
@@ -406,19 +434,56 @@ def test_default_plan_does_not_resolve_manager_adc_clients_or_write_files(
     assert sorted(child.name for child in tmp_path.iterdir()) == ["public-plan.json"]
 
 
-def test_commit_ack_loss_after_durable_rows_cannot_resume_or_adopt(native):
-    native.fault_after = "records"
+@pytest.mark.parametrize("phase", ["database", "records", "object", "ring", "key"])
+def test_accepted_write_deadline_loses_ack_without_resend_or_adoption(native, phase):
+    native.fault_after = phase
     with pytest.raises(bootstrap.BootstrapUnknown):
         native.runner.execute()
-    assert len(native.documents) == 5 and len(native.databases) == 3
-    marker = native.journal.read("004_records.unknown")
+    accepted = {
+        "database": native.databases,
+        "records": native.documents,
+        "object": native.objects,
+        "ring": native.rings,
+        "key": native.keys,
+    }
+    assert accepted[phase], "The provider accepted the write before its deadline response was lost"
+    assert native.writes.count(phase) == 1
+    unknown = list(native.journal.directory.glob("*.unknown"))
+    assert len(unknown) == 1
+    marker = native.journal.read(unknown[0].name)
     assert marker["state"] == "UNKNOWN" and marker["automatic_replay"] is False
-    assert not (native.journal.directory / "004_records.ack").exists()
+    assert not unknown[0].with_suffix(".ack").exists()
+    before = tuple(native.writes), tuple(native.write_options)
     with pytest.raises(FileExistsError):
         native.runner.execute()
     result = bootstrap.reconcile(native.runner.plan, native.clients, native.journal)
+    assert before == (tuple(native.writes), tuple(native.write_options))
     assert result["runtime_activation_allowed"] is False
     assert "CANDIDATE_ACCOUNT_NATIVE_CONFIG" not in result
+    assert not (native.journal.directory / "result.json").exists()
+
+
+def test_database_lro_keeps_original_read_timeout_and_never_recreates(native, plan, monkeypatch):
+    create = native.sdk.admin.transport.create_database.side_effect
+    original_ack = {}
+
+    def pending(request, **kwargs):
+        original_ack["value"] = create(request, **kwargs)
+        return Operation(name=original_ack["value"].name, done=False)
+
+    def poll(name, *, retry, timeout):
+        assert name == original_ack["value"].name
+        assert retry is None and timeout == 2.0
+        return original_ack["value"]
+
+    native.sdk.admin.transport.create_database.side_effect = pending
+    observed = Mock(side_effect=poll)
+    monkeypatch.setattr(native.sdk.admin.transport.operations_client, "get_operation", observed)
+    pin, _ = native.runner._database(plan.execution_database_id)
+    assert pin.database == plan.database_names[0]
+    assert native.writes == ["database"]
+    assert native.write_options == [("create_database", None, 30.0)]
+    observed.assert_called_once()
 
 
 @pytest.mark.parametrize(

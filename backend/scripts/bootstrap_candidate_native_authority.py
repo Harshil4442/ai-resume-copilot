@@ -58,6 +58,8 @@ MANAGER_DIRECTORY = Path("/Users/harshil/.config/gcloud")
 PROJECT: Literal["ai-resume-parser-482412"] = "ai-resume-parser-482412"
 EXTENSION: Literal["pnjmegppacleipajnifjmbcopjjffklb"] = "pnjmegppacleipajnifjmbcopjjffklb"
 RPC_TIMEOUT = 2.0
+# First-use creates may take longer than ordinary reads; neither bound retries.
+WRITE_RPC_TIMEOUT = 30.0
 
 
 class BootstrapDenied(RuntimeError):
@@ -439,7 +441,7 @@ class Bootstrap:
                     "database": body,
                 },
                 retry=None,
-                timeout=RPC_TIMEOUT,
+                timeout=WRITE_RPC_TIMEOUT,
             ),
             checked,
         )
@@ -501,7 +503,7 @@ class Bootstrap:
             lambda: self.native.firestore.commit(
                 request={"database": pin.database, "writes": writes},
                 retry=None,
-                timeout=RPC_TIMEOUT,
+                timeout=WRITE_RPC_TIMEOUT,
             ),
             checked,
         )
@@ -536,7 +538,7 @@ class Bootstrap:
                 content_type="application/json",
                 if_generation_match=0,
                 retry=None,
-                timeout=RPC_TIMEOUT,
+                timeout=WRITE_RPC_TIMEOUT,
                 checksum=None,
             ),
             checked,
@@ -649,7 +651,7 @@ class Bootstrap:
                     "skip_initial_version_creation": False,
                 },
                 retry=None,
-                timeout=RPC_TIMEOUT,
+                timeout=WRITE_RPC_TIMEOUT,
             ),
             checked,
         )
@@ -831,7 +833,7 @@ class Bootstrap:
                     "key_ring": {},
                 },
                 retry=None,
-                timeout=RPC_TIMEOUT,
+                timeout=WRITE_RPC_TIMEOUT,
             ),
             lambda reply: need(reply.name == ring, "bootstrap_kms_ring_ack_refused"),
         )
