@@ -162,7 +162,7 @@ def test_health_ignores_proxy_ca_and_tls_key_logging_without_changing_identity(
             requests.append(request)
             assert request.full_url == "https://unit-candidate.run.app/api/health"
             assert request.get_header("Authorization") == "Bearer unit-id"
-            assert request.get_method() == "GET" and request.data is None and timeout == 10
+            assert request.get_method() == "GET" and request.data is None and timeout == 30
             return io.BytesIO(json.dumps(health).encode())
 
         return SimpleNamespace(open=get)
@@ -170,6 +170,40 @@ def test_health_ignores_proxy_ca_and_tls_key_logging_without_changing_identity(
     monkeypatch.setattr(urllib.request, "build_opener", opener)
     boundary._verify_http_health(plan, service, revision)
     assert len(commands) == len(requests) == 1 and not keylog.exists()
+
+
+@pytest.mark.parametrize("response_delay,fault,reason", [
+    (12.415923, None, None),
+    (29.5, None, None),
+    (30.5, None, "exact_candidate_http_health_unavailable"),
+    (12.415923, "wrong_release", "exact_candidate_http_health_identity_mismatch"),
+    (12.415923, "wrong_revision", "exact_candidate_http_health_identity_mismatch"),
+])
+def test_slow_health_response_has_bounded_time_to_prove_exact_identity(
+    monkeypatch, response_delay, fault, reason
+):
+    boundary, plan, revision, health, commands = health_boundary(monkeypatch, release.SERVICES[0])
+    calls = []
+    if fault == "wrong_release":
+        health["release"] = "b" * 40
+    elif fault == "wrong_revision":
+        health["revision"] = revision + "-other"
+
+    def get(request, timeout):
+        calls.append(request)
+        # Model the socket's deadline without sleeping or opening a connection.
+        # The first delay matches a real healthy revision's observed response.
+        if response_delay > timeout:
+            raise TimeoutError("private delayed health response")
+        return io.BytesIO(json.dumps(health).encode())
+
+    monkeypatch.setattr(urllib.request, "build_opener", lambda *handlers: SimpleNamespace(open=get))
+    if reason is None:
+        boundary._verify_http_health(plan, release.SERVICES[0], revision)
+    else:
+        with pytest.raises(release.ReleaseDenied, match="^" + reason + "$"):
+            boundary._verify_http_health(plan, release.SERVICES[0], revision)
+    assert len(commands) == len(calls) == 1
 
 
 @pytest.mark.parametrize("fault", ["redirect", "tls", "invalid_json", "bound", "wrong_release"])

@@ -1033,7 +1033,7 @@ class NativeBoundary:
                                   "--audiences", audience, "--quiet").decode().strip()
             request = urllib.request.Request(url.rstrip("/") + "/api/health",
                                              headers={"Authorization": "Bearer " + token})
-            with opener.open(request, timeout=10) as response:
+            with opener.open(request, timeout=30) as response:
                 health = _json(response.read(MAX_JSON + 1))
         except ReleaseDenied:
             raise
