@@ -46,7 +46,8 @@ def rows(phase):
     return [{'oid': oid, 'rolname': name, 'rolinherit': False, 'elevated': False,
              'elevated_membership': False, 'administration': False,
              'rolcanlogin': alias != 'replacement_migration' or phase == 'migration',
-             'schema_create': alias == 'replacement_migration' and phase == 'migration'}
+             'schema_create': alias == 'replacement_migration' and phase == 'migration',
+             'database_create': alias == 'replacement_migration' and phase == 'migration'}
             for alias, (name, oid) in ACTORS.items()]
 
 
@@ -230,3 +231,34 @@ def test_permission_failure_and_source_target_confusion_never_advances(plan, tar
         value.verify_fresh_database_phase(plan, target, '20261008_0009', phase='migration')
     assert not any(event[0] == 'credential' for event in state.events)
     assert state.events[-1] == ('disposed', 'source')
+
+
+@pytest.mark.parametrize('phase', ['migration', 'serving'])
+@pytest.mark.parametrize('alias', ['observer', 'replacement_runtime'])
+def test_runtime_or_observer_database_create_refuses_before_migrator_auth(
+    plan, target, tmp_path, monkeypatch, phase, alias,
+):
+    value, state = boundary(tmp_path, monkeypatch, phase)
+    next(row for row in state.rows if row['oid'] == ACTORS[alias][1])['database_create'] = True
+    with pytest.raises(release.ReleaseDenied, match='fresh_target_role_phase_mismatch'):
+        value.verify_fresh_database_phase(plan, target, '20261015_0018', phase=phase)
+    assert not any(event[0] == 'credential' and event[1] == 'replacement_migration' for event in state.events)
+
+
+def test_serving_refuses_retained_database_create_even_after_public_create_and_login_removed(
+    plan, target, tmp_path, monkeypatch,
+):
+    value, state = boundary(tmp_path, monkeypatch, 'serving')
+    migration = next(row for row in state.rows if row['oid'] == 24578)
+    assert not migration['rolcanlogin'] and not migration['schema_create']
+    migration['database_create'] = True
+    with pytest.raises(release.ReleaseDenied, match='fresh_target_role_phase_mismatch'):
+        value.verify_fresh_database_phase(plan, target, '20261015_0018', phase='serving')
+
+
+def test_migration_allows_database_create_to_be_revoked_after_schema_restore(
+    plan, target, tmp_path, monkeypatch,
+):
+    value, state = boundary(tmp_path, monkeypatch, 'migration')
+    next(row for row in state.rows if row['oid'] == 24578)['database_create'] = False
+    value.verify_fresh_database_phase(plan, target, '20261015_0018', phase='migration')

@@ -1081,6 +1081,7 @@ def verify_fresh_role_phase(
         "SELECT r.oid,r.rolname,r.rolcanlogin,r.rolinherit,"
         "(r.rolsuper OR r.rolcreatedb OR r.rolcreaterole OR r.rolreplication OR r.rolbypassrls) AS elevated,"
         "has_schema_privilege(r.oid,'public','CREATE') AS schema_create,"
+        "has_database_privilege(r.oid,current_database(),'CREATE') AS database_create,"
         "EXISTS(SELECT 1 FROM pg_catalog.pg_roles a WHERE "
         "(a.rolsuper OR a.rolcreatedb OR a.rolcreaterole OR a.rolreplication OR a.rolbypassrls) "
         "AND (pg_has_role(r.oid,a.oid,'USAGE') OR pg_has_role(r.oid,a.oid,'SET'))) AS elevated_membership,"
@@ -1090,7 +1091,7 @@ def verify_fresh_role_phase(
     if len(rows) != 3:
         raise ReleaseDenied("fresh_target_role_inventory_mismatch")
     observed = {}
-    booleans = {"rolcanlogin", "rolinherit", "elevated", "schema_create", "elevated_membership", "administration"}
+    booleans = {"rolcanlogin", "rolinherit", "elevated", "schema_create", "database_create", "elevated_membership", "administration"}
     for row in rows:
         if (set(row) != booleans | {"oid", "rolname"} or type(row["oid"]) is not int
                 or row["rolname"] not in names or row["rolname"] in observed
@@ -1104,7 +1105,8 @@ def verify_fresh_role_phase(
             raise ReleaseDenied("fresh_target_role_oid_mismatch")
         migration = alias == "replacement_migration"
         expected = migration and phase == "migration"
-        if row["schema_create"] != expected or row["rolcanlogin"] != (not migration or expected):
+        if (row["schema_create"] != expected or row["rolcanlogin"] != (not migration or expected)
+                or row["database_create"] and not expected):
             raise ReleaseDenied("fresh_target_role_phase_mismatch")
     if phase == "serving" and any(role == actors["replacement_migration"][1] for _, role, _ in sessions):
         raise ReleaseDenied("fresh_migration_session_remains")

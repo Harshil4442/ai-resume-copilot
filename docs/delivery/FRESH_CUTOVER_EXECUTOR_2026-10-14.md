@@ -1,5 +1,12 @@
 # Executable fresh HireWiz cutover preparation
 
+**Status, 16 October:** this document retains the original preparation and
+first-attempt procedure. For current execution state, use
+[development and deployment progress](AUTO_APPLY_PROGRESS.md). The preserved-data
+F7 release is frozen at `b281118`; its continuations have not completed transfer
+or promotion. Completed isolation, credential issuance and provider retirement
+operations must not be repeated by rerunning the first-attempt procedure below.
+
 This document describes the supported preserved-data migration and deployment
 executor. The source now includes schema 17, a normal SDK authentication handoff
 and preparation checks for both private document workers. Source integration
@@ -7,7 +14,7 @@ has not executed a customer cutover, credential rotation, customer copy or
 production promotion. Synthetic sequencing controls and the previously observed
 Linux/PostgreSQL fixtures establish those tested boundaries only.
 
-**Current execution state:** the unchanged source guard verified all 1,023 files
+**Historical preparation state:** the unchanged source guard verified all 1,023 files
 and the 16-revision migration chain of the preceding `29f86053` cohort. The new
 source batch adds schema 17 and must receive its own complete guard, CI and
 immutable application/operator builds after it is frozen. No files are excluded
@@ -76,6 +83,27 @@ The same Linux process captures the retained source/model credential scope once,
 The positive terminal explicitly leaves queue admission closed, checkout disabled, frontend deployment unverified and goal_complete=false. Root still completes the existing paid-runtime/feature checks, Vercel deployment, connected GitHub builder restoration and appropriate reopening in the established checkpoints. This packet does not enable AI generation or billing from the estimated policy alone.
 
 ## Cutover impact and recovery
+
+### Temporary schema-restore permission
+
+The full source archive includes `public` and `neon_auth`. Permission to create
+tables inside `public` does not permit creating `neon_auth`. Before transfer,
+`prepare_target_restore` verifies the exact bootstrap, destination owner, empty
+catalog, three role identities, memberships, permissions and absence of other
+target sessions. One transaction grants only the selected migrator `CREATE ON
+DATABASE neondb`, checks the exact ACL delta and preserves the attempt marker.
+It does not create roles, rotate passwords, change schema ACLs or grant runtime
+or observer database CREATE. A lost transaction result requires read-only
+reconciliation, never another grant invocation.
+
+Before traffic promotion, `finalize_target_migrator` removes both database CREATE
+and public-schema CREATE, disables LOGIN, checks sessions and disables the exact
+selected migration secret version. Serving admission independently rejects
+retained database CREATE for any of these three roles. This database privilege
+is distinct from the `CREATEDB` role attribute; checking only that attribute does
+not prove removal. PostgreSQL tests cover a two-schema transfer, atomic failure,
+preserved source state and effective grant removal. These tests do not establish
+a completed production migration.
 
 The five exact old SAs are `hirewiz-api@ai-resume-parser-482412.iam.gserviceaccount.com` UID101596337064821972716; `ais-gemini-key-43d738d3dfb9485@226979001779.iam.gserviceaccount.com` UID100592881791239522151; `ais-gemini-key-41af2f49a3fb4b6@157225724590.iam.gserviceaccount.com` UID117611807420650799123; `ais-gemini-key-7aeb7c91129947c@157225724590.iam.gserviceaccount.com` UID103651370799427077361; old Compute `157225724590-compute@developer.gserviceaccount.com` UID115689643755778240830. Exact key resource paths are the four `OLD_KEYS` literals in the reviewed writer. Human provider-admin accounts, retained normal Neon management, unrelated apps and `bulk_action_platform` are preserved. Existing Redis value, payment keys/webhook secrets and customer financial rows are not rotated or discarded.
 

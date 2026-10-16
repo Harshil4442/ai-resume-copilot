@@ -9,6 +9,7 @@ import os
 import sys
 import urllib.parse
 from contextlib import contextmanager
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -338,6 +339,346 @@ def target_bind(writes, monkeypatch, *, fail=False):
         lambda *_args, **_kwargs: datetime.now(UTC),
     )
     return bootstrap, connection
+
+
+class RestoreTarget(Target):
+    """Synthetic permission state with transaction rollback and lost COMMIT."""
+
+    def __init__(self):
+        super().__init__()
+        self.owner = [(16395, 16391, 2200, 6171)]
+        self.roles = [(oid, name, True, False, False, False, False, False, False)
+                      for name, oid, _ in module.TARGET_ROLES]
+        self.memberships = [(24576, 16391, 10, True, False, False),
+                            (24578, 16391, 10, True, False, False),
+                            (24578, 16391, 16391, False, False, True),
+                            (24580, 16391, 10, True, False, False)]
+        self.database_create = set()
+        self.schema_create = {24578}
+        self.schema_usage = {24576, 24578, 24580}
+        self.acl = [(16391, 0, "CONNECT", False), (16391, 0, "TEMPORARY", False),
+                    (16391, 16391, "CONNECT", False), (16391, 16391, "CREATE", False),
+                    (16391, 16391, "TEMPORARY", False)]
+        self.schema_acl = [(["synthetic-owner=UC/synthetic-owner",
+                             "synthetic-migrator=UC/synthetic-owner"],)]
+        self.sessions = 0
+        self.after_grant = lambda _: None
+        self.unknown_commit = False
+        self.ineffective_revoke = set()
+        self.commits = self.rollbacks = 0
+
+    @contextmanager
+    def transaction(self):
+        fields = ("database_create", "schema_create", "schema_usage", "acl", "schema_acl", "roles")
+        before = {field: copy.deepcopy(getattr(self, field)) for field in fields}
+        start = len(self.mutations)
+        try:
+            yield self
+        except BaseException:
+            for field, value in before.items():
+                setattr(self, field, value)
+            self.rollbacks += 1
+            raise
+        self.commits += 1
+        if self.unknown_commit and len(self.mutations) > start:
+            raise RuntimeError("synthetic-private-commit-result")
+
+    @property
+    def mutations(self):
+        return [text for text in self.commands if text.startswith(("GRANT ", "REVOKE ", "ALTER ROLE"))]
+
+    def execute(self, command, parameters=None):
+        text = command if isinstance(command, str) else command.as_string(None)
+        self.commands.append(text)
+        if text.startswith(("SET ", "RESET ROLE")):
+            return Result([])
+        if text.startswith("SELECT d.oid,d.datdba"):
+            return Result(copy.deepcopy(self.owner))
+        if text.startswith("SELECT oid,rolname,rolcanlogin"):
+            return Result(copy.deepcopy(self.roles))
+        if "FROM pg_catalog.pg_auth_members" in text:
+            return Result(copy.deepcopy(self.memberships))
+        if text.startswith("SELECT oid,has_database_privilege"):
+            return Result([(oid, oid in self.database_create, oid in self.schema_usage,
+                            oid in self.schema_create) for oid in (24576, 24578, 24580)])
+        if "SELECT count(*) FROM pg_catalog.pg_stat_activity" in text:
+            return Result([(self.sessions,)])
+        if "aclexplode" in text:
+            return Result(copy.deepcopy(self.acl))
+        if text.startswith("SELECT nspacl"):
+            return Result(copy.deepcopy(self.schema_acl))
+        if text.startswith("GRANT CREATE ON DATABASE neondb TO "):
+            assert text == 'GRANT CREATE ON DATABASE neondb TO "hirewiz_migrator_20261013_r1"'
+            self.database_create.add(24578)
+            self.acl = sorted([*self.acl, (16391, 24578, "CREATE", False)])
+            self.after_grant(self)
+            return Result([])
+        if text.startswith("SELECT version_num FROM public.alembic_version"):
+            return Result([(module.native.release.CHAIN[-1],)])
+        if text.startswith("ALTER ROLE "):
+            assert text == 'ALTER ROLE "hirewiz_migrator_20261013_r1" NOLOGIN'
+            self.roles = [(*row[:2], False, *row[3:]) if row[0] == 24578 else row for row in self.roles]
+            return Result([])
+        if text.startswith("REVOKE CREATE ON "):
+            kind = "database" if " ON DATABASE " in text else "schema"
+            if kind not in self.ineffective_revoke:
+                (self.database_create if kind == "database" else self.schema_create).discard(24578)
+            return Result([])
+        if text.startswith("SELECT rolcanlogin"):
+            return Result([(next(row[2] for row in self.roles if row[0] == 24578),)])
+        if text.startswith("SELECT pg_catalog.has_schema_privilege"):
+            return Result([(24578 in self.schema_create, *(oid in self.database_create
+                                                          for oid in (24578, 24576, 24580)))])
+        if text.startswith("SELECT d.oid,r.oid,current_user,session_user"):
+            return Result([(16395, 24578, module.TARGET_ROLES[1][0], "hirewiz_bootstrap_20261013", 170000)])
+        if text.startswith("SELECT pid,usesysid,datid,backend_type"):
+            return Result([])
+        raise AssertionError("Unexpected synthetic SQL: " + text)
+
+
+def restore_target_fixture(writer, monkeypatch):
+    writes, _, _ = writer
+    bootstrap, _ = target_bind(writes, monkeypatch)
+    connection, events = RestoreTarget(), []
+
+    def connect(_):
+        events.append("target-connect")
+        return connection
+
+    def isolated(boundary):
+        assert boundary is writes.boundary
+        events.append("cloud-isolated")
+
+    def closure(boundary, source, *, replacements):
+        assert boundary is writes.boundary and source is boundary.scope.source and replacements is False
+        events.append("source-closure")
+        return datetime.now(UTC)
+
+    def empty(actual):
+        assert actual is connection
+        events.append("target-empty")
+
+    monkeypatch.setattr(module.transfer.BoundDatabase, "connect", connect)
+    monkeypatch.setattr(module.source_sql, "verify_cloud_isolated", isolated)
+    monkeypatch.setattr(module.native.NativeFreshFenceBoundary, "_observe_closure", closure)
+    monkeypatch.setattr(module.transfer, "_empty", empty)
+    return bootstrap, connection, events
+
+
+def test_empty_target_restore_grants_only_migrator_database_create_once_and_records_exact_acl(writer, monkeypatch):
+    writes, http, workdir = writer
+    bootstrap, connection, events = restore_target_fixture(writer, monkeypatch)
+    before_acl, schema_acl = copy.deepcopy(connection.acl), copy.deepcopy(connection.schema_acl)
+    result = module.prepare_target_restore(writes, bootstrap)
+    assert connection.mutations == ['GRANT CREATE ON DATABASE neondb TO "hirewiz_migrator_20261013_r1"']
+    assert connection.database_create == {24578} and connection.schema_acl == schema_acl
+    assert result == {"database_oid": 16395, "grantee_oid": 24578, "grantor_oid": 16391,
+                      "before_acl": before_acl,
+                      "after_acl": sorted([*before_acl, (16391, 24578, "CREATE", False)]),
+                      "runtime_database_create": False, "observer_database_create": False}
+    assert events == ["cloud-isolated", "source-closure", "target-connect", "target-empty", "target-empty"]
+    assert connection.commits == 1 and connection.closed and http.calls == []
+    marker = workdir / "prepare-target-restore-create.started.json"
+    assert json.loads(marker.read_text()) == {"phase": "prepare-target-restore-create", "automatic_replay": False}
+    with pytest.raises(module.WriteDenied, match="^write_target_restore_already_attempted_reconcile_only$"):
+        module.prepare_target_restore(writes, bootstrap)
+    assert len(connection.mutations) == 1
+
+
+@pytest.mark.parametrize(("field", "value"), [
+    ("host", "synthetic-wrong.invalid"), ("port", 5433), ("database", "synthetic_other"),
+    ("database_oid", 16396), ("cluster_sha256", "0" * 64),
+    ("actor", "synthetic_other"), ("actor_oid", 16392),
+])
+def test_restore_grant_rejects_native_identity_drift_before_connection(writer, monkeypatch, field, value):
+    writes, _, workdir = writer
+    bootstrap, connection, events = restore_target_fixture(writer, monkeypatch)
+    bootstrap = replace(bootstrap, identity=replace(bootstrap.identity, **{field: value}))
+    with pytest.raises(module.WriteDenied, match="^write_target_native_identity_drift$"):
+        module.prepare_target_restore(writes, bootstrap)
+    assert events == [] and connection.commands == [] and not list(workdir.iterdir())
+
+
+@pytest.mark.parametrize("field", ["retired_since", "scope"])
+def test_restore_grant_requires_native_source_cut_before_connection(writer, monkeypatch, field):
+    writes, _, workdir = writer
+    bootstrap, connection, events = restore_target_fixture(writer, monkeypatch)
+    setattr(writes.boundary, field, None)
+    with pytest.raises(module.WriteDenied, match="^write_target_restore_native_cut_missing$"):
+        module.prepare_target_restore(writes, bootstrap)
+    assert events == ["cloud-isolated"] and connection.commands == [] and not list(workdir.iterdir())
+
+
+@pytest.mark.parametrize("role_index", [0, 1, 2])
+@pytest.mark.parametrize("attribute", [2, 3, 4, 5, 6, 7, 8])
+def test_restore_grant_refuses_login_inheritance_or_elevated_role_drift_before_mutation(
+    writer, monkeypatch, role_index, attribute,
+):
+    writes, _, workdir = writer
+    bootstrap, connection, _ = restore_target_fixture(writer, monkeypatch)
+    row = list(connection.roles[role_index])
+    row[attribute] = not row[attribute]
+    connection.roles[role_index] = tuple(row)
+    with pytest.raises(module.WriteDenied, match="^write_target_restore_role_drift$"):
+        module.prepare_target_restore(writes, bootstrap)
+    assert connection.mutations == [] and connection.rollbacks == 1 and connection.closed
+    assert not list(workdir.iterdir())
+
+
+@pytest.mark.parametrize("defect", ["missing", "extra", "grantor", "admin", "inherit", "set"])
+def test_restore_grant_refuses_changed_exact_membership_before_mutation(writer, monkeypatch, defect):
+    writes, _, workdir = writer
+    bootstrap, connection, _ = restore_target_fixture(writer, monkeypatch)
+    if defect == "missing":
+        connection.memberships.pop()
+    elif defect == "extra":
+        connection.memberships.append((24578, 24576, 16391, False, False, True))
+    else:
+        row = list(connection.memberships[2])
+        index = {"grantor": 2, "admin": 3, "inherit": 4, "set": 5}[defect]
+        row[index] = 10 if defect == "grantor" else not row[index]
+        connection.memberships[2] = tuple(row)
+    with pytest.raises(module.WriteDenied, match="^write_target_restore_membership_drift$"):
+        module.prepare_target_restore(writes, bootstrap)
+    assert connection.mutations == [] and not list(workdir.iterdir())
+
+
+@pytest.mark.parametrize("role_oid", [24576, 24578, 24580])
+def test_restore_grant_refuses_preexisting_database_create_for_any_role(writer, monkeypatch, role_oid):
+    writes, _, workdir = writer
+    bootstrap, connection, _ = restore_target_fixture(writer, monkeypatch)
+    connection.database_create.add(role_oid)
+    with pytest.raises(module.WriteDenied, match="^write_target_restore_permissions_drift$"):
+        module.prepare_target_restore(writes, bootstrap)
+    assert connection.mutations == [] and not list(workdir.iterdir())
+
+
+@pytest.mark.parametrize("defect", ["grant_option", "foreign_grantee", "missing_original", "extra_runtime", "schema_acl"])
+def test_restore_grant_rolls_back_nonexact_acl_delta_and_retains_attempt(writer, monkeypatch, defect):
+    writes, _, workdir = writer
+    bootstrap, connection, _ = restore_target_fixture(writer, monkeypatch)
+    original = copy.deepcopy((connection.acl, connection.schema_acl))
+
+    def change(actual):
+        if defect == "schema_acl":
+            actual.schema_acl.append((["synthetic-foreign=UC/synthetic-owner"],))
+        elif defect == "missing_original":
+            actual.acl.remove((16391, 0, "CONNECT", False))
+        elif defect == "extra_runtime":
+            actual.acl.append((16391, 24576, "CREATE", False))
+            actual.database_create.add(24576)
+        else:
+            actual.acl.remove((16391, 24578, "CREATE", False))
+            actual.acl.append((16391, 24578 if defect == "grant_option" else 24580,
+                               "CREATE", defect == "grant_option"))
+        actual.acl.sort()
+
+    connection.after_grant = change
+    with pytest.raises(module.WriteDenied, match="^write_target_restore_grant_unconfirmed$"):
+        module.prepare_target_restore(writes, bootstrap)
+    assert (connection.acl, connection.schema_acl) == original and connection.database_create == set()
+    assert connection.rollbacks == 1 and connection.commits == 0 and connection.closed
+    assert (workdir / "prepare-target-restore-create.started.json").is_file()
+    with pytest.raises(module.WriteDenied, match="^write_target_restore_already_attempted_reconcile_only$"):
+        module.prepare_target_restore(writes, bootstrap)
+    assert len(connection.mutations) == 1
+
+
+def test_unknown_restore_grant_commit_cannot_repeat_grant_or_reflect_error_body(writer, monkeypatch, capsys):
+    writes, http, workdir = writer
+    bootstrap, connection, _ = restore_target_fixture(writer, monkeypatch)
+    connection.unknown_commit = True
+    with pytest.raises(module.WriteDenied, match="^write_target_restore_unknown_reconcile_only$") as error:
+        module.prepare_target_restore(writes, bootstrap)
+    assert connection.database_create == {24578} and connection.closed
+    assert str(error.value) == "write_target_restore_unknown_reconcile_only"
+    assert (workdir / "prepare-target-restore-create.started.json").is_file()
+    before = list(connection.commands)
+    with pytest.raises(module.WriteDenied, match="^write_target_restore_already_attempted_reconcile_only$"):
+        module.prepare_target_restore(writes, bootstrap)
+    assert connection.commands == before and len(connection.mutations) == 1 and http.calls == []
+    assert capsys.readouterr() == ("", "")
+    assert "synthetic-private-commit-result" not in "".join(path.read_text() for path in workdir.iterdir())
+
+
+def finalization_fixture(writer, monkeypatch):
+    writes, http, _ = writer
+    bootstrap, connection, _ = restore_target_fixture(writer, monkeypatch)
+    connection.database_create.add(24578)
+    release = module.native.release
+    source = release.Plan(
+        release="a" * 40, image_digest="sha256:" + "b" * 64,
+        build_id="11111111-1111-1111-1111-111111111111", ci_run_id=7,
+        runtime_secret="inert-old-runtime:2", migration_secret="inert-old-migration:3",
+        observer_secret="inert-old-observer:4", database_owner_oid=16387,
+        expense_secret="inert-expense-policy:5", expense_sha256="c" * 64,
+        model_policy_secret="inert-model-policy:6", model_policy_sha256="d" * 64,
+        model_key_secret="inert-model-key:7", model_primary="gemini-inert-model",
+        model_api_base=release.MODEL_API_BASE,
+        runtime_service_account=f"inert-runtime@{release.PROJECT}.iam.gserviceaccount.com",
+        migration_service_account=f"inert-migration@{release.PROJECT}.iam.gserviceaccount.com",
+        backup_uri=f"gs://{release.PROJECT}-hirewiz-application-artifacts/releases/inert.dump",
+        inventory_path=writer[2] / "inert.json", inventory_sha256="e" * 64,
+    )
+    target = release.FreshTargetPlan(*(row[2] + ":2" for row in module.TARGET_ROLES))
+    phases, state = [], {"value": "ENABLED"}
+    resource = f"projects/{module.NUMBER}/secrets/{module.TARGET_ROLES[1][2]}/versions/2"
+
+    def fences(actual, plan):
+        assert actual is writes.boundary and plan is source
+
+    def phase(actual, plan, destination, schema, *, phase):
+        assert actual is writes.boundary and plan is source and destination is target
+        assert schema == release.CHAIN[-1]
+        if phase == "serving":
+            assert state["value"] == "DISABLED" and connection.closed
+        phases.append(phase)
+
+    def respond(method, url, body):
+        if method == "POST":
+            assert url.endswith(resource + ":disable") and body == {"etag": "synthetic-selected-version"}
+            assert connection.closed and connection.database_create == connection.schema_create == set()
+            state["value"] = "DISABLED"
+        else:
+            assert method == "GET" and url.endswith(resource)
+        return 200, {"name": resource, "etag": "synthetic-selected-version", "state": state["value"]}
+
+    monkeypatch.setattr(module.native.NativeFreshFenceBoundary, "verify_fences", fences)
+    monkeypatch.setattr(module.native.NativeFreshFenceBoundary, "verify_fresh_database_phase", phase)
+    http.respond = respond
+    return bootstrap, connection, source, target, phases
+
+
+def test_finalization_removes_both_create_grants_before_disabling_only_selected_migrator_secret(writer, monkeypatch):
+    writes, http, workdir = writer
+    bootstrap, connection, source, target, phases = finalization_fixture(writer, monkeypatch)
+    module.finalize_target_migrator(writes, bootstrap, source, target)
+    assert connection.mutations == [
+        'ALTER ROLE "hirewiz_migrator_20261013_r1" NOLOGIN',
+        'REVOKE CREATE ON SCHEMA public FROM "hirewiz_migrator_20261013_r1"',
+        'REVOKE CREATE ON DATABASE neondb FROM "hirewiz_migrator_20261013_r1"',
+    ]
+    assert connection.database_create == connection.schema_create == set()
+    assert next(row[2] for row in connection.roles if row[0] == 24578) is False
+    assert [method for method, _, _ in http.calls] == ["GET", "POST", "GET"]
+    assert phases == ["migration", "serving"]
+    assert {path.name for path in workdir.iterdir()} == {
+        "finalize-target-migrator-sql.started.json", "disable-selected-migration-version-2.started.json"}
+
+
+@pytest.mark.parametrize("remaining", ["schema", "database", "runtime", "observer"])
+def test_finalization_refuses_any_remaining_create_authority_without_disabling_secret(writer, monkeypatch, remaining):
+    writes, http, workdir = writer
+    bootstrap, connection, source, target, phases = finalization_fixture(writer, monkeypatch)
+    if remaining in {"schema", "database"}:
+        connection.ineffective_revoke.add(remaining)
+    else:
+        connection.database_create.add(24576 if remaining == "runtime" else 24580)
+    with pytest.raises(module.WriteDenied, match="^write_migrator_nologin_nocreate_unconfirmed$"):
+        module.finalize_target_migrator(writes, bootstrap, source, target)
+    assert connection.rollbacks == 1 and connection.closed and phases == ["migration"]
+    assert [method for method, _, _ in http.calls] == ["GET"]
+    assert {path.name for path in workdir.iterdir()} == {"finalize-target-migrator-sql.started.json"}
 
 
 def test_cross_alias_precut_password_refuses_before_target_auth_or_secret_write(

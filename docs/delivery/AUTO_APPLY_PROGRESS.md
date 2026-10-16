@@ -26,17 +26,24 @@ separate worktree. Its old writers are isolated, and the source database is
 preserved. Existing replacement credentials must be reused without repeating
 issuance or completed retirement operations.
 
-The V12 continuation successfully created and verified the protected source
-backup with **Locked retention through 22 October**. It then stopped at
-`transfer_migration_staging` with
-`fresh_final_transfer_not_verified_reconcile_only`, before `transfer.started`
+The V13 continuation created a new protected source backup with **Locked
+retention through 23 October**. It then stopped at `transfer_migration_staging`
+with `fresh_final_transfer_not_verified_reconcile_only`, after `transfer.started`
 was created. **No completed data transfer or traffic promotion is verified.**
 
-Read-only reconciliation confirms that the target passes the exact empty-target
-check. The source remains at schema9; its 49-table catalog, sequence, exported
-snapshot and collation checks pass. Transfer diagnosis is in progress; these
-checks do not establish a successful transfer. The original journal and backup
-remain preserved. See the [cutover procedure](FRESH_CUTOVER_EXECUTOR_2026-10-14.md)
+Read-only reconciliation confirms that the target still passes the exact
+empty-target check. The source remains at schema9; its 49-table catalog,
+sequence, exported snapshot and collation checks pass. The earlier refusal of
+the source observer's own held read-only snapshot was reproduced on the actual
+source and fixed. V13 progressed beyond that check.
+
+The target migrator has permission to create objects in `public` but lacks
+database-level permission to create the source's additional `neon_auth` schema.
+The actual backup contains that schema. A temporary grant and verified removal
+are being prepared; the generic V13 stop does not itself prove which command
+failed. Existing bounded transfer diagnostics must be included in the next
+reviewed continuation. Both stopped attempts, their journals and protected
+backups remain preserved. See the [cutover procedure](FRESH_CUTOVER_EXECUTOR_2026-10-14.md)
 and [complete read-only export repair](SOURCE_COMPLETE_READONLY_EXPORT_2026-10-15.md).
 
 Queues, maintenance scheduling, checkout and new-feature admissions remain held
@@ -81,12 +88,13 @@ still require production verification.
 
 ## Supporting validation
 
-Remote candidate **`dd569`** in [PR #23](https://github.com/Harshil4442/ai-resume-copilot/pull/23)
-passed all five CI jobs: backend **5,446 passed, 1 skipped, 243 subtests**;
-frontend **803 unit checks** and **245 browser cases across five viewports**.
-This validates that source in its tested environments; it does not complete a
-production outcome. Local **`197deab`** adds optional safe transfer diagnostics
-and has not been deployed.
+Remote candidate **`22cdaae`** in [PR #23](https://github.com/Harshil4442/ai-resume-copilot/pull/23)
+passed all five CI jobs in [run 38830443331](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38830443331),
+completing at 01:05:56 UTC on 16 October. It includes the read-only observer
+classification repair and optional bounded transfer diagnostics. V13 used the
+observer repair; the optional diagnostics still require deployment. These checks
+validate source in its tested environments; they do not complete a production
+outcome.
 
 The [requirements](../requirements/JOB_SEARCH_AND_APPLICATION.md) define full
 acceptance. Earlier operational history remains in the

@@ -1425,6 +1425,107 @@ def rotate_empty_target(
         connection.close()
 
 
+def prepare_target_restore(writes: OfficialWrites, bootstrap: transfer.BoundDatabase) -> dict[str, Any]:
+    """One exact empty-target schema grant; unknown results never permit replay.
+
+    CREATE ON DATABASE allows the full archive's non-public schemas. It is not
+    CREATEDB and confers no authority on runtime/observer or another database.
+    Finalization removes this grant together with the public-schema grant.
+    """
+    phase = "prepare-target-restore-create"
+    need(type(writes) is OfficialWrites and type(bootstrap) is transfer.BoundDatabase
+         and bootstrap.restore_role is None, "write_target_native_bindings_required")
+    need(not os.path.lexists(writes.workdir / (phase + ".started.json")),
+         "write_target_restore_already_attempted_reconcile_only")
+    identity = bootstrap.identity
+    need((identity.host, identity.port, identity.database, identity.database_oid,
+          identity.cluster_sha256, identity.actor, identity.actor_oid)
+         == (TARGET_HOST, 5432, "neondb", 16395, TARGET_CLUSTER, "hirewiz_bootstrap_20261013", 16391),
+         "write_target_native_identity_drift")
+    boundary = writes.boundary
+    source_sql.verify_cloud_isolated(boundary)
+    need(boundary.retired_since is not None and boundary.scope is not None,
+         "write_target_restore_native_cut_missing")
+    boundary._observe_closure(boundary.scope.source, replacements=False)
+    expected_memberships = [
+        (24576, 16391, 10, True, False, False),
+        (24578, 16391, 10, True, False, False),
+        (24578, 16391, 16391, False, False, True),
+        (24580, 16391, 10, True, False, False),
+    ]
+    deadline = time.monotonic() + 30
+    connection = bootstrap.connect()
+    try:
+        with connection.transaction():
+            connection.execute("SET TRANSACTION READ WRITE")
+            connection.execute("SET LOCAL search_path=pg_catalog")
+            connection.execute("SET LOCAL statement_timeout='1000ms'")
+            connection.execute("SET LOCAL lock_timeout='1000ms'")
+            target = connection.execute(
+                "SELECT d.oid,d.datdba,n.oid,n.nspowner FROM pg_catalog.pg_database d "
+                "CROSS JOIN pg_catalog.pg_namespace n WHERE d.datname=current_database() AND n.nspname='public'"
+            ).fetchall()
+            need(target == [(16395, 16391, 2200, 6171)], "write_target_restore_owner_drift")
+            transfer._empty(connection)
+            roles = connection.execute(
+                "SELECT oid,rolname,rolcanlogin,rolinherit,rolsuper,rolcreatedb,rolcreaterole,rolreplication,rolbypassrls "
+                "FROM pg_catalog.pg_roles WHERE oid IN (24576,24578,24580) ORDER BY oid"
+            ).fetchall()
+            need(roles == [(oid, name, True, False, False, False, False, False, False)
+                           for name, oid, _ in TARGET_ROLES], "write_target_restore_role_drift")
+            memberships = connection.execute(
+                "SELECT roleid,member,grantor,admin_option,inherit_option,set_option FROM pg_catalog.pg_auth_members "
+                "WHERE roleid IN (24576,24578,24580) OR member IN (24576,24578,24580) "
+                "OR grantor IN (24576,24578,24580) ORDER BY roleid,member,grantor"
+            ).fetchall()
+            need(memberships == expected_memberships, "write_target_restore_membership_drift")
+            permissions_sql = (
+                "SELECT oid,has_database_privilege(oid,16395,'CREATE'),"
+                "has_schema_privilege(oid,'public','USAGE'),has_schema_privilege(oid,'public','CREATE') "
+                "FROM pg_catalog.pg_roles WHERE oid IN (24576,24578,24580) ORDER BY oid"
+            )
+            before_permissions = connection.execute(permissions_sql).fetchall()
+            need(before_permissions == [(24576, False, True, False), (24578, False, True, True),
+                                        (24580, False, True, False)],
+                 "write_target_restore_permissions_drift")
+            sessions = connection.execute(
+                "SELECT count(*) FROM pg_catalog.pg_stat_activity WHERE datid=16395 "
+                "AND backend_type='client backend' AND pid<>pg_catalog.pg_backend_pid()"
+            ).fetchone()
+            need(sessions == (0,), "write_target_restore_sessions_present")
+            acl_sql = (
+                "SELECT a.grantor,a.grantee,a.privilege_type,a.is_grantable FROM pg_catalog.pg_database d "
+                "CROSS JOIN LATERAL pg_catalog.aclexplode(COALESCE(d.datacl,pg_catalog.acldefault('d',d.datdba))) a "
+                "WHERE d.oid=16395 ORDER BY a.grantor,a.grantee,a.privilege_type,a.is_grantable"
+            )
+            before_acl = connection.execute(acl_sql).fetchall()
+            schema_acl = connection.execute(
+                "SELECT nspacl FROM pg_catalog.pg_namespace WHERE oid=2200"
+            ).fetchall()
+            need(0 < len(before_acl) <= 64 and time.monotonic() < deadline,
+                 "write_target_restore_acl_bound_or_deadline")
+            writes._once(phase)
+            connection.execute(sql.SQL("GRANT CREATE ON DATABASE neondb TO {}").format(
+                sql.Identifier(TARGET_ROLES[1][0])))
+            after_acl = connection.execute(acl_sql).fetchall()
+            after_permissions = connection.execute(permissions_sql).fetchall()
+            need(after_acl == sorted([*before_acl, (16391, 24578, "CREATE", False)])
+                 and after_permissions == [(24576, False, True, False), (24578, True, True, True),
+                                           (24580, False, True, False)]
+                 and connection.execute("SELECT nspacl FROM pg_catalog.pg_namespace WHERE oid=2200").fetchall() == schema_acl
+                 and time.monotonic() < deadline, "write_target_restore_grant_unconfirmed")
+            transfer._empty(connection)
+        return {"database_oid": 16395, "grantee_oid": 24578, "grantor_oid": 16391,
+                "before_acl": before_acl, "after_acl": after_acl,
+                "runtime_database_create": False, "observer_database_create": False}
+    except WriteDenied:
+        raise
+    except Exception:
+        raise WriteDenied("write_target_restore_unknown_reconcile_only") from None
+    finally:
+        connection.close()
+
+
 def finalize_target_migrator(
     writes: OfficialWrites,
     bootstrap: transfer.BoundDatabase,
@@ -1506,14 +1607,22 @@ def finalize_target_migrator(
                     sql.Identifier(TARGET_ROLES[1][0])
                 )
             )
+            connection.execute(
+                sql.SQL("REVOKE CREATE ON DATABASE neondb FROM {}").format(
+                    sql.Identifier(TARGET_ROLES[1][0])
+                )
+            )
             login = connection.execute(
                 "SELECT rolcanlogin FROM pg_catalog.pg_roles WHERE oid=24578 AND rolname='hirewiz_migrator_20261013_r1'"
             ).fetchone()
             create = connection.execute(
-                "SELECT pg_catalog.has_schema_privilege(24578,'public','CREATE')"
+                "SELECT pg_catalog.has_schema_privilege(24578,'public','CREATE'),"
+                "pg_catalog.has_database_privilege(24578,16395,'CREATE'),"
+                "pg_catalog.has_database_privilege(24576,16395,'CREATE'),"
+                "pg_catalog.has_database_privilege(24580,16395,'CREATE')"
             ).fetchone()
             need(
-                tuple(login or ()) == tuple(create or ()) == (False,)
+                tuple(login or ()) == (False,) and tuple(create or ()) == (False, False, False, False)
                 and time.monotonic() < deadline,
                 "write_migrator_nologin_nocreate_unconfirmed",
             )

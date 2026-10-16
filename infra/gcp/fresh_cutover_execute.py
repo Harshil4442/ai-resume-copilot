@@ -416,6 +416,7 @@ def execute(
     source = replace(source, model_key_secret=model)
     event(stage_event("replacement_binding"))
     boundary.bind_replacements_after_isolation(source, target)
+    writes.prepare_target_restore(writer, bootstrap)
     dump = Path("/usr/lib/postgresql/17/bin/pg_dump")
     restore = Path("/usr/lib/postgresql/17/bin/pg_restore")
     transfer_dir = WORK / "transfer"

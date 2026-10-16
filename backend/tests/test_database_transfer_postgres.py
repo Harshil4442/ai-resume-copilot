@@ -77,6 +77,9 @@ def databases(tmp_path):
                 target_admin.execute("REVOKE ALL ON FUNCTION pg_catalog.pg_control_system() FROM PUBLIC")
                 target_admin.execute(sql.SQL("GRANT EXECUTE ON FUNCTION pg_catalog.pg_control_system() TO {}").format(sql.Identifier(writer)))
                 target_admin.execute(sql.SQL("GRANT USAGE,CREATE ON SCHEMA public TO {}").format(sql.Identifier(migrator)))
+                target_admin.execute(sql.SQL("GRANT CREATE ON DATABASE {} TO {}").format(
+                    sql.Identifier(target_name), sql.Identifier(migrator),
+                ))
                 migrator_oid = target_admin.execute("SELECT oid FROM pg_roles WHERE rolname=%s", (migrator,)).fetchone()[0]
             def access(name, actor, password):
                 with psycopg.connect(dbname=name, user=actor, password=password,
@@ -100,12 +103,16 @@ def databases(tmp_path):
                 connection.execute("CREATE TABLE resumes(id serial PRIMARY KEY,user_id integer REFERENCES users(id),artifact_ref text,payload bytea)")
                 connection.execute("CREATE TABLE duplicates(value text,other integer)")
                 connection.execute("CREATE TABLE public.zz_collision(id integer)")
+                connection.execute("CREATE SCHEMA neon_auth")
+                connection.execute("CREATE TABLE neon_auth.users_sync(id serial PRIMARY KEY,app_user_id integer REFERENCES public.users(id),identity_subject text NOT NULL,profile jsonb NOT NULL)")
                 connection.execute("CREATE VIEW balances AS SELECT id,credits FROM public.users")
                 connection.execute("INSERT INTO users(credits,email) VALUES(17,'synthetic@example.invalid')")
                 connection.execute("INSERT INTO payment_orders(user_id,currency,amount_minor,provider_key_id,accepted_terms) VALUES(1,'INR',99000,'synthetic-original-key','{\"sku\":\"retired-pack\",\"amount_minor\":99000}')")
                 connection.execute("INSERT INTO resumes(user_id,artifact_ref,payload) VALUES(1,'synthetic/unchanged.docx',%s)", (b"\x00\xff\ncomplete-source-bytes",))
                 connection.execute("INSERT INTO duplicates VALUES('नमस्ते · NULL',NULL),('नमस्ते · NULL',NULL),(NULL,0)")
+                connection.execute("INSERT INTO neon_auth.users_sync(app_user_id,identity_subject,profile) VALUES(1,'synthetic-identity-001','{\"provider\":\"synthetic\",\"enabled\":true}'),(1,'synthetic-identity-002','{\"provider\":\"synthetic\",\"enabled\":false}')")
                 connection.execute("SELECT setval('public.users_id_seq',81,true)")
+                connection.execute("SELECT setval('neon_auth.users_sync_id_seq',37,true)")
                 connection.execute("SELECT lo_from_bytea(24001,%s)", (b"\x00\xfflarge-object",))
             yield source, target, tools, workdir, common
         finally:
@@ -123,14 +130,23 @@ def test_full_transfer_preserves_financial_artifact_duplicate_and_large_object_r
     result = transfer.transfer(source, target, tools, workdir)
     assert result["transfer"] == "verified" and result["schema"] == transfer.SCHEMA9
     assert result["table_rows"]["public.duplicates"] == 3
+    assert result["table_rows"]["neon_auth.users_sync"] == 2
     assert not result["production_released"] and not result["native_cut_observed"]
     with target.connect() as connection:
         assert connection.execute("SHOW search_path").fetchone() == ("pg_catalog",)
         assert connection.execute("SELECT amount_minor,provider_key_id,accepted_terms->>'sku' FROM public.payment_orders").fetchone() == (99000, "synthetic-original-key", "retired-pack")
         assert connection.execute("SELECT artifact_ref,payload FROM public.resumes").fetchone() == ("synthetic/unchanged.docx", b"\x00\xff\ncomplete-source-bytes")
         assert connection.execute("SELECT last_value,is_called FROM public.users_id_seq").fetchone() == (81, True)
+        assert connection.execute("SELECT id,app_user_id,identity_subject,profile->>'enabled' FROM neon_auth.users_sync ORDER BY id").fetchall() == [
+            (1, 1, "synthetic-identity-001", "true"), (2, 1, "synthetic-identity-002", "false"),
+        ]
+        assert connection.execute("SELECT last_value,is_called FROM neon_auth.users_sync_id_seq").fetchone() == (37, True)
         assert connection.execute("SELECT lo_get(24001)").fetchone()[0] == b"\x00\xfflarge-object"
         assert connection.execute("SELECT pg_get_userbyid(relowner) FROM pg_class WHERE oid='public.users'::regclass").fetchone()[0] == target.restore_role.name
+        assert connection.execute("SELECT pg_get_userbyid(nspowner) FROM pg_namespace WHERE nspname='neon_auth'").fetchone() == (target.restore_role.name,)
+        assert connection.execute("SELECT relname,pg_get_userbyid(relowner) FROM pg_class WHERE oid IN ('neon_auth.users_sync'::regclass,'neon_auth.users_sync_id_seq'::regclass) ORDER BY relname").fetchall() == [
+            ("users_sync", target.restore_role.name), ("users_sync_id_seq", target.restore_role.name),
+        ]
         assert connection.execute("SELECT current_user,session_user").fetchone() == (target.restore_role.name, target.identity.actor)
         assert connection.execute("SELECT rolcanlogin FROM pg_roles WHERE rolname=%s", (target.restore_role.name,)).fetchone() == (False,)
         assert connection.execute("SELECT has_function_privilege(current_user,'pg_catalog.pg_control_system()','EXECUTE')").fetchone() == (False,)
@@ -138,6 +154,79 @@ def test_full_transfer_preserves_financial_artifact_duplicate_and_large_object_r
                                   (target.restore_role.oid, target.identity.actor_oid)).fetchone() == (False, False, True)
     with source.connect() as connection:
         assert connection.execute("SELECT credits FROM public.users").fetchone() == (17,)
+
+
+def test_nonpublic_schema_restore_requires_only_temporary_migrator_database_create(databases):
+    source, target, tools, workdir, common = databases
+
+    def source_state():
+        with source.connect() as connection:
+            tables = connection.execute(
+                "SELECT n.nspname,c.relname,c.relowner FROM pg_class c "
+                "JOIN pg_namespace n ON n.oid=c.relnamespace "
+                "WHERE n.nspname IN ('public','neon_auth') AND c.relkind='r' ORDER BY 1,2"
+            ).fetchall()
+            rows = [(schema, table, owner, connection.execute(
+                sql.SQL("SELECT * FROM ONLY {}.{} ORDER BY ctid").format(
+                    sql.Identifier(schema), sql.Identifier(table),
+                )).fetchall()) for schema, table, owner in tables]
+            return (transfer._catalog(connection, transfer.Limits()),
+                    transfer._sequences(connection, transfer.Limits()), rows,
+                    connection.execute("SELECT lo_get(24001)").fetchone())
+
+    original = source_state()
+    with psycopg.connect(dbname=target.identity.database, **common) as admin:
+        admin.execute(sql.SQL("REVOKE CREATE ON DATABASE {} FROM {}").format(
+            sql.Identifier(target.identity.database), sql.Identifier(target.restore_role.name),
+        ))
+    with target.connect() as connection:
+        assert connection.execute("SELECT has_database_privilege(current_user,current_database(),'CREATE')").fetchone() == (False,)
+        assert connection.execute("SELECT rolcanlogin,rolcreatedb,rolsuper FROM pg_roles WHERE oid=%s", (target.restore_role.oid,)).fetchone() == (False, False, False)
+        transfer._empty(connection)
+
+    with pytest.raises(transfer.TransferDenied, match="^postgres_command_failed_reconcile_before_retry$"):
+        transfer.transfer(source, target, tools, workdir)
+    assert (workdir / "transfer.started").exists()
+    assert source_state() == original
+    # The real single-transaction restore rolled back every schema and object.
+    # Reconcile that database before preparing a distinct, fresh work directory.
+    with target.connect() as connection:
+        transfer._empty(connection)
+    reconciled = workdir / "reconciled"
+    reconciled.mkdir(mode=0o700)
+    with psycopg.connect(dbname=target.identity.database, **common) as admin:
+        admin.execute(sql.SQL("GRANT CREATE ON DATABASE {} TO {}").format(
+            sql.Identifier(target.identity.database), sql.Identifier(target.restore_role.name),
+        ))
+    result = transfer.transfer(source, target, tools, reconciled)
+    assert result["transfer"] == "verified" and result["table_rows"]["neon_auth.users_sync"] == 2
+    assert result["table_rows"]["public.users"] == 1
+    assert source_state() == original
+    with target.connect() as connection:
+        assert connection.execute("SELECT credits,email FROM public.users").fetchone() == (17, "synthetic@example.invalid")
+        assert connection.execute("SELECT id,app_user_id,identity_subject,profile->>'enabled' FROM neon_auth.users_sync ORDER BY id").fetchall() == [
+            (1, 1, "synthetic-identity-001", "true"), (2, 1, "synthetic-identity-002", "false"),
+        ]
+        assert connection.execute("SELECT last_value,is_called FROM neon_auth.users_sync_id_seq").fetchone() == (37, True)
+        assert connection.execute("SELECT nspname,pg_get_userbyid(nspowner) FROM pg_namespace WHERE nspname IN ('public','neon_auth') ORDER BY nspname").fetchall() == [
+            ("neon_auth", target.restore_role.name), ("public", "pg_database_owner"),
+        ]
+        assert connection.execute("SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname IN ('public','neon_auth') AND c.relowner<>%s", (target.restore_role.oid,)).fetchone() == (0,)
+    with psycopg.connect(dbname=target.identity.database, **common) as admin:
+        admin.execute(sql.SQL("REVOKE CREATE ON DATABASE {} FROM {}").format(
+            sql.Identifier(target.identity.database), sql.Identifier(target.restore_role.name),
+        ))
+    with target.connect() as connection:
+        assert connection.execute("SELECT has_database_privilege(current_user,current_database(),'CREATE')").fetchone() == (False,)
+        assert connection.execute("SELECT rolcreatedb FROM pg_roles WHERE oid=%s", (target.restore_role.oid,)).fetchone() == (False,)
+        connection.rollback()
+        connection.execute("SET default_transaction_read_only=off")
+        connection.commit()
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            connection.execute("CREATE SCHEMA synthetic_after_retirement")
+        connection.rollback()
+        assert connection.execute("SELECT count(*) FROM pg_namespace WHERE nspname='synthetic_after_retirement'").fetchone() == (0,)
+    assert source_state() == original
 
 
 def test_exporter_snapshot_excludes_a_concurrent_later_source_update(databases, monkeypatch):
