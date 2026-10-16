@@ -135,6 +135,93 @@ def test_actual_snapshot_clear_database_gate_is_never_cutover_authority(context)
     assert not result["observed_database"]["legacy_history_is_cost_proof"]
 
 
+def test_held_export_snapshot_of_same_readonly_observer_keeps_database_gate_clear(context):
+    engine, _, operator, data = context
+    observer = engine.cutover_readonly_observer
+    assert observer.url.username != operator
+    assert report(context)["database_gate_passed"]
+    with observer.connect() as exporter, exporter.begin():
+        exporter.exec_driver_sql("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+        exporter.execute(text(f'SELECT count(*) FROM "{data["database_namespace"]}".users'))
+        assert exporter.execute(text("SELECT pg_catalog.pg_export_snapshot()")).scalar_one()
+        export_pid = exporter.execute(text("SELECT pg_catalog.pg_backend_pid()")).scalar_one()
+        # The actual exporter transaction stays alive while a second native
+        # observer connection checks the database; no PID or role is injected.
+        result = report(context)
+        assert exporter.execute(text("SELECT pg_catalog.pg_backend_pid()")).scalar_one() == export_pid
+        assert result["database_gate_passed"] and not result["cutover_ready"]
+        assert not result["observed_database"]["inspector_has_writer_authority"]
+        assert result["observed_database"]["unclassified_session_count"] == 0
+
+
+def test_unrelated_readonly_login_still_blocks_during_same_observer_export(context):
+    engine, _, _, data = context
+    namespace = data["database_namespace"]
+    stranger = "cutover_readonly_stranger_" + uuid4().hex
+    separate = None
+    try:
+        with engine.begin() as connection:
+            connection.execute(text(f"CREATE ROLE \"{stranger}\" LOGIN PASSWORD 'synthetic-readonly-stranger'"))
+            connection.execute(text(f'GRANT USAGE ON SCHEMA "{namespace}" TO "{stranger}"'))
+            connection.execute(text(f'GRANT SELECT ON ALL TABLES IN SCHEMA "{namespace}" TO "{stranger}"'))
+        separate = create_engine(engine.url.set(username=stranger, password="synthetic-readonly-stranger"), poolclass=NullPool)
+        with engine.cutover_readonly_observer.connect() as exporter, separate.connect() as unrelated:
+            exporter.exec_driver_sql("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+            assert exporter.execute(text("SELECT pg_catalog.pg_export_snapshot()")).scalar_one()
+            unrelated.exec_driver_sql("SET TRANSACTION READ ONLY")
+            assert unrelated.execute(text("SELECT current_user,session_user")).one() == (stranger, stranger)
+            result = report(context)
+            assert not result["observed_database"]["inspector_has_writer_authority"]
+            assert result["observed_database"]["unexpected_writer_login_role_count"] == 0
+            assert result["observed_database"]["unclassified_session_count"] == 1
+            assert_refused(result, "unclassified_database_writers_or_sessions")
+    finally:
+        if separate is not None:
+            separate.dispose()
+        with engine.begin() as connection:
+            connection.execute(text(f'DROP OWNED BY "{stranger}"'))
+            connection.execute(text(f'DROP ROLE "{stranger}"'))
+
+
+@pytest.mark.parametrize("authority", ["direct", "column", "set", "admin", "schema", "definer"])
+def test_parallel_session_never_exempts_observer_with_writer_capability(context, authority):
+    engine, _, _, data = context
+    namespace = data["database_namespace"]
+    observer = engine.cutover_readonly_observer
+    helper = "cutover_observer_helper_" + uuid4().hex
+    helper_created = False
+    try:
+        with engine.begin() as connection:
+            if authority == "direct":
+                connection.execute(text(f'GRANT UPDATE ON "{namespace}".users TO "{observer.url.username}"'))
+            elif authority == "column":
+                connection.execute(text(f'GRANT UPDATE (email) ON "{namespace}".users TO "{observer.url.username}"'))
+            elif authority == "schema":
+                connection.execute(text(f'GRANT CREATE ON SCHEMA "{namespace}" TO "{observer.url.username}"'))
+            elif authority == "definer":
+                _create_credit_definer(connection, namespace)
+                connection.execute(text(f'GRANT EXECUTE ON FUNCTION "{namespace}".synthetic_credit_write() TO "{observer.url.username}"'))
+            else:
+                connection.execute(text(f'CREATE ROLE "{helper}" NOLOGIN NOINHERIT'))
+                helper_created = True
+                connection.execute(text(f'GRANT UPDATE ON "{namespace}".users TO "{helper}"'))
+                options = "ADMIN FALSE, INHERIT FALSE, SET TRUE" if authority == "set" else "ADMIN TRUE, INHERIT FALSE, SET FALSE"
+                connection.execute(text(f'GRANT "{helper}" TO "{observer.url.username}" WITH {options}'))
+        with observer.connect() as held:
+            held.exec_driver_sql("SET TRANSACTION READ ONLY")
+            held.execute(text("SELECT pg_catalog.pg_backend_pid()"))
+            result = report(context)
+            assert result["observed_database"]["inspector_has_writer_authority"]
+            assert result["observed_database"]["unclassified_session_count"] == 1
+            assert_refused(result, "database_observer_has_writer_authority")
+            assert_refused(result, "unclassified_database_writers_or_sessions")
+    finally:
+        if helper_created:
+            with engine.begin() as connection:
+                connection.execute(text(f'DROP OWNED BY "{helper}"'))
+                connection.execute(text(f'DROP ROLE "{helper}"'))
+
+
 @pytest.mark.parametrize(
     "updates,reason",
     [

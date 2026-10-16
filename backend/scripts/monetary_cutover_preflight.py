@@ -956,11 +956,16 @@ def observe(
             )
             if len(writers) > MAX_ROWS:
                 raise Denied("database_session_or_writer_inventory_bound")
+            known_session_oids = {int(role_by_name[name][0]) for name in known}
+            # The native-authenticated observer may also hold an export snapshot.
+            # Classify its exact OID only after proving it has no writer authority;
+            # a read-only transaction alone cannot establish that guarantee.
+            if not own_writer:
+                known_session_oids.add(current_oid)
             unrelated_sessions = sum(
                 1
                 for _, role_oid, _ in sessions
-                if role_oid is not None
-                and role_oid not in {int(role_by_name[name][0]) for name in known}
+                if role_oid is not None and role_oid not in known_session_oids
             )
             prepared_transactions = _count(
                 connection,
