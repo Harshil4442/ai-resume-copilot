@@ -11,7 +11,7 @@ from pathlib import Path
 
 from alembic.config import Config
 from sqlalchemy import create_engine, text
-from sqlalchemy.engine import Engine
+from sqlalchemy.engine import URL, Engine, make_url
 from sqlalchemy.pool import NullPool
 
 from alembic import command
@@ -27,10 +27,33 @@ MAX_INDEX_BYTES = 256 * 1024 * 1024
 INDEX_TABLES = (
     "payment_orders", "payment_refunds", "model_cost_liabilities", "service_credit_reservations",
 )
+FAILURE_CLASSES = frozenset({
+    "ArgumentError", "ConnectionError", "DataError", "DatabaseError", "ImportError",
+    "IntegrityError", "InterfaceError", "InternalError", "KeyError", "ModuleNotFoundError",
+    "NoSuchModuleError", "OperationalError", "ProgrammingError", "RuntimeError", "TimeoutError",
+    "TypeError", "ValueError",
+})
 
 
 class StepDenied(RuntimeError):
     pass
+
+
+def migration_url(value: str) -> URL:
+    url = make_url(value)
+    if url.drivername in {"postgres", "postgresql"}:
+        url = url.set(drivername="postgresql+psycopg")
+    return url
+
+
+def failure_diagnostic(error: Exception, phase: str) -> str:
+    safe_phase = phase if phase in {"engine_creation", "migration_execution"} else "unavailable"
+    name = type(error).__name__
+    category = name if name in FAILURE_CLASSES else "unclassified"
+    native = getattr(error, "orig", None)
+    state = getattr(native, "sqlstate", None)
+    sqlstate = state if type(state) is str and re.fullmatch(r"[A-Za-z0-9]{5}", state) else "unavailable"
+    return f"Monetary migration diagnostic: phase={safe_phase} exception_class={category} sqlstate={sqlstate}"
 
 
 def upgrade_step(
@@ -113,9 +136,11 @@ def main() -> int:
     parser.add_argument("--target", required=True, choices=CHAIN[1:])
     args = parser.parse_args()
     engine: Engine | None = None
+    phase = "engine_creation"
     try:
-        engine = create_engine(os.environ["DATABASE_URL"], poolclass=NullPool, echo=False,
+        engine = create_engine(migration_url(os.environ["DATABASE_URL"]), poolclass=NullPool, echo=False,
                                hide_parameters=True, connect_args={"connect_timeout": 5})
+        phase = "migration_execution"
         upgrade_step(engine, expected=args.expected, target=args.target,
                      identifier_hash=os.environ["HIREWIZ_CUTOVER_CLUSTER_SHA256"],
                      database_oid=int(os.environ["HIREWIZ_CUTOVER_DATABASE_OID"]),
@@ -126,8 +151,9 @@ def main() -> int:
     except StepDenied as error:
         print(f"Monetary migration refused: {error}", file=sys.stderr)
         return 65
-    except Exception:
+    except Exception as error:
         print("Monetary migration refused: observation_or_execution_unavailable; reconcile status before retry.", file=sys.stderr)
+        print(failure_diagnostic(error, phase), file=sys.stderr)
         return 65
     finally:
         if engine is not None:
