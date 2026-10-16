@@ -174,6 +174,13 @@ class ModelEnvironmentTests(unittest.TestCase):
                                 ("secrets", "versions", "describe", "6", "--secret", "hirewiz-model-key")])
         self.assertEqual(release._gemini_fallbacks(ROOT), tuple(q["model"] for q in model["pricing_quotes"]))
 
+    def test_unquoted_removed_fallback_cannot_be_selected_as_primary(self):
+        expense, model = policies()
+        with self.assertRaisesRegex(
+            release.ReleaseDenied, "exact_model_fallback_price_authority_unavailable"
+        ):
+            verify_model(model, expense, selected=replace(plan(), model_primary="gemini-3.5-flash"))
+
     def test_model_authority_refuses_hash_expiry_duplicates_funding_and_unfunded_limits(self):
         expense, good = policies()
         failures = []

@@ -9,6 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 from backend.app import models
+from backend.app.billing.catalog import ANALYSIS_PRICING_VERSION
 from backend.app.domains.analysis import operations, schemas, service, tasks
 from backend.app.routers import resume as resume_routes
 from backend.app.services import docx_artifact, guardrails, llm_client, result_commit
@@ -93,6 +94,7 @@ def test_actual_tailoring_worker_result_and_unit_commit_serialize_after_render(f
         db.commit()
         run, _ = service.create_run(db, user_id=1, payload=schemas.AnalysisRunCreate(
             operation="resume_tailor", opportunity_id="opp_test", input={},
+            accepted_quote={"pricing_version": ANALYSIS_PRICING_VERSION, "units": 2},
         ), header_idempotency_key="synthetic-real-tailor")
         run_id = run.id
     roles, ready, release = _gate(monkeypatch, order=order)

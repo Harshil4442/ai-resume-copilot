@@ -594,25 +594,41 @@ def test_tailoring_plural_acronym_does_not_borrow_unreferenced_evidence(monkeypa
         llm_client.tailor_resume_from_evidence(**inputs)
 
 
-def test_gemini_transient_failure_uses_next_stable_model(monkeypatch, persisted_model_budget):
+@pytest.mark.parametrize(
+    "unavailable,expected_models",
+    [
+        ({"gemini-3.6-flash"}, ["gemini-3.6-flash", "gemini-3.5-flash-lite"]),
+        (
+            {"gemini-3.6-flash", "gemini-3.5-flash-lite"},
+            ["gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"],
+        ),
+    ],
+)
+def test_gemini_transient_failure_uses_next_priced_model(
+    monkeypatch, persisted_model_budget, unavailable, expected_models
+):
     attempts = []
 
     class FakeModels:
         def generate_content(self, *, model, contents, config):
             attempts.append(model)
             assert config.temperature is None
-            if model == "gemini-3.5-flash":
+            if model in unavailable:
                 raise RuntimeError("503 UNAVAILABLE: model is experiencing high demand")
             return SimpleNamespace(text="completed")
 
     monkeypatch.setenv("LLM_API_KEY", "test-key")
-    monkeypatch.setattr(llm_client, "LLM_MODEL", "gemini-3.5-flash")
+    monkeypatch.setattr(llm_client, "LLM_MODEL", "gemini-3.6-flash")
     monkeypatch.setattr(genai, "Client", lambda **kwargs: SimpleNamespace(models=FakeModels()))
 
     result = llm_client._chat([{"role": "user", "content": "Analyze this role"}])
 
     assert result == "completed"
-    assert attempts == ["gemini-3.5-flash", "gemini-3.6-flash"]
+    assert attempts == expected_models
+    assert [record["model"] for record in persisted_model_budget.attempts] == expected_models
+    assert [record["status"] for record in persisted_model_budget.attempts] == (
+        ["failed"] * (len(expected_models) - 1) + ["succeeded"]
+    )
 
 
 def test_exhausted_total_model_budget_does_not_allow_worker_retry(monkeypatch, persisted_model_budget):
