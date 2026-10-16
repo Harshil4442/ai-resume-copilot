@@ -21,6 +21,193 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/candidate/v1/availability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Availability */
+        get: operations["availability_api_auth_candidate_v1_availability_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/candidate/v1/enroll-google": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enroll Google */
+        post: operations["enroll_google_api_auth_candidate_v1_enroll_google_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/candidate/v1/enroll-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enroll Password */
+        post: operations["enroll_password_api_auth_candidate_v1_enroll_password_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/candidate/v1/google-enrollment-challenge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Google Enrollment Challenge */
+        post: operations["google_enrollment_challenge_api_auth_candidate_v1_google_enrollment_challenge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/candidate/v1/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Login */
+        post: operations["login_api_auth_candidate_v1_login_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/candidate/v1/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Logout */
+        post: operations["logout_api_auth_candidate_v1_logout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/candidate/v1/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Change Password */
+        post: operations["change_password_api_auth_candidate_v1_password_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/candidate/v1/register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Register */
+        post: operations["register_api_auth_candidate_v1_register_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/candidate/v1/registration-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Registration Status */
+        post: operations["registration_status_api_auth_candidate_v1_registration_status_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/candidate/v1/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Current Session Status */
+        get: operations["current_session_status_api_auth_candidate_v1_session_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/candidate/v1/web-logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Logout Cookie */
+        post: operations["logout_cookie_api_auth_candidate_v1_web_logout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/delete-account": {
         parameters: {
             query?: never;
@@ -251,6 +438,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/billing/orders/{order_reference}/reconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reconcile Order
+         * @description Free explicit provider reads; never CREATE, capture, refund or open Checkout.
+         */
+        post: operations["reconcile_order_api_billing_orders__order_reference__reconcile_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/billing/recent-order": {
         parameters: {
             query?: never;
@@ -432,8 +639,7 @@ export interface paths {
         put?: never;
         /**
          * Optimize Bullet
-         * @description Ungated, rate-limited public endpoint to check and optimize an engineering resume bullet point.
-         *     Runs a light structured prompt on LLM and returns verified metrics and optimization suggestions.
+         * @description Check wording and quantity mentions; preserve every candidate claim.
          */
         post: operations["optimize_bullet_api_public_optimize_bullet_post"];
         delete?: never;
@@ -530,6 +736,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/resume/uploads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create */
+        post: operations["create_api_resume_uploads_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/resume/uploads/{upload_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Status */
+        get: operations["status_api_resume_uploads__upload_id__get"];
+        put?: never;
+        post?: never;
+        /** Cancel */
+        delete: operations["cancel_api_resume_uploads__upload_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/resume/uploads/{upload_id}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Complete */
+        post: operations["complete_api_resume_uploads__upload_id__complete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/resume/{resume_id}": {
         parameters: {
             query?: never;
@@ -556,6 +814,23 @@ export interface paths {
         };
         /** Download Resume Source */
         get: operations["download_resume_source_api_resume__resume_id__source_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/resume/{resume_id}/source-access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Source Access */
+        get: operations["source_access_api_resume__resume_id__source_access_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -735,6 +1010,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/browser-assistance/availability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Availability */
+        get: operations["availability_api_v1_browser_assistance_availability_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/browser-assistance/candidate/{operation}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Candidate */
+        post: operations["candidate_api_v1_browser_assistance_candidate__operation__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/browser-assistance/device/{operation}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Device */
+        post: operations["device_api_v1_browser_assistance_device__operation__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/browser-pairing/candidate/{operation}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Candidate */
+        post: operations["candidate_api_v1_browser_pairing_candidate__operation__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/browser-pairing/device/{operation}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Device */
+        post: operations["device_api_v1_browser_pairing_device__operation__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/career-memory": {
         parameters: {
             query?: never;
@@ -782,6 +1142,434 @@ export interface paths {
         post?: never;
         /** Delete Contact */
         delete: operations["delete_contact_api_v1_contacts__contact_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/employer-jobs/application-batches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Batch */
+        post: operations["create_batch_api_v1_employer_jobs_application_batches_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/employer-jobs/application-batches/{identity}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Batch */
+        get: operations["get_batch_api_v1_employer_jobs_application_batches__identity__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/employer-jobs/application-batches/{identity}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve Batch */
+        post: operations["approve_batch_api_v1_employer_jobs_application_batches__identity__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/employer-jobs/application-batches/{identity}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Batch */
+        post: operations["cancel_batch_api_v1_employer_jobs_application_batches__identity__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/employer-jobs/application-batches/{identity}/execute": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Execute Batch */
+        post: operations["execute_batch_api_v1_employer_jobs_application_batches__identity__execute_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/employer-jobs/applications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Applications */
+        get: operations["list_applications_api_v1_employer_jobs_applications_get"];
+        put?: never;
+        /** Create Application */
+        post: operations["create_application_api_v1_employer_jobs_applications_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/employer-jobs/applications/{identity}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Application */
+        get: operations["get_application_api_v1_employer_jobs_applications__identity__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/employer-jobs/applications/{identity}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve Package */
+        post: operations["approve_package_api_v1_employer_jobs_applications__identity__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/employer-jobs/applications/{identity}/artifact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Preview Artifact */
+        get: operations["preview_artifact_api_v1_employer_jobs_applications__identity__artifact_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/employer-jobs/applications/{identity}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Package */
+        post: operations["cancel_package_api_v1_employer_jobs_applications__identity__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/employer-jobs/applications/{identity}/execute": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Execute Package */
+        post: operations["execute_package_api_v1_employer_jobs_applications__identity__execute_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/employer-jobs/applications/{identity}/package": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Package */
+        put: operations["update_package_api_v1_employer_jobs_applications__identity__package_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/employer-jobs/applications/{identity}/reconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reconcile Application */
+        post: operations["reconcile_application_api_v1_employer_jobs_applications__identity__reconcile_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/employer-jobs/applications/{identity}/report-submitted": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Report Manual Submission */
+        post: operations["report_manual_submission_api_v1_employer_jobs_applications__identity__report_submitted_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/employer-jobs/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Catalog */
+        get: operations["get_catalog_api_v1_employer_jobs_catalog_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/employer-jobs/credits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Credit History */
+        get: operations["credit_history_api_v1_employer_jobs_credits_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/employer-jobs/search-preparations/{identity}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Search Preparation */
+        get: operations["get_search_preparation_api_v1_employer_jobs_search_preparations__identity__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/employer-jobs/search-preparations/{identity}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Search Preparation */
+        post: operations["cancel_search_preparation_api_v1_employer_jobs_search_preparations__identity__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/employer-jobs/search-summaries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Search Summaries */
+        get: operations["list_search_summaries_api_v1_employer_jobs_search_summaries_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/employer-jobs/searches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Searches */
+        get: operations["list_searches_api_v1_employer_jobs_searches_get"];
+        put?: never;
+        /** Create Search */
+        post: operations["create_search_api_v1_employer_jobs_searches_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/employer-jobs/searches/{identity}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Search */
+        get: operations["get_search_api_v1_employer_jobs_searches__identity__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/employer-jobs/searches/{identity}/results": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Saved Search Results */
+        get: operations["get_saved_search_results_api_v1_employer_jobs_searches__identity__results_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/employer-jobs/sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Sources */
+        get: operations["list_sources_api_v1_employer_jobs_sources_get"];
+        put?: never;
+        /** Create Source */
+        post: operations["create_source_api_v1_employer_jobs_sources_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/employer-jobs/sources/{identity}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Set Source State */
+        patch: operations["set_source_state_api_v1_employer_jobs_sources__identity__patch"];
+        trace?: never;
+    };
+    "/api/v1/employer-jobs/sources/{identity}/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Refresh Source */
+        post: operations["refresh_source_api_v1_employer_jobs_sources__identity__refresh_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1104,6 +1892,13 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AnalysisQuoteAcceptance */
+        AnalysisQuoteAcceptance: {
+            /** Pricing Version */
+            pricing_version: string;
+            /** Units */
+            units: number;
+        };
         /** AnalysisRunCancelResponse */
         AnalysisRunCancelResponse: {
             /** Cancel Requested */
@@ -1115,6 +1910,7 @@ export interface components {
         };
         /** AnalysisRunCreate */
         AnalysisRunCreate: {
+            accepted_quote?: components["schemas"]["AnalysisQuoteAcceptance"] | null;
             /** Idempotency Key */
             idempotency_key?: string | null;
             /** Input */
@@ -1155,17 +1951,25 @@ export interface components {
             error_code: string | null;
             /** Estimated Units */
             estimated_units: number;
+            failure_guidance?: components["schemas"]["TailoringFailureGuidance"] | null;
+            /**
+             * Generation Attempt Count
+             * @default 0
+             */
+            generation_attempt_count: number;
+            /**
+             * Generation Attempt Limit
+             * @default 3
+             */
+            generation_attempt_limit: number;
             /** Id */
             id: string;
             /** Input Purged At */
             input_purged_at: string | null;
             /** Model */
             model: string | null;
-            /**
-             * Operation
-             * @enum {string}
-             */
-            operation: "job_match" | "interview_questions" | "market_analysis" | "resume_tailor" | "skill_roi";
+            /** Operation */
+            operation: string;
             /** Opportunity Id */
             opportunity_id: string | null;
             /** Prompt Version */
@@ -1195,15 +1999,29 @@ export interface components {
             completed_at: string;
             /** Id */
             id: string;
-            /**
-             * Operation
-             * @enum {string}
-             */
-            operation: "job_match" | "interview_questions" | "market_analysis" | "resume_tailor" | "skill_roi";
+            /** Operation */
+            operation: string;
             /** Result */
             result: {
                 [key: string]: unknown;
             };
+        };
+        /** ApplicationCreate */
+        ApplicationCreate: {
+            /** Idempotency Key */
+            idempotency_key: string;
+            /** Posting Id */
+            posting_id: string;
+            /**
+             * Resume Choice
+             * @default original
+             * @enum {string}
+             */
+            resume_choice: "original" | "tailored" | "custom";
+            /** Resume Id */
+            resume_id: number;
+            /** Resume Version Id */
+            resume_version_id?: string | null;
         };
         /** ApplicationEventResponse */
         ApplicationEventResponse: {
@@ -1233,6 +2051,13 @@ export interface components {
             source: string;
             /** To Stage */
             to_stage: string | null;
+        };
+        /** ApprovalCreate */
+        ApprovalCreate: {
+            /** Allowed Actions */
+            allowed_actions: ("fill" | "upload" | "submit")[];
+            /** Package Digest */
+            package_digest: string;
         };
         /** AuthGoogleLoginRequest */
         AuthGoogleLoginRequest: {
@@ -1280,6 +2105,10 @@ export interface components {
         AuthTokenResponse: {
             /** Access Token */
             access_token: string;
+            /** Browser Pairing Session */
+            browser_pairing_session?: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Token Type
              * @default bearer
@@ -1288,10 +2117,100 @@ export interface components {
             /** User Id */
             user_id: number;
         };
+        /** BatchCreate */
+        BatchCreate: {
+            /** Idempotency Key */
+            idempotency_key: string;
+            /** Items */
+            items: components["schemas"]["BatchItem"][];
+            /** Max Total Credits */
+            max_total_credits: number;
+        };
+        /** BatchItem */
+        BatchItem: {
+            /** Allowed Actions */
+            allowed_actions: ("fill" | "upload" | "submit")[];
+            /** Application Id */
+            application_id: string;
+            /** Package Digest */
+            package_digest: string;
+        };
+        /** BillingOrderStatusResponse */
+        BillingOrderStatusResponse: {
+            accepted_quote: components["schemas"]["PurchaseQuoteAcceptance"] | null;
+            /** Amount Minor */
+            amount_minor: number;
+            /**
+             * Checkout Available
+             * @default false
+             */
+            checkout_available: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Currency
+             * @constant
+             */
+            currency: "INR";
+            /** Entitlement Kind */
+            entitlement_kind: string;
+            /** Entitlement Quantity */
+            entitlement_quantity: number;
+            /** Fulfilled */
+            fulfilled: boolean;
+            /** Order Id */
+            order_id: string;
+            /** Paid At */
+            paid_at: string | null;
+            /** Payment Reference */
+            payment_reference: string | null;
+            /** Provider Order Id */
+            provider_order_id: string | null;
+            /** Refunded Amount Minor */
+            refunded_amount_minor: number;
+            /** Refunded At */
+            refunded_at: string | null;
+            /** Sku */
+            sku: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "paid" | "failed" | "refunded";
+        };
         /** Body_parse_resume_api_resume_parse_post */
         Body_parse_resume_api_resume_parse_post: {
+            /**
+             * Enrich Skills
+             * @default false
+             */
+            enrich_skills: boolean;
             /** File */
             file: string;
+        };
+        /** CandidateRequest */
+        CandidateRequest: {
+            /**
+             * Confirmed
+             * @default false
+             */
+            confirmed: boolean;
+            /** Hosted Answers */
+            hosted_answers?: {
+                [key: string]: string;
+            } | null;
+            /**
+             * Identity
+             * Format: uuid
+             */
+            identity: string;
+            /** Key Sha256 */
+            key_sha256?: string | null;
+            /** Review Digest */
+            review_digest?: string | null;
         };
         /** CareerMemoryResponse */
         CareerMemoryResponse: {
@@ -1330,6 +2249,49 @@ export interface components {
             source_ref?: string | null;
             /** Value */
             value: unknown;
+        };
+        /** ChangeCandidatePassword */
+        ChangeCandidatePassword: {
+            /**
+             * Current Password
+             * Format: password
+             */
+            current_password: string;
+            /**
+             * New Password
+             * Format: password
+             */
+            new_password: string;
+        };
+        /** CheckoutOrderResponse */
+        CheckoutOrderResponse: {
+            accepted_quote: components["schemas"]["PurchaseQuoteAcceptance"];
+            /** Amount Minor */
+            amount_minor: number;
+            /**
+             * Currency
+             * @constant
+             */
+            currency: "INR";
+            /** Description */
+            description: string;
+            /** Key Id */
+            key_id: string;
+            /** Name */
+            name: string;
+            /** Order Id */
+            order_id: string;
+            /** Prefill */
+            prefill?: {
+                [key: string]: string;
+            } | null;
+            /**
+             * Provider
+             * @constant
+             */
+            provider: "razorpay";
+            /** Provider Order Id */
+            provider_order_id: string;
         };
         /** CheckoutResultRequest */
         CheckoutResultRequest: {
@@ -1395,11 +2357,23 @@ export interface components {
         };
         /** CreateOrderRequest */
         CreateOrderRequest: {
+            /** @description Required before payable checkout, including recovery. Free status reads expose the original terms for review. */
+            accepted_quote?: components["schemas"]["PurchaseQuoteAcceptance"] | null;
             /**
              * Billing Country
              * @constant
              */
             billing_country: "IN";
+            /**
+             * Idempotency Key
+             * @description Required for new orders; reuse this identity and the original accepted quote after an interrupted response.
+             */
+            idempotency_key?: string | null;
+            /**
+             * Order Reference
+             * @description An owned original order to resume without creating another order.
+             */
+            order_reference?: string | null;
             /** Sku */
             sku: string;
         };
@@ -1412,6 +2386,23 @@ export interface components {
             /** Score */
             score: number;
         };
+        /** EmployerAdmissionPolicy */
+        EmployerAdmissionPolicy: {
+            /** Daily Limit */
+            daily_limit: number;
+            /** Evidence Note */
+            evidence_note: string;
+            /** Evidence Url */
+            evidence_url: string;
+            /** Rolling Days */
+            rolling_days: number;
+            /** Rolling Limit */
+            rolling_limit: number;
+            /** Version */
+            version: string;
+        };
+        /** EmptyEnrollmentChallenge */
+        EmptyEnrollmentChallenge: Record<string, never>;
         /** EvidenceCreate */
         EvidenceCreate: {
             /**
@@ -1498,6 +2489,41 @@ export interface components {
             /** Title */
             title?: string | null;
         };
+        /** ExecuteCreate */
+        ExecuteCreate: {
+            /** Package Digest */
+            package_digest: string;
+        };
+        /** GoogleEnrollment */
+        GoogleEnrollment: {
+            /**
+             * Accepted Enrollment
+             * @constant
+             */
+            accepted_enrollment: true;
+            /**
+             * Challenge Id
+             * Format: uuid
+             */
+            challenge_id: string;
+            /** Current Password */
+            current_password?: string | null;
+            /**
+             * Id Token
+             * Format: password
+             */
+            id_token: string;
+            /**
+             * Nonce
+             * Format: password
+             */
+            nonce: string;
+            /**
+             * Password
+             * Format: password
+             */
+            password: string;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -1546,6 +2572,12 @@ export interface components {
             job_description: string | string[];
             /** Job Title */
             job_title: string;
+            /**
+             * Mode
+             * @default basic
+             * @enum {string}
+             */
+            mode: "basic" | "enhanced";
             /** Resume Id */
             resume_id: number;
         };
@@ -1565,14 +2597,22 @@ export interface components {
             match_id: number;
             /** Match Score */
             match_score: number;
+            /** Mode */
+            mode?: ("basic" | "enhanced") | null;
             /** Partial Matches */
             partial_matches: components["schemas"]["PartialMatch"][];
+            /** Provenance */
+            provenance?: string | null;
             /** Required Skills */
             required_skills: string[];
+            /** Scoring Version */
+            scoring_version?: string | null;
             /** Skill Verification Rate */
             skill_verification_rate: number;
             /** True Gaps */
             true_gaps: string[];
+            /** Uncertainties */
+            uncertainties?: string[];
         };
         /** LearningPriority */
         LearningPriority: {
@@ -1612,6 +2652,12 @@ export interface components {
         LearningStrategyRequest: {
             /** Match Id */
             match_id: number;
+            /**
+             * Mode
+             * @default curated
+             * @enum {string}
+             */
+            mode: "curated" | "enhanced";
         };
         /** LearningStrategyResponse */
         LearningStrategyResponse: {
@@ -1634,10 +2680,17 @@ export interface components {
             missing_hiring_signals: components["schemas"]["MissingHiringSignal"][];
             /** Project Recommendations */
             project_recommendations: components["schemas"]["ProjectRecommendation"][];
+            /**
+             * Provenance
+             * @default curated
+             */
+            provenance: string;
             /** Readiness Summary */
             readiness_summary: string;
             /** Timeline */
             timeline: components["schemas"]["LearningTimelineItem"][];
+            /** Warnings */
+            warnings?: string[];
         };
         /** LearningTimelineItem */
         LearningTimelineItem: {
@@ -1647,6 +2700,34 @@ export interface components {
             focus: string;
             /** Phase */
             phase: string;
+        };
+        /** LoginCandidate */
+        LoginCandidate: {
+            /**
+             * Email
+             * Format: email
+             */
+            email: string;
+            /**
+             * Password
+             * Format: password
+             */
+            password: string;
+        };
+        /** LogoutCookie */
+        LogoutCookie: {
+            /**
+             * Operation Id
+             * Format: uuid
+             */
+            operation_id: string;
+        };
+        /** ManualSubmissionReport */
+        ManualSubmissionReport: {
+            /** Confirmed */
+            confirmed: boolean;
+            /** Package Digest */
+            package_digest: string;
         };
         /** MarketAnalyzeRequest */
         MarketAnalyzeRequest: {
@@ -1999,16 +3080,24 @@ export interface components {
             match_id: number;
             /** Match Score */
             match_score: number;
+            /** Mode */
+            mode?: string | null;
             /** Partial Matches */
             partial_matches: {
                 [key: string]: unknown;
             }[];
+            /** Provenance */
+            provenance?: string | null;
             /** Required Skills */
             required_skills: string[];
+            /** Scoring Version */
+            scoring_version?: string | null;
             /** Skill Verification Rate */
             skill_verification_rate: number;
             /** True Gaps */
             true_gaps: string[];
+            /** Uncertainties */
+            uncertainties?: string[];
         };
         /** OpportunityOutcomeUpdate */
         OpportunityOutcomeUpdate: {
@@ -2129,10 +3218,38 @@ export interface components {
         OptimizeBulletResponse: {
             /** Action Verb Score */
             action_verb_score: number;
+            /** Feedback */
+            feedback?: string[];
             /** Metrics Present */
             metrics_present: boolean;
+            /**
+             * Provenance
+             * @default local_rules
+             */
+            provenance: string;
             /** Recommended Bullet */
             recommended_bullet: string;
+        };
+        /** PackageUpdate */
+        PackageUpdate: {
+            /** Answers */
+            answers?: {
+                [key: string]: string | string[];
+            };
+            /** Consents */
+            consents?: {
+                [key: string]: boolean;
+            };
+            /**
+             * Resume Choice
+             * @default original
+             * @enum {string}
+             */
+            resume_choice: "original" | "tailored" | "custom";
+            /** Resume Id */
+            resume_id: number;
+            /** Resume Version Id */
+            resume_version_id?: string | null;
         };
         /** PartialMatch */
         PartialMatch: {
@@ -2142,6 +3259,19 @@ export interface components {
             skill: string;
             /** Via */
             via: string;
+        };
+        /** PasswordEnrollment */
+        PasswordEnrollment: {
+            /**
+             * Accepted Enrollment
+             * @constant
+             */
+            accepted_enrollment: true;
+            /**
+             * Password
+             * Format: password
+             */
+            password: string;
         };
         /** ProjectRecommendation */
         ProjectRecommendation: {
@@ -2158,10 +3288,32 @@ export interface components {
             /** Title */
             title: string;
         };
+        /** PurchaseQuoteAcceptance */
+        PurchaseQuoteAcceptance: {
+            /** Amount Minor */
+            amount_minor: number;
+            /** Analysis Units */
+            analysis_units: number;
+            /** Catalog Version */
+            catalog_version: string;
+            /**
+             * Currency
+             * @constant
+             */
+            currency: "INR";
+            /** Job Service Credits */
+            job_service_credits: number;
+        };
         /** RagAskRequest */
         RagAskRequest: {
             /** Job Match Id */
             job_match_id: number;
+            /**
+             * Mode
+             * @default basic
+             * @enum {string}
+             */
+            mode: "basic" | "enhanced";
             /** Question */
             question: string;
             /** Recent Messages */
@@ -2179,6 +3331,19 @@ export interface components {
              * @enum {string}
              */
             confidence: "high" | "medium" | "low";
+            /**
+             * Mode
+             * @default direct
+             * @enum {string}
+             */
+            mode: "direct" | "enhanced" | "unavailable";
+            /**
+             * Provenance
+             * @default stored_data
+             */
+            provenance: string;
+            /** Sources */
+            sources?: string[];
             /** Suggested Followups */
             suggested_followups?: string[];
         };
@@ -2191,6 +3356,63 @@ export interface components {
              * @enum {string}
              */
             role: "user" | "assistant";
+        };
+        /** ReconciliationCreate */
+        ReconciliationCreate: {
+            /** Employer Posting Id */
+            employer_posting_id: string;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "confirmed" | "not_submitted";
+            /**
+             * Proof Kind
+             * @enum {string}
+             */
+            proof_kind: "provider_lookup" | "provider_support";
+            /** Proof Reference */
+            proof_reference: string;
+            /** Provider Receipt */
+            provider_receipt?: {
+                [key: string]: unknown;
+            } | null;
+            /** Reason */
+            reason: string;
+        };
+        /** ReconciliationResponse */
+        ReconciliationResponse: {
+            /** Message */
+            message: string;
+            order: components["schemas"]["BillingOrderStatusResponse"];
+            /**
+             * Resolution
+             * @enum {string}
+             */
+            resolution: "unresolved" | "checkout_ready" | "settled";
+        };
+        /** RegisterCandidate */
+        RegisterCandidate: {
+            /**
+             * Accepted Terms
+             * @constant
+             */
+            accepted_terms: true;
+            /**
+             * Confirmed Age 18
+             * @constant
+             */
+            confirmed_age_18: true;
+            /**
+             * Email
+             * Format: email
+             */
+            email: string;
+            /**
+             * Password
+             * Format: password
+             */
+            password: string;
         };
         /** ReminderCreate */
         ReminderCreate: {
@@ -2271,7 +3493,7 @@ export interface components {
              */
             source_available: boolean;
             /** Source Format */
-            source_format?: ("pdf" | "docx") | null;
+            source_format?: ("pdf" | "docx" | "tex" | "texzip") | null;
         };
         /** ResumeListResponse */
         ResumeListResponse: {
@@ -2281,8 +3503,24 @@ export interface components {
         /** ResumeParseResponse */
         ResumeParseResponse: {
             contact_info: components["schemas"]["ContactInfo"];
+            /**
+             * Enrichment State
+             * @default not_requested
+             */
+            enrichment_state: string;
+            /**
+             * Enrichment Units
+             * @default 0
+             */
+            enrichment_units: number;
             /** Experience Years */
             experience_years: number;
+            /**
+             * Extraction Mode
+             * @default deterministic
+             * @enum {string}
+             */
+            extraction_mode: "deterministic" | "enriched";
             /** Resume Id */
             resume_id: number;
             /** Sections */
@@ -2297,7 +3535,9 @@ export interface components {
              */
             source_available: boolean;
             /** Source Format */
-            source_format?: ("pdf" | "docx") | null;
+            source_format?: ("pdf" | "docx" | "tex" | "texzip") | null;
+            /** Warnings */
+            warnings?: string[];
         };
         /** ResumeTailorRequest */
         ResumeTailorRequest: {
@@ -2394,6 +3634,229 @@ export interface components {
             /** Summary */
             summary: string;
         };
+        /** SalaryPreference */
+        SalaryPreference: {
+            /** Currency */
+            currency: string;
+            /** Maximum */
+            maximum?: number | string | null;
+            /** Minimum */
+            minimum?: number | string | null;
+            /**
+             * Period
+             * @enum {string}
+             */
+            period: "year" | "month" | "week" | "day" | "hour";
+        };
+        /** SavedSearchResult */
+        SavedSearchResult: {
+            /** Charged Credits */
+            charged_credits: number;
+            /** Fit */
+            fit: {
+                [key: string]: unknown;
+            };
+            /** Posting */
+            posting: {
+                [key: string]: unknown;
+            };
+            /** Preference Evaluation */
+            preference_evaluation?: {
+                [key: string]: unknown;
+            } | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /** SavedSearchResultsPage */
+        SavedSearchResultsPage: {
+            /** Items */
+            items: components["schemas"]["SavedSearchResult"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+            search: components["schemas"]["SearchSummary"];
+            /** Snapshot Version */
+            snapshot_version: string;
+            /** Start Index */
+            start_index: number;
+            /** Total Items */
+            total_items: number;
+        };
+        /** SearchCreate */
+        SearchCreate: {
+            accepted_quote?: components["schemas"]["SearchPriceAcceptance"] | null;
+            /**
+             * Desired Count
+             * @default 10
+             */
+            desired_count: number;
+            /** Excluded Employers */
+            excluded_employers?: string[];
+            /** Idempotency Key */
+            idempotency_key: string;
+            /**
+             * Location
+             * @default
+             */
+            location: string;
+            preferences?: components["schemas"]["SearchPreferencesV1"] | null;
+            /** Published Within Days */
+            published_within_days?: number | null;
+            /**
+             * Remote Only
+             * @default false
+             */
+            remote_only: boolean;
+            /** Resume Id */
+            resume_id: number;
+            /** Role */
+            role: string;
+        };
+        /** SearchPreferencesV1 */
+        SearchPreferencesV1: {
+            /** Authorized Country Codes */
+            authorized_country_codes?: string[] | null;
+            /** Country Codes */
+            country_codes?: string[] | null;
+            /** Employment Types */
+            employment_types?: ("full_time" | "part_time" | "contract" | "internship" | "temporary" | "freelance" | "permanent" | "traineeship")[] | null;
+            /** Posting Languages */
+            posting_languages?: string[] | null;
+            salary?: components["schemas"]["SalaryPreference"] | null;
+            /** Sponsorship Required */
+            sponsorship_required?: boolean | null;
+            /**
+             * Unknown Metadata
+             * @default include
+             * @constant
+             */
+            unknown_metadata: "include";
+            /**
+             * Version
+             * @default 1
+             * @constant
+             */
+            version: 1;
+            /** Willing To Relocate */
+            willing_to_relocate?: boolean | null;
+        };
+        /** SearchPriceAcceptance */
+        SearchPriceAcceptance: {
+            /** Maximum Credits */
+            maximum_credits: number;
+            /** Pricing Version */
+            pricing_version: string;
+            /** Unit Price */
+            unit_price: number;
+        };
+        /**
+         * SearchSummary
+         * @description Saved search metadata, including the original query and complete quote.
+         */
+        SearchSummary: {
+            /** Charged Credits */
+            charged_credits: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Delivered Count */
+            delivered_count: number;
+            /** Desired Count */
+            desired_count: number;
+            /** Id */
+            id: string;
+            /** Query */
+            query: {
+                [key: string]: unknown;
+            };
+            /** Refunded Credits */
+            refunded_credits: number;
+            /** Reserved Credits */
+            reserved_credits: number;
+            /** Scope */
+            scope: {
+                [key: string]: unknown;
+            };
+            /** Status */
+            status: string;
+        };
+        /** SearchSummaryPage */
+        SearchSummaryPage: {
+            /** Items */
+            items: components["schemas"]["SearchSummary"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+        };
+        /** ServiceCreditEventView */
+        ServiceCreditEventView: {
+            /** Amount */
+            amount: number;
+            /** Balance After */
+            balance_after: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Event Type */
+            event_type: string;
+            /** Id */
+            id: string;
+            /** Reason */
+            reason: string;
+            /** Source Id */
+            source_id: string;
+            /** Source Type */
+            source_type: string;
+        };
+        /** ServiceCreditHistory */
+        ServiceCreditHistory: {
+            /** Balance */
+            balance: number;
+            /** Items */
+            items: components["schemas"]["ServiceCreditEventView"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+            /** Operations */
+            operations: components["schemas"]["ServiceCreditOperation"][];
+            /** Reservations */
+            reservations: components["schemas"]["ServiceCreditOperation"][];
+            /** Reserved Credits */
+            reserved_credits: number;
+        };
+        /** ServiceCreditOperation */
+        ServiceCreditOperation: {
+            /** Committed Amount */
+            committed_amount: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Held Amount */
+            held_amount: number;
+            /** Id */
+            id: string;
+            /** Operation */
+            operation: string;
+            /** Pricing Version */
+            pricing_version: string;
+            /** Released Amount */
+            released_amount: number;
+            /** Requested Count */
+            requested_count: number;
+            /** Reserved Amount */
+            reserved_amount: number;
+            /** Settled At */
+            settled_at: string | null;
+            /** Source Id */
+            source_id: string;
+            /** State */
+            state: string;
+            /** Unit Price */
+            unit_price: number;
+        };
         /** SkillRoiItem */
         SkillRoiItem: {
             /** Demand Ratio */
@@ -2419,6 +3882,144 @@ export interface components {
             items: components["schemas"]["SkillRoiItem"][];
             /** Opportunity Count */
             opportunity_count: number;
+        };
+        /** SourceAccess */
+        SourceAccess: {
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Filename */
+            filename: string;
+            /** Media Type */
+            media_type: string;
+            /** Sha256 */
+            sha256: string;
+            /** Size Bytes */
+            size_bytes: number;
+            /** Url */
+            url: string;
+        };
+        /** SourceCreate */
+        SourceCreate: {
+            admission_policy?: components["schemas"]["EmployerAdmissionPolicy"] | null;
+            /** Allowed Hosts */
+            allowed_hosts: string[];
+            /** Board Token */
+            board_token: string;
+            /** Careers Url */
+            careers_url: string;
+            /** Credential Env */
+            credential_env?: string | null;
+            /** Employer */
+            employer: string;
+            /** Employer Key */
+            employer_key?: string | null;
+            /**
+             * Form Parity Verified
+             * @default false
+             */
+            form_parity_verified: boolean;
+            /**
+             * Platform
+             * @enum {string}
+             */
+            platform: "greenhouse" | "lever" | "ashby" | "smartrecruiters" | "workable" | "personio" | "pinpoint";
+            /** Receipt Contract */
+            receipt_contract?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Region
+             * @default global
+             * @enum {string}
+             */
+            region: "global" | "eu";
+            /**
+             * Submission Enabled
+             * @default false
+             */
+            submission_enabled: boolean;
+            /** Submission Grant */
+            submission_grant?: string | null;
+            /** Verification Note */
+            verification_note: string;
+            /** Verification Url */
+            verification_url: string;
+        };
+        /** SourceStateUpdate */
+        SourceStateUpdate: {
+            /** Enabled */
+            enabled: boolean;
+            /** Reason */
+            reason: string;
+        };
+        /** TailoringFailureGuidance */
+        TailoringFailureGuidance: {
+            /**
+             * Next Action
+             * @enum {string}
+             */
+            next_action: "choose_source" | "upload_editable_source" | "check_source_file" | "reduce_source_size" | "use_supported_font" | "shorten_wording" | "keep_original_layout" | "edit_source_manually" | "keep_link_text" | "review_evidence" | "check_tex_dependencies" | "check_tex_source" | "use_original_or_custom";
+            /**
+             * Reason Code
+             * @enum {string}
+             */
+            reason_code: "source_required" | "editable_source_required" | "source_unreadable" | "source_too_large" | "source_protected" | "source_format_unsupported" | "font_unsupported" | "replacement_does_not_fit" | "source_layout_changed" | "source_span_unavailable" | "source_links_protected" | "evidence_changes_unsupported" | "tex_dependency_unsupported" | "tex_compile_failed" | "tex_worker_unavailable" | "tex_artifact_invalid" | "no_supported_changes" | "validation_failed";
+        };
+        /** UploadCreate */
+        UploadCreate: {
+            /**
+             * Enrich Skills
+             * @default false
+             */
+            enrich_skills: boolean;
+            /** Filename */
+            filename: string;
+            /** Sha256 */
+            sha256: string;
+            /** Size Bytes */
+            size_bytes: number;
+        };
+        /** UploadIntent */
+        UploadIntent: {
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Headers */
+            headers?: {
+                [key: string]: string;
+            };
+            /**
+             * Method
+             * @default PUT
+             * @constant
+             */
+            method: "PUT";
+            /** State */
+            state: string;
+            /**
+             * Upload Grant Expires At
+             * Format: date-time
+             */
+            upload_grant_expires_at: string;
+            /** Upload Id */
+            upload_id: string;
+            /** Upload Url */
+            upload_url?: string | null;
+        };
+        /** UploadStatus */
+        UploadStatus: {
+            /** Error Code */
+            error_code?: string | null;
+            resume?: components["schemas"]["ResumeParseResponse"] | null;
+            /** State */
+            state: string;
+            /** Upload Id */
+            upload_id: string;
         };
         /** UsageAdjustment */
         UsageAdjustment: {
@@ -2471,6 +4072,11 @@ export interface components {
             email: string;
             /** Id */
             id: number;
+            /**
+             * Job Service Credits
+             * @default 0
+             */
+            job_service_credits: number;
             /** Tier */
             tier: string;
         };
@@ -2597,6 +4203,1050 @@ export interface operations {
             };
         };
     };
+    availability_api_auth_candidate_v1_availability_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+        };
+    };
+    enroll_google_api_auth_candidate_v1_enroll_google_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GoogleEnrollment"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+        };
+    };
+    enroll_password_api_auth_candidate_v1_enroll_password_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordEnrollment"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+        };
+    };
+    google_enrollment_challenge_api_auth_candidate_v1_google_enrollment_challenge_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmptyEnrollmentChallenge"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+        };
+    };
+    login_api_auth_candidate_v1_login_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginCandidate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthTokenResponse"];
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+        };
+    };
+    logout_api_auth_candidate_v1_logout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+        };
+    };
+    change_password_api_auth_candidate_v1_password_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangeCandidatePassword"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+        };
+    };
+    register_api_auth_candidate_v1_register_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegisterCandidate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+        };
+    };
+    registration_status_api_auth_candidate_v1_registration_status_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginCandidate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+        };
+    };
+    current_session_status_api_auth_candidate_v1_session_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+        };
+    };
+    logout_cookie_api_auth_candidate_v1_web_logout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LogoutCookie"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+        };
+    };
     delete_account_api_auth_delete_account_post: {
         parameters: {
             query?: never;
@@ -2613,6 +5263,78 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
                 };
             };
         };
@@ -2659,13 +5381,76 @@ export interface operations {
                     "application/json": components["schemas"]["AuthTokenResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Authentication input rejected without reflecting private values */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
                 };
             };
         };
@@ -2692,13 +5477,76 @@ export interface operations {
                     "application/json": components["schemas"]["AuthTokenResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Authentication input rejected without reflecting private values */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
                 };
             };
         };
@@ -2798,13 +5646,76 @@ export interface operations {
                     "application/json": components["schemas"]["UserMeResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Authentication input rejected without reflecting private values */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
                 };
             };
         };
@@ -2888,7 +5799,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["CheckoutOrderResponse"];
                 };
             };
             /** @description Validation Error */
@@ -2919,7 +5830,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["BillingOrderStatusResponse"];
                 };
             };
             /** @description Validation Error */
@@ -2968,6 +5879,37 @@ export interface operations {
             };
         };
     };
+    reconcile_order_api_billing_orders__order_reference__reconcile_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                order_reference: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReconciliationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_recent_order_api_billing_recent_order_get: {
         parameters: {
             query?: never;
@@ -2983,9 +5925,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    } | null;
+                    "application/json": components["schemas"]["BillingOrderStatusResponse"] | null;
                 };
             };
         };
@@ -3424,6 +6364,134 @@ export interface operations {
             };
         };
     };
+    create_api_resume_uploads_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "idempotency-key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UploadCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadIntent"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    status_api_resume_uploads__upload_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                upload_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_api_resume_uploads__upload_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                upload_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    complete_api_resume_uploads__upload_id__complete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                upload_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_resume_api_resume__resume_id__get: {
         parameters: {
             query?: never;
@@ -3474,6 +6542,39 @@ export interface operations {
                 content: {
                     "application/pdf": string;
                     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": string;
+                    "application/x-tex": string;
+                    "application/zip": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    source_access_api_resume__resume_id__source_access_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                resume_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceAccess"];
                 };
             };
             /** @description Validation Error */
@@ -3826,6 +6927,290 @@ export interface operations {
             };
         };
     };
+    availability_api_v1_browser_assistance_availability_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    candidate_api_v1_browser_assistance_candidate__operation__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                operation: "device" | "confirm" | "revoke" | "review" | "revise" | "approve" | "cancel";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CandidateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    device_api_v1_browser_assistance_device__operation__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                operation: "prepare" | "status" | "application" | "inspect" | "begin" | "artifact" | "outcome" | "reconcile" | "cancel";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    candidate_api_v1_browser_pairing_candidate__operation__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                operation: "challenge" | "confirm" | "revoke-challenge" | "revoke";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * Pairing Id
+                     * Format: uuid
+                     */
+                    pairing_id: string;
+                } | {
+                    /**
+                     * Device Id
+                     * Format: uuid
+                     */
+                    device_id: string;
+                } | {
+                    /**
+                     * Challenge Id
+                     * Format: uuid
+                     */
+                    challenge_id: string;
+                    /**
+                     * Confirmed
+                     * @constant
+                     */
+                    confirmed: true;
+                    /**
+                     * Method
+                     * @default password_reauth
+                     * @constant
+                     */
+                    method?: "password_reauth";
+                    /**
+                     * Nonce
+                     * Format: password
+                     */
+                    nonce: string;
+                    /**
+                     * Operation
+                     * @enum {string}
+                     */
+                    operation: "confirm_pairing" | "revoke_device";
+                    /**
+                     * Password
+                     * Format: password
+                     */
+                    password: string;
+                    /**
+                     * Protocol Version
+                     * @constant
+                     */
+                    protocol_version: 2;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    device_api_v1_browser_pairing_device__operation__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                operation: "prepare" | "create" | "challenge" | "complete" | "status" | "refresh-challenge" | "refresh";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Extension Id */
+                    extension_id: string;
+                    /** Issued At Ms */
+                    issued_at_ms: number;
+                    /** Key */
+                    key: {
+                        [key: string]: string;
+                    };
+                    /**
+                     * Operation
+                     * @constant
+                     */
+                    operation: "prepare_request";
+                    /**
+                     * Protocol Version
+                     * @constant
+                     */
+                    protocol_version: 2;
+                    /**
+                     * Request Id
+                     * Format: uuid
+                     */
+                    request_id: string;
+                    /** Revision */
+                    revision: string;
+                    /** Signature */
+                    signature: string;
+                } | {
+                    /**
+                     * Identity
+                     * Format: uuid
+                     */
+                    identity: string;
+                    /** Issued At Ms */
+                    issued_at_ms: number;
+                    /**
+                     * Operation
+                     * @enum {string}
+                     */
+                    operation: "device_challenge" | "status" | "refresh_challenge";
+                    /**
+                     * Protocol Version
+                     * @constant
+                     */
+                    protocol_version: 2;
+                    /**
+                     * Request Id
+                     * Format: uuid
+                     */
+                    request_id: string;
+                    /** Signature */
+                    signature: string;
+                } | {
+                    /**
+                     * Nonce
+                     * Format: uuid
+                     */
+                    nonce: string;
+                    /**
+                     * Pairing Id
+                     * Format: uuid
+                     */
+                    pairing_id: string;
+                    /** Signature */
+                    signature: string;
+                } | {
+                    /**
+                     * Challenge Id
+                     * Format: uuid
+                     */
+                    challenge_id: string;
+                    /**
+                     * Nonce
+                     * Format: uuid
+                     */
+                    nonce: string;
+                    /** Signature */
+                    signature: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_career_memory_api_v1_career_memory_get: {
         parameters: {
             query?: never;
@@ -3925,6 +7310,907 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_batch_api_v1_employer_jobs_application_batches_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_batch_api_v1_employer_jobs_application_batches__identity__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                identity: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_batch_api_v1_employer_jobs_application_batches__identity__approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                identity: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExecuteCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_batch_api_v1_employer_jobs_application_batches__identity__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                identity: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    execute_batch_api_v1_employer_jobs_application_batches__identity__execute_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                identity: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExecuteCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_applications_api_v1_employer_jobs_applications_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_application_api_v1_employer_jobs_applications_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplicationCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_application_api_v1_employer_jobs_applications__identity__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                identity: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_package_api_v1_employer_jobs_applications__identity__approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                identity: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApprovalCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_artifact_api_v1_employer_jobs_applications__identity__artifact_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                identity: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_package_api_v1_employer_jobs_applications__identity__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                identity: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    execute_package_api_v1_employer_jobs_applications__identity__execute_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                identity: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExecuteCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_package_api_v1_employer_jobs_applications__identity__package_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                identity: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PackageUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reconcile_application_api_v1_employer_jobs_applications__identity__reconcile_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                identity: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReconciliationCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    report_manual_submission_api_v1_employer_jobs_applications__identity__report_submitted_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                identity: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManualSubmissionReport"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_catalog_api_v1_employer_jobs_catalog_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    credit_history_api_v1_employer_jobs_credits_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string | null;
+                operation?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceCreditHistory"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_search_preparation_api_v1_employer_jobs_search_preparations__identity__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                identity: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_search_preparation_api_v1_employer_jobs_search_preparations__identity__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                identity: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_search_summaries_api_v1_employer_jobs_search_summaries_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchSummaryPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_searches_api_v1_employer_jobs_searches_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_search_api_v1_employer_jobs_searches_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SearchCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Search preparation accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_search_api_v1_employer_jobs_searches__identity__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                identity: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_saved_search_results_api_v1_employer_jobs_searches__identity__results_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string | null;
+            };
+            header?: never;
+            path: {
+                identity: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedSearchResultsPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_sources_api_v1_employer_jobs_sources_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    create_source_api_v1_employer_jobs_sources_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SourceCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_source_state_api_v1_employer_jobs_sources__identity__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                identity: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SourceStateUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    refresh_source_api_v1_employer_jobs_sources__identity__refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                identity: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
             };
             /** @description Validation Error */
             422: {
@@ -4653,7 +8939,7 @@ export interface operations {
     download_resume_version_api_v1_resume_versions__version_id__download_get: {
         parameters: {
             query?: {
-                format?: "pdf" | "docx";
+                format?: "pdf" | "docx" | "tex" | "texzip";
             };
             header?: never;
             path: {
@@ -4671,6 +8957,8 @@ export interface operations {
                 content: {
                     "application/pdf": string;
                     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": string;
+                    "application/x-tex": string;
+                    "application/zip": string;
                 };
             };
             /** @description Validation Error */

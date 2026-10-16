@@ -1,0 +1,114 @@
+{
+  "scope": "Native compiler CI portability scoped source CLEAR; full release HOLD",
+  "integrated_at_utc": "2026-10-09T16:55:06.536286+00:00",
+  "author_freeze": "/var/folders/ck/cyzkgt2d1yx6hzpsdflcg83c0000gn/T/hirewiz-native-tex-ci-author-20261009-d9f1snqd/review-freeze",
+  "author_hashes": {
+    "report.json": "e14e6e69f9400c46f5a47d3ecc15d040312271da66a4cb5d463f3177bbca20a7",
+    "source-manifest.json": "2ef02914425f06de2d2d7b12008ce337320668dfd93b176ba0205641c53f2be8",
+    "manifest.json": "6a9150f8fa017fa0619482bee172755194c72379b5c0a95f2745887019a54744",
+    "native-ci.patch": "b354b47efe8e1f2ccd947c1f94930904c9241c8a5b4dcdc2a4686f8c96dfdef9",
+    "workflow-ci.patch": "a3dd58471614f354375e6b921f38c69c9d4f5fed8bebc5168ff33c2fea44c146"
+  },
+  "independent_freeze": "/var/folders/ck/cyzkgt2d1yx6hzpsdflcg83c0000gn/T/hirewiz-native-tex-ci-independent-20261009-nv4xt0zo",
+  "independent_hashes": {
+    "report.json": "84996853845f4b76ab634841d030479b22468f3f771dc6cb634f4c9d196c0e34",
+    "source-manifest.json": "2ef02914425f06de2d2d7b12008ce337320668dfd93b176ba0205641c53f2be8",
+    "probe-source-manifest.json": "0adffb958afaf4390f7f9e122f6dee33e9e7b12e8cd90f86f73f8539787cf1e7",
+    "manifest.json": "4665688573921c9371f58adedc00a8be1d9b09f6371969d6133b68e1c462ada4"
+  },
+  "verified_file_counts": {
+    "author_source": 707,
+    "author_artifacts": 747,
+    "independent_source": 707,
+    "independent_artifacts": 745,
+    "independent_probes": 6
+  },
+  "root_preimages": {
+    "backend/scripts/native_tex_test_image.py": null,
+    "backend/tests/native_tex_ci_fixtures.py": null,
+    "backend/tests/test_native_tex_ci.py": null,
+    "backend/tests/test_native_tex.py": "9dce9313e62dd7717e464b8879c6a82e9cf2f62ba1569b87b31a4107b60c5c30",
+    "backend/tests/test_native_tex_r2.py": "028f491a5a8e58cc4276893aaedc174e3e6bd1661e54eebcf61e940acb9b920c",
+    "backend/tests/test_native_tex_application.py": "932c0a9c16fda3f1a12c88671c8e452fd02f3a73f25bb747e284e47a4b07f34b",
+    "infra/native-tex/README.md": "c71c3bbe65eaf71c93974195e01105998b973464ebfe393a95db6f0ea3f9b96a",
+    ".github/workflows/ci.yml": "29cd3cff72566c9816e3545c488974ae2aea11eab588d5cbd5f32f5c13d19c71"
+  },
+  "root_results": {
+    "backend/scripts/native_tex_test_image.py": "8ab02f23b9f23b7e4f20854caa8e950a5d269522bfb74572f77d431690ac9e9f",
+    "backend/tests/native_tex_ci_fixtures.py": "fb788f7b0b8e8ac6cb8a3a54b519a8281e32129ac5b78b5c42c2c59192b75cad",
+    "backend/tests/test_native_tex_ci.py": "2ec65fefe68249ddf886904463b2967e614912083a7983180fa1a37e04d11645",
+    "backend/tests/test_native_tex.py": "cda72e141a228fc2a4833162952815a51257069595906e455b09e018f0d334dc",
+    "backend/tests/test_native_tex_r2.py": "5da78b5e94ddf24afb09a825b80c4343dc042f17c1754f7aaa85951fc5b71049",
+    "backend/tests/test_native_tex_application.py": "b912f5d66b9c1f0ddee69724ffb25bedc451b6e4780aded473b58a6285e05a5a",
+    "infra/native-tex/README.md": "a03ce5f5024f43a78c0d3417decbbd84f2030558b1cfdc123f7191863e53be44",
+    ".github/workflows/ci.yml": "3aacce0f9cd91db3032620b87808f1a38b08a823bc6b0a66cd5627df1d3e8fea"
+  },
+  "independent_results": {
+    "compiler_contract_cases": 170,
+    "unchanged_policy_application": 40,
+    "original_v1_pass": 22,
+    "original_v1_accepted_date_refusal_red": 1,
+    "required_missing_tag_stale_each": {
+      "failed": 1,
+      "skipped": 0
+    }
+  },
+  "architecture": "Fresh independent local ARM64 build with exact source/worker byte attestation; actual AMD64 GitHub execution pending",
+  "root_validation": {
+    "status": "HOLD: strict-umask packaging counterexample",
+    "ci_ruff": "PASS",
+    "ci_mypy_source_files": 119,
+    "actual_build": "Build succeeded; required worker-byte verification failed with nonroot read denial",
+    "image": "sha256:b95cb34f58b51b79d15a112837dfc2cdaefe3f3d93c4d0cf0328a696d508159e",
+    "actual_worker_permissions": {
+      "processor.py": "0600",
+      "service.py": "0600"
+    },
+    "cause": "Builder controlled temporary copies inherit caller umask0077. Docker preserves0600; runtime65534 cannot read known nonsecret worker code.",
+    "required_fix": "Explicit readable modes on three known build-context files; retain caller restrictive umask/nonroot/read-only/no-network controls. Bounded author R2 requested.",
+    "preserved_initial_diagnostic": "First diagnostic selected inaccessible config digest instead of image manifest ID and returned no-such-image. Correct exact manifest ID replay proves worker PermissionError.",
+    "raw_log_hashes": {
+      "/tmp/hirewiz-root-native-ci-image-build-20261009.log": "3d971efa7315fd72ceda4720c2979f8ef636c99f2563ab9cf1488551f2a6489b",
+      "/tmp/hirewiz-root-native-ci-umask-counterproof-20261009.log": "b3ac3f568d08750fa4c8e959e4c2b2a11c5b24a73508eb278ef2e02f444d5e71",
+      "/tmp/hirewiz-root-native-ci-umask-counterproof-manifest-20261009.log": "14bf0f1ac549a18f6a36b46dfb100d54658db5c7682be15eb718679c269c59f9",
+      "/tmp/hirewiz-root-native-ci-static-20261009.log": "702dc20d9411ce0af9eb0a8d330d4cbdc014ea9741d4724cedc29714d83e9e63"
+    }
+  },
+  "release_holds": [
+    "Actual fresh AMD64 CI",
+    "Combined expense/preferences/native CI",
+    "Deployed GCP worker isolation and custody",
+    "Controlled schema13 rollout"
+  ],
+  "strict_umask_r2": {
+    "status": "SCOPED SOURCE CLEAR, root actual replay and AMD64 CI pending",
+    "author_report_sha256": "a9c9ff2a26f9d1e35478bcdef95190d286f2c651bc2d4527ace869c54bd30615",
+    "independent_report": "/var/folders/ck/cyzkgt2d1yx6hzpsdflcg83c0000gn/T/hirewiz-native-tex-ci-r2-independent-20261009-_46g8lk7/report.json",
+    "independent_report_sha256": "b3db3b5a0c3aa1af87821c39e09b0498ff948abc319f48d08d4fad129962a5c1",
+    "source_files_verified": 707,
+    "independent_result": "172PASS0skip; unchanged40PASS; first171PASS1Docker timeout retained; isolated and full unchanged replay passed",
+    "preimages": {
+      "backend/scripts/native_tex_test_image.py": {
+        "preimage_sha256": "8ab02f23b9f23b7e4f20854caa8e950a5d269522bfb74572f77d431690ac9e9f",
+        "result_sha256": "36fbdcec4c933922df4d622c1f10c77ef8c2728f7edfb691dbe40f8b732a92e2",
+        "preimage_source": "Exact integrated root/V1 native CI source; eight original CI paths were verified exact before copy"
+      },
+      "backend/tests/test_native_tex_ci.py": {
+        "preimage_sha256": "2ec65fefe68249ddf886904463b2967e614912083a7983180fa1a37e04d11645",
+        "result_sha256": "dfed67d5bc18213bac2326102d33c137a4efa2acb7b5e377995a2608914a17c7",
+        "preimage_source": "Exact integrated root/V1 native CI source; eight original CI paths were verified exact before copy"
+      }
+    },
+    "production": "HOLD",
+    "root_replay": {
+      "status": "172PASS0skip",
+      "report": "/var/folders/ck/cyzkgt2d1yx6hzpsdflcg83c0000gn/T/hirewiz-root-native-r2-replay-20261009-3r4f0dvm/report.json",
+      "report_sha256": "13cb343248e1f1ef73fef2ea70b6a68382529170183fdef844ae63d15b6ada89",
+      "artifacts_verified": 14,
+      "before_after_input_hashes_identical": true,
+      "image": "sha256:3511ef7e827dcefb4656efa43f05c85ad99aeb20cddc335ae7387f12bc0d0f9c",
+      "platform": "linux/arm64",
+      "production_and_amd64": "OPEN"
+    }
+  }
+}

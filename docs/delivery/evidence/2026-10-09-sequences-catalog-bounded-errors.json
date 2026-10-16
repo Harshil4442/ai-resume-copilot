@@ -1,0 +1,16 @@
+{
+  "start_utc": "2026-10-08T19:50:05Z",
+  "end_utc": "2026-10-08T19:56:29.655289+00:00",
+  "release": "6f380203c55b8574d2d345420de6ac5e3da1b784",
+  "revisions": [
+    "ai-resume-parser-00262-fim",
+    "hirewiz-analysis-worker-00020-kkx",
+    "hirewiz-employer-worker-00010-xsx"
+  ],
+  "query_scope": "Exact three revisions; severity ERROR+ or HTTP500+; selected metadata only",
+  "matching_entries": 0,
+  "truncated_at_201": false,
+  "entries": [],
+  "candidate_mutations": 0,
+  "limit": "Bounded log observation; not load, availability, or incident/recovery acceptance"
+}

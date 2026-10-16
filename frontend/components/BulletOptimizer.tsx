@@ -61,7 +61,7 @@ export default function BulletOptimizer() {
         Resume Bullet Review
       </h2>
       <p className="text-sm text-muted-foreground leading-6 mt-3">
-        Test one resume bullet. HireWiz provides a simple writing-quality estimate and an AI-assisted alternative for you to verify.
+        Test one resume bullet. HireWiz uses local writing checks to review action verbs and verified metrics. No AI call or analysis units are used.
       </p>
 
       <form onSubmit={handleOptimize} className="mt-6 space-y-4">
@@ -110,7 +110,7 @@ export default function BulletOptimizer() {
           </div>
 
           <div className="surface-soft p-5">
-            <div className="eyebrow">AI-Suggested Alternative</div>
+            <div className="eyebrow">Your original bullet</div>
             <p className="mt-2 text-base font-medium text-foreground leading-relaxed italic">
               "{result.recommended_bullet}"
             </p>
@@ -136,7 +136,7 @@ export default function BulletOptimizer() {
               onClick={() => trackEvent("premium_cta_clicked", { source: "bullet_optimizer" })}
               className="button-secondary whitespace-nowrap"
             >
-              View Premium
+              View credit packs
             </Link>
             </div>
           </div>

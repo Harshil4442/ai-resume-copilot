@@ -1,0 +1,153 @@
+{
+  "scope": "one canonical synthetic target transfer attempt",
+  "execution": {
+    "status": "observed_same_execution",
+    "name": "hirewiz-doc-canonical-target-1c4f9174e9c5-4w5nf",
+    "uid": "ee68d3a2-35cf-480a-8305-05d69210b065",
+    "job_uid": "dd3d1fc4-84e6-4113-984f-512cab16fbc4",
+    "created_at": "2026-10-10T22:06:34.626047Z",
+    "started_at": "2026-10-10T22:06:51.903016Z",
+    "completed_at": "2026-10-10T22:08:46.147611Z",
+    "conditions": [
+      {
+        "type": "Completed",
+        "status": "False",
+        "reason": "NonZeroExitCode"
+      },
+      {
+        "type": "ResourcesAvailable",
+        "status": "True",
+        "reason": ""
+      },
+      {
+        "type": "Started",
+        "status": "True",
+        "reason": ""
+      },
+      {
+        "type": "ContainerReady",
+        "status": "True",
+        "reason": ""
+      }
+    ],
+    "counts": {
+      "succeededCount": 0,
+      "failedCount": 1,
+      "runningCount": 0,
+      "cancelledCount": 0,
+      "retriedCount": 0
+    },
+    "body_source_join_verified": true,
+    "execution_restarts": 0,
+    "scanner_acceptance": false,
+    "customer_release": false
+  },
+  "stdout_observation": {
+    "status": "one_scoped_stdout_result_observed",
+    "rows": 1,
+    "pagination": false,
+    "result": {
+      "archive_rejection": {
+        "checks": {},
+        "error_family": "predicate_or_local",
+        "index": null,
+        "pax_key": null,
+        "role": "other",
+        "stage": "member_path"
+      },
+      "archives": {
+        "python": null,
+        "sdk": null
+      },
+      "canonical_target_transfer": {
+        "archive_rejection": {
+          "checks": {
+            "present": false
+          },
+          "error_family": "predicate",
+          "stage": "target_present"
+        },
+        "cases": [],
+        "complete_only": false,
+        "fresh_tar_verified": false,
+        "scope": "synthetic_canonical_target_transfer_only",
+        "source_archive_parity_claimed": false,
+        "source_target_verified": false,
+        "source_unknown_members_imported": false,
+        "stopped_at": "target_selection"
+      },
+      "capability_diagnostic_complete_only": false,
+      "cases": [
+        {
+          "case": "export_sdk",
+          "case_marker_complete": false,
+          "marker_state": "archive_refused",
+          "observations": [
+            {
+              "exit_code": 0,
+              "inconclusive": false,
+              "launcher_stopped": true,
+              "outcome": "returned",
+              "phase": "do",
+              "sdk_exec_observed": true,
+              "stderr_bytes": 0,
+              "stderr_families": {
+                "access": false,
+                "archive": false,
+                "missing": false,
+                "owner": false,
+                "readonly": false,
+                "resource": false
+              },
+              "stderr_hint": "empty",
+              "stdout_bytes": 31
+            },
+            {
+              "exit_code": 0,
+              "inconclusive": false,
+              "launcher_stopped": true,
+              "outcome": "returned",
+              "phase": "delete",
+              "sdk_exec_observed": true,
+              "stderr_bytes": 0,
+              "stderr_families": {
+                "access": false,
+                "archive": false,
+                "missing": false,
+                "owner": false,
+                "readonly": false,
+                "resource": false
+              },
+              "stderr_hint": "empty",
+              "stdout_bytes": 0
+            }
+          ]
+        }
+      ],
+      "child_isolation_acceptance": false,
+      "customer_release": false,
+      "http_acceptance": false,
+      "native_sandbox_absence_independently_verified": false,
+      "original_parity_imports_attempted": false,
+      "original_sdk_validator_accepted": false,
+      "scanner_acceptance": false,
+      "scope": "synthetic_archive_transfer_only",
+      "stopped_at": "export_sdk",
+      "unique_cause_verified": false,
+      "version": 1,
+      "whole_deadline_expired": false
+    },
+    "sdk_materialized_before_serialized_size_guard": true,
+    "native_mutations": 0
+  },
+  "unique_archive_path_or_cause_known": false,
+  "sdk_source_archive_imported": false,
+  "canonical_import_attempted": false,
+  "reader_invocations": 1,
+  "execution_restarted": false,
+  "protected_bodies_read": false,
+  "production_changed": false,
+  "verdict": "native_test_failed_target_absent_from_accepted_relative_path",
+  "source_sha256": "739a5a87405e03b387d525aea5a4227fc574dcf984af8a2326d6ec41beafb7a9",
+  "terminal_evidence_manifest_sha256": "5cb248ac2050e8f857269acbcdeb13d040944fdd6766203683f4007efa8508ae"
+}

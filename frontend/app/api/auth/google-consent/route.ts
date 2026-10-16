@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isTrustedRequestOrigin } from "../../../../lib/requestOrigin";
 
-const POLICY_VERSION = "2026-07-11";
+const POLICY_VERSION = "2026-10-08";
 const COOKIE_NAME = "hirewiz_google_registration_consent";
 
 export async function POST(request: NextRequest) {
-  const origin = request.headers.get("origin");
-  if (!origin || origin !== request.nextUrl.origin) {
+  if (!isTrustedRequestOrigin(request, true)) {
     return NextResponse.json({ detail: "Invalid request origin." }, { status: 403 });
   }
 
@@ -13,6 +13,9 @@ export async function POST(request: NextRequest) {
   try {
     body = await request.json();
   } catch {
+    return NextResponse.json({ detail: "Invalid request." }, { status: 400 });
+  }
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
     return NextResponse.json({ detail: "Invalid request." }, { status: 400 });
   }
   const consent = body as Record<string, unknown>;

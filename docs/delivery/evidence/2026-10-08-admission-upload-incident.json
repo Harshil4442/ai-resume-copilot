@@ -1,0 +1,13 @@
+{
+  "commit": "7cc49c2c08a296b33cb30f96e383b959caf214c0",
+  "first_build": "db5774d3-8183-40a4-9fbc-35d56fb53251",
+  "failed_step": "push-commit",
+  "registry_http": 503,
+  "migration_step_started": false,
+  "previous_live_release": "3565655712c2ceee431bee8306678a020b2f462d",
+  "previous_live_health": true,
+  "retry_build": "0655dc29-136f-4abd-9e18-a313327638d7",
+  "first_attempt_frontend_promoted": false,
+  "retry_status": "SUCCESS",
+  "retry_evidence": "2026-10-08-admission-cloudbuild.json"
+}

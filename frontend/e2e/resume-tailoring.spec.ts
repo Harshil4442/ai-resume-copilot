@@ -1,6 +1,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import { encode } from "next-auth/jwt";
+import type { components } from "../lib/generated/api";
 
 const opportunityId = "opp_tailoring_fixture";
 const workspacePath = `/workspace/${opportunityId}?tab=resume`;
@@ -8,6 +9,7 @@ const now = "2026-10-07T10:00:00Z";
 const sourceFile = { name: "Taylor-resume.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\nLocal upload fixture\n%%EOF") };
 type ResumeFixture = { id: number; filename: string; created_at: string; source_available?: boolean; source_format?: "pdf" | "docx" | null };
 type RequestRecord = { path: string; method: string; query: string; body: unknown };
+type FailureGuidance = components["schemas"]["TailoringFailureGuidance"];
 const browserErrors = new WeakMap<Page, string[]>();
 
 test.beforeEach(async ({ page }) => {
@@ -41,11 +43,11 @@ function createFixture() {
   };
   const requests: RequestRecord[] = [];
   const unexpected: RequestRecord[] = [];
-  const state = { listError: false, connectionError: false, parseCount: 0, connected: false, heldOpportunityReads: 0, pauseList: null as Promise<void> | null, pauseConnectedOpportunity: null as Promise<void> | null, failureCode: null as string | null, failureUsageState: "released" as "released" | "waived" };
+  const state = { listError: false, connectionError: false, parseCount: 0, connected: false, heldOpportunityReads: 0, pauseList: null as Promise<void> | null, pauseConnectedOpportunity: null as Promise<void> | null, failureCode: null as string | null, failureUsageState: "released" as "released" | "waived", failureGuidance: undefined as FailureGuidance | null | undefined };
   const patchResponses: Record<string, unknown>[] = [];
 
   function failedTailoringRun() {
-    return { id: "run_tailoring_failed", operation: "resume_tailor", opportunity_id: opportunityId, status: "failed", usage_state: state.failureUsageState, estimated_units: 10, committed_units: 0, created_at: now, updated_at: now, started_at: now, completed_at: now, cancel_requested: false, cancelled_at: null, attempt_count: 1, error_code: state.failureCode, provider: "local-fixture", model: "local-fixture", prompt_version: "fixture-v1", input_purged_at: null, result_purged_at: null };
+    return { id: "run_tailoring_failed", operation: "resume_tailor", opportunity_id: opportunityId, status: "failed", usage_state: state.failureUsageState, estimated_units: 10, committed_units: 0, created_at: now, updated_at: now, started_at: now, completed_at: now, cancel_requested: false, cancelled_at: null, attempt_count: 1, error_code: state.failureCode, provider: "local-fixture", model: "local-fixture", prompt_version: "fixture-v1", input_purged_at: null, result_purged_at: null, ...(state.failureGuidance === undefined ? {} : { failure_guidance: state.failureGuidance }) };
   }
 
   async function install(context: BrowserContext, baseURL: string) {
@@ -60,10 +62,10 @@ function createFixture() {
       if (location.protocol !== "http:" && location.protocol !== "https:") return;
       localStorage.setItem("hirewiz_cookie_consent", JSON.stringify({ version: 2, preference: "essential", savedAt: new Date().toISOString() }));
     });
-    await context.route("**/api/backend/**", async (route) => {
+    await context.route((url) => url.pathname.startsWith("/api/backend/") || url.pathname === "/api/account/profile", async (route) => {
       const request = route.request();
       const url = new URL(request.url());
-      const path = url.pathname.replace("/api/backend", "");
+      const path = url.pathname.replace(/^\/api\/account\/profile$/, "/auth/profile").replace("/api/backend", "");
       const method = request.method();
       const body = method === "GET" ? undefined : request.headers()["content-type"]?.includes("application/json") ? request.postDataJSON() : request.postData();
       const record = { path, method, query: url.search, body };
@@ -71,6 +73,7 @@ function createFixture() {
       let status = 200;
       let value: unknown;
       if (path === "/auth/profile") value = { email: "fixture@example.com", full_name: "Taylor Example", tier: "free", ai_credits: 40 };
+      else if (path === "/public/billing/catalog") value = { analysis_pricing_version: "tailoring-fixture-v1", analysis_operation_units: { resume_tailor: 2 } };
       else if (path === "/v1/features") value = { features: { career_workspace: { enabled: true }, evidence_tailoring: { enabled: true }, async_analysis: { enabled: true } } };
       else if (path === "/resume/list") {
         if (state.pauseList) await state.pauseList;
@@ -132,7 +135,7 @@ async function openWorkspace(page: Page) {
 
 function actions(page: Page) {
   return {
-    generate: page.getByRole("button", { name: "Generate tailored version", exact: true }),
+    generate: page.getByRole("button", { name: /^Generate tailored version(?: · 2 AI analysis units)?$/ }),
     snapshot: page.getByRole("button", { name: "Save source snapshot", exact: true }),
     status: page.locator("#resume-actions-status"),
     resume: page.getByRole("combobox", { name: "Resume", exact: true }),
@@ -146,17 +149,26 @@ async function audit(page: Page) {
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 }
 
-for (const failure of [
-  { code: "TailoringOutputError", usage: "released", heading: "Could not generate safe, useful changes for this role.", message: "Please try again. Any reserved units were released." },
-  { code: "TailoringOutputError", usage: "waived", heading: "Could not generate safe, useful changes for this role.", message: "Please try again. No analysis units were charged." },
-  { code: "ResumeLayoutError", usage: "released", heading: "Could not apply the changes while preserving your resume format.", message: "Please try again. Any reserved units were released." },
-  { code: "RuntimeError", usage: "released", heading: "Analysis did not complete.", message: "Try again later. Any reserved units were released." },
-] as const) {
-  test(`tailoring failure banner classifies ${failure.code} with ${failure.usage} usage`, async ({ page, context, baseURL }) => {
+const legacyHeading = "Could not verify safe, useful changes for this role.";
+const legacyNextStep = "Keep your original resume, choose a custom file, or review your source and approved evidence before requesting another version.";
+const failures: { code: string; usage: "released" | "waived"; heading: string; nextStep: string; guidance?: FailureGuidance | null }[] = [
+  // Keep legacy responses without failure_guidance; exception class alone cannot identify a safe repair.
+  { code: "TailoringOutputError", usage: "released", heading: legacyHeading, nextStep: legacyNextStep },
+  { code: "TailoringOutputError", usage: "waived", heading: legacyHeading, nextStep: legacyNextStep },
+  { code: "ResumeLayoutError", usage: "released", heading: legacyHeading, nextStep: legacyNextStep },
+  { code: "RuntimeError", usage: "released", heading: legacyHeading, nextStep: legacyNextStep, guidance: null },
+  { code: "ResumeLayoutError", usage: "released", guidance: { reason_code: "replacement_does_not_fit", next_action: "shorten_wording" }, heading: "The proposed wording does not fit the original layout.", nextStep: "Use shorter wording in an editable source, or keep your original/custom resume. We will not shrink fonts or rebuild your layout to force this change." },
+  { code: "ResumeLayoutError", usage: "released", guidance: { reason_code: "source_links_protected", next_action: "keep_link_text" }, heading: "A proposed change would alter an existing resume link.", nextStep: "Keep the linked text, destination and placement unchanged. Shorten surrounding edits or choose the original/custom resume." },
+  { code: "TailoringOutputError", usage: "waived", guidance: { reason_code: "no_supported_changes", next_action: "use_original_or_custom" }, heading: "No safe, useful changes were found for this role.", nextStep: "You can keep your original resume unchanged, save a source snapshot, or choose a custom file. Review your evidence before requesting new wording." },
+];
+
+for (const failure of failures) {
+  test(`tailoring failure banner handles ${failure.guidance?.reason_code || "legacy " + failure.code} with ${failure.usage} usage`, async ({ page, context, baseURL }) => {
     const fixture = createFixture();
     Object.assign(fixture.resumes[0], { source_available: true, source_format: "pdf" });
     fixture.state.failureCode = failure.code;
     fixture.state.failureUsageState = failure.usage;
+    fixture.state.failureGuidance = failure.guidance;
     await fixture.install(context, baseURL!);
     await openWorkspace(page);
     const { generate } = actions(page);
@@ -164,16 +176,52 @@ for (const failure of [
     await generate.click();
     const banner = page.getByRole("main").getByRole("alert");
     await expect(banner.locator("strong")).toHaveText(failure.heading);
-    await expect(banner.locator("p")).toHaveText(failure.message);
+    await expect(banner.locator("p").nth(0)).toHaveText(failure.nextStep);
+    await expect(banner.locator("p").nth(1)).toHaveText(failure.usage === "released" ? "Any reserved units were released." : "No analysis units were charged.");
+    await expect(banner.locator("p").nth(2)).toHaveText("Your original resume is unchanged. Saving a source snapshot keeps that file as it is.");
+    await expect(banner.getByRole("button", { name: "Save unchanged source snapshot", exact: true })).toBeEnabled();
+    await expect(banner.getByRole("link", { name: "Choose original or custom resume", exact: true })).toHaveAttribute("href", "/resume");
     await expect(generate).toBeEnabled();
     await expect(page.getByText(/Version \d+ created\./)).toHaveCount(0);
     expect(fixture.opportunity.resume_versions).toEqual([]);
     expect(fixture.requests.filter((request) => request.path === "/v1/resume-versions" || request.path.endsWith("/result"))).toEqual([]);
-    expect(fixture.requests.find((request) => request.path === "/v1/analysis-runs" && request.method === "POST")?.body).toEqual({ operation: "resume_tailor", opportunity_id: opportunityId, input: {} });
+    expect(fixture.requests.find((request) => request.path === "/v1/analysis-runs" && request.method === "POST")?.body).toEqual({ operation: "resume_tailor", opportunity_id: opportunityId, input: {}, accepted_quote: { pricing_version: "tailoring-fixture-v1", units: 2 } });
     expect(fixture.unexpected).toEqual([]);
     await audit(page);
   });
 }
+
+test("failure recovery waits for a resume connection and saves the currently selected unchanged source", async ({ page, context, baseURL }) => {
+  const fixture = createFixture();
+  Object.assign(fixture.resumes[0], { source_available: true, source_format: "pdf" });
+  fixture.state.failureCode = "ResumeLayoutError";
+  fixture.state.failureGuidance = { reason_code: "replacement_does_not_fit", next_action: "shorten_wording" };
+  await fixture.install(context, baseURL!);
+  await openWorkspace(page);
+  await actions(page).generate.click();
+  const banner = page.getByRole("main").getByRole("alert");
+  const saveUnchanged = banner.getByRole("button", { name: "Save unchanged source snapshot", exact: true });
+  await expect(saveUnchanged).toBeEnabled();
+  let releaseConnection!: () => void;
+  fixture.state.pauseConnectedOpportunity = new Promise<void>((resolve) => { releaseConnection = resolve; });
+  await actions(page).resume.selectOption("2");
+  await expect.poll(() => fixture.state.heldOpportunityReads).toBeGreaterThan(0);
+  await expect(saveUnchanged).toBeDisabled();
+  expect(fixture.requests.filter((request) => request.path === "/v1/resume-versions")).toEqual([]);
+  releaseConnection();
+  await expect(actions(page).resume).toHaveValue("2");
+  await expect(saveUnchanged).toBeEnabled();
+  await saveUnchanged.click();
+  await expect(page.getByRole("heading", { name: "Example Studio source snapshot", exact: true })).toBeVisible();
+  expect(fixture.requests.filter((request) => request.path === "/v1/resume-versions" && request.method === "POST").map((request) => request.body)).toEqual([{
+    resume_id: 2, opportunity_id: opportunityId, label: "Example Studio source snapshot",
+    structured_content: { format_preservation: "source", source_format: "pdf", source_edits: [] }, evidence_ids: [],
+  }]);
+  expect(fixture.requests.filter((request) => request.path === "/v1/analysis-runs" && request.method === "POST")).toHaveLength(1);
+  expect(fixture.requests.filter((request) => request.path.endsWith("/result"))).toEqual([]);
+  expect(fixture.unexpected).toEqual([]);
+  await audit(page);
+});
 
 test("approved evidence with a missing original explains both disabled actions and the recovery path", async ({ page, context, baseURL }, testInfo) => {
   const fixture = createFixture();
@@ -183,7 +231,7 @@ test("approved evidence with a missing original explains both disabled actions a
   await expect(status).toContainText("Your evidence is approved, but the selected resume's original file is missing.");
   await expect(generate).toBeDisabled();
   await expect(snapshot).toBeDisabled();
-  await expect(generate).toHaveAttribute("aria-describedby", "resume-actions-status");
+  await expect(generate).toHaveAttribute("aria-describedby", "tailoring-price resume-actions-status");
   await expect(snapshot).toHaveAttribute("aria-describedby", "resume-actions-status");
   await expect(page.getByRole("link", { name: "Upload source again", exact: true })).toHaveAttribute("href", `/resume?opportunity=${opportunityId}`);
   await expect(resume.locator("option[value='1']")).toHaveText(`${sourceFile.name} · #1 · needs upload`);

@@ -1,0 +1,56 @@
+{
+  "release": "e7d8f2ba0435fd3d4a504ccdce83fac365ec6835",
+  "run_id": 37839872258,
+  "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37839872258",
+  "attempt": 1,
+  "status": "completed",
+  "conclusion": "success",
+  "jobs": [
+    {
+      "name": "frontend",
+      "databaseId": 113526248838,
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T20:29:51Z",
+      "completedAt": "2026-10-08T20:38:44Z",
+      "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37839872258/job/113526248838"
+    },
+    {
+      "name": "security-and-container",
+      "databaseId": 113526249074,
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T20:29:51Z",
+      "completedAt": "2026-10-08T20:31:36Z",
+      "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37839872258/job/113526249074"
+    },
+    {
+      "name": "browser-companion",
+      "databaseId": 113526249082,
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T20:29:51Z",
+      "completedAt": "2026-10-08T20:30:35Z",
+      "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37839872258/job/113526249082"
+    },
+    {
+      "name": "backend",
+      "databaseId": 113526249183,
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T20:30:02Z",
+      "completedAt": "2026-10-08T20:32:37Z",
+      "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37839872258/job/113526249183"
+    }
+  ],
+  "counts": {
+    "backend": 930,
+    "frontend_unit": 72,
+    "frontend_browser": 190,
+    "companion_protocol": 56,
+    "companion_mv3": 14,
+    "razorpay_unit": 5,
+    "razorpay_browser": 35
+  },
+  "ci_log_sha256": "a856c15047ac9b1aee322d5b1700257ca0db6ac8b8ca234225a70875d58cc803"
+}

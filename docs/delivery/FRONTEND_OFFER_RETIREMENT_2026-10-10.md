@@ -1,0 +1,16 @@
+# Deployed retirement of unlimited and legacy purchase offers
+
+Both HireWiz domains serve the independently reviewed offer-retirement hotfix `67a51f246fcca97b886d004e2ee742ae80741726`, tree `cb4479dc05e7e1023a17033551197edb0ebf80bd`, Vercel deployment `dpl_ArAEG3YmMQydCjr4qfPfSZZzZ1Wf`. Native production-target and commit metadata, authenticated staged GETs and fresh public domain GETs were verified. New purchase screens no longer offer unlimited/Premium access or the old ₹499 service pack. Pricing clearly states that finite-pack purchasing is temporarily unavailable. Existing paid access, balances, accepted orders and receipt handling retain their terms.
+
+This narrow frontend release starts from actual previously deployed frontend `06cc112`, contains only thirteen independently reviewed offer-screen/helper/test paths and avoids activating the wider unpromoted backend. Canonical finite-pack source remains on the main development branch. The frontend only displays validated server-owned finite bundles and exact paise prices; it does not invent a fallback catalog or open disabled checkout. Local exact source checks pass 100 units, lint, types, production build and twenty final purchase/accessibility/layout cases across 320, 390, 768, 1024 and 1440 pixels.
+
+The build was staged with production environment and automatic custom-domain promotion disabled. CLI project inspection verified the intended account/project, frontend root and Node24 runtime. Read-only connector access could not create a deployment; the existing authenticated native CLI completed the documented fallback. No account login or credential replacement was required. Existing environment values were preserved. The protected stage was read using authenticated CLI access before the exact existing deployment was promoted; both custom domains and the production target then matched. Initial read-only verification setup corrections are retained in private evidence.
+
+The existing GCP e7 checkout-retirement image remains healthy with checkout disabled. No payment, model request or employer application was sent. This release does not activate finite-pack grants, schema13, browser pairing or automatic employer submissions. [Sanitized deployment evidence](evidence/2026-10-10-frontend-offer-retirement.json) records the scope; the [live backend retirement](LIVE_CHECKOUT_RETIREMENT_2026-10-10.md) and [finite-pack handoff](FINITE_PACK_IMPLEMENTATION_2026-10-09.md) record their separate gates.
+
+- [x] Exact reviewed source and independent source/build/UI tests.
+- [x] Correct project, native staging and protected stage GET verification.
+- [x] Promotion, full native commit/deployment identity and both live domains verified.
+- [x] Independent public/staged reads and no-store disabled backend catalog.
+- [x] Ten hydrated public homepage/pricing cases at all five declared widths: no overflow, browser/HTTP errors or retired offers; zero Axe violations. Root visually checked mobile/desktop pricing. [Hosted evidence](evidence/2026-10-10-hosted-offer-retirement.json) retains incomplete manual accessibility review items; full WCAG/field-performance claims are not made.
+- [ ] Controlled monetary backend rollout and finite-pack purchase activation.

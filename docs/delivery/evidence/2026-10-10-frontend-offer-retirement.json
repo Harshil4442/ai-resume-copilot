@@ -1,0 +1,54 @@
+{
+  "observed_at_utc": "2026-10-09T20:18:10.971858+00:00",
+  "status": "FRONTEND_RETIREMENT_PROMOTED",
+  "deployment": "dpl_ArAEG3YmMQydCjr4qfPfSZZzZ1Wf",
+  "exact_commit": "67a51f246fcca97b886d004e2ee742ae80741726",
+  "production_target_verified": true,
+  "domains_verified": [
+    {
+      "route": "www-pricing",
+      "GET_status": 200,
+      "unlimited_offer_absent": true,
+      "temporarily_unavailable": true,
+      "old_premium_offer_absent": true
+    },
+    {
+      "route": "apex-pricing",
+      "GET_status": 200,
+      "unlimited_offer_absent": true,
+      "temporarily_unavailable": true,
+      "old_premium_offer_absent": true
+    },
+    {
+      "route": "www-home",
+      "GET_status": 200,
+      "unlimited_offer_absent": true
+    },
+    {
+      "route": "public-catalog",
+      "GET_status": 200,
+      "checkout_disabled": true,
+      "all_purchase_flags_disabled": true,
+      "no_store": true
+    },
+    {
+      "route": "api-health",
+      "GET_status": 200,
+      "exact_revision": "ai-resume-parser-e7-checkout-off-20261010",
+      "exact_release": "e7d8f2ba0435fd3d4a504ccdce83fac365ec6835"
+    }
+  ],
+  "source_build_and_staged_GET_verified": true,
+  "finite_pack_purchases_activated": false,
+  "live_payment_or_application_performed": false,
+  "goal_complete": false,
+  "verification_setup_corrections": [
+    "CLI curl forwarded --non-interactive; omitted for explicit authenticated deployment GET.",
+    "Catalog purchase flag key enabled_for_purchase; health route /api/health. Original refused read-only harness checks retained."
+  ],
+  "independent_read_only_verdict": {
+    "sha256": "a3a99ebdb18e9eacf14daa829c676f0126ca65d302182140b8f8c2c578c0d34e",
+    "status": "CLEAR",
+    "scope": "exact 589 source-file byte match plus staged/public GET and disabled backend catalog; independent CLI READY proof, root native full commit and domain target proof recorded separately"
+  }
+}

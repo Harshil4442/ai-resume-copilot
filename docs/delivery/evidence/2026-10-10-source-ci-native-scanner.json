@@ -1,0 +1,95 @@
+{
+  "review_date": "2026-10-10",
+  "full_goal_complete": false,
+  "published_source": "e353e83dbd86700c979262f6680fb7913d205ac8",
+  "original_ci": {
+    "run_id": 38054665085,
+    "conclusion": "failure",
+    "successful_jobs": 4,
+    "backend_passes": 3385,
+    "backend_failures": 4,
+    "frontend_units": 353,
+    "responsive_cases": 215,
+    "normal_production_build": "passed",
+    "openapi_after_backend_tests": "skipped",
+    "provider_transports": "synthetic",
+    "model_calls": 0
+  },
+  "schema_head_correction": {
+    "scope": "four current-head assertion literals only; historical migration targets unchanged",
+    "integrated_source_hashes": {
+      "backend/tests/test_candidate_lifetime_migration_postgres.py": "d6dca18d688ec0b687c61e8ff6e0bb409bfaa1e924d4cd782327c9d978fa357b",
+      "backend/tests/test_employer_admissions_postgres.py": "da0590e475706dd985f747c98aeda9777235a28f9e825e26b68d86537e37d08c",
+      "backend/tests/test_expense_budget_postgres.py": "b24bab3ccab5e8e2f03401d5e967616d622098d246ab00dc31c74da7a9f7d43a",
+      "backend/tests/test_model_cost_liabilities_postgres.py": "ced1e0fb0f56f956da35186a5044b8ae7153b2e6851c267644b4e00e4493bcea"
+    },
+    "focused_actual_postgres_tests": 51,
+    "skips": 0,
+    "catalog_before_after_identical": true,
+    "independent_verdict_sha256": "1868f7366339daf8c6db7c895edcb26f4644887ffead095cbfee760629341fdc",
+    "corrected_source_full_ci": "required"
+  },
+  "private_scanner": {
+    "service": "hirewiz-document-inspector",
+    "uid": "7014a5ba-faee-4fbf-8272-a437b1de49ad",
+    "ready_revision": "hirewiz-document-inspector-00001-xcf",
+    "image_digest": "sha256:edc8f5fc3000a40237ed3888c563c5f5ef175008e5ef3c4fb5007976119934e1",
+    "policy_sha256": "425fd4b326554d8fee8d2686f423c8e2b499eaaa1bd7858eb69f7759ac526bdf",
+    "source_join": "seven archive inputs match published e353; native Git checkout not claimed",
+    "configuration_review_sha256": "58f44254a327557c2d74e56d5c2c1803e338f8e1a5da61fc106404b44faa0c7c",
+    "ingress": "internal",
+    "iam_invoker_check": true,
+    "runtime_user_keys": 0,
+    "application_project_grants": 0,
+    "application_invoker_bindings": 0,
+    "revision_max_instances": 2,
+    "provider_service_max_instances": 10,
+    "customer_activation": false
+  },
+  "original_native_job": {
+    "name": "hirewiz-document-isolation-probe-grvwv",
+    "uid": "f5a787c4-640c-431a-9d40-57a802fbcb58",
+    "job_uid": "40d8adac-7628-437b-9da1-de45176e1ddc",
+    "config_and_saved_fixtures_match": true,
+    "completed": false,
+    "terminal": true,
+    "failed_count": 1,
+    "acceptance": "HOLD",
+    "failure_stage": "unknown",
+    "service_instance_isolation_introspected": false,
+    "forced_delete_failure_exercised": false,
+    "execution_receipt_sha256": "07f8e14b7a714db6aedbfb41124ca47cd265233a81d7a046f03a21bdb34179e2",
+    "fixed_scope_log_sha256": "05a8613aaf544c0588b097628723303ebd660bf50d90cf6b1a24ec9b4d16bdfd",
+    "independent_failure_verdict_sha256": "a6866752112c56e3d5dec300580bef3bb5533e17e95517a034e5cb936aabf1cf"
+  },
+  "private_http_preparation": {
+    "workflows_apis": "enabled",
+    "temporary_probe_account_unique_id": "110646581818622716337",
+    "http_execution_completed": false,
+    "invoker_grant_created": false,
+    "original_failures_preserved": [
+      "native SERVICE_DISABLED",
+      "SDK578 explicit deployment none converter crash",
+      "native INVALID_ARGUMENT inline-map expression"
+    ],
+    "provider_history_disabled_claimed": false,
+    "sdk_modified": false
+  },
+  "gcs_packet_review": {
+    "scope": "new empty resources steps10 through22 only",
+    "independent_cases": 79,
+    "production_api_signing_steps23_24": "HOLD",
+    "customer_activation": false,
+    "independent_verdict_sha256": "22ba13a6819dc91349fd81bc7d6206ac7f9acd970f84d4f3fe78e6424422a1b9"
+  },
+  "production": {
+    "schema": "20261008_0009",
+    "paid_plan_activation": false,
+    "checkout_enabled": false,
+    "customer_direct_uploads": false,
+    "coordinator_activation": false,
+    "global_consumer_provider_fence": false,
+    "automatic_submission": false
+  },
+  "retirement": "owned temporary probes require terminal-state and UID checks; cleanup not yet claimed"
+}

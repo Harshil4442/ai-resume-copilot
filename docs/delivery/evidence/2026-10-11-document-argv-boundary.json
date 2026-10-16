@@ -1,0 +1,187 @@
+{
+  "checkpoint": "native_synthetic_argv_boundary",
+  "date": "2026-10-11",
+  "source_head": "eeb53d6ad982b629c07bd4f526477d0966e3669c",
+  "immutable_image": "sha256:1fd697ba1ad7870c75068876aff5b9d151e151e8943418bb86072975f762ef98",
+  "probe_sha256": "0a2ab3d904955edce8765e169c004277d0e07b320a24f5e356f4f53e2a7173cd",
+  "job_body_sha256": "60302a1a379ecfb247aa8e702907490090b6d44e779828770900fbd52f03d64a",
+  "independent_review_verdict_sha256": "fc67ea1968a1258ee23ae0f148cd80d68ebb72660240ab91ed32572407d934ae",
+  "native_artifacts": 37,
+  "native_artifact_manifest_sha256": "27bf9678c0ac2c59c24d3af19cd9fa1b9220d55a49905047632a696c9e9914ca",
+  "job": {
+    "name": "hirewiz-document-argv-ladder-diagnostic",
+    "uid": "b47c389c-d836-4d7b-967e-15f0eefa99ef",
+    "generation": 1,
+    "create_requests": 1,
+    "fresh_absence_status": 404,
+    "new_grants_or_secrets": false
+  },
+  "execution": {
+    "status": "observed_same_execution",
+    "name": "hirewiz-document-argv-ladder-diagnostic-xqsmz",
+    "uid": "11aba65d-92c3-4f09-bc31-ae93c8b4bb81",
+    "job_uid": "b47c389c-d836-4d7b-967e-15f0eefa99ef",
+    "created_at": "2026-10-10T20:41:03.511158Z",
+    "started_at": "2026-10-10T20:41:23.778905Z",
+    "completed_at": "2026-10-10T20:43:25.250125Z",
+    "conditions": [
+      {
+        "type": "Completed",
+        "status": "False",
+        "reason": "NonZeroExitCode"
+      },
+      {
+        "type": "ResourcesAvailable",
+        "status": "True",
+        "reason": ""
+      },
+      {
+        "type": "Started",
+        "status": "True",
+        "reason": ""
+      },
+      {
+        "type": "ContainerReady",
+        "status": "True",
+        "reason": ""
+      }
+    ],
+    "counts": {
+      "succeededCount": 0,
+      "failedCount": 1,
+      "runningCount": 0,
+      "cancelledCount": 0,
+      "retriedCount": 0
+    },
+    "body_source_join_verified": true,
+    "execution_restarts": 0,
+    "scanner_acceptance": false,
+    "customer_release": false
+  },
+  "stdout_observation": {
+    "status": "one_scoped_stdout_result_observed",
+    "rows": 1,
+    "pagination": false,
+    "result": {
+      "capability_diagnostic_complete_only": false,
+      "cases": [
+        {
+          "case": "named_echo",
+          "case_marker_complete": true,
+          "marker_state": "exact",
+          "observations": [
+            {
+              "exit_code": 0,
+              "inconclusive": false,
+              "launcher_stopped": true,
+              "outcome": "returned",
+              "phase": "do",
+              "sdk_exec_observed": true,
+              "stderr_bytes": 0,
+              "stderr_hint": "empty",
+              "stdout_bytes": 28
+            },
+            {
+              "exit_code": 0,
+              "inconclusive": false,
+              "launcher_stopped": true,
+              "outcome": "returned",
+              "phase": "delete",
+              "sdk_exec_observed": true,
+              "stderr_bytes": 0,
+              "stderr_hint": "empty",
+              "stdout_bytes": 0
+            }
+          ]
+        },
+        {
+          "case": "write_echo",
+          "case_marker_complete": true,
+          "marker_state": "exact",
+          "observations": [
+            {
+              "exit_code": 0,
+              "inconclusive": false,
+              "launcher_stopped": true,
+              "outcome": "returned",
+              "phase": "do",
+              "sdk_exec_observed": true,
+              "stderr_bytes": 0,
+              "stderr_hint": "empty",
+              "stdout_bytes": 28
+            },
+            {
+              "exit_code": 0,
+              "inconclusive": false,
+              "launcher_stopped": true,
+              "outcome": "returned",
+              "phase": "delete",
+              "sdk_exec_observed": true,
+              "stderr_bytes": 0,
+              "stderr_hint": "empty",
+              "stdout_bytes": 0
+            }
+          ]
+        },
+        {
+          "case": "import_echo",
+          "case_marker_complete": false,
+          "marker_state": "missing",
+          "observations": [
+            {
+              "exit_code": 1,
+              "inconclusive": false,
+              "launcher_stopped": true,
+              "outcome": "nonzero_exit",
+              "phase": "do",
+              "sdk_exec_observed": true,
+              "stderr_bytes": 133,
+              "stderr_hint": "unclassified",
+              "stdout_bytes": 0
+            },
+            {
+              "exit_code": 0,
+              "inconclusive": false,
+              "launcher_stopped": true,
+              "outcome": "returned",
+              "phase": "delete",
+              "sdk_exec_observed": true,
+              "stderr_bytes": 0,
+              "stderr_hint": "empty",
+              "stdout_bytes": 0
+            }
+          ]
+        }
+      ],
+      "child_isolation_acceptance": false,
+      "customer_release": false,
+      "http_acceptance": false,
+      "native_sandbox_absence_independently_verified": false,
+      "scanner_acceptance": false,
+      "scope": "synthetic_scanner_argv_ladder_only",
+      "stopped_at": "import_echo",
+      "unique_cause_verified": false,
+      "version": 1,
+      "whole_deadline_expired": false
+    },
+    "sdk_materialized_before_serialized_size_guard": true,
+    "native_mutations": 0
+  },
+  "first_local_reader_refusal_preserved": true,
+  "corrected_generated_request_type": "ListLogEntriesRequest",
+  "execution_restarts": 0,
+  "limits": {
+    "do_seconds": 15,
+    "startup_allowance_calibrated": false,
+    "provider_task_seconds": 600,
+    "stdout_read_rows": 1,
+    "stdout_read_pagination": false,
+    "unique_cause_verified": false,
+    "scanner_acceptance": false,
+    "http_acceptance": false,
+    "child_isolation_acceptance": false,
+    "customer_release": false,
+    "native_sandbox_absence_independently_verified": false
+  },
+  "next_step": "Investigate supported archive transfer; do not repeat the failed execution or enable uploads."
+}

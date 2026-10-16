@@ -1,50 +1,61 @@
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
-from google.auth.transport import requests as google_requests
-from google.oauth2 import id_token as google_id_token
 from sqlalchemy.orm import Session
 
 from ..database import get_db
+from ..domains.candidate_accounts.google import google_id_token as google_id_token
+from ..domains.notifications import enqueue_notification
 from ..models import (
     FREE_SIGNUP_ANALYSIS_UNITS,
-    EntitlementLedger,
-    User,
-    UserProfile,
-    Resume,
-    JobMatch,
-    PaymentOrder,
-    AnalysisRun,
     AdminAuditEvent,
+    AnalysisRun,
     ApplicationEvent,
+    CandidateGoogleIdentity,
+    CandidatePasswordAccount,
     CareerMemoryEntry,
+    EntitlementLedger,
     EvidenceItem,
+    JobMatch,
     ModelCallEvent,
     NotificationOutbox,
     Opportunity,
     OpportunityContact,
+    PaymentOrder,
     Reminder,
+    Resume,
     ResumeVersion,
     UsageEvent,
+    User,
+    UserProfile,
 )
-from ..domains.notifications import enqueue_notification
+from ..rate_limiter import limiter
 from ..schemas import (
-    AuthLoginRequest,
     AuthGoogleLoginRequest,
+    AuthLoginRequest,
     AuthRegisterRequest,
     AuthTokenResponse,
     UserMeResponse,
     UserProfileResponse,
     UserProfileUpdate,
 )
-from ..security import create_access_token, get_current_user, hash_password, verify_password
-from ..rate_limiter import limiter
+from ..security import (
+    JWT_ALGORITHM,
+    JWT_SECRET,
+    create_access_token,
+    get_current_user,
+    hash_password,
+    oauth2_scheme,
+    verify_password,
+)
+from .candidate_ingress import require_candidate_ingress
+from .sensitive_auth import SensitiveAuthRoute
 
-router = APIRouter(prefix="/auth", tags=["auth"])
-CURRENT_POLICY_VERSION = "2026-07-11"
+router = APIRouter(prefix="/auth", tags=["auth"], route_class=SensitiveAuthRoute)
+CURRENT_POLICY_VERSION = "2026-10-08"
 
 PROFILE_FIELDS = [
     ("full_name", "Full name"),
@@ -127,7 +138,25 @@ def register(request: Request, payload: AuthRegisterRequest, db: Session = Depen
     if exists:
         raise HTTPException(status_code=409, detail="Email already registered")
 
-    accepted_at = datetime.now(timezone.utc)
+    if (os.getenv("CANDIDATE_ACCOUNT_LIFECYCLE_ENABLED") or "").strip().lower() == "true":
+        from ..domains.candidate_accounts.service import production_candidate_accounts
+        from ..domains.recovery.store import GuardDenied, GuardUnavailable
+        db.rollback()  # No SQL transaction held across native enrollment IO.
+        require_candidate_ingress(request)
+        try:
+            uid = production_candidate_accounts().register(email=email, password=payload.password,
+                policy_version=CURRENT_POLICY_VERSION)
+        except GuardDenied:
+            raise HTTPException(status_code=401, detail="Candidate password authentication failed") from None
+        except GuardUnavailable:
+            raise HTTPException(status_code=503, detail="Candidate account lifetime is unavailable") from None
+        enrolled = db.query(User).filter_by(id=uid).one_or_none()
+        if enrolled is None:
+            raise HTTPException(status_code=503, detail="Candidate account lifetime is unavailable")
+        return UserMeResponse(id=enrolled.id, email=enrolled.email, tier=enrolled.tier,
+            ai_credits=enrolled.ai_credits, job_service_credits=enrolled.job_service_credits)
+
+    accepted_at = datetime.now(UTC)
     u = User(
         email=email,
         password_hash=hash_password(payload.password),
@@ -167,42 +196,66 @@ def login(request: Request, payload: AuthLoginRequest, db: Session = Depends(get
     email = payload.email.strip().lower()
 
     u = db.query(User).filter(User.email == email).first()
-    if not u or not verify_password(payload.password, u.password_hash):
+    if not u:
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
+    from ..domains.candidate_accounts.service import mapped_account, production_candidate_accounts
+    from ..domains.recovery.store import GuardDenied, GuardUnavailable
+    enrolled = mapped_account(db, u.id)
+    if enrolled is not None:
+        if enrolled.state != "ACTIVE":
+            raise HTTPException(status_code=401, detail="Invalid email or password")
+        # No absent-subject bootstrap: the genuine issuance service re-verifies
+        # current credentials and independently retained generation/session.
+        uid = u.id
+        db.rollback()  # Release request SQL transaction before native issuance IO.
+        require_candidate_ingress(request)
+        try:
+            result = production_candidate_accounts().login(email=email, password=payload.password)
+        except GuardDenied:
+            raise HTTPException(status_code=401, detail="Invalid email or password") from None
+        except GuardUnavailable:
+            raise HTTPException(status_code=503, detail="Candidate account lifetime is unavailable") from None
+        token = create_access_token(subject=str(uid), expires_delta=timedelta(days=1), candidate_lifetime={
+            "version": 1, "context": result.context.model_dump(mode="json"), "auth_generation": result.auth_generation})
+        return AuthTokenResponse(access_token=token, user_id=uid,
+                                 browser_pairing_session=result.context.model_dump(mode="json"))
+    if not verify_password(payload.password, u.password_hash):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
     token = create_access_token(subject=str(u.id))
     return AuthTokenResponse(access_token=token, user_id=u.id, token_type="bearer")
 
 @router.post("/google-login", response_model=AuthTokenResponse)
 @limiter.limit("10/minute")
 def google_login(request: Request, payload: AuthGoogleLoginRequest, db: Session = Depends(get_db)):
-    client_id = (os.getenv("GOOGLE_CLIENT_ID") or "").strip()
-    if not client_id:
-        raise HTTPException(status_code=503, detail="Google sign-in is not configured")
-
+    from ..domains.candidate_accounts.google import verify_google_identity
+    from ..domains.candidate_accounts.service import production_candidate_accounts
+    from ..domains.recovery.store import GuardDenied, GuardUnavailable
     try:
-        claims = google_id_token.verify_oauth2_token(
-            payload.id_token,
-            google_requests.Request(),
-            client_id,
-        )
-    except (ValueError, TypeError):
-        raise HTTPException(status_code=401, detail="Invalid Google identity token")
-
-    if claims.get("iss") not in {"accounts.google.com", "https://accounts.google.com"}:
-        raise HTTPException(status_code=401, detail="Invalid Google identity token")
-    if claims.get("email_verified") is not True:
-        raise HTTPException(status_code=401, detail="Google email is not verified")
-    email_claim = claims.get("email")
-    subject = claims.get("sub")
-    if not isinstance(email_claim, str) or not email_claim.strip() or not isinstance(subject, str):
-        raise HTTPException(status_code=401, detail="Invalid Google identity token")
-
-    email = email_claim.strip().lower()
-    name = claims.get("name") if isinstance(claims.get("name"), str) else ""
-
-    # Find existing user
-    u = db.query(User).filter(User.email == email).first()
+        identity = verify_google_identity(payload.id_token)
+    except GuardDenied:
+        raise HTTPException(status_code=401, detail="Invalid Google identity token") from None
+    except GuardUnavailable:
+        raise HTTPException(status_code=503, detail="Google sign-in is not configured") from None
+    email = identity.email
+    linked = db.query(CandidateGoogleIdentity).filter_by(principal_sha256=identity.principal_sha256).first()
+    u = db.query(User).filter(User.id == linked.user_id).first() if linked else db.query(User).filter(User.email == email).first()
+    if u is not None and db.query(CandidatePasswordAccount).filter_by(user_id=u.id).first() is not None:
+        if linked is None:
+            raise HTTPException(status_code=403, detail="Google account is not explicitly linked; use your enrolled sign-in method")
+        db.rollback()
+        require_candidate_ingress(request)
+        try:
+            result = production_candidate_accounts().login_google(identity)
+        except GuardDenied:
+            raise HTTPException(status_code=401, detail="Google account is not explicitly linked; use your enrolled sign-in method") from None
+        except GuardUnavailable:
+            raise HTTPException(status_code=503, detail="Candidate account lifetime is unavailable") from None
+        token = create_access_token(subject=str(result.context.candidate_id), expires_delta=timedelta(days=1),
+            candidate_lifetime={"version": 1, "context": result.context.model_dump(mode="json"),
+                                "auth_generation": result.auth_generation}, google_identity=identity.bearer_claim())
+        return AuthTokenResponse(access_token=token, user_id=result.context.candidate_id,
+                                 browser_pairing_session=result.context.model_dump(mode="json"))
     
     if not u:
         if not payload.registration_consent or payload.policy_version != CURRENT_POLICY_VERSION:
@@ -212,7 +265,7 @@ def google_login(request: Request, payload: AuthGoogleLoginRequest, db: Session 
             )
         # Google-only users have no usable local password. Their identity is
         # re-verified by Google on every new OAuth sign-in.
-        accepted_at = datetime.now(timezone.utc)
+        accepted_at = datetime.now(UTC)
         u = User(
             email=email,
             password_hash="",
@@ -224,7 +277,7 @@ def google_login(request: Request, payload: AuthGoogleLoginRequest, db: Session 
         )
         db.add(u)
         db.flush()
-        db.add(UserProfile(user_id=u.id, full_name=name))
+        db.add(UserProfile(user_id=u.id, full_name=identity.name))
         enqueue_notification(
             db,
             user_id=u.id,
@@ -245,12 +298,12 @@ def google_login(request: Request, payload: AuthGoogleLoginRequest, db: Session 
         db.commit()
         db.refresh(u)
 
-    token = create_access_token(subject=str(u.id))
+    token = create_access_token(subject=str(u.id), google_identity=identity.bearer_claim())
     return AuthTokenResponse(access_token=token, user_id=u.id, token_type="bearer")
 
 @router.get("/me", response_model=UserMeResponse)
 def me(current_user: User = Depends(get_current_user)):
-    return UserMeResponse(id=current_user.id, email=current_user.email, tier=current_user.tier, ai_credits=current_user.ai_credits)
+    return UserMeResponse(id=current_user.id, email=current_user.email, tier=current_user.tier, ai_credits=current_user.ai_credits, job_service_credits=current_user.job_service_credits)
 
 @router.get("/profile", response_model=UserProfileResponse)
 def get_profile(
@@ -284,8 +337,10 @@ def update_profile(
 
 @router.post("/delete-account")
 def delete_account(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    token: str = Depends(oauth2_scheme),
 ):
     """
     Deletes account/profile/resume/job data and unlinks retained financial
@@ -293,7 +348,29 @@ def delete_account(
     reconciliation, tax, and legal obligations without a live User foreign key.
     """
     uid = current_user.id
-    now = datetime.now(timezone.utc)
+    if db.query(CandidatePasswordAccount).filter_by(user_id=uid).first() is not None:
+        from jose import jwt
+
+        from ..domains.candidate_accounts.access import context_from_claims
+        from ..domains.candidate_accounts.service import production_candidate_accounts
+        from ..domains.recovery.store import GuardDenied, GuardUnavailable
+        try:
+            context, _ = context_from_claims(jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM]), candidate_id=uid)
+            db.rollback()  # Release SQL transaction before independently protected denial IO.
+            require_candidate_ingress(request)
+            production_candidate_accounts().prepare_delete(context)
+        except GuardDenied:
+            raise HTTPException(status_code=401, detail="Not authenticated") from None
+        except GuardUnavailable:
+            raise HTTPException(status_code=503, detail="Candidate account lifetime is unavailable") from None
+    now = datetime.now(UTC)
+
+    from ..domains.employer.admissions import lock_application_set
+
+    # This same short lifetime guard fences new application/analysis creation
+    # and model admission. Lock runs before model events and the owner row.
+    lock_application_set(db, uid)
+    db.query(AnalysisRun).filter_by(user_id=uid).order_by(AnalysisRun.id).with_for_update().all()
 
     # End access before unlinking the ledger. This is an audit transition, not
     # a refund and not a subscription cancellation.
@@ -322,6 +399,15 @@ def delete_account(
         order.user_id = None
 
     db.query(ModelCallEvent).filter(ModelCallEvent.user_id == uid).delete(synchronize_session=False)
+    from ..domains.analysis.models import AnalysisRequestKey
+    from ..domains.dispatch.models import DispatchOutbox
+    from ..domains.employer.service import delete_account_data
+
+    delete_account_data(db, uid)
+    run_ids = [identity for (identity,) in db.query(AnalysisRun.id).filter_by(user_id=uid).all()]
+    if run_ids:
+        db.query(DispatchOutbox).filter(DispatchOutbox.topic == "analysis.run", DispatchOutbox.aggregate_id.in_(run_ids)).delete(synchronize_session=False)
+    db.query(AnalysisRequestKey).filter_by(user_id=uid).delete(synchronize_session=False)
     db.query(NotificationOutbox).filter(NotificationOutbox.user_id == uid).delete(synchronize_session=False)
     db.query(AdminAuditEvent).filter(AdminAuditEvent.actor_user_id == uid).update(
         {AdminAuditEvent.actor_user_id: None}, synchronize_session=False
@@ -338,6 +424,7 @@ def delete_account(
     db.query(JobMatch).filter(JobMatch.user_id == uid).delete(synchronize_session=False)
     db.query(Resume).filter(Resume.user_id == uid).delete(synchronize_session=False)
     db.query(UserProfile).filter(UserProfile.user_id == uid).delete(synchronize_session=False)
+    db.query(CandidatePasswordAccount).filter_by(user_id=uid).delete(synchronize_session=False)
     db.query(User).filter(User.id == uid).delete(synchronize_session=False)
     db.commit()
     return {"status": "deleted"}
@@ -362,16 +449,19 @@ def export_account(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    from ..domains.employer.service import export_account_data
+
     uid = current_user.id
     profile = db.query(UserProfile).filter(UserProfile.user_id == uid).first()
     payment_orders = db.query(PaymentOrder).filter(PaymentOrder.user_id == uid).all()
     payload = {
-        "exported_at": datetime.now(timezone.utc),
+        "exported_at": datetime.now(UTC),
         "account": {
             "id": current_user.id,
             "email": current_user.email,
             "tier": current_user.tier,
             "analysis_units": current_user.ai_credits,
+            "job_service_credits": current_user.job_service_credits,
             "premium_until": current_user.premium_until,
         },
         "profile": (
@@ -390,6 +480,7 @@ def export_account(
         "career_memory": _rows(db, CareerMemoryEntry, uid),
         "analysis_runs": _rows(db, AnalysisRun, uid),
         "usage_events": _rows(db, UsageEvent, uid),
+        "employer_services": export_account_data(db, uid),
         "model_call_events": _rows(db, ModelCallEvent, uid),
         "payment_orders": [
             {

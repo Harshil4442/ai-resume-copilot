@@ -1,0 +1,111 @@
+{
+  "scope": "Local production build; homepage counter CSS only; synthetic anonymous/public fixtures; no hosted requests, auth/consent actions or production mutations.",
+  "base_commit": "178656064064c0eea44321cc1508e4409b916ae0",
+  "css_sha256": "259baaf9d6f4483e70ca996996f633006e87efb488df60c2de6839b02a29fc85",
+  "widths": [
+    320,
+    390,
+    1440
+  ],
+  "passed": 3,
+  "total": 3,
+  "console_errors": 0,
+  "runtime_errors": 0,
+  "blocked_write_attempts": 0,
+  "blocked_external_requests": 0,
+  "blocked_api_reads": 0,
+  "all_counters_single_line": true,
+  "counter_width_px": [
+    14.40625
+  ],
+  "all_counters_no_shrink_no_wrap": true,
+  "all_copy_unchanged_and_within_row": true,
+  "all_resume_numbers_single_line": true,
+  "horizontal_overflow": false,
+  "resource_warnings": [
+    {
+      "width": 320,
+      "url": "http://127.0.0.1:4344/pricing",
+      "failure": "net::ERR_ABORTED",
+      "type": "fetch"
+    },
+    {
+      "width": 390,
+      "url": "http://127.0.0.1:4344/pricing",
+      "failure": "net::ERR_ABORTED",
+      "type": "fetch"
+    },
+    {
+      "width": 1440,
+      "url": "http://127.0.0.1:4344/register",
+      "failure": "net::ERR_ABORTED",
+      "type": "fetch"
+    },
+    {
+      "width": 1440,
+      "url": "http://127.0.0.1:4344/pricing",
+      "failure": "net::ERR_ABORTED",
+      "type": "fetch"
+    },
+    {
+      "width": 1440,
+      "url": "http://127.0.0.1:4344/login",
+      "failure": "net::ERR_ABORTED",
+      "type": "fetch"
+    },
+    {
+      "width": 1440,
+      "url": "http://127.0.0.1:4344/register",
+      "failure": "net::ERR_ABORTED",
+      "type": "fetch"
+    }
+  ],
+  "screenshots": {
+    "320": [
+      "/tmp/hirewiz-home-counter-local-20261008-1791481853218/story-counters-320.png",
+      "/tmp/hirewiz-home-counter-local-20261008-1791481853218/story-viewport-320.png",
+      "/tmp/hirewiz-home-counter-local-20261008-1791481853218/resume-steps-320.png",
+      "/tmp/hirewiz-home-counter-local-20261008-1791481853218/home-320-full.png"
+    ],
+    "390": [
+      "/tmp/hirewiz-home-counter-local-20261008-1791481853218/story-counters-390.png",
+      "/tmp/hirewiz-home-counter-local-20261008-1791481853218/story-viewport-390.png",
+      "/tmp/hirewiz-home-counter-local-20261008-1791481853218/resume-steps-390.png",
+      "/tmp/hirewiz-home-counter-local-20261008-1791481853218/home-390-full.png"
+    ],
+    "1440": [
+      "/tmp/hirewiz-home-counter-local-20261008-1791481853218/story-counters-1440.png",
+      "/tmp/hirewiz-home-counter-local-20261008-1791481853218/story-viewport-1440.png",
+      "/tmp/hirewiz-home-counter-local-20261008-1791481853218/resume-steps-1440.png",
+      "/tmp/hirewiz-home-counter-local-20261008-1791481853218/home-1440-full.png"
+    ]
+  },
+  "build": {
+    "status": "passed",
+    "typecheck": true,
+    "generated_pages": 42,
+    "local_process_only_synthetic_config": true
+  },
+  "preserved_initial_evidence": [
+    {
+      "path": "/tmp/hirewiz-home-counter-local-20261008-1791481559019/results.json",
+      "classification": "Temporary anonymous-session fixture used null instead of {}, causing NextAuth client error; logger POST blocked before sending. CSS geometry passed."
+    },
+    {
+      "path": "/tmp/hirewiz-home-counter-local-20261008-1791481790667/results.json",
+      "classification": "320px passed; 390px strict selector ran before streamed headings settled to one. Bounded single-heading readiness added to /tmp harness. Passed 320px screenshots retained and reused for identical source hash."
+    }
+  ],
+  "historical_hosted_cosmetic_evidence": "/tmp/hirewiz-public-smoke-bounded-ec52279-1791480638570/home-320.png",
+  "visual_review": {
+    "status": "passed for targeted repair",
+    "inspected_count": 12,
+    "coverage": "All three story-list crops, story viewports, resume-step crops and full-page frames inspected. Counters and adjacent copy show no clipping or overlap; larger resume numbers remain intact. Full frames are context checks, not broad acceptance."
+  },
+  "production_status": "CSS repair is local only; production remains ec52279.",
+  "local_server": {
+    "port": 4344,
+    "stopped": true
+  },
+  "source_diff_check": "passed; two additions in home.module.css only for this task"
+}

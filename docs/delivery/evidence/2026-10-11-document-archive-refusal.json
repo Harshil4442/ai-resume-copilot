@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "scope": "synthetic archive diagnostic only",
+  "job": {
+    "name": "hirewiz-document-archive-rejection-diagnostic",
+    "uid": "c4cdb851-c45b-4ff1-bad6-3ce79006e2a7"
+  },
+  "execution": {
+    "name": "hirewiz-document-archive-rejection-diagnostic-9cvwl",
+    "uid": "42a4b1db-f38e-45f5-a5dc-c4a93de8c846",
+    "started_at": "2026-10-10T21:39:11.867589Z",
+    "completed_at": "2026-10-10T21:40:23.765577Z",
+    "failed": 1,
+    "running": 0,
+    "restarted": false
+  },
+  "writer_export_command_exit_code": 0,
+  "delete_exit_code": 0,
+  "local_validator_refusal": {
+    "checks": {},
+    "error_family": "predicate_or_local",
+    "index": null,
+    "pax_key": null,
+    "role": "other",
+    "stage": "member_path"
+  },
+  "sdk_import_attempted": false,
+  "python_reencode_attempted": false,
+  "unique_cause_verified": false,
+  "native_sandbox_absence_independently_verified": false,
+  "scanner_acceptance": false,
+  "child_isolation_acceptance": false,
+  "private_http_acceptance": false,
+  "customer_release": false,
+  "local_setup_refusal_before_create_retained": true,
+  "fresh_create_calls": 1,
+  "run_calls": 1,
+  "source": {
+    "probe_sha256": "840a3e401d22d5c88a8cb7772aa45e04cd02f0691d9225bc81ad8a89700d9e95",
+    "job_sha256": "b08b2c821d5022e6fe033acf05a0591c3ac783e153cfc021b81c6b9ea82d3685"
+  },
+  "packet_manifest_sha256": "589f79669edeb53df7a778322399987df6fc5e313214b5b08a7bb64ec844ff70",
+  "terminal_result_sha256": "7b28f6761eb30d99c944e24038ce6a860eccf4ea3d588a4735aa546d7594c21a",
+  "fixed_result_sha256": "8ee92ec33b38ad894b473bfa1d7325454c1ac43c5c5b970cfa2c5fe2c4b0814a",
+  "decision": "Keep document deployment acceptance open; do not widen member path acceptance or infer a provider defect from the category."
+}

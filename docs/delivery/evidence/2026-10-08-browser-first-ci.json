@@ -1,0 +1,47 @@
+{
+  "commit": "7c59578d169290a91f45d39552ad48d41ea40d16",
+  "run_id": 37821078441,
+  "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37821078441",
+  "status": "completed",
+  "conclusion": "success",
+  "jobs": [
+    {
+      "name": "security-and-container",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-08T18:01:30Z",
+      "completed_at": "2026-10-08T18:03:17Z"
+    },
+    {
+      "name": "browser-companion",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-08T18:01:31Z",
+      "completed_at": "2026-10-08T18:02:24Z"
+    },
+    {
+      "name": "frontend",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-08T18:01:30Z",
+      "completed_at": "2026-10-08T18:15:25Z"
+    },
+    {
+      "name": "backend",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-08T18:01:33Z",
+      "completed_at": "2026-10-08T18:03:29Z"
+    }
+  ],
+  "tests": {
+    "backend": 630,
+    "backend_skipped": 0,
+    "frontend_units": 55,
+    "browser_cases": 190,
+    "companion_protocol": 55,
+    "chromium_mv3": 14
+  },
+  "mypy_source_files": 53,
+  "scope": "Exact source CI; no live employer submission, payment or production authority proof"
+}

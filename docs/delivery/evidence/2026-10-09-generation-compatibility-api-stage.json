@@ -1,0 +1,65 @@
+{
+  "checked_at_utc": "2026-10-08T22:43:54.275829+00:00",
+  "release": "b306f135fcd5d8f10336c8cfb4174c71ac028649",
+  "ci_run": 37852390858,
+  "ci_jobs": [
+    {
+      "name": "security-and-container",
+      "conclusion": "success"
+    },
+    {
+      "name": "browser-companion",
+      "conclusion": "success"
+    },
+    {
+      "name": "frontend",
+      "conclusion": "success"
+    },
+    {
+      "name": "backend",
+      "conclusion": "success"
+    }
+  ],
+  "build_id": "d1f4ddea-45f0-4ec5-a4eb-818620333cad",
+  "immutable_image": "us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz@sha256:de8dcc2d778d04f5afc87f4d1513ce6495fca4713676031635d55a0486a20fce",
+  "candidate_revision": "ai-resume-parser-00270-veb",
+  "candidate_url": "https://generation-quiesce---ai-resume-parser-mqff62d75a-uc.a.run.app",
+  "health": {
+    "http_status": 200,
+    "ok": true,
+    "release": "b306f135fcd5d8f10336c8cfb4174c71ac028649"
+  },
+  "command": [
+    "python"
+  ],
+  "args": [
+    "-m",
+    "uvicorn",
+    "app.main:app",
+    "--host",
+    "0.0.0.0",
+    "--port",
+    "8080"
+  ],
+  "safe_environment": {
+    "APP_RELEASE": "b306f135fcd5d8f10336c8cfb4174c71ac028649",
+    "AUTO_DB_MIGRATE": "false",
+    "OPTIONAL_AI_GENERATION_ENABLED": "false"
+  },
+  "traffic": [
+    {
+      "revision": "ai-resume-parser-00267-xot",
+      "percent": 100,
+      "tag": "release-candidate"
+    },
+    {
+      "revision": "ai-resume-parser-00270-veb",
+      "percent": 0,
+      "tag": "generation-quiesce"
+    }
+  ],
+  "production_generation_quiesced": false,
+  "database_migration_performed": false,
+  "provider_calls_performed": false,
+  "scope": "Zero-traffic compatibility API staging only; no queue pause, analysis-worker replacement, writer retirement, schema change or promotion."
+}

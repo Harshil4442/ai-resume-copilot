@@ -1,0 +1,248 @@
+{
+  "CI": {
+    "OpenAPI_export_and_drift_checks_passed": true,
+    "attempt": 2,
+    "backend_duration_seconds": 890.85,
+    "backend_only_retry_count": 1,
+    "backend_skips": 0,
+    "backend_tests": 3433,
+    "conclusion": "success",
+    "frontend_units": 353,
+    "independent_verdict_sha256": "b9cd80a011bc3b6c2b0770d2762832ef1bbe41f6c3a0bda7807fd0b3d78705ac",
+    "migration_roundtrip": [
+      "20261010_0014",
+      "20260803_0001",
+      "20261010_0014"
+    ],
+    "original_failure": "public ECR immutable Debian acquisition429 before backend tests",
+    "original_failure_preserved": true,
+    "original_four_successful_executions_carried_forward": true,
+    "responsive_cases": 215,
+    "run_id": 38070998618,
+    "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38070998618"
+  },
+  "actual_local_engine": {
+    "corpus": [
+      {
+        "case": "clean_pdf",
+        "outcome": "clean",
+        "passed": true,
+        "scan": {
+          "definitions": "28149/2026-10-10T06:24:04+00:00",
+          "engine": "ClamAV",
+          "version": "1.4.3"
+        }
+      },
+      {
+        "case": "clean_docx",
+        "outcome": "clean",
+        "passed": true,
+        "scan": {
+          "definitions": "28149/2026-10-10T06:24:04+00:00",
+          "engine": "ClamAV",
+          "version": "1.4.3"
+        }
+      },
+      {
+        "case": "page_counter",
+        "outcome": "clean",
+        "passed": true,
+        "scan": {
+          "definitions": "28149/2026-10-10T06:24:04+00:00",
+          "engine": "ClamAV",
+          "version": "1.4.3"
+        }
+      },
+      {
+        "case": "active_pdf",
+        "outcome": "refused",
+        "passed": true
+      },
+      {
+        "case": "includetext",
+        "outcome": "refused",
+        "passed": true
+      },
+      {
+        "case": "eicar_exact_file",
+        "outcome": "detected",
+        "passed": true
+      },
+      {
+        "case": "eicar_zip_member",
+        "outcome": "detected",
+        "passed": true
+      },
+      {
+        "case": "missing_definitions",
+        "outcome": "missing",
+        "passed": true
+      }
+    ],
+    "image_id": "sha256:1fd697ba1ad7870c75068876aff5b9d151e151e8943418bb86072975f762ef98",
+    "immutable_repo_digest_verified": true,
+    "platform": "linux/amd64",
+    "proof_sha256": "81e05b138e382ea19a399bda516790b76bece2b2daf9770cada0f0e4a08e937c",
+    "restricted_container_metadata_verified": true,
+    "runtime_source_bytes_verified": true
+  },
+  "backend_build": {
+    "backend_platform_runtime_proven": false,
+    "build_id": "9392c249-40ac-46bc-8e12-0b0553d580db",
+    "conclusion": "SUCCESS",
+    "image": "us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz@sha256:eb6369c7c33826f222dc7ce0f95a80c10323968d5a0233d7c134ca74db3b6cbb",
+    "independent_verdict_sha256": "8f47b5d58d5c740fb5c029def30ed6623bab9371dddce6ba50fdd1d6ca0ce037",
+    "mutable_dependency_reproducibility_proven": false,
+    "native_source_configuration_registry_CI_join_sha256": "c0757b643198b7f665430b3e66758fb7694e1b421ba8c6a17dff24610d3cbe05",
+    "production_promoted": false,
+    "root_verified_review_artifacts": 17,
+    "submission_acknowledged": true,
+    "terminal_outcome_not_yet_joined": false
+  },
+  "latest_fully_verified_runtime_CI": {
+    "all_five_jobs": "success",
+    "artifact_manifest_sha256": "2b307da2883474c921b81a34dc75cc40a609a73d77140856ce19da19010f5d79",
+    "attempt": 1,
+    "backend_passed": 3449,
+    "backend_skipped": 0,
+    "cloud_run_isolation_proven": false,
+    "companion_cases": 136,
+    "customer_activation": false,
+    "frontend_units": 353,
+    "independent_verdict_sha256": "b258bab482e74879168033018c2817488c20541fa5fa34b09d98835d4bfe6b9d",
+    "later_runtime_source_requires_fresh_CI": true,
+    "new_matching_backend_image_built": false,
+    "production_promoted": false,
+    "responsive_cases": 215,
+    "root_verified_artifacts": 38,
+    "run_id": 38075728280,
+    "source_head": "626efa901565ab8c089d8c8603739788a6038823",
+    "source_tree": "65f471b2a8b8f2b0569fd7c41351ee77cd04e158"
+  },
+  "limitations": [
+    "Local AMD64 engine success is separate from actual sandbox do and Cloud Run isolation/cleanup/HTTP evidence.",
+    "Known production routes retain the compatibility release; no application promotion or database migration follows.",
+    "No model, employer submission or merchant transaction was performed by the native scanner image verification.",
+    "Exact backend image/source/configuration/current-CI join is verified; backend runtime and mutable build-dependency reproducibility remain unproved."
+  ],
+  "native_synthetic_job": {
+    "CPU": 2,
+    "body_sha256": "942cb2d06af6a066201102821fae95f2e96f933539f777780eec91a84222fdfb",
+    "bounded_SDK_log_rows": 16,
+    "bounded_SDK_log_truncated": false,
+    "child_isolation_proven": false,
+    "completion_time": "2026-10-10T18:13:06.540270Z",
+    "customer_activation": false,
+    "document_corpus_reached": false,
+    "execution_name": "hirewiz-document-synchronous-do-acceptance-r724t",
+    "execution_uid": "716bc888-ffc7-4d76-a494-9e9a4ee85cb3",
+    "failed_tasks": 1,
+    "first_observation": "nonterminal_waiting_for_operation",
+    "first_runner_local_import_refusal_preserved": true,
+    "first_runner_sent_native_execution_request": false,
+    "fixed_events_sha256": "3ba3a68bc334f1f51cf2799ed83e094c84aec02300837d1b41042c0e2841d273",
+    "fixed_probe_phase": "isolation_do",
+    "fresh_identity_native_GETs": 7,
+    "generation": 1,
+    "host_metadata_DNS_egress_controls_passed": true,
+    "host_runtime_source_bytes_verified": true,
+    "inline_probe_sha256": "89d78499b535055629870d30b89d91e8486ade1c036d52e56fb62eaf5854cbc7",
+    "keyless_identity_no_application_grants": true,
+    "memory": "4Gi",
+    "name": "hirewiz-document-synchronous-do-acceptance",
+    "native_execution_requests": 1,
+    "native_execution_retry_permitted": false,
+    "native_sandbox_absence_proven": false,
+    "original_CLI_log_read_timeout_preserved": true,
+    "parallelism": 1,
+    "private_HTTP_acceptance": false,
+    "ready": true,
+    "retries": 0,
+    "runtime_acceptance_proven": false,
+    "sandboxLauncher": true,
+    "sdk_failure_detail": "not_observed",
+    "start_time": "2026-10-10T18:11:01.615304Z",
+    "startup_review_cases": 72,
+    "startup_review_skips": 0,
+    "startup_review_verdict_sha256": "8a9010939a79a79bc84175eef821406400f180708456ff2141fe237d13460db8",
+    "succeeded_tasks": 0,
+    "task_count": 1,
+    "terminal_observation": "failed_NonZeroExitCode",
+    "timeout_cleanup_phase_reached": false,
+    "timeout_seconds": 600,
+    "uid": "9e3fcf95-2fb7-4f1f-9cde-7a176e02db60"
+  },
+  "observed_at_utc": "2026-10-10T18:24:42.125218+00:00",
+  "ordinary_tailoring_failure_guidance": {
+    "added_model_calls": 0,
+    "evidence": "2026-10-11-tailoring-failure-guidance.json",
+    "full_browser_native_customer_acceptance": false,
+    "independent_backend_cases": 102,
+    "independent_frontend_executions": 367,
+    "integrated_shipping_paths": 11,
+    "new_committed_source_CI_pending": true,
+    "protected_source_reads_or_changes": 0,
+    "root_backend_cases": 96,
+    "root_frontend_executions": 365,
+    "root_integration_sha256": "9be7b39dd344ad5a2d920ef6949625941676ef7b14549aa6df30dfc85ee7a4bc",
+    "skips": 0,
+    "source_base_head": "626efa901565ab8c089d8c8603739788a6038823"
+  },
+  "remaining": {
+    "GCS_SQL_API_customer_wiring": false,
+    "global_consumer_provider_fence": false,
+    "native_full_synchronous_do_acceptance": false,
+    "paid_activation": false,
+    "private_service_positive_HTTP_acceptance": false,
+    "production_schema_checkpoint_suffix": "0009",
+    "protected_browser_integration_stopped": true
+  },
+  "resume_link_repair": {
+    "author_artifacts_sha256": "ccf215fcbb58e1572ae265c8fe121259a840adfdf8442f41c15589ffc3f6279f",
+    "author_manifest_sha256": "800467e0c879ded843ba9aa286f80e817f577f2f9235becabbe81d5f392a2092",
+    "fresh_committed_CI_pending": false,
+    "original_three_failure_bodies_preserved": true,
+    "production_promoted": false,
+    "root_result": {
+      "Mypy": "pass_1_source_file",
+      "Ruff": "pass",
+      "broader_DOCX_rendered_layout_proven": false,
+      "customer_activation": false,
+      "duration_seconds": 30.64,
+      "errors": 0,
+      "failures": 0,
+      "junit_sha256": "f596bb4cc160bc95755c56fd4c4960739f9c6809077e1113053bcbadd865c411",
+      "native_tex_prerequisite_sha256": "dd2732094bbd16ec89bd27f6bf8cf6ba2c7e27c6b47ab769d1abd937dcb5b08f",
+      "original_missing_prerequisite_failure_preserved": true,
+      "passed": 110,
+      "scope": "exact managed two-path resume link guard and related native compiler/career composition",
+      "skipped": 0,
+      "unique_cases": 110
+    },
+    "source_base": "eeb53d6ad982b629c07bd4f526477d0966e3669c",
+    "source_sha256": {
+      "backend/app/services/resume_layout.py": "3a47e2185973d2e0cfe1e79471b5b63ef8400bc1683aec46872371e443da378d",
+      "backend/tests/test_resume_layout.py": "a532de38fb52704886f4c5917fe9a4207a413b23fc5fd50143396b21e42a75dc"
+    }
+  },
+  "scanner_build": {
+    "build_id": "8be5a680-60d2-47a4-84bb-ec5dec182009",
+    "conclusion": "SUCCESS",
+    "image": "us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz-document-inspector@sha256:1fd697ba1ad7870c75068876aff5b9d151e151e8943418bb86072975f762ef98",
+    "policy_sha256": "e7d6680ee78da0cda5a8e4d9abfaf178ce5684b8b55ebcc5c168b69e3ece8e34",
+    "provenance_verdict_sha256": "5d34b12c5ea815bd3d1b4dd765f2aaf67061e6b43c7bd8e17cb797cbd3320b9b",
+    "source_sha256": {
+      "backend/app/services/market/security.py": "a440f4ea26a5fb5982690da8399c75983e9133a23501d12e1973a985487200f6",
+      "backend/app/services/market/skill_extractor.py": "765824e77d2e9e0bfc88c910134a5009dd3ded52eccc958407d8173039746f54",
+      "backend/app/services/market/skill_taxonomy.py": "e210d0c2b97567fae690d4710ffffb1a5a93bb5bb732badcff47cc2839296366",
+      "backend/app/services/parsing.py": "c2533930bbeff9eb226abfb4b71720b6eb29dfaf805f6c2939e57c73226442a8",
+      "infra/document-processing/Dockerfile": "a1ace7a21e2c5add84f5b088daabf394b6b51fe0dc6db1c439869521954be97f",
+      "infra/document-processing/processor.py": "fdf4a00fdf92b09f0dd22bf3a8b17d3987cc505bd5b55d313dbfa44f537272a8",
+      "infra/document-processing/service.py": "040710f23e83ce61a8401338b52defb613b51e4344bf1bb2a4a063ce39962d11"
+    }
+  },
+  "schema_version": 1,
+  "scope": "preceding committed scanner/search CI and immutable cloud builds; failed native full do acceptance; new locally verified PDF/DOCX link repair; no customer activation",
+  "source_head": "eeb53d6ad982b629c07bd4f526477d0966e3669c",
+  "source_tree": "353300538d2b86b17269ac1514e38ed79d3cbd5e"
+}

@@ -1,0 +1,13 @@
+{
+  "status": "completed",
+  "task_name": "projects/ai-resume-parser-482412/locations/us-central1/queues/hirewiz-employer-ingestion/tasks/dispatch_39483b5eaea54297bf771730b14a2132-dispatch-1",
+  "execution_attempts": 1,
+  "dispatch_attempts": 1,
+  "last_error": null,
+  "source_status": "healthy",
+  "last_error_code": null,
+  "last_success_at": "2026-10-08 14:39:32.516319+00:00",
+  "event_id": "dispatch_39483b5eaea54297bf771730b14a2132",
+  "release": "3565655712c2ceee431bee8306678a020b2f462d",
+  "public_read_only": true
+}

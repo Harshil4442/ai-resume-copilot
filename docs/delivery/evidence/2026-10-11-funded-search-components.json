@@ -1,0 +1,124 @@
+{
+  "schema_version": 1,
+  "state": "managed_integration_awaiting_new_exact_source_ci_and_deployment",
+  "base_head": "c1936ec932e924e45708991f69e48c138b7fe2ed",
+  "source_manifest_sha256": "26984c803d6e80bb65eb9765ed345941bc95a3b8fe18c64f05f609c555ebbffa",
+  "runtime_and_contract_files": [
+    {
+      "path": "backend/app/domains/employer/catalogue_search.py",
+      "sha256": "7f3af0a3fd215fd9400f58b4f43d4c9b4080146c7c9364925115d41e60f80e3c"
+    },
+    {
+      "path": "backend/app/domains/employer/privacy.py",
+      "sha256": "a7af7071a4daef671ba62e123af0529063de0c35538bf22f7d638edbd1bc7796"
+    },
+    {
+      "path": "backend/app/domains/employer/schemas.py",
+      "sha256": "d218dbcbac7e30dc2eda0210b53b558ef25fc5e2f92bf1d5c11bfdf8f2f0d0c9"
+    },
+    {
+      "path": "backend/openapi.json",
+      "sha256": "495f32df88e96446ae844a991ebb5f0a3252fcf5aa8a7f34d1550fb42d9f6125"
+    },
+    {
+      "path": "backend/app/domains/employer/service.py",
+      "sha256": "a82a637e6c4ea469c46ef250325bf36b1c2ab79b8373da5f1878128e96454189"
+    },
+    {
+      "path": "backend/app/routers/v1/employer.py",
+      "sha256": "829340a07adaa093c66ba0ba1ddb09db2ecc24a091c5b889317ce8bb2c0cce82"
+    },
+    {
+      "path": "backend/app/domains/employer/tasks.py",
+      "sha256": "9750f2f7f4f930540ce285830680406698e88bfa0152cc9c06bd7bcb26cbf736"
+    },
+    {
+      "path": "backend/app/domains/employer/search_pages.py",
+      "sha256": "cada54b596cd9e3a796e40541498de44765a056a7edf8e5c5778593db038d973"
+    },
+    {
+      "path": "frontend/app/employer-jobs/page.tsx",
+      "sha256": "fff351a0434074bdebb90e9ffce1c6b0354e35f961d3c8306f152b13d0f3355c"
+    },
+    {
+      "path": "frontend/lib/employerJobs.ts",
+      "sha256": "b08c703c5ad77e25c833900a99572ad7d3f7ce604ab28671aa0fe08cf78f7ce0"
+    },
+    {
+      "path": "frontend/components/EmployerSavedSearches.tsx",
+      "sha256": "9ff6e5768a56b3f23796282e264057efe64c7086be850177969b219b4dcefb1a"
+    }
+  ],
+  "behavior": [
+    "Request count times immutable accepted price reserved before matching or paid-history work",
+    "Reservation, pending search or catalogue plan and durable outbox commit together",
+    "Only newly delivered fresh unique jobs charged; unused hold released once",
+    "Cancelled, safely failed, expired and account-erased unfinished search holds settle to zero",
+    "Unknown application holds and cash exposure remain retained",
+    "Bounded and catalogue progress and cancellation share owner-scoped transport; unpaid staged results stay hidden"
+  ],
+  "sqlite_component_controls": {
+    "catalogue": 24,
+    "bounded": 19,
+    "failed": 0,
+    "skipped": 0
+  },
+  "exact_shipping_function_controls": {
+    "catalogue": 25,
+    "bounded": 9,
+    "failed": 0,
+    "skipped": 0,
+    "initializers_imported": false,
+    "full_configured_pytest": false
+  },
+  "native_postgres": {
+    "receipts": [
+      {
+        "artifact": "native-financial-controls-result.json",
+        "sha256": "d120f296f57994472d280bb4a1e4590eda25a6194411142f921f68117949e87e",
+        "tests_run": 30,
+        "errors": 0,
+        "failures": 0,
+        "seconds": 16.066,
+        "source_pins_sha256": "32ef8aefb5ba21b2f0da8cbe5be0d35e5c812314ae6b854b993053d2454445f5",
+        "scope": "actual-finance-and-native-catalogue-domain-component-only"
+      },
+      {
+        "artifact": "native-bounded-financial-controls-result.json",
+        "sha256": "e9b81912b94c43ad63ec4d46efee8d60502d7812485c49300fb976f828e3acbf",
+        "tests_run": 24,
+        "errors": 0,
+        "failures": 0,
+        "seconds": 12.598,
+        "source_pins_sha256": "32ef8aefb5ba21b2f0da8cbe5be0d35e5c812314ae6b854b993053d2454445f5",
+        "scope": "actual-finance-and-native-bounded-domain-component-only"
+      }
+    ],
+    "total_passed": 54,
+    "synthetic_owned_schema_metadata_only": true,
+    "production_migrations_executed": false,
+    "schema_triggers_proven": false,
+    "raw_output_saved": false,
+    "first_attempt": "29 catalogue passes and one harness error: fault injection raised raw QueryCanceled; corrected harness still requires real SQLSTATE 57014",
+    "owned_container_removed": true,
+    "root_independent_absence_verified": true,
+    "owned_schemas_before_removal": 0,
+    "synthetic_credential_files_removed": true
+  },
+  "frontend": {
+    "focused_tests_passed": 46,
+    "new_pending_and_selection_regressions": 2,
+    "typecheck_and_lint": "passed",
+    "generated_openapi_types_changed": false,
+    "browser_e2e_proven": false
+  },
+  "limits": [
+    "New exact-source whole-application CI and actual OpenAPI exporter not yet established",
+    "Native finance component tests do not establish production migration-trigger fences or full HTTP/BFF/browser behavior",
+    "Pack profitability, catalogue latency/allocation and worldwide coverage remain unmeasured",
+    "Document worker transfer/isolation/scanner/private HTTP and protected lifecycle integration remain open",
+    "No production migrations, payment/application requests, credential retirement or GCP/Vercel activation"
+  ],
+  "protected_source_bodies_read_during_this_correction": false,
+  "production_changed": false
+}

@@ -25,3 +25,27 @@
 - [ ] Verify one real account can finish first value without support.
 - [ ] Record release SHA and observations. Pause rollout on auth, billing, ownership,
   factuality, or data-integrity regression.
+
+## Paid employer service
+
+- [ ] Verify requested job count, configurable search/application unit prices, exact
+  immutable per-job/batch quotes and a separate service-credit balance. See BI01–BI07
+  in [the requirements](requirements/JOB_SEARCH_AND_APPLICATION.md).
+- [ ] Verify captured-payment grants, concurrent reservations, deduplicated delivered
+  jobs, unused-credit release and refunds against the actual release. Manual handoff,
+  a saved draft or an unverified employer response cannot incur a successful automatic
+  application charge.
+- [ ] Verify original/custom/tailored sealed file bytes, destination, answers, consent
+  and price bindings. Changes require fresh review before filling, autosave or upload.
+- [ ] Verify candidate/device ownership, recent authentication, cancellation, permission
+  revocation, unknown-send reconciliation and restore-safe admissions. Never retry a
+  possible send as a recovery strategy.
+- [ ] Verify real protected-resource identity, retained history, permissions, old-writer
+  exclusion, per-subject availability and measured scalable recovery. A disabled local
+  foundation or an immutable resource UID does not establish these deployment controls.
+- [ ] Resolve credential consumers, provider fencing and queue drain before monetary
+  migration. The read-only [database helper](delivery/MONETARY_PREFLIGHT_2026-10-09.md)
+  checks a bounded SQL gate; its `cutover_ready=false` result cannot authorize rollout.
+- [ ] Attach permitted portal form/receipt evidence, complete-flow device checks,
+  measured coverage/performance and monitored immutable deployment evidence for each
+  claimed scope. Keep unsupported portals and uncertain outcomes visible.

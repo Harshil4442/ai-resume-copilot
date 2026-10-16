@@ -1,0 +1,155 @@
+{
+  "scope": "Native TeX cumulative R3 root integration; source-scoped independent CLEAR, release HOLD",
+  "integrated_at_utc": "2026-10-09T16:32:43.356860+00:00",
+  "root_base_head": "b50d9f7433698d534af63940f1f010a409d270af",
+  "author_freeze": "/var/folders/ck/cyzkgt2d1yx6hzpsdflcg83c0000gn/T/hirewiz-native-tex-r3-author-20261009-o3w0kmad/review-freeze",
+  "author_hashes": {
+    "report.json": "763517c8f7700e454af3d0f8aff791f062f1aaf53bfe32af9d33ad58ebfd300a",
+    "source-manifest.json": "1323ad3fdc4f0ee0d46bbff2c0eac8b08a4cb457255b4eab117534104c1c1a64",
+    "manifest.json": "8f50bf188e58e7766bea3534fe8340d0c605cc745e831e572454b4f53212c258",
+    "author.patch": "f61a12989a400770a922e8ef24d56a7daee5e890e0aea6884a29557612fae189"
+  },
+  "independent_freeze": "/var/folders/ck/cyzkgt2d1yx6hzpsdflcg83c0000gn/T/hirewiz-native-tex-r3-independent-20261009-z2ii10f8",
+  "independent_hashes": {
+    "report.json": "6b91a43c4db58c10e9228a78f2c0594a229d77aa6d2676fe033d2e94cd9e1758",
+    "source-manifest.json": "d42a7f272771d19b31f2cb2e75eaeb04a97c7a48aeb669117235a0b4236c85e0",
+    "artifact-manifest.json": "71c326229fa6e662afe59654e44646be7a0ac5569113b7fb4d361ec9d8d6ddb4"
+  },
+  "verified_file_counts": {
+    "author_source": 704,
+    "author_artifacts": 741,
+    "independent_source": 708,
+    "independent_artifacts": 738
+  },
+  "independent_tests": {
+    "author": 145,
+    "prior_unchanged_policy_application": 40,
+    "distinct_wrapper": 4,
+    "original_v1": {
+      "pass": 22,
+      "retained_accepted_date_refusal_red": 1
+    }
+  },
+  "root_preimages": {
+    "backend/app/domains/analysis/operations.py": "26b895ede813b0826eb16c25d0641508cd9ce300c285a51e16d9903a203e791d",
+    "backend/app/domains/career/service.py": "b066d2381553865d0e279951fe1263abc78ef20c2d3eda47ce2010836a17cb8c",
+    "backend/app/domains/employer/artifacts.py": "6fd6a69f9fb5ac632ef8a6b489c7ee6cbba589fd1f9df0387143809efd2b087c",
+    "backend/app/domains/employer/service.py": "362f6a6913e0b1a1f75afd334730559b355597f1182f49b2b8e59c0aede8c1a9",
+    "backend/app/models.py": "5c994d44e791687f1cf53755e6833ce323ecb08798351e653e8124213d6af308",
+    "backend/app/routers/jobs.py": "8b3fd2b65413e06b75a834c5847e1dbbb73925f85eaf95806d5e3b3755ee0691",
+    "backend/app/routers/resume.py": "c1f11f4469fc819b80b42e3e502470cf6458a1ad3de8b1553e870c8ab356ed44",
+    "backend/app/routers/v1/career.py": "d547a13ef31d092217dd36c54d4f5a7968fe742cbcca5eae5a6bb602c29d39b1",
+    "backend/app/schemas.py": "2b09b3624cf63eb868c64b6fd2e711c324cc88c588c8ff541215695472044edc",
+    "backend/app/services/parsing.py": "ef20a48e5967b123e8f60492ec5abe0b49dc036b2dc2e46fd32a1346f1b109dd",
+    "backend/app/services/resume_artifacts.py": "356e4cff784d12d0c9cb80e40343be96006832b2a4fbf0d52c158e07124f9089",
+    "backend/app/services/resume_layout.py": "1d9d7de18ce876a7e09fde8cd51512966e4fe4562792fc7ae2a3edfabb5c4f33",
+    "frontend/app/resume/page.tsx": "02ec8399fde6ab91006f11cd7ffc85699d9728d6f26c720f909323313b84b278",
+    "frontend/app/resume/preview/page.tsx": "b7a179b660903f18e6705c3b7a1191ccb94b02f2e8a74dc9f72c6b25af1d7ba6",
+    "frontend/app/workspace/[id]/page.tsx": "177c3557b8441ff14e5d7c4fb50236adde22420d546c83ff21ba3dca2e328049",
+    "frontend/components/EmployerApplicationPanel.tsx": "41cb2fbb49417c5a9f992d2d848bc89a0c73dae6767b89dcb49077ac71b3bf83",
+    "frontend/lib/career.ts": "c1fc1695343d7d72ed95042306e7a2ead0d458ea6476f480128cb3d92305de1a",
+    "frontend/lib/types.ts": "4fa20b1d815f288dccc5ef57cea0c2cbb1e8c78ae6aae512a4e491c7e8542b33",
+    "backend/app/services/native_tex.py": null,
+    "backend/app/services/native_tex_transport.py": null,
+    "backend/tests/fixtures/native_tex/resume.tex": null,
+    "backend/tests/fixtures/native_tex/resumestyle.sty": null,
+    "backend/tests/fixtures/native_tex/sections/experience.tex": null,
+    "backend/tests/fixtures/native_tex_single/resume.tex": null,
+    "backend/tests/test_native_tex.py": null,
+    "backend/tests/test_native_tex_application.py": null,
+    "backend/tests/test_native_tex_r2.py": null,
+    "frontend/lib/careerNative.test.ts": null,
+    "infra/native-tex/Dockerfile": null,
+    "infra/native-tex/README.md": null,
+    "infra/native-tex/processor.py": null,
+    "infra/native-tex/service.py": null
+  },
+  "root_results": {
+    "backend/app/domains/analysis/operations.py": "a5cf88ff499543cca1fa9067f07f9c0790c7f09ce7c304d6ed529699534066c0",
+    "backend/app/domains/career/service.py": "e4064c891bfefff25d778f98368bbb59fb8c3d821f7caaa9531a91ac18f5c108",
+    "backend/app/domains/employer/artifacts.py": "5ccd18f38619603ceaddd493de2172160dbd38b64f2a1e98499742d8401f6236",
+    "backend/app/domains/employer/service.py": "445a3b1b926b644bd45e5053970a698c0f96609999211d39e2a2a6ab320a9318",
+    "backend/app/models.py": "1803fbc5fd6ca00a52be9c20eae12fd80c8cd7370689043a530a052011725062",
+    "backend/app/routers/jobs.py": "3551ba27f7a1a0532293c0107a045ade01c7080e781e7ce1892314d11e3df8a4",
+    "backend/app/routers/resume.py": "52f6aa212e3340c7f9394e75a30e3696700441ee7a866ccbcf22ed952d18e0f4",
+    "backend/app/routers/v1/career.py": "bd8074b41e5939f1f36c9305af27735c4bfc0167c7568657fe428b90f57791b0",
+    "backend/app/schemas.py": "ea783f5fa07341a9267d65205b40ce53a5545e549998850f8e1faee81b557391",
+    "backend/app/services/parsing.py": "c2533930bbeff9eb226abfb4b71720b6eb29dfaf805f6c2939e57c73226442a8",
+    "backend/app/services/resume_artifacts.py": "e5512e764f639295c7eb78f6fae6bd0ba652aeb6c5366633dd99e3be84da7404",
+    "backend/app/services/resume_layout.py": "f71622d46d4741f2393d9433dc092fd240fba497909525338abf6036e4db3b90",
+    "frontend/app/resume/page.tsx": "941b3289e29ec399421c45b17ac4ae7d82cb4d427f2f1867d259e232a9c8130d",
+    "frontend/app/resume/preview/page.tsx": "1e17fe3f1bcb2b8f1897cabff79c006ebd0d548207387d0286c5664871018139",
+    "frontend/app/workspace/[id]/page.tsx": "6045476d772eb1751760733c75fbd7d81183ad1faff4393c349ac5a8a94595e8",
+    "frontend/components/EmployerApplicationPanel.tsx": "05c299bd3acdf2d1ecf04dcf271202d85f434cb289d48c94c6cc92be2c2318ee",
+    "frontend/lib/career.ts": "dc289b6bed14abec93938e8ef8e031310ddcf1375d9dde6e3a3dbd835c8bb49f",
+    "frontend/lib/types.ts": "da94bee73aaab8535be2882873d102975d66046e436a5940bc068f554bb6a012",
+    "backend/app/services/native_tex.py": "c67d52bf8702ae311973748c08ffe1d179d3778522447be53bd42b34886a7bf7",
+    "backend/app/services/native_tex_transport.py": "e1f09cf15f98e01d5d0712a6a9ab205914effbbf20aa6b2bfca637ff414f0727",
+    "backend/tests/fixtures/native_tex/resume.tex": "1d4658959907349d09fda9c336f22868186f0e4f30f29e34bcc8531df4cae7a1",
+    "backend/tests/fixtures/native_tex/resumestyle.sty": "fee5b4f64ff45d2fcbf2926c29e9b8bcf39a16f96a41196a561ac34ccb351068",
+    "backend/tests/fixtures/native_tex/sections/experience.tex": "962422fd39b37d98be196742f4c75ca037fe7d82290c62ee21e91ff60ee90351",
+    "backend/tests/fixtures/native_tex_single/resume.tex": "12eecaafcf14fef8b12be02fc49d9019119ef4827f1159176e14884c4cf61490",
+    "backend/tests/test_native_tex.py": "9dce9313e62dd7717e464b8879c6a82e9cf2f62ba1569b87b31a4107b60c5c30",
+    "backend/tests/test_native_tex_application.py": "932c0a9c16fda3f1a12c88671c8e452fd02f3a73f25bb747e284e47a4b07f34b",
+    "backend/tests/test_native_tex_r2.py": "028f491a5a8e58cc4276893aaedc174e3e6bd1661e54eebcf61e940acb9b920c",
+    "frontend/lib/careerNative.test.ts": "44df30268df663275d47d0ccc6861589f43bcb9966a8b2895202a69f598311e9",
+    "infra/native-tex/Dockerfile": "369167cdfdc7c649a105bad2f6994b90051ca7079c4f799fc9d065f87de13146",
+    "infra/native-tex/README.md": "c71c3bbe65eaf71c93974195e01105998b973464ebfe393a95db6f0ea3f9b96a",
+    "infra/native-tex/processor.py": "23bf30c70dbe4ea5778deea8b4101eddb71e427cab5174d2771b9328f7209188",
+    "infra/native-tex/service.py": "b2fa0b220bf8e78f799d816e55d337237cf90aa75a99963185601b48b90f111a"
+  },
+  "composed_paths": [
+    "backend/app/domains/employer/service.py"
+  ],
+  "composition_reason": "Existing independently reviewed search-preference service hunks retained; exactly two native application materialization calls composed. Other31 native files match frozen author results.",
+  "root_validation": {
+    "native_backend": {
+      "passed": 145,
+      "failed": 0,
+      "skipped": 0,
+      "compiler_image": "sha256:a3816f651cb2c3dc47f74b94565adefca5a1a104cbe6be727144ff7b5743775d",
+      "architecture": "local ARM64",
+      "environment": "APP_ENV=test NATIVE_TEX_TEST_IMAGE=<immutable image>"
+    },
+    "frontend_units": 221,
+    "frontend_lint": "PASS",
+    "frontend_types": "PASS",
+    "ci_ruff": "PASS",
+    "ci_legacy_import_ruff": "PASS",
+    "ci_mypy_source_files": 118,
+    "git_diff_check": "PASS",
+    "preserved_initial_runs": "Two first root commands used absent/wrong compiler fixture environment; each138PASS/7SKIP. Neither is counted as complete compilation proof. Actual test-fixture variable configured explicitly for final145PASS/0SKIP.",
+    "raw_log_hashes": {
+      "/tmp/hirewiz-root-native-r3-20261009.log": "677f97e489fb47e62b59d65114902cc38978296f5a83fea7c539bc2975500d6f",
+      "/tmp/hirewiz-root-native-r3-20261009.xml": "bb3cffc83ac206cc76eaaad167a2bc0ee0c1c063f893cf7033d48d529292dbfd",
+      "/tmp/hirewiz-root-native-r3-image-20261009.log": "3e00f6b8764fcaf5c7595ffdf3a79c8bb5d1cca710dde65ac10baef3d853a3a3",
+      "/tmp/hirewiz-root-native-r3-image-20261009.xml": "1da6ba1df7f73fe9c203268d71fb4a3f0d2ce450691a9b4e97296ff6c72b14e3",
+      "/tmp/hirewiz-root-native-r3-test-image-20261009.log": "88832b3030f2b0ef4241a6e9a945be87e848a0ab65fda72fbf0b2704df2a51f6",
+      "/tmp/hirewiz-root-native-r3-test-image-20261009.xml": "a8a3078c92590a8cec6a805dbd717e0c8e7b9a57e0d33cd906f2948274ecb5c2",
+      "/tmp/hirewiz-root-native-r3-frontend-20261009.log": "97fc42a15c55fc9f8c2328986cd24a5dd3100cf84ea8bb7fa738e18bb55be7a4",
+      "/tmp/hirewiz-root-native-r3-ci-static-20261009.log": "e41fc3e8ae7fc050cc908e62c6defeb0973c069a511a9df30902d5be89bb702d",
+      "/tmp/hirewiz-root-native-r3-frontend-static-20261009.log": "694402e9715c1f70678aec0cecc25b5932f8195003e9af43a5c13104af97c046"
+    },
+    "generated_contracts": [
+      {
+        "path": "backend/openapi.json",
+        "sha256": "0cc7f3f3e444b1a3dcde680274ad62795d72e7f14d6f35b05d4ac79708dcb965"
+      },
+      {
+        "path": "frontend/lib/generated/api.ts",
+        "sha256": "bf9ac9839551bcb0c3c0ec01c97e8d04cac79167087f4c491c398dc8c0eed7f2"
+      }
+    ],
+    "react_review": {
+      "skill": "vercel:react-best-practices",
+      "scope": "Changed resume upload/preview/workspace/application controls",
+      "result": "No new hooks/effects, provider SDK bundles or render-time network calls; existing owner-scoped query/mutation handling retained. Native download actions are disabled while pending, flex-wrap/min-width/break-word layouts and original/custom choices retained. Browser width checks for combined source remain pending."
+    }
+  },
+  "release_holds": [
+    "Fresh immutable test image portability and actual AMD64 CI",
+    "Combined billing/preferences/native validation and generated contracts",
+    "Production private compiler isolation and custody",
+    "Controlled schema13 migration and deployment"
+  ]
+}

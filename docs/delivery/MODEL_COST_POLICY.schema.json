@@ -1,0 +1,156 @@
+{
+  "$defs": {
+    "ModelPriceQuote": {
+      "additionalProperties": false,
+      "properties": {
+        "provider": {
+          "enum": [
+            "google",
+            "openai",
+            "openai_compatible"
+          ],
+          "title": "Provider",
+          "type": "string"
+        },
+        "model": {
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:/-]+$",
+          "title": "Model",
+          "type": "string"
+        },
+        "api_base": {
+          "title": "Api Base",
+          "type": "string"
+        },
+        "version": {
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:/-]+$",
+          "title": "Version",
+          "type": "string"
+        },
+        "price_source_url": {
+          "title": "Price Source Url",
+          "type": "string"
+        },
+        "output_limit_source_url": {
+          "title": "Output Limit Source Url",
+          "type": "string"
+        },
+        "usage_source_url": {
+          "title": "Usage Source Url",
+          "type": "string"
+        },
+        "valid_from": {
+          "format": "date-time",
+          "title": "Valid From",
+          "type": "string"
+        },
+        "expires_at": {
+          "format": "date-time",
+          "title": "Expires At",
+          "type": "string"
+        },
+        "input_rate_micros_per_million": {
+          "exclusiveMinimum": 0,
+          "maximum": 1000000000000,
+          "title": "Input Rate Micros Per Million",
+          "type": "integer"
+        },
+        "output_rate_micros_per_million": {
+          "exclusiveMinimum": 0,
+          "maximum": 1000000000000,
+          "title": "Output Rate Micros Per Million",
+          "type": "integer"
+        },
+        "max_input_tokens": {
+          "exclusiveMinimum": 0,
+          "maximum": 1000000,
+          "title": "Max Input Tokens",
+          "type": "integer"
+        },
+        "max_output_tokens": {
+          "exclusiveMinimum": 0,
+          "maximum": 1000000,
+          "title": "Max Output Tokens",
+          "type": "integer"
+        },
+        "output_limit_parameter": {
+          "enum": [
+            "max_output_tokens",
+            "max_completion_tokens",
+            "max_tokens"
+          ],
+          "title": "Output Limit Parameter",
+          "type": "string"
+        },
+        "token_estimator": {
+          "const": "utf8-json-bytes-framing-v1",
+          "title": "Token Estimator",
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider",
+        "model",
+        "api_base",
+        "version",
+        "price_source_url",
+        "output_limit_source_url",
+        "usage_source_url",
+        "valid_from",
+        "expires_at",
+        "input_rate_micros_per_million",
+        "output_rate_micros_per_million",
+        "max_input_tokens",
+        "max_output_tokens",
+        "output_limit_parameter",
+        "token_estimator"
+      ],
+      "title": "ModelPriceQuote",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "maxLength": 120,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_.:/-]+$",
+      "title": "Version",
+      "type": "string"
+    },
+    "currency": {
+      "const": "USD",
+      "title": "Currency",
+      "type": "string"
+    },
+    "operation_limits_micros": {
+      "additionalProperties": {
+        "exclusiveMinimum": 0,
+        "maximum": 1000000000000,
+        "type": "integer"
+      },
+      "title": "Operation Limits Micros",
+      "type": "object"
+    },
+    "pricing_quotes": {
+      "items": {
+        "$ref": "#/$defs/ModelPriceQuote"
+      },
+      "maxItems": 100,
+      "minItems": 1,
+      "title": "Pricing Quotes",
+      "type": "array"
+    }
+  },
+  "required": [
+    "version",
+    "currency",
+    "operation_limits_micros",
+    "pricing_quotes"
+  ],
+  "title": "ModelCostPolicy",
+  "type": "object"
+}

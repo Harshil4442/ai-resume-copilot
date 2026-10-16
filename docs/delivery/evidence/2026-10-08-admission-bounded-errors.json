@@ -1,0 +1,15 @@
+{
+  "release": "7cc49c2c08a296b33cb30f96e383b959caf214c0",
+  "start": "2026-10-08T16:11:22Z",
+  "end": "2026-10-08T16:31:54.084355+00:00",
+  "services": [
+    "ai-resume-parser",
+    "hirewiz-analysis-worker",
+    "hirewiz-employer-worker"
+  ],
+  "predicate": "severity>=ERROR or HTTP status>=500",
+  "entries": 0,
+  "limit_reached": false,
+  "limit": 1000,
+  "scope_limit": "Bounded log observation; not sustained load, field performance or absence of all failures."
+}

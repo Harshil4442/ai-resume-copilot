@@ -1,0 +1,68 @@
+{
+  "base_commit": "29919c2de38fb9e2b45975fad7ea9d822b2442fb",
+  "scope": "Seven-path native read-only readiness and guarded monetary migration/staging foundation. Execution intentionally refuses without native external/provider consumer fence.",
+  "source_review": "CLEAR",
+  "deployment": "HOLD",
+  "goal_complete": false,
+  "changes": [
+    {
+      "path": ".github/workflows/ci.yml",
+      "postimage_sha256": "c0ad06b48bd3743d6e62162abc83eaa9001bc77fb213a31a8db51b4ca16c1ee0",
+      "preimage_sha256": "f087d16861bcd6d3412df8812ed266de028adaef567e1b7b48695a56ccbe6962"
+    },
+    {
+      "path": "infra/gcp/release_preflight.py",
+      "postimage_sha256": "d11335699f642216a3d39a669128472dcdd7a817e6931c1fdb8af90c2a3c039a",
+      "preimage_sha256": "4188c1174505fb4f658a2f4680b52083bb82d32a3891d2c16c3a2980c08f1710"
+    },
+    {
+      "path": "infra/gcp/monetary_release.py",
+      "postimage_sha256": "335c07df86c09b3d2cc6771c4e24ba125bd3e44511c4671ce405f99685274d39",
+      "preimage_sha256": null
+    },
+    {
+      "path": "backend/scripts/monetary_schema_step.py",
+      "postimage_sha256": "bdeb63f075f9d7ede0131daf0e818b52ff114533ea238ab93d0a73efcc0b362f",
+      "preimage_sha256": null
+    },
+    {
+      "path": "backend/tests/test_monetary_release_entrypoint.py",
+      "postimage_sha256": "5e7be5362be044b71de392bd0b77fb9b9b9952d9a3be94f40441fdb6ee0411cf",
+      "preimage_sha256": null
+    },
+    {
+      "path": "backend/tests/test_monetary_schema_step_postgres.py",
+      "postimage_sha256": "32d28433c8f929c9a29fd9f6c338cc12d9724c912bf2662ccf89f7495917989e",
+      "preimage_sha256": null
+    },
+    {
+      "path": "docs/delivery/MONETARY_RELEASE_ENTRYPOINT_2026-10-10.md",
+      "postimage_sha256": "54f2cf4c0132c1ff92de7d2134b97a2501b72fb6258017b187e8682110d5e029",
+      "preimage_sha256": null
+    }
+  ],
+  "author_packet": {
+    "patch_sha256": "1951fc5c6c9d6082acb95ec83ee2c229d37a6c8436f4a0c8be0cc06d03a9d95a",
+    "report_sha256": "453972a484833102a83907f37471da1470f8d831f8a6be524afdd8e92527ce8e",
+    "source_manifest_sha256": "0c1d120945f520d9a1acac6e16faed43a7a2f03b28b9960c77f91f7564cf59c5",
+    "artifact_manifest_sha256": "1c6eb3ebc5e252fef1461c53c634bc4901f8d2626cc38e3a7d9e63f59ea75357"
+  },
+  "independent_review_sha256": "b53fc055029c3ef3594f79c9f9ac11af0ff63cd48016af20c75a2bb8fa664546",
+  "verification": {
+    "passed": 111,
+    "skipped": 0,
+    "actual_postgres": 11,
+    "legacy_guard": 25,
+    "independent_boundary_probes": 4,
+    "ruff": "PASS",
+    "mypy": "PASS"
+  },
+  "open_gates": [
+    "Authenticated native external database/provider/consumer retirement fence and complete consumer inventory missing; current observations are not a fence.",
+    "Actual replacement roles/default grants and distinct numeric credentials; policy/image/source/CI binding; real retained backup/restore; migration/staged health/traffic remain required.",
+    "Root composition and hosted exact-source CI on integrated head required; this seven-path review does not certify other changes.",
+    "Accepted financial liabilities/old orders remain supported; webhook fee-preservation repair and finite-pack validation need separate review.",
+    "Task admission reopening, complete product journeys, operational monitoring and full user goal remain outstanding."
+  ],
+  "cloud_mutations": 0
+}

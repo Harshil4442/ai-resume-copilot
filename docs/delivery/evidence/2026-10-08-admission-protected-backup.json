@@ -1,0 +1,11 @@
+{
+  "object": "gs://ai-resume-parser-482412-hirewiz-application-artifacts/releases/pre-foundation-20261008T153327Z.dump",
+  "generation": "1791473615226134",
+  "bytes": 845698,
+  "sha256": "b36187c2d731fe04fa330e2c54a52b12bbee3c3ca8e51f78acdecbf1cd3923c7",
+  "schema": "20261008_0008",
+  "created": "2026-10-08T15:33:35+0000",
+  "format_checked": true,
+  "catalogue_checked": true,
+  "restore_verified": false
+}

@@ -1,0 +1,88 @@
+{
+  "release_scope": "Frontend service-credit selection and mobile navigation readiness; full auto-apply goal remains active",
+  "frontend": {
+    "status": "promoted",
+    "commit": "06cc112278e94aadb358fbe347f5430e373c4eb1",
+    "frontend_tree": "bbb561d17b7d93362d3eccb9ea558c49f9e5295a",
+    "deployment": "dpl_5hkC8opsk2tt2SXLpBXJsYbn4GUu",
+    "project": "prj_yM58wylX64Ehx97cYUPdBhXvXI3J",
+    "team": "team_ZETkn2a7bUensp8MF5a6OESX",
+    "cli_exit": 0,
+    "same_accepted_production_build": true,
+    "prior_aliases": {
+      "www.hirewizhq.com": "dpl_HwhNvBnH1hnKTmoVC8MP865zPVhT",
+      "hirewizhq.com": "dpl_HwhNvBnH1hnKTmoVC8MP865zPVhT"
+    },
+    "current_aliases": {
+      "www.hirewizhq.com": "dpl_5hkC8opsk2tt2SXLpBXJsYbn4GUu",
+      "hirewizhq.com": "dpl_5hkC8opsk2tt2SXLpBXJsYbn4GUu"
+    },
+    "backend_release": "e7d8f2ba0435fd3d4a504ccdce83fac365ec6835",
+    "backend_revision": "ai-resume-parser-00267-xot",
+    "cloud_backend_mutations": false,
+    "authenticated_payment_or_employer_proof": false,
+    "full_goal_complete": false
+  },
+  "validation": {
+    "all_five_ci_jobs": "success",
+    "backend_passed": 1607,
+    "backend_skipped": 0,
+    "responsive_passed": 205,
+    "live_public_views": 15,
+    "widths": [
+      320,
+      390,
+      768,
+      1024,
+      1440
+    ],
+    "private_unauthenticated_401": 4,
+    "new_release_error_records": 0,
+    "authenticated_live_purchase_proof": false,
+    "real_employer_submission_proof": false
+  },
+  "evidence": [
+    {
+      "path": "/tmp/hirewiz-frontend-06cc112-stage-source-20261009.json",
+      "sha256": "e80d83bc1134c650e0e6f495129016fac2b9f99870b7eb157103583fdceb600f"
+    },
+    {
+      "path": "/tmp/hirewiz-frontend-06cc112-promotion-20261009.json",
+      "sha256": "559e151de01fefa68b621661384a06a5a2e67f6056fb9a9b67b4a4588a89567b"
+    },
+    {
+      "path": "/tmp/hirewiz-06cc112-ci-20261009.json",
+      "sha256": "fb957e5fc353d5c2b3219e79852ddd52539c74eb8a7c294b45fdba24fbbb907c"
+    },
+    {
+      "path": "/tmp/hirewiz-06cc112-ci-counts-20261009.json",
+      "sha256": "a380990ea049df7c41e083654a4df47556520ad9ff1948d015f802cb4a5bb128"
+    },
+    {
+      "path": "/tmp/hirewiz-06cc112-ci-connected-proof-20261009/summary.json",
+      "sha256": "f329fa11081f8aa5afdbddaf15ce0317f90bc9ce884098e75456d2e4c778b3c9"
+    },
+    {
+      "path": "/tmp/hirewiz-manual-staging-06cc112-20261009/summary.json",
+      "sha256": "0a7513c481158f319c21f1262705583b190abdf01e2abcb32ff66a40dd41f8d3"
+    },
+    {
+      "path": "/tmp/hirewiz-public-live-06cc112-20261009/summary.json",
+      "sha256": "a19f00c3344964b5cc1954f520d6e63f1663481d6c06d144aa0dc859469d782b"
+    },
+    {
+      "path": "/tmp/hirewiz-frontend-06cc112-error-monitoring-20261009.json",
+      "sha256": "f564228f9eeb9f39a6015da819065c8460fa69deb21ab5473a09c38c7c112cbc"
+    },
+    {
+      "path": "/tmp/hirewiz-monitoring-baseline-v2-20261009-report.json",
+      "sha256": "c164bfa00f2c24e5aa302add39259536827c72881430a66f0f2a8e685462e276"
+    }
+  ],
+  "last_verified_backend_schema": "20261008_0009",
+  "backend_migration_performed": false,
+  "backend_proposals_integrated": false,
+  "financial_preflight_status": "V3 extra identity probe HOLD; V4 author repairing outside root",
+  "protected_publication_status": "Frozen disabled prototype; independent review pending outside root",
+  "full_goal_complete": false
+}

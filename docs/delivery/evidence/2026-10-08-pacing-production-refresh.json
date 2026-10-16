@@ -1,0 +1,22 @@
+{
+  "status": "completed",
+  "task_name": "projects/ai-resume-parser-482412/locations/us-central1/queues/hirewiz-employer-ingestion/tasks/dispatch_c059f1127df543f996f076a932072457-dispatch-1",
+  "execution_attempts": 1,
+  "dispatch_attempts": 1,
+  "last_error": null,
+  "source_status": "healthy",
+  "last_error_code": null,
+  "last_success_at": "2026-10-08 17:30:57.605899+00:00",
+  "event_id": "dispatch_c059f1127df543f996f076a932072457",
+  "release": "ec52279d236e82813bc486b9d5de9eb97a80408d",
+  "public_read_only": true,
+  "enqueue": {
+    "event_id": "dispatch_c059f1127df543f996f076a932072457",
+    "source": "Razorpay Software Private Limited",
+    "topic": "employer.refresh",
+    "status": "pending",
+    "audited": true,
+    "customer_application_or_credit_writes": false
+  },
+  "verification_scope": "Normal audited public-source refresh through existing Scheduler and Cloud Tasks. No candidate, credit, payment or application payload."
+}

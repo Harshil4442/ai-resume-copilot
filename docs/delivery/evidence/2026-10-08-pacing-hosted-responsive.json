@@ -1,0 +1,170 @@
+{
+  "origin": "https://www.hirewizhq.com",
+  "phase": "bounded-ec52279",
+  "applicationCommit": "ec52279d236e82813bc486b9d5de9eb97a80408d",
+  "vercelDeployment": "dpl_JB49tvj5iVqA2Zf8BBN4Py5jxmZg",
+  "gcpApiRevision": "ai-resume-parser-00257-tov",
+  "gcpCloudBuild": "41c3be1f-a5f9-4cd2-9daf-ecf320af9837",
+  "unchangedFrontendTree": "96e977b101d6b2da85ce9f756fdd43b9d3befd80",
+  "scopeJustification": "Backend-only repair; frontend Git tree matches previously verified 7cc49c2. Six public boundary cases at narrow mobile and full desktop; authenticated catalog query behavior remains covered by local/CI regressions, not this anonymous smoke.",
+  "releaseIdentitySource": "Supplied by release owner after exact deployment promotion; public UI alone does not prove the commit.",
+  "completedAt": "2026-10-08T17:31:03.421Z",
+  "publicCatalogReads": [
+    {
+      "index": 0,
+      "status": 200,
+      "elapsedMs": 2104,
+      "cacheControl": "private, no-store, max-age=0",
+      "catalogVersion": "inr-2026-10-08-v2",
+      "checkoutEnabled": true,
+      "products": [
+        {
+          "sku": "premium_30d",
+          "amount_minor": 99900,
+          "amount_display": "\u20b9999",
+          "currency": "INR",
+          "duration_days": 30,
+          "entitlement_quantity": 30,
+          "catalog_visible": true,
+          "enabled_for_purchase": true
+        },
+        {
+          "sku": "job_service_500",
+          "amount_minor": 49900,
+          "amount_display": "\u20b9499",
+          "currency": "INR",
+          "duration_days": 0,
+          "entitlement_quantity": 500,
+          "catalog_visible": true,
+          "enabled_for_purchase": true
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "status": 200,
+      "elapsedMs": 411,
+      "cacheControl": "private, no-store, max-age=0",
+      "catalogVersion": "inr-2026-10-08-v2",
+      "checkoutEnabled": true,
+      "products": [
+        {
+          "sku": "premium_30d",
+          "amount_minor": 99900,
+          "amount_display": "\u20b9999",
+          "currency": "INR",
+          "duration_days": 30,
+          "entitlement_quantity": 30,
+          "catalog_visible": true,
+          "enabled_for_purchase": true
+        },
+        {
+          "sku": "job_service_500",
+          "amount_minor": 49900,
+          "amount_display": "\u20b9499",
+          "currency": "INR",
+          "duration_days": 0,
+          "entitlement_quantity": 500,
+          "catalog_visible": true,
+          "enabled_for_purchase": true
+        }
+      ]
+    }
+  ],
+  "catalogFailures": [],
+  "caseCount": 6,
+  "expectedCaseCount": 6,
+  "widths": [
+    320,
+    1440
+  ],
+  "failures": [],
+  "runtimeErrorCount": 0,
+  "consoleErrorCount": 0,
+  "blockedWrites": [],
+  "blockedPrivateReads": [],
+  "resourceWarnings": [
+    {
+      "url": "https://www.hirewizhq.com/register",
+      "type": "fetch",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "https://www.hirewizhq.com/register",
+      "type": "fetch",
+      "failure": "net::ERR_ABORTED"
+    }
+  ],
+  "routeLabSamples": {
+    "home": {
+      "DCL_samples_ms": [
+        1811.3999999761581,
+        512.1999999880791
+      ],
+      "LCP_samples_ms": [
+        2144,
+        640
+      ],
+      "DCL_sample_median_ms": 1162,
+      "LCP_sample_median_ms": 1392
+    },
+    "pricing": {
+      "DCL_samples_ms": [
+        737,
+        1074
+      ],
+      "LCP_samples_ms": [
+        816,
+        2820
+      ],
+      "DCL_sample_median_ms": 906,
+      "LCP_sample_median_ms": 1818
+    },
+    "jobs-handoff": {
+      "DCL_samples_ms": [
+        1255,
+        483.80000001192093
+      ],
+      "LCP_samples_ms": [
+        1324,
+        560
+      ],
+      "DCL_sample_median_ms": 869,
+      "LCP_sample_median_ms": 942
+    }
+  },
+  "artifactCounts": {
+    "full_page_screenshots": 6,
+    "mobile_menu_screenshots": 3,
+    "readable_top_crops": 6,
+    "route_overview_sheets": 3
+  },
+  "maxObservedCLS": 0.05807956104252401,
+  "rawEvidenceDirectory": "/tmp/hirewiz-public-smoke-bounded-ec52279-1791480638570",
+  "limitations": [
+    "Six cases only: one unthrottled local-network navigation per route at 320 and 1440px. No field/p75/p95, INP, load or causal latency claim.",
+    "Backend-only change and unchanged frontend tree justify bounded scope; prior five-width suite is separate historical evidence.",
+    "Anonymous public smoke does not exercise the changed authenticated employer catalog or prove worker/pacing/financial behavior; local and exact-commit CI tests cover those boundaries.",
+    "No authentication fields, payment/application/consent controls, private data or authenticated account requests are exercised.",
+    "Menu keyboard/tap, visible navigation focus, layout and reduced-motion checks are a smoke, not a complete accessibility audit."
+  ],
+  "visualReview": {
+    "full_pages_reviewed": 6,
+    "readable_top_crops_reviewed": 6,
+    "mobile_menu_screenshots_reviewed": 3,
+    "clipping_found": false,
+    "cookie_banner_preserved": true,
+    "cosmetic_observations": [
+      {
+        "route": "/",
+        "width": 320,
+        "description": "Small 02/03 counters under See the bigger picture wrap digits vertically; surrounding text/controls remain readable.",
+        "evidence": "home-320.png",
+        "blocking": false
+      }
+    ]
+  },
+  "resourceWarningClassification": "Two /register fetch ERR_ABORTED events during navigation/prefetch; no product resource failure evidenced.",
+  "performanceObservation": "Single desktop pricing LCP 2820ms retained; no field threshold, regression or authenticated catalog repair speed claim.",
+  "retries": 0
+}

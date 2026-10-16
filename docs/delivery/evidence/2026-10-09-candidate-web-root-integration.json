@@ -1,0 +1,281 @@
+{
+  "status": "REVIEWED_WEBSITE_TRANSPORT_INTEGRATED_LOCAL_VERIFICATION_PRIVATE_INGRESS_AND_DEPLOYMENT_OPEN",
+  "base_commit": "4911d1f637c0dab28817e10a41ed352e56d166a3",
+  "recorded_utc": "2026-10-09T13:35:53.815276+00:00",
+  "story": "Candidate signup/sign-in and owner account actions use dedicated NextAuth/BFF handlers with actual local SQL/native lifecycle state and public-only browser replies.",
+  "review": {
+    "directory": "/var/folders/ck/cyzkgt2d1yx6hzpsdflcg83c0000gn/T/hirewiz-candidate-web-r2-independent-freeze-20261009-twb4a3ri",
+    "report_sha256": "76a8b7d0730cf30dba83d7bdd975d43310738ccc359bf43062c5f70a452a646d",
+    "manifest_sha256": "31b8e7dc24972b589b7e813b55449327ec1e3932d7f9c7445902b1c49a57e6d1",
+    "verified_artifacts": 881,
+    "scope": "bounded R2 issuer/logout transport closure; inherited rate-limit and direct backend ingress HOLD"
+  },
+  "reviewed_product_paths": {
+    "paths": [
+      "backend/app/domains/candidate_accounts/service.py",
+      "backend/app/domains/recovery/gcp_candidate_logout.py",
+      "backend/app/main.py",
+      "backend/app/routers/candidate_accounts.py",
+      "backend/app/routers/sensitive_auth.py",
+      "backend/openapi.json",
+      "backend/scripts/run_candidate_web_journey.py",
+      "backend/tests/fixtures/candidate_browser_app.py",
+      "backend/tests/test_candidate_web_lifecycle.py",
+      "backend/tests/test_sensitive_auth_http.py",
+      "docs/delivery/CANDIDATE_WEB_LIFECYCLE_PLAN_2026-10-09.md",
+      "docs/delivery/CANDIDATE_WEB_TRANSPORT_R2_2026-10-09.md",
+      "frontend/app/api/account/[operation]/route.ts",
+      "frontend/app/api/auth/[...nextauth]/route.ts",
+      "frontend/app/api/backend/[...path]/route.test.ts",
+      "frontend/app/api/backend/[...path]/route.ts",
+      "frontend/app/api/candidate-account/[operation]/route.test.ts",
+      "frontend/app/api/candidate-account/[operation]/route.ts",
+      "frontend/app/login/page.tsx",
+      "frontend/app/logout/page.tsx",
+      "frontend/app/profile/page.tsx",
+      "frontend/app/register/page.tsx",
+      "frontend/components/CandidateAuthPages.test.tsx",
+      "frontend/lib/accountTransportClient.ts",
+      "frontend/lib/accountTransportServer.test.ts",
+      "frontend/lib/accountTransportServer.ts",
+      "frontend/lib/api.ts",
+      "frontend/lib/auth.ts",
+      "frontend/lib/authOptions.test.ts",
+      "frontend/lib/authOptions.ts",
+      "frontend/lib/candidateAuthClient.ts",
+      "frontend/lib/candidateAuthServer.test.ts",
+      "frontend/lib/candidateAuthServer.ts",
+      "frontend/lib/generated/api.ts",
+      "frontend/lib/useHydrated.ts",
+      "frontend/tests/candidate-https-server.mjs",
+      "frontend/tests/candidate-web-journey.mjs",
+      "frontend/types/next-auth.d.ts"
+    ],
+    "sha256": [
+      "01185185b79e744edff41aceb6aa6d6b544f40dc6b395e730dab754fbdf3a474",
+      "9a3f6c737a19889abbde69d26ac88769fb9843bd4de8311831ce01ae9df999bd",
+      "dc93d654feb3b350c8378fb4cd3225ade55b13f2f12df941fa726865d3edac0c",
+      "41e3dacaf94aa83209fb7f4e4e6ad0b93c7d822a0bbcba10327e010d8854dc4d",
+      "ec1b529dbc757640cc9a3231fbcbf23a36f01c425078a21facb6b78f2194a4ca",
+      "73c82be0594d8f13b4ac4d28357e6172feb12a98307af8d620d30bf660c87ca6",
+      "9dcb84e67d2bafa864b57da824fa826a2d4fb983eb963ec350131b3b33afaa9c",
+      "e7fbafca1d318a2c34c7d19d58a6bc151a1dcf8e4b41481fe97d1c24b0089bcc",
+      "b8faecffc0570d42db12ac6d7cb68cbd62a1679a2004b8e40efdfe88cae603eb",
+      "06731e50e82809460c44299f74c6d0e28609d4e43d266628984fddc8e52d94a2",
+      "564bf387d10c54f2b7a363545eaf266f8c56763452f7c96dc20f1bc8f5aa5661",
+      "8aa13ed7adb7366c6a9420d39227aa6d66acaa5beef5c8646cac944e6bdd1c59",
+      "06e915fc82253b120a8929bf27b8865994a3c0c1fcf5aac883e5b2e653e4b6bc",
+      "5f182ef81b6b9fede8f1d989426cb3db130d2e2fa7fb3ecc995feaf7f6da4cc0",
+      "6524ed3204f8fac9e39161c61a3f008d1a583f8f680a8006dd513d1df3a8a263",
+      "0f5365acfaaa6f96a3507cba2c7a59cf4109f3d44846afbc423cc2c4cdafc2f6",
+      "016958b0c4272203e39aa7813a1fb2488c9aae2c93263ac0b14361233ef0b5bf",
+      "e7a09152d0777803446314967d9e16e0a5333ac078092f5300bde5de4eeb3bde",
+      "4634e047f89027e5943ed7663bedc3f6790006541aed4427581e48f2c3b569b9",
+      "63db09dd99bec7c3c15eda1126c65855f07eb2ea6095a1f88919cfb043b65392",
+      "0766675354ccd7b310e245426d40fef55a44e86f0aa73ff9c6f9f61f8689e2c0",
+      "e3e5be90dad4fb0ec818a97d0f67a65721fcdf28179fcc03a00b2cc14c57e848",
+      "082df4adb16090da92100e32e5ad39afe6e7cc4a81a80fd4e2c5fa1ee7b8cd05",
+      "cc26de6acf1437f3d31e11c3b74d7a780334824717428f3b5fe69532bc2a1c81",
+      "e4454e076f7fa47e208fef66f7530805b3ed0c3c7a0e1136ec7effe0d4d1ad6a",
+      "da044edb13437eb3730065de6eecc5998d2056964bc2d15c5fb0d95fc983acf1",
+      "4d471b6fa1da2e87d90b9df9b2a277cd199bd12de26bbf48ccb663ac1338f4d6",
+      "ccf903bddf5618806c2b7cfa777d63b3e174f08354e48c6439f1f63cb08a6a79",
+      "1f42576852f9b28259b075717d4b32f0551d9a97250b6b27cfdda913f1713cfb",
+      "5ac539b8ce6c8cd5d6a1ade1c1daf56477fd2794268f14d36703d7e516167049",
+      "9123892dfec1d2aaa1b7e1b28bb951b0b039bb27e6bbea91cc5425898478fb43",
+      "fcd6e3850b531a5bceb830a35a7e140f1594fafab6d4b8bbb39237356c8f669e",
+      "8cf208598d1c1478cdf125d10593c42d3592c493da440ca2054ec3564a1de7cd",
+      "b4e5472d2f50f92c707343ba1ceee8e49862836098dee7a6aa39959ec7278471",
+      "5e9ed786a133b7d61a187a2ce688945234fe6cd9e5c9eb00e1f111a01ae2d30b",
+      "5bcccbd2b902cc586635da94ea58df61be6e3130a1a4ef116bc9d7348b7ca80d",
+      "70a7d416e60f58cf32e82102d2e839f2b49570c3a59ab2446512d90e8ba97bd2",
+      "a10ead4068ab1b86bb26b66098253e7b848f8bf15a539cb8302badb59477f9aa"
+    ]
+  },
+  "product_paths_stable_after_checks": true,
+  "checks": {
+    "backend_initial": {
+      "selected": 2030,
+      "passed": 1850,
+      "setup_errors": 180,
+      "failures": 0,
+      "skipped": 0,
+      "seconds": 242.693
+    },
+    "backend_configured_recovery": {
+      "selected_exact_prior_error_nodes": 180,
+      "passed": 180,
+      "failed": 0,
+      "skipped": 0,
+      "seconds": 177.377,
+      "configuration_only": "required pre-existing hirewiz_admission_test database selected and verified read-only; no fixture assertion edits",
+      "unique_verified_cases_across_runs": 2030,
+      "single_all_pass_full_run": false
+    },
+    "frontend": {
+      "passed": 190,
+      "failed": 0,
+      "skipped": 0,
+      "lint": "PASS",
+      "typecheck": "PASS",
+      "build": "PASS with synthetic process-only test secret"
+    },
+    "backend_static": {
+      "ruff": "PASS exact CI selection plus added fixture/tests",
+      "mypy": "PASS110files",
+      "openapi": "exact reviewed bytes remain after regeneration"
+    },
+    "actual_cold_browser": {
+      "passed": 46,
+      "runtime": "actual Chromium/HTTPS NextAuth/BFF/FastAPI/local PostgreSQL/native emulator",
+      "synthetic_dependencies": [
+        "operator UID witness",
+        "Storage HTTP custody",
+        "local signing"
+      ],
+      "external_requests": 0,
+      "owned_schema_independently_verified_absent": true,
+      "owned_process_groups_stopped": 2,
+      "TLS_private_key_removed": true
+    }
+  },
+  "previous_exact_ci": {
+    "commit": "4911d1f637c0dab28817e10a41ed352e56d166a3",
+    "run_id": 37933390559,
+    "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37933390559",
+    "status": "completed",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "name": "frontend",
+        "status": "completed",
+        "conclusion": "success",
+        "databaseId": 113829365190,
+        "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37933390559/job/113829365190"
+      },
+      {
+        "name": "backend",
+        "status": "completed",
+        "conclusion": "success",
+        "databaseId": 113829365522,
+        "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37933390559/job/113829365522"
+      },
+      {
+        "name": "browser-companion",
+        "status": "completed",
+        "conclusion": "success",
+        "databaseId": 113829365615,
+        "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37933390559/job/113829365615"
+      },
+      {
+        "name": "cold-browser-journey",
+        "status": "completed",
+        "conclusion": "success",
+        "databaseId": 113829365664,
+        "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37933390559/job/113829365664"
+      },
+      {
+        "name": "security-and-container",
+        "status": "completed",
+        "conclusion": "success",
+        "databaseId": 113829366163,
+        "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/37933390559/job/113829366163"
+      }
+    ],
+    "backend": {
+      "passed": 2002,
+      "warnings": 413,
+      "seconds": 521.99,
+      "log_path": "/tmp/hirewiz-4911d1f-backend-ci-success-20261009.log",
+      "log_sha256": "03038fcaa6c41509afe2d84b2474f8ebdbbb42b43257e2a1b867a1c593638784"
+    },
+    "production_deployment": false
+  },
+  "new_exact_source_ci": "PENDING",
+  "preserved_failures": [
+    "initial host Python preflight had no sqlalchemy; pytest was not invoked; locked project Python used afterward",
+    "initial required local database-name setup refusals retained; only180 exact refused cases rerun with correct pre-existing database",
+    "prior V1 private-context/generic logout HOLD and logging-order failure retained in frozen review",
+    "actual sixth native registration HTTP500 versus intended429 remains unresolved in root; isolated authored private-ingress repair awaits review/integration",
+    "normal reset first zero-winner concurrency failure and held-write availability gate remain open",
+    "one separate protected-join review was rejected by automated review as possible cybersecurity risk; no final independent join clearance inferred",
+    "Initial raw secret scan flagged13 path-keyed public source digests; each matched unchanged reviewed product bytes. Manifest representation changed to path/digest arrays with no scan exclusions."
+  ],
+  "production_mutations": false,
+  "ai_calls": 0,
+  "employer_submissions": 0,
+  "payment_calls": 0,
+  "remaining": [
+    "independent private-ingress review/integration including intended429 regression",
+    "genuine cold browser-companion protected connection",
+    "contention availability",
+    "protected production resource/custody/key/clock provision",
+    "writer retirement/monetary migration/full deployment"
+  ],
+  "artifacts": [
+    {
+      "path": "/tmp/hirewiz-web-r2-root-backend-20261009.xml",
+      "sha256": "6b76a90e03800cd75033f3499716c8598ca23b422568349d1932ed976233eb84"
+    },
+    {
+      "path": "/tmp/hirewiz-web-r2-root-backend-20261009.log",
+      "sha256": "d20acda1ed4e821a12eb32f9a19ac707e50e0d74c7e605365ded7593384ee18b"
+    },
+    {
+      "path": "/tmp/hirewiz-web-r2-root-backend-recovered-20261009.xml",
+      "sha256": "c0c3dd2f051091aba9ab89487307bc873450a6770dcc6fc312ccbcddf7c118e1"
+    },
+    {
+      "path": "/tmp/hirewiz-web-r2-root-backend-recovered-20261009.log",
+      "sha256": "3f794e4be34f09ace2236b34e0e8eed9688f5c1da0145699ce0381f9dbf60091"
+    },
+    {
+      "path": "/tmp/hirewiz-web-r2-root-frontend-20261009.json",
+      "sha256": "8dd5f54c463f0d529efcefcef25dcc3b18d30d64f6f7a04feea1830b130e0ecf"
+    },
+    {
+      "path": "/tmp/hirewiz-web-r2-root-frontend-checks-20261009.json",
+      "sha256": "67ecf4b210a94413adadccab22546a69dad62bc5493e5e2566e3490a84ec311b"
+    },
+    {
+      "path": "/tmp/hirewiz-web-r2-root-ruff-20261009.log",
+      "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+    },
+    {
+      "path": "/tmp/hirewiz-web-r2-root-mypy-20261009.log",
+      "sha256": "c68f50a89794521a4d43d1354657bb2b465570f85b8cf4a226fc9f9fa7200852"
+    },
+    {
+      "path": "/tmp/hirewiz-web-r2-root-cold-20261009.log",
+      "sha256": "5ebd67821222c39fa907c6dbcc479a2d8c068190713799392b70ce7c8b427a5b"
+    },
+    {
+      "path": "/tmp/hirewiz-web-r2-root-composition-20261009.json",
+      "sha256": "9e21acb5b609b0f6d0530dbd7b803b2208dc2c924b8ef95db386ab3318ae40f8"
+    },
+    {
+      "path": "/tmp/hirewiz-4911d1f-ci-success-20261009.json",
+      "sha256": "9e8e835a2bc13c7d6e451e5d6daa5f2f6bb85ce87a9e8bd9cd87a7118a2db242"
+    },
+    {
+      "path": "/tmp/hirewiz-4911d1f-backend-ci-success-20261009.log",
+      "sha256": "03038fcaa6c41509afe2d84b2474f8ebdbbb42b43257e2a1b867a1c593638784"
+    },
+    {
+      "path": "/tmp/hirewiz-candidate-web-browser-a280876041e54f06b7b2ee8f8642b11d/browser-report.json",
+      "sha256": "00b6a54d076f0b65ee47cfe780e34393482a05c0db4791fdac023698926d0d51"
+    },
+    {
+      "path": "/tmp/hirewiz-candidate-web-browser-a280876041e54f06b7b2ee8f8642b11d/summary.json",
+      "sha256": "1bedf18d75427eaca26c6678e4416b2ab1c48b7554eb3a8bdd1e37129b7445cf"
+    },
+    {
+      "path": "/tmp/hirewiz-candidate-web-browser-a280876041e54f06b7b2ee8f8642b11d/metadata.json",
+      "sha256": "528d8e28783448382f53119a76f09e8d45000f7f67d63f23f6e4bdad2c7f24b4"
+    },
+    {
+      "path": "/tmp/hirewiz-candidate-web-browser-a280876041e54f06b7b2ee8f8642b11d/mobile-login.png",
+      "sha256": "50aa1ebed35b8400cb3968a8f6ab5511865d54446b7cd527ecc9dcc71e17f09b"
+    }
+  ]
+}

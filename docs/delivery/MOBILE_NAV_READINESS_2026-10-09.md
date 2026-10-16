@@ -1,0 +1,15 @@
+# Mobile navigation readiness
+
+Review date: 9 October 2026 (Asia/Kolkata). This checkpoint covers navigation readiness and the preceding paid-credit frontend repair. It does not close the full service requirements.
+
+The server-rendered mobile menu was enabled while its Next.js JavaScript was still loading. An early interaction could arrive before React attached the toggle handler. A production Next/Chromium reproduction held 15 static JavaScript chunks and failed the desired disabled-state assertion. The first isolated setup build failure is preserved separately. The initial hosted homepage assertion failure remains undiagnosed; this reproduction does not retroactively establish its cause.
+
+`Nav.tsx` now uses React's server/hydration snapshot boundary to keep only the menu toggle disabled until hydration completes. Normal links remain usable. The new regression holds actual Next.js chunks, inspects the server-rendered closed and disabled control, then releases the chunks and verifies enabled state and reliable mobile open/close. Four mobile/tablet widths and desktop primary navigation at 1440px pass without sleeps, retries or skips. This follows [React's server snapshot semantics](https://react.dev/reference/react/useSyncExternalStore).
+
+Lint, types, production build and five browser cases pass in the isolated exact-source archive. Independent review clears the two-file change, verifies its proof hashes and confirms route and owned process cleanup. No backend contract, authentication, payment price or schema is changed. Exact new-commit CI and a new immutable frontend deployment remain required before promotion.
+
+The preceding `bdc46a1` repair now has all five exact GitHub CI jobs passing: 1,607 backend cases, 200 responsive frontend cases, the companion, security/container checks and the connected no-AI browser workflow. Its uploaded connected proof shows a real Chromium/NextAuth/BFF/FastAPI/PostgreSQL journey at five widths, exact original/custom resume bytes, no AI calls, one credit grant, four delivered-job credits charged and two unused reserved credits returned. Manual handoff incurs zero automatic-application fees and supplies no employer receipt. Payment and job-feed transports remain synthetic.
+
+The preceding production-target frontend build `dpl_2FnbgX6QNfpJwRFqSEvTNZLXqR2w` is READY but not promoted. Its first hosted run failed in the homepage content/menu block after four correct private-route denials. The unchanged-assertion diagnostic run then passed 15 public route/width checks, five widths and four private 401 responses. Both results remain preserved. These GET-only empty-session checks do not verify authenticated purchases or native browser assistance.
+
+Serving GCP remains `e7d8f2b` with schema `0009`. Monetary `0010`, independent retained authority, permitted portal assistance, native LaTeX/visual fidelity, coverage, recovery and full deployment gates remain open. See [remaining requirements](REMAINING_REQUIREMENTS.md) and [hash-bound evidence](evidence/2026-10-09-nav-hydration.json).

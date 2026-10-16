@@ -1,0 +1,89 @@
+{
+  "schema": 1,
+  "scope": "ordinary-synthetic-child-directory-native-api-diagnostic",
+  "reviewed_manifest_sha256": "97b216ab12212f4479b1902a8b3fb3defb88d5d6d0b96e8b5493c668e5e52569",
+  "job_name": "hirewiz-doc-child-export-5014a116a842",
+  "job_uid": "9100aa92-cbe9-4dc9-99d0-cafa640138ad",
+  "execution_name": "hirewiz-doc-child-export-5014a116a842-hh6d7",
+  "execution_uid": "4c9f4edd-468f-48aa-bfd2-9562fcf17968",
+  "create_requests": 1,
+  "run_requests": 1,
+  "execution_restarts": 0,
+  "sdk_retries": 0,
+  "fresh_readonly_preflights": 2,
+  "preflight_reads_each": 7,
+  "terminal": {
+    "completed_at": "2026-10-11T00:47:09.838665Z",
+    "counts": {
+      "cancelledCount": 0,
+      "failedCount": 1,
+      "retriedCount": 0,
+      "runningCount": 0,
+      "succeededCount": 0
+    },
+    "conditions": [
+      {
+        "reason": "NonZeroExitCode",
+        "status": "False",
+        "type": "Completed"
+      },
+      {
+        "reason": "",
+        "status": "True",
+        "type": "ResourcesAvailable"
+      },
+      {
+        "reason": "",
+        "status": "True",
+        "type": "Started"
+      },
+      {
+        "reason": "",
+        "status": "True",
+        "type": "ContainerReady"
+      }
+    ]
+  },
+  "job_execution_template_source_join_verified": true,
+  "count_read": {
+    "rows": 1,
+    "pagination": false,
+    "counts": {
+      "device_count": 0,
+      "direct_target_count": 0,
+      "link_count": 0,
+      "member_count": 3,
+      "prefixed_regular_18_byte_count": 0,
+      "prefixed_target_count": 0,
+      "regular_18_byte_count": 0,
+      "request_leaf_elsewhere_count": 0,
+      "unsafe_path_count": 0
+    },
+    "member_names_disclosed": false,
+    "count_reader_member_payloads_opened": 0,
+    "sdk_materialized_before_serialized_size_guard": true
+  },
+  "root_offline_controls": {
+    "integration": 55,
+    "api": 16,
+    "failed": 0,
+    "skipped": 0
+  },
+  "expected_synthetic_target_observed": false,
+  "archive_transfer_accepted": false,
+  "scanner_isolation_http_customer_acceptance": false,
+  "independent_sandbox_absence_verified": false,
+  "job_retained_for_reconciliation": true,
+  "protected_integration_hold_unchanged": true,
+  "production_activation": false,
+  "limits": [
+    "Count projection does not prove the actual sandbox member names or a unique cause.",
+    "Literal false flags in the count-reader projection describe that projection; they are not whole-job action evidence.",
+    "Job nonzero exit is retained independently from component metadata.",
+    "Earlier diagnostics remain unchanged; no repeated Create/Run or source safety relaxation."
+  ],
+  "official_references": [
+    "https://docs.cloud.google.com/run/docs/reference/sandbox-cli",
+    "https://docs.cloud.google.com/run/docs/code-execution"
+  ]
+}

@@ -1,0 +1,1094 @@
+{
+  "origin": "https://www.hirewizhq.com",
+  "candidate": "6f380203c55b8574d2d345420de6ac5e3da1b784",
+  "frontendTree": "85f052abb03d5c99a4917f228a91772d417027c5",
+  "backendRelease": "6f380203c55b8574d2d345420de6ac5e3da1b784",
+  "apiRevision": "ai-resume-parser-00262-fim",
+  "ciRun": "37831706133",
+  "deployment": "dpl_6SXQf3MekLzV2dFtFWRdQXgjo5Qi",
+  "identitySource": "Release-owner explicit exact promotion confirmation; public rendering alone cannot prove the immutable commit.",
+  "scope": "Homepage only at 320/390/1440; exact story counters/copy, overflow, runtime-console and public navigation readiness/focus. UI check only; backend/SQL/environment rollout is verified by separate release evidence.",
+  "controls": "Fresh anonymous contexts, service workers blocked, all non-GET methods blocked, external origins blocked and only public API bootstrap endpoints allowed. No forms, link destinations, auth fields, consent, payment or application actions.",
+  "observationLimits": "Single local-network unthrottled Chromium lab observation per width, reduced motion. Not field performance, full accessibility, authenticated flow or full requirements acceptance.",
+  "completedAt": "2026-10-08T19:54:48.754Z",
+  "aggregate": {
+    "total": 3,
+    "planned": 3,
+    "passed": 3,
+    "widths": [
+      320,
+      390,
+      1440
+    ],
+    "failures": [],
+    "runtimeErrors": 0,
+    "consoleErrors": 0,
+    "blockedNonGet": 0,
+    "blockedPrivateReads": 0,
+    "blockedExternal": 0,
+    "visualReview": "passed root readable inspection of all nine saved screenshots; no counter overlap, wrapped digits or horizontal overflow"
+  },
+  "rows": [
+    {
+      "width": 320,
+      "failures": [],
+      "consoleErrors": [],
+      "runtimeErrors": [],
+      "resourceWarnings": [
+        {
+          "url": "https://www.hirewizhq.com/register",
+          "type": "fetch",
+          "failure": "net::ERR_ABORTED"
+        }
+      ],
+      "blockedNonGet": [],
+      "blockedPrivateReads": [],
+      "blockedExternal": [],
+      "publicBootstrap": [
+        {
+          "path": "/api/auth/session",
+          "status": 200
+        }
+      ],
+      "screenshots": [
+        "/tmp/hirewiz-catalog-release-hosted-6f38020-1791489282029/home-320-menu.png",
+        "/tmp/hirewiz-catalog-release-hosted-6f38020-1791489282029/story-counters-320.png",
+        "/tmp/hirewiz-catalog-release-hosted-6f38020-1791489282029/story-viewport-320.png"
+      ],
+      "wallDomContentLoadedMs": 1116,
+      "httpStatus": 200,
+      "sessionStatus": 200,
+      "menuTarget": {
+        "x": 256,
+        "y": 9.5,
+        "width": 44,
+        "height": 44
+      },
+      "navigationFocus": {
+        "tag": "BUTTON",
+        "name": "Open navigation",
+        "visible": true,
+        "focusVisible": true,
+        "outline": "solid",
+        "boxShadow": "none"
+      },
+      "menuLinks": [
+        {
+          "label": "Benefits",
+          "height": 44,
+          "width": 288
+        },
+        {
+          "label": "How it works",
+          "height": 44,
+          "width": 288
+        },
+        {
+          "label": "Pricing",
+          "height": 44,
+          "width": 288
+        },
+        {
+          "label": "Contact",
+          "height": 44,
+          "width": 288
+        },
+        {
+          "label": "Log in",
+          "height": 63.5625,
+          "width": 140
+        },
+        {
+          "label": "Build your workspace",
+          "height": 63.5625,
+          "width": 140
+        }
+      ],
+      "menuKeyboardAndTapToggle": true,
+      "counters": [
+        {
+          "text": "01",
+          "counter": {
+            "x": 16,
+            "y": 148.3125,
+            "width": 14.40625,
+            "height": 18,
+            "top": 148.3125,
+            "right": 30.40625,
+            "bottom": 166.3125,
+            "left": 16
+          },
+          "row": {
+            "x": 16,
+            "y": 127.8125,
+            "width": 288,
+            "height": 58,
+            "top": 127.8125,
+            "right": 304,
+            "bottom": 185.8125,
+            "left": 16
+          },
+          "copyText": "Keep the original job description close.",
+          "copy": {
+            "x": 50.40625,
+            "y": 146.8125,
+            "width": 250.921875,
+            "height": 21,
+            "top": 146.8125,
+            "right": 301.328125,
+            "bottom": 167.8125,
+            "left": 50.40625
+          },
+          "glyphs": [
+            {
+              "x": 16,
+              "y": 149.3125,
+              "width": 7.203125,
+              "height": 16,
+              "top": 149.3125,
+              "right": 23.203125,
+              "bottom": 165.3125,
+              "left": 16
+            },
+            {
+              "x": 23.203125,
+              "y": 149.3125,
+              "width": 7.203125,
+              "height": 16,
+              "top": 149.3125,
+              "right": 30.40625,
+              "bottom": 165.3125,
+              "left": 23.203125
+            }
+          ],
+          "lineTops": [
+            149.31
+          ],
+          "computed": {
+            "flexGrow": "0",
+            "flexShrink": "0",
+            "flexBasis": "14.4023px",
+            "whiteSpace": "nowrap",
+            "fontFamily": "\"Roboto Mono\", \"Roboto Mono Fallback\", monospace",
+            "fontSize": "12px"
+          }
+        },
+        {
+          "text": "02",
+          "counter": {
+            "x": 16,
+            "y": 216.8125,
+            "width": 14.40625,
+            "height": 18,
+            "top": 216.8125,
+            "right": 30.40625,
+            "bottom": 234.8125,
+            "left": 16
+          },
+          "row": {
+            "x": 16,
+            "y": 185.8125,
+            "width": 288,
+            "height": 79,
+            "top": 185.8125,
+            "right": 304,
+            "bottom": 264.8125,
+            "left": 16
+          },
+          "copyText": "Know which experience supports each claim.",
+          "copy": {
+            "x": 50.40625,
+            "y": 204.8125,
+            "width": 253.59375,
+            "height": 42,
+            "top": 204.8125,
+            "right": 304,
+            "bottom": 246.8125,
+            "left": 50.40625
+          },
+          "glyphs": [
+            {
+              "x": 16,
+              "y": 217.8125,
+              "width": 7.203125,
+              "height": 16,
+              "top": 217.8125,
+              "right": 23.203125,
+              "bottom": 233.8125,
+              "left": 16
+            },
+            {
+              "x": 23.203125,
+              "y": 217.8125,
+              "width": 7.203125,
+              "height": 16,
+              "top": 217.8125,
+              "right": 30.40625,
+              "bottom": 233.8125,
+              "left": 23.203125
+            }
+          ],
+          "lineTops": [
+            217.81
+          ],
+          "computed": {
+            "flexGrow": "0",
+            "flexShrink": "0",
+            "flexBasis": "14.4023px",
+            "whiteSpace": "nowrap",
+            "fontFamily": "\"Roboto Mono\", \"Roboto Mono Fallback\", monospace",
+            "fontSize": "12px"
+          }
+        },
+        {
+          "text": "03",
+          "counter": {
+            "x": 16,
+            "y": 295.8125,
+            "width": 14.40625,
+            "height": 18,
+            "top": 295.8125,
+            "right": 30.40625,
+            "bottom": 313.8125,
+            "left": 16
+          },
+          "row": {
+            "x": 16,
+            "y": 264.8125,
+            "width": 288,
+            "height": 79,
+            "top": 264.8125,
+            "right": 304,
+            "bottom": 343.8125,
+            "left": 16
+          },
+          "copyText": "Find the exact resume version you prepared.",
+          "copy": {
+            "x": 50.40625,
+            "y": 283.8125,
+            "width": 253.59375,
+            "height": 42,
+            "top": 283.8125,
+            "right": 304,
+            "bottom": 325.8125,
+            "left": 50.40625
+          },
+          "glyphs": [
+            {
+              "x": 16,
+              "y": 296.8125,
+              "width": 7.203125,
+              "height": 16,
+              "top": 296.8125,
+              "right": 23.203125,
+              "bottom": 312.8125,
+              "left": 16
+            },
+            {
+              "x": 23.203125,
+              "y": 296.8125,
+              "width": 7.203125,
+              "height": 16,
+              "top": 296.8125,
+              "right": 30.40625,
+              "bottom": 312.8125,
+              "left": 23.203125
+            }
+          ],
+          "lineTops": [
+            296.81
+          ],
+          "computed": {
+            "flexGrow": "0",
+            "flexShrink": "0",
+            "flexBasis": "14.4023px",
+            "whiteSpace": "nowrap",
+            "fontFamily": "\"Roboto Mono\", \"Roboto Mono Fallback\", monospace",
+            "fontSize": "12px"
+          }
+        },
+        {
+          "text": "04",
+          "counter": {
+            "x": 16,
+            "y": 364.3125,
+            "width": 14.40625,
+            "height": 18,
+            "top": 364.3125,
+            "right": 30.40625,
+            "bottom": 382.3125,
+            "left": 16
+          },
+          "row": {
+            "x": 16,
+            "y": 343.8125,
+            "width": 288,
+            "height": 59,
+            "top": 343.8125,
+            "right": 304,
+            "bottom": 402.8125,
+            "left": 16
+          },
+          "copyText": "Pick up where you left off.",
+          "copy": {
+            "x": 50.40625,
+            "y": 362.8125,
+            "width": 166.453125,
+            "height": 21,
+            "top": 362.8125,
+            "right": 216.859375,
+            "bottom": 383.8125,
+            "left": 50.40625
+          },
+          "glyphs": [
+            {
+              "x": 16,
+              "y": 365.3125,
+              "width": 7.203125,
+              "height": 16,
+              "top": 365.3125,
+              "right": 23.203125,
+              "bottom": 381.3125,
+              "left": 16
+            },
+            {
+              "x": 23.203125,
+              "y": 365.3125,
+              "width": 7.203125,
+              "height": 16,
+              "top": 365.3125,
+              "right": 30.40625,
+              "bottom": 381.3125,
+              "left": 23.203125
+            }
+          ],
+          "lineTops": [
+            365.31
+          ],
+          "computed": {
+            "flexGrow": "0",
+            "flexShrink": "0",
+            "flexBasis": "14.4023px",
+            "whiteSpace": "nowrap",
+            "fontFamily": "\"Roboto Mono\", \"Roboto Mono Fallback\", monospace",
+            "fontSize": "12px"
+          }
+        }
+      ],
+      "layout": {
+        "viewport": 320,
+        "document": 320,
+        "body": 320,
+        "reducedMotion": true,
+        "scrollBehavior": "auto"
+      },
+      "navigationTiming": {
+        "responseStartMs": 326.30000001192093,
+        "domContentLoadedMs": 1113.6000000238419,
+        "loadMs": 1431.9000000059605
+      }
+    },
+    {
+      "width": 390,
+      "failures": [],
+      "consoleErrors": [],
+      "runtimeErrors": [],
+      "resourceWarnings": [
+        {
+          "url": "https://www.hirewizhq.com/register",
+          "type": "fetch",
+          "failure": "net::ERR_ABORTED"
+        },
+        {
+          "url": "https://www.hirewizhq.com/register",
+          "type": "fetch",
+          "failure": "net::ERR_ABORTED"
+        }
+      ],
+      "blockedNonGet": [],
+      "blockedPrivateReads": [],
+      "blockedExternal": [],
+      "publicBootstrap": [
+        {
+          "path": "/api/auth/session",
+          "status": 200
+        }
+      ],
+      "screenshots": [
+        "/tmp/hirewiz-catalog-release-hosted-6f38020-1791489282029/home-390-menu.png",
+        "/tmp/hirewiz-catalog-release-hosted-6f38020-1791489282029/story-counters-390.png",
+        "/tmp/hirewiz-catalog-release-hosted-6f38020-1791489282029/story-viewport-390.png"
+      ],
+      "wallDomContentLoadedMs": 322,
+      "httpStatus": 200,
+      "sessionStatus": 200,
+      "menuTarget": {
+        "x": 326,
+        "y": 9.5,
+        "width": 44,
+        "height": 44
+      },
+      "navigationFocus": {
+        "tag": "BUTTON",
+        "name": "Open navigation",
+        "visible": true,
+        "focusVisible": true,
+        "outline": "solid",
+        "boxShadow": "none"
+      },
+      "menuLinks": [
+        {
+          "label": "Benefits",
+          "height": 44,
+          "width": 358
+        },
+        {
+          "label": "How it works",
+          "height": 44,
+          "width": 358
+        },
+        {
+          "label": "Pricing",
+          "height": 44,
+          "width": 358
+        },
+        {
+          "label": "Contact",
+          "height": 44,
+          "width": 358
+        },
+        {
+          "label": "Log in",
+          "height": 63.5625,
+          "width": 175
+        },
+        {
+          "label": "Build your workspace",
+          "height": 63.5625,
+          "width": 175
+        }
+      ],
+      "menuKeyboardAndTapToggle": true,
+      "counters": [
+        {
+          "text": "01",
+          "counter": {
+            "x": 20,
+            "y": 148.359375,
+            "width": 14.40625,
+            "height": 18,
+            "top": 148.359375,
+            "right": 34.40625,
+            "bottom": 166.359375,
+            "left": 20
+          },
+          "row": {
+            "x": 20,
+            "y": 127.859375,
+            "width": 350,
+            "height": 58,
+            "top": 127.859375,
+            "right": 370,
+            "bottom": 185.859375,
+            "left": 20
+          },
+          "copyText": "Keep the original job description close.",
+          "copy": {
+            "x": 54.40625,
+            "y": 146.859375,
+            "width": 250.921875,
+            "height": 21,
+            "top": 146.859375,
+            "right": 305.328125,
+            "bottom": 167.859375,
+            "left": 54.40625
+          },
+          "glyphs": [
+            {
+              "x": 20,
+              "y": 149.359375,
+              "width": 7.203125,
+              "height": 16,
+              "top": 149.359375,
+              "right": 27.203125,
+              "bottom": 165.359375,
+              "left": 20
+            },
+            {
+              "x": 27.203125,
+              "y": 149.359375,
+              "width": 7.203125,
+              "height": 16,
+              "top": 149.359375,
+              "right": 34.40625,
+              "bottom": 165.359375,
+              "left": 27.203125
+            }
+          ],
+          "lineTops": [
+            149.36
+          ],
+          "computed": {
+            "flexGrow": "0",
+            "flexShrink": "0",
+            "flexBasis": "14.4023px",
+            "whiteSpace": "nowrap",
+            "fontFamily": "\"Roboto Mono\", \"Roboto Mono Fallback\", monospace",
+            "fontSize": "12px"
+          }
+        },
+        {
+          "text": "02",
+          "counter": {
+            "x": 20,
+            "y": 206.359375,
+            "width": 14.40625,
+            "height": 18,
+            "top": 206.359375,
+            "right": 34.40625,
+            "bottom": 224.359375,
+            "left": 20
+          },
+          "row": {
+            "x": 20,
+            "y": 185.859375,
+            "width": 350,
+            "height": 58,
+            "top": 185.859375,
+            "right": 370,
+            "bottom": 243.859375,
+            "left": 20
+          },
+          "copyText": "Know which experience supports each claim.",
+          "copy": {
+            "x": 54.40625,
+            "y": 204.859375,
+            "width": 291.046875,
+            "height": 21,
+            "top": 204.859375,
+            "right": 345.453125,
+            "bottom": 225.859375,
+            "left": 54.40625
+          },
+          "glyphs": [
+            {
+              "x": 20,
+              "y": 207.359375,
+              "width": 7.203125,
+              "height": 16,
+              "top": 207.359375,
+              "right": 27.203125,
+              "bottom": 223.359375,
+              "left": 20
+            },
+            {
+              "x": 27.203125,
+              "y": 207.359375,
+              "width": 7.203125,
+              "height": 16,
+              "top": 207.359375,
+              "right": 34.40625,
+              "bottom": 223.359375,
+              "left": 27.203125
+            }
+          ],
+          "lineTops": [
+            207.36
+          ],
+          "computed": {
+            "flexGrow": "0",
+            "flexShrink": "0",
+            "flexBasis": "14.4023px",
+            "whiteSpace": "nowrap",
+            "fontFamily": "\"Roboto Mono\", \"Roboto Mono Fallback\", monospace",
+            "fontSize": "12px"
+          }
+        },
+        {
+          "text": "03",
+          "counter": {
+            "x": 20,
+            "y": 264.359375,
+            "width": 14.40625,
+            "height": 18,
+            "top": 264.359375,
+            "right": 34.40625,
+            "bottom": 282.359375,
+            "left": 20
+          },
+          "row": {
+            "x": 20,
+            "y": 243.859375,
+            "width": 350,
+            "height": 58,
+            "top": 243.859375,
+            "right": 370,
+            "bottom": 301.859375,
+            "left": 20
+          },
+          "copyText": "Find the exact resume version you prepared.",
+          "copy": {
+            "x": 54.40625,
+            "y": 262.859375,
+            "width": 288.0625,
+            "height": 21,
+            "top": 262.859375,
+            "right": 342.46875,
+            "bottom": 283.859375,
+            "left": 54.40625
+          },
+          "glyphs": [
+            {
+              "x": 20,
+              "y": 265.359375,
+              "width": 7.203125,
+              "height": 16,
+              "top": 265.359375,
+              "right": 27.203125,
+              "bottom": 281.359375,
+              "left": 20
+            },
+            {
+              "x": 27.203125,
+              "y": 265.359375,
+              "width": 7.203125,
+              "height": 16,
+              "top": 265.359375,
+              "right": 34.40625,
+              "bottom": 281.359375,
+              "left": 27.203125
+            }
+          ],
+          "lineTops": [
+            265.36
+          ],
+          "computed": {
+            "flexGrow": "0",
+            "flexShrink": "0",
+            "flexBasis": "14.4023px",
+            "whiteSpace": "nowrap",
+            "fontFamily": "\"Roboto Mono\", \"Roboto Mono Fallback\", monospace",
+            "fontSize": "12px"
+          }
+        },
+        {
+          "text": "04",
+          "counter": {
+            "x": 20,
+            "y": 322.359375,
+            "width": 14.40625,
+            "height": 18,
+            "top": 322.359375,
+            "right": 34.40625,
+            "bottom": 340.359375,
+            "left": 20
+          },
+          "row": {
+            "x": 20,
+            "y": 301.859375,
+            "width": 350,
+            "height": 59,
+            "top": 301.859375,
+            "right": 370,
+            "bottom": 360.859375,
+            "left": 20
+          },
+          "copyText": "Pick up where you left off.",
+          "copy": {
+            "x": 54.40625,
+            "y": 320.859375,
+            "width": 166.453125,
+            "height": 21,
+            "top": 320.859375,
+            "right": 220.859375,
+            "bottom": 341.859375,
+            "left": 54.40625
+          },
+          "glyphs": [
+            {
+              "x": 20,
+              "y": 323.359375,
+              "width": 7.203125,
+              "height": 16,
+              "top": 323.359375,
+              "right": 27.203125,
+              "bottom": 339.359375,
+              "left": 20
+            },
+            {
+              "x": 27.203125,
+              "y": 323.359375,
+              "width": 7.203125,
+              "height": 16,
+              "top": 323.359375,
+              "right": 34.40625,
+              "bottom": 339.359375,
+              "left": 27.203125
+            }
+          ],
+          "lineTops": [
+            323.36
+          ],
+          "computed": {
+            "flexGrow": "0",
+            "flexShrink": "0",
+            "flexBasis": "14.4023px",
+            "whiteSpace": "nowrap",
+            "fontFamily": "\"Roboto Mono\", \"Roboto Mono Fallback\", monospace",
+            "fontSize": "12px"
+          }
+        }
+      ],
+      "layout": {
+        "viewport": 390,
+        "document": 390,
+        "body": 390,
+        "reducedMotion": true,
+        "scrollBehavior": "auto"
+      },
+      "navigationTiming": {
+        "responseStartMs": 159.80000001192093,
+        "domContentLoadedMs": 321.10000002384186,
+        "loadMs": 717.6000000238419
+      }
+    },
+    {
+      "width": 1440,
+      "failures": [],
+      "consoleErrors": [],
+      "runtimeErrors": [],
+      "resourceWarnings": [
+        {
+          "url": "https://www.hirewizhq.com/register",
+          "type": "fetch",
+          "failure": "net::ERR_ABORTED"
+        },
+        {
+          "url": "https://www.hirewizhq.com/login",
+          "type": "fetch",
+          "failure": "net::ERR_ABORTED"
+        }
+      ],
+      "blockedNonGet": [],
+      "blockedPrivateReads": [],
+      "blockedExternal": [],
+      "publicBootstrap": [
+        {
+          "path": "/api/auth/session",
+          "status": 200
+        }
+      ],
+      "screenshots": [
+        "/tmp/hirewiz-catalog-release-hosted-6f38020-1791489282029/home-1440-navigation.png",
+        "/tmp/hirewiz-catalog-release-hosted-6f38020-1791489282029/story-counters-1440.png",
+        "/tmp/hirewiz-catalog-release-hosted-6f38020-1791489282029/story-viewport-1440.png"
+      ],
+      "wallDomContentLoadedMs": 354,
+      "httpStatus": 200,
+      "sessionStatus": 200,
+      "navigationFocus": {
+        "tag": "A",
+        "name": "Pricing",
+        "visible": true,
+        "focusVisible": true,
+        "outline": "solid",
+        "boxShadow": "none"
+      },
+      "desktopNavigationReady": true,
+      "counters": [
+        {
+          "text": "01",
+          "counter": {
+            "x": 120,
+            "y": 148.265625,
+            "width": 14.40625,
+            "height": 18,
+            "top": 148.265625,
+            "right": 134.40625,
+            "bottom": 166.265625,
+            "left": 120
+          },
+          "row": {
+            "x": 120,
+            "y": 127.765625,
+            "width": 500,
+            "height": 58,
+            "top": 127.765625,
+            "right": 620,
+            "bottom": 185.765625,
+            "left": 120
+          },
+          "copyText": "Keep the original job description close.",
+          "copy": {
+            "x": 154.40625,
+            "y": 146.765625,
+            "width": 250.921875,
+            "height": 21,
+            "top": 146.765625,
+            "right": 405.328125,
+            "bottom": 167.765625,
+            "left": 154.40625
+          },
+          "glyphs": [
+            {
+              "x": 120,
+              "y": 149.265625,
+              "width": 7.203125,
+              "height": 16,
+              "top": 149.265625,
+              "right": 127.203125,
+              "bottom": 165.265625,
+              "left": 120
+            },
+            {
+              "x": 127.203125,
+              "y": 149.265625,
+              "width": 7.203125,
+              "height": 16,
+              "top": 149.265625,
+              "right": 134.40625,
+              "bottom": 165.265625,
+              "left": 127.203125
+            }
+          ],
+          "lineTops": [
+            149.27
+          ],
+          "computed": {
+            "flexGrow": "0",
+            "flexShrink": "0",
+            "flexBasis": "14.4023px",
+            "whiteSpace": "nowrap",
+            "fontFamily": "\"Roboto Mono\", \"Roboto Mono Fallback\", monospace",
+            "fontSize": "12px"
+          }
+        },
+        {
+          "text": "02",
+          "counter": {
+            "x": 120,
+            "y": 206.265625,
+            "width": 14.40625,
+            "height": 18,
+            "top": 206.265625,
+            "right": 134.40625,
+            "bottom": 224.265625,
+            "left": 120
+          },
+          "row": {
+            "x": 120,
+            "y": 185.765625,
+            "width": 500,
+            "height": 58,
+            "top": 185.765625,
+            "right": 620,
+            "bottom": 243.765625,
+            "left": 120
+          },
+          "copyText": "Know which experience supports each claim.",
+          "copy": {
+            "x": 154.40625,
+            "y": 204.765625,
+            "width": 291.046875,
+            "height": 21,
+            "top": 204.765625,
+            "right": 445.453125,
+            "bottom": 225.765625,
+            "left": 154.40625
+          },
+          "glyphs": [
+            {
+              "x": 120,
+              "y": 207.265625,
+              "width": 7.203125,
+              "height": 16,
+              "top": 207.265625,
+              "right": 127.203125,
+              "bottom": 223.265625,
+              "left": 120
+            },
+            {
+              "x": 127.203125,
+              "y": 207.265625,
+              "width": 7.203125,
+              "height": 16,
+              "top": 207.265625,
+              "right": 134.40625,
+              "bottom": 223.265625,
+              "left": 127.203125
+            }
+          ],
+          "lineTops": [
+            207.27
+          ],
+          "computed": {
+            "flexGrow": "0",
+            "flexShrink": "0",
+            "flexBasis": "14.4023px",
+            "whiteSpace": "nowrap",
+            "fontFamily": "\"Roboto Mono\", \"Roboto Mono Fallback\", monospace",
+            "fontSize": "12px"
+          }
+        },
+        {
+          "text": "03",
+          "counter": {
+            "x": 120,
+            "y": 264.265625,
+            "width": 14.40625,
+            "height": 18,
+            "top": 264.265625,
+            "right": 134.40625,
+            "bottom": 282.265625,
+            "left": 120
+          },
+          "row": {
+            "x": 120,
+            "y": 243.765625,
+            "width": 500,
+            "height": 58,
+            "top": 243.765625,
+            "right": 620,
+            "bottom": 301.765625,
+            "left": 120
+          },
+          "copyText": "Find the exact resume version you prepared.",
+          "copy": {
+            "x": 154.40625,
+            "y": 262.765625,
+            "width": 288.0625,
+            "height": 21,
+            "top": 262.765625,
+            "right": 442.46875,
+            "bottom": 283.765625,
+            "left": 154.40625
+          },
+          "glyphs": [
+            {
+              "x": 120,
+              "y": 265.265625,
+              "width": 7.203125,
+              "height": 16,
+              "top": 265.265625,
+              "right": 127.203125,
+              "bottom": 281.265625,
+              "left": 120
+            },
+            {
+              "x": 127.203125,
+              "y": 265.265625,
+              "width": 7.203125,
+              "height": 16,
+              "top": 265.265625,
+              "right": 134.40625,
+              "bottom": 281.265625,
+              "left": 127.203125
+            }
+          ],
+          "lineTops": [
+            265.27
+          ],
+          "computed": {
+            "flexGrow": "0",
+            "flexShrink": "0",
+            "flexBasis": "14.4023px",
+            "whiteSpace": "nowrap",
+            "fontFamily": "\"Roboto Mono\", \"Roboto Mono Fallback\", monospace",
+            "fontSize": "12px"
+          }
+        },
+        {
+          "text": "04",
+          "counter": {
+            "x": 120,
+            "y": 322.265625,
+            "width": 14.40625,
+            "height": 18,
+            "top": 322.265625,
+            "right": 134.40625,
+            "bottom": 340.265625,
+            "left": 120
+          },
+          "row": {
+            "x": 120,
+            "y": 301.765625,
+            "width": 500,
+            "height": 59,
+            "top": 301.765625,
+            "right": 620,
+            "bottom": 360.765625,
+            "left": 120
+          },
+          "copyText": "Pick up where you left off.",
+          "copy": {
+            "x": 154.40625,
+            "y": 320.765625,
+            "width": 166.453125,
+            "height": 21,
+            "top": 320.765625,
+            "right": 320.859375,
+            "bottom": 341.765625,
+            "left": 154.40625
+          },
+          "glyphs": [
+            {
+              "x": 120,
+              "y": 323.265625,
+              "width": 7.203125,
+              "height": 16,
+              "top": 323.265625,
+              "right": 127.203125,
+              "bottom": 339.265625,
+              "left": 120
+            },
+            {
+              "x": 127.203125,
+              "y": 323.265625,
+              "width": 7.203125,
+              "height": 16,
+              "top": 323.265625,
+              "right": 134.40625,
+              "bottom": 339.265625,
+              "left": 127.203125
+            }
+          ],
+          "lineTops": [
+            323.27
+          ],
+          "computed": {
+            "flexGrow": "0",
+            "flexShrink": "0",
+            "flexBasis": "14.4023px",
+            "whiteSpace": "nowrap",
+            "fontFamily": "\"Roboto Mono\", \"Roboto Mono Fallback\", monospace",
+            "fontSize": "12px"
+          }
+        }
+      ],
+      "layout": {
+        "viewport": 1440,
+        "document": 1440,
+        "body": 1440,
+        "reducedMotion": true,
+        "scrollBehavior": "auto"
+      },
+      "navigationTiming": {
+        "responseStartMs": 168.59999999403954,
+        "domContentLoadedMs": 352.7999999821186,
+        "loadMs": 482.19999998807907
+      }
+    }
+  ],
+  "screenshots_sha256": {
+    "home-320-menu.png": "6d75406d621321c9a312f427b6766c079ff589ff9649ea8bf5476ce6dd76d12e",
+    "story-counters-320.png": "42ac15dfee0abffe26950ed4f3b26f7cca6606e2efddf72e1c6d288b01c6c8fb",
+    "story-viewport-320.png": "70e3127e7c3b5ec809f42dc731eeb0f7a3ef6e43398988bd2c71fa1935c099f3",
+    "home-390-menu.png": "7d102b3268076804b0d32bdc70c717c5f2e4b4d33e0d4dad721f096187f501f0",
+    "story-counters-390.png": "0a6d5176c66d49129191fb2e4777c41f91c0adadd2160172a9c637b8387770de",
+    "story-viewport-390.png": "99e9599be87913a983e73f4fa3e3cde52d5d596c51a2371c8f80523cf8a526a3",
+    "home-1440-navigation.png": "0a6d670739d50be0f86c1664d9e9d204246b26ff19ed48dfc627c23e3399e8cf",
+    "story-counters-1440.png": "b31b3ed75b3b80db3f9cd38affe887315239624afd6b06e46e882026575efc24",
+    "story-viewport-1440.png": "a4bc15794616a7cc4d8dfbd1f3dc5665398b3f98fdddee5b20220eaaa614ea92"
+  },
+  "retention_note": "Screenshots/raw UI geometry remain supplemental temporary files; this selected evidence is committed. Cookie dialog remained untouched."
+}

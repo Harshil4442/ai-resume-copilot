@@ -1,0 +1,92 @@
+{
+  "schema": 1,
+  "scope": "Private document worker service schema correction; runtime and customer release remain unverified",
+  "basis_head": "61f5a2a0d77ffd29e9efb15e0baf7a80c49f2435",
+  "candidate_manifest_sha256": "7cf186d53cf090e71f084997a4b201ab652700a8fbc126cc3b8ae2d20da16d66",
+  "adopted_source_pins": {
+    "infra/gcp/document_worker.py": "91142e1156e8892d378a3be63edf0e63534e5f21bcb75d6cbcc72207e04406b8",
+    "backend/tests/test_document_worker_deployment.py": "9895974a8b390727ce4081d2cfc1561ca5b4869ca2d9117bfe9e104c467bb12d",
+    "docs/delivery/DOCUMENT_WORKER_DEPLOYMENT_2026-10-10.md": "94f95c3d2091e6892a6e621de7ab89caa25a7531e47b0e59dcad0d09a9b7d5a4"
+  },
+  "actual_read": {
+    "receipt_sha256": "ca29f7cf10722b00cb4636d952ed9bf0e625a1d23baee26dc1642beb4b3e100c",
+    "started_at_utc": "2026-10-11T19:22:52.032452+00:00",
+    "elapsed_seconds": 2.2388837919570506,
+    "calls": 1,
+    "mutations": 0,
+    "readiness_UID_etag_unchanged": true,
+    "service_scaling": {
+      "maxInstanceCount": 10
+    },
+    "traffic_revision_form": "bare_exact_ready",
+    "traffic_percent": 100,
+    "traffic_type": "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST",
+    "traffic_tag_present": false
+  },
+  "change": {
+    "desired_service_max_instances": 2,
+    "desired_revision_max_instances": 2,
+    "accepted_defaults": [
+      "omitted or explicit AUTOMATIC scaling mode",
+      "omitted or strict integer zero service minimum"
+    ],
+    "traffic_join": "Already verified full ready revision or its exact scoped basename; one integer100 LATEST row; no tags/unknown fields",
+    "no_mutation_from_verifier": true
+  },
+  "validation": {
+    "isolated_controls_passed": 109,
+    "test_seconds": 0.12,
+    "Ruff_isolated": "pass",
+    "target_Mypy": "pass",
+    "independent_source_review": "no actionable findings",
+    "current_full_CI": "pending for adopted source"
+  },
+  "runtime_image_digest": "392ac44e56757ef3c3b24a396d9eaeb03e8ad63d5ef36320ba8099501c156440",
+  "runtime_image_source_release": "15fc5137a1375ff1dfcb4e6a9c04bc319ea248e0",
+  "policy_sha256": "96d2991927b3ffec6d24310ef8e9a4555bd38ccfb3479d44a795d2e43c9d38a0",
+  "limits": {
+    "brief_cap_overshoot_possible": true,
+    "hard_billing_ceiling_claimed": false,
+    "effective_IAM_proven": false,
+    "native_service_update_invoked": false,
+    "private_HTTP_acceptance": false,
+    "application_boundary_acceptance": false,
+    "checkpoint2_complete": false,
+    "paid_customer_activation": false
+  },
+  "recorded_at_utc": "2026-10-11T19:35:15.512684+00:00",
+  "actual_configuration_diff": {
+    "receipt_sha256": "c2e5221177f78908436ab9b7a62997bbcc0cc4e044dc0acbc41842d33ccc32ba",
+    "started_at_utc": "2026-10-11T19:37:58.715614+00:00",
+    "elapsed_seconds": 5.612782667041756,
+    "read_calls": 3,
+    "mutations": 0,
+    "UID_ready_etag_terminal_matches": true,
+    "private_controls_match": true,
+    "traffic_exact_ready_no_tags": true,
+    "template_extra_fields": 0,
+    "template_changed_paths": [
+      "template.containers[0].env[0].value",
+      "template.containers[0].env[1].value",
+      "template.containers[0].image",
+      "template.containers[0].resources.startupCpuBoost",
+      "template.labels.hirewiz-source",
+      "template.scaling.minInstanceCount"
+    ],
+    "documented_default_omissions": [
+      "startupCpuBoost=false",
+      "revision minInstanceCount=0"
+    ],
+    "existing_CPU_matches_two": true,
+    "revision_configuration_extra_fields": 0,
+    "revision_unknown_top_level_fields": 0,
+    "service_IAM_binding_count": 0,
+    "service_IAM_matches_prior": true,
+    "service_cap_change": {
+      "from": 10,
+      "to": 2
+    },
+    "raw_provider_metadata_retained": false,
+    "configuration_acceptance_claimed": false
+  }
+}

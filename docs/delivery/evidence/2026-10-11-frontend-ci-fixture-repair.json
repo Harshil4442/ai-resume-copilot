@@ -1,0 +1,54 @@
+{
+  "parent_commit": "4c287dc3843d6328f59bc247df4c223e0100df88",
+  "shipping_files": [
+    {
+      "path": "frontend/e2e/employer-batches.spec.ts",
+      "pre_sha256": "0f791a70643024f7de94229287fbeb1b61a421130281779a2faf3234fb53da28",
+      "post_sha256": "88643e1c2e05c998ef9765a5ca9699e35e81c7a928740a9629e9b1ee4caa1ff0",
+      "bytes": 22542
+    },
+    {
+      "path": "frontend/e2e/employer-search-preferences.spec.ts",
+      "pre_sha256": "28a29329ed5f7e38d3ebf4a2dbe1dfb92837333dd7dc6062827479a4fe1c56bc",
+      "post_sha256": "1d8e1af2c75cee540934f804ea4a2ca4aa7a1630d346b12d7c3a73d61afa1bb7",
+      "bytes": 8853
+    }
+  ],
+  "artifacts_root_verified": 55,
+  "artifact_manifest_sha256": "620e6df2b4fa5ee29beadb0bf8c4e7cc856f64ddaa78e5b02dfe5b0271c35031",
+  "full_responsive_cases": 245,
+  "failures": 0,
+  "skips": 0,
+  "retries": 0,
+  "api_scope": "mocked",
+  "runtime_source_changed": false,
+  "managed_fixture_integrated": true,
+  "deployed": false,
+  "new_ci_dispatched": false,
+  "root_reran_unchanged_suite": false,
+  "date": "2026-10-11",
+  "checkpoint": "frontend_ci_fixture_repair",
+  "original_run": 38083618720,
+  "original_frontend_failures": 35,
+  "original_frontend_passes": 210,
+  "original_units_passed": 399,
+  "review_report_sha256": "43041502817f19cc70aab4a47e368b44e6171536d0700a7bee45235db656f6d8",
+  "full_report_sha256": "f1d26451b014bfe0279a5dc442292cfcd7a85079ba01d6d6f092b5fb8b8a6f12",
+  "full_junit_sha256": "00c7aab45fd1e4acfc0cc750034396455a2404d2c538db1b2ec6156c2aae688d",
+  "root_receipt_sha256": "8e9ab8496a4e436f1c64d8f416004a7b728a69a0c58b78660919870e6a200e86",
+  "widths": [
+    320,
+    390,
+    768,
+    1024,
+    1440
+  ],
+  "original_failure_preserved": true,
+  "production_build_reused": true,
+  "unchanged_runtime_build_files": 1300,
+  "limitations": [
+    "Mocked APIs; not global authentication, real financial ledger or employer submission acceptance.",
+    "Fresh committed-source CI and deployment remain separate.",
+    "Protected integration remains stopped."
+  ]
+}

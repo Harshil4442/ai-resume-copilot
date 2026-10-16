@@ -1,0 +1,514 @@
+{
+  "scope": "Default-disabled integrated direct PDF/DOCX quarantine/upload frontend, durable coordinator, source-access consistency, validated receipts and fresh-definition build; full production acceptance remains open",
+  "prior_exact_published_ci": {
+    "commit": "ab5cb5d958b3eff4ab99fb073fb47b5ca7c7bfcf",
+    "run_id": 38047639205,
+    "all_five_jobs": "success",
+    "backend_summary_matches": [
+      [
+        "3149",
+        "455"
+      ]
+    ],
+    "native_amd64_source_files_verified": 7,
+    "native_amd64_corpus_passed": 8,
+    "native_cloud_isolation_proven": false,
+    "cold_source_files_verified": 27,
+    "cold_scope": "Local production Next + Chromium + actual FastAPI/auth/SQL; finite synthetic external providers only",
+    "cold_widths": [
+      320,
+      390,
+      768,
+      1024,
+      1440
+    ],
+    "cold_model_calls": 0,
+    "cold_automatic_application_fee": 0,
+    "cold_real_employer_contact": false,
+    "cold_cleanup_verified": true,
+    "artifact_sha256": {
+      "native": "f0815f270b87e099ffde0431882d27b958a55df6de83bd6befd708fcffc6eaaa",
+      "cold": "c8fb79b687bfb5694924bfc2e96eadfcea4f733ce4ce8d85ed524cf1670d9657"
+    },
+    "later_receipt_refresh_source_not_certified": true
+  },
+  "receipt_refresh_integration": {
+    "packets": [
+      {
+        "packet": "/tmp/hirewiz-document-receipt-author-20261010-p7jkv1r8/freeze-v1",
+        "verified_source_files": 834,
+        "author_artifacts": 13,
+        "review_artifacts": 10,
+        "changed_paths": [
+          "backend/app/services/document_ingestion.py",
+          "backend/tests/test_document_ingestion.py"
+        ]
+      },
+      {
+        "packet": "/var/folders/ck/cyzkgt2d1yx6hzpsdflcg83c0000gn/T/hirewiz-document-definition-cache-author-20261010-_rhtky3s/freeze-v1",
+        "verified_source_files": 831,
+        "author_artifacts": 15,
+        "review_artifacts": 11,
+        "changed_paths": [
+          "infra/document-processing/Dockerfile",
+          "backend/scripts/document_test_image.py",
+          "backend/tests/test_document_definition_cache.py"
+        ]
+      }
+    ],
+    "integration": "exact reviewed patches only; no cloud changes"
+  },
+  "upload_integration": {
+    "shipping_paths": [
+      "backend/alembic/versions/20261010_0014_resume_upload_quarantine.py",
+      "backend/app/domains/resume_uploads/__init__.py",
+      "backend/app/domains/resume_uploads/models.py",
+      "backend/app/domains/resume_uploads/privacy.py",
+      "backend/app/domains/resume_uploads/scanner.py",
+      "backend/app/domains/resume_uploads/schemas.py",
+      "backend/app/domains/resume_uploads/service.py",
+      "backend/app/domains/resume_uploads/storage.py",
+      "backend/app/domains/resume_uploads/tasks.py",
+      "backend/app/main.py",
+      "backend/app/routers/resume_uploads.py",
+      "backend/tests/test_resume_upload_quarantine.py"
+    ],
+    "default_disabled": true,
+    "author_freeze": "/var/folders/ck/cyzkgt2d1yx6hzpsdflcg83c0000gn/T/hirewiz-resume-quarantine-candidate-20261010-e3qg1wz0/freeze-v2",
+    "independent_verdict": "/var/folders/ck/cyzkgt2d1yx6hzpsdflcg83c0000gn/T/hirewiz-quarantine-v2-independent-20261010-84m8i4t6/independent-verdict-v2.json",
+    "native_cloud_mutations": 0,
+    "source_manifest_sha256": "b17267fd422468496367f6a60eba335ff3ed2390ea9b18883b23b7a7b3f918ca",
+    "patch_sha256": "bdb87931fadad78ae17ecddf1274dbe6554ec0309172254acb2a21811ce66fc3",
+    "independent_passed": 69,
+    "review_composed_files_verified": 844
+  },
+  "fresh_arm64_engine": {
+    "cloud_run_isolation_proven": false,
+    "corpus": [
+      {
+        "case": "clean_pdf",
+        "outcome": "clean",
+        "passed": true,
+        "scan": {
+          "definitions": "28149/2026-10-10T06:24:04+00:00",
+          "engine": "ClamAV",
+          "version": "1.4.3"
+        }
+      },
+      {
+        "case": "clean_docx",
+        "outcome": "clean",
+        "passed": true,
+        "scan": {
+          "definitions": "28149/2026-10-10T06:24:04+00:00",
+          "engine": "ClamAV",
+          "version": "1.4.3"
+        }
+      },
+      {
+        "case": "page_counter",
+        "outcome": "clean",
+        "passed": true,
+        "scan": {
+          "definitions": "28149/2026-10-10T06:24:04+00:00",
+          "engine": "ClamAV",
+          "version": "1.4.3"
+        }
+      },
+      {
+        "case": "active_pdf",
+        "outcome": "refused",
+        "passed": true
+      },
+      {
+        "case": "includetext",
+        "outcome": "refused",
+        "passed": true
+      },
+      {
+        "case": "eicar_exact_file",
+        "outcome": "detected",
+        "passed": true
+      },
+      {
+        "case": "eicar_zip_member",
+        "outcome": "detected",
+        "passed": true
+      },
+      {
+        "case": "missing_definitions",
+        "outcome": "missing",
+        "passed": true
+      }
+    ],
+    "image_id": "sha256:a1a57802080a84bd584a2f119626a39e20a4420c6b7e4e8638b05b91ab3874c9",
+    "platform": "linux/arm64",
+    "restricted_container_metadata_verified": true,
+    "runtime_source_bytes_verified": true,
+    "scope": "local_native_docker_only",
+    "source_sha256": {
+      "backend/app/services/market/security.py": "a440f4ea26a5fb5982690da8399c75983e9133a23501d12e1973a985487200f6",
+      "backend/app/services/market/skill_extractor.py": "765824e77d2e9e0bfc88c910134a5009dd3ded52eccc958407d8173039746f54",
+      "backend/app/services/market/skill_taxonomy.py": "e210d0c2b97567fae690d4710ffffb1a5a93bb5bb732badcff47cc2839296366",
+      "backend/app/services/parsing.py": "c2533930bbeff9eb226abfb4b71720b6eb29dfaf805f6c2939e57c73226442a8",
+      "infra/document-processing/Dockerfile": "a1ace7a21e2c5add84f5b088daabf394b6b51fe0dc6db1c439869521954be97f",
+      "infra/document-processing/processor.py": "fdf4a00fdf92b09f0dd22bf3a8b17d3987cc505bd5b55d313dbfa44f537272a8",
+      "infra/document-processing/service.py": "fd65733bfb959cfa6af9283d92170a22debe4765a662be5430a2486a6b2b43c2"
+    }
+  },
+  "fresh_arm64_engine_sha256": "288a6dfdc6e90ce1ab4f9028042da50b2d1913575b7407ce0e2f84535397cfcf",
+  "boundaries": {
+    "monetary_guard_byte_exact_to_ab5": true,
+    "native_execute_unconditionally_refuses": true,
+    "protected_existing_unchanged": 6,
+    "protected_absent": 8,
+    "policy_sha256": "425fd4b326554d8fee8d2686f423c8e2b499eaaa1bd7858eb69f7759ac526bdf",
+    "fresh_native_proof_sha256": "288a6dfdc6e90ce1ab4f9028042da50b2d1913575b7407ce0e2f84535397cfcf",
+    "fresh_native_source_exact_to_policy": true
+  },
+  "root_checks": {
+    "receipt_initial": {
+      "junit_sha256": "592a2cb55545d314f375b4930268e7774e5725368948763c907dcda21ed35c8f",
+      "tests": 333,
+      "failures": 0,
+      "errors": 6,
+      "skipped": 0
+    },
+    "receipt_pg_replay": {
+      "junit_sha256": "95ce372d6ce82fe81e87091bf69a0407ba1b26279b5a4abd81872723025d6034",
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "quarantine_initial": {
+      "junit_sha256": "98ba5bfa22f941ef447d3ba0af72d42b3050df2edbf9b9672a33ac32e910d8c0",
+      "tests": 197,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    "quarantine_monetary_replay": {
+      "junit_sha256": "db48b031d34dc19b31b61d19d50766a76586aa600bafc78243a4292b4e7ec59f",
+      "tests": 83,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "document_worker_configuration": {
+      "tests": 56,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "junit_sha256": "9d3376dc47328ba559a8f7824a88a534a077da41dd6e792a95843612a156a938"
+    }
+  },
+  "composed_distinct_passing_counts": {
+    "receipt_and_related": 333,
+    "quarantine_migration_source_and_related": 197
+  },
+  "preserved_failures": {
+    "receipt_initial_six_setup_errors": "Local test URL selected unavailable psycopg2; same six cases passed with explicitly selected locked psycopg driver, no source fix.",
+    "quarantine_initial_one_failed": "Legacy-release schema-chain assertion required explicit ordinary0014 suffix; production CHAIN allowance and all native monetary guards stayed byte-exact. Full83-case file replay passed.",
+    "private_quarantine_v1_two_reviewer_failures": "Parsed representation privacy and deletion-during-cleanup rearm defects; unchanged independent probes pass in V2.",
+    "root_full_Ruff_initial_timeout": "Gitignore discovery did not finish in120seconds. Same entire CI target list passed with cache and gitignore traversal disabled; full Mypy138 passed.",
+    "initial_static_script_wrong_interpreter": "System Python lacked yaml before commands ran; locked backend Python replay passed.",
+    "root_build_missing_auth_configuration": "Normal build compiled and typed but refused static collection because local NEXTAUTH_SECRET absent/short; same source normal build passed with ephemeral synthetic64hex secret, no production secret access."
+  },
+  "static": {
+    "full_CI_Ruff_targets": "passed with no-cache/no-respect-gitignore; no target removed",
+    "full_CI_Mypy_source_files": 141,
+    "latest_target_logs_sha256": {
+      "ruff": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+      "mypy": "76d10d900e83b629960c9642e0898e985536ff486e19dc74de72c5c9a9dac58e"
+    }
+  },
+  "production_changes": false,
+  "new_schema_head": "20261010_0014",
+  "production_schema": "0009",
+  "direct_upload_enabled": false,
+  "native_GCS_proof": false,
+  "cloud_run_isolation_proven": false,
+  "new_source_hosted_CI": "pending",
+  "remaining": [
+    "Native GCS bucket/IAM/CORS/signed5MiB/generation retirement acceptance",
+    "Native isolated scanner service identity, networking, sandbox resource/cleanup and actual HTTP receipt acceptance",
+    "Actual coordinator runtime, bounded auth deadline and native scheduler",
+    "Large original signed-download native GCS/CORS browser acceptance; frontend/CSP source integrated",
+    "Restricted grants and reviewed schema0014 cutover; monetary native fence remains closed",
+    "Legacy/TeX/stored-file/rendered artifact admission and broader format fidelity",
+    "Finite retention policy for closure markers and detached cleanup metadata",
+    "Protected browser integration, permitted portal acceptance and full coverage/recovery/field requirements"
+  ],
+  "disabled_document_worker_configuration": {
+    "integration": {
+      "reviewed_verdict": "CLEAR_SOURCE_ONLY_DISABLED_DEPLOYMENT_PROPOSAL",
+      "basis_head": "ab5cb5d958b3eff4ab99fb073fb47b5ca7c7bfcf",
+      "verification": {
+        "author_source": 838,
+        "author_artifacts": 29,
+        "review_artifacts": 14
+      },
+      "integrated_postimages": {
+        "backend/tests/test_document_worker_deployment.py": {
+          "postimage": "2940d1ec84f193faebd210c2e0f6ddbe6b63d3e56e763c672f87c6cc9eff62c8",
+          "preimage": null,
+          "size": 11968
+        },
+        "docs/delivery/DOCUMENT_WORKER_DEPLOYMENT_2026-10-10.md": {
+          "postimage": "4cfc3961935f6d14f439d3cbc0a801bf2ff0d0bcd361d8af7b1abf9c6eb9b410",
+          "preimage": null,
+          "size": 9535
+        },
+        "infra/gcp/document-worker.disabled.json": {
+          "postimage": "a7a6018a48db8e26567f1d224edac17aab595fa718d4e90a344e78a8604b7e1a",
+          "preimage": null,
+          "size": 473
+        },
+        "infra/gcp/document_worker.py": {
+          "postimage": "8fdbea5c0a6955b056bd356988086cef17a7eb8073b723c8f188dbab66166741",
+          "preimage": null,
+          "size": 13360
+        }
+      },
+      "native_calls": 0,
+      "cloud_mutations": 0,
+      "api_wiring": false,
+      "paid_activation": false,
+      "author_report_sha256": "c97f60cfe9140029215eaf1f80485eb4fb2dd3d7d9f5b99e9f69a73cbb957f0e"
+    },
+    "independent_distinct_passes": 76,
+    "root_tests": {
+      "tests": 56,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "root_junit_sha256": "9d3376dc47328ba559a8f7824a88a534a077da41dd6e792a95843612a156a938",
+    "native_deployment": false,
+    "runtime_isolation_proven": false,
+    "effective_iam_proven": false,
+    "input_snapshot_provenance": "offline untrusted declarations only",
+    "new_source_hosted_CI": "pending"
+  },
+  "frontend_generated_contract_checks": {
+    "lint": "passed",
+    "types": "passed",
+    "units_passed": 248,
+    "scope": "generated direct-upload API contracts; new upload UI not integrated at this checkpoint"
+  },
+  "frontend_v2_integration": {
+    "scope": "Seven-path default-disabled direct-upload frontend source; publication/integration only",
+    "shipping_postimages": [
+      {
+        "path": "frontend/app/resume/page.test.tsx",
+        "pre_sha256": null,
+        "post_sha256": "190aa4b9c7864cfabccbe54d0fe51462400588d6e3f5bf45c387e469b774868b"
+      },
+      {
+        "path": "frontend/app/resume/page.tsx",
+        "pre_sha256": "8b5bae1812d3a258dee6d148a9aa6ca924d0415f59f81809d1746e9a5d35defc",
+        "post_sha256": "408cdd0a5b60dd59f8b03435c4c2f66deabceb1cab298d55098c18a3e4ba73f2"
+      },
+      {
+        "path": "frontend/components/EmployerApplicationPanel.test.tsx",
+        "pre_sha256": "c1dc017102e09df45a50d887dc1ca946ec623e385145b563d54d1fc32dd6ec15",
+        "post_sha256": "2e4c13f148252072a8909308093fd9f1e0db26be04208b30fef74a2850adf9e8"
+      },
+      {
+        "path": "frontend/components/EmployerApplicationPanel.tsx",
+        "pre_sha256": "8f0c5b0c9f7e10163bb0397b50554bcd01421743a1b7c16410e428957a906115",
+        "post_sha256": "211ff7d3267d30dc83f223ba4d1583bf40d521f576bde28654f31c66e66a71cc"
+      },
+      {
+        "path": "frontend/components/ResumeUploadProgress.tsx",
+        "pre_sha256": null,
+        "post_sha256": "8d2615386f858d67f837ff7941f39bc6e18e33dcf52c8e800916decfff83c23c"
+      },
+      {
+        "path": "frontend/lib/resumeUpload.test.ts",
+        "pre_sha256": null,
+        "post_sha256": "069af5d38a97700bf000325cb8764438837e81035a541cb1a5d0a7d65f538add"
+      },
+      {
+        "path": "frontend/lib/resumeUpload.ts",
+        "pre_sha256": null,
+        "post_sha256": "d55859b40800650d1fd5d5c66adf925360b3d699d4abc7a5d33296d2816a0077"
+      }
+    ],
+    "artifacts_verified": {
+      "author": 25,
+      "review": 8
+    },
+    "independent_cases": {
+      "tests": 74,
+      "passed": 74,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "breakdown": {
+        "authored_focused": 62,
+        "unchanged_original_cleanup_and_ambiguous_put": 7,
+        "independent_account_swap": 1,
+        "unchanged_existing_owner_boundary": 4
+      }
+    },
+    "prior_hold": {
+      "verdict_sha256": "e5f960ab80b1812877df4e85c38e72474a3fc91d91c7bf35b261571779f21b64",
+      "artifact_manifest_sha256": "a0dcdc1c686c0df74c025a907bc81eda66a63119cbbb8994ff99d8e14bcbf6a8"
+    },
+    "default_enabled": false,
+    "no_cloud_mutations": true,
+    "backend_source_access_addendum_separately_pending_review": false,
+    "initial_root_manifest_reader_refusal": "Reader required dictionary values; actual pinned manifests use string hashes. Corrected manifest-reader shape only before any mutation.",
+    "backend_source_access_addendum_review": "CLEAR_SOURCE_ONLY_V2_18_CASES"
+  },
+  "root_frontend_checks": {
+    "units_passed": 291,
+    "files_passed": 24,
+    "lint": "passed",
+    "typescript": "passed",
+    "new_direct_upload_flag": false,
+    "native_browser_GCS": "not exercised",
+    "normal_turbopack_build": "passed after ephemeral synthetic NEXTAUTH_SECRET configuration; source unchanged",
+    "build_log_sha256": "c5b4f620d7bc8f2e660f1e3cec01f124d91c467b284db31affe8ea14f9c4e778"
+  },
+  "native_registry_candidate": "2026-10-10-document-registry-image.json",
+  "coordinator_integration": {
+    "shipping_postimages": {
+      "backend/app/resume_upload_worker.py": {
+        "preimage": null,
+        "postimage": "cca2a4f8fd76ba0e478a529319ad10357370e67505321e11d2c5c27e383fab5a",
+        "size": 5934
+      },
+      "backend/app/services/resume_upload_coordinator.py": {
+        "preimage": null,
+        "postimage": "69fae648b95f85c5f1f12c25d7f76872cc5f01e56161b8d787c2f52962301ecc",
+        "size": 6808
+      },
+      "backend/tests/test_resume_upload_coordinator.py": {
+        "preimage": null,
+        "postimage": "98e1715f9f5c47c8e638a751a80c3b93d4085a7f26080d6a4bb81e6b9408b135",
+        "size": 15491
+      },
+      "backend/tests/test_resume_upload_coordinator_postgres.py": {
+        "preimage": null,
+        "postimage": "ee5e89dd80b267fd8e05586a625a7771ffd99b73daced95e54ad35471b6f4c8f",
+        "size": 6950
+      },
+      "docs/delivery/RESUME_UPLOAD_COORDINATOR_2026-10-10.md": {
+        "preimage": null,
+        "postimage": "78d134f90b678fc268f517462e1eedc4497ce1d202b7164f06e308710a729d97",
+        "size": 9549
+      }
+    },
+    "reviewed_unique_cases": 57,
+    "reviewed_actual_local_postgres_cases": 8,
+    "source_manifest_sha256": "41401036bb55aed265ca58c4a1490616223eaaab31ba8e96c29fee2b6d50186a",
+    "independent_verdict_sha256": "443c4197050bf08b09b4ad126867ddb4d00d25be31092aceb334c57e93515b53",
+    "verified_source_files": 853,
+    "author_artifacts": 27,
+    "review_artifacts": 22,
+    "enabled": false,
+    "native_scheduler": false,
+    "native_provider_calls": false,
+    "original_auth_sdk_total_wall_deadline": "still unproved; five-second socket timeout only",
+    "initial_root_reader_refusal": "incorrect_manifest_filename_before_mutation"
+  },
+  "source_access_v2_integration": {
+    "shipping_postimages": {
+      "backend/app/domains/resume_uploads/service.py": {
+        "pre_sha256": "3be5b8ad217450a2c7f6d5d48cfa11ac2f9071c01bee339f20f7496594ee3114",
+        "post_sha256": "8e9c62e54b7fe62704a178adddd57f8c6720bdd55cb8d029e2a50de4111a5edd",
+        "size": 7869
+      },
+      "backend/tests/test_resume_source_access.py": {
+        "pre_sha256": null,
+        "post_sha256": "43d855e0226c335ff8f5ebcb8bce7d700e6b407833027c9216328960bed11ef0",
+        "size": 4954
+      }
+    },
+    "source_manifest_sha256": "fa272cf9d2c51d9e28507ca0ef588584934701bd9ecd399618851336cbf4f1ef",
+    "review_sha256": "89171bbfce47b7b2305fb4ce04de9ce59d1460bc3e694148a9c09565305250ff",
+    "root_quarantine_source_cases": 77,
+    "independent_cases": 18,
+    "default_enabled": false,
+    "production_changes": false,
+    "prior_hold_preserved": true,
+    "initial_reader_refusal": "review manifest string hashes were treated as dictionaries; only reader corrected before acceptance",
+    "root_junit_sha256": "c8f0b3d496c022c2fe4d98de314ce24ba0fa1e2d664308986a9ce27c353e5e40",
+    "root_pg_inventory_exact": true
+  },
+  "original_source_frontend_integration": {
+    "shipping_postimages": {
+      "frontend/lib/career.ts": {
+        "preimage_sha256": "dc289b6bed14abec93938e8ef8e031310ddcf1375d9dde6e3a3dbd835c8bb49f",
+        "postimage_sha256": "84928d1d061e4294bd1784653c3122b930dfebd6feaaffe3bd6a95f0e87da91d",
+        "new": false
+      },
+      "frontend/app/resume/preview/page.tsx": {
+        "preimage_sha256": "1e17fe3f1bcb2b8f1897cabff79c006ebd0d548207387d0286c5664871018139",
+        "postimage_sha256": "ae840849e166c2e25af3032805b3661c383109409d34294d09f3ad5667d13e93",
+        "new": false
+      },
+      "frontend/next.config.mjs": {
+        "preimage_sha256": "d6791dc97f2fa308c4f6dae07882cecf0ec5a8ac0032f194625ffdd7b9ae636f",
+        "postimage_sha256": "9f78bbbbb9fd379e72400f46e2a85395dff7ff9129d91cd9107b106da827b9d9",
+        "new": false
+      },
+      "frontend/lib/resumeSource.ts": {
+        "preimage_sha256": null,
+        "postimage_sha256": "aa92ecfd5bef7fbf97463c4b61f47731a0a6f854917fc50517abb11dc49eeb97",
+        "new": true
+      },
+      "frontend/lib/resumeSource.test.ts": {
+        "preimage_sha256": null,
+        "postimage_sha256": "4c78d86b736af5d62c76191a1977ee68d4bf2bb5b4f8519e30cf73d06eda295f",
+        "new": true
+      },
+      "frontend/app/resume/preview/page.test.tsx": {
+        "preimage_sha256": null,
+        "postimage_sha256": "e7574a638433f62d9b7f4680be4959b57ef293462fe92ab91e6c670e81195960",
+        "new": true
+      },
+      "frontend/lib/resumeSourceCsp.test.ts": {
+        "preimage_sha256": null,
+        "postimage_sha256": "fccf938412593ea1045e9c2ba324b7180edb40cb16f47da399688828745a83d9",
+        "new": true
+      },
+      "docs/delivery/ORIGINAL_RESUME_SOURCE_2026-10-10.md": {
+        "preimage_sha256": null,
+        "postimage_sha256": "9b1611264ce83398c8461fa4737d142a9c1fc428f03fcc4787b17759209083ef",
+        "new": true
+      }
+    },
+    "source_manifest_sha256": "fb82c6709ed952ebe2942f56a2c216344c734732362d2657319fb9ae7580e3d7",
+    "independent_verdict_sha256": "922b9d2ec009809e40eae58aee287f18070626d0c5a66e589bbc307b6dd6cc89",
+    "author_full_frontend_cases": 310,
+    "independent_unique_cases": 72,
+    "author_browser_source_bytes": 5242880,
+    "author_browser_widths": [
+      320,
+      390,
+      768,
+      1024,
+      1440
+    ],
+    "author_browser_external_transports": "synthetic API and GCS",
+    "native_browser_storage_proven": false,
+    "enabled": false
+  },
+  "joined_root_frontend_checks": {
+    "tests": 353,
+    "files": 27,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "junit_sha256": "e75d301369dbbe31c6b3890a539b014f5bc467a14451b15ad84510939723fa93",
+    "lint": "passed",
+    "typescript": "passed",
+    "normal_turbopack_build": "currently running in owned session57253; no terminal result at source publication freeze",
+    "ephemeral_auth_configuration": "synthetic test value, no production credential access",
+    "native_browser_GCS": "not exercised"
+  }
+}

@@ -1,0 +1,28 @@
+"use client";
+
+import { employmentOptions, type PreferenceDraft } from "../lib/searchPreferences";
+
+export function EmployerSearchPreferences({ value, onChange, disabled, error }: {
+  value: PreferenceDraft; onChange: (next: PreferenceDraft) => void; disabled: boolean; error: string | null;
+}) {
+  const change = <K extends keyof PreferenceDraft>(key: K, next: PreferenceDraft[K]) => onChange({ ...value, [key]: next });
+  return <details className="rounded-lg border border-border p-3">
+    <summary className="min-h-11 cursor-pointer text-sm font-semibold">More search preferences</summary>
+    <fieldset disabled={disabled} className="mt-3 grid min-w-0 gap-4" aria-describedby="preference-help">
+      <legend className="sr-only">Optional search preferences</legend>
+      <p id="preference-help" className="text-xs leading-5 text-muted-foreground">Leave unanswered choices blank. Jobs with missing employer facts stay in results and show what needs review.</p>
+      <label className="grid gap-2 text-sm font-semibold">Country codes<input className="field-control min-w-0" value={value.countries} onChange={(event) => change("countries", event.target.value)} maxLength={100} placeholder="IN, US, GB" /><span className="text-xs font-normal leading-5 text-muted-foreground">Two-letter country codes. Only a stated employer country can exclude a result; location text is separate.</span></label>
+      <label className="grid gap-2 text-sm font-semibold">Posting language codes<input className="field-control min-w-0" value={value.languages} onChange={(event) => change("languages", event.target.value)} maxLength={140} placeholder="en, hi, pt-BR" /><span className="text-xs font-normal leading-5 text-muted-foreground">Public feed display locale where documented. Translations may fall back to English. This does not establish working-language requirements.</span></label>
+      <fieldset className="grid gap-2"><legend className="mb-2 text-sm font-semibold">Employment types</legend>{employmentOptions.map((option) => <label key={option.value} className="flex min-h-8 items-center gap-2 text-xs"><input type="checkbox" className="h-4 w-4 accent-primary" checked={value.employment.includes(option.value)} onChange={(event) => change("employment", event.target.checked ? [...value.employment, option.value] : value.employment.filter((item) => item !== option.value))} />{option.label}</label>)}</fieldset>
+      <div className="grid grid-cols-2 gap-3"><label className="grid gap-2 text-sm font-semibold">Salary minimum<input className="field-control min-w-0" inputMode="decimal" value={value.minimum} onChange={(event) => change("minimum", event.target.value)} maxLength={15} placeholder="Optional" /></label><label className="grid gap-2 text-sm font-semibold">Salary maximum<input className="field-control min-w-0" inputMode="decimal" value={value.maximum} onChange={(event) => change("maximum", event.target.value)} maxLength={15} placeholder="Optional" /></label></div>
+      <div className="grid grid-cols-2 gap-3"><label className="grid gap-2 text-sm font-semibold">Salary currency<input className="field-control min-w-0" value={value.currency} onChange={(event) => change("currency", event.target.value.toUpperCase())} maxLength={3} /></label><label className="grid gap-2 text-sm font-semibold">Pay period<select className="field-control min-w-0" value={value.period} onChange={(event) => change("period", event.target.value as PreferenceDraft["period"])}>{["year", "month", "week", "day", "hour"].map((period) => <option key={period} value={period}>{period}</option>)}</select></label></div>
+      <p className="text-xs leading-5 text-muted-foreground">Salary ranges overlap your bounds only when currency and pay period match exactly. No exchange-rate or annual-pay guesses are used.</p>
+      <label className="grid gap-2 text-sm font-semibold">Do you need sponsorship?<select className="field-control min-w-0" value={value.sponsorship} onChange={(event) => change("sponsorship", event.target.value as PreferenceDraft["sponsorship"])}><option value="">Not answered</option><option value="yes">Yes</option><option value="no">No</option></select></label>
+      <label className="grid gap-2 text-sm font-semibold">Countries where you have work authorization<input className="field-control min-w-0" value={value.authorizedCountries} disabled={value.noAuthorization} onChange={(event) => change("authorizedCountries", event.target.value)} maxLength={100} placeholder="e.g. IN" /></label>
+      <label className="flex items-start gap-2 text-xs leading-5"><input type="checkbox" className="mt-1 h-4 w-4 shrink-0 accent-primary" checked={value.noAuthorization} onChange={(event) => onChange({ ...value, noAuthorization: event.target.checked, authorizedCountries: event.target.checked ? "" : value.authorizedCountries })} />I do not currently have work authorization in any country.</label>
+      <label className="grid gap-2 text-sm font-semibold">Are you willing to relocate?<select className="field-control min-w-0" value={value.relocation} onChange={(event) => change("relocation", event.target.value as PreferenceDraft["relocation"])}><option value="">Not answered</option><option value="yes">Yes</option><option value="no">No</option></select></label>
+      <p className="text-xs leading-5 text-muted-foreground">These are your stated choices, not verified legal eligibility. Current public feeds usually omit sponsorship and authorization rules, so review these with the employer.</p>
+      {error ? <p role="alert" className="text-xs leading-5 text-coral">{error}</p> : null}
+    </fieldset>
+  </details>;
+}

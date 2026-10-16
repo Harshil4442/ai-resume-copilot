@@ -1,18 +1,8 @@
 import "server-only";
 
-export type PublicCatalogProduct = {
-  sku: "premium_30d";
-  name: string;
-  description: string;
-  amount_minor: number;
-  amount_display: string;
-  currency: "INR";
-  billing_type: "one_time";
-  duration_days: 30;
-  auto_renews: false;
-  catalog_visible: boolean;
-  enabled_for_purchase: boolean;
-};
+import { finiteCreditBundles, type CreditBundleProduct } from "./billingProducts";
+
+export type PublicCatalogProduct = CreditBundleProduct;
 
 export type PublicBillingCatalog = {
   catalog_version: string;
@@ -20,6 +10,8 @@ export type PublicBillingCatalog = {
   checkout_enabled: boolean;
   provider: "razorpay" | null;
   products: PublicCatalogProduct[];
+  availability_message?: string | null;
+  service_prices?: { search_credits_per_job: number; apply_credits_per_job: number; pricing_version: string } | null;
 };
 
 function backendApiBase(): string | null {
@@ -45,16 +37,33 @@ export async function getPublicBillingCatalog(): Promise<PublicBillingCatalog | 
   const apiBase = backendApiBase();
   if (!apiBase) return null;
 
-  try {
-    const response = await fetch(`${apiBase}/public/billing/catalog`, {
-      cache: "no-store",
-      headers: { Accept: "application/json" },
-    });
-    if (!response.ok) return null;
+  const controller = new AbortController();
+  let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<null>((resolve) => {
+    deadlineTimer = setTimeout(() => {
+      controller.abort();
+      resolve(null);
+    }, 2_500);
+  });
 
-    const data: unknown = await response.json();
-    return isCatalog(data) ? data : null;
+  try {
+    return await Promise.race([
+      (async () => {
+        const response = await fetch(`${apiBase}/public/billing/catalog`, {
+          cache: "no-store",
+          headers: { Accept: "application/json" },
+          signal: controller.signal,
+        });
+        if (!response.ok) return null;
+
+        const data: unknown = await response.json();
+        return isCatalog(data) ? { ...data, products: finiteCreditBundles(data.products) } : null;
+      })(),
+      deadline,
+    ]);
   } catch {
     return null;
+  } finally {
+    if (deadlineTimer !== undefined) clearTimeout(deadlineTimer);
   }
 }

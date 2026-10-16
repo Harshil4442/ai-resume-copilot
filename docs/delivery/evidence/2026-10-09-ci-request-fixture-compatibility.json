@@ -1,0 +1,45 @@
+{
+  "status": "THREE_TEST_FIXTURE_PATHS_INTEGRATED_FULL_RELEASE_HOLD",
+  "baseline": "b50d9f7433698d534af63940f1f010a409d270af",
+  "frozen_patch_sha256": "ea35adf43ead283046544f49cea3b1fcd1e77937e8a61b400cddf31ba3096a57",
+  "report_sha256": "e5c135ff022d722850e0f3d88a20ff8937749f644eb81f8a0fbfde4cfabe705b",
+  "verified_source_count": 709,
+  "verified_artifact_count": 760,
+  "integrated_paths": [
+    {
+      "path": "backend/tests/test_gcp_password_reset_emulator.py",
+      "sha256": "802d784e4d77f27eb15a4f828b66c468678307019758b7d53138cf8e2a0bd7ef"
+    },
+    {
+      "path": "backend/tests/test_model_cost_liabilities.py",
+      "sha256": "6f0f66a3b88d07f371b44040dd3dc83ef37c65ed69f6de8f0a1403ae6f94c9ac"
+    },
+    {
+      "path": "backend/tests/test_razorpay_billing.py",
+      "sha256": "d0bfa20260a3424abf7662bc68685a8a29ba9e2167427468f59d0c82810275a3"
+    }
+  ],
+  "original_exact_ci": {
+    "run": 37950467827,
+    "backend_failed": 25,
+    "backend_passed": 2072,
+    "other_lanes_successful": 4
+  },
+  "bounded_repair_results": {
+    "original_25_failures_now_pass": 25,
+    "unchanged_ingress_cases_pass": 60,
+    "affected": {
+      "passed": 81,
+      "failed": 1
+    },
+    "focused_concurrency_control": {
+      "passed": 2,
+      "failed": 0
+    }
+  },
+  "assertions_preserved": 249,
+  "product_authorization_changed": false,
+  "known_availability_hold": "Untouched native concurrent reset returned zero confirmed winners. Later two green controls do not resolve initial/historical availability HOLD.",
+  "full_root_ci": "PENDING after final billing/native/preferences/preflight composition",
+  "local_evidence": "/var/folders/ck/cyzkgt2d1yx6hzpsdflcg83c0000gn/T/hirewiz-ci-b50-fixture-compat-20261009-397x8xar"
+}

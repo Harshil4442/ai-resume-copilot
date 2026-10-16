@@ -2,8 +2,8 @@
 
 import { AlertCircle, ArrowUpRight, BarChart3, BriefcaseBusiness, Globe2, LoaderCircle, MapPin, Search, TrendingUp } from "lucide-react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { Button } from "../../components/ui/Button";
 import { EmptyState } from "../../components/ui/EmptyState";
@@ -12,6 +12,11 @@ import { apiGet, apiPostJson } from "../../lib/api";
 import type { MarketAnalyzeResponse } from "../../lib/types";
 
 type ResumeItem = { id: number; filename: string; created_at: string };
+
+const MarketDemandChart = dynamic(() => import("../../components/MarketDemandChart"), {
+  ssr: false,
+  loading: () => <div className="skeleton-block h-full w-full" role="status" aria-label="Loading demand chart" />,
+});
 
 function tone(value: string) {
   const normalized = value.toLowerCase();
@@ -135,15 +140,7 @@ export default function MarketPage() {
                 <section>
                   <div className="flex items-end justify-between gap-4"><div><p className="eyebrow">Demand</p><h2 className="font-display mt-2 text-2xl font-normal">Most repeated skills</h2></div><TrendingUp size={20} className="text-primary" /></div>
                   <div className="mt-6 h-[390px] min-w-0">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={chartData} layout="vertical" margin={{ left: 30, right: 20 }}>
-                        <CartesianGrid horizontal={false} stroke="var(--color-border)" />
-                        <XAxis type="number" domain={[0, 100]} tickFormatter={(value) => `${value}%`} tick={{ fill: "var(--color-muted-foreground)", fontSize: 11 }} axisLine={false} />
-                        <YAxis type="category" dataKey="skill" width={120} tick={{ fill: "var(--color-foreground)", fontSize: 11 }} axisLine={false} tickLine={false} />
-                        <Tooltip formatter={(value) => [`${Number(value).toFixed(1)}%`, "Demand"]} contentStyle={{ background: "var(--color-card)", color: "var(--color-foreground)", border: "1px solid var(--color-border)", borderRadius: 12 }} />
-                        <Bar dataKey="demand" fill="var(--color-primary)" radius={[0, 4, 4, 0]} barSize={22} />
-                      </BarChart>
-                    </ResponsiveContainer>
+                    <MarketDemandChart data={chartData} />
                   </div>
                 </section>
 

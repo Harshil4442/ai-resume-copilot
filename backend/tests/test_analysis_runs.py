@@ -5,6 +5,7 @@ import logging
 from io import BytesIO
 
 import pytest
+from backend.app.billing.catalog import ANALYSIS_PRICING_VERSION
 from backend.app.database import Base
 from backend.app.domains.analysis import schemas, tasks
 from backend.app.domains.analysis import service as analysis_service
@@ -25,6 +26,7 @@ from backend.app.services.resume_layout import (
     apply_source_edits,
     extract_source_units,
 )
+from backend.tests.native_docx_ci_fixtures import configure_native_docx_worker
 from docx import Document as DocxDocument
 from fastapi import HTTPException
 from pypdf import PdfReader
@@ -266,7 +268,7 @@ def test_repaired_interview_output_saves_eight_questions_and_charges_once(monkey
                 payload=schemas.AnalysisRunCreate(
                     operation="interview_questions",
                     opportunity_id="opp_repaired_interview",
-                    input={"num_questions": 8},
+                    input={"num_questions": 8, "mode": "enhanced"},
                 ),
                 header_idempotency_key="repaired-interview-output-001",
             )
@@ -340,7 +342,7 @@ def test_invalid_interview_output_fails_without_charging_or_saving_a_result(
                 payload=schemas.AnalysisRunCreate(
                     operation="interview_questions",
                     opportunity_id="opp_interview",
-                    input={"num_questions": 8},
+                    input={"num_questions": 8, "mode": "enhanced"},
                 ),
                 header_idempotency_key="invalid-interview-output-001",
             )
@@ -417,7 +419,47 @@ def test_active_premium_run_is_audited_without_deduction():
         engine.dispose()
 
 
+def test_unavailable_docx_renderer_does_not_request_another_content_repair(monkeypatch):
+    from backend.app.services import document_ingestion
+
+    engine, factory = _database()
+    monkeypatch.setattr(tasks, "SessionLocal", factory)
+    monkeypatch.setenv("DOCUMENT_WORKER_URL", "https://unavailable-docx-test.run.app/inspect")
+    monkeypatch.setenv("DOCUMENT_WORKER_IMAGE_DIGEST", "local-test@sha256:" + "a" * 64)
+    monkeypatch.setenv("DOCUMENT_WORKER_POLICY_SHA256", "b" * 64)
+    monkeypatch.setenv("DOCUMENT_WORKER_DOCX_RENDERER_VERSION", "")
+    monkeypatch.setenv("DOCUMENT_WORKER_DOCX_FONT_MANIFEST_SHA256", "")
+
+    def identity_forbidden(*args):
+        pytest.fail("Missing renderer pins must stop before identity or HTTP")
+
+    monkeypatch.setattr(document_ingestion, "_identity_token", identity_forbidden)
+    calls = []
+
+    def propose(**kwargs):
+        calls.append(kwargs)
+        return _source_edit_response(kwargs["source_units"])
+
+    monkeypatch.setattr(llm_client, "tailor_resume_from_evidence", propose)
+    try:
+        run_id = _create_tailoring_run(factory)
+        assert tasks.process_analysis_run(run_id) == "failed"
+        assert tasks.process_analysis_run(run_id) == "failed"
+        assert len(calls) == 1
+        with factory() as db:
+            run = db.get(AnalysisRun, run_id)
+            assert run.committed_units == 0 and run.usage_state == "released"
+            assert run.result_payload is None and run.attempt_count == 1
+            assert db.query(ResumeVersion).count() == 0
+            assert db.get(User, 1).ai_credits == 50
+            events = db.query(UsageEvent).order_by(UsageEvent.created_at).all()
+            assert [(event.event_type, event.amount) for event in events] == [("reserve", -2), ("release", 2)]
+    finally:
+        engine.dispose()
+
+
 def test_evidence_tailoring_creates_a_traceable_version_and_commits_once(monkeypatch):
+    native_calls = configure_native_docx_worker(monkeypatch)
     engine, factory = _database()
     monkeypatch.setattr(tasks, "SessionLocal", factory)
     calls = []
@@ -439,10 +481,10 @@ def test_evidence_tailoring_creates_a_traceable_version_and_commits_once(monkeyp
             resume = db.get(Resume, 10)
             assert run.status == "succeeded"
             assert run.usage_state == "committed"
-            assert run.committed_units == 10
+            assert run.committed_units == 2
             assert run.attempt_count == 1
-            assert run.prompt_version == "resume-source-v4"
-            assert db.get(User, 1).ai_credits == 40
+            assert run.prompt_version == "resume-source-v5"
+            assert db.get(User, 1).ai_credits == 48
             assert version.generation_run_id == run_id
             assert version.evidence_ids == ["evd_approved"]
             assert version.structured_content["evidence_policy"] == "approved_only"
@@ -452,9 +494,11 @@ def test_evidence_tailoring_creates_a_traceable_version_and_commits_once(monkeyp
             edited = DocxDocument(BytesIO(artifact.content))
             assert edited.paragraphs[-1].text == TAILORED_EXPERIENCE
             assert DocxDocument(BytesIO(resume.source_document)).paragraphs[-1].text == SOURCE_EXPERIENCE
+            assert version.structured_content["sealed_native_artifact"]["content_sha256"]
+            assert len(native_calls) == 1  # Duplicate delivery and download do not render again.
             events = db.query(UsageEvent).order_by(UsageEvent.created_at).all()
             assert [event.event_type for event in events] == ["reserve", "commit"]
-            assert [event.amount for event in events] == [-10, 0]
+            assert [event.amount for event in events] == [-2, 0]
     finally:
         engine.dispose()
 
@@ -508,12 +552,13 @@ def _create_tailoring_run(factory):
             db,
             user_id=1,
             payload=schemas.AnalysisRunCreate(
-                operation="resume_tailor", opportunity_id="opp_tailor", input={}
+                operation="resume_tailor", opportunity_id="opp_tailor", input={},
+                accepted_quote={"pricing_version": ANALYSIS_PRICING_VERSION, "units": 2},
             ),
             header_idempotency_key="native-tailor-request-001",
         )
         assert run.usage_state == "reserved"
-        assert db.get(User, 1).ai_credits == 40
+        assert db.get(User, 1).ai_credits == 48
         return run.id
 
 
@@ -581,9 +626,9 @@ def test_mixed_pdf_tailoring_saves_only_the_proven_safe_edits_and_charges_once(m
             resume = db.get(Resume, 10)
             version = db.query(ResumeVersion).one()
             assert run.status == "succeeded" and run.attempt_count == 1
-            assert run.usage_state == "committed" and run.committed_units == 10
-            assert run.prompt_version == "resume-source-v4"
-            assert db.get(User, 1).ai_credits == 40
+            assert run.usage_state == "committed" and run.committed_units == 2
+            assert run.prompt_version == "resume-source-v5"
+            assert db.get(User, 1).ai_credits == 48
             assert version.generation_run_id == run_id
             assert version.structured_content["source_edits"] == [safe]
             assert run.result_payload["content"]["source_edits"] == [safe]
@@ -597,7 +642,7 @@ def test_mixed_pdf_tailoring_saves_only_the_proven_safe_edits_and_charges_once(m
             assert PDF_OVERFLOW_REPLACEMENT not in exported_text
             events = db.query(UsageEvent).order_by(UsageEvent.created_at).all()
             assert [event.event_type for event in events] == ["reserve", "commit"]
-            assert [event.amount for event in events] == [-10, 0]
+            assert [event.amount for event in events] == [-2, 0]
             assert db.query(ModelCallEvent).one().status == "succeeded"
     finally:
         engine.dispose()
@@ -634,7 +679,7 @@ def test_all_pdf_tailoring_edits_overflow_twice_without_saving_and_refund_once(m
             assert db.get(User, 1).ai_credits == 50
             events = db.query(UsageEvent).order_by(UsageEvent.created_at).all()
             assert [event.event_type for event in events] == ["reserve", "release"]
-            assert [event.amount for event in events] == [-10, 10]
+            assert [event.amount for event in events] == [-2, 2]
     finally:
         engine.dispose()
 
@@ -694,7 +739,7 @@ def test_mixed_pdf_joining_edit_preserves_the_sentence_and_charges_only_once(mon
             resume = db.get(Resume, 10)
             version = db.query(ResumeVersion).one()
             assert run.status == "succeeded" and run.attempt_count == 1
-            assert run.usage_state == "committed" and run.committed_units == 10
+            assert run.usage_state == "committed" and run.committed_units == 2
             assert run.result_payload["content"]["source_edits"] == [safe]
             assert version.structured_content["source_edits"] == [safe]
             assert version.evidence_ids == ["evd_approved"]
@@ -706,15 +751,16 @@ def test_mixed_pdf_joining_edit_preserves_the_sentence_and_charges_only_once(mon
             assert joining_original.strip() in exported_text
             assert joining_replacement.strip() not in exported_text
             assert "50+ engineers" in exported_text
-            assert db.get(User, 1).ai_credits == 40
+            assert db.get(User, 1).ai_credits == 48
             events = db.query(UsageEvent).order_by(UsageEvent.created_at).all()
             assert [event.event_type for event in events] == ["reserve", "commit"]
-            assert [event.amount for event in events] == [-10, 0]
+            assert [event.amount for event in events] == [-2, 0]
     finally:
         engine.dispose()
 
 
 def test_all_invalid_llm_edit_repair_hint_reaches_second_request_and_charges_once(monkeypatch):
+    configure_native_docx_worker(monkeypatch)
     engine, factory = _database()
     monkeypatch.setattr(tasks, "SessionLocal", factory)
     calls = []
@@ -751,18 +797,19 @@ def test_all_invalid_llm_edit_repair_hint_reaches_second_request_and_charges_onc
         assert "previous proposed changes could not be applied" not in calls[0][1]["content"]
         with factory() as db:
             run = db.get(AnalysisRun, run_id)
-            assert run.usage_state == "committed" and run.committed_units == 10
+            assert run.usage_state == "committed" and run.committed_units == 2
             assert run.attempt_count == 1
             assert db.query(ResumeVersion).one().structured_content["source_edits"] == valid["source_edits"]
-            assert db.get(User, 1).ai_credits == 40
+            assert db.get(User, 1).ai_credits == 48
             events = db.query(UsageEvent).order_by(UsageEvent.created_at).all()
             assert [event.event_type for event in events] == ["reserve", "commit"]
-            assert [event.amount for event in events] == [-10, 0]
+            assert [event.amount for event in events] == [-2, 0]
     finally:
         engine.dispose()
 
 
 def test_empty_tailoring_output_leaves_one_content_repair_and_charges_once(monkeypatch):
+    configure_native_docx_worker(monkeypatch)
     engine, factory = _database()
     monkeypatch.setattr(tasks, "SessionLocal", factory)
     calls = []
@@ -814,17 +861,17 @@ def test_empty_tailoring_output_leaves_one_content_repair_and_charges_once(monke
             resume = db.get(Resume, 10)
             version = db.query(ResumeVersion).one()
             assert run.status == "succeeded" and run.attempt_count == 1
-            assert run.usage_state == "committed" and run.committed_units == 10
+            assert run.usage_state == "committed" and run.committed_units == 2
             assert run.error_code is None
             assert run.result_payload["resume_version_id"] == version.id
             assert version.structured_content["source_edits"] == valid["source_edits"]
             assert resume.source_document == source
             artifact = render_resume_version(version, resume, "docx")
             assert DocxDocument(BytesIO(artifact.content)).paragraphs[-1].text == TAILORED_EXPERIENCE
-            assert db.get(User, 1).ai_credits == 40
+            assert db.get(User, 1).ai_credits == 48
             events = db.query(UsageEvent).order_by(UsageEvent.created_at).all()
             assert [event.event_type for event in events] == ["reserve", "commit"]
-            assert [event.amount for event in events] == [-10, 0]
+            assert [event.amount for event in events] == [-2, 0]
             assert db.query(ModelCallEvent).one().status == "succeeded"
     finally:
         engine.dispose()
@@ -871,7 +918,7 @@ def test_changed_tailoring_constraint_leaves_one_native_width_repair_and_charges
             resume = db.get(Resume, 10)
             version = db.query(ResumeVersion).one()
             assert run.status == "succeeded" and run.attempt_count == 1
-            assert run.usage_state == "committed" and run.committed_units == 10
+            assert run.usage_state == "committed" and run.committed_units == 2
             assert run.result_payload["content"]["source_edits"] == [safe]
             assert version.structured_content["source_edits"] == [safe]
             assert resume.source_document == source
@@ -880,16 +927,17 @@ def test_changed_tailoring_constraint_leaves_one_native_width_repair_and_charges
             assert TAILORED_EXPERIENCE in exported_text
             assert PDF_OVERFLOW_ORIGINAL in exported_text
             assert PDF_OVERFLOW_REPLACEMENT not in exported_text
-            assert db.get(User, 1).ai_credits == 40
+            assert db.get(User, 1).ai_credits == 48
             events = db.query(UsageEvent).order_by(UsageEvent.created_at).all()
             assert [event.event_type for event in events] == ["reserve", "commit"]
-            assert [event.amount for event in events] == [-10, 0]
+            assert [event.amount for event in events] == [-2, 0]
     finally:
         engine.dispose()
 
 
 @pytest.mark.parametrize("failure", ["malformed", "unsafe-layout"])
 def test_invalid_native_tailoring_fails_without_version_and_refunds_once(monkeypatch, failure):
+    configure_native_docx_worker(monkeypatch)
     engine, factory = _database()
     monkeypatch.setattr(tasks, "SessionLocal", factory)
     repair_notes = []
@@ -922,12 +970,13 @@ def test_invalid_native_tailoring_fails_without_version_and_refunds_once(monkeyp
             assert db.get(User, 1).ai_credits == 50
             events = db.query(UsageEvent).order_by(UsageEvent.created_at).all()
             assert [event.event_type for event in events] == ["reserve", "release"]
-            assert [event.amount for event in events] == [-10, 10]
+            assert [event.amount for event in events] == [-2, 2]
     finally:
         engine.dispose()
 
 
 def test_native_tailoring_repairs_an_unsafe_edit_and_commits_one_charge(monkeypatch):
+    configure_native_docx_worker(monkeypatch)
     engine, factory = _database()
     monkeypatch.setattr(tasks, "SessionLocal", factory)
     repair_notes = []
@@ -948,19 +997,20 @@ def test_native_tailoring_repairs_an_unsafe_edit_and_commits_one_charge(monkeypa
         with factory() as db:
             run = db.get(AnalysisRun, run_id)
             assert run.usage_state == "committed"
-            assert run.committed_units == 10
+            assert run.committed_units == 2
             assert run.attempt_count == 1
-            assert db.get(User, 1).ai_credits == 40
+            assert db.get(User, 1).ai_credits == 48
             version = db.query(ResumeVersion).one()
             assert version.structured_content["source_edits"][0]["replacement_text"] == TAILORED_EXPERIENCE
             events = db.query(UsageEvent).order_by(UsageEvent.created_at).all()
             assert [event.event_type for event in events] == ["reserve", "commit"]
-            assert [event.amount for event in events] == [-10, 0]
+            assert [event.amount for event in events] == [-2, 0]
     finally:
         engine.dispose()
 
 
 def test_failed_tailoring_keeps_layout_diagnostics_and_cause_after_rollback(monkeypatch, caplog):
+    configure_native_docx_worker(monkeypatch)
     engine, factory = _database()
     monkeypatch.setattr(tasks, "SessionLocal", factory)
     repair_notes = []
@@ -1003,7 +1053,7 @@ def test_failed_tailoring_keeps_layout_diagnostics_and_cause_after_rollback(monk
         assert len(diagnostic_messages) == 2
         assert all(f"run_id={run_id}" in message for message in diagnostic_messages)
         assert all("type=ResumeLayoutError" in message for message in diagnostic_messages)
-        assert all("reason=docx_paragraph_overflow" in message for message in diagnostic_messages)
+        assert all("reason=docx_rendered_layout_refused" in message for message in diagnostic_messages)
         assert all(f"unit_id={unit_ids[0]}" in message for message in diagnostic_messages)
         assert all("source_units=1 edits=1" in message for message in diagnostic_messages)
         assert SOURCE_EXPERIENCE not in caplog.text
@@ -1012,14 +1062,14 @@ def test_failed_tailoring_keeps_layout_diagnostics_and_cause_after_rollback(monk
             run = db.get(AnalysisRun, run_id)
             assert run.usage_state == "released" and run.committed_units == 0
             assert run.error_code == "TailoringOutputError"
-            assert run.error_message == "Could not apply useful changes while preserving the resume format"
+            assert run.error_message == "resume-tailoring-failure/v1:source_layout_changed"
             assert run.result_payload is None
             assert db.query(ResumeVersion).count() == 0
             assert db.query(ModelCallEvent).count() == 0
             assert db.get(User, 1).ai_credits == 50
             events = db.query(UsageEvent).order_by(UsageEvent.created_at).all()
             assert [event.event_type for event in events] == ["reserve", "release"]
-            assert [event.amount for event in events] == [-10, 10]
+            assert [event.amount for event in events] == [-2, 2]
     finally:
         engine.dispose()
 

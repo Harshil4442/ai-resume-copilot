@@ -1,0 +1,47 @@
+{
+  "id": "41c3be1f-a5f9-4cd2-9daf-ecf320af9837",
+  "status": "SUCCESS",
+  "createTime": "2026-10-08T17:13:46.507929615Z",
+  "startTime": "2026-10-08T17:13:47.172995515Z",
+  "finishTime": "2026-10-08T17:27:11.099940Z",
+  "release": "ec52279d236e82813bc486b9d5de9eb97a80408d",
+  "backup_object": "gs://ai-resume-parser-482412-hirewiz-application-artifacts/releases/pre-pacing-20261008T170107Z.dump",
+  "steps": [
+    {
+      "id": "build",
+      "status": "SUCCESS",
+      "timing": {
+        "endTime": "2026-10-08T17:17:18.593577943Z",
+        "startTime": "2026-10-08T17:13:53.079342444Z"
+      }
+    },
+    {
+      "id": "push-commit",
+      "status": "SUCCESS",
+      "timing": {
+        "endTime": "2026-10-08T17:18:29.036944301Z",
+        "startTime": "2026-10-08T17:17:18.593776893Z"
+      }
+    },
+    {
+      "id": "migrate-stage-verify-promote",
+      "status": "SUCCESS",
+      "timing": {
+        "endTime": "2026-10-08T17:27:09.329799660Z",
+        "startTime": "2026-10-08T17:18:29.037281868Z"
+      }
+    }
+  ],
+  "images": [
+    {
+      "artifactRegistryPackage": "projects/ai-resume-parser-482412/locations/us-central1/repositories/cloud-run-source-deploy/packages/hirewiz/versions/sha256:000ed7db0f4aefd59ed5fc708ae4c771052901a28a3aedf2a36f3e83a6f32257",
+      "digest": "sha256:000ed7db0f4aefd59ed5fc708ae4c771052901a28a3aedf2a36f3e83a6f32257",
+      "name": "us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz:ec52279d236e82813bc486b9d5de9eb97a80408d",
+      "pushTiming": {
+        "endTime": "2026-10-08T17:27:10.804098208Z",
+        "startTime": "2026-10-08T17:27:09.380381991Z"
+      }
+    }
+  ],
+  "credentials_retained": false
+}

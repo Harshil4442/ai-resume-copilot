@@ -1,0 +1,30 @@
+{
+  "base_head": "2056e0aa53879c3dabf93efec88a664345b11937",
+  "path": "backend/app/domains/employer/service.py",
+  "preimage_sha256": "a82a637e6c4ea469c46ef250325bf36b1c2ab79b8373da5f1878128e96454189",
+  "candidate_sha256": "a191032adc923a62a227691ab1fc3ae12c5bce389c2177545bdff03883d99286",
+  "only_local_annotation_changed": true,
+  "runtime_ast_otherwise_identical": true,
+  "production_changed": false,
+  "native_control_runtime_logic_changed": false,
+  "runtime_bytecode_and_constants_identical": true,
+  "focused_mypy_files": 3,
+  "focused_mypy_passed": true,
+  "preimage_control": "Same three files with exact preimage supplied via mypy --shadow-file reproduce the same arg-type error; one error at service.py:407",
+  "local_single_file_limit": "One-file check passed on preimage because omitted imported model definitions do not expose the wrong annotation; use model-aware check.",
+  "configured_ruff_passed": true,
+  "ci": {
+    "run_id": 38140110016,
+    "head_sha": "2056e0aa53879c3dabf93efec88a664345b11937",
+    "backend_job_id": 114472062523,
+    "backend_status": "completed",
+    "backend_conclusion": "failure",
+    "failure_step": 14,
+    "checked_sources": 147,
+    "mypy_errors": 1,
+    "backend_tests": "skipped",
+    "actual_exporter": "skipped",
+    "whole_run_terminal_observed": false
+  },
+  "new_source_full_ci_required": true
+}

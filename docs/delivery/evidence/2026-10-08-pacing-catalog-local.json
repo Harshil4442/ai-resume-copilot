@@ -1,0 +1,52 @@
+{
+  "observed_utc": "2026-10-08T17:00:43.413890+00:00",
+  "scope": "frozen integrated local backend snapshot; synthetic fixtures and disposable loopback PostgreSQL/Redis only",
+  "base_commit": "da25c77dba06c6865c12dbe1868de9f3d8a3e44f",
+  "tests": 545,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "postgres_cases": 26,
+  "postgres_file_cases_including_sqlite_round_trip": 27,
+  "pacing_cases": 30,
+  "actual_redis_cases": 8,
+  "catalog_query_cases": 4,
+  "ruff": "exact expanded CI scope passed",
+  "mypy": "50 source files passed",
+  "compileall": "passed",
+  "openapi": "regenerated; zero drift",
+  "warning_count": 3,
+  "production_mutations": false,
+  "employer_http_requests": false,
+  "source_enrollment": false,
+  "production_redis_change": false,
+  "frozen_files": [
+    {
+      "path": "backend/app/domains/employer/connectors.py",
+      "sha256": "2a29cb8049080a554d8e20b6f2d41fa5f80f852fddd62dba4b481dd151b020f5"
+    },
+    {
+      "path": "backend/app/domains/employer/host_pacing.py",
+      "sha256": "33b73b41458e302d0ee9b26a0f52215068025cdc3aa36372f4c42b689cc07f63"
+    },
+    {
+      "path": "backend/app/domains/employer/service.py",
+      "sha256": "475ff0c43dd5fb543aedab056e7fcfc7e9e5720564b4797537316eb158a70634"
+    },
+    {
+      "path": "backend/tests/test_employer_host_pacing.py",
+      "sha256": "008d5e12ddbc1366863492d78155573176f91d94b304516896dccd1afa216834"
+    },
+    {
+      "path": "backend/tests/test_employer_catalog_queries.py",
+      "sha256": "3ae5b18b28b6122c8804130367d6330c08b368cb0975d44543b16bbaf7a70b9f"
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "sha256": "9ed928ea4bf00ba457bd73de541dd5981e44f722cb76c732419eccf286b8dd75"
+    }
+  ],
+  "tested_redis_image": "redis:7.4-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499",
+  "test_container_removed": true,
+  "junit_sha256": "8c33d18208bc1d6b8487ddc5350b0da319adfe5fba3e61fdc5aafae1497378f4"
+}

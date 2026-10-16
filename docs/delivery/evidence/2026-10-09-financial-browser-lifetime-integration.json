@@ -1,0 +1,341 @@
+{
+  "observed_utc": "2026-10-09T00:35:51.479450+00:00",
+  "tracked_base": "c253038e7ef5d1466b057aebc0cb1a0f3dd659d7",
+  "patches": [
+    {
+      "component": "financial_v2",
+      "sha256": "0a7880b7b7e0172acdf7babfcfa9d6617380c2bb77aa9f6c6f1a52dd2804507d"
+    },
+    {
+      "component": "cold_browser_v2",
+      "sha256": "32ce1edc661fb34b20f9e4552b8a726a3f775276fd40204a1545a5d0e025b545"
+    },
+    {
+      "component": "lifetime_v2",
+      "sha256": "01115b6cb95faf6b3fbcdb56827baf10079ec73db5d7b701ed8a2b500d55e43f"
+    }
+  ],
+  "source_sha256": [
+    {
+      "path": ".github/workflows/ci.yml",
+      "sha256": "d19c6831442241b8b70235b6221a0ef208aecb7bc6c7b97ec55381abed5f4bf1"
+    },
+    {
+      "path": "backend/alembic/versions/20261009_0010_model_cost_budgets.py",
+      "sha256": "9383247e105cc97c7dabd70179bf81a3b88aff7452ab94602ee7598ec7da77ef"
+    },
+    {
+      "path": "backend/app/domains/analysis/operations.py",
+      "sha256": "26b895ede813b0826eb16c25d0641508cd9ce300c285a51e16d9903a203e791d"
+    },
+    {
+      "path": "backend/app/domains/analysis/service.py",
+      "sha256": "9dff764120124f1ed663a7de5a82a6aad3f417373e3cadf7e6895503a21ccb18"
+    },
+    {
+      "path": "backend/app/domains/analysis/tasks.py",
+      "sha256": "b0f668b0f6edbcd672945b759b51fabc86f5a40a17d0be3b29757dd31801cc6b"
+    },
+    {
+      "path": "backend/app/domains/recovery/gcp_password_lifetime.py",
+      "sha256": "f596ce6adbf0e5a12818ae18e0999fbf6858910f841b3dec78bcad14cfce89f1"
+    },
+    {
+      "path": "backend/app/domains/recovery/gcp_password_lifetime_contracts.py",
+      "sha256": "e770d36eb639f7db88e655f7768222f9c0489026328e808e7fb898a8911b2f69"
+    },
+    {
+      "path": "backend/app/domains/recovery/gcp_password_lifetime_journal.py",
+      "sha256": "e6060eccfcdce61ef1ed2b685fffa104451f814029166fafa62ada65121da559"
+    },
+    {
+      "path": "backend/app/models.py",
+      "sha256": "2fed81f2487f0845db08e188ad86f06bde964495e384f6e65e2db4245b6d2666"
+    },
+    {
+      "path": "backend/app/routers/auth.py",
+      "sha256": "73ad6016832bf82d836c7e723de8247665d191723127a19d1d5d661101f24336"
+    },
+    {
+      "path": "backend/app/routers/resume.py",
+      "sha256": "c1f11f4469fc819b80b42e3e502470cf6458a1ad3de8b1553e870c8ab356ed44"
+    },
+    {
+      "path": "backend/app/services/generation_budget.py",
+      "sha256": "a95ad4062851ceab7a9fbd248f2829295e95baebd94af7a5bf5cd00996539bd4"
+    },
+    {
+      "path": "backend/app/services/guardrails.py",
+      "sha256": "84eb05291dbd12494be817d467c861410972d763d6e5e93cd3d8e2b5a6dcf213"
+    },
+    {
+      "path": "backend/app/services/result_commit.py",
+      "sha256": "2302f28df1d8dff7ce34ca27be810bb7ad8d0ad2aae6dee64fea1fa00d644451"
+    },
+    {
+      "path": "backend/scripts/run_cold_browser_journey.py",
+      "sha256": "1133c2030e4fa7c60940708e544dde2345ed8f02ba19fa965e1f159eef58661e"
+    },
+    {
+      "path": "backend/tests/fixtures/cold_browser_app.py",
+      "sha256": "52962ffaaaddb5afd1eccc52437028937b71aca3eb6641873d0b5a7d3a17750a"
+    },
+    {
+      "path": "backend/tests/fixtures/firestore_emulator.py",
+      "sha256": "b222c5420137fed359c2764319f873fe73090554814e75011dde662de2cc24a0"
+    },
+    {
+      "path": "backend/tests/test_cold_browser_runner.py",
+      "sha256": "2a807c0e023992f4fe3c490d4626f0d1f08ca95c756d608a4bab1250c9a97330"
+    },
+    {
+      "path": "backend/tests/test_gcp_pairing_admission_emulator.py",
+      "sha256": "8118b8fd0c8e03f66a5674b66f0a3fc0fd18c5181b2804ba24332b96d4457b56"
+    },
+    {
+      "path": "backend/tests/test_gcp_pairing_emulator.py",
+      "sha256": "7b54ca19b8aea0fdf984bc442d394ead63fdff625cbdeceada96466e8f6e1aff"
+    },
+    {
+      "path": "backend/tests/test_gcp_password_lifetime_emulator.py",
+      "sha256": "442c6929947b45a31f861dd60b874c293bb3f8d75bdb6acf0fcf771fc0454528"
+    },
+    {
+      "path": "backend/tests/test_gcp_rpc_emulator.py",
+      "sha256": "5b4f32d86d9b4c7c7f0fc98f5e38c6ea2d320ef1902bfd3a35841939f8161022"
+    },
+    {
+      "path": "backend/tests/test_model_cost_liabilities.py",
+      "sha256": "bd9e3efc9614428fe798a3a3a75b158101915e90d47a8cc7b0e30dd521cb1636"
+    },
+    {
+      "path": "backend/tests/test_model_cost_liabilities_postgres.py",
+      "sha256": "bef2036adc3f22d7432dfc938585c3aa28d9c742083eb9eeb9ea7b108170d3d7"
+    },
+    {
+      "path": "backend/tests/test_model_cost_result_lifetime_postgres.py",
+      "sha256": "39dd6296302f792f1dba32fa9f658f678f7a085ede7b8c40385a3b5570812ed4"
+    },
+    {
+      "path": "frontend/components/EmployerApplicationPanel.tsx",
+      "sha256": "e34c19f8c8a35590808f391b2cda611d97e1b8d982da63ac0565b32480621e73"
+    },
+    {
+      "path": "frontend/journey/cold-no-ai.spec.ts",
+      "sha256": "75fb46b966eec8226aed46cd1cea494368943d17ae832d953abb0f0d4edc22da"
+    },
+    {
+      "path": "frontend/playwright.cold.config.ts",
+      "sha256": "6673716281f27eff76c8d668c36403570a711e714f3b6515aaf1afca6b648ab3"
+    }
+  ],
+  "verification": {
+    "junit": [
+      {
+        "scope": "independent_financial",
+        "path": "/tmp/hirewiz-liability-v2-independent-final-20261009.xml",
+        "sha256": "54f690d7ade9b8ea51ad5d213cd598f2b079066bb6d6cd8295698a332f950e2b",
+        "tests": 149,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "scope": "independent_lifetime",
+        "path": "/tmp/hirewiz-lifetime-v2-independent-final-20261009.xml",
+        "sha256": "7aa2c43789cd3abe2e0af4277fead10da35f5be0279a207fc740a1ae2bafb7c7",
+        "tests": 630,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "scope": "root_default_collected_before_lifetime_addition",
+        "path": "/tmp/hirewiz-financial-cold-lifetime-root-20261009.xml",
+        "sha256": "091d4dc38b7af69c145e20e87335df5d9d328f1206c4b4bde567f66b137e6f42",
+        "tests": 1539,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "scope": "root_lifetime_addition",
+        "path": "/tmp/hirewiz-lifetime-v2-root-integration-20261009.xml",
+        "sha256": "044db8654cb6b5d8049e5a60896550fc264ee430e349cdf92cc7077bc22ae9f6",
+        "tests": 65,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "scope": "root_fixture_followup",
+        "path": "/tmp/hirewiz-isolated-emulator-fixture-followup-20261009.xml",
+        "sha256": "b829af95b8783948167508401ec8a93922e3ff93cd8b40d3b90715738425621a",
+        "tests": 32,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    ],
+    "frontend": {
+      "lint": "passed",
+      "typecheck": "passed",
+      "units": {
+        "passed": 72,
+        "files": 8,
+        "failed": 0
+      },
+      "production_build": "passed",
+      "next_version": "16.4.0",
+      "browser_fixtures": {
+        "passed": 190,
+        "spec_files": 4,
+        "widths": [
+          320,
+          390,
+          768,
+          1024,
+          1440
+        ],
+        "skipped": 0,
+        "flaky": 0,
+        "failed": 0,
+        "duration_ms": 128375.071,
+        "report": "/tmp/hirewiz-frontend-current-20261009-proof/browser-initial.json",
+        "report_sha256": "b083112b8298778b09d32253406d3f695551e1023d8c00d6b39db038935bafcc"
+      },
+      "initial_failures": 0,
+      "test_or_product_edits": [],
+      "production_server_cleanup": {
+        "group_id": 80579,
+        "verified_stopped": true,
+        "verification": "unreaped owned leader; no live group members"
+      }
+    },
+    "connected_browser": {
+      "passed": 1,
+      "actual_stack": "Chromium \u2192 real NextAuth/BFF \u2192 FastAPI \u2192 uniquely migrated local PostgreSQL schema",
+      "no_bff_interception": true,
+      "widths": [
+        320,
+        390,
+        768,
+        1024,
+        1440
+      ],
+      "axe_violations": 0,
+      "page_errors": 0,
+      "server_errors": 0,
+      "exact_original_and_custom_bytes": true,
+      "stale_approval_rejected": true,
+      "cross_owner_denied": true,
+      "final_status": "manual_handoff",
+      "sql": {
+        "model_calls": 0,
+        "analysis_runs": 0,
+        "analysis_units_unchanged": 50,
+        "posting_index": 4,
+        "owned_docx_sources": 2,
+        "service_credit_grants": 1,
+        "service_balance": 496,
+        "search_reserved": 6,
+        "search_charged": 4,
+        "search_released": 2,
+        "application_fee": 0,
+        "application_attempts": 0,
+        "employer_apply_outbox": 0,
+        "approval_records": 2,
+        "revoked_approvals": 1,
+        "final_submit_grants": 0,
+        "current_exact_custom_artifact": true,
+        "employer_receipt": null,
+        "migration": "20261009_0010"
+      },
+      "cleanup": {
+        "owned_processes_stopped": true,
+        "group_verification": [
+          {
+            "group_id": 81773,
+            "verified_stopped": true,
+            "verification": "unreaped owned leader; no live group members"
+          },
+          {
+            "group_id": 81772,
+            "verified_stopped": true,
+            "verification": "unreaped owned leader; no live group members"
+          }
+        ],
+        "errors": [],
+        "own_schema_removed": true
+      },
+      "proof": "/tmp/hirewiz-cold-integrated-current-20261009/summary.json",
+      "proof_sha256": "9b1f74efedca3aa5fd73510d17921cd1fe3ed0977f091c520a3e1153177400d6",
+      "selected_18_file_bundle_sha256": "df551c383e26a5c7d7465c70e3994dd30411b4739929db360e88605b46a7d976",
+      "note": "The 568-file manifest additionally binds all integrated financial files, beyond the cold runner's selected 18-file hash set."
+    },
+    "frontend_proof_sha256": "933c6a97234cb00ad045f116dcfd08ea14feb055aa1e697e429e52ca36ea34b5",
+    "mypy_files_including_three_harnesses": 90,
+    "ruff_actual_ci_selection": "passed",
+    "compile": "passed",
+    "prompt_cases": 6,
+    "openapi_drift": false
+  },
+  "historical_failed_checkpoints": [
+    {
+      "scope": "unowned_evidence_fixture_failure",
+      "path": "/tmp/hirewiz-financial-cold-integrated-root-20261009.xml",
+      "sha256": "3e7d5897deba9f870e94173baa14c3ef0728f89d28fc4370341f39b08e2edf9b",
+      "tests": 1539,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "scope": "shared_emulator_heap_exhaustion_interrupted",
+      "path": "/tmp/hirewiz-financial-cold-integrated-root-fixed-20261009.xml",
+      "sha256": "5f2e437de9e1bb2eeb14ab8ebedc46bef5b8554cc5d1b509eb2c3af6a6413df0",
+      "tests": 1469,
+      "failures": 1,
+      "errors": 27,
+      "skipped": 0
+    },
+    {
+      "scope": "test_subprocess_missing_endpoint_override",
+      "path": "/tmp/hirewiz-financial-cold-integrated-root-isolated-20261009.xml",
+      "sha256": "bdaae41408f813a9b1cd7195e9c4391bdaaa38b715b970cdfc5b5727dd29c4c7",
+      "tests": 1539,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    }
+  ],
+  "root_augmentations": [
+    "Retain native CI and add financial, lifetime and cold-harness static checks",
+    "Pin new fifth job actions and restrict checkout credentials",
+    "Remove one financial test trailing blank line",
+    "Run unowned-evidence test against its own source/evidence directories",
+    "Allow only explicit nonprivileged loopback emulator port and propagate it to the restart child",
+    "Increase finite emulator JVM heap and retain failed shared-emulator evidence"
+  ],
+  "prior_exact_ci": {
+    "run_id": 37862213523,
+    "head": "c253038e7ef5d1466b057aebc0cb1a0f3dd659d7",
+    "all_four_jobs": "success",
+    "covers_this_followup": false
+  },
+  "production": {
+    "serving_backend": "e7d8f2ba0435fd3d4a504ccdce83fac365ec6835",
+    "schema": "20261008_0009",
+    "new_backend_promoted": false,
+    "pairing_enabled": false,
+    "real_payments": 0,
+    "real_employer_submissions": 0
+  },
+  "remaining": [
+    "Protected pending-denial barrier and complete restore/reopen",
+    "Actual cloud resource/IAM/retention/KMS proofs",
+    "Authenticated BFF/MV3 and permitted employer form assistance",
+    "Fenced monetary cutover and monitoring",
+    "Native document, independent coverage/ranking, load and field performance acceptance"
+  ]
+}
