@@ -40,6 +40,11 @@ export default function AboutPage() {
             description, and receive AI-assisted resume parsing, compatibility estimates, skill-gap analysis, market
             insights, and learning suggestions. You stay in control of every change.
           </p>
+          <p>
+            Employer discovery is a pilot covering 20 reviewed employer origins, with current source availability
+            shown in Employer Jobs. Candidate-reviewed browser assistance is limited to Razorpay’s Greenhouse
+            portal; other employers use a manual portal handoff. Broader worldwide discovery is follow-on work.
+          </p>
         </GlassCard>
       </FadeIn>
 
@@ -64,8 +69,8 @@ export default function AboutPage() {
             <h2 className="font-display text-xl font-normal text-foreground tracking-tight">What HireWiz is not</h2>
           </div>
           <ul className="space-y-3 text-sm text-foreground">
-            <li className="flex items-start gap-2"><span className="text-amber-800 font-semibold mt-0.5">•</span> HireWiz is <strong>not</strong> a recruitment agency, staffing company, job-placement service, job board, or automated job-application service.</li>
-            <li className="flex items-start gap-2"><span className="text-amber-800 font-semibold mt-0.5">•</span> We do <strong>not</strong> make employment decisions, submit applications on your behalf, or recruit or place candidates.</li>
+            <li className="flex items-start gap-2"><span className="text-amber-800 font-semibold mt-0.5">•</span> HireWiz is <strong>not</strong> a recruitment agency, staffing company, job-placement service, or employer.</li>
+            <li className="flex items-start gap-2"><span className="text-amber-800 font-semibold mt-0.5">•</span> We do <strong>not</strong> make employment decisions or recruit or place candidates. Supported application actions require your separate review and approval.</li>
             <li className="flex items-start gap-2"><span className="text-amber-800 font-semibold mt-0.5">•</span> Compatibility scores are <strong>HireWiz estimates</strong>, not scores produced by any employer or a specific applicant-tracking system (ATS). We do not guarantee ATS acceptance, interviews, offers, or employment.</li>
             <li className="flex items-start gap-2"><span className="text-amber-800 font-semibold mt-0.5">•</span> The service must <strong>not</strong> be used for impersonation, false credentials, another person's resume without authorization, exam or hiring cheating, or fabricated achievements.</li>
             <li className="flex items-start gap-2"><span className="text-amber-800 font-semibold mt-0.5">•</span> HireWiz does not authorize scraping or third-party data use that violates a data provider's terms or applicable law.</li>

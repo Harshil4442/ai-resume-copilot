@@ -48,6 +48,30 @@ An employer career portal includes a company website and a vendor-hosted ATS ten
 | P2 | Additional languages and sectors, permitted server browser execution, semantic retrieval infrastructure, advanced personalization | Adopt after measured demand and demonstrated benefit |
 | Deferred | Cloud migration, Kubernetes, new microservices for every domain, universal browser agent, job-board application routes | These are not initial delivery prerequisites |
 
+### Approved pilot release scope — 16 October 2026
+
+The user explicitly approved launching and verifying a clearly labeled pilot,
+with worldwide expansion kept as follow-on work. This release covers the twenty
+reviewed employer origins in the origin register and the candidate-reviewed
+Razorpay/Greenhouse application adapter. The website must display this scope and
+current availability honestly. No India-wide, worldwide or greater-than-95%
+coverage claim is authorized by this release decision.
+
+The six delivery outcomes remain the reporting checklist. Closing them requires
+actual production acceptance within this approved pilot: employer-origin search,
+requested result counts and separate charging; safe format-preserving resume
+choices; reviewed complete forms and submission/reconciliation controls; finite
+packs and payment recovery; usable responsive pages and SEO; and the deployed,
+monitored GCP/Vercel system with preserved data. Fixture tests alone cannot establish
+production acceptance. Candidate approval, ownership, privacy, truthfulness,
+unknown-outcome recovery and duplicate prevention requirements remain in force.
+
+Worldwide expansion, its independent coverage reference and the CV01–CV07 / Stage 6
+coverage claims remain documented follow-on work. Their worldwide measurements
+are not a completion condition for this pilot, and this decision does not mark
+them passed. Pilot source availability, freshness, closed-job handling and visible
+partial-result behavior must still be verified before release.
+
 ### Decisions for product review
 
 Default source policy remains employer-origin only. Licensed search may locate employer URLs, but the source record must be verified before a vacancy enters verified results. A broader licensed job-aggregator locator mode is an optional alternative requiring a separate product decision, commercial rights and origin validation. Board-only jobs cannot satisfy the direct-employer requirement; show the limitation rather than invent an employer route.

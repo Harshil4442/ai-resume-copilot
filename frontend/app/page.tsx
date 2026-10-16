@@ -191,6 +191,11 @@ export default function HomePage() {
                 Build your workspace <ArrowUpRight size={16} />
               </Link>
             </div>
+            <p className="mx-auto mt-5 max-w-[900px] text-center text-xs leading-5 text-muted-foreground">
+              Discovery pilot: 20 reviewed employer origins. Candidate-reviewed
+              application assistance for Razorpay’s Greenhouse portal. Availability
+              and supported actions are shown before you approve.
+            </p>
           </FadeIn>
           <div className={styles.heroVisual}>
             <div className={styles.sageBackdrop} aria-hidden="true" />

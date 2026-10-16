@@ -9,7 +9,7 @@ import { getPublicBillingCatalog } from "../../lib/billingCatalog";
 import { SITE } from "../../lib/site";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Pricing", description: "Finite HireWiz prepaid packs for employer job search, supported reviewed applications and optional resume AI. Clear INR prices with no automatic renewal.", alternates: { canonical: "/pricing" } };
+export const metadata: Metadata = { title: "Pricing", description: "Finite HireWiz prepaid packs for the 20-employer discovery pilot, candidate-reviewed Razorpay/Greenhouse applications and optional resume AI. Clear INR prices.", alternates: { canonical: "/pricing" } };
 
 export default async function PricingPage() {
   const catalog = await getPublicBillingCatalog();
@@ -18,6 +18,7 @@ export default async function PricingPage() {
     <TrackEventOnView eventName="pricing_viewed" />
     <Link href="/" className="inline-flex items-center text-sm font-semibold text-muted-foreground hover:text-primary"><ArrowLeft size={16} className="mr-2" /> Back to Home</Link>
     <PageHeader badge="Public pricing" title="A clear plan for your next move." subtitle="Three finite prepaid packs. Separate job-service and AI balances. One-time INR payments for customers in India, with no automatic renewal." />
+    <p className="text-sm leading-7 text-muted-foreground"><strong className="text-foreground">Pilot coverage:</strong> discovery is limited to 20 reviewed employer origins, with source availability shown in Employer Jobs. Candidate-reviewed browser assistance supports Razorpay’s Greenhouse portal; other employers use a manual handoff. Review current availability and the exact supported action before spending credits.</p>
     <FadeIn><div className="grid gap-5 md:grid-cols-3">{products.length ? products.map(p => <GlassCard key={p.sku} className="flex flex-col p-6 sm:p-8" hoverEffect={false}>
       <h2 className="font-display text-2xl">{p.name}</h2><p className="mt-4 text-4xl font-semibold">{p.amount_display}</p><p className="mt-2 text-xs text-muted-foreground">INR total · one-time purchase</p>
       <ul className="my-6 space-y-3 text-sm">{[`${p.entitlement_quantity} job service credits`, `${p.analysis_units} AI analysis units`, "Full tailored-resume draft: 2 analysis units", "Review every AI quote before generation", "No subscription or automatic renewal"].map(f => <li key={f} className="flex items-start gap-2"><CheckCircle2 size={16} className="mt-0.5 shrink-0 text-primary" />{f}</li>)}</ul>

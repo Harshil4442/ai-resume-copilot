@@ -2,12 +2,12 @@
 
 Updated 16 October 2026 (Asia/Kolkata). These are the original six reporting
 outcomes. All remain **OPEN** until their development and production acceptance
-requirements are met. Builds, tests and diagnostics are supporting evidence
+requirements are met within the explicitly approved pilot scope. Builds, tests and diagnostics are supporting evidence
 within these outcomes, not additional checkpoints.
 
 | Original outcome | Status | Remaining work |
 |---|---|---|
-| Official job search, ranking and user-selected job counts | OPEN | Seed and activate the 20 reviewed employer origins; verify freshness, closed-job removal, matching, requested counts and charging in production; measure coverage against a declared reference set. |
+| Official job search, ranking and user-selected job counts | OPEN | Seed and activate the 20 reviewed employer origins; verify freshness, closed-job removal, matching, requested counts and charging in production; show the twenty-origin pilot scope and verify source availability without a worldwide or >95% claim. |
 | Resume tailoring preserving PDF, DOCX and LaTeX formatting | OPEN | Complete private upload/scan/cleanup custody; verify truthful supported edits, preserved formatting, review, original/custom/tailored selection and downloads through the deployed user journey. |
 | Candidate-reviewed direct company applications | OPEN | Release schema19 and provision native browser authority; publish the configured companion; verify ordinary enrollment/pairing, required and conditional fields, approved upload, separate final approval, one-shot submission and receipt reconciliation in production. |
 | Paid search/application credits, profitable finite packs and payment recovery | OPEN | Activate finite packs and quoted prices; verify production payments, separate balances, holds, settlement, refunds and interrupted/duplicate recovery; calibrate estimated costs against actual usage. |
@@ -18,6 +18,15 @@ No whole outcome is newly complete. There is no dependable remaining completion
 estimate. No additional action or approval is currently needed from the user.
 When an outcome closes, report its original estimate and actual elapsed time
 against that same row.
+
+## Approved release scope
+
+On **16 October 2026**, the user selected: “Launch and verify the clearly labeled
+pilot; keep worldwide expansion as follow-on work.” This release therefore covers
+the twenty reviewed employer origins and the Razorpay/Greenhouse application pilot.
+Worldwide coverage and its independent >95% assessment remain future work; they
+must not be advertised as achieved. Payment, resume, candidate approval, privacy,
+recovery and genuine production acceptance remain required for the same six rows.
 
 ## Current deployment state
 
