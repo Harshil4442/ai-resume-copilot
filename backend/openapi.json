@@ -1,6 +1,30 @@
 {
   "components": {
     "schemas": {
+      "AnalysisQuoteAcceptance": {
+        "additionalProperties": false,
+        "properties": {
+          "pricing_version": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9_.-]+$",
+            "title": "Pricing Version",
+            "type": "string"
+          },
+          "units": {
+            "maximum": 100000.0,
+            "minimum": 0.0,
+            "title": "Units",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "pricing_version",
+          "units"
+        ],
+        "title": "AnalysisQuoteAcceptance",
+        "type": "object"
+      },
       "AnalysisRunCancelResponse": {
         "properties": {
           "cancel_requested": {
@@ -27,6 +51,16 @@
       "AnalysisRunCreate": {
         "additionalProperties": false,
         "properties": {
+          "accepted_quote": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AnalysisQuoteAcceptance"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "idempotency_key": {
             "anyOf": [
               {

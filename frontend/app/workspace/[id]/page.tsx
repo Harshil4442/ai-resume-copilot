@@ -81,6 +81,14 @@ type TailorResult = {
   evidence_ids: string[];
   content: SourcePreservingResumeContent;
 };
+type TailoringQuote = { pricing_version: string; units: number };
+type TailoringIntent = { opportunityId: string; resumeId: number; key: string; quote: TailoringQuote };
+
+function requiresTailoringQuoteReview(error: unknown) {
+  if (!(error instanceof ApiError) || error.status !== 409 || !error.detail || typeof error.detail !== "object") return false;
+  const detail = (error.detail as { detail?: { code?: unknown } }).detail;
+  return detail?.code === "analysis_quote_requires_review";
+}
 
 const tabs: { id: Tab; label: string; icon: typeof Target }[] = [
   { id: "overview", label: "Overview", icon: Target },
@@ -169,6 +177,7 @@ function OpportunityContent() {
   const trackedTerminalRuns = useRef(new Set<string>());
   const resumeTabRef = useRef<HTMLButtonElement>(null);
   const resumeSelectRef = useRef<HTMLSelectElement>(null);
+  const tailoringIntent = useRef<TailoringIntent | null>(null);
 
   const opportunity = useQuery({
     queryKey: ["opportunity", opportunityId],
@@ -187,6 +196,21 @@ function OpportunityContent() {
     : sourceResume.source_available === true && ["pdf", "docx", "tex", "texzip"].includes(sourceResume.source_format || "") ? "ready"
     : "unknown_metadata";
   const sourceReady = sourceState === "ready";
+  const tailoringPrice = useQuery({
+    queryKey: ["tailoring-price", opportunityId, opportunity.data?.resume_id],
+    queryFn: async (): Promise<TailoringQuote> => {
+      const catalog = await apiGet<{ analysis_pricing_version?: unknown; analysis_operation_units?: { resume_tailor?: unknown } }>("/public/billing/catalog");
+      const version = catalog.analysis_pricing_version;
+      const units = catalog.analysis_operation_units?.resume_tailor;
+      if (typeof version !== "string" || !version.trim() || typeof units !== "number" || !Number.isSafeInteger(units) || units < 0) {
+        throw new Error("The tailoring price is unavailable. Refresh the price to try again.");
+      }
+      return { pricing_version: version, units };
+    },
+    enabled: tab === "resume" && opportunity.isSuccess,
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
   const match = useQuery({
     queryKey: ["opportunity-match", opportunityId],
     queryFn: () => apiGet<OpportunityMatch>(`/v1/opportunities/${opportunityId}/match`),
@@ -312,20 +336,49 @@ function OpportunityContent() {
     },
   });
   const startTailoring = useMutation({
-    mutationFn: () => {
+    mutationFn: (intent: TailoringIntent) => {
       if (!sourceReady) throw new Error("Check the original file status beside the tailoring actions before generating a version.");
       if (!evidence.isSuccess || !(evidence.data || []).some((entry) => entry.approval_state === "approved")) throw new Error("Import and approve relevant evidence for the selected resume before tailoring.");
+      if (intent.opportunityId !== opportunityId || intent.resumeId !== opportunity.data?.resume_id) throw new Error("Review the tailoring price for the selected resume before generating a version.");
       return apiPostJson<AnalysisRun>(
         "/v1/analysis-runs",
-        { operation: "resume_tailor", opportunity_id: opportunityId, input: {} },
-        { "Idempotency-Key": crypto.randomUUID() },
+        { operation: "resume_tailor", opportunity_id: intent.opportunityId, input: {}, accepted_quote: intent.quote },
+        { "Idempotency-Key": intent.key },
       );
     },
-    onSuccess: (run) => {
-      setTailorRunId(run.id);
+    onSuccess: (run, intent) => {
+      if (tailoringIntent.current === intent) tailoringIntent.current = null;
+      if (intent.opportunityId === opportunityId && intent.resumeId === opportunity.data?.resume_id) setTailorRunId(run.id);
       trackEvent("analysis_run_created", { operation: "resume_tailor", estimated_units: run.estimated_units });
     },
+    onError: (error, intent) => {
+      if (requiresTailoringQuoteReview(error)) {
+        if (tailoringIntent.current === intent) tailoringIntent.current = null;
+        void tailoringPrice.refetch();
+      }
+    },
+    retry: false,
   });
+  const resetTailoring = startTailoring.reset;
+  useEffect(() => {
+    tailoringIntent.current = null;
+    resetTailoring();
+  }, [opportunityId, opportunity.data?.resume_id, resetTailoring]);
+
+  const retryTailoringIntent = startTailoring.isError && !requiresTailoringQuoteReview(startTailoring.error)
+    && startTailoring.variables?.opportunityId === opportunityId && startTailoring.variables.resumeId === opportunity.data?.resume_id
+    ? startTailoring.variables : null;
+  const displayedTailoringQuote = retryTailoringIntent?.quote || tailoringPrice.data;
+  const tailoringPriceReady = Boolean(retryTailoringIntent || (tailoringPrice.isSuccess && !tailoringPrice.isFetching));
+
+  function requestTailoring() {
+    if (!tailoringPriceReady || !displayedTailoringQuote || !opportunity.data?.resume_id) return;
+    const intent = tailoringIntent.current || {
+      opportunityId, resumeId: opportunity.data.resume_id, key: crypto.randomUUID(), quote: displayedTailoringQuote,
+    };
+    tailoringIntent.current = intent;
+    startTailoring.mutate(intent);
+  }
   const importEvidence = useMutation({
     mutationFn: () => apiPostJson<EvidenceImport>(`/v1/evidence-items/import-resume/${opportunity.data!.resume_id}`, {}),
     onSuccess: async (result) => {
@@ -663,12 +716,19 @@ function OpportunityContent() {
                   </div>
                   <div className="min-w-0 space-y-3 xl:max-w-md">
                     <div className="flex flex-wrap gap-2">
-                      <Button aria-describedby={tailoringIssue ? "resume-actions-status" : undefined} disabled={connectResume.isPending || !sourceReady || !evidence.isSuccess || approvedCount === 0 || tailoringIsRunning} onClick={() => startTailoring.mutate()}>
+                      <Button aria-describedby={tailoringIssue ? "tailoring-price resume-actions-status" : "tailoring-price"} disabled={connectResume.isPending || !sourceReady || !evidence.isSuccess || approvedCount === 0 || tailoringIsRunning || !tailoringPriceReady} onClick={requestTailoring}>
                         {tailoringIsRunning ? <LoaderCircle size={16} className="animate-spin" /> : <WandSparkles size={16} />}
-                        Generate tailored version
+                        {retryTailoringIntent ? "Retry same request" : "Generate tailored version"}{displayedTailoringQuote && tailoringPriceReady ? ` · ${displayedTailoringQuote.units} AI analysis ${displayedTailoringQuote.units === 1 ? "unit" : "units"}` : ""}
                       </Button>
                       <Button variant="secondary" aria-describedby={tailoringIssue ? "resume-actions-status" : undefined} disabled={connectResume.isPending || !sourceReady || createVersion.isPending} onClick={() => createVersion.mutate()}><FilePlus2 size={16} /> Save source snapshot</Button>
                     </div>
+                    <p id="tailoring-price" className="text-xs leading-5 text-muted-foreground" role="status">
+                      {retryTailoringIntent ? `The previous request could not be confirmed. Retry keeps the same request and accepted ${retryTailoringIntent.quote.units}-unit price.`
+                        : tailoringPrice.isFetching ? "Loading the current tailoring price. Source snapshots remain free."
+                        : !tailoringPriceReady ? "The tailoring price is unavailable. Source snapshots remain free."
+                        : `Generating accepts ${displayedTailoringQuote!.units} AI analysis ${displayedTailoringQuote!.units === 1 ? "unit" : "units"}. These are separate from job service credits. Source snapshots are free.`}
+                    </p>
+                    {!tailoringPriceReady && !tailoringPrice.isFetching ? <Button size="sm" variant="ghost" onClick={() => { tailoringIntent.current = null; startTailoring.reset(); void tailoringPrice.refetch(); }}>Refresh tailoring price</Button> : null}
                     {tailoringIssue ? <p id="resume-actions-status" className="text-xs leading-5 text-muted-foreground" role="status">{tailoringIssue}</p> : null}
                     {sourceIssue && sourceState !== "loading" ? <div className="flex flex-wrap gap-2">
                       {sourceCanRefresh ? <Button size="sm" variant="secondary" disabled={opportunity.isFetching || resumes.isFetching} onClick={refreshSourceDetails}><RefreshCw size={14} /> Refresh details</Button> : null}

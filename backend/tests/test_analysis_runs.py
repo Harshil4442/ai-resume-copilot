@@ -5,6 +5,7 @@ import logging
 from io import BytesIO
 
 import pytest
+from backend.app.billing.catalog import ANALYSIS_PRICING_VERSION
 from backend.app.database import Base
 from backend.app.domains.analysis import schemas, tasks
 from backend.app.domains.analysis import service as analysis_service
@@ -551,7 +552,8 @@ def _create_tailoring_run(factory):
             db,
             user_id=1,
             payload=schemas.AnalysisRunCreate(
-                operation="resume_tailor", opportunity_id="opp_tailor", input={}
+                operation="resume_tailor", opportunity_id="opp_tailor", input={},
+                accepted_quote={"pricing_version": ANALYSIS_PRICING_VERSION, "units": 2},
             ),
             header_idempotency_key="native-tailor-request-001",
         )

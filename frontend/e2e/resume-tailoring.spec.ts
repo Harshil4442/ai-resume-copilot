@@ -73,6 +73,7 @@ function createFixture() {
       let status = 200;
       let value: unknown;
       if (path === "/auth/profile") value = { email: "fixture@example.com", full_name: "Taylor Example", tier: "free", ai_credits: 40 };
+      else if (path === "/public/billing/catalog") value = { analysis_pricing_version: "tailoring-fixture-v1", analysis_operation_units: { resume_tailor: 2 } };
       else if (path === "/v1/features") value = { features: { career_workspace: { enabled: true }, evidence_tailoring: { enabled: true }, async_analysis: { enabled: true } } };
       else if (path === "/resume/list") {
         if (state.pauseList) await state.pauseList;
@@ -134,7 +135,7 @@ async function openWorkspace(page: Page) {
 
 function actions(page: Page) {
   return {
-    generate: page.getByRole("button", { name: "Generate tailored version", exact: true }),
+    generate: page.getByRole("button", { name: /^Generate tailored version(?: · 2 AI analysis units)?$/ }),
     snapshot: page.getByRole("button", { name: "Save source snapshot", exact: true }),
     status: page.locator("#resume-actions-status"),
     resume: page.getByRole("combobox", { name: "Resume", exact: true }),
@@ -184,7 +185,7 @@ for (const failure of failures) {
     await expect(page.getByText(/Version \d+ created\./)).toHaveCount(0);
     expect(fixture.opportunity.resume_versions).toEqual([]);
     expect(fixture.requests.filter((request) => request.path === "/v1/resume-versions" || request.path.endsWith("/result"))).toEqual([]);
-    expect(fixture.requests.find((request) => request.path === "/v1/analysis-runs" && request.method === "POST")?.body).toEqual({ operation: "resume_tailor", opportunity_id: opportunityId, input: {} });
+    expect(fixture.requests.find((request) => request.path === "/v1/analysis-runs" && request.method === "POST")?.body).toEqual({ operation: "resume_tailor", opportunity_id: opportunityId, input: {}, accepted_quote: { pricing_version: "tailoring-fixture-v1", units: 2 } });
     expect(fixture.unexpected).toEqual([]);
     await audit(page);
   });

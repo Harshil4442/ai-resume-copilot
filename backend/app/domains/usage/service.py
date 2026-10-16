@@ -55,6 +55,25 @@ def _append_event(
     return event
 
 
+def _reserve_reason(run: models.AnalysisRun, reason: str) -> str:
+    """Retain accepted tailoring terms in financial history after input purge."""
+    if run.operation != "resume_tailor":
+        return reason
+    from pydantic import ValidationError
+
+    from ..analysis.schemas import AnalysisQuoteAcceptance
+
+    try:
+        quote = AnalysisQuoteAcceptance.model_validate(
+            (run.input_payload or {}).get("_accepted_analysis_quote")
+        )
+    except ValidationError:
+        return reason
+    if quote.units != run.estimated_units:
+        return reason
+    return f"{reason}; accepted quote {quote.pricing_version}: {quote.units} analysis units"
+
+
 def reserve_run_usage(
     db: Session,
     *,
@@ -85,7 +104,7 @@ def reserve_run_usage(
                 amount=0,
                 balance_after=balance,
                 idempotency_key=event_key,
-                reason="Active Premium access" if units else "No-cost operation",
+                reason=_reserve_reason(run, "Active Premium access" if units else "No-cost operation"),
             )
         run.usage_state = "waived"
         return
@@ -110,7 +129,7 @@ def reserve_run_usage(
         amount=-units,
         balance_after=user.ai_credits,
         idempotency_key=event_key,
-        reason=f"Paid allocation {paid_units}; reserved for {run.operation}",
+        reason=_reserve_reason(run, f"Paid allocation {paid_units}; reserved for {run.operation}"),
     )
     run.usage_state = "reserved"
     db.flush()

@@ -1,6 +1,14 @@
 from dataclasses import dataclass
 
 CATALOG_VERSION = "inr-finite-2026-10-09-v3"
+ANALYSIS_PRICING_VERSION = "analysis-units-2026-10-16-v1"
+ANALYSIS_OPERATION_UNITS = {
+    "job_match": 1,
+    "interview_questions": 1,
+    "market_analysis": 5,
+    "resume_tailor": 2,
+    "skill_roi": 0,
+}
 
 
 @dataclass(frozen=True)
@@ -111,6 +119,7 @@ def public_catalog(*, checkout_enabled: bool) -> dict:
         "availability_message": availability,
         "cost_review": cost_review,
         "service_prices": {k: prices[k] for k in ("search_credits_per_job", "apply_credits_per_job", "pricing_version")} if prices else None,
-        "analysis_operation_units": {"job_match": 1, "interview_questions": 1, "market_analysis": 5, "resume_tailor": 2, "skill_roi": 0},
+        "analysis_pricing_version": ANALYSIS_PRICING_VERSION,
+        "analysis_operation_units": dict(ANALYSIS_OPERATION_UNITS),
         "products": [p.public_dict(enabled_for_purchase=available) for p in PRODUCTS.values() if p.entitlement_kind == "credit_bundle"],
     }

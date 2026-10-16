@@ -20,6 +20,13 @@ AnalysisOperation = Literal[
 ]
 
 
+class AnalysisQuoteAcceptance(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    pricing_version: str = Field(strict=True, min_length=1, max_length=64, pattern=r"^[a-zA-Z0-9_.-]+$")
+    units: int = Field(strict=True, ge=0, le=100_000)
+
+
 class AnalysisRunCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -27,6 +34,7 @@ class AnalysisRunCreate(BaseModel):
     opportunity_id: str | None = Field(default=None, max_length=64)
     input: dict[str, Any] = Field(default_factory=dict)
     idempotency_key: str | None = Field(default=None, min_length=8, max_length=160)
+    accepted_quote: AnalysisQuoteAcceptance | None = None
 
 
 class TailoringFailureGuidance(BaseModel):

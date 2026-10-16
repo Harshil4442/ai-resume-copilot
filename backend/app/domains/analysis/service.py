@@ -8,19 +8,14 @@ from fastapi import BackgroundTasks, HTTPException
 from sqlalchemy.orm import Session
 
 from ... import models
+from ...billing import catalog as pricing
 from ..career.service import get_opportunity
 from ..common import payload_fingerprint, public_id, utcnow
 from ..usage import InsufficientUnitsError, release_run_usage, reserve_run_usage
 from . import schemas
 from .models import AnalysisRequestKey
 
-OPERATION_UNITS = {
-    "job_match": 1,
-    "interview_questions": 1,
-    "market_analysis": 5,
-    "resume_tailor": 2,
-    "skill_roi": 0,
-}
+OPERATION_UNITS = pricing.ANALYSIS_OPERATION_UNITS
 
 
 def _dependency_snapshot(
@@ -183,7 +178,7 @@ def create_run(
             detail="Provide an Idempotency-Key header between 8 and 160 characters",
         )
     input_payload = dict(payload.input)
-    if any(key in input_payload for key in ("expense_paid_units", "_expense_paid_units", "expense_funding", "cost_policy_snapshot", "paid_current_reserved_credits")):
+    if any(key in input_payload for key in ("expense_paid_units", "_expense_paid_units", "expense_funding", "cost_policy_snapshot", "paid_current_reserved_credits", "_accepted_analysis_quote")):
         raise HTTPException(422, detail="Funding allocation is server-owned and cannot be supplied by the client")
     validate_analysis_input(
         db,
@@ -251,6 +246,20 @@ def create_run(
                                       analysis_run_id=reusable.id, input_fingerprint=fingerprint))
             db.commit()
             return reusable, False
+
+    # Matching owned requests above return their original run and stored units
+    # without a new reservation. Only a new tailoring admission accepts a quote.
+    if payload.operation == "resume_tailor":
+        quote = {"pricing_version": pricing.ANALYSIS_PRICING_VERSION,
+                 "units": OPERATION_UNITS[payload.operation]}
+        if payload.accepted_quote is None or payload.accepted_quote.model_dump() != quote:
+            raise HTTPException(status_code=409, detail={
+                "code": "analysis_quote_requires_review",
+                "message": "Review the current AI-unit quote before starting this analysis.",
+            })
+        # Add server-owned metadata only after the semantic fingerprint, so a
+        # later price change cannot create another paid equivalent request.
+        input_payload["_accepted_analysis_quote"] = quote
 
     from ...services.generation_gate import check_generation_admission
 

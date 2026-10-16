@@ -1892,6 +1892,13 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AnalysisQuoteAcceptance */
+        AnalysisQuoteAcceptance: {
+            /** Pricing Version */
+            pricing_version: string;
+            /** Units */
+            units: number;
+        };
         /** AnalysisRunCancelResponse */
         AnalysisRunCancelResponse: {
             /** Cancel Requested */
@@ -1903,6 +1910,7 @@ export interface components {
         };
         /** AnalysisRunCreate */
         AnalysisRunCreate: {
+            accepted_quote?: components["schemas"]["AnalysisQuoteAcceptance"] | null;
             /** Idempotency Key */
             idempotency_key?: string | null;
             /** Input */
