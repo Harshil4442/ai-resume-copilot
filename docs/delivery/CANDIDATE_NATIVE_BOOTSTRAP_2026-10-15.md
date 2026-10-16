@@ -36,6 +36,11 @@ A default invocation only validates/prints the public plan. It does not read cre
 python backend/scripts/bootstrap_candidate_native_authority.py --plan-file /absolute/private-plan.json
 ```
 
+Standalone plan validation requires no `DATABASE_URL`, `JWT_SECRET` or `APP_ENV`.
+Its configuration-model imports do not load application database or security
+initialization. The existing password verifier loads only during actual password
+verification; production database and JWT configuration checks remain unchanged.
+
 After root's F7/builder/coordinator gates and explicit operator resource approval, the operator supplies an already-created, empty, owned, non-symlink **0700** journal directory:
 
 ```sh
@@ -92,3 +97,9 @@ Runtime identity/IAM is a separate reviewed composition contract. Its Firestore 
 Final focused count and lint/type results are recorded by the implementation handoff. These tests do not establish actual IAM, SDK credential refresh against Google's token endpoint, GCP service availability, Firestore emulator behavior, live provisioning or production activation.
 
 Local result at handoff: **27 passed** in 1.24 seconds (one existing Passlib/Python `crypt` deprecation warning). Ruff check and format check passed for both new Python files; focused mypy passed for the new script using `backend/pyproject.toml`. No Firestore emulator, normal-manager credential call, ADC fallback, live provider read/write, deployment or Git index operation was used.
+
+The later standalone CLI regression runs a clean subprocess with database/JWT/app
+settings absent and network, SDK credential-manager, ADC and SQL connection paths
+forbidden. It verifies `PLAN_ONLY`, no database/security aggregate import and no
+new local file. The combined bootstrap/password verification subset passes 96
+cases; three optional disposable-PostgreSQL cases skip without their local URL.

@@ -32,7 +32,6 @@ from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import QueuePool
 
-from ...security import verify_password
 from .contracts import Digest, Identifier, Timestamp
 from .pairing_contracts import (
     CANDIDATE_MS,
@@ -279,6 +278,8 @@ class SqlPasswordCredentials:
             encoded = row[0] if row is not None else None
         usable = type(encoded) is str and bool(encoded)
         checked_hash = encoded if isinstance(encoded, str) and usable else self._dummy_hash
+        from ...security import verify_password
+
         result = verify_password(password, checked_hash)
         return usable and result
 
