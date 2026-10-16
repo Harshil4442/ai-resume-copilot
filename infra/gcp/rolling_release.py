@@ -406,6 +406,7 @@ def stage_body(plan: RollingPlan, pin: ServicePin, current: dict[str, Any]) -> d
     need({name for name, row in env.items() if "valueSource" in row} == expected_names)
     env["APP_RELEASE"] = {"name": "APP_RELEASE", "value": plan.release}
     env["AUTO_DB_MIGRATE"] = {"name": "AUTO_DB_MIGRATE", "value": "false"}
+    env["PGSSLROOTCERT"] = {"name": "PGSSLROOTCERT", "value": release.SAFE_ENV["PGSSLROOTCERT"]}
     template["revision"] = plan.revision(pin.service)
     template.setdefault("labels", {})["hirewiz-source"] = plan.release
     container = template["containers"][0]

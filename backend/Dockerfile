@@ -4,6 +4,7 @@ COPY --from=ghcr.io/astral-sh/uv:0.11.32 /uv /uvx /bin/
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
+    PGSSLROOTCERT=/etc/ssl/certs/ca-certificates.crt \
     PORT=8080 \
     PATH="/app/.venv/bin:$PATH"
 

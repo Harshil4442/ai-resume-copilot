@@ -6,6 +6,7 @@ COPY --from=ghcr.io/astral-sh/uv:0.11.32 /uv /uvx /bin/
 # example on Vercel) and talks to this service over the explicit API origin.
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
+    PGSSLROOTCERT=/etc/ssl/certs/ca-certificates.crt \
     PORT=10000 \
     PATH="/app/backend/.venv/bin:$PATH"
 

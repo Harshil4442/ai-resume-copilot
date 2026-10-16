@@ -26,18 +26,28 @@ separate worktree. Its old writers are isolated, and the source database is
 preserved. Existing replacement credentials must be reused without repeating
 issuance or completed retirement operations.
 
-V14 created and verified a new protected source backup with **Locked retention
-through 23 October**. Its temporary database-level schema-creation grant let the
-transfer progress beyond its acceptance checks. The ordered release reached the
-first schema9-to-schema10 migration job; this establishes that the transfer gates
-passed, but independent post-failure target reconciliation is still required.
+The restored target passed a full source/target content and catalog comparison
+across **49 tables and 9 sequences** during V15. A fresh protected source backup
+has **Locked retention through 23 October**. The copied data has not been
+promoted to serving traffic.
 
-That exact Cloud Run execution, `hirewiz-fresh-b281118da4ff-0010-2rndq`, failed
-with container exit **65** at **02:00:42 UTC on 16 October**. The host stopped and
-its owned container is absent. The release has **not** promoted traffic. The
-current work is read-only diagnosis of that execution and the target's actual
-schema, followed by a bounded recovery from its observed state. Do not replay an
-empty-target transfer or blindly resubmit the job.
+The original schema9-to-schema10 job failed before the shipping CLI's missing
+psycopg3 driver selection was corrected. The corrected Cloud Run execution,
+`hirewiz-fresh-b281118da4ff-0010-p3-dm6c4`, also failed with container exit **65**
+at **03:02:48 UTC on 16 October**. Its logs contain only the generic execution
+error. The host stopped and its owned container is absent. Independent
+read-only reconciliation at **03:08:02 UTC** verified schema9, absence of all
+schema10 additions, and no other target sessions or prepared transactions.
+
+A separate read-only GCP diagnostic completed successfully at **03:17:46 UTC**
+using the same application image, migration service account and numeric secret
+version. Its default verify-full connection failed because the root certificate
+file was missing. Specifying `/etc/ssl/certs/ca-certificates.crt` connected
+successfully and verified the expected cluster, database, role, schema9 and
+read-only transaction. The source repair supplies that OS trust bundle to
+migrations, all three serving services and later rolling releases. Recovery
+still requires the retained-state admission and full migration checks. Do not
+replay the empty-target transfer or blindly resubmit the failed job.
 
 The source database remains preserved. Earlier stopped journals and protected
 backups remain retained. See the [cutover procedure](FRESH_CUTOVER_EXECUTOR_2026-10-14.md)
@@ -85,11 +95,11 @@ still require production verification.
 
 ## Supporting validation
 
-Remote candidate **`62db8ec`** in [PR #23](https://github.com/Harshil4442/ai-resume-copilot/pull/23)
-passed all five CI jobs in [run 38835985556](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38835985556),
-completing at 02:03:22 UTC on 16 October. It includes the observer classification,
-bounded transfer diagnostics and temporary schema-restore permission repairs.
-The later local bootstrap-CLI correction is not covered by that remote run.
+Remote candidate **`a383f88`** in [PR #23](https://github.com/Harshil4442/ai-resume-copilot/pull/23)
+passed all five CI jobs in [run 38839468937](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38839468937),
+completing at 02:46:08 UTC on 16 October. It includes the observer classification,
+bounded transfer diagnostics, temporary schema-restore permission repair,
+standalone bootstrap-CLI correction and explicit psycopg3 driver selection.
 These checks validate source in its tested environments; they do not complete a
 production outcome.
 

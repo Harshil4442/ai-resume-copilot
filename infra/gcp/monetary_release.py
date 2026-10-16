@@ -60,6 +60,7 @@ CUTOVER_CHAIN = (
 CHAIN = (*source_guard.ALLOWED_CHAIN[:-1], *CUTOVER_CHAIN)
 SAFE_ENV = {
     "APP_ENV": "production",
+    "PGSSLROOTCERT": "/etc/ssl/certs/ca-certificates.crt",
     "AUTO_DB_MIGRATE": "false",
     "OPTIONAL_AI_GENERATION_ENABLED": "false",
     "EMPLOYER_AUTO_SUBMIT_ENABLED": "false",
