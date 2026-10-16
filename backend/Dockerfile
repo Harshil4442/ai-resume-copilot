@@ -15,9 +15,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
     libpq-dev \
-    texlive-latex-base \
-    texlive-fonts-recommended \
-    texlive-latex-extra \
+    libfontconfig1 \
+    fontconfig-config \
+    libfreetype6 \
+    fonts-dejavu-core \
+    fonts-dejavu-mono \
+    fonts-lmodern \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml uv.lock ./
