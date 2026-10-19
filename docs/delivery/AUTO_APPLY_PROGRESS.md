@@ -1,6 +1,6 @@
 # HireWiz development and deployment progress
 
-Updated 16 October 2026 (Asia/Kolkata). These are the original six reporting
+Updated 19 October 2026 (Asia/Kolkata). These are the original six reporting
 outcomes. All remain **OPEN** until their development and production acceptance
 requirements are met within the explicitly approved pilot scope. Builds, tests and diagnostics are supporting evidence
 within these outcomes, not additional checkpoints.
@@ -10,12 +10,14 @@ within these outcomes, not additional checkpoints.
 | Official job search, ranking and user-selected job counts | OPEN | Seed and activate the 20 reviewed employer origins; verify freshness, closed-job removal, matching, requested counts and charging in production; show the twenty-origin pilot scope and verify source availability without a worldwide or >95% claim. |
 | Resume tailoring preserving PDF, DOCX and LaTeX formatting | OPEN | Complete private upload/scan/cleanup custody; verify truthful supported edits, preserved formatting, review, original/custom/tailored selection and downloads through the deployed user journey. |
 | Candidate-reviewed direct company applications | OPEN | Release schema19 and provision native browser authority; publish the configured companion; verify ordinary enrollment/pairing, required and conditional fields, approved upload, separate final approval, one-shot submission and receipt reconciliation in production. |
-| Paid search/application credits, profitable finite packs and payment recovery | OPEN | Activate finite packs and quoted prices; verify production payments, separate balances, holds, settlement, refunds and interrupted/duplicate recovery; calibrate estimated costs against actual usage. |
+| Paid search/application credits, profitable finite packs and payment recovery | OPEN | Activate finite packs and quoted prices after the launch hold is lifted; verify production payments, separate search/application charges against the service-credit balance, the independent AI-unit balance, holds, settlement, refunds and interrupted/duplicate recovery; calibrate estimated costs against actual usage. |
 | Fast responsive pages and SEO | OPEN | Publish the frontend and verify complete desktop, laptop and mobile journeys, production loading performance and SEO. |
 | GCP/Vercel deployment, preserved-data migration and monitoring | OPEN | Verify the restored builder with a native build, activate required private coordinator and browser services, deploy the final application candidate and frontend, and verify monitored production behavior. The preserved-data F7 GCP cutover is complete. |
 
 No whole outcome is newly complete. There is no dependable remaining completion
-estimate. No additional action or approval is currently needed from the user.
+estimate. The user has explicitly kept the paid launch on hold; development and
+local verification may continue, but no Vercel upgrade or paid-service activation
+is authorized by that continuation.
 When an outcome closes, report its original estimate and actual elapsed time
 against that same row.
 
@@ -28,11 +30,35 @@ Worldwide coverage and its independent >95% assessment remain future work; they
 must not be advertised as achieved. Payment, resume, candidate approval, privacy,
 recovery and genuine production acceptance remain required for the same six rows.
 
+## Paid launch hold
+
+After the pilot-scope decision, the user selected **“Keep launch on hold”** when
+asked about upgrading the existing Vercel Hobby team to Pro. Do not purchase an
+upgrade, activate paid services or report the pilot launched. Resuming development
+does not reverse this spending decision. The release still needs a reviewed
+commercial hosting arrangement and fresh acceptance before launch.
+
+Read-only Cloud Run metadata at **19 October, 00:31 UTC / 06:01 IST** confirmed
+that API277 and the existing analysis/employer worker revisions still receive
+100% production traffic, with checkout, optional AI, browser assistance and
+automatic submission explicitly disabled. This is a configuration observation,
+not an authenticated customer-journey check. The coordinator metadata request
+was unavailable, so that read does not prove the service absent or ready.
+
+The earlier Tasks-account verification grant expired on **16 October, 13:14 UTC**.
+The last accepted scanner definition window expired on **17 October, 06:24 UTC**;
+the inspector still references that same immutable image. Do not reuse those
+time-bound checks or widen their limits. Fresh verification authority and accepted
+scanner definitions are required before processing can be reactivated. The source
+maintenance automation has not been deployed or accepted.
+
 ## Current deployment state
 
 As of **16 October 2026, 09:31 UTC / 15:01 IST**, the preserved-data release
 **F7 (`b281118`)** has completed its GCP cutover and production traffic promotion.
-The later paid-application candidate is `e25b5be`; it has not been deployed.
+The last pushed paid-application candidate is `e25b5be`; it has not been deployed.
+Local commits `2504a47` and `ab6121c` add definition-maintenance source and explicit
+pilot labels. Those commits remain unpushed and have not passed the final CI run.
 
 The original database is preserved. Its copy passed the complete source/target
 content and catalog comparison across **49 tables and 9 sequences** before
@@ -73,19 +99,21 @@ protected backups remain preserved.
 
 The build identity, all three scoped grants and enabled deployment trigger passed
 native readback at **10:02 UTC**. A real build under that identity remains to be
-verified. The private coordinator’s complete production inventory and catalog
-verification have also passed. Provisioning its SQL identity then stopped in
-preflight because the current project-permission fingerprint did not match the
-reviewed fingerprint. No role or secret mutation was started. An actual raw API
-comparison proved that every policy field and the decoded version-token bytes
-are identical: REST uses standard base64 while the CLI uses URL-safe base64.
-A narrowly scoped encoding correction is in preparation; provisioning remains
-pending fresh native verification.
- With F7 complete, remaining release work includes provisioning the private upload/scan/cleanup coordinator and native browser
+verified. The private coordinator’s production inventory and catalog were reviewed
+on 16 October. An exact raw API comparison resolved the project-policy fingerprint
+discrepancy as standard versus URL-safe base64 spelling of the same version token.
+The restricted SQL role and numeric secret version were subsequently created,
+and an actual ordinary login succeeded. Do not repeat that issuance or activation.
+A read-only reconciliation then passed the role/authentication stages but stopped
+at the final running-service guards. It did not emit a completed SQL descriptor;
+no sequential coordinator workload provisioning was launched. The exact final
+guard failure remains unresolved, and the old time-bound contract is now stale.
+
+With F7 complete, remaining release work includes completing the private upload/scan/cleanup coordinator and native browser
 resources, releasing schema19 and the configured companion, then deploying the
 final GCP/Vercel configuration and verifying complete customer journeys. The
-Tasks-account verification grant is temporary and requires removal after release
-verification.
+expired Tasks-account verification binding still requires exact-policy cleanup;
+its expiry must not be extended silently to reuse the old release contract.
 
 Queues, maintenance scheduling, checkout and new-feature admissions remain held.
 Production login, paid search, tailoring and applications are not yet accepted.
@@ -101,10 +129,14 @@ for the preserved-data release requirements.
   acceptance remain. Worldwide coverage and greater-than-95% recall are
   unproven; follow the [coverage audit protocol](COVERAGE_AUDIT_PROTOCOL_2026-10-09.md).
 - **Resumes:** document rendering has [native acceptance evidence](DOCUMENT_RENDERING_ACCEPTANCE_2026-10-14.md).
-  The restricted upload coordinator still needs its SQL identity, workload,
+  The restricted upload coordinator still needs final SQL reconciliation, workload,
   invocation grants and genuine custody/scan/cleanup checks before the full
   tailoring and download journey can be accepted. See the
   [coordinator plan](RESUME_UPLOAD_COORDINATOR_2026-10-10.md).
+  A local application-review correction now binds the tailoring Workspace result
+  to the chosen source resume. Changing the selection hides the previous file's
+  link, including when that previous preparation responds late. This does not
+  automatically generate, approve or attach another resume; it is not deployed.
 - **Direct applications:** companion **0.8.0** implements the Razorpay/Greenhouse
   pilot's required controls,
   approved upload and separately reviewed one-shot submission receipts. Installed
@@ -176,11 +208,19 @@ for the preserved-data release requirements.
 
 ## Supporting validation
 
+On 19 October, focused local synthetic checks covered the selected-count and
+credit admission paths, newly delivered search settlement, application receipt
+reconciliation, and expense-policy/failure-budget enforcement: **109 passed**.
+The application-review change passed **208 relevant frontend tests**, including
+new source-switch and delayed-response regressions, plus TypeScript and targeted
+lint checks. These checks made no provider calls or real applications and do not
+close any of the six production outcomes.
+
 The current pushed candidate **`e25b5be`** in [PR #23](https://github.com/Harshil4442/ai-resume-copilot/pull/23)
 passed all five CI jobs in [run 38875552034](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38875552034)
 on 16 October. This verifies the tested source and local native document checks;
-it does not establish production acceptance or cover the later uncommitted
-maintenance changes.
+it does not establish production acceptance or cover the later local
+maintenance and pilot-label commits.
 
 Earlier candidate **`83e30b9`** in the same PR
 passed all five CI jobs in [run 38845781461](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38845781461),

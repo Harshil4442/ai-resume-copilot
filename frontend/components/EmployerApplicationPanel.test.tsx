@@ -139,6 +139,50 @@ it("offers the exact Razorpay companion handoff and application ID without appro
   expect(apiPostJson).not.toHaveBeenCalled(); expect(apiPutJson).not.toHaveBeenCalled();
 });
 
+describe("tailoring workspace follows the chosen resume for this job", () => {
+  async function openTailoring() {
+    const saved = manualApplication();
+    vi.mocked(apiGet).mockImplementation(async (path) => path.startsWith("/v1/resume-versions?") ? [] : path.endsWith("/catalog") ? {
+      enabled: true, auto_submit_enabled: false, search_credits_per_job: 1, apply_credits_per_job: 20,
+      pricing_version: "synthetic", max_search_jobs: 20, balance: 0, sources: [],
+    } : saved);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } } }); clients.push(client);
+    const resumes = [1, 2].map((id) => ({ id, filename: `synthetic-${id}.docx`, source_available: true, source_format: "docx" as const, created_at: "2026-10-16T00:00:00Z" }));
+    render(<QueryClientProvider client={client}><EmployerApplicationPanel id="app_local" onClose={vi.fn()} onChange={vi.fn()} resumes={resumes} /></QueryClientProvider>);
+    await screen.findByRole("heading", { name: "Engineer" });
+    await userEvent.selectOptions(screen.getByLabelText("Resume choice"), "tailored");
+  }
+
+  it("requires a new explicit preparation after switching source resumes", async () => {
+    vi.mocked(apiPostJson).mockResolvedValueOnce({ id: "tailoring_resume_one" }).mockResolvedValueOnce({ id: "tailoring_resume_two" });
+    await openTailoring();
+    await userEvent.click(screen.getByRole("button", { name: "Prepare tailored resume for this job" }));
+    expect(await screen.findByRole("link", { name: "Review tailoring for this job in Workspace" })).toHaveAttribute("href", "/workspace/tailoring_resume_one?tab=resume");
+    await userEvent.selectOptions(screen.getByLabelText("Saved original file"), "2");
+    expect(screen.queryByRole("link", { name: "Review tailoring for this job in Workspace" })).toBeNull();
+    expect(apiPostJson).toHaveBeenCalledTimes(1);
+    await userEvent.click(screen.getByRole("button", { name: "Prepare tailored resume for this job" }));
+    expect(await screen.findByRole("link", { name: "Review tailoring for this job in Workspace" })).toHaveAttribute("href", "/workspace/tailoring_resume_two?tab=resume");
+    expect(vi.mocked(apiPostJson).mock.calls.map(([path, payload]) => [path, (payload as { resume_id: number }).resume_id])).toEqual([["/v1/opportunities", 1], ["/v1/opportunities", 2]]);
+    expect(apiPutJson).not.toHaveBeenCalled();
+  });
+
+  it("does not expose a late first-resume result for the newly chosen resume", async () => {
+    const reply = Promise.withResolvers<unknown>();
+    vi.mocked(apiPostJson).mockReturnValue(reply.promise);
+    await openTailoring();
+    await userEvent.click(screen.getByRole("button", { name: "Prepare tailored resume for this job" }));
+    await userEvent.selectOptions(screen.getByLabelText("Saved original file"), "2");
+    await act(async () => { reply.resolve({ id: "tailoring_resume_one" }); });
+    expect(screen.queryByRole("link", { name: "Review tailoring for this job in Workspace" })).toBeNull();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Prepare tailored resume for this job" })).toBeEnabled());
+    expect(screen.queryByRole("link", { name: "Review tailoring for this job in Workspace" })).toBeNull();
+    await userEvent.selectOptions(screen.getByLabelText("Saved original file"), "1");
+    expect(screen.getByRole("link", { name: "Review tailoring for this job in Workspace" })).toHaveAttribute("href", "/workspace/tailoring_resume_one?tab=resume");
+    expect(apiPostJson).toHaveBeenCalledTimes(1); expect(apiPutJson).not.toHaveBeenCalled();
+  });
+});
+
 function manualApplication(): EmployerApplication {
   const saved = application(); saved.status = "manual_handoff"; saved.resume_choice = "original"; saved.credit_cost = 0; saved.reserved_credits = 0; saved.receipt = null;
   saved.artifact = { filename: "Synthetic retained resume.docx", media_type: docxType, size_bytes: 1024, sha256: "a".repeat(64), preview_url: "/v1/employer-jobs/applications/app_local/artifact" };

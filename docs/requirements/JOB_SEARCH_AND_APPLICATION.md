@@ -72,6 +72,17 @@ are not a completion condition for this pilot, and this decision does not mark
 them passed. Pilot source availability, freshness, closed-job handling and visible
 partial-result behavior must still be verified before release.
 
+### Paid launch hold — subsequent owner decision
+
+The owner subsequently selected “Keep launch on hold” in response to the proposed
+Vercel commercial-plan upgrade. Development and local testing may continue, but
+the pilot must not be launched and the Vercel subscription must not be upgraded
+under the prior general deployment authorization. A future launch requires a
+reviewed commercial hosting arrangement, an explicit decision to lift this hold,
+and current acceptance evidence. Do not reuse expired verification grants,
+scanner definitions or pricing-policy validity windows. This decision changes
+release timing, not the six delivery outcomes or the approved pilot scope.
+
 ### Decisions for product review
 
 Default source policy remains employer-origin only. Licensed search may locate employer URLs, but the source record must be verified before a vacancy enters verified results. A broader licensed job-aggregator locator mode is an optional alternative requiring a separate product decision, commercial rights and origin validation. Board-only jobs cannot satisfy the direct-employer requirement; show the limitation rather than invent an employer route.
