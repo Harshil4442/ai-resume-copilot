@@ -56,9 +56,11 @@ maintenance automation has not been deployed or accepted.
 
 As of **16 October 2026, 09:31 UTC / 15:01 IST**, the preserved-data release
 **F7 (`b281118`)** has completed its GCP cutover and production traffic promotion.
-The last pushed paid-application candidate is `e25b5be`; it has not been deployed.
-Local commits `2504a47` and `ab6121c` add definition-maintenance source and explicit
-pilot labels. Those commits remain unpushed and have not passed the final CI run.
+The previously CI-verified paid-application candidate is `e25b5be`; it has not been
+deployed. Recent commits `2504a47`, `ab6121c` and `c1cced0` add definition-maintenance
+source, explicit pilot labels and the selected-resume correction. This source is
+being prepared for review in draft PR #23; the fresh whole-branch CI is pending.
+Publishing a review branch does not authorize a production release or paid launch.
 
 The original database is preserved. Its copy passed the complete source/target
 content and catalog comparison across **49 tables and 9 sequences** before
@@ -216,7 +218,7 @@ new source-switch and delayed-response regressions, plus TypeScript and targeted
 lint checks. These checks made no provider calls or real applications and do not
 close any of the six production outcomes.
 
-The current pushed candidate **`e25b5be`** in [PR #23](https://github.com/Harshil4442/ai-resume-copilot/pull/23)
+The previously CI-verified candidate **`e25b5be`** in [PR #23](https://github.com/Harshil4442/ai-resume-copilot/pull/23)
 passed all five CI jobs in [run 38875552034](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/38875552034)
 on 16 October. This verifies the tested source and local native document checks;
 it does not establish production acceptance or cover the later local
