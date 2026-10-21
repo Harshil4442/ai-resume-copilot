@@ -7,9 +7,9 @@ within these outcomes, not additional checkpoints.
 
 | Original outcome | Status | Remaining work |
 |---|---|---|
-| Official job search, ranking and user-selected job counts | OPEN | Seed and activate the 20 reviewed employer origins; verify freshness, closed-job removal, matching, requested counts and charging in production; show the twenty-origin pilot scope and verify source availability without a worldwide or >95% claim. |
+| Official job search, ranking and user-selected job counts | OPEN | Activate and refresh the 20 registered employer origins; verify freshness, closed-job removal, matching, requested counts and charging in production; show the twenty-origin pilot scope and verify source availability without a worldwide or >95% claim. |
 | Resume tailoring preserving PDF, DOCX and LaTeX formatting | OPEN | Complete private upload/scan/cleanup custody; verify truthful supported edits, preserved formatting, review, original/custom/tailored selection and downloads through the deployed user journey. |
-| Candidate-reviewed direct company applications | OPEN | Release schema19 and configure the provisioned native browser authority; publish the configured companion; verify ordinary enrollment/pairing, required and conditional fields, approved upload, separate final approval, one-shot submission and receipt reconciliation in production. |
+| Candidate-reviewed direct company applications | OPEN | Release schema19 and activate the configured native browser authority; publish the configured companion; verify ordinary enrollment/pairing, required and conditional fields, approved upload, separate final approval, one-shot submission and receipt reconciliation in production. |
 | Paid search/application credits, profitable finite packs and payment recovery | OPEN | Activate finite packs and quoted prices after the paid-sales hold is lifted and commercial hosting is resolved; verify production payments, separate search/application charges against the service-credit balance, the independent AI-unit balance, holds, settlement, refunds and interrupted/duplicate recovery; calibrate estimated costs against actual usage. |
 | Fast responsive pages and SEO | OPEN | Publish the frontend and verify complete desktop, laptop and mobile journeys, production loading performance and SEO. |
 | GCP/Vercel deployment, preserved-data migration and monitoring | OPEN | Activate the configured private coordinator and browser services, deploy the final application candidate and frontend, and verify monitored production behavior. The preserved-data F7 GCP cutover is complete. |
@@ -127,14 +127,13 @@ runtime/observer privileges. Do not repeat the transfer, migrations, credential
 issuance or retirement. The protected backup remains Locked through
 **23 October, 08:55 UTC**.
 
-The API revision `ai-resume-parser-00277-kur`, analysis worker
-`hirewiz-analysis-worker-00024-foc` and employer worker
-`hirewiz-employer-worker-00013-gex` are the existing F7 serving baseline.
-Checkout, optional AI and automatic submission remain disabled. All four task
-queues are paused. A fresh 21 October read found that employer discovery was
-still enabled on the API/employer worker; admission must be closed explicitly
-before the source-seeding and release sequence. Do not describe every admission
-as closed based only on queue state.
+The original F7 promotion used API277, analysis24 and employer13. Subsequent
+configuration-only revisions preserve that same F7 image and release. The API now
+serves `ai-resume-parser-rupcfg-08c22919cf`; analysis and employer serve their
+`discovery-off-20261021` revisions. Discovery was explicitly closed on all three
+before seeding. Checkout, optional AI and automatic submission remain disabled,
+and all four task queues remain paused. Removing obsolete rollout tags and final
+maintenance/configuration acceptance are separate from these default-route checks.
 
 The private resume coordinator is READY with its dedicated numeric database
 secret, resource-scoped invocation grants and two PAUSED schedules. Its processing
@@ -149,8 +148,10 @@ locked journal witnesses and two KMS keys. All nine planned runtime IAM grants
 have native readbacks. The initial GCS rejection was a definite, transient
 new-role propagation failure; only the four remaining grants were subsequently
 applied with the original scopes. Three dedicated backend transport secrets and
-the matching two Vercel production Secrets are published. The public origin/key
-identifier are configured in Vercel. Native runtime flags remain false; no
+the matching two Vercel production Secrets are published. The four native backend
+configs and all three numeric secret references are installed on a healthy F7
+revision. The public origin/key identifier are configured in Vercel. Native runtime
+flags remain false; no
 candidate or device was seeded during bootstrap.
 
 Application Cloud Build **`bdda589b-b364-4189-b08a-5ca216714e0f`** succeeded on
@@ -163,11 +164,31 @@ customer journeys. The retained old OIDC verification grant was removed; the
 replacement narrow, temporary health grant expires on **21 October at 20:00 UTC**
 and must be removed when verification finishes.
 
-Production source inventory on 21 October contained **4 sources**, 386 postings
-and 353 marked open, with none checked in the prior 24 hours. Current review
-verified all twenty pilot employer pages, ATS feeds and tenant joins. Seeding,
-full pagination, fresh ingestion and customer search acceptance remain required.
-HTTP success alone does not establish fresh or complete job coverage.
+Production now has **20 reviewed sources**: the audited seed created sixteen and
+updated four, with twenty audit entries. Readback preserved the original four
+source IDs/fetch state, all **386 postings** (353 marked open), customer counts
+and dispatch state. The first Job execution failed before a SQL transaction
+because its sparse environment lacked the system CA path. The corrected execution
+succeeded once with zero retries; no committed transaction was replayed. No
+submission grants were supplied. Full pagination, fresh ingestion and customer
+search acceptance remain required. HTTP success and registry count alone do not
+establish fresh or complete job coverage.
+
+The user's signed-in Google account is now the sole destination for one enabled
+notification channel. Two maintenance log metrics and four enabled policies were
+created and read back: definition attention, missing heartbeat, repeated API 5xx
+and sustained high latency. No test email or synthetic heartbeat was sent. A real
+maintenance event must arm absence detection; inbox delivery remains untested.
+Exact resource mappings and provisional thresholds are in the
+[operations guide](../../infra/gcp/README.md). Vercel production auto-assignment is
+temporarily disabled to stage new Git builds until matching backend verification;
+the existing production deployment remains assigned.
+
+A local repository stall was traced to the original shared Git exclude file being
+an iCloud-only placeholder. Apple's filesystem download API restored the original
+240-byte file without overwriting it, and the waiting Git operation completed.
+A fresh local checkout outside iCloud is prepared for subsequent release work;
+no cloud files were removed and no storage purchase was made.
 
 ## Implemented source and remaining rollout
 
@@ -264,7 +285,13 @@ passed frontend, security/container and cold-browser jobs; backend document-imag
 build and the configured-companion UI expectation failed. Subsequent companion and bounded-build diagnostic repairs are committed in
 `e1324ef2` and passed focused verification, including one successful controlled
 AMD64 document-image build. The old CI build failure was not reproduced; the
-pinned base is unchanged. A new integrated CI run is required before release. The previously green
+pinned base is unchanged. A new integrated CI run is required before release. A further actual-browser
+failure was reproduced in the legacy-cohort fixture: it inherited the shipping
+native key and waited on intentionally hidden legacy controls. Commit `11dfd353`
+makes that isolated fixture's cohort explicit, preserving shipping native gates;
+all 106 assistance checks passed locally. The stock release health helper also
+now uses official direct ID-token issuance with the existing narrow grant, with
+focused tests and genuine tagged-health acceptance. The previously green
 [CI run 39182062183](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/39182062183)
 applies only to source **`8eb5f86`**, not the current candidate. These are supporting
 checks within the original six outcomes, not additional checkpoints.

@@ -86,3 +86,45 @@ Official resource contracts:
 [Cloud Tasks](https://registry.terraform.io/providers/hashicorp/google/7.27.0/docs/resources/cloud_tasks_queue),
 [queue IAM](https://registry.terraform.io/providers/hashicorp/google/7.27.0/docs/resources/cloud_tasks_queue_iam),
 [Cloud Run](https://registry.terraform.io/providers/hashicorp/google/7.27.0/docs/resources/cloud_run_v2_service).
+
+Operational alerts use the existing project's Cloud Logging and Monitoring APIs. On
+2026-10-21, the two definition metrics and four policies below were created and read back
+through the normal retained GCP manager, with the user's selected signed-in account as
+the sole email destination. No test notification or synthetic heartbeat was sent.
+
+`document_refresh_alerts.tf` retains opt-in defaults. Before importing these resources
+into the reviewed private Terraform state, set `document_refresh_alerts_enabled=true`,
+`api_alerts_enabled=true`, and `document_refresh_notification_channels` to
+`["projects/ai-resume-parser-482412/notificationChannels/586119582964625421"]`.
+Reconcile the resulting plan against these existing resources; applying the full
+uninitialized stack is not a monitoring activation procedure. The email channel remains
+an external reviewed reference, rather than a second Terraform-managed copy.
+
+| Terraform resource | Existing native resource name |
+| --- | --- |
+| `google_logging_metric.document_refresh_expiry[0]` | `projects/ai-resume-parser-482412/metrics/hirewiz_document_definition_attention` |
+| `google_logging_metric.document_refresh_heartbeat[0]` | `projects/ai-resume-parser-482412/metrics/hirewiz_document_definition_heartbeat` |
+| `google_monitoring_alert_policy.document_refresh_expiry[0]` | `projects/ai-resume-parser-482412/alertPolicies/16873482599735560977` |
+| `google_monitoring_alert_policy.document_refresh_silent[0]` | `projects/ai-resume-parser-482412/alertPolicies/3488339065445890745` |
+| `google_monitoring_alert_policy.api_errors[0]` | `projects/ai-resume-parser-482412/alertPolicies/6821016490474288404` |
+| `google_monitoring_alert_policy.api_latency[0]` | `projects/ai-resume-parser-482412/alertPolicies/6821016490474289498` |
+
+The definition policies retain the unchanged three-day validity limit, attention at
+24 hours remaining, and a two-hour missing-heartbeat window. After activation, observe
+a genuine `hirewiz_document_definition_maintenance_v1` event from the maintenance
+workflow and its heartbeat metric. A metric-absence policy needs an initial measurement
+before it can detect missing data; never forge an event to arm it. New log metric
+descriptors can take time to appear in Monitoring after Logging acknowledges creation.
+
+The API policies use built-in Cloud Run metrics for `ai-resume-parser` in `us-central1`:
+at least three 5xx responses in five minutes, and worst-series five-minute p95 latency
+above 5,000 milliseconds for ten minutes. The latency threshold is an initial operational
+warning to tune against representative traffic, not a published SLO. These policies
+monitor runtime health and definition maintenance; deployment-job failures remain in
+the deployment workflow's own notification scope.
+
+The email channel readback is enabled with `VERIFICATION_STATUS_UNSPECIFIED`, which is
+different from `UNVERIFIED`; Google did not request channel verification. Inbox delivery
+was not tested. Preserve the channel and policy handles during future deployments.
+See [channel verification semantics](https://docs.cloud.google.com/monitoring/api/ref_v3/rest/v3/projects.notificationChannels)
+and [metric-absence behavior](https://docs.cloud.google.com/monitoring/alerts/metric-absence).
