@@ -1,6 +1,6 @@
 # HireWiz development and deployment progress
 
-Updated 19 October 2026 (Asia/Kolkata). These are the original six reporting
+Updated 21 October 2026 (Asia/Kolkata). These are the original six reporting
 outcomes. All remain **OPEN** until their development and production acceptance
 requirements are met within the explicitly approved pilot scope. Builds, tests and diagnostics are supporting evidence
 within these outcomes, not additional checkpoints.
@@ -10,14 +10,14 @@ within these outcomes, not additional checkpoints.
 | Official job search, ranking and user-selected job counts | OPEN | Seed and activate the 20 reviewed employer origins; verify freshness, closed-job removal, matching, requested counts and charging in production; show the twenty-origin pilot scope and verify source availability without a worldwide or >95% claim. |
 | Resume tailoring preserving PDF, DOCX and LaTeX formatting | OPEN | Complete private upload/scan/cleanup custody; verify truthful supported edits, preserved formatting, review, original/custom/tailored selection and downloads through the deployed user journey. |
 | Candidate-reviewed direct company applications | OPEN | Release schema19 and provision native browser authority; publish the configured companion; verify ordinary enrollment/pairing, required and conditional fields, approved upload, separate final approval, one-shot submission and receipt reconciliation in production. |
-| Paid search/application credits, profitable finite packs and payment recovery | OPEN | Activate finite packs and quoted prices after the launch hold is lifted; verify production payments, separate search/application charges against the service-credit balance, the independent AI-unit balance, holds, settlement, refunds and interrupted/duplicate recovery; calibrate estimated costs against actual usage. |
+| Paid search/application credits, profitable finite packs and payment recovery | OPEN | Activate finite packs and quoted prices after the paid-sales hold is lifted and commercial hosting is resolved; verify production payments, separate search/application charges against the service-credit balance, the independent AI-unit balance, holds, settlement, refunds and interrupted/duplicate recovery; calibrate estimated costs against actual usage. |
 | Fast responsive pages and SEO | OPEN | Publish the frontend and verify complete desktop, laptop and mobile journeys, production loading performance and SEO. |
 | GCP/Vercel deployment, preserved-data migration and monitoring | OPEN | Verify the restored builder with a native build, activate required private coordinator and browser services, deploy the final application candidate and frontend, and verify monitored production behavior. The preserved-data F7 GCP cutover is complete. |
 
 No whole outcome is newly complete. There is no dependable remaining completion
-estimate. The user has explicitly kept the paid launch on hold; development and
-local verification may continue, but no Vercel upgrade or paid-service activation
-is authorized by that continuation.
+estimate. The owner has authorized continued prelaunch development, integration
+and deployment preparation using the existing free Vercel plan, subject to its
+usage eligibility. No Pro purchase or paid-sales activation is authorized.
 When an outcome closes, report its original estimate and actual elapsed time
 against that same row.
 
@@ -30,13 +30,28 @@ Worldwide coverage and its independent >95% assessment remain future work; they
 must not be advertised as achieved. Payment, resume, candidate approval, privacy,
 recovery and genuine production acceptance remain required for the same six rows.
 
-## Paid launch hold
+## Prelaunch continuation and paid-sales hold
 
-After the pilot-scope decision, the user selected **“Keep launch on hold”** when
-asked about upgrading the existing Vercel Hobby team to Pro. Do not purchase an
-upgrade, activate paid services or report the pilot launched. Resuming development
-does not reverse this spending decision. The release still needs a reviewed
-commercial hosting arrangement and fresh acceptance before launch.
+On **21 October 2026**, the owner directed continued prelaunch work on the free
+Vercel plan, with a Pro upgrade planned when selling. This supersedes the earlier
+blanket launch hold for prelaunch development, integration and deployment
+preparation. Do not purchase Pro, activate paid sales or report the commercial
+pilot launched under this instruction.
+
+Provider eligibility is a separate requirement. Vercel's
+[commercial-usage guidance](https://vercel.com/docs/limits/fair-use-guidelines#commercial-usage)
+defines commercial use by financial purpose, including advertising services for
+sale before the first payment. Having no sales does not establish Hobby
+eligibility. Resolve the permitted hosting arrangement before commercial
+deployment; this owner decision does not waive provider terms or current
+technical acceptance requirements.
+
+Read-only Vercel metadata on **21 October** confirmed the team remains on active
+Hobby and an existing preview for source `8eb5f86` is READY. No new deployment was
+performed in that check. The authenticated CLI check returned HTTP 200 with
+HireWiz homepage content after correcting a CLI argument-forwarding issue;
+deployment protection was unchanged. Sign-in and complete user journeys remain
+unverified, so this is not production acceptance.
 
 Read-only Cloud Run metadata at **19 October, 00:31 UTC / 06:01 IST** confirmed
 that API277 and the existing analysis/employer worker revisions still receive
@@ -56,11 +71,13 @@ maintenance automation has not been deployed or accepted.
 
 As of **16 October 2026, 09:31 UTC / 15:01 IST**, the preserved-data release
 **F7 (`b281118`)** has completed its GCP cutover and production traffic promotion.
-The previously CI-verified paid-application candidate is `e25b5be`; it has not been
-deployed. Recent commits `2504a47`, `ab6121c` and `c1cced0` add definition-maintenance
-source, explicit pilot labels and the selected-resume correction. This source is
-being prepared for review in draft PR #23; the fresh whole-branch CI is pending.
-Publishing a review branch does not authorize a production release or paid launch.
+The current source candidate is `8eb5f86` in open draft PR #23. Its
+[CI run 39182062183](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/39182062183)
+completed successfully across all five jobs. The candidate includes definition
+maintenance, explicit pilot labels and the selected-resume correction; it has not
+been accepted as the final GCP production release. CI and the existing Vercel
+preview are supporting evidence within the original six outcomes, not completed
+production acceptance or authorization for paid sales.
 
 The original database is preserved. Its copy passed the complete source/target
 content and catalog comparison across **49 tables and 9 sequences** before
@@ -209,6 +226,12 @@ for the preserved-data release requirements.
   source review passed; production recovery acceptance remains pending.
 
 ## Supporting validation
+
+Current source **`8eb5f86`** in open draft
+[PR #23](https://github.com/Harshil4442/ai-resume-copilot/pull/23) passes all five
+jobs in [CI run 39182062183](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/39182062183).
+This supersedes the earlier pending whole-branch CI status. It verifies the tested
+source and does not close any of the six production outcomes.
 
 On 19 October, focused local synthetic checks covered the selected-count and
 credit admission paths, newly delivered search settlement, application receipt

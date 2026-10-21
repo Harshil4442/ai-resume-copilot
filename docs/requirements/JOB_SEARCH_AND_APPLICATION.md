@@ -72,16 +72,25 @@ are not a completion condition for this pilot, and this decision does not mark
 them passed. Pilot source availability, freshness, closed-job handling and visible
 partial-result behavior must still be verified before release.
 
-### Paid launch hold — subsequent owner decision
+### Prelaunch continuation and paid-sales hold — 21 October 2026
 
-The owner subsequently selected “Keep launch on hold” in response to the proposed
-Vercel commercial-plan upgrade. Development and local testing may continue, but
-the pilot must not be launched and the Vercel subscription must not be upgraded
-under the prior general deployment authorization. A future launch requires a
-reviewed commercial hosting arrangement, an explicit decision to lift this hold,
-and current acceptance evidence. Do not reuse expired verification grants,
-scanner definitions or pricing-policy validity windows. This decision changes
-release timing, not the six delivery outcomes or the approved pilot scope.
+The owner directed continued prelaunch development, integration and deployment
+preparation on the existing free Vercel plan, with a Pro upgrade planned when
+selling. This supersedes the earlier blanket launch hold for that prelaunch work.
+It does not authorize a Pro purchase or paid-sales activation. Commercial release
+still requires the owner's decision to activate sales, permitted hosting and
+current acceptance evidence.
+
+Provider eligibility must be resolved independently of the owner's spending
+decision. Vercel's
+[commercial-usage guidance](https://vercel.com/docs/limits/fair-use-guidelines#commercial-usage)
+defines commercial use by financial purpose, including advertising services for
+sale before receiving a first payment. Prelaunch status or having no sales does
+not automatically make HireWiz eligible for Hobby. Resolve this requirement
+before commercial deployment; do not treat a READY preview as eligibility or
+production acceptance evidence. Do not reuse expired verification grants,
+scanner definitions or pricing-policy validity windows. The six delivery outcomes
+and the twenty-origin Razorpay/Greenhouse pilot scope remain unchanged.
 
 ### Decisions for product review
 
