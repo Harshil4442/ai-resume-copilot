@@ -541,10 +541,11 @@ def test_native_health_uses_real_worker_contract_and_tagged_revision_identity(pl
     revision = service + "-00042-test"
     boundary = release.NativeBoundary(ROOT)
     monkeypatch.setattr(boundary, "_cloud", lambda *args: {"status": {"url": "https://synthetic-service.run.app", "traffic": [{"tag": "monetary-candidate", "revisionName": revision, "url": "https://synthetic-verified.run.app"}]}})
-    def token_command(*args):
-        assert args[args.index("--audiences") + 1] == "https://synthetic-service.run.app"
-        return b"synthetic-test-identity"
-    monkeypatch.setattr(boundary, "_command", token_command)
+    def identity_token(audience):
+        assert audience == "https://synthetic-service.run.app"
+        return "synthetic-test-identity"
+    monkeypatch.setattr(boundary, "_health_id_token", identity_token)
+    monkeypatch.setattr(boundary, "_command", lambda *args: pytest.fail("no access-token impersonation command"))
     health = {"ok": True, "release": plan.release}
     if service == release.SERVICES[0]:
         health["revision"] = revision

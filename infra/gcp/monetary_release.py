@@ -987,6 +987,92 @@ class NativeBoundary:
                 raise ReleaseDenied("private_worker_invoker_policy_mismatch")
         self._verify_http_health(plan, service, revision)
 
+    def _health_id_token(self, audience: str) -> str:
+        """Mint only the Tasks identity token; never impersonate an access token.
+
+        gcloud's impersonated print-identity-token first obtains an access token,
+        requiring a broader grant than iam.serviceAccounts.getOpenIdToken. Use
+        the official endpoint with the existing normal retained SDK identity.
+        """
+        from urllib.parse import urlsplit
+
+        import certifi
+
+        session = None
+        try:
+            parsed = urlsplit(audience)
+            if (parsed.scheme != "https" or not parsed.hostname or not parsed.hostname.endswith(".run.app")
+                    or parsed.username or parsed.password or parsed.port not in {None, 443}
+                    or parsed.path not in {"", "/"} or parsed.query or parsed.fragment
+                    or os.environ.get("SSLKEYLOGFILE")):
+                raise ReleaseDenied("exact_candidate_id_token_unavailable")
+            from document_refresh_auth import RELEASE_ACCOUNT
+            from document_refresh_probe import sdk_library
+            from native_fresh_fence import SDKGoogleReads
+
+            # A separate stock manager preserves its canonical account, project,
+            # TLS, proxy, logging and non-impersonated credential checks.
+            http = SDKGoogleReads(sdk_library(), RELEASE_ACCOUNT)._http()
+            session = http.session
+            session.trust_env, session.max_redirects, session.verify = False, 0, certifi.where()
+            for adapter in session.adapters.values():
+                adapter.max_retries = adapter.max_retries.__class__(
+                    total=0, connect=0, read=0, redirect=0, status=0)
+            destination = ("https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/"
+                           f"hirewiz-tasks@{PROJECT}.iam.gserviceaccount.com:generateIdToken")
+            body = {"audience": audience, "includeEmail": True}
+            send, issued = session.send, 0
+
+            def send_once(request: Any, **kwargs: Any) -> Any:
+                nonlocal issued
+                # A normal OAuth refresh may run, but an authentication challenge
+                # must not silently repeat this token-issuance POST.
+                if request.url == "https://oauth2.googleapis.com/token" and request.method == "POST":
+                    pass
+                elif (request.url == destination and request.method == "POST"
+                      and json.loads(request.body) == body and issued == 0):
+                    issued += 1
+                else:
+                    raise ReleaseDenied("exact_candidate_id_token_unavailable")
+                kwargs["allow_redirects"] = False
+                response = send(request, **kwargs)
+                if request.url == destination:
+                    try:
+                        raw = response.raw.read(MAX_JSON + 1, decode_content=True)
+                        if type(raw) is not bytes or len(raw) > MAX_JSON:
+                            raise ReleaseDenied("exact_candidate_id_token_unavailable")
+                        # Stock SDK response handlers materialize .content even
+                        # for streamed requests. Bound it before those handlers.
+                        response._content, response._content_consumed = raw, True
+                    except Exception:
+                        response.close()
+                        raise
+                return response
+
+            session.send = send_once
+            response = session.request("POST", destination, data=json.dumps(body).encode(),
+                headers={"Content-Type": "application/json"}, timeout=(5, 15),
+                allow_redirects=False, stream=True)
+            try:
+                if response.status_code != 200 or issued != 1:
+                    raise ReleaseDenied("exact_candidate_id_token_unavailable")
+                value = _json(response.content)
+                token = value.get("token")
+                if (set(value) != {"token"} or type(token) is not str or not 1 <= len(token) <= 16384
+                        or any(not 33 <= ord(character) <= 126 for character in token)):
+                    raise ReleaseDenied("exact_candidate_id_token_unavailable")
+                return token
+            finally:
+                response.close()
+        except Exception:  # noqa: BLE001 - SDK/HTTP failures may contain bearer tokens.
+            raise ReleaseDenied("exact_candidate_id_token_unavailable") from None
+        finally:
+            if session is not None:
+                try:
+                    session.close()
+                except Exception:  # noqa: BLE001 - cleanup must not expose SDK diagnostics.
+                    pass
+
     def _verify_http_health(self, plan: Plan, service: str, revision: str, *,
                             candidate_tag: str = "monetary-candidate") -> None:
         import ssl
@@ -1028,9 +1114,7 @@ class NativeBoundary:
                 urllib.request.HTTPSHandler(context=context),
             )
             # Cloud Run requires the service URL audience even for traffic-tag URLs.
-            token = self._command("gcloud", "auth", "print-identity-token",
-                                  "--impersonate-service-account", f"hirewiz-tasks@{PROJECT}.iam.gserviceaccount.com",
-                                  "--audiences", audience, "--quiet").decode().strip()
+            token = self._health_id_token(audience)
             request = urllib.request.Request(url.rstrip("/") + "/api/health",
                                              headers={"Authorization": "Bearer " + token})
             with opener.open(request, timeout=30) as response:

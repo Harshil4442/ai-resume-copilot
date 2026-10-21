@@ -9,6 +9,7 @@ import ssl
 import subprocess
 import urllib.error
 import urllib.request
+from pathlib import Path
 from types import SimpleNamespace
 
 import certifi
@@ -119,14 +120,13 @@ def health_boundary(monkeypatch, service):
     })
     commands = []
 
-    def token(*args):
-        commands.append(args)
-        assert args == ("gcloud", "auth", "print-identity-token", "--impersonate-service-account",
-                        f"hirewiz-tasks@{release.PROJECT}.iam.gserviceaccount.com",
-                        "--audiences", "https://unit-service.run.app", "--quiet")
-        return b"unit-id"
+    def token(audience):
+        commands.append(audience)
+        assert audience == "https://unit-service.run.app"
+        return "unit-id"
 
-    monkeypatch.setattr(boundary, "_command", token)
+    monkeypatch.setattr(boundary, "_health_id_token", token)
+    monkeypatch.setattr(boundary, "_command", lambda *args: pytest.fail("no access-token impersonation command"))
     health = {"ok": True, "release": plan.release}
     if service == release.SERVICES[0]:
         health["revision"] = revision
@@ -249,3 +249,121 @@ def test_global_fence_refusal_does_not_dispatch_hardened_transport(monkeypatch):
     monkeypatch.setattr(boundary, "_cloud", lambda *args: pytest.fail("no cloud may occur"))
     with pytest.raises(release.ReleaseDenied, match="^native_external_consumer_and_provider_fence_verifier_missing$"):
         boundary.verify_fences(SimpleNamespace())
+
+
+def identity_transport(monkeypatch, *, fault=None, payload=None):
+    """Exercise real request preparation; replace only SDK identity and wire IO."""
+    import document_refresh_auth as auth
+    import document_refresh_probe as probe
+    import native_fresh_fence as fence
+    import requests
+
+    session = requests.Session()
+    calls, managers = [], []
+    destination = ("https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/"
+                   f"hirewiz-tasks@{release.PROJECT}.iam.gserviceaccount.com:generateIdToken")
+
+    class Body(io.BytesIO):
+        def read(self, size=-1, *, decode_content=False):
+            assert decode_content is True
+            return super().read(size)
+
+    def send(request, **kwargs):
+        calls.append((request, kwargs))
+        assert request.url == destination and request.method == "POST"
+        assert json.loads(request.body) == {"audience": "https://unit-service.run.app", "includeEmail": True}
+        assert kwargs["allow_redirects"] is False and kwargs["stream"] is True
+        assert kwargs["timeout"] == (5, 15) and kwargs["verify"] == certifi.where()
+        assert session.trust_env is False and session.max_redirects == 0
+        assert all(adapter.max_retries.total == 0 for adapter in session.adapters.values())
+        if fault == "timeout":
+            raise TimeoutError("private-access-token-or-provider-diagnostic")
+        response = requests.Response()
+        response.status_code = {"redirect": 302, "forbidden": 403}.get(fault, 200)
+        response.headers["Location"] = "https://foreign.invalid/private-token"
+        response.raw = Body(payload if payload is not None else b'{"token":"unit.id.token"}')
+        return response
+
+    session.send = send
+    request = session.request
+
+    def request_fault(method, uri, **kwargs):
+        if fault == "wrong_endpoint":
+            uri = uri.replace(":generateIdToken", ":generateAccessToken")
+        if fault == "changed_audience":
+            kwargs["data"] = b'{"audience":"https://foreign.invalid","includeEmail":true}'
+        response = request(method, uri, **kwargs)
+        # The real retained SDK materializes a streamed response in its response
+        # handler. Reading raw again afterwards loses the returned token JSON.
+        _ = response.content
+        if fault == "replay":
+            request(method, uri, **kwargs)
+        return response
+
+    monkeypatch.setattr(session, "request", request_fault)
+    monkeypatch.setattr(probe, "sdk_library", lambda: Path("/unit/sdk/lib"))
+
+    def manager(sdk, account):
+        managers.append((sdk, account))
+        assert sdk == Path("/unit/sdk/lib") and account == auth.RELEASE_ACCOUNT
+        return SimpleNamespace(_http=lambda: SimpleNamespace(session=session))
+
+    monkeypatch.setattr(fence, "SDKGoogleReads", manager)
+    return calls, managers
+
+
+def test_health_identity_uses_only_fixed_generate_id_token_and_observed_audience(monkeypatch, capsys, caplog):
+    monkeypatch.setenv("HTTPS_PROXY", "https://foreign.invalid/")
+    monkeypatch.setenv("REQUESTS_CA_BUNDLE", "/untrusted/ca")
+    calls, managers = identity_transport(monkeypatch)
+    boundary = release.NativeBoundary(ROOT)
+    monkeypatch.setattr(boundary, "_command", lambda *args: pytest.fail("no token CLI or access-token impersonation"))
+    assert boundary._health_id_token("https://unit-service.run.app") == "unit.id.token"
+    assert len(calls) == len(managers) == 1
+    assert capsys.readouterr() == ("", "") and caplog.text == ""
+
+
+@pytest.mark.parametrize("fault,payload,physical_posts", [
+    ("timeout", None, 1),
+    ("redirect", None, 1),
+    ("forbidden", None, 1),
+    ("replay", None, 1),
+    ("wrong_endpoint", None, 0),
+    ("changed_audience", None, 0),
+    (None, b"private-token-not-json", 1),
+    (None, b"x" * (release.MAX_JSON + 1), 1),
+    (None, b'{"token":"unit.id.token","unexpected":"private-token"}', 1),
+    (None, b'{"token":"line\\r\\nbreak"}', 1),
+    (None, b'{"token":19}', 1),
+    (None, b'{"token":""}', 1),
+])
+def test_health_identity_failure_is_private_bounded_and_never_replays(
+    monkeypatch, capsys, caplog, fault, payload, physical_posts
+):
+    calls, managers = identity_transport(monkeypatch, fault=fault, payload=payload)
+    with pytest.raises(release.ReleaseDenied, match="^exact_candidate_id_token_unavailable$") as caught:
+        release.NativeBoundary(ROOT)._health_id_token("https://unit-service.run.app")
+    assert len(managers) == 1 and len(calls) == physical_posts
+    assert "private" not in str(caught.value) and caught.value.__suppress_context__
+    assert capsys.readouterr() == ("", "") and caplog.text == ""
+
+
+@pytest.mark.parametrize("audience", [
+    "http://unit-service.run.app", "https://foreign.invalid", "https://user@unit-service.run.app",
+    "https://unit-service.run.app/path", "https://unit-service.run.app?token=private",
+    "https://unit-service.run.app#private",
+])
+def test_health_identity_refuses_foreign_audiences_before_sdk_access(monkeypatch, audience):
+    calls, managers = identity_transport(monkeypatch)
+    with pytest.raises(release.ReleaseDenied, match="^exact_candidate_id_token_unavailable$"):
+        release.NativeBoundary(ROOT)._health_id_token(audience)
+    assert calls == managers == []
+
+
+def test_health_identity_refuses_tls_key_logging_before_authentication(monkeypatch, tmp_path):
+    calls, managers = identity_transport(monkeypatch)
+    keylog = tmp_path / "must-not-contain-token-session-keys"
+    monkeypatch.setenv("SSLKEYLOGFILE", str(keylog))
+    with pytest.raises(release.ReleaseDenied, match="^exact_candidate_id_token_unavailable$"):
+        release.NativeBoundary(ROOT)._health_id_token("https://unit-service.run.app")
+    assert calls == managers == [] and not keylog.exists()
