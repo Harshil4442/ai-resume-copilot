@@ -69,13 +69,22 @@ maintenance automation has not been deployed or accepted.
 
 ### 21 October integration work
 
-The private resume coordinator is now staged as
+The private resume coordinator was first staged as
 `hirewiz-resume-coordinator-disabled-202610211605-2a99` and native Cloud Run
 readback confirms READY. It uses the existing immutable F7 image, internal ingress,
 IAM checks, its dedicated keyless service account, concurrency one and a maximum
 of one instance. No database secret is installed, the service has no invoker
 bindings, and all processing/admission flags are explicitly false. This is a
 staged resource, not accepted upload, scan or cleanup behavior.
+
+Subsequent native readback confirmed configured revision
+`hirewiz-resume-coordinator-configured-disabled-202610211613` READY. It now has
+only its dedicated numeric database secret reference, reviewed storage/document
+pins and the actual Scheduler caller identity. Resource-scoped grants allow only
+that caller to invoke it, the coordinator to access its dedicated secret and the
+coordinator to invoke the document inspector. Both scan and cleanup schedules
+exist and are PAUSED. Processing remains disabled; fresh definitions and genuine
+scan/storage/cleanup acceptance are still required.
 
 A fresh independent read-only check verified the existing coordinator SQL role,
 numeric secret version, ordinary authentication and exact schema/grants. Reissuing

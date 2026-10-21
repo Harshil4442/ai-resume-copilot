@@ -309,3 +309,32 @@ printf '%s' "$artifact" > "$destination/observed"
     assert (history / "1001/observed").read_text() == "document-refresh-refresh-42-1"
     assert (history / "1002/observed").read_text() == "document-refresh-refresh-42-2"
     assert {path.name for path in history.iterdir()} == {"1001", "1002"}
+
+
+def test_workflow_initializes_runner_paths_after_job_expression_validation(tmp_path):
+    import shutil
+    import subprocess
+
+    import yaml
+
+    workflow = yaml.safe_load((refresh.ROOT / ".github/workflows/document-refresh.yml").read_text())
+    job = workflow["jobs"]["maintenance"]
+    # GitHub rejects runner context in jobs.<job>.env before any job is created.
+    assert all("runner." not in str(value) for value in job["env"].values())
+    first = job["steps"][0]
+    assert first["name"] == "Initialize private maintenance paths"
+    env_file = tmp_path / "github-env"
+    runner_temp = tmp_path / "private runner temp"
+    runner_temp.mkdir()
+    result = subprocess.run([shutil.which("bash"), "-eu", "-c", first["run"]], env={
+        "RUNNER_TEMP": str(runner_temp), "GITHUB_ENV": str(env_file),
+        "GITHUB_RUN_ID": "42", "GITHUB_RUN_ATTEMPT": "2",
+    }, capture_output=True, timeout=5)
+    assert result.returncode == 0, result.stderr.decode()
+    assert env_file.read_text().splitlines() == [
+        f"HISTORY_DIRECTORY={runner_temp}/document-refresh-history",
+        f"OUTPUT_DIRECTORY={runner_temp}/document-refresh-42-2",
+    ]
+    assert not list(runner_temp.iterdir())  # Controller owns fresh directory creation.
+    artifact = next(step for step in job["steps"] if step.get("name") == "Retain bounded maintenance evidence")
+    assert artifact["if"] == "always() && env.OUTPUT_DIRECTORY != ''"

@@ -32,9 +32,12 @@ jobs:
       CLOUDSDK_CORE_LOG_HTTP: "false"
       REFRESH_MODE: ${{ github.event.schedule == '37 1 * * *' && 'refresh' || inputs.mode || 'monitor' }}
       DOCUMENT_REFRESH_CONTROLLER_UID: ${{ vars.DOCUMENT_REFRESH_CONTROLLER_UID }}
-      HISTORY_DIRECTORY: ${{ runner.temp }}/document-refresh-history
-      OUTPUT_DIRECTORY: ${{ runner.temp }}/document-refresh-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
+      - name: Initialize private maintenance paths
+        run: |
+          umask 077
+          printf '%s\n' "HISTORY_DIRECTORY=$RUNNER_TEMP/document-refresh-history" >> "$GITHUB_ENV"
+          printf '%s\n' "OUTPUT_DIRECTORY=$RUNNER_TEMP/document-refresh-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - name: Require explicitly provisioned maintenance identity
         env:
@@ -79,7 +82,7 @@ jobs:
         if: env.REFRESH_MODE == 'refresh'
         run: backend/.venv/bin/python backend/scripts/document_refresh.py --mode refresh --publish-candidate --prior-history-directory "$HISTORY_DIRECTORY" --output-directory "$OUTPUT_DIRECTORY"
       - name: Retain bounded maintenance evidence
-        if: always()
+        if: always() && env.OUTPUT_DIRECTORY != ''
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: document-refresh-${{ env.REFRESH_MODE }}-${{ github.run_id }}-${{ github.run_attempt }}
