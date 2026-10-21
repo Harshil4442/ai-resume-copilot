@@ -559,3 +559,144 @@ def test_global_rechecks_current_and_rollback_policy_bindings_before_sql(context
     with pytest.raises(rolling.RollingDenied, match="rolling_service_(policy|model)"):
         adapter.verify_global(boundary.plan)
     assert boundary.writes == []
+
+
+def _candidate_policy_plan(boundary):
+    candidate = replace(boundary.plan.policies, expense_secret="synthetic-expense:2",
+                        expense_sha256="2" * 64, model_policy_secret="synthetic-model-policy:2",
+                        model_policy_sha256="3" * 64)
+    plan = replace(boundary.plan, candidate_policies=candidate)
+    pins = tuple(replace(pin, candidate_template_sha256=rolling.template_sha(
+        rolling.stage_body(plan, pin, boundary.service(pin.service))["template"], pin.service))
+        for pin in plan.services)
+    return replace(plan, services=pins)
+
+
+def _native_policy_adapter(boundary, monkeypatch):
+    adapter = native.NativeRollingBoundary(ROOT)
+    for method in ("verify_source_image", "verify_admission_closed", "verify_document_configuration"):
+        monkeypatch.setattr(adapter.observer, method, lambda *args, **kwargs: None)
+    monkeypatch.setattr(adapter, "_identity", lambda uid: None)
+    monkeypatch.setattr(adapter, "service", boundary.service)
+    monkeypatch.setattr(adapter, "iam", boundary.iam)
+    monkeypatch.setattr(adapter, "revision", boundary.revision)
+    monkeypatch.setattr(adapter, "_reference", lambda secret, selector: selector)
+    monkeypatch.setattr(adapter, "_target", lambda *args: boundary.plan.financial_sha256)
+    return adapter
+
+
+def test_candidate_policy_release_preserves_prior_refs_and_rollback_without_revalidating_expired_prior(context, monkeypatch):
+    boundary, old_journal = context
+    original = copy.deepcopy(boundary.revisions)
+    boundary.plan = _candidate_policy_plan(boundary)
+    boundary.plan.validate()
+    assert native.load_plan(rolling.canonical(asdict(boundary.plan))) == boundary.plan
+    adapter = _native_policy_adapter(boundary, monkeypatch)
+    validated = []
+    def policy_check(policies):
+        # The historical policy has expired; it may be retained, never fund work.
+        assert policies == boundary.plan.candidate_policies
+        validated.append(policies)
+    monkeypatch.setattr(adapter.observer, "verify_policy_configuration", policy_check)
+    monkeypatch.setattr(boundary, "verify_global", adapter.verify_global)
+    journal = rolling.Journal(old_journal.directory, boundary.plan)
+    assert rolling.advance(boundary.plan, boundary, journal)["rolling_release_complete"]
+    for service, body, mask in boundary.writes[:3]:
+        assert mask == "template,traffic"
+        env = rolling.environment(body["template"])
+        assert env["HIREWIZ_EXPENSE_POLICY_JSON"]["valueSource"]["secretKeyRef"]["version"] == "2"
+        if service != rolling.release.SERVICES[2]:
+            assert env["LLM_MODEL_COST_POLICY_JSON"]["valueSource"]["secretKeyRef"]["version"] == "2"
+        assert all(env.get(flag, {"value": "false"})["value"] == "false" for flag in rolling.OFF)
+    assert rolling.rollback(boundary.plan, boundary, journal)["queue_admission"] == "closed"
+    assert validated
+    assert all(boundary.revisions[key] == value for key, value in original.items())
+    assert all(mask == "traffic" for _, _, mask in boundary.writes[6:])
+
+
+@pytest.mark.parametrize("phase", ["prior", "candidate", "rollback"])
+def test_candidate_policy_global_refuses_wrong_phase_or_any_template_drift(context, monkeypatch, phase):
+    boundary, _ = context
+    boundary.plan = _candidate_policy_plan(boundary)
+    adapter = _native_policy_adapter(boundary, monkeypatch)
+    monkeypatch.setattr(adapter.observer, "verify_policy_configuration", lambda policies: None)
+    pin = boundary.plan.services[0]
+    if phase == "candidate":
+        boundary.states[pin.service]["template"] = rolling.stage_body(
+            boundary.plan, pin, boundary.service(pin.service))["template"]
+    template = (boundary.revisions[(pin.service, pin.prior_revision)] if phase == "rollback"
+                else boundary.states[pin.service]["template"])
+    rolling.environment(template)["HIREWIZ_EXPENSE_POLICY_JSON"]["valueSource"]["secretKeyRef"]["version"] = "9"
+    monkeypatch.setattr(adapter, "_target", lambda *args: pytest.fail("Drift precedes SQL"))
+    with pytest.raises(rolling.RollingDenied):
+        adapter.verify_global(boundary.plan)
+    assert boundary.writes == []
+
+
+@pytest.mark.parametrize("kwargs", [
+    {"candidate_expense_secret": "synthetic-expense:2"},
+    {"candidate_model_policy_secret": "synthetic-model-policy:2"},
+    {"candidate_expense_secret": "synthetic-expense:latest", "candidate_model_policy_secret": "synthetic-model-policy:2"},
+])
+def test_capture_candidate_pair_is_explicit_numeric_and_complete_before_native_access(capture_context, monkeypatch, kwargs):
+    _, adapter, base = capture_context
+    monkeypatch.setattr(adapter.observer, "verify_source_image", lambda **kwargs: pytest.fail("No native access"))
+    with pytest.raises(rolling.RollingDenied, match="candidate_policy"):
+        adapter.capture(**base, **kwargs)
+
+
+def test_capture_validates_candidate_before_sql_and_preserves_observed_prior_refs(capture_context, monkeypatch):
+    boundary, adapter, kwargs = capture_context
+    validations = []
+    monkeypatch.setattr(adapter.observer, "verify_policy_configuration", lambda policies: validations.append(policies))
+    monkeypatch.setattr(adapter, "_target", lambda *args: boundary.plan.financial_sha256 if validations else pytest.fail("Policy first"))
+    monkeypatch.setattr(adapter, "verify_global", lambda plan: None)
+    plan = adapter.capture(**kwargs, candidate_expense_secret="synthetic-expense:2",
+                           candidate_model_policy_secret="synthetic-model-policy:2")
+    plan.validate()
+    assert len(validations) == 1 and validations[0] == plan.candidate_policies
+    assert plan.policies.expense_secret == "synthetic-expense:1"
+    assert plan.candidate_policies.expense_secret == "synthetic-expense:2"
+    assert all(pin.candidate_template_sha256 for pin in plan.services)
+    assert all(next(row for row in pin.secrets if row.environment_name == "HIREWIZ_EXPENSE_POLICY_JSON").version == "1"
+               for pin in plan.services)
+    assert boundary.writes == []
+
+
+@pytest.mark.parametrize("reason", ["expired_policy", "source_fallback_missing_quote", "hash_mismatch"])
+def test_candidate_payload_refusal_stops_capture_before_sql_or_plan(capture_context, monkeypatch, reason):
+    boundary, adapter, kwargs = capture_context
+    def reject(_policies):
+        raise rolling.release.ReleaseDenied(reason)
+    monkeypatch.setattr(adapter.observer, "verify_policy_configuration", reject)
+    with pytest.raises(rolling.release.ReleaseDenied, match=reason):
+        adapter.capture(**kwargs, candidate_expense_secret="synthetic-expense:2",
+                        candidate_model_policy_secret="synthetic-model-policy:2")
+    assert boundary.writes == []
+
+
+@pytest.mark.parametrize("change", [
+    {"model_key_secret": "synthetic-replacement-key:3"}, {"model_primary": "gemini-unreviewed"},
+    {"model_api_base": "https://unreviewed.example"}, {"expense_secret": "synthetic-expense:latest"},
+])
+def test_candidate_policy_pair_cannot_replace_model_or_credential_contract(context, change):
+    boundary, _ = context
+    plan = _candidate_policy_plan(boundary)
+    with pytest.raises(rolling.RollingDenied, match="candidate_policy"):
+        replace(plan, candidate_policies=replace(plan.candidate_policies, **change)).validate()
+
+
+def test_candidate_unknown_patch_remains_reconcile_only_with_its_original_plan(context, monkeypatch):
+    boundary, old_journal = context
+    boundary.plan = _candidate_policy_plan(boundary)
+    adapter = _native_policy_adapter(boundary, monkeypatch)
+    monkeypatch.setattr(adapter.observer, "verify_policy_configuration", lambda policies: None)
+    monkeypatch.setattr(boundary, "verify_global", adapter.verify_global)
+    journal = rolling.Journal(old_journal.directory, boundary.plan)
+    boundary.lose_ack = True
+    with pytest.raises(RuntimeError):
+        rolling.advance(boundary.plan, boundary, journal)
+    with pytest.raises(rolling.RollingDenied, match="unknown_mutation"):
+        rolling.advance(boundary.plan, boundary, journal)
+    assert rolling.reconcile(boundary.plan, boundary, journal)["native_mutations"] == 0
+    assert len(boundary.writes) == 1

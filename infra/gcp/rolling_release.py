@@ -15,7 +15,7 @@ import re
 import stat
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Protocol
@@ -154,6 +154,7 @@ class ServicePin:
     revision_keys: tuple[str, ...]
     traffic: tuple[dict[str, Any], ...]
     secrets: tuple[SecretPin, ...]
+    candidate_template_sha256: str | None = None
 
 
 @dataclass(frozen=True)
@@ -182,6 +183,10 @@ class RollingPlan:
     financial_sha256: str
     policies: PolicyPins
     services: tuple[ServicePin, ...]
+    candidate_policies: PolicyPins | None = None
+
+    def target_policies(self) -> PolicyPins:
+        return self.candidate_policies or self.policies
 
     def disabled_flags(self) -> tuple[str, ...]:
         return OFF
@@ -227,6 +232,16 @@ class RollingPlan:
              and HASH.fullmatch(self.policies.model_policy_sha256)
              and self.policies.model_api_base == release.MODEL_API_BASE
              and re.fullmatch(r"gemini-[A-Za-z0-9_.-]{1,113}", self.policies.model_primary))
+        if self.candidate_policies is not None:
+            candidate = self.candidate_policies
+            need(type(candidate) is PolicyPins
+                 and all(type(ref) is str and REF.fullmatch(ref) for ref in
+                         (candidate.expense_secret, candidate.model_policy_secret))
+                 and HASH.fullmatch(candidate.expense_sha256)
+                 and HASH.fullmatch(candidate.model_policy_sha256)
+                 and (candidate.model_key_secret, candidate.model_primary, candidate.model_api_base)
+                 == (self.policies.model_key_secret, self.policies.model_primary, self.policies.model_api_base),
+                 "rolling_candidate_policy_pair_invalid")
         need(tuple(pin.service for pin in self.services) == release.SERVICES)
         for pin in self.services:
             need(re.fullmatch(r"[a-f0-9-]{36}", pin.uid)
@@ -236,6 +251,9 @@ class RollingPlan:
                  and pin.prior_revision != self.revision(pin.service))
             need(all(HASH.fullmatch(value) for value in (pin.template_sha256,
                 pin.static_sha256, pin.iam_sha256, pin.revision_sha256)))
+            need((pin.candidate_template_sha256 is None) if self.candidate_policies is None else
+                 (type(pin.candidate_template_sha256) is str and HASH.fullmatch(pin.candidate_template_sha256)),
+                 "rolling_candidate_template_pin_required")
             need(1 <= len(pin.revision_keys) <= 40 and len(set(pin.revision_keys)) == len(pin.revision_keys))
             need(pinned_traffic(pin.service, {"trafficStatuses": list(pin.traffic)},
                                 prior_revision=pin.prior_revision) == list(pin.traffic),
@@ -250,6 +268,17 @@ class RollingPlan:
             database = [s for s in pin.secrets if s.environment_name == "DATABASE_URL"]
             need(len(database) == 1 and database[0].secret + ":" + database[0].version == self.runtime_secret)
             verify_policy_bindings(self.policies, pin)
+
+
+def candidate_service_pin(plan: RollingPlan, pin: ServicePin) -> ServicePin:
+    """Derive only the reviewed policy-reference changes; keep prior pins immutable."""
+    policies = plan.target_policies()
+    replacements = {"HIREWIZ_EXPENSE_POLICY_JSON": policies.expense_secret,
+                    "LLM_MODEL_COST_POLICY_JSON": policies.model_policy_secret}
+    secrets = tuple(replace(row, secret=replacements[row.environment_name].split(":")[0],
+                            version=replacements[row.environment_name].split(":")[1])
+                    if row.environment_name in replacements else row for row in pin.secrets)
+    return replace(pin, prior_release=plan.release, secrets=secrets)
 
 
 def verify_policy_bindings(policies: PolicyPins, pin: ServicePin,
@@ -404,6 +433,11 @@ def stage_body(plan: RollingPlan, pin: ServicePin, current: dict[str, Any]) -> d
         ref["version"] = secret.version
     expected_names = {s.environment_name for s in pin.secrets}
     need({name for name, row in env.items() if "valueSource" in row} == expected_names)
+    if plan.candidate_policies is not None:
+        target_pin = candidate_service_pin(plan, pin)
+        for secret in target_pin.secrets:
+            env[secret.environment_name] = {"name": secret.environment_name, "valueSource": {
+                "secretKeyRef": {"secret": secret.secret, "version": secret.version}}}
     env["APP_RELEASE"] = {"name": "APP_RELEASE", "value": plan.release}
     env["AUTO_DB_MIGRATE"] = {"name": "AUTO_DB_MIGRATE", "value": "false"}
     env["PGSSLROOTCERT"] = {"name": "PGSSLROOTCERT", "value": release.SAFE_ENV["PGSSLROOTCERT"]}
@@ -417,6 +451,11 @@ def stage_body(plan: RollingPlan, pin: ServicePin, current: dict[str, Any]) -> d
     module = "app.main:app" if pin.service == release.SERVICES[0] else "app.worker_main:app"
     container["command"] = ["python"]
     container["args"] = ["-m", "uvicorn", module, "--host", "0.0.0.0", "--port", str(ports[0]["containerPort"])]
+    if plan.candidate_policies is not None:
+        verify_policy_bindings(plan.target_policies(), candidate_service_pin(plan, pin), template)
+        if pin.candidate_template_sha256 is not None:
+            need(template_sha(template, pin.service) == pin.candidate_template_sha256,
+                 "rolling_candidate_template_changed")
     return {"name": current["name"], "etag": current["etag"], "template": template,
             "traffic": _traffic_for(plan, pin, False)}
 

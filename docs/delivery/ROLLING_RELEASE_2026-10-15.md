@@ -29,6 +29,37 @@ require its exact SHA-256 and a separate private journal directory. All values
 must come from the completed native cutover. A template with invented values is
 not a release plan.
 
+## Renewing the candidate expense and model policy pair
+
+An ordinary release may need current reviewed policies while the preserved prior
+revision still references an expired policy. Do not patch the live service merely
+to make capture pass. Both native capture CLIs accept the optional pair
+`--candidate-expense-secret NAME:NUMERIC_VERSION` and
+`--candidate-model-policy-secret NAME:NUMERIC_VERSION`. Supply both or neither;
+`latest`, a changed model credential, primary model or API base are refused. For
+the schema19 operator sequence, supply this pair on both the schema18 migration
+capture and the fresh schema19 rolling capture, using actual currently accepted
+versions. Policy publication is separate from capture.
+
+Capture preserves the independently observed old policy references, payload
+hashes and immutable prior templates. It separately verifies the candidate pair's
+numeric versions, exact payload hashes, current expiry, funded prices/budgets and
+all models in the candidate source before accessing SQL or emitting a plan. It
+pins the exact target template hashes. Staging changes only the two policy
+references alongside the normal immutable application release; model keys,
+database references and unrelated configuration retain their captured values.
+
+Every subsequent gate revalidates the candidate policies and accepts only each
+service's exact captured prior template or exact staged target template, using
+the corresponding numeric secret references. The old immutable revision remains
+bound to the original references and is never rewritten. An expired prior policy
+is retained solely with every cost-bearing admission closed. Traffic rollback
+does not renew that policy or reopen work. If the candidate policy expires during
+the operation, stop and reconcile the retained operation rather than bypassing
+expiry or editing its plan. Missing acknowledgements retain the same one-send
+journal and cannot authorize another PATCH. Default capture without this explicit
+pair retains the existing same-policy behavior.
+
 ## Update and recovery
 
 `advance` stages each existing service at zero traffic, keeping its old revision

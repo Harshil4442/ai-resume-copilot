@@ -11,7 +11,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from backend.tests.test_rolling_release import FixtureBoundary
+from backend.tests.test_rolling_release import FixtureBoundary, _candidate_policy_plan
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "infra/gcp"))
@@ -66,6 +66,22 @@ def test19_stage_pins_all_feature_flags_false_and_reuses_single_patch_journal(ow
             )
     rolling.reconcile(plan, boundary, journal)
     assert len(boundary.writes) == 6
+
+
+def test19_candidate_policy_pair_roundtrip_retains_disabled_native_controls(owned):
+    _plan, boundary, old_journal = owned
+    plan = _candidate_policy_plan(boundary)
+    boundary.plan = plan
+    assert reviewed.load_plan(rolling.canonical(asdict(plan))) == plan
+    journal = rolling.Journal(old_journal.directory, plan)
+    assert rolling.advance(plan, boundary, journal)["rolling_release_complete"]
+    for _, body, mask in boundary.writes:
+        if mask == "template,traffic":
+            env = rolling.environment(body["template"])
+            assert all(env.get(flag, {"value": "false"})["value"] == "false" for flag in reviewed.OFF)
+            assert env["HIREWIZ_EXPENSE_POLICY_JSON"]["valueSource"]["secretKeyRef"]["version"] == "2"
+    assert all(next(row for row in pin.secrets if row.environment_name == "HIREWIZ_EXPENSE_POLICY_JSON").version == "1"
+               for pin in plan.services)
 
 
 @pytest.mark.parametrize("flag", reviewed.OFF)

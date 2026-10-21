@@ -67,6 +67,30 @@ time-bound checks or widen their limits. Fresh verification authority and accept
 scanner definitions are required before processing can be reactivated. The source
 maintenance automation has not been deployed or accepted.
 
+### 21 October integration work
+
+The private resume coordinator is now staged as
+`hirewiz-resume-coordinator-disabled-202610211605-2a99` and native Cloud Run
+readback confirms READY. It uses the existing immutable F7 image, internal ingress,
+IAM checks, its dedicated keyless service account, concurrency one and a maximum
+of one instance. No database secret is installed, the service has no invoker
+bindings, and all processing/admission flags are explicitly false. This is a
+staged resource, not accepted upload, scan or cleanup behavior.
+
+A fresh independent read-only check verified the existing coordinator SQL role,
+numeric secret version, ordinary authentication and exact schema/grants. Reissuing
+the role or credential is unnecessary. Final service configuration, invocation,
+fresh scanner definitions and actual custody/cleanup acceptance remain pending.
+Paused queues contain retained work; the earlier claim that all queues were empty
+must not be reused for a new release.
+
+The rolling-release source now supports an explicit numeric candidate expense and
+model-policy pair while preserving the prior revision and its original rollback
+references. Candidate validity and exact prior/staged templates remain checked;
+this does not reopen admissions or update production policy references. The repair
+has passed focused verification and independent review; exact-source publication
+and native deployment remain required.
+
 ## Current deployment state
 
 As of **16 October 2026, 09:31 UTC / 15:01 IST**, the preserved-data release

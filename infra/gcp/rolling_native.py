@@ -14,7 +14,7 @@ import os
 import re
 import sys
 import time
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -262,7 +262,9 @@ class NativeRollingBoundary:
         plan.validate()
         self.observer.verify_source_image(release=plan.release, image_digest=plan.image_digest,
             build_id=plan.build_id, ci_run_id=plan.ci_run_id)
-        self.observer.verify_policy_configuration(plan.policies)
+        # Only candidate policies fund new work. An expired prior policy remains
+        # an immutable rollback reference while every cost-bearing admission is closed.
+        self.observer.verify_policy_configuration(plan.target_policies())
         self.observer.verify_admission_closed()
         self._identity(plan.runtime_uid)
         # Worker images/provenance retain their actual separate native source
@@ -274,16 +276,26 @@ class NativeRollingBoundary:
             rolling.worker_iam(pin.service, self.iam(pin.service))
             env = rolling.environment(value["template"])
             rolling.need(value["template"].get("serviceAccount") == rolling.RUNTIME
-                         and all(env.get(name, {"value": "false"}).get("value") == "false" for name in rolling.OFF))
-            # Both current and rollback secret capabilities remain pinned to the
-            # same actual version; a moved latest alias refuses the rollback too.
+                         and all(env.get(name, {"value": "false"}).get("value") == "false" for name in plan.disabled_flags()))
             old = self.revision(pin.service, pin.prior_revision)
             rolling.need(old is not None)
             assert old is not None
-            for template in (value["template"], old):
-                rolling.verify_policy_bindings(plan.policies, pin, template)
+            current_pin, current_policies = pin, plan.policies
+            if plan.candidate_policies is not None:
+                actual = rolling.template_sha(value["template"], pin.service)
+                if actual != pin.template_sha256:
+                    rolling.need(actual == pin.candidate_template_sha256,
+                                 "rolling_current_policy_phase_unverified")
+                    current_pin = rolling.candidate_service_pin(plan, pin)
+                    current_policies = plan.target_policies()
+                rolling._old_revision(self, pin)
+                rolling.need(all(rolling.environment(old).get(name, {"value": "false"}).get("value") == "false"
+                                 for name in plan.disabled_flags()), "rolling_prior_admission_not_closed")
+            for template, expected_pin, policies in ((value["template"], current_pin, current_policies),
+                                                      (old, pin, plan.policies)):
+                rolling.verify_policy_bindings(policies, expected_pin, template)
                 rows = rolling.environment(template)
-                for secret in pin.secrets:
+                for secret in expected_pin.secrets:
                     ref = rows.get(secret.environment_name, {}).get("valueSource", {}).get("secretKeyRef", {})
                     rolling.need(ref.get("secret") == secret.secret
                                  and self._reference(secret.secret, ref.get("version", "")) == secret.version,
@@ -293,8 +305,15 @@ class NativeRollingBoundary:
                      "rolling_financial_state_changed_reconcile_only")
 
     def capture(self, *, commit, image_digest, build_id, ci_run_id, nonce,
-                observer_secret, retired_migration_secret, workers_release):
+                observer_secret, retired_migration_secret, workers_release,
+                candidate_expense_secret=None, candidate_model_policy_secret=None):
         """Read real post-cutover fields, never fabricate a ready plan from blanks."""
+        rolling.need((candidate_expense_secret is None) == (candidate_model_policy_secret is None),
+                     "rolling_candidate_policy_pair_required")
+        if candidate_expense_secret is not None:
+            rolling.need(all(type(ref) is str and rolling.REF.fullmatch(ref)
+                             for ref in (candidate_expense_secret, candidate_model_policy_secret)),
+                         "rolling_candidate_policy_numeric_refs_required")
         self.observer.verify_source_image(release=commit, image_digest=image_digest,
                                          build_id=build_id, ci_run_id=ci_run_id)
         self.observer.verify_admission_closed()
@@ -344,9 +363,26 @@ class NativeRollingBoundary:
             api_env["LLM_MODEL"]["value"], api_env["LLM_API_BASE"]["value"])
         for pin in pins:
             rolling.verify_policy_bindings(policies, pin, templates[pin.service])
+        candidate_policies = None
+        if candidate_expense_secret is not None:
+            for reference in (candidate_expense_secret, candidate_model_policy_secret):
+                secret, version = reference.split(":")
+                rolling.need(self._reference(secret, version) == version,
+                             "rolling_candidate_policy_version_unverified")
+            candidate_policies = replace(policies, expense_secret=candidate_expense_secret,
+                expense_sha256=hashlib.sha256(self.observer._secret(candidate_expense_secret).encode()).hexdigest(),
+                model_policy_secret=candidate_model_policy_secret,
+                model_policy_sha256=hashlib.sha256(self.observer._secret(candidate_model_policy_secret).encode()).hexdigest())
+            # This checks current expiry, prices, budgets and every source fallback
+            # before capture accesses SQL, creates a plan or can issue a PATCH.
+            self.observer.verify_policy_configuration(candidate_policies)
         plan = self.make_plan(commit, image_digest, build_id, ci_run_id, nonce, uid,
             runtime_reference, observer_secret, retired_migration_secret, workers_release,
-            self._target(runtime_reference, observer_secret, retired_migration_secret), policies, tuple(pins))
+            self._target(runtime_reference, observer_secret, retired_migration_secret), policies, tuple(pins),
+            candidate_policies=candidate_policies)
+        if candidate_policies is not None:
+            plan = replace(plan, services=tuple(replace(pin, candidate_template_sha256=rolling.template_sha(
+                rolling.stage_body(plan, pin, self.service(pin.service))["template"], pin.service)) for pin in pins))
         plan.validate()
         self.verify_global(plan)
         for pin in plan.services:
@@ -358,6 +394,8 @@ class NativeRollingBoundary:
 def load_plan(raw: bytes) -> rolling.RollingPlan:
     value = release._json(raw)
     value["policies"] = rolling.PolicyPins(**value["policies"])
+    if value.get("candidate_policies") is not None:
+        value["candidate_policies"] = rolling.PolicyPins(**value["candidate_policies"])
     services = []
     for item in value["services"]:
         item["secrets"] = tuple(rolling.SecretPin(**row) for row in item["secrets"])
@@ -378,6 +416,8 @@ def main():
     for name in ("release", "image-digest", "build-id", "nonce", "observer-secret", "retired-migration-secret", "workers-release"):
         parser.add_argument("--" + name)
     parser.add_argument("--ci-run-id", type=int)
+    parser.add_argument("--candidate-expense-secret")
+    parser.add_argument("--candidate-model-policy-secret")
     args = parser.parse_args()
     adapter = NativeRollingBoundary(Path(__file__).resolve().parents[2])
     if args.mode == "capture":
@@ -385,7 +425,9 @@ def main():
             "observer_secret", "retired_migration_secret", "workers_release", "ci_run_id")))
         plan = adapter.capture(commit=args.release, image_digest=args.image_digest, build_id=args.build_id,
             ci_run_id=args.ci_run_id, nonce=args.nonce, observer_secret=args.observer_secret,
-            retired_migration_secret=args.retired_migration_secret, workers_release=args.workers_release)
+            retired_migration_secret=args.retired_migration_secret, workers_release=args.workers_release,
+            candidate_expense_secret=args.candidate_expense_secret,
+            candidate_model_policy_secret=args.candidate_model_policy_secret)
         rolling.need(args.plan.is_absolute() and args.plan.parent.resolve() == args.plan.parent
                      and args.plan.parent.stat().st_uid == os.getuid()
                      and args.plan.parent.stat().st_mode & 0o077 == 0)

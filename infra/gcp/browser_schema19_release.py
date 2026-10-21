@@ -332,6 +332,8 @@ def load_plan(raw: bytes) -> Schema19Plan:
         "schema19_distinct_plan_required",
     )
     value["policies"] = rolling.PolicyPins(**value["policies"])
+    if value.get("candidate_policies") is not None:
+        value["candidate_policies"] = rolling.PolicyPins(**value["candidate_policies"])
     services = []
     for item in value["services"]:
         item["secrets"] = tuple(rolling.SecretPin(**row) for row in item["secrets"])
@@ -633,6 +635,8 @@ def main() -> None:
     ):
         parser.add_argument("--" + name)
     parser.add_argument("--ci-run-id", type=int)
+    parser.add_argument("--candidate-expense-secret")
+    parser.add_argument("--candidate-model-policy-secret")
     parser.add_argument("--prior-sources", type=Path)
     parser.add_argument("--prior-sources-sha256")
     args = parser.parse_args()
@@ -657,6 +661,8 @@ def main() -> None:
             observer_secret=args.observer_secret,
             retired_migration_secret=args.retired_migration_secret,
             workers_release=args.workers_release,
+            candidate_expense_secret=args.candidate_expense_secret,
+            candidate_model_policy_secret=args.candidate_model_policy_secret,
         )
         raw = rolling.canonical(asdict(plan)) + b"\n"
         fd = os.open(
