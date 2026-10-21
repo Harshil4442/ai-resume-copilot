@@ -76,26 +76,31 @@ test("real MV3 Chrome: exact review before autosave, device signing without cook
   } finally { await f.close(); }
 });
 
-test("real Chrome: reviewed shipping UI has zero host grants, no transport and no legacy or unapproved actions", async () => {
+test("real Chrome: configured shipping UI requires reviewed pairing before any assistance and grants no hosts", async () => {
   const f = await browserFixture({ shipping: true }); try {
     await expect(f.popup.locator("#mode")).toContainText("Candidate-reviewed Razorpay assistance");
-    await expect(f.popup.locator("#assistance")).toBeVisible();
-    await expect(f.popup.locator("#assistance-permission")).toBeEnabled();
-    for (const id of ["assistance-connect", "assistance-prepare", "assistance-fill"]) await expect(f.popup.locator(`#${id}`)).toBeDisabled();
+    await expect(f.popup.locator("#native-connection")).toBeVisible();
+    await expect(f.popup.locator("#native-permission")).toBeEnabled();
+    for (const id of ["native-start", "native-complete", "native-refresh", "native-disconnect"]) await expect(f.popup.locator(`#${id}`)).toBeDisabled();
+    await expect(f.popup.locator("#assistance")).toBeHidden();
+    for (const id of ["assistance-connect", "assistance-prepare", "assistance-prepare-attachment", "assistance-prepare-native-upload", "assistance-prepare-submit", "assistance-fill"]) await expect(f.popup.locator(`#${id}`)).toBeDisabled();
     await expect(f.popup.locator("#fixture-connection")).toBeHidden();
     await expect(f.popup.locator("#fixture-prepare")).toBeHidden();
-    await expect(f.popup.locator("#native-connection")).toBeHidden();
     await expect(f.popup.locator("#fill")).toBeDisabled(); await expect(f.popup.locator("#review")).toBeHidden();
     const permissions = await f.popup.evaluate(() => chrome.permissions.getAll());
     assert.deepEqual(permissions.origins, []);
-    for (const message of [{ type: "prepare", application_id: "app_fixture" }, { type: "enroll", grant: "synthetic-only" }, { type: "pairing_start" }]) {
-      const response = await f.popup.evaluate((value) => chrome.runtime.sendMessage(value), message);
-      assert.equal(response.ok, false); assert.match(response.error, /Unsupported assistance operation/);
+    const legacy = await f.popup.evaluate(() => chrome.runtime.sendMessage({ type: "enroll", grant: "synthetic-only" }));
+    assert.equal(legacy.ok, false); assert.match(legacy.error, /Unsupported assistance operation/);
+    for (const type of ["prepare", "assistance_connect", "assistance_prepare", "assistance_prepare_attachment", "assistance_prepare_native_upload", "assistance_prepare_submit", "assistance_reconcile", "assistance_fill"]) {
+      const response = await f.popup.evaluate((type) => chrome.runtime.sendMessage({ type, application_id: "app_fixture" }), type);
+      assert.equal(response.ok, false); assert.match(response.error, /Check the current native browser connection before application assistance/);
     }
-    const connect = await f.popup.evaluate(() => chrome.runtime.sendMessage({ type: "assistance_connect" }));
-    assert.equal(connect.ok, false); assert.match(connect.error, /exact reviewed origin permission is missing or revoked/);
-    const fill = await f.popup.evaluate(() => chrome.runtime.sendMessage({ type: "assistance_fill" }));
-    assert.equal(fill.ok, false); assert.match(fill.error, /freshly inspected, approved review is required/);
+    const connect = await f.popup.evaluate(() => chrome.runtime.sendMessage({ type: "pairing_start" }));
+    assert.equal(connect.ok, false); assert.match(connect.error, /Connection is unavailable. No application action was authorized/);
+    const status = await f.popup.evaluate(() => chrome.runtime.sendMessage({ type: "pairing_status" }));
+    assert.equal(status.ok, true); assert.equal(status.value.phase, "idle"); assert.equal(status.value.connected, false);
+    assert.deepEqual(status.value.allowed_actions, []);
+    assert.deepEqual((await f.popup.evaluate(() => chrome.permissions.getAll())).origins, []);
     assert.deepEqual(f.transportRequests, []);
     assert.equal(f.authority.state.requests.length, 0); await f.noWrite();
   } finally { await f.close(); }

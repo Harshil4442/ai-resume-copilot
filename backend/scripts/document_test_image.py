@@ -86,6 +86,14 @@ class _DocxRefusal(NamedTuple):
     reason: str
 
 
+class _BuildFailure(NamedTuple):
+    exit_code: int
+    output_sha256: str
+    output_bytes: int
+    reason: str
+    detail: str
+
+
 class _DocxFitMismatch(NamedTuple):
     case: str
     failed_checks: tuple[str, ...]
@@ -479,6 +487,7 @@ def _progress(stage: str, *, case: str | None = None, exit_code: int | None = No
               completed_cases: int | None = None) -> None:
     diagnostic = _FAILURE.get()
     if type(diagnostic) is dict:
+        diagnostic.pop("build_failure", None)
         diagnostic.pop("clamd_failure", None)
         diagnostic.pop("clamd_native_requirement", None)
         diagnostic.pop("clamd_startup_observation", None)
@@ -488,6 +497,35 @@ def _progress(stage: str, *, case: str | None = None, exit_code: int | None = No
         diagnostic.update(stage=stage, case=case, exit_code=exit_code)
         if completed_cases is not None:
             diagnostic["completed_cases"] = completed_cases
+
+
+def _safe_build_detail(output: bytes) -> str:
+    """Bounded Docker errors from the public build context, never document data."""
+    text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", output.decode("utf-8", "replace"))
+    lines = [line for line in text.splitlines() if re.search(
+        r"(?:^|\s)(?:ERROR|Error|WARNING|Warning):|failed to solve:|^unknown flag:|^The command |(?:^|\s)E: ", line)]
+    safe = []
+    for line in lines[-3:]:
+        if re.search(r"(?i)\b(password|passwd|authorization|bearer|secret|credentials?|api[-_ ]?key|access[-_ ]?token|refresh[-_ ]?token)\b", line):
+            safe.append("Docker authentication detail redacted.")
+            continue
+        line = re.sub(r"https?://[^\s<>]+", "<url>", line)
+        line = re.sub(r'''"[^"\r\n]*"|'[^'\r\n]*'|`[^`\r\n]*`''', "<quoted>", line)
+        line = re.sub(r"(?:/Users/|/home/|/tmp/|/private/)[^\s]+", "<path>", line)
+        line = re.sub(r"[A-Za-z0-9_-]{32,}", "<opaque>", line)
+        safe.append(" ".join("".join(char if 32 <= ord(char) <= 126 else " " for char in line).split())[:330])
+    return " | ".join(safe) if safe else "Docker command failed without a recognized final error line."
+
+
+def _note_build_failure(code: int, output: bytes) -> None:
+    _progress("build", exit_code=code)
+    diagnostic = _FAILURE.get()
+    if type(diagnostic) is not dict or type(code) is not int or not 1 <= code <= 255 or type(output) is not bytes or len(output) > 1024 * 1024:
+        return
+    reason = ("http_429_observed" if b"429 Too Many Requests" in output or b"toomanyrequests" in output
+              else "base_image_resolution" if b"failed to resolve source metadata" in output
+              else "unclassified")
+    diagnostic["build_failure"] = _BuildFailure(code, hashlib.sha256(output).hexdigest(), len(output), reason, _safe_build_detail(output))
 
 
 def _note_docx_refusal(result: object, binding: dict, code: int, *, case: str) -> None:
@@ -558,8 +596,8 @@ def _note_docx_fit_mismatch(result: object, binding: dict, code: int, *, case: s
 
 
 def _failure_report() -> dict:
-    # Arbitrary context/native text cannot escape. A bound refusal contributes
-    # only the independently allowlisted typed projection, never its body/unit.
+    # Document context/native text cannot escape. Public-context Docker errors
+    # use a separate bounded redaction; document refusals never export a body/unit.
     stored = _FAILURE.get()
     diagnostic = stored if type(stored) is dict else {}
     stage, case = diagnostic.get("stage"), diagnostic.get("case")
@@ -569,6 +607,16 @@ def _failure_report() -> dict:
             "case": case if type(case) is str and case in _FAILURE_CASES else None,
             "exit_code": code if type(code) is int and 0 <= code <= 255 else None,
             "completed_cases": completed if type(completed) is int and 0 <= completed <= len(_FAILURE_CASES) else 0}
+    build = diagnostic.get("build_failure")
+    if (result["stage"] == "build" and type(build) is _BuildFailure
+            and type(build.exit_code) is int and build.exit_code == result["exit_code"] and 1 <= build.exit_code <= 255
+            and type(build.output_sha256) is str and re.fullmatch(r"[a-f0-9]{64}", build.output_sha256)
+            and type(build.output_bytes) is int and 0 <= build.output_bytes <= 1024 * 1024
+            and type(build.reason) is str and build.reason in {"http_429_observed", "base_image_resolution", "unclassified"}
+            and type(build.detail) is str and 1 <= len(build.detail) <= 1024
+            and all(32 <= ord(char) <= 126 for char in build.detail)):
+        result.update(build_error=build.reason, build_output_sha256=build.output_sha256,
+                      build_output_bytes=build.output_bytes, build_error_detail=build.detail)
     refusal = diagnostic.get("docx_refusal")
     if (result["stage"] == "case_validation" and result["case"] in {"styled_multipage_fit", "rendered_reflow_refusal"}
             and result["exit_code"] == 1
@@ -682,11 +730,13 @@ def _diagnose_docx_links(docker: list[str], image: str, platform: str, request: 
         diagnostic["docx_link_observation"] = _DocxLinkObservation(container_calls, round(time.monotonic() - started, 6), values)
 
 
-def command(args: list[str], *, timeout: int = 20, limit: int = 1024 * 1024) -> tuple[int, bytes]:
+def command(args: list[str], *, timeout: int = 20, limit: int = 1024 * 1024,
+            merge_stderr: bool = False) -> tuple[int, bytes]:
     child = None
     try:
         child = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                                 stderr=subprocess.DEVNULL, start_new_session=True)
+                                 stderr=subprocess.STDOUT if merge_stderr else subprocess.DEVNULL,
+                                 start_new_session=True)
         assert child.stdout is not None
         deadline = time.monotonic() + timeout
         output = bytearray()
@@ -764,7 +814,10 @@ def build(docker: list[str], platform: str, hashes: dict[str, str]) -> str:
         for path, digest in hashes.items():
             args += ["--label", LABEL + path + "=" + digest]
         args.append(str(context))
-        successful(args, timeout=600)
+        code, output = command(args, timeout=600, merge_stderr=True)
+        if code:
+            _note_build_failure(code, output)
+            raise DocumentImageError()
         image = iid.read_text().strip()
     if not IMAGE_ID.fullmatch(image) or source_hashes() != hashes:
         raise DocumentImageError()
