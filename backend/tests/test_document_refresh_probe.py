@@ -535,11 +535,13 @@ def test_changed_current_consumer_prevents_any_old_job_delete(native, monkeypatc
 
 @pytest.mark.parametrize("read_only_release", [False, True])
 @pytest.mark.parametrize("preflight_drift", [None, "sandbox", "coordinator"])
-def test_official_generated_sdk_requests_use_only_concrete_service_adapter_routes(monkeypatch, read_only_release, preflight_drift):
+@pytest.mark.parametrize("maintenance_binding", [False, True])
+def test_official_generated_sdk_requests_use_only_concrete_service_adapter_routes(monkeypatch, read_only_release, preflight_drift, maintenance_binding):
     """Exercise actual SDK serialization with an in-memory HTTP envelope, never auth."""
     import json
     from urllib.parse import parse_qs, urlsplit
 
+    from backend.tests.test_document_worker_deployment import maintenance_snapshot
     from infra.gcp import document_refresh_auth as auth
 
     sdk = Path("/opt/homebrew/share/google-cloud-sdk/lib")
@@ -550,11 +552,16 @@ def test_official_generated_sdk_requests_use_only_concrete_service_adapter_route
     runtime_rows = runtime()
     runtime_rows[2]["etag"] = "YWJj"
     runtime_rows[1] = service(p.BASE_IMAGE)
+    metadata = maintenance_snapshot(worker)
+    if maintenance_binding:
+        runtime_rows[2]["bindings"].append({"role": worker.MAINTENANCE_ROLE,
+            "members": ["serviceAccount:" + worker.MAINTENANCE_ACCOUNT]})
     if preflight_drift == "sandbox":
         runtime_rows[1]["template"]["containers"][0]["sandboxLauncher"] = False
 
     class Http:
         connections = {}
+        uid = "123456789012345678901"
 
         def request(self, uri, method="GET", body=None, headers=None, redirections=0, **kwargs):
             assert redirections == 0 and auth.allowed(method, uri), (method, uri)
@@ -564,8 +571,11 @@ def test_official_generated_sdk_requests_use_only_concrete_service_adapter_route
                 data = {} if "iam.googleapis.com" in uri else {"bindings": []}
             elif path.endswith("/keys"):
                 data = {}
+            elif path.endswith("/roles/hirewizDocumentServiceMaintenance"):
+                data = metadata["maintenance_role"]
             elif "iam.googleapis.com" in uri:
-                data = coordinator_account() if "hirewiz-resume-coordinator" in uri else runtime_rows[3]
+                data = (metadata["maintenance_service_account"] if "hirewiz-document-refresh" in uri else
+                        coordinator_account() if "hirewiz-resume-coordinator" in uri else runtime_rows[3])
                 if "hirewiz-resume-coordinator" in uri and preflight_drift == "coordinator":
                     data["uniqueId"] = "1" * 21
             elif "cloudresourcemanager.googleapis.com" in uri:
@@ -625,6 +635,9 @@ def test_official_generated_sdk_requests_use_only_concrete_service_adapter_route
         proof = clients.preflight()
         assert proof["service"]["template"]["containers"][0]["image"] == p.BASE_IMAGE
         assert proof["revision"]["name"] == proof["service"]["latestReadyRevision"]
+        if maintenance_binding:
+            assert proof["maintenance_role"] == metadata["maintenance_role"]
+            assert any(urlsplit(uri).path.endswith("/roles/hirewizDocumentServiceMaintenance") for _, uri, _ in seen)
         if read_only_release:
             for mutation, argument in ((clients.create, p.desired(IMAGE, NONCE)), (clients.start, j), (clients.delete, j)):
                 with pytest.raises(p.NativeProofDenied, match="release_mutation_refused"):
@@ -643,7 +656,7 @@ def test_official_generated_sdk_requests_use_only_concrete_service_adapter_route
     finally:
         clients.close()
     assert selected == ["release" if read_only_release else "maintenance"]
-    assert len(seen) == (15 if read_only_release else 18)
+    assert len(seen) == (15 if read_only_release else 18) + (3 if maintenance_binding else 0)
 
 
 def coordinator_account():

@@ -700,3 +700,68 @@ def test_candidate_unknown_patch_remains_reconcile_only_with_its_original_plan(c
         rolling.advance(boundary.plan, boundary, journal)
     assert rolling.reconcile(boundary.plan, boundary, journal)["native_mutations"] == 0
     assert len(boundary.writes) == 1
+
+
+@pytest.mark.parametrize("service", rolling.release.SERVICES)
+def test_maintenance_updater_is_optional_only_on_reviewed_consumers_and_never_an_invoker(context, service):
+    boundary, _ = context
+    documents = rolling.release.documents
+    policy = boundary.iam(service)
+    policy["bindings"].append({"role": documents.MAINTENANCE_ROLE,
+        "members": ["serviceAccount:" + documents.MAINTENANCE_ACCOUNT]})
+    if service == rolling.release.SERVICES[2]:
+        with pytest.raises(rolling.RollingDenied):
+            rolling.worker_iam(service, policy)
+    else:
+        rolling.worker_iam(service, policy)
+        policy["bindings"][-1]["role"] = "roles/run.invoker"
+        with pytest.raises(rolling.RollingDenied):
+            rolling.worker_iam(service, policy)
+
+
+@pytest.mark.parametrize("broaden_role", [False, True])
+def test_native_iam_reader_requires_real_keyless_account_and_exact_role_definition(context, monkeypatch, broaden_role):
+    from backend.tests.test_document_worker_deployment import maintenance_snapshot
+
+    boundary, _ = context
+    documents = rolling.release.documents
+    metadata = maintenance_snapshot(documents)
+    if broaden_role:
+        metadata["maintenance_role"]["includedPermissions"].append("run.services.setIamPolicy")
+    service = rolling.release.SERVICES[1]
+    policy = boundary.iam(service)
+    policy["bindings"].append({"role": documents.MAINTENANCE_ROLE,
+        "members": ["serviceAccount:" + documents.MAINTENANCE_ACCOUNT]})
+    adapter, reads = native.NativeRollingBoundary(ROOT), []
+    def cloud(*args):
+        reads.append(args)
+        if args[:3] == ("run", "services", "get-iam-policy"):
+            return copy.deepcopy(policy)
+        if args[:3] == ("iam", "service-accounts", "describe"):
+            assert args[3] == documents.MAINTENANCE_ACCOUNT
+            return metadata["maintenance_service_account"]
+        if args[:4] == ("iam", "service-accounts", "keys", "list"):
+            assert args[-1] == documents.MAINTENANCE_ACCOUNT
+            return metadata["maintenance_service_account_keys"]["keys"]
+        assert args == ("iam", "roles", "describe", "hirewizDocumentServiceMaintenance")
+        return metadata["maintenance_role"]
+    monkeypatch.setattr(adapter.observer, "_cloud", cloud)
+    if broaden_role:
+        with pytest.raises(rolling.RollingDenied, match="maintenance_authority"):
+            adapter.iam(service)
+    else:
+        assert adapter.iam(service) == policy
+        assert rolling.sha(policy) != boundary.plan.pin(service).iam_sha256
+    assert len(reads) == 4 and boundary.writes == []
+
+
+def test_maintenance_grant_after_capture_changes_full_iam_hash_and_refuses_patch(context):
+    boundary, journal = context
+    documents = rolling.release.documents
+    boundary.policies[rolling.release.SERVICES[1]]["bindings"].append({"role": documents.MAINTENANCE_ROLE,
+        "members": ["serviceAccount:" + documents.MAINTENANCE_ACCOUNT]})
+    with pytest.raises(rolling.RollingDenied):
+        rolling.advance(boundary.plan, boundary, journal)
+    # API may stage before its sibling's changed policy is encountered; no
+    # action is sent for the service whose captured native IAM changed.
+    assert all(service != rolling.release.SERVICES[1] for service, _, _ in boundary.writes)

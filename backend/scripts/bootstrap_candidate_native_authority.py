@@ -18,6 +18,7 @@ import sys
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from importlib import import_module
 from pathlib import Path
 from typing import Any, Literal
 from uuid import UUID, uuid4
@@ -202,6 +203,16 @@ def validate_manager(plan: BootstrapPlan) -> None:
 
 
 def manager_credentials(plan: BootstrapPlan):
+    # Pin application protobuf/GAPIC modules before the normal manager adds its
+    # bundled dependencies to sys.path. Importing classes constructs no clients
+    # and remains outside PLAN_ONLY; credentials still come only from the manager.
+    for module in (
+        "google.cloud.firestore_admin_v1.services.firestore_admin",
+        "google.cloud.firestore_v1.services.firestore",
+        "google.cloud.kms_v1.services.key_management_service",
+        "google.cloud.storage",
+    ):
+        import_module(module)
     validate_manager(plan)
     from google.auth.credentials import Credentials
     from googlecloudsdk.core.credentials import store

@@ -193,7 +193,23 @@ class NativeRollingBoundary:
 
     def iam(self, service):
         rolling.need(service in release.SERVICES)
-        return self.observer._cloud("run", "services", "get-iam-policy", service, "--region", release.REGION)
+        policy = self.observer._cloud("run", "services", "get-iam-policy", service, "--region", release.REGION)
+        documents = release.documents
+        try:
+            _, maintenance = documents.service_bindings_without_maintenance(policy, service)
+            if maintenance:
+                snapshot = {
+                    "maintenance_service_account": self.observer._cloud(
+                        "iam", "service-accounts", "describe", documents.MAINTENANCE_ACCOUNT),
+                    "maintenance_service_account_keys": {"keys": self.observer._cloud(
+                        "iam", "service-accounts", "keys", "list", "--iam-account", documents.MAINTENANCE_ACCOUNT)},
+                    "maintenance_role": self.observer._cloud(
+                        "iam", "roles", "describe", documents.MAINTENANCE_ROLE.rsplit("/", 1)[-1]),
+                }
+                documents.validate_maintenance_identity(snapshot)
+        except documents.ConfigurationDenied:
+            raise rolling.RollingDenied("rolling_maintenance_authority_unverified") from None
+        return policy
 
     def patch(self, service, body, mask):
         return self.run.patch(service, body, mask)

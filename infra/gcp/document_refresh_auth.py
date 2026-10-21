@@ -22,6 +22,7 @@ PARENT = f"projects/{PROJECT}/locations/{REGION}"
 ACCOUNT = f"hirewiz-document-refresh@{PROJECT}.iam.gserviceaccount.com"
 WORKER_ACCOUNT = f"hirewiz-document-inspector@{PROJECT}.iam.gserviceaccount.com"
 COORDINATOR_ACCOUNT = f"hirewiz-resume-coordinator@{PROJECT}.iam.gserviceaccount.com"
+MAINTENANCE_ROLE = f"projects/{PROJECT}/roles/hirewizDocumentServiceMaintenance"
 CALLERS = ("ai-resume-parser", "hirewiz-analysis-worker", "hirewiz-resume-coordinator")
 SERVICES = ("hirewiz-document-inspector", *CALLERS)
 MAX_BODY = 1024 * 1024
@@ -70,6 +71,8 @@ def allowed(method: str, uri: str) -> bool:
                     or revision and method == "GET" or jobs or operations and method == "GET"
                     or path == prefix + "/jobs" and method == "POST")
     if target.hostname == "iam.googleapis.com":
+        if method == "GET" and path == "/v1/" + MAINTENANCE_ROLE:
+            return True
         return any(method == "GET" and path in {
             "/v1/projects/" + PROJECT + "/serviceAccounts/" + account,
             "/v1/projects/" + PROJECT + "/serviceAccounts/" + account + "/keys",

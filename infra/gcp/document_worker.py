@@ -20,6 +20,12 @@ SERVICE_ACCOUNT = f"{SERVICE}@{PROJECT}.iam.gserviceaccount.com"
 API_INVOKER = f"hirewiz-runtime-20261014@{PROJECT}.iam.gserviceaccount.com"
 UPLOAD_COORDINATOR = f"hirewiz-resume-coordinator@{PROJECT}.iam.gserviceaccount.com"
 UPLOAD_COORDINATOR_UID = "109155185167233588129"
+MAINTENANCE_ACCOUNT = f"hirewiz-document-refresh@{PROJECT}.iam.gserviceaccount.com"
+MAINTENANCE_ROLE = f"projects/{PROJECT}/roles/hirewizDocumentServiceMaintenance"
+MAINTENANCE_PERMISSIONS = frozenset({"run.services.get", "run.services.getIamPolicy",
+                                     "run.services.update", "run.revisions.get"})
+MAINTENANCE_SERVICES = frozenset({SERVICE, "ai-resume-parser", "hirewiz-analysis-worker",
+                                 "hirewiz-resume-coordinator"})
 RESOURCE = f"projects/{PROJECT}/locations/{REGION}/services/{SERVICE}"
 POLICY_SHA256 = "dbd15ce3120bb6211bb6c1d7b166aaddbd8b80e00a72d564e6274ef10db3aaf1"
 ACCEPTED_IMAGE = (
@@ -267,6 +273,48 @@ def _coordinator_identity(snapshot: dict[str, Any]) -> None:
         _deny()
 
 
+def service_bindings_without_maintenance(policy: dict[str, Any], service: str) -> tuple[list[dict[str, Any]], bool]:
+    """An exact non-invoking updater binding never changes the invoker allowlist."""
+    bindings, remaining, found = _bindings(policy, project_conditions=True), [], False
+    member = "serviceAccount:" + MAINTENANCE_ACCOUNT
+    for binding in bindings:
+        related = binding["role"] == MAINTENANCE_ROLE or any(
+            MAINTENANCE_ACCOUNT in value for value in binding["members"])
+        if not related:
+            remaining.append(binding)
+            continue
+        if (found or service not in MAINTENANCE_SERVICES
+                or binding != {"role": MAINTENANCE_ROLE, "members": [member]}):
+            _deny()
+        found = True
+    return remaining, found
+
+
+def validate_maintenance_identity(snapshot: dict[str, Any], *, expected_uid: str | None = None) -> str:
+    """Native readers supply fresh account/key/role bodies; offline data stays offline."""
+    try:
+        account = snapshot["maintenance_service_account"]
+        keys = snapshot["maintenance_service_account_keys"].get("keys", [])
+        role = snapshot["maintenance_role"]
+        uid = account.get("uniqueId")
+        permissions = role.get("includedPermissions")
+        if (account.get("name") != f"projects/{PROJECT}/serviceAccounts/{MAINTENANCE_ACCOUNT}"
+                or account.get("email") != MAINTENANCE_ACCOUNT or account.get("projectId") != PROJECT
+                or account.get("disabled", False) is not False
+                or type(uid) is not str or not re.fullmatch(r"[1-9][0-9]{20}", uid)
+                or expected_uid is not None and uid != expected_uid
+                or type(keys) is not list or len(keys) > 100
+                or any(type(key) is not dict or key.get("keyType") != "SYSTEM_MANAGED" for key in keys)
+                or role.get("name") != MAINTENANCE_ROLE or role.get("deleted", False) is not False
+                or role.get("stage") != "GA" or type(role.get("etag")) is not str or not role["etag"]
+                or type(permissions) is not list or len(permissions) != len(MAINTENANCE_PERMISSIONS)
+                or set(permissions) != MAINTENANCE_PERMISSIONS):
+            _deny()
+        return uid
+    except (KeyError, TypeError, AttributeError):
+        _deny()
+
+
 def check_snapshot(snapshot: dict[str, Any], image: str, release: str, *, api_phase: bool = False,
                    coordinator_phase: bool = False) -> dict[str, Any]:
     """Check bounded native-shaped inputs while explicitly retaining their unknown provenance."""
@@ -318,7 +366,10 @@ def check_snapshot(snapshot: dict[str, Any], image: str, release: str, *, api_ph
             _coordinator_identity(snapshot)
             wanted = [{"role": "roles/run.invoker", "members": sorted(
                 ["serviceAccount:" + API_INVOKER, "serviceAccount:" + UPLOAD_COORDINATOR])}]
-        if _bindings(snapshot["service_iam"]) != wanted:
+        bindings, maintenance = service_bindings_without_maintenance(snapshot["service_iam"], SERVICE)
+        if maintenance:
+            validate_maintenance_identity(snapshot)
+        if bindings != wanted:
             _deny()
         # A project snapshot cannot establish organization/folder/group/custom
         # role access closure. Known public or runtime grants are refused here.

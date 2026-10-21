@@ -119,12 +119,15 @@ def template_sha(template: dict[str, Any], service: str) -> str:
 def worker_iam(service: str, policy: dict[str, Any]) -> None:
     """Retain the exact existing Tasks/Scheduler callers for the two workers."""
     need(service in release.SERVICES and type(policy) is dict)
+    try:
+        bindings, _ = release.documents.service_bindings_without_maintenance(policy, service)
+    except release.documents.ConfigurationDenied:
+        raise RollingDenied("rolling_maintenance_binding_unverified") from None
     if service == release.SERVICES[0]:
         return
     expected = {"serviceAccount:hirewiz-tasks@" + release.PROJECT + ".iam.gserviceaccount.com"}
     if service == release.SERVICES[1]:
         expected.add("serviceAccount:hirewiz-scheduler@" + release.PROJECT + ".iam.gserviceaccount.com")
-    bindings = policy.get("bindings", [])
     need(type(bindings) is list and len(bindings) == 1
          and set(bindings[0]) == {"role", "members"}
          and bindings[0]["role"] == "roles/run.invoker"

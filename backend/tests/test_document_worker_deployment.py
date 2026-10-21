@@ -535,3 +535,55 @@ def test_upload_coordinator_phase_is_not_a_truthy_policy_waiver(config, phase):
     with pytest.raises(config.ConfigurationDenied):
         config.check_snapshot(upload_coordinator_snapshot(config), IMAGE, RELEASE,
                               api_phase=True, coordinator_phase=phase)
+
+
+def maintenance_snapshot(config):
+    return {
+        "maintenance_service_account": {
+            "name": f"projects/{config.PROJECT}/serviceAccounts/{config.MAINTENANCE_ACCOUNT}",
+            "projectId": config.PROJECT, "email": config.MAINTENANCE_ACCOUNT,
+            "uniqueId": "123456789012345678901", "disabled": False,
+        },
+        "maintenance_service_account_keys": {"keys": []},
+        "maintenance_role": {"name": config.MAINTENANCE_ROLE, "stage": "GA", "etag": "YWJj",
+                             "includedPermissions": sorted(config.MAINTENANCE_PERMISSIONS)},
+    }
+
+
+def test_exact_noninvoking_maintenance_role_keeps_current_two_invokers_and_offline_limit(config):
+    value = upload_coordinator_snapshot(config)
+    value.update(maintenance_snapshot(config))
+    value["service_iam"]["bindings"].insert(0, {"role": config.MAINTENANCE_ROLE,
+        "members": ["serviceAccount:" + config.MAINTENANCE_ACCOUNT]})
+    report = config.check_snapshot(value, IMAGE, RELEASE, api_phase=True, coordinator_phase=True)
+    assert report["configuration_matches"] and not report["effective_iam_proven"]
+    invokers, present = config.service_bindings_without_maintenance(value["service_iam"], config.SERVICE)
+    assert present and invokers == upload_coordinator_snapshot(config)["service_iam"]["bindings"]
+    with pytest.raises(config.ConfigurationDenied):
+        config.validate_maintenance_identity(value, expected_uid="987654321098765432109")
+
+
+@pytest.mark.parametrize("change", [
+    lambda value: value.pop("maintenance_role"),
+    lambda value: value.pop("maintenance_service_account"),
+    lambda value: value["maintenance_service_account"].update(disabled=True),
+    lambda value: value["maintenance_service_account"].update(uniqueId="invented"),
+    lambda value: value["maintenance_service_account"].update(email="foreign@example.test"),
+    lambda value: value["maintenance_service_account_keys"].update(keys=[{"keyType": "USER_MANAGED"}]),
+    lambda value: value["maintenance_role"]["includedPermissions"].append("run.routes.invoke"),
+    lambda value: value["maintenance_role"]["includedPermissions"].append("run.services.setIamPolicy"),
+    lambda value: value["maintenance_role"].update(stage="DISABLED"),
+    lambda value: value["maintenance_role"].update(deleted=True),
+    lambda value: value["service_iam"]["bindings"][-1]["members"].append("allUsers"),
+    lambda value: value["service_iam"]["bindings"][-1].update(role="roles/run.admin"),
+    lambda value: value["service_iam"]["bindings"][-1].update(condition={"title": "unsupported", "expression": "true"}),
+    lambda value: value["service_iam"]["bindings"].append(copy.deepcopy(value["service_iam"]["bindings"][-1])),
+])
+def test_maintenance_binding_cannot_expand_invocation_or_adopt_unverified_account_role(config, change):
+    value = upload_coordinator_snapshot(config)
+    value.update(maintenance_snapshot(config))
+    value["service_iam"]["bindings"].append({"role": config.MAINTENANCE_ROLE,
+        "members": ["serviceAccount:" + config.MAINTENANCE_ACCOUNT]})
+    change(value)
+    with pytest.raises(config.ConfigurationDenied):
+        config.check_snapshot(value, IMAGE, RELEASE, api_phase=True, coordinator_phase=True)

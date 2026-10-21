@@ -953,6 +953,17 @@ class FreshNativeBoundary(release.NativeBoundary):
                 if type(coordinator_keys) is not list:
                     raise release.ReleaseDenied("fresh_upload_coordinator_key_inventory_invalid")
                 snapshot["upload_coordinator_service_account_keys"] = {"keys": coordinator_keys}
+            _, maintenance = documents.service_bindings_without_maintenance(snapshot["service_iam"], documents.SERVICE)
+            if maintenance:
+                snapshot["maintenance_service_account"] = self._cloud(
+                    "iam", "service-accounts", "describe", documents.MAINTENANCE_ACCOUNT)
+                maintenance_keys = self._cloud("iam", "service-accounts", "keys", "list",
+                                               "--iam-account", documents.MAINTENANCE_ACCOUNT)
+                if type(maintenance_keys) is not list:
+                    raise release.ReleaseDenied("fresh_document_maintenance_key_inventory_invalid")
+                snapshot["maintenance_service_account_keys"] = {"keys": maintenance_keys}
+                snapshot["maintenance_role"] = self._cloud(
+                    "iam", "roles", "describe", documents.MAINTENANCE_ROLE.rsplit("/", 1)[-1])
             image = service.get("template", {}).get("containers", [{}])[0].get("image")
             if image != documents.ACCEPTED_IMAGE:
                 # Labels select a proof; only fresh native Build/GCS/Job/log and

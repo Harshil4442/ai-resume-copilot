@@ -100,6 +100,22 @@ this does not reopen admissions or update production policy references. The repa
 has passed focused verification and independent review; exact-source publication
 and native deployment remain required.
 
+The account/device native bootstrap has now completed all twelve acknowledged
+operations in **37.93 seconds**: three named Firestore databases and baseline
+records, immutable journal witnesses, a KMS key ring and two signing keys. The
+owner-approved 24-hour journal retention lock was verified natively before
+initialization. No user/device authority was seeded and all activation flags
+remain false. Runtime permissions, dedicated transport secrets, schema19,
+deployment and ordinary-user acceptance remain necessary. The companion source
+and reproducible 0.8.0 ZIP now contain the actual public claim key; publishing
+that package alone grants no account or device authority.
+
+The single retained basic job-match request was fulfilled through its original
+Cloud Tasks worker, with zero AI calls and zero credits charged. The analysis
+succeeded, its dispatch completed and its task retired. All four queues remained
+PAUSED; no request was cancelled or purged to satisfy release checks. New release
+capture must use the current financial snapshot after this legitimate fulfillment.
+
 ## Current deployment state
 
 As of **16 October 2026, 09:31 UTC / 15:01 IST**, the preserved-data release

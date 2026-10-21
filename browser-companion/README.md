@@ -1,12 +1,13 @@
 # HireWiz candidate-reviewed Chrome companion
 
 The 0.8.0 source package supports separately reviewed Razorpay/Greenhouse answers,
-resume attachment and one final submit action. Production stays closed until a
-later schema19 release, native resources, public key pins and explicit feature
-flags are accepted. The frozen F7 release remains schema18. A separately configured
-release connects normal candidates through genuine protected account enrollment,
-current-password approval and native browser pairing. The default ZIP preserves
-the earlier pilot configuration; it does not contain native authority or deployment pins.
+resume attachment and one final submit action. The source and reproducible default
+ZIP now pin the actual public KMS claim key and `companion_0_8_0` executor for the
+normal candidate cohort. Public verifier pins grant no account, device or action
+authority. Production stays closed until the later schema19 release, runtime IAM
+and configuration, explicit feature flags and complete user journey are accepted.
+The frozen F7 release remains schema18. Normal candidates still require genuine
+protected account enrollment, current-password approval and native browser pairing.
 
 The candidate chooses a saved application and resume, connects this browser by
 reviewing its fingerprint on HireWiz, opens the exact company portal, and reviews
@@ -63,14 +64,19 @@ in this artifact. See [the design decision](../docs/adr/007-reviewed-browser-ass
 for expiry, cancellation and database-restore limitations. Existing local synthetic
 and native experiment tests remain separate and do not constitute production proof.
 
-For the normal candidate cohort, build with `python3 scripts/package-reviewed.py
---native-config /absolute/path/to/reviewed-public-pins.json`. The bounded JSON has
+Configured 0.8.0 ZIP SHA-256:
+`887d6d37c9cfd6c6e2388a8e0e1b97c0e9518199035786a740f4b1e73b0e1675`.
+
+The committed `extension/config.js` contains the reviewed public pins, so the
+ordinary package command and CI `--check` reproduce the configured native archive.
+For a separately reviewed key update, `python3 scripts/package-reviewed.py
+--native-config /absolute/path/to/reviewed-public-pins.json` accepts bounded JSON with
 exactly `executorRevision: "companion_0_8_0"` and `authorityKey`, the actual public
 P-256 claim JWK from the configured KMS version. Use the same argument with
 `--check`. This replaces only public `config.js` bytes in the archive; it supplies
-no account, device or action grant. For a production release, commit the same
-reviewed public values into `extension/config.js` and regenerate the default
-archive so the ordinary CI `--check` also reproduces the published package.
+no account, device or action grant. Commit the same reviewed public values into
+`extension/config.js` and regenerate the default archive before publishing an
+updated package; the ordinary CI `--check` must also reproduce it.
 Publish the digest of that configured build.
 See [normal candidate activation](../docs/delivery/NORMAL_CANDIDATE_BROWSER_ACTIVATION_2026-10-15.md).
 

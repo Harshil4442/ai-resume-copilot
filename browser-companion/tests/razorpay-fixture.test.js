@@ -44,7 +44,7 @@ test("loopback recorder distinguishes email, manual file and manual submit witho
   } finally { await server.close(); }
 });
 
-test("shipping package requests only optional reviewed origins; legacy factories and scaffold authority remain disabled", async () => {
+test("shipping package pins the public verifier and requests only optional reviewed origins", async () => {
   const manifest = JSON.parse(await readFile(new URL("../extension/manifest.json", import.meta.url)));
   assert.deepEqual(manifest.host_permissions, []);
   // 0.8.0 declares the reviewed native-network/upload envelope as optional.
@@ -56,7 +56,9 @@ test("shipping package requests only optional reviewed origins; legacy factories
   assert.deepEqual(manifest.optional_permissions, ["webRequest"]);
   assert.equal(manifest.content_scripts, undefined);
   assert.deepEqual(CONFIG, { mode: "reviewed_assistance", websiteOrigin: "https://www.hirewizhq.com",
-    portalOrigin: "https://job-boards.greenhouse.io", extensionId: "pnjmegppacleipajnifjmbcopjjffklb" });
+    portalOrigin: "https://job-boards.greenhouse.io", extensionId: "pnjmegppacleipajnifjmbcopjjffklb",
+    nativePairing: { executorRevision: "companion_0_8_0", authorityKey: { kty: "EC", crv: "P-256",
+      x: "s9e6O8vhJr1es7w7VUzYHRPQTQkXvcC_io9LStNFgXU", y: "lhZgC0pB8mkhEaALM7aRf1btp5Z-J-7uUsVOAOl8p5k" } } });
   assert.equal(Object.isFrozen(CONFIG), true);
   const background = await readFile(new URL("../extension/background.js", import.meta.url), "utf8");
   const legacy = background.match(/const nativeMode = \(\) => (\[[^;\n]+\])\.includes\(CONFIG\.mode\) \|\| nativeAssistance\(\);/);
@@ -65,7 +67,8 @@ test("shipping package requests only optional reviewed origins; legacy factories
   assert.deepEqual(legacyModes, ["pairing_only", "local_native_fixture"]);
   assert.equal(legacyModes.includes(CONFIG.mode), false);
   assert.match(background, /const nativeAssistance = \(\) => CONFIG\.mode === "reviewed_assistance" && CONFIG\.nativePairing != null;/);
-  assert.equal(CONFIG.nativePairing, undefined, "The shipping default must not adopt native pairing authority");
+  assert.deepEqual(Object.keys(CONFIG.nativePairing.authorityKey).sort(), ["crv", "kty", "x", "y"],
+    "The shipping verifier contains public coordinates only, never a private signing key");
   const server = await readFile(new URL("../fixtures/razorpay/server.js", import.meta.url), "utf8");
   assert.doesNotMatch(server, /fixtureAuthority|fetch\(|device-action|recover|enroll/);
 });

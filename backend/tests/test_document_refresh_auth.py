@@ -101,3 +101,11 @@ def test_release_proof_cannot_publish_build_or_log_but_retains_read_policy_endpo
     assert auth.release_allowed("POST", "https://iam.googleapis.com/v1/projects/" + auth.PROJECT
         + "/serviceAccounts/" + auth.WORKER_ACCOUNT + ":getIamPolicy")
     assert auth.release_allowed("GET", "https://run.googleapis.com/v2/" + auth.PARENT + "/services/hirewiz-document-inspector")
+
+
+def test_exact_updater_role_definition_is_readable_but_other_roles_or_role_writes_are_not():
+    uri = "https://iam.googleapis.com/v1/" + auth.MAINTENANCE_ROLE
+    assert auth.allowed("GET", uri) and auth.release_allowed("GET", uri)
+    for method in ("POST", "PATCH", "DELETE"):
+        assert not auth.allowed(method, uri)
+    assert not auth.allowed("GET", uri + "-other")

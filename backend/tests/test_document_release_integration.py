@@ -86,6 +86,13 @@ def native_configuration(snapshot, tex_snapshot=None):
 
     def cloud(*args):
         reads.append(args)
+        if args[:3] == ("iam", "roles", "describe"):
+            assert args[3] == "hirewizDocumentServiceMaintenance"
+            return snapshot["maintenance_role"]
+        if args[:3] == ("iam", "service-accounts", "describe") and args[3] == documents.MAINTENANCE_ACCOUNT:
+            return snapshot["maintenance_service_account"]
+        if args[:4] == ("iam", "service-accounts", "keys", "list") and args[-1] == documents.MAINTENANCE_ACCOUNT:
+            return snapshot["maintenance_service_account_keys"]["keys"]
         if args[:3] == ("compute", "networks", "describe"):
             return {"name": routing.NETWORK, "selfLink": routing.NETWORK_URL, "autoCreateSubnetworks": False}
         if args[:4] == ("compute", "networks", "subnets", "describe"):
@@ -119,6 +126,26 @@ def native_configuration(snapshot, tex_snapshot=None):
 
     boundary._get, boundary._cloud = get, cloud
     return boundary, reads
+
+
+@pytest.mark.parametrize("extra_permission", [False, True])
+def test_native_document_release_reads_exact_maintenance_account_keys_and_role(extra_permission):
+    from backend.tests.test_document_worker_deployment import maintenance_snapshot
+
+    value = snapshots()
+    value.update(maintenance_snapshot(documents))
+    value["service_iam"]["bindings"].append({"role": documents.MAINTENANCE_ROLE,
+        "members": ["serviceAccount:" + documents.MAINTENANCE_ACCOUNT]})
+    if extra_permission:
+        value["maintenance_role"]["includedPermissions"].append("run.routes.invoke")
+    boundary, reads = native_configuration(value)
+    source = SimpleNamespace(release="a" * 40, runtime_service_account=documents.API_INVOKER)
+    if extra_permission:
+        with pytest.raises(Denied):
+            boundary.verify_document_configuration(source)
+    else:
+        assert boundary.verify_document_configuration(source)["configuration_matches"]
+    assert ("iam", "roles", "describe", "hirewizDocumentServiceMaintenance") in reads
 
 
 def test_native_metadata_is_reread_without_claiming_invocation_or_isolation():

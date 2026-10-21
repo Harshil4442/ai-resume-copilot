@@ -126,6 +126,67 @@ API-key creation, payment action, employer submission or registry delete is need
 The local adapter also fixes every resource/method and denies those mutation routes.
 Provisioning and an actual native full maintenance run remain root release actions.
 
+### Exact service updater and native verification
+
+Create the project custom role
+`projects/ai-resume-parser-482412/roles/hirewizDocumentServiceMaintenance` with
+exactly `run.services.get`, `run.services.getIamPolicy`, `run.services.update`
+and `run.revisions.get`, at stage GA. Bind it directly to the dedicated
+`hirewiz-document-refresh` account on the inspector and three listed consumers.
+It grants no invocation, IAM modification, service creation/deletion, employer
+worker management or secret access. Keep every existing invoker binding intact.
+
+The source admits only this exact role/member binding. Native release and refresh
+readers independently retrieve the actual enabled account, key inventory and role
+definition whenever that binding is present. Missing metadata, user-managed keys,
+additional role permissions/members, conditions, duplicate bindings or a changed
+invoker set refuse. The unattended controller additionally matches the actual
+account UID to `DOCUMENT_REFRESH_CONTROLLER_UID`; provision that value from native
+IAM, never an example. Full service IAM hashes remain part of capture and rollback,
+so grant changes after capture require a fresh review rather than changing a plan.
+
+Provide `iam.roles.get` for the native role read, alongside account/key/policy
+metadata reads on the controller, inspector and coordinator accounts. Grant
+`iam.serviceAccounts.actAs` only on the existing builder, inspector, coordinator
+and shared application runtime accounts. The controller needs image-download
+permission only on the existing `cloud-run-source-deploy` repository; retain the
+builder's separate registry/source/logging grants.
+
+The existing `ai-resume-parser-482412_cloudbuild` bucket has UBLA disabled. Preserve
+its settings: a project-level custom role with only `storage.objects.create` and
+`storage.objects.get` may use the supported inherited condition below. This does
+not grant list, overwrite or delete, and other IAM/ACL grants must be audited
+separately.
+
+```cel
+resource.type == 'storage.googleapis.com/Object' &&
+resource.name.startsWith('projects/_/buckets/ai-resume-parser-482412_cloudbuild/objects/hirewiz-document-refresh-source/')
+```
+
+Cloud Build creation and fresh Cloud Run Job creation are parent-authorized;
+the controller's exact recipe and `hirewiz-doc-six-*` checks are application
+boundaries, not IAM body/name restrictions. The existing project log query also
+needs project `logging.logEntries.list`; its synthetic-job filter is not an
+authorization boundary. Do not claim these grants are scoped by unsupported
+Cloud Run resource-name conditions. Use a separately configured log view and
+matching reader source if a narrower log-read boundary is required.
+
+The protected GitHub environment is `document-maintenance`, restricted to `main`.
+WIF admission must bind numeric repository ID `1127941014`, owner ID `118929591`,
+`refs/heads/main`, exact `workflow_ref` ending in
+`/.github/workflows/document-refresh.yml@refs/heads/main`, and the environment
+subject. This standalone workflow does not rely on the reusable-workflow-only
+`job_workflow_ref` claim. Enable the required STS API and provision the three
+environment variables above, then merge the reviewed source to the default branch
+before dispatching the existing workflow. Source validation and a workflow dispatch
+alone do not establish native refresh or alert delivery.
+
+Provider contracts: [inherited conditional grants](https://docs.cloud.google.com/iam/docs/conditions-overview),
+[Cloud Storage IAM conditions](https://docs.cloud.google.com/storage/docs/access-control/iam),
+[Cloud Run Job creation](https://docs.cloud.google.com/run/docs/reference/rest/v2/projects.locations.jobs/create),
+[Cloud Run resource access](https://docs.cloud.google.com/run/docs/securing/managing-access),
+and [Logging query authorization](https://docs.cloud.google.com/logging/docs/reference/v2/rest/v2/entries/list).
+
 ## Ordinary future application releases
 
 The baseline accepted image keeps its original verification path. A successor is

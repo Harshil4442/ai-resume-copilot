@@ -428,7 +428,12 @@ class Clients:
             resource="projects/" + PROJECT + "/serviceAccounts/" + ACCOUNT, options_requestedPolicyVersion=3)))
         inherited = self.data(self.crm.projects.GetIamPolicy(self.cm.CloudresourcemanagerProjectsGetIamPolicyRequest(
             resource=PROJECT, getIamPolicyRequest=self.cm.GetIamPolicyRequest(options=self.cm.GetPolicyOptions(requestedPolicyVersion=3)))))
-        validate_runtime(project, service, policy, account, keys, own, inherited)
+        configuration = load_source("hirewiz_document_refresh_worker_contract", HERE / "document_worker.py")
+        _, has_maintenance = configuration.service_bindings_without_maintenance(policy, "hirewiz-document-inspector")
+        maintenance = self.maintenance_snapshot() if has_maintenance else {}
+        if has_maintenance:
+            configuration.validate_maintenance_identity(maintenance, expected_uid=getattr(self.http, "uid", None))
+        validate_runtime(project, service, policy, account, keys, own, inherited, maintenance=maintenance)
         coordinator = "hirewiz-resume-coordinator@" + PROJECT + ".iam.gserviceaccount.com"
         upload = self.data(self.iam.projects_serviceAccounts.Get(self.im.IamProjectsServiceAccountsGetRequest(
             name="projects/" + PROJECT + "/serviceAccounts/" + coordinator)))
@@ -439,8 +444,22 @@ class Clients:
                     "service_account": account, "service_account_keys": keys,
                     "upload_coordinator_service_account": upload,
                     "upload_coordinator_service_account_keys": upload_keys}
+        snapshot.update(maintenance)
         validate_worker_snapshot(self, snapshot)
         return snapshot
+
+    def maintenance_snapshot(self) -> dict[str, Any]:
+        """Fresh official IAM reads; never infer a UID or role scope from a binding."""
+        account = "hirewiz-document-refresh@" + PROJECT + ".iam.gserviceaccount.com"
+        return {
+            "maintenance_service_account": self.data(self.iam.projects_serviceAccounts.Get(
+                self.im.IamProjectsServiceAccountsGetRequest(name="projects/" + PROJECT + "/serviceAccounts/" + account))),
+            "maintenance_service_account_keys": self.data(self.iam.projects_serviceAccounts_keys.List(
+                self.im.IamProjectsServiceAccountsKeysListRequest(name="projects/" + PROJECT + "/serviceAccounts/" + account,
+                    keyTypes=[self.im.IamProjectsServiceAccountsKeysListRequest.KeyTypesValueValuesEnum.USER_MANAGED]))),
+            "maintenance_role": self.data(self.iam.projects_roles.Get(self.im.IamProjectsRolesGetRequest(
+                name="projects/" + PROJECT + "/roles/hirewizDocumentServiceMaintenance"))),
+        }
 
     def create(self, body: dict[str, Any]) -> dict[str, Any]:
         need(self.read_only_release is False, "document_native_release_mutation_refused")
@@ -463,14 +482,20 @@ class Clients:
 
 
 def validate_runtime(project: Any, service: Any, policy: Any, account: Any, keys: Any,
-                     own: Any, inherited: Any) -> None:
+                     own: Any, inherited: Any, *, maintenance: dict[str, Any] | None = None) -> None:
     need(project.get("projectId") == PROJECT and str(project.get("projectNumber")) == NUMBER
          and service.get("uid") == SERVICE_UID and service.get("template", {}).get("serviceAccount") == ACCOUNT
          and account.get("projectId") == PROJECT and account.get("email") == ACCOUNT
          and account.get("uniqueId") == ACCOUNT_UID and account.get("disabled", False) is False
          and keys.get("keys", []) == [], "document_native_runtime_identity_changed")
     wanted = [{"role": "roles/run.invoker", "members": CALLERS}]
-    bindings = policy.get("bindings", [])
+    configuration = load_source("hirewiz_document_refresh_worker_contract", HERE / "document_worker.py")
+    try:
+        bindings, has_maintenance = configuration.service_bindings_without_maintenance(policy, "hirewiz-document-inspector")
+        if has_maintenance:
+            configuration.validate_maintenance_identity(maintenance or {})
+    except configuration.ConfigurationDenied:
+        raise NativeProofDenied("document_native_maintenance_authority_unverified") from None
     need(type(bindings) is list and len(bindings) == 1 and set(bindings[0]) == {"role", "members"}
          and type(bindings[0]["members"]) is list and len(bindings[0]["members"]) == 2
          and [{**bindings[0], "members": sorted(bindings[0]["members"])}] == wanted
