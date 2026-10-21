@@ -97,7 +97,8 @@ def allowed(method: str, uri: str) -> bool:
                 return False
             return set(query) == {"uploadType", "name", "ifGenerationMatch"} and query["uploadType"] == ["media"] \
                 and query["ifGenerationMatch"] == ["0"] and len(query["name"]) == 1 and bool(re.fullmatch(
-                    r"hirewiz-document-refresh-source/[a-f0-9]{32}/source.tar.gz", query["name"][0]))
+                    r"hirewiz-document-refresh-source/(?:[a-f0-9]{32}/source.tar.gz|terminal-recovery/"
+                    r"[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}\.json)", query["name"][0]))
         return method == "GET" and path.startswith(
             ("/storage/v1/b/" + PROJECT + "_cloudbuild/o/hirewiz-document-refresh-source/",
              "/download/storage/v1/b/" + PROJECT + "_cloudbuild/o/hirewiz-document-refresh-source/"))

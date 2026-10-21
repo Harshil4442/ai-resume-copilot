@@ -11,6 +11,11 @@ on:
         type: choice
         options: [monitor, refresh]
         default: monitor
+      recover_failed_native_job:
+        description: Exact failed synthetic Job to reconcile once before a fresh full refresh
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -32,6 +37,7 @@ jobs:
       CLOUDSDK_CORE_LOG_HTTP: "false"
       REFRESH_MODE: ${{ github.event.schedule == '37 1 * * *' && 'refresh' || inputs.mode || 'monitor' }}
       DOCUMENT_REFRESH_CONTROLLER_UID: ${{ vars.DOCUMENT_REFRESH_CONTROLLER_UID }}
+      RECOVER_FAILED_NATIVE_JOB: ${{ github.event_name == 'workflow_dispatch' && inputs.recover_failed_native_job || '' }}
     steps:
       - name: Initialize private maintenance paths
         run: |
@@ -46,6 +52,7 @@ jobs:
         run: |
           test -n "$PROVIDER" && test "$ACCOUNT" = "hirewiz-document-refresh@ai-resume-parser-482412.iam.gserviceaccount.com"
           test -n "$DOCUMENT_REFRESH_CONTROLLER_UID"
+          test -z "$RECOVER_FAILED_NATIVE_JOB" || test "$REFRESH_MODE" = refresh
       - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
         with:
           workload_identity_provider: ${{ vars.DOCUMENT_REFRESH_WIF_PROVIDER }}
@@ -80,7 +87,12 @@ jobs:
           find "$HISTORY_DIRECTORY" -type f -exec chmod 600 {} +
       - name: Build, prove, transition exact pins and restore admission
         if: env.REFRESH_MODE == 'refresh'
-        run: backend/.venv/bin/python backend/scripts/document_refresh.py --mode refresh --publish-candidate --prior-history-directory "$HISTORY_DIRECTORY" --output-directory "$OUTPUT_DIRECTORY"
+        run: |
+          args=(--mode refresh --publish-candidate --prior-history-directory "$HISTORY_DIRECTORY" --output-directory "$OUTPUT_DIRECTORY")
+          if [[ -n "$RECOVER_FAILED_NATIVE_JOB" ]]; then
+            args+=(--recover-failed-native-job "$RECOVER_FAILED_NATIVE_JOB")
+          fi
+          backend/.venv/bin/python backend/scripts/document_refresh.py "${args[@]}"
       - name: Retain bounded maintenance evidence
         if: always() && env.OUTPUT_DIRECTORY != ''
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

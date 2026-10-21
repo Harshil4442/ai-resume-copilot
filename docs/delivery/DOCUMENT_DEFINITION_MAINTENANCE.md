@@ -77,6 +77,43 @@ that original unknown run must be reconciled explicitly.
 A root-reviewed remaining-only recovery is required; deleting the journal is not
 recovery. A completed native acceptance Job is retained while its image serves.
 
+## Explicit recovery after a definite pre-transition failure
+
+Scheduled runs never recover failures automatically. For the supported case—one
+completed synthetic Job failed its identity preflight, all six corpus cases stayed
+unattempted and sandbox cleanup completed—an operator may set
+`recover_failed_native_job` to that exact Job name in a `workflow_dispatch` with
+`mode=refresh`. The CLI equivalent adds `--recover-failed-native-job JOB` to the
+existing `--mode refresh --publish-candidate --prior-history-directory ...` command.
+
+Before a new build, the controller freshly rejoins the eleven original artifact
+files, source generation and Build acknowledgments, successful original Build,
+Create/Run acknowledgments and UIDs, singleton failed Execution with zero retries,
+and the unique bounded native failure report. Missing acknowledgments, in-flight
+or unknown outcomes, other failure stages, failed cleanup, acceptance/deletion
+markers or any transition directory refuse recovery. Current worker configuration,
+native acceptance when applicable, all three caller pins and strict serving
+templates must still pass their original checks.
+
+A metadata-only claim under the existing source prefix is keyed by the original
+Job UID and created once with `ifGenerationMatch=0`. It binds the original journal
+manifest and exactly one new build nonce. An existing claim or unknown claim
+acknowledgment cannot start another pipeline. No new IAM permission is needed.
+The original Job is never rerun or deleted; diagnostic probes are not acceptance
+evidence. The new candidate must acquire fresh definitions and pass the complete
+unchanged 21 local and six native cases before any transition.
+
+The new artifact retains every original journal byte and the immutable claim
+disposition under `terminal-recoveries/`. While the original failed artifact is
+among the three retrieved prior runs, normal runs freshly reverify and carry its
+disposition; the failure is never relabeled as serving. Once that artifact leaves
+the bounded history window, later successful maintenance drops the unneeded copy
+and stops depending on expired old logs, operations or source objects. Existing
+historical artifacts retain their normal retention period; the immutable consumed
+claim stays and prevents another recovery of that Job. A new unknown/partial
+successor still blocks maintenance and requires same-operation reconciliation.
+Deleting a journal or claim is not recovery.
+
 ## Schedule, proof retention and alerts
 
 The daily 01:37 UTC run executes **the full refresh**, not candidate publication

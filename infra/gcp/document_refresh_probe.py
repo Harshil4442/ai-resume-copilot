@@ -180,7 +180,8 @@ def validate_execution(row: Any, job: dict[str, Any], image: str, nonce: str, *,
          and task_matches(row.get("template"), desired(image, nonce)["template"]["template"]),
          "document_native_execution_not_successful")
     latest = job.get("latestCreatedExecution", {})
-    need(integer(job.get("executionCount"), 1) and latest.get("name") == row["name"],
+    need(integer(job.get("executionCount"), 1)
+         and latest.get("name") in (row["name"], row["name"].rsplit("/", 1)[-1]),
          "document_native_execution_not_singleton")
 
 
@@ -572,6 +573,19 @@ def timestamp(value: Any) -> datetime:
     return datetime.fromisoformat(value.removesuffix("Z") + "+00:00")
 
 
+def execution_reference(job: dict[str, Any], value: Any) -> str:
+    """Canonicalize only the exact current Job's native execution reference."""
+    name = job["name"]
+    short = name.rsplit("/", 1)[-1]
+    prefix = name + "/executions/"
+    need(type(value) is str, "document_native_current_execution_missing")
+    if re.fullmatch(re.escape(short + "-") + r"[a-z0-9]{1,20}", value):
+        return prefix + value
+    need(re.fullmatch(re.escape(prefix + short + "-") + r"[a-z0-9]{1,20}", value),
+         "document_native_current_execution_reference_invalid")
+    return value
+
+
 def native_payload(clients: Clients, job: dict[str, Any], execution: dict[str, Any]) -> dict[str, Any]:
     job_id, execution_id = job["name"].rsplit("/", 1)[-1], execution["name"].rsplit("/", 1)[-1]
     begin, end = timestamp(job.get("createTime")), timestamp(execution.get("completionTime"))
@@ -750,9 +764,9 @@ def _verify_current_successor(image: str, service_metadata: dict[str, Any], *, r
         snapshot.update(service=actual)
         need(validate_worker_snapshot(clients, snapshot) == image, "document_native_current_service_changed")
         job = clients.job(PARENT + "/jobs/" + job_id)
+        validate_job(job, image, nonce)
         latest = job.get("latestCreatedExecution", {}).get("name")
-        need(type(latest) is str, "document_native_current_execution_missing")
-        execution = clients.execution(latest)
+        execution = clients.execution(execution_reference(job, latest))
         return acceptance(clients, image, build, job, execution)
     except NativeProofDenied:
         raise

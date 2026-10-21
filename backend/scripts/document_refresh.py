@@ -328,10 +328,20 @@ def read_native_source(http: Any, identity: dict[str, Any]) -> bytes:
     return raw
 
 
-def native_build(directory: Path, recipe: bytes) -> dict[str, Any]:
+def build_request(nonce: str, source: dict[str, str]) -> dict[str, Any]:
+    tag = REPOSITORY + ":refresh-" + nonce
+    return {"source": {"storageSource": source}, "serviceAccount": f"projects/{PROJECT}/serviceAccounts/{BUILDER}",
+        "steps": [{"name": DOCKER_BUILDER, "args": ["build", "--pull=false", "--platform=linux/amd64", "--build-arg",
+            "DOCUMENT_DEFINITIONS_NONCE=" + nonce, "--tag", tag, "."]},
+            {"name": DOCKER_BUILDER, "args": ["push", tag]}], "images": [tag],
+        "options": {"logging": "CLOUD_LOGGING_ONLY"}, "timeout": "900s"}
+
+
+def native_build(directory: Path, recipe: bytes, *, nonce: str | None = None) -> dict[str, Any]:
     from urllib.parse import urlencode
 
-    nonce = uuid.uuid4().hex
+    nonce = uuid.uuid4().hex if nonce is None else nonce
+    need(type(nonce) is str and re.fullmatch(r"[a-f0-9]{32}", nonce), "document_refresh_build_nonce_invalid")
     recipe_sha = hashlib.sha256(recipe).hexdigest()
     archive = source_archive(recipe)
     archive_sha = archive_recipe(archive, recipe_sha)
@@ -352,12 +362,7 @@ def native_build(directory: Path, recipe: bytes) -> dict[str, Any]:
              "document_refresh_source_upload_identity_unverified")
         source = {"bucket": obj["bucket"], "object": obj["name"], "generation": str(obj["generation"])}
         write_new(directory / "source-upload-acknowledged.json", source)
-        tag = REPOSITORY + ":refresh-" + nonce
-        body = {"source": {"storageSource": source}, "serviceAccount": f"projects/{PROJECT}/serviceAccounts/{BUILDER}",
-            "steps": [{"name": DOCKER_BUILDER, "args": ["build", "--pull=false", "--platform=linux/amd64", "--build-arg",
-                "DOCUMENT_DEFINITIONS_NONCE=" + nonce, "--tag", tag, "."]},
-                {"name": DOCKER_BUILDER, "args": ["push", tag]}], "images": [tag],
-            "options": {"logging": "CLOUD_LOGGING_ONLY"}, "timeout": "900s"}
+        body = build_request(nonce, source)
         write_new(directory / "build-create-started.json", {"nonce": nonce,
             "request_sha256": hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":")).encode()).hexdigest(),
             "automatic_replay": False})
@@ -442,7 +447,7 @@ def _verify_current_build(build_id: str, nonce: str, image: str, *, release_read
     return actual
 
 
-def candidate(directory: Path, *, publish: bool, now: datetime) -> dict[str, Any]:
+def candidate(directory: Path, *, publish: bool, now: datetime, nonce: str | None = None) -> dict[str, Any]:
     # Import only the existing synthetic build/check helper; never the API app.
     sys.path.insert(0, str(ROOT / "backend"))
     from scripts import document_test_image as engines
@@ -457,7 +462,7 @@ def candidate(directory: Path, *, publish: bool, now: datetime) -> dict[str, Any
     raw = recipe.read_bytes()
     need(raw.count(RENDERER_BASE.encode()) == 2, "document_refresh_fixed_base_changed")
     recipe_sha = hashlib.sha256(raw).hexdigest()
-    identity = native_build(directory, raw)
+    identity = native_build(directory, raw) if nonce is None else native_build(directory, raw, nonce=nonce)
     digest = identity["immutable_image"]
     command(docker + ["pull", digest], seconds=180)
     installed = decode(command(docker + ["image", "inspect", digest], seconds=15))
@@ -487,7 +492,8 @@ def candidate(directory: Path, *, publish: bool, now: datetime) -> dict[str, Any
 
 
 def infra(name: str) -> Any:
-    need(name in {"document_refresh_probe", "document_refresh_transition"}, "document_refresh_module_refused")
+    need(name in {"document_refresh_probe", "document_refresh_transition", "document_refresh_recovery"},
+         "document_refresh_module_refused")
     spec = importlib.util.spec_from_file_location("hirewiz_" + name, ROOT / "infra/gcp" / (name + ".py"))
     need(spec is not None and spec.loader is not None, "document_refresh_module_unavailable")
     assert spec is not None and spec.loader is not None
@@ -498,29 +504,19 @@ def infra(name: str) -> Any:
 
 
 def refresh(directory: Path, *, publish: bool, now: datetime, prior_journal: Path | None = None,
-            history: Path | None = None) -> dict[str, Any]:
+            history: Path | None = None, recover_failed_native_job: str | None = None) -> dict[str, Any]:
     """Full controlled pipeline. No serialized acceptance result grants authority."""
-    if history is not None:
-        need(history.is_absolute() and history.is_dir() and not history.is_symlink(),
-             "document_refresh_prior_history_refused")
-        previous_runs = list(history.iterdir())
-        need(len(previous_runs) <= 3, "document_refresh_prior_history_bound")
-        for previous in previous_runs:
-            result_file = previous / "result.json"
-            need(previous.is_dir() and not previous.is_symlink() and result_file.is_file()
-                 and not result_file.is_symlink() and result_file.stat().st_size <= MAX_OUTPUT,
-                 "document_refresh_prior_unknown_reconcile_only")
-            previous_result = decode(result_file.read_bytes())
-            need(previous_result.get("status") == "document_refresh_serving"
-                 and previous_result.get("admission_restored") is True,
-                 "document_refresh_prior_unknown_reconcile_only")
+    need(recover_failed_native_job is None or publish is True, "document_refresh_recovery_requires_explicit_refresh")
+    nonce = infra("document_refresh_recovery").prepare(
+        directory, history, recover_failed_native_job, refresh_module=sys.modules[__name__])
     probe = infra("document_refresh_probe")
     preflight = probe.Clients()
     try:
         preflight.preflight()
     finally:
         preflight.close()
-    value = candidate(directory, publish=publish, now=now)
+    value = (candidate(directory, publish=publish, now=now) if nonce is None else
+             candidate(directory, publish=publish, now=now, nonce=nonce))
     image, build = value["candidate_registry_digest"], value["build_identity"]
     native = directory / "native-proof"
     acceptance = probe.run_successor(image, build, native)
@@ -534,8 +530,12 @@ def refresh(directory: Path, *, publish: bool, now: datetime, prior_journal: Pat
     result["definition_expires_at"] = acceptance.definition_expires_at
     if prior_journal is None and history is not None and result["prior_image"] != RENDERER_BASE:
         matches = []
-        for binding_path in history.glob("**/native-proof/binding.json"):
-            if not binding_path.is_symlink() and binding_path.stat().st_size <= MAX_OUTPUT:
+        for binding_path in history.glob("*/native-proof/binding.json"):
+            # Retained failed journals are evidence, never a serving predecessor
+            # or a deletion target, even if another Job proved identical bytes.
+            acceptance_path = binding_path.parent / "acceptance.json"
+            if (acceptance_path.is_file() and not acceptance_path.is_symlink()
+                    and not binding_path.is_symlink() and binding_path.stat().st_size <= MAX_OUTPUT):
                 binding = decode(binding_path.read_bytes())
                 if binding.get("image") == result["prior_image"]:
                     matches.append(binding_path.parent)
@@ -614,7 +614,10 @@ def main() -> None:
     parser.add_argument("--prior-native-journal", type=Path)
     parser.add_argument("--transition-journal", type=Path)
     parser.add_argument("--prior-history-directory", type=Path)
+    parser.add_argument("--recover-failed-native-job")
     args = parser.parse_args()
+    need(args.recover_failed_native_job is None or args.mode == "refresh" and args.publish_candidate,
+         "document_refresh_recovery_requires_explicit_refresh")
     need(args.output_directory.is_absolute() and not args.output_directory.exists(),
          "document_refresh_fresh_output_directory_required")
     args.output_directory.mkdir(mode=0o700)
@@ -623,7 +626,8 @@ def main() -> None:
         emit_status(result)
     elif args.mode == "refresh":
         result = refresh(args.output_directory, publish=args.publish_candidate,
-                         now=datetime.now(UTC), prior_journal=args.prior_native_journal, history=args.prior_history_directory)
+                         now=datetime.now(UTC), prior_journal=args.prior_native_journal, history=args.prior_history_directory,
+                         recover_failed_native_job=args.recover_failed_native_job)
         emit_status(result)
     elif args.mode == "reconcile":
         need(args.transition_journal is not None, "document_refresh_transition_journal_required")
