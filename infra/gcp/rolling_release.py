@@ -423,7 +423,7 @@ def stage_body(plan: RollingPlan, pin: ServicePin, current: dict[str, Any]) -> d
     env = environment(template)
     need(all(env.get(name, {"value": "false"}).get("value") == "false" for name in plan.disabled_flags()),
          "rolling_product_admission_not_closed")
-    for name in set(plan.disabled_flags()) - set(OFF):
+    for name in sorted(set(plan.disabled_flags()) - set(OFF)):
         env[name] = {"name": name, "value": "false"}
     need(env.get("SERVICE_ROLE", {}).get("value") == ("api" if pin.service == release.SERVICES[0] else "worker"))
     if pin.service != release.SERVICES[0]:

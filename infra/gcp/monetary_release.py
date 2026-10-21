@@ -432,7 +432,11 @@ class NativeBoundary:
             raise ReleaseDenied("cloud_operation_unavailable_or_outcome_unknown") from None
 
     def _cloud(self, *args: str) -> Any:
-        return _json(self._command("gcloud", *args, "--project", PROJECT, "--format=json", "--quiet"))
+        # Execution templates can repeat large environment/configuration bodies;
+        # this inventory needs only identity and completion, never those bodies.
+        output = ("json(metadata.name,status.completionTime)"
+                  if args[:4] == ("run", "jobs", "executions", "list") else "json")
+        return _json(self._command("gcloud", *args, "--project", PROJECT, "--format=" + output, "--quiet"))
 
     def _module(self, relative: str, name: str) -> Any:
         spec = importlib.util.spec_from_file_location(name, self.root / relative)
@@ -600,7 +604,10 @@ class NativeBoundary:
         if not isinstance(schedules, list) or len(schedules) > 256 or any(item.get("state") != "PAUSED" for item in schedules):
             raise ReleaseDenied("scheduler_admission_not_closed")
         executions = self._cloud("run", "jobs", "executions", "list", "--region", REGION, "--limit", "257")
-        if not isinstance(executions, list) or len(executions) > 256 or any(not item.get("status", {}).get("completionTime") for item in executions):
+        if not isinstance(executions, list) or len(executions) > 256 or any(
+            not isinstance(item, dict) or not isinstance(item.get("status"), dict)
+            or not item["status"].get("completionTime") for item in executions
+        ):
             raise ReleaseDenied("job_execution_inventory_unresolved")
 
     def verify_fences(self, plan: Plan) -> Fence:

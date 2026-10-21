@@ -96,6 +96,22 @@ class Schema19Plan(rolling.RollingPlan):
 
 
 class Source19Boundary(fresh.FreshNativeBoundary):
+    def _get(self, api: str, path: str, params: dict | None = None) -> dict:
+        """Read only the two fixed private document workers and their revisions."""
+        resources = (release.documents.RESOURCE, release.native_tex.RESOURCE)
+        rolling.need(
+            api == "run" and type(path) is str and params in (None, {})
+            and any(path == resource or re.fullmatch(
+                re.escape(resource + "/revisions/" + resource.rsplit("/", 1)[-1] + "-")
+                + r"[a-z0-9-]{1,36}", path) for resource in resources),
+            "schema19_document_metadata_route_refused",
+        )
+        if not hasattr(self, "_document_reads"):
+            self._document_reads = native.native.SDKGoogleReads(
+                native.host_auth.SDK, native.host_auth.ACCOUNT,
+            )
+        return self._document_reads.get("run", path, {})
+
     def verify_source_image(
         self, *, release: str, image_digest: str, build_id: str, ci_run_id: int
     ) -> None:

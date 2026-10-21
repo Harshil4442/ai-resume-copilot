@@ -76,6 +76,11 @@ A fresh schema19 native boundary then checks global admission, source/image,
 policies, identities and financial state before recording a successful check.
 SDK/provider work runs outside the SQL transaction.
 
+The global Cloud Run execution inventory projects only `metadata.name` and
+`status.completionTime`. Its 257-result probe, 256-execution ceiling and 128 KiB
+response bound remain enforced; pending or malformed rows stop the operation.
+Retained execution templates do not need deletion to fit that observation.
+
 The preservation snapshot admits at most 256 ordinary tables and 250,000 retained
 rows within a 30-second hashing window. Exceeding those bounds stops the operation;
 it does not skip rows or relax the preservation proof.
