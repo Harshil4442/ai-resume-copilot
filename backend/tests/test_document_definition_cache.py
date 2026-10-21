@@ -87,8 +87,9 @@ def test_two_builds_pass_distinct_builder_owned_nonces_and_exact_secretless_cont
     monkeypatch.setenv(NONCE, "caller-value-must-not-route-or-be-exported")
     captured = []
 
-    def fake_build(args, *, timeout=20):
+    def fake_build(args, *, timeout=20, merge_stderr=False):
         assert timeout == 600
+        assert merge_stderr is True
         assert args[:4] == ["docker", "--host=unix:///fixed.sock", "build", "--pull=false"]
         argument = args[args.index("--build-arg") + 1]
         assert re.fullmatch(NONCE + "=[0-9a-f]{32}", argument)
@@ -103,9 +104,9 @@ def test_two_builds_pass_distinct_builder_owned_nonces_and_exact_secretless_cont
         assert not {"--secret", "--ssh", "--network", "--env"}.intersection(args)
         assert not any("caller-value" in value for value in args)
         Path(args[args.index("--iidfile") + 1]).write_text(IMAGE)
-        return b""
+        return 0, b""
 
-    monkeypatch.setattr(checker, "successful", fake_build)
+    monkeypatch.setattr(checker, "command", fake_build)
     assert checker.build(["docker", "--host=unix:///fixed.sock"], "linux/amd64", hashes) == IMAGE
     assert checker.build(["docker", "--host=unix:///fixed.sock"], "linux/amd64", hashes) == IMAGE
     assert captured == [NONCE + "=" + "1" * 32, NONCE + "=" + "2" * 32]
