@@ -53,6 +53,20 @@ The API keeps one service-level minimum instance to reduce idle cold starts, wit
 existing request/concurrency cap and a bounded SQL pool. Idle capacity has a recurring
 infrastructure cost; private batch workers can still scale to zero. This is not a latency
 guarantee, and production Web Vitals are evaluated separately from local mocked checks.
+The API also needs an explicit trusted-proxy setting for native account transport.
+Cloud Run terminates TLS before forwarding HTTP to the container; Uvicorn only
+accepts forwarded protocol headers from configured peers. The peer observed on
+21 October was `169.254.169.126`. The reviewed API-only repair sets
+`FORWARDED_ALLOW_IPS=127.0.0.1,169.254.169.126`; it keeps the HTTPS, signed-request,
+body, path and replay checks intact. Preserve this setting during environment
+replacement and fresh provisioning. Stock rolling releases copy and pin the
+current API environment. Before promotion, verify the staged HTTPS redirect,
+unsigned-request rejection and a fresh signed account-availability request.
+Neither provider promises this exact peer permanently: after a platform/network
+change, reobserve it and fail closed rather than broadening to a wildcard or
+subnet. Workers do not need this API trust setting. See the official
+[Uvicorn proxy settings](https://uvicorn.dev/settings/#http) and
+[Cloud Run TLS contract](https://docs.cloud.google.com/run/docs/container-contract#transport-layer-encryption-tls).
 Serialize releases. The migration preparation refuses an unmatched staged revision,
 so operators must resolve a previous candidate before starting another release. Its
 direct ASGI command supports older images whose entrypoints ignore `AUTO_DB_MIGRATE`;
