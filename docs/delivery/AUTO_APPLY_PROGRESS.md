@@ -9,10 +9,10 @@ within these outcomes, not additional checkpoints.
 |---|---|---|
 | Official job search, ranking and user-selected job counts | OPEN | Seed and activate the 20 reviewed employer origins; verify freshness, closed-job removal, matching, requested counts and charging in production; show the twenty-origin pilot scope and verify source availability without a worldwide or >95% claim. |
 | Resume tailoring preserving PDF, DOCX and LaTeX formatting | OPEN | Complete private upload/scan/cleanup custody; verify truthful supported edits, preserved formatting, review, original/custom/tailored selection and downloads through the deployed user journey. |
-| Candidate-reviewed direct company applications | OPEN | Release schema19 and provision native browser authority; publish the configured companion; verify ordinary enrollment/pairing, required and conditional fields, approved upload, separate final approval, one-shot submission and receipt reconciliation in production. |
+| Candidate-reviewed direct company applications | OPEN | Release schema19 and configure the provisioned native browser authority; publish the configured companion; verify ordinary enrollment/pairing, required and conditional fields, approved upload, separate final approval, one-shot submission and receipt reconciliation in production. |
 | Paid search/application credits, profitable finite packs and payment recovery | OPEN | Activate finite packs and quoted prices after the paid-sales hold is lifted and commercial hosting is resolved; verify production payments, separate search/application charges against the service-credit balance, the independent AI-unit balance, holds, settlement, refunds and interrupted/duplicate recovery; calibrate estimated costs against actual usage. |
 | Fast responsive pages and SEO | OPEN | Publish the frontend and verify complete desktop, laptop and mobile journeys, production loading performance and SEO. |
-| GCP/Vercel deployment, preserved-data migration and monitoring | OPEN | Verify the restored builder with a native build, activate required private coordinator and browser services, deploy the final application candidate and frontend, and verify monitored production behavior. The preserved-data F7 GCP cutover is complete. |
+| GCP/Vercel deployment, preserved-data migration and monitoring | OPEN | Activate the configured private coordinator and browser services, deploy the final application candidate and frontend, and verify monitored production behavior. The preserved-data F7 GCP cutover is complete. |
 
 No whole outcome is newly complete. There is no dependable remaining completion
 estimate. The owner has authorized continued prelaunch development, integration
@@ -105,8 +105,9 @@ operations in **37.93 seconds**: three named Firestore databases and baseline
 records, immutable journal witnesses, a KMS key ring and two signing keys. The
 owner-approved 24-hour journal retention lock was verified natively before
 initialization. No user/device authority was seeded and all activation flags
-remain false. Runtime permissions, dedicated transport secrets, schema19,
-deployment and ordinary-user acceptance remain necessary. The companion source
+remain false. Runtime permissions and three dedicated transport secrets have since been
+provisioned and verified. Schema19, runtime configuration, deployment and
+ordinary-user acceptance remain necessary. The companion source
 and reproducible 0.8.0 ZIP now contain the actual public claim key; publishing
 that package alone grants no account or device authority.
 
@@ -118,76 +119,55 @@ capture must use the current financial snapshot after this legitimate fulfillmen
 
 ## Current deployment state
 
-As of **16 October 2026, 09:31 UTC / 15:01 IST**, the preserved-data release
-**F7 (`b281118`)** has completed its GCP cutover and production traffic promotion.
-The current source candidate is `8eb5f86` in open draft PR #23. Its
-[CI run 39182062183](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/39182062183)
-completed successfully across all five jobs. The candidate includes definition
-maintenance, explicit pilot labels and the selected-resume correction; it has not
-been accepted as the final GCP production release. CI and the existing Vercel
-preview are supporting evidence within the original six outcomes, not completed
-production acceptance or authorization for paid sales.
+The preserved-data F7 GCP cutover completed on **16 October at 09:31 UTC**.
+The original database remains preserved. Complete source/target comparison
+covered **49 tables and 9 sequences** before nine successful additive migrations
+to schema18. The target has 74 tables, 969 columns and 9 sequences with verified
+runtime/observer privileges. Do not repeat the transfer, migrations, credential
+issuance or retirement. The protected backup remains Locked through
+**23 October, 08:55 UTC**.
 
-The original database is preserved. Its copy passed the complete source/target
-content and catalog comparison across **49 tables and 9 sequences** before
-upgrading. All **nine native Cloud Run migrations have succeeded**. The target
-is now schema18 with **74 tables, 969 columns and 9 sequences**, and its runtime
-and observer grants were verified complete. Completed transfer, migrations,
-credential issuance and retirement actions must not be repeated.
+The API revision `ai-resume-parser-00277-kur`, analysis worker
+`hirewiz-analysis-worker-00024-foc` and employer worker
+`hirewiz-employer-worker-00013-gex` are the existing F7 serving baseline.
+Checkout, optional AI and automatic submission remain disabled. All four task
+queues are paused. A fresh 21 October read found that employer discovery was
+still enabled on the API/employer worker; admission must be closed explicitly
+before the source-seeding and release sequence. Do not describe every admission
+as closed based only on queue state.
 
-The API revision `ai-resume-parser-00277-kur`, analysis worker revision
-`hirewiz-analysis-worker-00024-foc` and employer worker revision
-`hirewiz-employer-worker-00013-gex` now each serve **100% of production traffic**.
-The execution passed its final serving and privilege-closure checks before
-promotion. The original full candidate API contract had passed at **07:26 UTC**,
-including configuration, image, numeric secrets and authenticated health.
+The private resume coordinator is READY with its dedicated numeric database
+secret, resource-scoped invocation grants and two PAUSED schedules. Its processing
+flags remain false. Fresh accepted scanner definitions and actual upload,
+scan and cleanup acceptance are still required; the original definitions expired
+on **17 October at 06:24 UTC**. The maintenance service account, GitHub-main WIF,
+main-only environment and scoped native maintenance permissions are provisioned.
+The maintenance workflow still needs publication and a successful native refresh.
 
-An earlier attempt stopped at **08:09 UTC** during a fresh API health check,
-before changing either worker. Exact server request metadata shows HTTP200 after
-**12.416 seconds**, while the client allowed **10 seconds**. The bounded repair
-changes only that socket timeout to **30 seconds**; it preserves TLS,
-authentication, response identity checks and the overall deployment deadline.
-The repair is committed in `75178fe` and was applied to the successful deployment
-continuation. This timing evidence does not establish why the server was slow.
+The account/device authority now has its three actual Firestore databases,
+locked journal witnesses and two KMS keys. All nine planned runtime IAM grants
+have native readbacks. The initial GCS rejection was a definite, transient
+new-role propagation failure; only the four remaining grants were subsequently
+applied with the original scopes. Three dedicated backend transport secrets and
+the matching two Vercel production Secrets are published. The public origin/key
+identifier are configured in Vercel. Native runtime flags remain false; no
+candidate or device was seeded during bootstrap.
 
-Read-only reconciliation after that stop verified unchanged service metadata,
-no active regional deployment operations, no new backup from that attempt, and
-retained previous journals and protected backups. The corrected continuation
-reused API277 and completed the remaining worker stages, fresh acceptance gates,
-migration-access closure and traffic promotion.
+Application Cloud Build **`bdda589b-b364-4189-b08a-5ca216714e0f`** succeeded on
+21 October at **16:57:56 UTC** for source **`2bb4ae79`**, producing immutable
+digest `sha256:f738f8c805b9652aa80066c12d35add98742596e51f5eea0849d00254576e0f8`.
+This verifies the restored builder. It is not a production deployment or a
+completed original outcome. The later source still needs complete CI,
+schema19, fresh document acceptance, final GCP/Vercel publication and full
+customer journeys. The retained old OIDC verification grant was removed; the
+replacement narrow, temporary health grant expires on **21 October at 20:00 UTC**
+and must be removed when verification finishes.
 
-The corrected continuation started at **08:38 UTC** and passed the previous
-health failure point. Its new source backup was created at **08:55 UTC**, with
-Locked retention through **23 October, 08:55 UTC**. Native metadata at **09:04 UTC**
-confirmed the new analysis worker revision, `hirewiz-analysis-worker-00024-foc`,
-ready at zero production traffic. The employer worker was still on its prior
-revision at that observation. The execution subsequently completed successfully
-at **09:31 UTC**, promoting all three new revisions. The original source and
-protected backups remain preserved.
-
-The build identity, all three scoped grants and enabled deployment trigger passed
-native readback at **10:02 UTC**. A real build under that identity remains to be
-verified. The private coordinator’s production inventory and catalog were reviewed
-on 16 October. An exact raw API comparison resolved the project-policy fingerprint
-discrepancy as standard versus URL-safe base64 spelling of the same version token.
-The restricted SQL role and numeric secret version were subsequently created,
-and an actual ordinary login succeeded. Do not repeat that issuance or activation.
-A read-only reconciliation then passed the role/authentication stages but stopped
-at the final running-service guards. It did not emit a completed SQL descriptor;
-no sequential coordinator workload provisioning was launched. The exact final
-guard failure remains unresolved, and the old time-bound contract is now stale.
-
-With F7 complete, remaining release work includes completing the private upload/scan/cleanup coordinator and native browser
-resources, releasing schema19 and the configured companion, then deploying the
-final GCP/Vercel configuration and verifying complete customer journeys. The
-expired Tasks-account verification binding still requires exact-policy cleanup;
-its expiry must not be extended silently to reuse the old release contract.
-
-Queues, maintenance scheduling, checkout and new-feature admissions remain held.
-Production login, paid search, tailoring and applications are not yet accepted.
-See the [cutover procedure](FRESH_CUTOVER_EXECUTOR_2026-10-14.md) and
-[complete read-only export repair](SOURCE_COMPLETE_READONLY_EXPORT_2026-10-15.md)
-for the preserved-data release requirements.
+Production source inventory on 21 October contained **4 sources**, 386 postings
+and 353 marked open, with none checked in the prior 24 hours. Current review
+verified all twenty pilot employer pages, ATS feeds and tenant joins. Seeding,
+full pagination, fresh ingestion and customer search acceptance remain required.
+HTTP success alone does not establish fresh or complete job coverage.
 
 ## Implemented source and remaining rollout
 
@@ -197,8 +177,8 @@ for the preserved-data release requirements.
   acceptance remain. Worldwide coverage and greater-than-95% recall are
   unproven; follow the [coverage audit protocol](COVERAGE_AUDIT_PROTOCOL_2026-10-09.md).
 - **Resumes:** document rendering has [native acceptance evidence](DOCUMENT_RENDERING_ACCEPTANCE_2026-10-14.md).
-  The restricted upload coordinator still needs final SQL reconciliation, workload,
-  invocation grants and genuine custody/scan/cleanup checks before the full
+  The restricted upload coordinator has verified SQL access, a READY workload
+  and scoped invocation grants; it still needs genuine custody/scan/cleanup checks before the full
   tailoring and download journey can be accepted. See the
   [coordinator plan](RESUME_UPLOAD_COORDINATOR_2026-10-10.md).
   A local application-review correction now binds the tailoring Workspace result
@@ -210,8 +190,9 @@ for the preserved-data release requirements.
   approved upload and separately reviewed one-shot submission receipts. Installed
   Chrome for Testing acceptance uses controlled HTTPS fixtures and actual SQL
   and cryptographic composition. It does not establish production employer
-  acceptance. Ordinary Chrome installation, native Firestore/KMS authority,
-  configured packaging and normal-user enrollment/pairing remain. See
+  acceptance. Ordinary Chrome installation, configured runtime publication and normal-user
+  enrollment/pairing remain; native Firestore/KMS authority and configured
+  packaging have been provisioned. See
   [hosted-network acceptance](BROWSER_HOSTED_NETWORK_ACCEPTANCE_2026-10-15.md),
   [candidate activation](NORMAL_CANDIDATE_BROWSER_ACTIVATION_2026-10-15.md) and
   the separate [schema19 release path](BROWSER_TYPED_CONTROLS_SCHEMA19_RELEASE_2026-10-15.md).
@@ -276,11 +257,17 @@ for the preserved-data release requirements.
 
 ## Supporting validation
 
-Current source **`8eb5f86`** in open draft
-[PR #23](https://github.com/Harshil4442/ai-resume-copilot/pull/23) passes all five
-jobs in [CI run 39182062183](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/39182062183).
-This supersedes the earlier pending whole-branch CI status. It verifies the tested
-source and does not close any of the six production outcomes.
+Source **`2bb4ae79`** is published in open draft
+[PR #23](https://github.com/Harshil4442/ai-resume-copilot/pull/23). Its application
+Cloud Build succeeded. [CI run 39638587744](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/39638587744)
+passed frontend, security/container and cold-browser jobs; backend document-image
+build and the configured-companion UI expectation failed. Subsequent companion and bounded-build diagnostic repairs are committed in
+`e1324ef2` and passed focused verification, including one successful controlled
+AMD64 document-image build. The old CI build failure was not reproduced; the
+pinned base is unchanged. A new integrated CI run is required before release. The previously green
+[CI run 39182062183](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/39182062183)
+applies only to source **`8eb5f86`**, not the current candidate. These are supporting
+checks within the original six outcomes, not additional checkpoints.
 
 On 19 October, focused local synthetic checks covered the selected-count and
 credit admission paths, newly delivered search settlement, application receipt
