@@ -1,5 +1,6 @@
 """Owned file/fake-daemon checks; never alter a host daemon or pull an image."""
 
+import hashlib
 import json
 import subprocess
 from pathlib import Path
@@ -172,7 +173,12 @@ def test_repeated_observation_timeouts_exhaust_same_ten_second_budget(monkeypatc
 @pytest.mark.parametrize("raw", ["not-json", "{}", '[123]'])
 def test_malformed_native_mirrors_are_not_retried_or_accepted(raw, monkeypatch):
     calls = []
-    monkeypatch.setattr(cache.subprocess, "run", lambda *args, **kwargs: calls.append(args) or SimpleNamespace(stdout=raw))
+
+    def observe(*args, **kwargs):
+        calls.append(args)
+        return SimpleNamespace(stdout=raw)
+
+    monkeypatch.setattr(cache.subprocess, "run", observe)
     with pytest.raises((ValueError, json.JSONDecodeError)):
         cache.verify()
     assert len(calls) == 1
@@ -195,3 +201,93 @@ def test_cli_reports_only_fixed_timeout_or_command_diagnostics(failure, reason, 
         cache.main()
     assert "CI remains required" in str(result.value)
     assert "private-command-metadata" not in str(result.value) and "do-not-export" not in str(result.value)
+
+
+def test_document_policy_routes_only_two_literal_forms_to_the_same_pinned_manifest(tmp_path, monkeypatch):
+    monkeypatch.setenv("RUNNER_TEMP", str(tmp_path.resolve()))
+    monkeypatch.delenv(cache.SOURCE_POLICY_ENV, raising=False)
+    monkeypatch.setattr(cache.subprocess, "run", lambda *a, **k: pytest.fail("No Docker command or pull is required."))
+    path = cache.document_source_policy()
+    raw = path.read_bytes()
+    assert path.parent == tmp_path.resolve() and path.stat().st_mode & 0o777 == 0o600
+    assert len(raw) <= 4096
+    policy = json.loads(raw)
+    digest = "sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1"
+    origin = "docker-image://public.ecr.aws/docker/library/python"
+    assert policy == {"version": 1, "rules": [
+        {"action": "CONVERT", "selector": {"identifier": source, "matchType": "EXACT"},
+         "updates": {"identifier": "docker-image://mirror.gcr.io/library/python@" + digest}}
+        for source in (origin + ":3.12-slim-trixie@" + digest, origin + "@" + digest)
+    ]}
+    # An unrelated image, different digest, unpinned tag or lookalike repository
+    # cannot match an EXACT selector. No mutable-tag or wildcard rule exists.
+    selectors = {rule["selector"]["identifier"] for rule in policy["rules"]}
+    assert not selectors.intersection({
+        origin + ":3.12-slim-trixie", origin + "@sha256:" + "0" * 64,
+        origin + "-other@" + digest, origin.replace("public.ecr.aws", "other.example") + "@" + digest,
+        "docker-image://docker.io/library/debian:bookworm-slim",
+    })
+    root = Path(__file__).resolve().parents[2]
+    dockerfile = root / "infra/document-processing/Dockerfile"
+    assert ("FROM " + origin.removeprefix("docker-image://") + ":3.12-slim-trixie@" + digest
+            + " AS dependencies") in dockerfile.read_text().splitlines()
+    source_policy = json.loads((root / "infra/document-processing/policy.json").read_bytes())
+    assert hashlib.sha256(dockerfile.read_bytes()).hexdigest() == source_policy["source_sha256"][
+        "infra/document-processing/Dockerfile"]
+
+
+@pytest.mark.parametrize("inherited", ["/tmp/foreign-policy.json", "{}", "https://other.example/policy", "\n"])
+def test_inherited_source_policy_refuses_before_creating_or_reading_files(tmp_path, monkeypatch, inherited):
+    monkeypatch.setenv("RUNNER_TEMP", str(tmp_path.resolve()))
+    monkeypatch.setenv(cache.SOURCE_POLICY_ENV, inherited)
+    with pytest.raises(ValueError, match="inherited"):
+        cache.document_source_policy()
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("kind", ["missing", "relative", "symlink", "file", "control"])
+def test_document_policy_refuses_unowned_or_noncanonical_temp_destination(tmp_path, monkeypatch, kind):
+    runner = tmp_path / "runner"
+    runner.mkdir()
+    link = tmp_path / "link"
+    link.symlink_to(runner, target_is_directory=True)
+    regular = tmp_path / "regular"
+    regular.write_text("preserve")
+    choices = {"missing": "", "relative": "runner", "symlink": str(link),
+               "file": str(regular), "control": str(runner) + "\n"}
+    monkeypatch.setenv("RUNNER_TEMP", choices[kind])
+    monkeypatch.delenv(cache.SOURCE_POLICY_ENV, raising=False)
+    with pytest.raises(ValueError, match="temporary directory"):
+        cache.document_source_policy()
+    assert list(runner.iterdir()) == [] and regular.read_text() == "preserve"
+
+
+def test_failed_policy_write_removes_only_its_owned_new_file(tmp_path, monkeypatch):
+    monkeypatch.setenv("RUNNER_TEMP", str(tmp_path.resolve()))
+    monkeypatch.delenv(cache.SOURCE_POLICY_ENV, raising=False)
+    retained = tmp_path / "retained.json"
+    retained.write_text("preserve")
+
+    def fail_sync(_):
+        raise OSError("private failure must not become a usable partial policy")
+
+    monkeypatch.setattr(cache.os, "fsync", fail_sync)
+    with pytest.raises(OSError):
+        cache.document_source_policy()
+    assert list(tmp_path.iterdir()) == [retained] and retained.read_text() == "preserve"
+
+
+def test_document_build_scopes_and_cleans_its_generated_policy_without_skipping_native_checks():
+    root = Path(__file__).resolve().parents[2]
+    workflow = (root / ".github/workflows/ci.yml").read_text()
+    step = workflow.split("      - name: Build and verify genuine native document engines\n", 1)[1].split(
+        "      - name:", 1)[0]
+    assert 'EXPERIMENTAL_BUILDKIT_SOURCE_POLICY: ""' in step.split("        run: |", 1)[0]
+    create = 'document_source_policy_path="$(python3 backend/scripts/ci_registry_cache.py --document-source-policy)"'
+    export = 'export EXPERIMENTAL_BUILDKIT_SOURCE_POLICY="$document_source_policy_path"'
+    check = "backend/.venv/bin/python backend/scripts/document_test_image.py"
+    assert step.index(create) < step.index(export) < step.index(check)
+    assert 'trap \'rm -f -- "$document_source_policy_path"\' EXIT' in step
+    assert '--platform linux/amd64 --output "$document_test_report_path"' in step
+    assert "--image-id" not in step and "|| true" not in step and "continue-on-error" not in step
+    assert workflow.count("EXPERIMENTAL_BUILDKIT_SOURCE_POLICY:") == 1
