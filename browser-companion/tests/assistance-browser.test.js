@@ -9,6 +9,7 @@ import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { createHash } from "node:crypto";
 import { chromium, expect } from "@playwright/test";
+import { CONFIG as shippingConfig } from "../extension/config.js";
 import { fixtureHtml } from "../fixtures/razorpay/form.js";
 import { hostedFixtureHtml } from "../fixtures/razorpay/hosted-form.js";
 import { submitFixtureHtml } from "../fixtures/razorpay/submit-form.js";
@@ -43,6 +44,11 @@ async function fixture({ granted = true, loseBegin = false, typed = false, unkno
     if (typed || attachment || hosted || submission) assert.equal(typedApplication.status, 200);
     const extension = `${directory}/extension`;
     await cp(new URL("../extension/", import.meta.url), extension, { recursive: true });
+    // This bridge intentionally exercises the legacy review cohort. Native
+    // pairing uses its separate real SQL/cryptographic bridge; the shipping
+    // configuration keeps its actual public key and connection requirement.
+    await writeFile(`${extension}/config.js`,
+      `export const CONFIG = Object.freeze(${JSON.stringify({ ...shippingConfig, nativePairing: null })});\n`);
     const manifest = JSON.parse(await readFile(`${extension}/manifest.json`, "utf8"));
     // A narrow test-only host grant avoids automating Chrome's human permissions
     // dialog. Production still declares optional grants with no granted hosts.
@@ -140,7 +146,7 @@ async function fixture({ granted = true, loseBegin = false, typed = false, unkno
   } catch (error) { await context?.close(); python.kill(); await rm(directory, { recursive: true, force: true }); throw error; }
 }
 
-test("installed production MV3 proves actual extension Origin and reviewed SQL/crypto fill-only flow", async () => {
+test("installed MV3 legacy cohort fixture proves actual extension Origin and reviewed SQL/crypto fill-only flow", async () => {
   const f = await fixture(); try {
     await f.connect(); const review = await f.prepare();
     const premature = await message(f.popup, { type: "assistance_fill" }); assert.equal(premature.ok, false);
