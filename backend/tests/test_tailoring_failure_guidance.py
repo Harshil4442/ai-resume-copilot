@@ -208,6 +208,30 @@ def test_bounded_cause_traversal_and_arbitrary_reason_attributes_are_generic():
     assert public_tailoring_guidance("resume_tailor", "queued", None) is None
 
 
+@pytest.mark.parametrize("budget_exhausted,reason", [(False, "provider_unavailable"), (True, "generation_unavailable")])
+def test_provider_failures_do_not_blame_the_resume_or_reflect_private_details(budget_exhausted, reason):
+    error = llm_client.LLMProviderError("private credential and provider response")
+    error.budget_exhausted = budget_exhausted
+    marker = persist_tailoring_failure(error)
+    assert marker == "resume-tailoring-failure/v1:" + reason
+    assert public_tailoring_guidance("resume_tailor", "failed", marker) == {
+        "reason_code": reason, "next_action": "retry_later",
+    }
+    assert "private" not in marker
+
+
+def test_legacy_provider_failure_uses_trusted_error_class_without_exposing_stored_text():
+    assert public_tailoring_guidance("resume_tailor", "failed", "private provider details", "LLMProviderError") == {
+        "reason_code": "provider_unavailable", "next_action": "retry_later",
+    }
+    assert public_tailoring_guidance("resume_tailor", "failed", "private provider details", "unknown") == {
+        "reason_code": "validation_failed", "next_action": "use_original_or_custom",
+    }
+    assert public_tailoring_guidance("resume_tailor", "failed", "resume-tailoring-failure/v1:font_unsupported", "LLMProviderError") == {
+        "reason_code": "font_unsupported", "next_action": "use_supported_font",
+    }
+
+
 def test_actual_isolated_analysis_router_openapi_matches_composed_contract():
     app = FastAPI()
     app.include_router(router, prefix="/api/v1")

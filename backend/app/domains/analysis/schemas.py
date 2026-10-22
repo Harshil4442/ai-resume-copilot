@@ -82,7 +82,7 @@ class AnalysisRunResponse(BaseModel):
             data = {name: getattr(value, name) for name in cls.model_fields if hasattr(value, name)}
             stored_message = getattr(value, "error_message", None)
         data["failure_guidance"] = public_tailoring_guidance(
-            data.get("operation", ""), data.get("status", ""), stored_message,
+            data.get("operation", ""), data.get("status", ""), stored_message, data.get("error_code"),
         )
         return data
 

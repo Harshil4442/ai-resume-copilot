@@ -11,11 +11,12 @@ const context = { candidate_id: 12, account_binding_id: "01234567-89ab-cdef-0123
   session_id: "11234567-89ab-cdef-0123-456789abcdef" };
 const operation = "21234567-89ab-cdef-0123-456789abcdef";
 const csrf = "a".repeat(64);
+let clockScope = 0;
 beforeEach(() => {
   vi.restoreAllMocks();
   vi.stubEnv("NEXTAUTH_URL", origin);
   vi.stubEnv("NEXTAUTH_SECRET", secret);
-  vi.stubEnv("BACKEND_URL", "https://backend.example.com"); vi.stubEnv("CANDIDATE_AUTH_TRANSPORT_SECRET", "6e".repeat(32)); vi.stubEnv("CANDIDATE_AUTH_TRANSPORT_KEY_ID", "fixture_ingress_v1");
+  vi.stubEnv("BACKEND_URL", "https://backend.example.com"); vi.stubEnv("CANDIDATE_AUTH_TRANSPORT_SECRET", "6e".repeat(32)); vi.stubEnv("CANDIDATE_AUTH_TRANSPORT_KEY_ID", `fixture_ingress_${++clockScope}`);
 });
 
 async function request(path = "signout", options: { legacy?: boolean; origin?: string; body?: string } = {}) {
@@ -32,18 +33,20 @@ async function request(path = "signout", options: { legacy?: boolean; origin?: s
 describe("actual encrypted cookie pre-handler signout guard", () => {
   it("uses the same trimmed configured secret as the real NextAuth issuer", async () => {
     vi.stubEnv("NEXTAUTH_SECRET", ` ${secret} `);
-    const fetch = vi.fn(async () => Response.json({status:"COOKIE_DENIAL_RETAINED"})); vi.stubGlobal("fetch",fetch);
+    const fetch = vi.fn(async (url: string) => Response.json(url.endsWith("/availability")
+      ? { fresh_registration: true, legacy_enrollment: true } : { status:"COOKIE_DENIAL_RETAINED" })); vi.stubGlobal("fetch",fetch);
     const result = await guardAuthRequest(await request(), "signout");
-    expect(result.request).toBeDefined(); expect(fetch).toHaveBeenCalledTimes(1);
+    expect(result.request).toBeDefined(); expect(fetch).toHaveBeenCalledTimes(2);
   });
   it("requires exact retained denial before permitting the NextAuth handler", async () => {
-    const fetch = vi.fn(async () => new Response(JSON.stringify({ status: "COOKIE_DENIAL_RETAINED" })));
+    const fetch = vi.fn(async (url: string) => Response.json(url.endsWith("/availability")
+      ? { fresh_registration: true, legacy_enrollment: true } : { status:"COOKIE_DENIAL_RETAINED" }));
     vi.stubGlobal("fetch", fetch);
     const result = await guardAuthRequest(await request(), "signout");
     expect(result.response).toBeUndefined();
     expect(result.request).toBeDefined();
-    expect(fetch).toHaveBeenCalledTimes(1);
-    const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(fetch).toHaveBeenCalledTimes(2);
+    const [url, init] = fetch.mock.calls[1] as unknown as [string, RequestInit];
     expect(url).toBe("https://backend.example.com/api/auth/candidate/v1/web-logout");
     expect(JSON.parse(init.body as string)).toEqual({ operation_id: operation });
     expect(JSON.stringify(init.body)).not.toContain(context.session_id);

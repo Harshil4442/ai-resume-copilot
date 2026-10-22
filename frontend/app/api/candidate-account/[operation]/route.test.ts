@@ -9,7 +9,8 @@ const origin = "https://candidate.example.com", secret = "synthetic-candidate-bf
 const context = { candidate_id: 12, account_binding_id: "01234567-89ab-cdef-0123-456789abcdef",
   session_id: "11234567-89ab-cdef-0123-456789abcdef" };
 const retained = { hirewizUserId: 12, accessToken: "synthetic-private-server-bearer", browserPairingSession: context };
-beforeEach(() => { vi.restoreAllMocks(); vi.stubEnv("NEXTAUTH_URL", origin); vi.stubEnv("NEXTAUTH_SECRET", secret); vi.stubEnv("BACKEND_URL", "https://backend.example.com"); vi.stubEnv("CANDIDATE_AUTH_TRANSPORT_SECRET", "6e".repeat(32)); vi.stubEnv("CANDIDATE_AUTH_TRANSPORT_KEY_ID", "fixture_ingress_v1"); });
+let clockScope = 0;
+beforeEach(() => { vi.restoreAllMocks(); vi.stubEnv("NEXTAUTH_URL", origin); vi.stubEnv("NEXTAUTH_SECRET", secret); vi.stubEnv("BACKEND_URL", "https://backend.example.com"); vi.stubEnv("CANDIDATE_AUTH_TRANSPORT_SECRET", "6e".repeat(32)); vi.stubEnv("CANDIDATE_AUTH_TRANSPORT_KEY_ID", `fixture_ingress_${++clockScope}`); });
 async function request(operation: string, token?: Record<string, unknown>, body?: string, foreign = false) {
   const csrf="a".repeat(64);
   const cookie = (token ? `__Secure-next-auth.session-token=${await encode({token, secret})}; ` : "")
@@ -38,7 +39,12 @@ describe("candidate website projected BFF contracts", () => {
     const fetch = vi.fn(async () => Response.json(challenge)); vi.stubGlobal("fetch", fetch);
     const reply = await POST(await request("google-enrollment-challenge", legacy, "{}"), params("google-enrollment-challenge"));
     expect(await reply.json()).toEqual(challenge);
-    const sent=fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(fetch).toHaveBeenCalledTimes(2);
+    const probe=fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(probe[0]).toBe("https://backend.example.com/api/auth/candidate/v1/availability");
+    expect(probe[1].body).toBeUndefined();
+    expect(new Headers(probe[1].headers).has("authorization")).toBe(false);
+    const sent=fetch.mock.calls[1] as unknown as [string, RequestInit];
     expect(sent[0]).toBe("https://backend.example.com/api/auth/candidate/v1/google-enrollment-challenge");
     expect(new Headers(sent[1].headers).get("authorization")).toBe(`Bearer ${legacy.accessToken}`);
     expect(new Headers(sent[1].headers).get("x-hirewiz-candidate-ingress")).toBeTruthy();
@@ -55,7 +61,7 @@ describe("candidate website projected BFF contracts", () => {
     vi.stubEnv("NEXTAUTH_SECRET", ` ${secret} `);
     const fetch=vi.fn(async()=>Response.json({status:"ELIGIBLE"}));vi.stubGlobal("fetch",fetch);
     const result=await GET(await request("eligibility",retained),params("eligibility"));
-    expect(await result.json()).toEqual({status:"ELIGIBLE"});expect(fetch).toHaveBeenCalledTimes(1);
+    expect(await result.json()).toEqual({status:"ELIGIBLE"});expect(fetch).toHaveBeenCalledTimes(2);
   });
   it.each([[undefined, "PASSWORD_SIGN_IN_REQUIRED"], [{hirewizUserId: 12}, "LEGACY_ENROLLMENT_UNAVAILABLE"],
     [{browserPairingSession: {candidate_id: 12}}, "UNAVAILABLE"]] as const)("projects absent, legacy and malformed private sessions without native calls", async (token, status) => {

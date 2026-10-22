@@ -1,5 +1,5 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-import { candidateIngressHeaders } from "./candidateIngressServer";
+import { candidateIngressFetch } from "./candidateIngressFetch";
 import type { JWT } from "next-auth/jwt";
 import { getToken } from "next-auth/jwt";
 import { NextRequest, NextResponse } from "next/server";
@@ -29,8 +29,7 @@ export async function backendAuth(path: string, init: RequestInit = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 15000);
   try {
-    const response = await fetch(`${base}/api/auth/${path}`, { ...init, headers: candidateIngressHeaders(`/api/auth/${path}`, init), redirect: "error", cache: "no-store",
-      signal: controller.signal });
+    const response = await candidateIngressFetch(base, `/api/auth/${path}`, { ...init, signal: controller.signal });
     const bytes = await boundedPairingBytes(response.body, AUTH_RESPONSE_LIMIT);
     const value: unknown = JSON.parse(bytes.toString("utf8"));
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("AUTH_UNAVAILABLE");

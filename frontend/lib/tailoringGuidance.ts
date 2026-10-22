@@ -28,6 +28,8 @@ const messages: Record<Reason, Copy> = {
   tex_worker_unavailable: { title: "The isolated LaTeX compiler is unavailable.", nextStep: "Use your original compiled PDF or a custom PDF/DOCX for now. Your source will not be compiled on the web server." },
   tex_artifact_invalid: { title: "The compiled resume could not be verified.", nextStep: "Use your original/custom resume. Do not apply with an unverified generated file." },
   no_supported_changes: { title: "No safe, useful changes were found for this role.", nextStep: "You can keep your original resume unchanged, save a source snapshot, or choose a custom file. Review your evidence before requesting new wording." },
+  provider_unavailable: { title: "AI resume editing is temporarily unavailable.", nextStep: "The AI provider did not complete this request. Try again later, or use your original or custom resume." },
+  generation_unavailable: { title: "AI resume editing is temporarily unavailable.", nextStep: "We could not authorize this AI request. Try again later, or use your original or custom resume." },
   validation_failed: fallback,
 };
 

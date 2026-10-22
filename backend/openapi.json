@@ -5922,7 +5922,8 @@
               "review_evidence",
               "check_tex_dependencies",
               "check_tex_source",
-              "use_original_or_custom"
+              "use_original_or_custom",
+              "retry_later"
             ],
             "title": "Next Action",
             "type": "string"
@@ -5946,6 +5947,8 @@
               "tex_worker_unavailable",
               "tex_artifact_invalid",
               "no_supported_changes",
+              "provider_unavailable",
+              "generation_unavailable",
               "validation_failed"
             ],
             "title": "Reason Code",

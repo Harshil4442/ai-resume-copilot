@@ -13,13 +13,14 @@ TailoringFailureReason = Literal[
     "font_unsupported", "replacement_does_not_fit", "source_layout_changed",
     "source_span_unavailable", "source_links_protected", "evidence_changes_unsupported",
     "tex_dependency_unsupported", "tex_compile_failed", "tex_worker_unavailable",
-    "tex_artifact_invalid", "no_supported_changes", "validation_failed",
+    "tex_artifact_invalid", "no_supported_changes", "provider_unavailable",
+    "generation_unavailable", "validation_failed",
 ]
 TailoringNextAction = Literal[
     "choose_source", "upload_editable_source", "check_source_file", "reduce_source_size",
     "use_supported_font", "shorten_wording", "keep_original_layout", "edit_source_manually",
     "keep_link_text", "review_evidence", "check_tex_dependencies", "check_tex_source",
-    "use_original_or_custom",
+    "use_original_or_custom", "retry_later",
 ]
 
 _ACTIONS: dict[str, TailoringNextAction] = {
@@ -40,6 +41,8 @@ _ACTIONS: dict[str, TailoringNextAction] = {
     "tex_worker_unavailable": "use_original_or_custom",
     "tex_artifact_invalid": "use_original_or_custom",
     "no_supported_changes": "use_original_or_custom",
+    "provider_unavailable": "retry_later",
+    "generation_unavailable": "retry_later",
     "validation_failed": "use_original_or_custom",
 }
 _PREFIX = "resume-tailoring-failure/v1:"
@@ -107,7 +110,8 @@ _MESSAGES: dict[str, str] = {
 
 def persist_tailoring_failure(exc: Exception) -> str:
     """Keep an allowlisted reason from the native cause, with bounded traversal."""
-    from ...services.llm_client import TailoringOutputError
+    from ...services.llm_client import LLMProviderError, TailoringOutputError
+    from ...services.model_cost_policy import ModelCostUnavailable
     from ...services.resume_layout import ResumeLayoutError
 
     current: BaseException | None = exc
@@ -116,6 +120,10 @@ def persist_tailoring_failure(exc: Exception) -> str:
         if current is None or id(current) in seen:
             break
         seen.add(id(current))
+        if isinstance(current, LLMProviderError):
+            return _PREFIX + ("generation_unavailable" if current.budget_exhausted else "provider_unavailable")
+        if isinstance(current, ModelCostUnavailable):
+            return _PREFIX + "generation_unavailable"
         if isinstance(current, (ResumeLayoutError, TailoringOutputError)):
             reason = _MESSAGES.get(str(current))
             if reason is not None:
@@ -124,11 +132,20 @@ def persist_tailoring_failure(exc: Exception) -> str:
     return _PREFIX + "validation_failed"
 
 
-def public_tailoring_guidance(operation: str, status: str, stored_message: object) -> dict[str, str] | None:
+def public_tailoring_guidance(
+    operation: str, status: str, stored_message: object, error_code: object = None,
+) -> dict[str, str] | None:
     """Legacy/unknown failures receive useful generic guidance, never reflection."""
     if operation != "resume_tailor" or status != "failed":
         return None
     reason = stored_message.removeprefix(_PREFIX) if isinstance(stored_message, str) and stored_message.startswith(_PREFIX) else "validation_failed"
     if reason not in _ACTIONS:
         reason = "validation_failed"
+    # Older rows predate provider guidance. Their trusted exception class can
+    # distinguish service failures without reflecting the stored error text.
+    if reason == "validation_failed":
+        if error_code == "LLMProviderError":
+            reason = "provider_unavailable"
+        elif error_code in ("ModelCostUnavailable", "GenerationBudgetExhausted"):
+            reason = "generation_unavailable"
     return {"reason_code": reason, "next_action": _ACTIONS[reason]}

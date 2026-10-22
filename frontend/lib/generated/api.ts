@@ -3961,12 +3961,12 @@ export interface components {
              * Next Action
              * @enum {string}
              */
-            next_action: "choose_source" | "upload_editable_source" | "check_source_file" | "reduce_source_size" | "use_supported_font" | "shorten_wording" | "keep_original_layout" | "edit_source_manually" | "keep_link_text" | "review_evidence" | "check_tex_dependencies" | "check_tex_source" | "use_original_or_custom";
+            next_action: "choose_source" | "upload_editable_source" | "check_source_file" | "reduce_source_size" | "use_supported_font" | "shorten_wording" | "keep_original_layout" | "edit_source_manually" | "keep_link_text" | "review_evidence" | "check_tex_dependencies" | "check_tex_source" | "use_original_or_custom" | "retry_later";
             /**
              * Reason Code
              * @enum {string}
              */
-            reason_code: "source_required" | "editable_source_required" | "source_unreadable" | "source_too_large" | "source_protected" | "source_format_unsupported" | "font_unsupported" | "replacement_does_not_fit" | "source_layout_changed" | "source_span_unavailable" | "source_links_protected" | "evidence_changes_unsupported" | "tex_dependency_unsupported" | "tex_compile_failed" | "tex_worker_unavailable" | "tex_artifact_invalid" | "no_supported_changes" | "validation_failed";
+            reason_code: "source_required" | "editable_source_required" | "source_unreadable" | "source_too_large" | "source_protected" | "source_format_unsupported" | "font_unsupported" | "replacement_does_not_fit" | "source_layout_changed" | "source_span_unavailable" | "source_links_protected" | "evidence_changes_unsupported" | "tex_dependency_unsupported" | "tex_compile_failed" | "tex_worker_unavailable" | "tex_artifact_invalid" | "no_supported_changes" | "provider_unavailable" | "generation_unavailable" | "validation_failed";
         };
         /** UploadCreate */
         UploadCreate: {
