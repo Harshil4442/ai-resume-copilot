@@ -9,7 +9,20 @@ import { getPublicBillingCatalog } from "../../lib/billingCatalog";
 import { SITE } from "../../lib/site";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Pricing", description: "Finite HireWiz prepaid packs for the 20-employer discovery pilot, candidate-reviewed Razorpay/Greenhouse applications and optional resume AI. Clear INR prices.", alternates: { canonical: "/pricing" } };
+const description = "Finite HireWiz prepaid packs for the 20-employer discovery pilot, candidate-reviewed Razorpay/Greenhouse applications and optional resume AI. Clear INR prices.";
+export const metadata: Metadata = {
+  title: "Pricing",
+  description,
+  alternates: { canonical: "/pricing" },
+  openGraph: {
+    type: "website",
+    url: "/pricing",
+    siteName: SITE.name,
+    title: "Pricing | HireWiz",
+    description,
+    images: [{ url: "/images/hirewiz-share.png", width: 1200, height: 630, alt: "HireWiz — Evidence-backed career workspace" }],
+  },
+};
 
 export default async function PricingPage() {
   const catalog = await getPublicBillingCatalog();

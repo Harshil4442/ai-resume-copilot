@@ -10,8 +10,6 @@ const PUBLIC_ROUTES = [
   "/about",
   "/digital-delivery",
   "/subprocessors",
-  "/login",
-  "/register",
   "/terms",
   "/privacy",
   "/refund",

@@ -173,7 +173,12 @@ jobs:
           --output "$RUNNER_TEMP/native-tex-test-image.json"
       - name: Build and verify genuine native document engines
         timeout-minutes: 20
+        env:
+          EXPERIMENTAL_BUILDKIT_SOURCE_POLICY: ""
         run: |
+          document_source_policy_path="$(python3 backend/scripts/ci_registry_cache.py --document-source-policy)"
+          trap 'rm -f -- "$document_source_policy_path"' EXIT
+          export EXPERIMENTAL_BUILDKIT_SOURCE_POLICY="$document_source_policy_path"
           document_test_report_path="$RUNNER_TEMP/document-engine-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.json"
           backend/.venv/bin/python backend/scripts/document_test_image.py \
             --platform linux/amd64 --output "$document_test_report_path"
