@@ -13,6 +13,7 @@ import re
 import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
+from uuid import uuid4
 
 from pydantic import model_validator
 
@@ -42,6 +43,7 @@ FAILURE = "Private candidate ingress native configuration is unavailable"
 MAX_READ_LATENCY_NS = 500_000_000
 MAX_ANCHOR_AGE_NS = 2_000_000_000
 MAX_OPERATION_NS = 5_000_000_000
+CLOCK_PROBE_COLLECTION = "candidate_ingress_clock_probes"
 
 
 class CandidateIngressNativeConfiguration(CandidateNativeConfiguration):
@@ -148,7 +150,7 @@ class GcpTrustedIngressEnvironment:
             or now - self._started_ns >= MAX_OPERATION_NS
         ):
             raise GuardUnavailable("Fresh trusted ingress time is unavailable")
-        # The read occurred between request start and completion. Round outward;
+        # The acknowledged commit occurred between request start and completion. Round outward;
         # admission requires issue <= lower and expiry > upper, not a guessed UTC.
         lower = (anchor.provider_ns + now - anchor.end_ns) // 1_000_000
         upper = (anchor.provider_ns + now - anchor.start_ns + 999_999) // 1_000_000
@@ -172,7 +174,11 @@ class GcpTrustedIngressEnvironment:
                 pass
 
     def _clock_root(self, resource: IngressResource) -> None:
-        from google.cloud.firestore_v1.types import BatchGetDocumentsResponse, Document
+        from google.cloud.firestore_v1.types import (
+            BatchGetDocumentsResponse,
+            CommitResponse,
+            Document,
+        )
 
         path = BufferedTransaction(self.rpc, b"path-only").path(CONTROL_NAMESPACE, "root")
         start = time.monotonic_ns()
@@ -204,10 +210,10 @@ class GcpTrustedIngressEnvironment:
         stamp.ToDatetime()  # Validate protobuf's full UTC range and nanoseconds.
         if not 0 <= stamp.nanos < 1_000_000_000:
             raise GuardUnavailable("Fresh ingress provider time is malformed")
-        provider_ns = stamp.seconds * 1_000_000_000 + stamp.nanos
+        read_ns = stamp.seconds * 1_000_000_000 + stamp.nanos
         updated = Document.pb(response.found).update_time
         updated.ToDatetime()
-        if updated.seconds * 1_000_000_000 + updated.nanos > provider_ns:
+        if updated.seconds * 1_000_000_000 + updated.nanos > read_ns:
             raise GuardUnavailable("Ingress control update follows its provider read time")
         raw = bytes(wire.found.fields["body"].bytes_value)
         expected = canonical({
@@ -217,6 +223,43 @@ class GcpTrustedIngressEnvironment:
         }).encode()
         if raw != expected:
             raise GuardUnavailable("Exact independent ingress OPEN control is unavailable")
+        # A document read_time identifies its snapshot, not fresh wall-clock UTC.
+        # Use the original ACK of a new operational write instead. Only these
+        # 256 fixed documents can be overwritten; authority/replay rows stay separate.
+        nonce = uuid4().hex
+        probe = resource.registry.database + "/documents/" + CLOCK_PROBE_COLLECTION + "/" + nonce[:2]
+        start = time.monotonic_ns()
+        acknowledgement = self.rpc.client.commit(
+            request={"database": resource.registry.database, "writes": [{
+                "update": {"name": probe, "fields": {"nonce": {"string_value": nonce}}},
+                "update_transforms": [{"field_path": "observed_at", "set_to_server_value": "REQUEST_TIME"}],
+            }]},
+            retry=None,
+            timeout=0.5,
+        )
+        end = time.monotonic_ns()
+        if not isinstance(acknowledgement, CommitResponse) or not 0 <= end - start <= MAX_READ_LATENCY_NS:
+            raise GuardUnavailable("Fresh ingress clock Commit acknowledgement is unavailable")
+        committed = CommitResponse.pb(acknowledgement)
+        if not committed.HasField("commit_time") or len(committed.write_results) != 1:
+            raise GuardUnavailable("An exact ingress clock Commit acknowledgement is required")
+        write = committed.write_results[0]
+        if (not write.HasField("update_time") or len(write.transform_results) != 1
+                or write.transform_results[0].WhichOneof("value_type") != "timestamp_value"):
+            raise GuardUnavailable("An exact ingress clock transform acknowledgement is required")
+        stamps = (committed.commit_time, write.update_time, write.transform_results[0].timestamp_value)
+        values = []
+        for value in stamps:
+            value.ToDatetime()
+            if not 0 <= value.nanos < 1_000_000_000 or value.seconds <= 0:
+                raise GuardUnavailable("Fresh ingress clock acknowledgement time is malformed")
+            values.append(value.seconds * 1_000_000_000 + value.nanos)
+        provider_ns, update_ns, requested_ns = values
+        # REQUEST_TIME has millisecond precision. Its rounding may differ by
+        # <1ms; neither the write nor request time may predate this bounded RPC.
+        if (requested_ns % 1_000_000 or not 0 <= provider_ns - update_ns <= end - start
+                or not -1_000_000 < provider_ns - requested_ns <= end - start + 1_000_000):
+            raise GuardUnavailable("Fresh ingress clock acknowledgement times disagree")
         old = self._anchor
         if old is not None and (
             start < old.end_ns

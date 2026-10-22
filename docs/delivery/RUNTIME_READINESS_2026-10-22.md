@@ -60,3 +60,41 @@ Backend Ruff and Mypy passed for the changed modules. Frontend lint, type checki
 all 827 tests and the optimized production build passed using a synthetic local
 build secret. Independent read-only review found no actionable clock-sync issue.
 These checks are supporting evidence, not completed production outcomes.
+
+## Subsequent staged verification
+
+The full five-job CI run for source `1ccfdc8` passed, including its native-image
+checks. Both API and analysis candidates were then staged at zero traffic and
+passed their real private health checks. The API also passed the HTTPS redirect
+and unsigned-request refusal checks. Its signed availability handshake failed:
+the first HTTP 503 supplied a bounded clock hint, but the corrected second
+request also returned HTTP 503. Production traffic was not moved.
+
+A separate bounded diagnostic retained both responses. Their lower time bounds
+were `1792696561693` and `1792696541968` milliseconds: the second went backward
+by **19,725 ms**. This disproves the assumption that successive Firestore
+document `readTime` values provide the fresh wall clock required by the ingress
+guard. The [API contract](https://docs.cloud.google.com/firestore/docs/reference/rest/v1/projects.databases.documents/batchGet)
+describes document read timestamps; strong consistency establishes data
+freshness and does not provide the assumed clock bound. Repeating the same
+CI fixtures or applying another clock offset cannot establish that guarantee.
+Keep the failed verification and diagnostic as failures, not release permission.
+
+The replacement keeps the fresh control/identity/custody reads and anchors time
+to a complete fresh server acknowledgement. It must retain the existing expiry,
+monotonic bounds and durable replay checks. Regression evidence must cover
+backward read timestamps and absent, malformed, late or unknown acknowledgements.
+Actual staged signed availability remains required before traffic promotion.
+
+## Gemini request compatibility
+
+The selected Gemini 3.6 model received `candidate_count=1`, although Google's
+[Gemini 3.6 migration guide](https://ai.google.dev/gemini-api/docs/generate-content/whats-new-gemini-3.6)
+requires omitting that unsupported field for Gemini 3 and later. The source fix
+omits it for Gemini 3+ and aliases, retaining the single-candidate setting for
+known older Gemini 1/2 models. Output-token and durable budget limits are unchanged.
+Focused regression checks inspect actual SDK wire serialization for the four
+configured model choices; 199 focused tests, Ruff and Mypy passed without a
+provider generation request. This is a definite request-contract correction,
+not proof of the exact cause of the historical generic failure or of successful
+new tailoring. Both source corrections are prepared for one release.

@@ -154,7 +154,9 @@ def _chat_with_budget(messages: list[dict], budget) -> str:
                 )
                 config = types.GenerateContentConfig(
                     system_instruction=system_text or None,
-                    candidate_count=1,
+                    # Gemini 3+ does not support candidate_count. Known older
+                    # models retain their explicit single-candidate limit.
+                    candidate_count=1 if re.match(r"gemini-[12](?:[.-]|$)", model) else None,
                     max_output_tokens=record["max_output_tokens"],
                 )
                 response = client.models.generate_content(model=model, contents=contents, config=config)

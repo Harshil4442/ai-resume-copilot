@@ -29,6 +29,7 @@ from backend.tests.model_cost_fixtures import synthetic_policy
 from backend.tests.test_ai_efficiency import _create, _database
 from fastapi import HTTPException
 from google import genai
+from google.genai import models as genai_models
 
 MESSAGES = [{"role": "user", "content": "Synthetic Python role"}]
 GOOGLE = "https://generativelanguage.googleapis.com"
@@ -300,9 +301,17 @@ def test_legacy_unquoted_attempt_history_cannot_gain_fresh_budget(context):
         assert db.get(models.AnalysisRun, run_id).model_cost_quote is None
 
 
-def test_legacy_first_generation_freezes_price_and_hold_before_network(context, monkeypatch):
+@pytest.mark.parametrize("model,candidate_count", [
+    ("gemini-3.6-flash", None),
+    ("gemini-3.5-flash-lite", None),
+    ("gemini-3.1-flash-lite", None),
+    ("gemini-2.5-flash", 1),
+])
+def test_legacy_first_generation_freezes_price_and_hold_before_network(
+    context, monkeypatch, model, candidate_count
+):
     monkeypatch.setenv("LLM_API_KEY", "synthetic")
-    monkeypatch.setattr(llm_client, "LLM_MODEL", "gemini-3.6-flash")
+    monkeypatch.setattr(llm_client, "LLM_MODEL", model)
     seen = []
     class Models:
         def generate_content(self, *, config, **kwargs):
@@ -311,7 +320,12 @@ def test_legacy_first_generation_freezes_price_and_hold_before_network(context, 
                 seen.append(run.id)
                 assert run.model_cost_quote and run.model_cost_reserved_micros > 0
                 assert db.query(models.ModelCallEvent).one().output_token_limit == config.max_output_tokens == 1024
-                assert config.candidate_count == 1
+                wire = genai_models._GenerateContentConfig_to_mldev(None, config, {})
+                assert wire["maxOutputTokens"] == 1024
+                if candidate_count is None:
+                    assert "candidateCount" not in wire
+                else:
+                    assert wire["candidateCount"] == candidate_count
             return usage()
     def client(**kwargs):
         assert kwargs["http_options"].retry_options.attempts == 1

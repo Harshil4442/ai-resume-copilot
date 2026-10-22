@@ -1,6 +1,6 @@
 # HireWiz development and deployment progress
 
-Updated **22 October 2026, 18:00 UTC**; runtime observations below include the
+Updated **22 October 2026, 19:20 UTC**; runtime observations below include the
 subsequent owner upload, frontend promotion and native-clock diagnosis. This replaces the earlier
 21 October operational state. The original six outcomes below remain **OPEN**
 until their complete development and production acceptance requirements are met
@@ -13,17 +13,21 @@ employer sources have refreshed successfully. The owner's existing Chrome sessio
 reached the authenticated dashboard with the preserved balance of **7 AI units**.
 Existing original and previously approved tailored PDFs were previewed and
 downloaded successfully. A fresh owner PDF upload and deterministic parse also
-succeeded, with the balance unchanged at 7 AI units. Fresh Google sign-in, native
+succeeded, with the balance unchanged at 7 AI units. Its persisted scan/custody
+receipt subsequently passed all 26 owner-bound metadata checks. Fresh Google sign-in, native
 enrollment and the complete resume, pairing, paid-search and application journeys
-remain unaccepted. The HTTPS proxy correction is staged at zero traffic. Signed
-availability now reaches the native guard, where a measured clock difference
-causes HTTP 503; its source correction is under validation. **The overall goal is
+remain unaccepted. The HTTPS proxy and clock-hint corrections are staged at zero traffic.
+Actual verification still returned HTTP 503: two successive authenticated clock
+hints moved backward by 19,725 milliseconds. Firestore document read timestamps
+cannot serve as the assumed fresh wall clock. A server-acknowledged clock-event
+correction and a Gemini request-parameter correction are being prepared together.
+Neither has been promoted. **The overall goal is
 not complete.**
 
 | Original outcome | Status | Completed work within this outcome | Remaining acceptance |
 |---|---|---|---|
 | Official job search, ranking and user-selected job counts | OPEN | Deterministic search/ranking, selected counts and settlement safeguards are deployed. All 20 reviewed origins are enabled and healthy; all refreshed after activation. The latest aggregate shows 1,366 open postings freshly checked. | Verify the authenticated candidate journey: preferences/resume matching, pagination, requested counts, fresh/closed-job handling and per-delivered-result charges/recovery. Keep the twenty-origin scope visible. No worldwide or >95% coverage claim is established. |
-| Resume tailoring preserving PDF, DOCX and LaTeX formatting | OPEN | Source-preserving document engines, private rendering/scanning, the upload coordinator and the deployed source-selection/review safeguards are available. Fresh scanner acceptance and genuine scheduled scan/cleanup endpoint successes are recorded. Optional AI capability is enabled behind reviewed cost/consent/quote controls. The owner's existing original resume 28 and previously approved tailored version 2 previewed and downloaded on the canonical site; both retain one A4 page and nine annotations, with fonts, sections and layout visually preserved. A fresh PDF upload created resume 29 and completed the reservation, safety-check, extraction and parsed UI stages without an AI call; the balance stayed at 7 AI units. | Independently verify the new upload's scan/custody evidence; its original-download byte identity has passed. Complete approved-evidence review, new truthful tailoring, original/custom/tailored selection and deletion/cleanup across the supported formats. Existing PDF review and the new PDF parse do not establish new generation or complete PDF/DOCX/LaTeX acceptance. Scheduled HTTP 200 responses alone do not prove processing or deletion of an actual resume. |
+| Resume tailoring preserving PDF, DOCX and LaTeX formatting | OPEN | Source-preserving document engines, private rendering/scanning, the upload coordinator and the deployed source-selection/review safeguards are available. Fresh scanner acceptance and genuine scheduled scan/cleanup endpoint successes are recorded. Optional AI capability is enabled behind reviewed cost/consent/quote controls. The owner's existing original resume 28 and previously approved tailored version 2 previewed and downloaded on the canonical site; both retain one A4 page and nine annotations, with fonts, sections and layout visually preserved. A fresh PDF upload created resume 29 and completed the reservation, safety-check, extraction and parsed UI stages without an AI call; the balance stayed at 7 AI units. Its original-download byte identity and 26 persisted scan/custody checks passed. | Complete approved-evidence review, new truthful tailoring, original/custom/tailored selection and deletion/cleanup across the supported formats. Existing PDF review and the new PDF parse do not establish new generation or complete PDF/DOCX/LaTeX acceptance. Scheduled HTTP 200 responses alone do not prove processing or deletion of an actual resume. |
 | Candidate-reviewed direct company applications | OPEN | Schema19, native Firestore/KMS account/device infrastructure, website transport/pairing configuration and the configured Razorpay/Greenhouse companion implementation are deployed or packaged. The API account/ingress/pairing and basic assistance capabilities are enabled. The owner's existing Chrome session reaches the authenticated dashboard. | Publish and verify the staged proxy and new clock-synchronization corrections; independently verify fresh Google sign-in and native enrollment, companion installation/pairing, required/conditional form parity and the candidate-reviewed upload/submission/receipt/recovery journey. The account-enrollment page is unavailable and presents no password fields. Actual attachment, native upload, final submission and typed-control gates remain held; no real candidate submission acceptance is claimed. |
 | Paid search/application credits, profitable finite packs and payment recovery | OPEN | Three finite packs, separate service-credit/AI-unit balances, exact quotes, reservations, settlement/refunds and interrupted/duplicate recovery are implemented in the deployed source. Numeric expense/model policies version 2 are installed with the matching application. New unlimited offers are removed. | Paid sales and checkout remain held. Production payment, paid-search/application charging, refunds/recovery and actual-cost calibration remain unaccepted. Estimated margins are not proven profit. Resolve the commercial hosting arrangement before commercial activation. |
 | Fast responsive pages and SEO | OPEN | The SEO-corrected main-tree frontend is promoted. The live public homepage renders without horizontal overflow at 390, 768 and 1,440-pixel requested widths; mobile navigation opens and closes. Canonical HTTP checks verify pricing-specific sharing metadata, noindex on login/registration and authentication routes absent from the sitemap. | Verify complete authenticated laptop/PC/mobile journeys, current production accessibility/SEO and measured loading performance. A healthy homepage or earlier lab measurement does not establish complete production performance acceptance. |
@@ -43,6 +47,15 @@ Provider eligibility must be resolved before commercial activation; the owner
 instruction does not change provider terms. See the existing
 [operations guide](../../infra/gcp/README.md) and
 [full acceptance requirements](../requirements/JOB_SEARCH_AND_APPLICATION.md).
+
+Report free-prelaunch pilot acceptance separately from the intentionally held
+commercial and real-employer actions within these same six outcomes. A real
+payment or employer application must not be created as a smoke test. Existing
+controlled browser/database/provider-boundary fixtures cover accounting,
+submission and recovery behavior; they are not production payment or employer
+receipts. The remaining base-pilot journeys include ordinary enrollment/pairing,
+truthful current tailoring and authenticated usability. The sales hold is not a
+reason to repeat migrations or keep deploying the same source.
 
 ## Current deployed state
 
@@ -141,8 +154,11 @@ A subsequent fresh upload of the same **122,522-byte original PDF** created
 resume **29** through the canonical site. The UI progressed through reserved
 space, safety checks and extraction to **Resume parsed**. The operation used
 deterministic extraction without an AI call, and the balance remained **7 AI
-units** before and after. The UI retains the original source PDF. The new original download is byte-identical to the upload. Independent
-scan/custody readback remains pending. No new tailoring generation or DOCX/LaTeX upload acceptance is claimed.
+units** before and after. The UI retains the original source PDF. The new
+original download is byte-identical to the upload. Subsequent read-only metadata
+observation verified all 26 persisted receipt/custody checks; it did not retrieve
+current object metadata. No new tailoring generation or DOCX/LaTeX upload
+acceptance is claimed.
 Private PDFs, rendered pages, the fresh-upload screenshot and
 `fresh-upload.result.json` remain in the operator's `owner-resume-review` evidence
 directory outside this repository.
@@ -208,7 +224,12 @@ measured the signed issue time 11,747 ms ahead of the native provider-clock lowe
 bound. The temporary diagnostics were restored. The new source adds a bounded,
 authenticated availability-only clock synchronization without loosening the
 five-second expiry, custody checks or durable replay protection. Its deployment
-and enrollment acceptance remain pending. See the
+and enrollment acceptance remain pending. Actual staged verification then found
+that two fresh hints moved backward by 19,725 milliseconds. The hint mechanism
+cannot compensate for a database snapshot timestamp that is not a reliable wall
+clock; its failed verification remains retained and no traffic was promoted.
+The next correction replaces that clock assumption with a fresh acknowledged
+server event while preserving the existing expiry and replay guards. See the
 [runtime diagnosis](RUNTIME_READINESS_2026-10-22.md).
 Do not seed an account/device, replace the owner's identity, invent credentials
 or bypass ordinary proof.
@@ -216,13 +237,24 @@ or bypass ordinary proof.
 Existing original/approved-tailored PDF preview and download, plus a fresh owner
 PDF upload and deterministic parse, succeeded as described above. The new
 upload's original preview/download also succeeded, and the downloaded bytes
-exactly match the uploaded 122,522-byte PDF. Independent scan/custody evidence,
-a new successful tailoring run,
+exactly match the uploaded 122,522-byte PDF. A read-only owner-bound observation
+also passed all 26 persisted receipt/custody checks, including storage generation
+pins, completed release and recorded quarantine cleanup. This did not independently
+retrieve current object metadata. A new successful tailoring run,
 other supported formats, ordinary browser pairing, paid search and candidate
 submission remain unaccepted. Complete those
 genuine journeys within the existing consent/price/credit/permission controls.
 Keep unavailable submission capabilities visibly unavailable until their
 respective acceptance and owner review are complete.
+
+The fresh tailoring attempt failed before document editing and returned its
+reserved AI units. A separate source review identified a definite request-contract
+defect: Gemini 3+ does not support `candidate_count`, which the client always sent.
+The compatibility fix omits that parameter for Gemini 3+ and aliases while retaining
+the existing output-token cap and budget admission. Its focused regression checks
+actual SDK request serialization without making a generation request. The old
+generic error does not prove this was the only cause of that historical failure;
+a new successful owner-reviewed generation remains required.
 
 The three finite offers remain Starter **₹649 / 100 service credits + 2 AI
 units**, Growth **₹1,099 / 300 + 6**, and Scale **₹2,199 / 700 + 15**. Deployed

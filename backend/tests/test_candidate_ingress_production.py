@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from threading import RLock, get_ident
@@ -59,6 +60,10 @@ class NativeTransport:
         self.clock_offset_ns = 0
         self.clock_reads = []
         self.clock_fault = None
+        self.read_time_offset_ns = 0
+        self.clock_commits = []
+        self.clock_documents = {}
+        self.clock_commit_fault = None
         self.before_clock = None
         self.commit_fault = None
         self.before_commit = None
@@ -104,7 +109,8 @@ class NativeTransport:
             self.clock_reads.append(request)
             if self.before_clock:
                 self.before_clock()
-            now = NOW * 1_000_000 + time.monotonic_ns() - self.clock_start + self.clock_offset_ns
+            now = (NOW * 1_000_000 + time.monotonic_ns() - self.clock_start
+                   + self.clock_offset_ns + self.read_time_offset_ns)
             stamp = Timestamp(seconds=now // 1_000_000_000, nanos=now % 1_000_000_000)
             path = request.documents[0]
             if path not in self.data:
@@ -122,6 +128,8 @@ class NativeTransport:
 
     def commit(self, request, **kwargs):
         with self.lock:
+            if not request.transaction:
+                return self.clock_commit(request, **kwargs)
             if self.before_commit:
                 self.before_commit()
             for path in self.reads[request.transaction]:
@@ -144,6 +152,59 @@ class NativeTransport:
             if self.commit_fault == "persist":
                 raise ServiceUnavailable("Owned commit ACK lost after persistence")
             return CommitResponse(commit_time=stamp, write_results=[WriteResult(update_time=stamp) for _ in request.writes])
+
+    def clock_commit(self, request, **kwargs):
+        self.outside()
+        assert request.database == self.case.ingress_resource.registry.database
+        assert len(request.writes) == 1 and kwargs["timeout"] <= 0.5
+        write = request.writes[0]
+        assert write._pb.WhichOneof("operation") == "update"
+        assert not write._pb.HasField("update_mask") and not write._pb.HasField("current_document")
+        assert set(write.update.fields) == {"nonce"}
+        assert write.update.fields["nonce"]._pb.WhichOneof("value_type") == "string_value"
+        nonce = write.update.fields["nonce"].string_value
+        assert re.fullmatch(r"[a-f0-9]{32}", nonce)
+        assert write.update.name == request.database + "/documents/candidate_ingress_clock_probes/" + nonce[:2]
+        assert len(write.update_transforms) == 1
+        transform = write.update_transforms[0]
+        assert transform.field_path == "observed_at"
+        assert transform._pb.WhichOneof("transform_type") == "set_to_server_value"
+        assert transform.set_to_server_value == 1  # REQUEST_TIME
+        self.clock_commits.append(request)
+        fault = self.clock_commit_fault
+        if fault in {"unknown_before", "aborted"}:
+            raise (Aborted if fault == "aborted" else ServiceUnavailable)("Owned clock Commit unavailable")
+        if fault == "slow":
+            time.sleep(0.01)
+        now = NOW * 1_000_000 + time.monotonic_ns() - self.clock_start + self.clock_offset_ns
+        stamp = Timestamp(seconds=now // 1_000_000_000, nanos=now % 1_000_000_000)
+        request_time = Timestamp(seconds=stamp.seconds, nanos=stamp.nanos // 1_000_000 * 1_000_000)
+        self.clock_documents[write.update.name] = {"nonce": nonce, "observed_at": request_time}
+        if fault == "unknown_after":
+            raise ServiceUnavailable("Owned clock Commit ACK lost after persistence")
+        response = CommitResponse(commit_time=stamp, write_results=[WriteResult(
+            update_time=stamp, transform_results=[{"timestamp_value": request_time}])])
+        if fault == "missing_commit_time":
+            response._pb.ClearField("commit_time")
+        elif fault == "missing_update_time":
+            response._pb.write_results[0].ClearField("update_time")
+        elif fault == "missing_transform":
+            response._pb.write_results[0].ClearField("transform_results")
+        elif fault == "extra_write":
+            response.write_results.append(WriteResult(update_time=stamp))
+        elif fault == "extra_transform":
+            response.write_results[0].transform_results.append({"timestamp_value": request_time})
+        elif fault == "wrong_transform":
+            response._pb.write_results[0].transform_results[0].string_value = "owned-malformed"
+        elif fault == "invalid_commit_time":
+            response._pb.commit_time.nanos = 1_000_000_000
+        elif fault == "non_millisecond_transform":
+            response._pb.write_results[0].transform_results[0].timestamp_value.nanos += 1
+        elif fault == "future_transform":
+            response._pb.write_results[0].transform_results[0].timestamp_value.seconds += 1
+        elif fault == "old_update_time":
+            response._pb.write_results[0].update_time.seconds -= 10
+        return response
 
     def rollback(self, request, **kwargs):
         with self.lock:
@@ -226,6 +287,7 @@ def test_real_factory_is_structural_then_composes_sdk_and_retains_one_safe_ack(i
     value = assertion(c)
     assert send(c, value) is None
     assert len(c.transport.mutations) == 1 and len(c.transport.clock_reads) == 2
+    assert len(c.transport.clock_commits) == 2 and len(c.transport.clock_documents) <= 2
     assert c.transport.mutations[0]["value"]["resource"] == c.ingress_resource.model_dump(mode="json")
     retained = canonical(c.transport.mutations[0]).encode()
     assert BODY not in retained and AUTH not in retained and c.key.secret not in retained
@@ -253,6 +315,52 @@ def test_clock_synchronization_retains_five_second_expiry_and_requires_a_new_non
     assert len(c.transport.mutations) == 1
     with pytest.raises(GuardUnavailable):
         send(c, corrected)
+    assert len(c.transport.mutations) == 1
+
+
+def test_backwards_snapshot_read_time_does_not_anchor_the_ingress_clock(ingress):
+    c = ingress
+    def older_snapshot():
+        c.transport.read_time_offset_ns = -20_000_000_000 * len(c.transport.clock_reads)
+    c.transport.before_clock = older_snapshot
+    assert send(c) is None
+    assert len(c.transport.mutations) == 1 and len(c.transport.clock_commits) == 2
+    stamps = [row.fields["nonce"].string_value for request in c.transport.clock_commits
+              for row in [request.writes[0].update]]
+    assert len(set(stamps)) == 2
+
+
+@pytest.mark.parametrize("fault", [
+    "missing_commit_time", "missing_update_time", "missing_transform", "extra_write", "extra_transform",
+    "wrong_transform", "invalid_commit_time", "non_millisecond_transform", "future_transform", "old_update_time",
+    "unknown_before", "unknown_after", "aborted", "slow",
+])
+def test_clock_commit_requires_one_complete_fresh_ack_without_retry(ingress, monkeypatch, fault):
+    c = ingress
+    c.transport.clock_commit_fault = fault
+    calls_before = c.native.sdk.client.commit.call_count
+    if fault == "slow":
+        monkeypatch.setattr(production, "MAX_READ_LATENCY_NS", 1_000_000)
+    with pytest.raises(GuardUnavailable):
+        send(c)
+    assert len(c.transport.clock_commits) == 1 and not c.transport.mutations
+    assert c.native.sdk.client.commit.call_count == calls_before + 1
+    assert c.native.sdk.client.commit.call_args.kwargs["retry"] is None
+    assert len(c.transport.clock_documents) == int(fault not in {"unknown_before", "aborted"})
+
+
+def test_clock_probe_storage_uses_only_fixed_shards_without_candidate_content(ingress, monkeypatch):
+    from uuid import UUID
+    c = ingress
+    nonces = iter([UUID(hex="7f" + "1" * 30), UUID(hex="7f" + "2" * 30)])
+    monkeypatch.setattr(production, "uuid4", lambda: next(nonces))
+    assert send(c) is None
+    assert len(c.transport.clock_commits) == 2 and len(c.transport.clock_documents) == 1
+    path, stored = next(iter(c.transport.clock_documents.items()))
+    assert path == c.ingress_resource.registry.database + "/documents/candidate_ingress_clock_probes/7f"
+    assert set(stored) == {"nonce", "observed_at"} and stored["nonce"] == "7f" + "2" * 30
+    requests = b"".join(type(request).serialize(request) for request in c.transport.clock_commits)
+    assert BODY not in requests and AUTH not in requests and c.key.secret not in requests
     assert len(c.transport.mutations) == 1
 
 
