@@ -1,3 +1,4 @@
+import { createHash, webcrypto } from "node:crypto";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -13,13 +14,52 @@ vi.mock("../lib/api", () => ({
   apiGet: vi.fn(), apiPostForm: vi.fn(), apiPostJson: vi.fn(), apiPutJson: vi.fn(),
   apiBlob: vi.fn(), apiDownload: vi.fn(),
 }));
-vi.mock("../lib/accountTransportClient", () => ({ accountMutationHeaders: vi.fn() }));
+vi.mock("../lib/accountTransportClient", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../lib/accountTransportClient")>(),
+  accountMutationHeaders: vi.fn(),
+}));
 
 const docxType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const maximum = 5 * 1024 * 1024;
 const texSource = "\\documentclass{article}\\usepackage[T1]{fontenc}\\usepackage{lmodern}\\begin{document}\nBuilt Python reports.\n\\end{document}";
 const sourceZipBase64 = "UEsDBBQAAAAIANu5SV2VnuAKYgAAAHgAAAAKAAAAcmVzdW1lLnRleItJyU8uzU3NK0nOSSwurk4sKslMzkmtjSktTi1ITM5OTE+NDjGMrU7LzytJzUtGFq/Oyc1PSS3Kq41JSk3PzKuGGVTL5VSamVOiEFBZkpGfp1CUWpBfVFKsxxWTmpeCUAQAUEsBAhQDFAAAAAgA27lJXZWe4ApiAAAAeAAAAAoAAAAAAAAAAAAAAIABAAAAAHJlc3VtZS50ZXhQSwUGAAAAAAEAAQA4AAAAigAAAAAA";
 const clients: QueryClient[] = [];
+const fetchMock = vi.fn<typeof fetch>();
+const uploadId = "rup_" + "a".repeat(32);
+
+function nativeFile(name: string, type: string) {
+  const bytes = /\.zip$/i.test(name) ? Uint8Array.from(atob(sourceZipBase64), (character) => character.charCodeAt(0)) : new TextEncoder().encode(texSource);
+  const file = new File([bytes], name, { type });
+  Object.defineProperty(file, "arrayBuffer", { value: async () => bytes.buffer });
+  return { file, bytes };
+}
+
+function serveNativeUpload(file: File, sourceFormat: "tex" | "texzip", rejected = false) {
+  vi.stubEnv("NEXT_PUBLIC_RESUME_DIRECT_UPLOAD_ENABLED", "true");
+  vi.stubGlobal("crypto", webcrypto);
+  vi.stubGlobal("fetch", fetchMock);
+  const query = new URLSearchParams({ "X-Goog-Algorithm": "GOOG4-RSA-SHA256", "X-Goog-Expires": "300",
+    "X-Goog-SignedHeaders": "content-type;host;x-goog-content-length-range;x-goog-if-generation-match", "X-Goog-Signature": "a".repeat(512) });
+  const uploadUrl = `https://storage.googleapis.com/synthetic-quarantine/quarantine/${uploadId}/source?${query}`;
+  const json = (value: unknown) => new Response(JSON.stringify(value), { headers: { "Content-Type": "application/json" } });
+  fetchMock.mockImplementation(async (url, init) => {
+    if (url === "/api/backend/resume/uploads" && init?.method === "POST") return json({
+      upload_id: uploadId, state: "awaiting_upload", upload_url: uploadUrl, method: "PUT",
+      headers: { "Content-Type": sourceFormat === "tex" ? "application/x-tex" : "application/zip",
+        "x-goog-if-generation-match": "0", "x-goog-content-length-range": `${file.size},${file.size}` },
+      upload_grant_expires_at: new Date(Date.now() + 300_000).toISOString(), expires_at: new Date(Date.now() + 900_000).toISOString(),
+    });
+    if (url === uploadUrl && init?.method === "PUT") return new Response(null, { status: 200 });
+    if (url === `/api/backend/resume/uploads/${uploadId}/complete` && init?.method === "POST") return json({
+      upload_id: uploadId, state: rejected ? "rejected" : "released", error_code: rejected ? "source_unsupported" : null,
+      resume: rejected ? null : { resume_id: 42, source_available: true, source_format: sourceFormat, skills: [], experience_years: 0, sections: {}, contact_info: {} },
+    });
+    if (url === `/api/backend/resume/uploads/${uploadId}` && init?.method === "DELETE") return json({
+      upload_id: uploadId, state: "cancelled", error_code: null, resume: null,
+    });
+    throw new Error("Unexpected synthetic native-upload request.");
+  });
+}
 
 function application(): EmployerApplication {
   return {
@@ -37,13 +77,14 @@ function application(): EmployerApplication {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.stubEnv("NEXT_PUBLIC_RESUME_DIRECT_UPLOAD_ENABLED", "false");
   const catalog: JobServiceCatalog = { enabled: true, auto_submit_enabled: false,
     search_credits_per_job: 2, apply_credits_per_job: 7, pricing_version: "fixture-price", max_search_jobs: 20, balance: 10, sources: [] };
   vi.mocked(apiGet).mockImplementation(async (path) => path.endsWith("/catalog") ? catalog : application());
   vi.mocked(apiPostForm).mockResolvedValue({ resume_id: 42, source_available: true, source_format: "tex" });
   vi.mocked(accountMutationHeaders).mockResolvedValue({ "Content-Type": "application/json", "X-Hirewiz-Account-CSRF": "9".repeat(64) });
 });
-afterEach(() => { cleanup(); clients.forEach((client) => client.clear()); clients.length = 0; vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); clients.forEach((client) => client.clear()); clients.length = 0; vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
 async function upload(file: File) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } } });
@@ -55,22 +96,39 @@ async function upload(file: File) {
 
 describe("custom resume upload admission through the application review UI", () => {
   it.each([
-    ["resume.pdf", "application/pdf"], ["resume.docx", docxType],
-    ["resume.tex", "application/x-tex"], ["resume.TEX", "text/x-tex"],
-    ["resume.tex", "text/plain"], ["source.zip", "application/zip"],
-    ["source.ZIP", "application/x-zip-compressed"], ["source.zip", "application/octet-stream"],
-    ["resume.tex", ""], ["resume.pdf", ""],
-  ])("sends supported %s (%s) unchanged for server validation, without applying or approving", async (name, type) => {
-    const contents = /\.zip$/i.test(name) ? Uint8Array.from(atob(sourceZipBase64), (character) => character.charCodeAt(0)) : /\.tex$/i.test(name) ? texSource : "Local source upload fixture";
-    const file = new File([contents], name, { type });
+    ["resume.pdf", "application/pdf"], ["resume.docx", docxType], ["resume.pdf", ""],
+  ])("sends supported %s (%s) unchanged through the established server route, without applying or approving", async (name, type) => {
+    const file = new File(["Local source upload fixture"], name, { type });
     await upload(file);
     await waitFor(() => expect(apiPostForm).toHaveBeenCalledTimes(1));
     const [path, body] = vi.mocked(apiPostForm).mock.calls[0];
     expect(path).toBe("/resume/parse");
     expect(body.get("file")).toBe(file);
+    expect(fetchMock).not.toHaveBeenCalled();
     expect(apiPostJson).not.toHaveBeenCalled();
     expect(apiPutJson).not.toHaveBeenCalled();
     await screen.findByText("Your saved preview is out of date. Save the package to preview the new file.");
+  });
+
+  it.each([
+    ["resume.tex", "application/x-tex"], ["resume.TEX", "text/x-tex"], ["resume.tex", "text/plain"],
+    ["source.zip", "application/zip"], ["source.ZIP", "application/x-zip-compressed"],
+    ["source.zip", "application/octet-stream"], ["resume.tex", ""],
+  ])("sends native %s (%s) unchanged through secure quarantine, without applying or approving", async (name, type) => {
+    const { file, bytes } = nativeFile(name, type);
+    serveNativeUpload(file, /\.zip$/i.test(name) ? "texzip" : "tex");
+    await upload(file);
+    await screen.findByText("Your saved preview is out of date. Save the package to preview the new file.");
+    expect(fetchMock.mock.calls.map(([url, init]) => [init?.method, String(url).startsWith("https://storage.googleapis.com/") ? "storage" : url])).toEqual([
+      ["POST", "/api/backend/resume/uploads"], ["PUT", "storage"], ["POST", `/api/backend/resume/uploads/${uploadId}/complete`],
+    ]);
+    expect(JSON.parse(fetchMock.mock.calls[0][1]!.body as string)).toMatchObject({
+      filename: file.name, size_bytes: file.size, sha256: createHash("sha256").update(bytes).digest("hex"),
+    });
+    expect(fetchMock.mock.calls[1][1]).toMatchObject({ body: file, credentials: "omit", redirect: "error" });
+    expect(apiPostForm).not.toHaveBeenCalled();
+    expect(apiPostJson).not.toHaveBeenCalled();
+    expect(apiPutJson).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -86,17 +144,23 @@ describe("custom resume upload admission through the application review UI", () 
     expect(apiPutJson).not.toHaveBeenCalled();
   });
 
-  it("does not send a 5 MB native source through the limited BFF route", async () => {
+  it("does not bypass secure admission for a native source when direct upload is disabled", async () => {
     await upload(new File([new Uint8Array(maximum)], "source.zip", { type: "application/zip" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("cannot pass through the current website upload route");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Secure upload is unavailable for TeX and ZIP source projects");
     expect(apiPostForm).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("shows the server's source refusal without approving or changing the saved package", async () => {
-    vi.mocked(apiPostForm).mockRejectedValue(new Error("This TeX project is unsupported. Upload your original/custom PDF."));
-    await upload(new File(["unsupported source fixture"], "resume.tex", { type: "text/plain" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("This TeX project is unsupported. Upload your original/custom PDF.");
-    expect(apiPostForm).toHaveBeenCalledTimes(1);
+  it("shows the native safety refusal without approving or changing the saved package", async () => {
+    const { file } = nativeFile("resume.tex", "text/plain");
+    serveNativeUpload(file, "tex", true);
+    await upload(file);
+    expect(await screen.findByRole("alert")).toHaveTextContent("This document did not pass resume safety checks.");
+    expect(fetchMock.mock.calls.map(([url, init]) => [init?.method, String(url).startsWith("https://storage.googleapis.com/") ? "storage" : url])).toEqual([
+      ["POST", "/api/backend/resume/uploads"], ["PUT", "storage"], ["POST", `/api/backend/resume/uploads/${uploadId}/complete`],
+      ["DELETE", `/api/backend/resume/uploads/${uploadId}`],
+    ]);
+    expect(apiPostForm).not.toHaveBeenCalled();
     expect(apiPutJson).not.toHaveBeenCalled();
     expect(apiPostJson).not.toHaveBeenCalled();
     expect(screen.queryByText("Your saved preview is out of date. Save the package to preview the new file.")).toBeNull();
