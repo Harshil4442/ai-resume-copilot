@@ -174,11 +174,27 @@ deterministic extraction without an AI call, and the balance remained **7 AI
 units** before and after. The UI retains the original source PDF. The new
 original download is byte-identical to the upload. Subsequent read-only metadata
 observation verified all 26 persisted receipt/custody checks; it did not retrieve
-current object metadata. No new tailoring generation or DOCX/LaTeX upload
-acceptance is claimed.
+current object metadata. That observation did not establish new tailoring or
+DOCX/LaTeX upload acceptance.
 Private PDFs, rendered pages, the fresh-upload screenshot and
 `fresh-upload.result.json` remain in the operator's `owner-resume-review` evidence
 directory outside this repository.
+
+Later canonical checks uploaded synthetic **36,890-byte DOCX** and **933-byte
+TeX** resumes. Both parsed deterministically, with the AI balance unchanged at
+**7**. The DOCX's owner-bound receipt records release after one ClamAV inspection
+attempt, with no error and matching source size/hash. Both original downloads
+are byte-identical to their inputs. The TeX source uses the existing separate
+deterministic route; this is not evidence of TeX quarantine/scan, compilation,
+new tailoring or deletion/cleanup acceptance.
+
+That journey exposed a transient preview-selection defect: the URL for the new
+TeX source briefly displayed the previous cached DOCX while its list refreshed.
+The frontend correction binds explicit resume requests to that exact source,
+refreshes the list on entry and resets selector overrides when owner or document
+changes. Missing or malformed explicit IDs cannot select another file. Deferred
+list and late-PDF-response regressions cover this boundary. This source change
+does not establish a successful new tailoring operation.
 
 The GCP notification channel routes to the owner's selected signed-in Google
 account. Definition attention, missing heartbeat, API 5xx and latency policies
@@ -190,9 +206,21 @@ Read-only owner-mailbox evidence verified actual **INBOX** delivery of GCP
 scanner-definition attention open/resolved messages and GitHub maintenance/main
 CI failure messages. An attention-resolved email alone does not prove scanner
 recovery; the separate successful native refresh provides that evidence.
-Vercel failure delivery, the new native Cloud Build rule's live delivery and an
-actual missing-heartbeat incident remain unexercised. No synthetic heartbeat,
-forced production failure or test email was used to create this evidence.
+Actual missing-heartbeat firing and prior resolved notices were subsequently
+found in the owner's INBOX. The latest incident opened at **22 October,
+21:37:10 UTC** after no hourly GitHub monitor runs materialized following the
+successful 18:31 run. Existing monitor-only run **39860463269** then succeeded
+at **21:51:29 UTC**, reverified the current inspector pin/accepted native receipt,
+and emitted a genuine fresh heartbeat observed in native metrics. Refresh,
+build and pin-transition steps were skipped. Incident closure and subsequent
+cron cadence were not established by that observation. GitHub documents that
+[scheduled events can be delayed or dropped](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule);
+the cause of this particular run-creation gap remains unknown.
+
+Vercel failure and the new native Cloud Build rule's live delivery remain
+unexercised. API 5xx/latency policies are configured, without retained
+condition-specific incident/inbox proof. No synthetic heartbeat, forced
+production failure or test email was used to create this evidence.
 Preserve the notification channel and policy resource handles listed in the
 [operations guide](../../infra/gcp/README.md).
 

@@ -19,15 +19,28 @@ function ResumePreviewContent() {
   const searchParams = useSearchParams();
   const { data: session, status: sessionStatus } = useSession();
   const ownerKey = `${sessionStatus}:${session?.user?.id || ""}`;
-  const downloadController = useRef<AbortController | null>(null);
-  const requestedId = Number(searchParams.get("resume"));
+  const requestedValue = searchParams.get("resume");
   const versionId = searchParams.get("version");
+  return <ResumePreviewDocument key={JSON.stringify([ownerKey, requestedValue, versionId])}
+    ownerKey={ownerKey} authenticated={sessionStatus === "authenticated"} requestedValue={requestedValue} versionId={versionId} />;
+}
+
+function ResumePreviewDocument({ ownerKey, authenticated, requestedValue, versionId }: {
+  ownerKey: string; authenticated: boolean; requestedValue: string | null; versionId: string | null;
+}) {
+  const downloadController = useRef<AbortController | null>(null);
+  const requestedId = requestedValue !== null && /^[1-9]\d*$/.test(requestedValue) && Number.isSafeInteger(Number(requestedValue))
+    ? Number(requestedValue) : null;
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [pdfPreview, setPdfPreview] = useState<{ documentKey: string; url: string } | null>(null);
   const [pdfError, setPdfError] = useState<{ documentKey: string; message: string } | null>(null);
   const [previewAttempt, setPreviewAttempt] = useState(0);
-  const resumes = useQuery({ queryKey: ["resumes", ownerKey], queryFn: () => apiGet<ResumeListResponse>("/resume/list"), enabled: sessionStatus === "authenticated" });
-  const selectedResume = resumes.data?.resumes.find((resume) => resume.id === (selectedId ?? requestedId)) || resumes.data?.resumes[0];
+  const resumes = useQuery({ queryKey: ["resumes", ownerKey], queryFn: () => apiGet<ResumeListResponse>("/resume/list"), enabled: authenticated, refetchOnMount: "always" });
+  const targetId = selectedId ?? requestedId;
+  // A cached list can predate the upload linked by this URL. Never substitute
+  // another file for an explicit request or a deliberate selector choice.
+  const selectedResume = targetId !== null ? resumes.data?.resumes.find((resume) => resume.id === targetId)
+    : requestedValue === null ? resumes.data?.resumes[0] : undefined;
   const resumeId = selectedResume?.id;
   const sourceAvailable = selectedResume?.source_available;
   const sourceFormat = selectedResume?.source_format;
@@ -98,9 +111,11 @@ function ResumePreviewContent() {
           <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">{versionId ? "This preview uses the exact PDF served by the download button. Check its text and layout, then return to your opportunity workspace to approve or reject the version." : "View or download the file you uploaded, with its original formatting. Tailored versions and proposed changes are reviewed in your opportunity workspace."}</p>
         </header>
 
-        {!versionId && resumes.isLoading ? <div className="mt-8"><LoadingBlock rows={5} /></div> : null}
+        {!versionId && !selectedResume && (resumes.isLoading || resumes.isFetching) ? <div className="mt-8" role="status"><p className="mb-4 text-sm text-muted-foreground">Loading requested resume...</p><LoadingBlock rows={5} /></div> : null}
         {!versionId && resumes.isError ? <div className="mt-6 flex flex-wrap items-center gap-3" role="alert"><p className="text-sm text-coral">{resumes.error instanceof Error ? resumes.error.message : "Could not load your resumes."}</p><Button size="sm" variant="secondary" onClick={() => void resumes.refetch()}>Retry loading</Button></div> : null}
-        {!versionId && !resumes.isLoading && !resumes.isError && !selectedResume ? <EmptyState icon={FileUp} title="Add your source resume" description="Upload a PDF or DOCX to keep the original file available for preview and tailoring." action={<Button asChild><Link href="/resume">Upload resume</Link></Button>} /> : null}
+        {!versionId && !resumes.isLoading && !resumes.isFetching && !resumes.isError && !selectedResume ? targetId !== null || requestedValue !== null
+          ? <EmptyState icon={FileUp} title="Requested resume is unavailable" description="Refresh the list or return to Resume upload to choose a source. No other file has been selected." action={<Button variant="secondary" onClick={() => void resumes.refetch()}>Retry loading</Button>} />
+          : <EmptyState icon={FileUp} title="Add your source resume" description="Upload a PDF or DOCX to keep the original file available for preview and tailoring." action={<Button asChild><Link href="/resume">Upload resume</Link></Button>} /> : null}
 
         {versionId ? (
           <section className="mt-7">
