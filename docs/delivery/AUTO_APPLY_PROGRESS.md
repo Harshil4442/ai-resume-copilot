@@ -1,37 +1,39 @@
 # HireWiz development and deployment progress
 
-Updated **22 October 2026, 19:20 UTC**; runtime observations below include the
-subsequent owner upload, frontend promotion and native-clock diagnosis. This replaces the earlier
-21 October operational state. The original six outcomes below remain **OPEN**
-until their complete development and production acceptance requirements are met
-within the owner-approved pilot. A deployed service, a successful migration,
-source validation or a passing build is supporting evidence within an outcome;
-it is not an additional checkpoint or proof of a complete customer journey.
+Updated **22 October 2026** after the accepted runtime repair and canonical
+frontend promotion. The original six outcomes below remain **OPEN** until their
+complete development and production acceptance requirements are met within the
+owner-approved pilot. A deployed service, a successful migration, source
+validation or a passing build is supporting evidence within an outcome; it is
+not an additional checkpoint or proof of a complete customer journey.
 
-The current application is deployed on GCP and Vercel. The twenty reviewed
-employer sources have refreshed successfully. The owner's existing Chrome session
-reached the authenticated dashboard with the preserved balance of **7 AI units**.
-Existing original and previously approved tailored PDFs were previewed and
-downloaded successfully. A fresh owner PDF upload and deterministic parse also
-succeeded, with the balance unchanged at 7 AI units. Its persisted scan/custody
-receipt subsequently passed all 26 owner-bound metadata checks. Fresh Google sign-in, native
-enrollment and the complete resume, pairing, paid-search and application journeys
-remain unaccepted. The HTTPS proxy and clock-hint corrections are staged at zero traffic.
-Actual verification still returned HTTP 503: two successive authenticated clock
-hints moved backward by 19,725 milliseconds. Firestore document read timestamps
-cannot serve as the assumed fresh wall clock. A server-acknowledged clock-event
-correction and a Gemini request-parameter correction are being prepared together.
-Neither has been promoted. **The overall goal is
-not complete.**
+The runtime proxy, native clock and Gemini request-compatibility corrections are
+now deployed. The canonical website's account-availability endpoint returns
+**HTTP 200** with both registration options strictly `true`. Fresh ordinary
+Google sign-in passed. Native Google verification reached the owner, but human
+password submission, completed native enrollment and browser pairing remain
+unverified. Existing original/approved-tailored PDF review and a fresh
+PDF upload/parse succeeded. One fresh post-repair tailoring attempt failed at
+Gemini with **HTTP 402** before a change plan or document editing; AI Studio
+confirms **Tier 1 Prepay / No credits**. Reserved AI units were waived, the
+balance remains **7**, and no new resume version was saved. There was no
+automatic generation retry. Internal HireWiz credits do not fund Google's
+provider balance.
+
+Expense-policy secret version **3** is now accepted on all three application
+services, with canonical traffic verified and renewal rollout tags cleaned.
+Model-policy secret version **2** is unchanged. The finite expense-policy
+expiry is **29 October 2026, 20:28:54.855717 UTC**. Prices, economic caps and
+retained spending history are unchanged. **The overall goal is not complete.**
 
 | Original outcome | Status | Completed work within this outcome | Remaining acceptance |
 |---|---|---|---|
-| Official job search, ranking and user-selected job counts | OPEN | Deterministic search/ranking, selected counts and settlement safeguards are deployed. All 20 reviewed origins are enabled and healthy; all refreshed after activation. The latest aggregate shows 1,366 open postings freshly checked. | Verify the authenticated candidate journey: preferences/resume matching, pagination, requested counts, fresh/closed-job handling and per-delivered-result charges/recovery. Keep the twenty-origin scope visible. No worldwide or >95% coverage claim is established. |
-| Resume tailoring preserving PDF, DOCX and LaTeX formatting | OPEN | Source-preserving document engines, private rendering/scanning, the upload coordinator and the deployed source-selection/review safeguards are available. Fresh scanner acceptance and genuine scheduled scan/cleanup endpoint successes are recorded. Optional AI capability is enabled behind reviewed cost/consent/quote controls. The owner's existing original resume 28 and previously approved tailored version 2 previewed and downloaded on the canonical site; both retain one A4 page and nine annotations, with fonts, sections and layout visually preserved. A fresh PDF upload created resume 29 and completed the reservation, safety-check, extraction and parsed UI stages without an AI call; the balance stayed at 7 AI units. Its original-download byte identity and 26 persisted scan/custody checks passed. | Complete approved-evidence review, new truthful tailoring, original/custom/tailored selection and deletion/cleanup across the supported formats. Existing PDF review and the new PDF parse do not establish new generation or complete PDF/DOCX/LaTeX acceptance. Scheduled HTTP 200 responses alone do not prove processing or deletion of an actual resume. |
-| Candidate-reviewed direct company applications | OPEN | Schema19, native Firestore/KMS account/device infrastructure, website transport/pairing configuration and the configured Razorpay/Greenhouse companion implementation are deployed or packaged. The API account/ingress/pairing and basic assistance capabilities are enabled. The owner's existing Chrome session reaches the authenticated dashboard. | Publish and verify the staged proxy and new clock-synchronization corrections; independently verify fresh Google sign-in and native enrollment, companion installation/pairing, required/conditional form parity and the candidate-reviewed upload/submission/receipt/recovery journey. The account-enrollment page is unavailable and presents no password fields. Actual attachment, native upload, final submission and typed-control gates remain held; no real candidate submission acceptance is claimed. |
-| Paid search/application credits, profitable finite packs and payment recovery | OPEN | Three finite packs, separate service-credit/AI-unit balances, exact quotes, reservations, settlement/refunds and interrupted/duplicate recovery are implemented in the deployed source. Numeric expense/model policies version 2 are installed with the matching application. New unlimited offers are removed. | Paid sales and checkout remain held. Production payment, paid-search/application charging, refunds/recovery and actual-cost calibration remain unaccepted. Estimated margins are not proven profit. Resolve the commercial hosting arrangement before commercial activation. |
-| Fast responsive pages and SEO | OPEN | The SEO-corrected main-tree frontend is promoted. The live public homepage renders without horizontal overflow at 390, 768 and 1,440-pixel requested widths; mobile navigation opens and closes. Canonical HTTP checks verify pricing-specific sharing metadata, noindex on login/registration and authentication routes absent from the sitemap. | Verify complete authenticated laptop/PC/mobile journeys, current production accessibility/SEO and measured loading performance. A healthy homepage or earlier lab measurement does not establish complete production performance acceptance. |
-| GCP/Vercel deployment, preserved-data migration and monitoring | OPEN | Preserved-data cutover, schema19 migration, the final application rollout, frontend promotion, coordinator activation, clean traffic routes, resumed consumer queues/schedules, genuine scheduled successes, fresh source ingestion and live monitoring are recorded. Selected GCP/GitHub alerts have reached the owner's Google inbox. | Resolve the native availability clock rejection, verify fresh Google sign-in/native enrollment and complete production resume, search, pairing and candidate-approved application/recovery journeys. Verify the still-unexercised notification routes and required operational acceptance. Preserve the paid-sales hold. |
+| Official job search, ranking and user-selected job counts | OPEN | Deterministic search/ranking, selected counts and settlement safeguards are deployed. All 20 reviewed origins are enabled and healthy; all refreshed after activation. The recorded aggregate shows 1,366 open postings freshly checked. Authenticated search configuration and mobile layout were observed. | Verify preferences/resume matching, pagination, requested counts, fresh/closed-job handling and per-delivered-result charges/recovery in a completed candidate search. The owner account has no service credits and no paid search was launched. Keep the twenty-origin scope visible; worldwide expansion and an independent >95% coverage assessment remain follow-on work. |
+| Resume tailoring preserving PDF, DOCX and LaTeX formatting | OPEN | Source-preserving document engines, private rendering/scanning, upload coordination and source-selection/review safeguards are deployed. Existing original/approved-tailored PDFs preview and download with one A4 page, nine annotations and visually preserved fonts/sections/layout. A fresh deterministic PDF upload/parse retained byte-identical original download and passed 26 persisted scan/custody checks. The deployed Gemini compatibility fix now has a real post-repair observation: HTTP 402 before planning/layout, waived units, balance 7 and no saved version. | Fund the provider account before a separately approved new generation; do not retry automatically. Complete truthful new tailoring, evidence review, original/custom/tailored selection and deletion/cleanup across PDF, DOCX and LaTeX. A provider billing refusal is not a demonstrated formatting defect, and existing PDF review does not establish complete new-generation acceptance. |
+| Candidate-reviewed direct company applications | OPEN | Schema19, native Firestore/KMS account/device infrastructure, website transport/pairing configuration and the Razorpay/Greenhouse companion implementation are deployed or packaged. The proxy/clock repair is accepted, canonical account availability is HTTP 200 with both options true, and fresh ordinary Google sign-in passed. Native Google verification was received. The owner reports companion 0.8.0 installed; pairing remains unverified. | Complete human password submission/native enrollment and browser pairing, then verify required/conditional form parity and the candidate-reviewed upload/receipt/recovery journey. Receipt of verification does not prove enrollment or pairing. Actual attachment, native upload, final submission and typed-control gates remain held; real employer writes remain follow-on work. |
+| Paid search/application credits, profitable finite packs and payment recovery | OPEN | Three finite packs, separate service-credit/AI-unit balances, exact quotes, reservations, settlement/refunds and interrupted/duplicate recovery are deployed. New unlimited offers are removed. Expense-policy secret version 3 is accepted on all three application services through 29 October; model-policy secret version 2 is unchanged. Prices, expense caps and retained spending history are unchanged. | Paid sales/checkout and real payment/application charging remain held. Production payments, refunds/recovery and actual-cost calibration are unaccepted; estimate-based margins are not proven profit. Resolve the commercial hosting arrangement before selling. |
+| Fast responsive pages and SEO | OPEN | PR28 main-tree frontend deployment A8 is promoted on both canonical domains and retains the SEO corrections. Public homepage checks at requested widths of 390, 768 and 1,440 pixels show no horizontal overflow and working mobile navigation. Authenticated search/billing views were also observed at 390 pixels without horizontal overflow. Canonical metadata checks verify pricing-specific sharing metadata, noindex on login/registration and authentication routes absent from the sitemap. | Verify complete authenticated laptop/PC/mobile journeys, production accessibility/SEO and measured loading performance. The observed pages and server timings do not establish complete usability acceptance, Core Web Vitals or mobile field-data performance. |
+| GCP/Vercel deployment, preserved-data migration and monitoring | OPEN | Preserved-data cutover and schema19 migration remain intact. PR28 runtime fixes are accepted: API/analysis retain the exact c67d144 image; the matching A8 frontend is canonical on both domains. Expense-policy-3 revisions now serve 100% on all three application services, with renewal tags cleaned and model policy 2 unchanged. Fresh ordinary Google sign-in and canonical account availability passed. Consumer queues/schedules, reviewed-source ingestion and selected owner-inbox monitoring delivery were previously verified. | Complete human native enrollment/pairing, provider-funded truthful tailoring and the remaining pilot journeys. Verify unexercised alert routes and required operational acceptance. Preserve commercial and employer-write holds; deployment completion alone does not close all six outcomes. |
 
 ## Scope and owner controls
 
@@ -59,31 +61,46 @@ reason to repeat migrations or keep deploying the same source.
 
 ## Current deployed state
 
-The backend application source remains **`e36152ee4e991315c76f4baccb39b0363b966271`**.
-Its immutable application digest is
-`sha256:8516787317856d33080435478d772700b37930680fcf996cb26332e5340529ac`.
-The SEO update merged as **`103e3baec4e6c44f3abb9ea81c4eb4e3f86f5f85`**;
-its tree matches the tested pull request. READY Vercel deployment
-**`dpl_3kp8p6xBzvJB2czYxeyoJ5yCk8bd`** was promoted and checked on the
-canonical site. The preceding deployment remains available for rollback.
-The canonical site and backend health returned HTTP 200. Full user-journey
-acceptance is still pending.
+The accepted runtime repair is pull request **28**, tested at
+**`efb35866dd850341e4f4f1f08da67323f5269d88`** and merged as
+**`88ed491742030a8553c2419d9340a803b397e572`**. The merged and tested Git trees
+are identical. API and analysis use immutable image digest
+`sha256:c67d144ee7a02efa7df44ee78babf1ad3b562bc2f8d5c12e81a32804117eb64e`.
+At the runtime-repair acceptance boundary, both served 100% canonical traffic:
 
-The API, analysis and employer services now serve their respective activation
-revisions at 100%, with one untagged current route each:
+- `ai-resume-parser-runtime-a30b52b32136`
+- `hirewiz-analysis-worker-runtime-a30b52b32136`
 
-- `ai-resume-parser-activate-fb938848688e`
-- `hirewiz-analysis-worker-activate-7fb74714188f`
-- `hirewiz-employer-worker-activate-a89540c935a0`
+Their old runtime rollout tags were cleaned after acceptance. The employer
+worker retained its reviewed e361 image and behavior. The private coordinator
+retains its reviewed F7 runtime image; the runtime repair did not replace it.
+Prior revisions remain available for rollback. No schema, customer balance or
+spending history was reset by this repair.
 
-The private coordinator serves
-`hirewiz-resume-coordinator-act-a182af50858b`. It intentionally retains its
-reviewed immutable F7 runtime image with the required configuration/flag changes;
-it is not a new e361 coordinator image. Prior revisions remain retained.
-Obsolete rollout/test tags were removed after all three application promotions;
-that cleanup changed traffic only, not images, templates, IAM, secrets or flags.
-The temporary health-verification grant was removed and its absence reconciled
-without replaying the acknowledged removal.
+READY Vercel deployment **`dpl_A8eCkxaZjvK3d7rAVUKYTPodqQKV`** was promoted
+once. Fresh actual alias records verify both `www.hirewizhq.com` and
+`hirewizhq.com` on that exact deployment, with the existing apex-to-www 308
+redirect retained. Automatic custom-domain assignment remains disabled. At
+**22 October, 20:42:41 UTC**, the canonical same-origin account-availability
+GET returned HTTP 200 and exactly `fresh_registration: true` and
+`legacy_enrollment: true`.
+
+The following configuration-only expense-policy renewal is accepted. All three
+services use expense-policy secret version **3** and unchanged model-policy
+secret version **2**, retain their existing images and prices, and serve 100%
+canonical traffic on these revisions:
+
+- `ai-resume-parser-expense-855b625c68d8`
+- `hirewiz-analysis-worker-expense-855b625c68d8`
+- `hirewiz-employer-worker-expense-855b625c68d8`
+
+Publication, staged verification, all three promotions, joined canonical
+acceptance and renewal-tag cleanup passed. The expense-policy window ends
+**29 October 2026, 20:28:54.855717 UTC**. Retained expense-policy-2 revisions
+are not usable after **23 October, 05:07:52 UTC** unless the rollback
+configuration attaches a valid reviewed expense policy. Keeping an old revision
+does not extend its policy authority. No balance, spending history, price or
+economic cap was reset by the renewal.
 
 Discovery and the analysis/employer consumers are active. Optional AI capability
 is enabled on the API and analysis worker only; actual AI work still requires
@@ -145,13 +162,13 @@ label, so its correlation with the accepted refresh comes from the independent
 serving/artifact proof. See [document maintenance](DOCUMENT_DEFINITION_MAINTENANCE.md).
 
 Using the owner's existing authenticated Chrome session on the canonical site,
-the original resume **28** and previously approved tailored **version 2** both
+the original resume and previously approved tailored PDF both
 previewed and downloaded successfully. Each PDF has **one A4 page and nine
 annotations**. Visual comparison preserved the fonts, section structure and
 layout. This establishes limited acceptance of existing PDF preview/download.
 
 A subsequent fresh upload of the same **122,522-byte original PDF** created
-resume **29** through the canonical site. The UI progressed through reserved
+a fresh source record through the canonical site. The UI progressed through reserved
 space, safety checks and extraction to **Resume parsed**. The operation used
 deterministic extraction without an AI call, and the balance remained **7 AI
 units** before and after. The UI retains the original source PDF. The new
@@ -204,35 +221,16 @@ credentials, authentication behavior and layout are unchanged by this correction
 
 ## Remaining owner acceptance
 
-The owner's existing Chrome session is authenticated and shows the preserved
-dashboard balance of **7 AI units**. The fixed authenticated eligibility endpoint reports
-`GOOGLE_ENROLLMENT_AVAILABLE`, confirming the existing Google session. A fresh
-Google callback has not been exercised in this continuation. The earlier rejected saved-password attempt is not
-the current blocker, and no human password handoff is required by this evidence.
-`/account-enrollment` is unavailable and shows no password fields. At
-**21 October, 22:53 and 22:55 UTC**, backend availability checks returned
-**HTTP 403** on `ai-resume-parser-activate-fb938848688e`. The deployment's proxy
-configuration is being repaired. A canonical HTTPS GET to the known public
-`/api/public/optimize_bullet/` route returned a 307 redirect with an HTTP location,
-confirming that the application observes an HTTP ASGI scheme. The API lacks the
-trusted-proxy setting for the observed Cloud Run peer; the exact-peer
-configuration repair is staged with zero production traffic. Its health and
-HTTPS redirect checks pass, and unsigned requests remain rejected. A fresh signed
-availability check reaches the native guard but returns HTTP 503. Structural
-configuration and signature-input binding checks pass. A bounded diagnostic
-measured the signed issue time 11,747 ms ahead of the native provider-clock lower
-bound. The temporary diagnostics were restored. The new source adds a bounded,
-authenticated availability-only clock synchronization without loosening the
-five-second expiry, custody checks or durable replay protection. Its deployment
-and enrollment acceptance remain pending. Actual staged verification then found
-that two fresh hints moved backward by 19,725 milliseconds. The hint mechanism
-cannot compensate for a database snapshot timestamp that is not a reliable wall
-clock; its failed verification remains retained and no traffic was promoted.
-The next correction replaces that clock assumption with a fresh acknowledged
-server event while preserving the existing expiry and replay guards. See the
-[runtime diagnosis](RUNTIME_READINESS_2026-10-22.md).
-Do not seed an account/device, replace the owner's identity, invent credentials
-or bypass ordinary proof.
+Fresh ordinary Google sign-in now succeeds on the canonical website and
+reaches the authenticated dashboard. The repaired same-origin availability
+endpoint returns HTTP 200 with both registration options true. Native Google
+verification was received, but the human password submission and completed
+native enrollment remain unverified. The owner reports installing companion
+0.8.0; independent pairing and the complete browser-assisted journey are still
+pending. Do not seed an account/device, replace the owner's identity, invent
+credentials or bypass ordinary proof. The earlier proxy/clock failures remain
+retained as historical failures; the accepted successor and its bounded signed
+handshake are documented in the [runtime diagnosis](RUNTIME_READINESS_2026-10-22.md).
 
 Existing original/approved-tailored PDF preview and download, plus a fresh owner
 PDF upload and deterministic parse, succeeded as described above. The new
@@ -247,14 +245,22 @@ genuine journeys within the existing consent/price/credit/permission controls.
 Keep unavailable submission capabilities visibly unavailable until their
 respective acceptance and owner review are complete.
 
-The fresh tailoring attempt failed before document editing and returned its
-reserved AI units. A separate source review identified a definite request-contract
-defect: Gemini 3+ does not support `candidate_count`, which the client always sent.
-The compatibility fix omits that parameter for Gemini 3+ and aliases while retaining
-the existing output-token cap and budget admission. Its focused regression checks
-actual SDK request serialization without making a generation request. The old
-generic error does not prove this was the only cause of that historical failure;
-a new successful owner-reviewed generation remains required.
+The Gemini request-compatibility correction is deployed: Gemini 3+ requests
+omit unsupported `candidate_count` while preserving output-token and budget
+limits. One fresh post-repair owner-approved tailoring run reached Gemini and
+failed with **HTTP 402** before creating a change plan or editing the document.
+AI Studio independently shows **Tier 1 Prepay / No credits** and requires a
+positive provider balance to resume service. The two reserved AI units were
+waived, the verified balance stayed at **7**, and no new resume version was
+saved. There was no automatic retry. No provider usage receipt was returned,
+so the provider-cost outcome remains unknown rather than assumed free. This
+billing refusal does not demonstrate a format-preservation failure. Internal
+HireWiz credit adjustments cannot fund Google's provider account.
+
+A successful new generation remains unaccepted. Resume only through an
+explicitly reviewed action after provider funding is available; preserve the
+original/custom-file alternatives, evidence checks, exact quote and finite
+expense controls. No provider purchase was made during these observations.
 
 The three finite offers remain Starter **₹649 / 100 service credits + 2 AI
 units**, Growth **₹1,099 / 300 + 6**, and Scale **₹2,199 / 700 + 15**. Deployed
@@ -280,7 +286,10 @@ times: schema19 migration **540.78 seconds**; closed-admission rollout
 **1,761.94 seconds**; coordinator promotion **19.46 seconds**; read-only analysis
 promotion reconciliation **18.27 seconds**; employer promotion **26.88 seconds**;
 API promotion **65.22 seconds**; final traffic-tag cleanup **67.90 seconds**.
-These independent phase timings must not be summed into an end-to-end duration.
+The later PR28 frontend promotion completed in **5.52 seconds** at
+**22 October, 20:37:48 UTC**, followed by independent canonical readback.
+These independent phase timings must not be summed into an end-to-end duration
+or presented as completion of a whole outcome.
 
 - Run the Vercel CLI from a responsive local working directory. In this rollout,
   `vercel` 64 `api --help` from the Desktop repository hung for over two minutes
