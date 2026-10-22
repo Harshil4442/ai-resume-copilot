@@ -98,3 +98,12 @@ configured model choices; 199 focused tests, Ruff and Mypy passed without a
 provider generation request. This is a definite request-contract correction,
 not proof of the exact cause of the historical generic failure or of successful
 new tailoring. Both source corrections are prepared for one release.
+
+The subsequent release audit reported a newly indexed DOMPurify advisory,
+[GHSA-cg2g-xh64-v4q7](https://github.com/cure53/DOMPurify/security/advisories/GHSA-cg2g-xh64-v4q7).
+The targeted lockfile update replaces transitive DOMPurify 3.4.16 with patched
+3.4.17 without changing other dependency versions. A clean installation and
+parent constraints pass, along with 222 focused rendering/security tests and
+TypeScript. The actual production audit again has zero critical findings;
+five high and two moderate findings remain. This is a patch for the observed
+release blocker, not a claim that the entire dependency audit is clean.
