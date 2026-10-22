@@ -20,7 +20,7 @@ class ResumeUpload(Base):
     __table_args__ = (
         UniqueConstraint("user_id", "idempotency_sha256", name="uq_resume_upload_owner_key"),
         CheckConstraint("size_bytes BETWEEN 1 AND 5242880", name="ck_resume_upload_size"),
-        CheckConstraint("source_format IN ('pdf','docx')", name="ck_resume_upload_format"),
+        CheckConstraint("source_format IN ('pdf','docx','tex','texzip')", name="ck_resume_upload_format"),
         CheckConstraint("state IN ('awaiting_upload','queued','inspecting','released','rejected','failed','cancelled','expired')", name="ck_resume_upload_state"),
         CheckConstraint("attempt_count BETWEEN 0 AND 3", name="ck_resume_upload_attempts"),
         Index("ix_resume_upload_due", "state", "next_attempt_at"),

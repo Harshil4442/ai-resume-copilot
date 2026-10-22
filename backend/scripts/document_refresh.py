@@ -1,7 +1,7 @@
 """Build immutable scanner candidates or audit serving definition expiry.
 
 The refresh mode builds a fixed-renderer definitions-only successor, requires
-new native six-case acceptance, and performs a bounded fail-closed worker/caller
+new native required-case acceptance, and performs a bounded fail-closed worker/caller
 pin transition. Monitor and candidate modes grant no promotion. IAM provisioning
 is separate. Vendor output stays in RAM; unknown writes never authorize replay.
 """
@@ -182,10 +182,16 @@ def proof_contract(proof: Any, contract: Any, source_hashes: dict[str, str], *, 
          and re.fullmatch(r"sha256:[a-f0-9]{64}", proof.get("image_id", "")),
          "document_refresh_local_proof_unverified")
     corpus = proof.get("corpus", [])
-    need(type(corpus) is list and len(corpus) == 8
+    need(type(corpus) is list and len(corpus) == 12
          and {row.get("case") for row in corpus} == {"clean_pdf", "clean_docx", "page_counter", "active_pdf",
-             "includetext", "eicar_exact_file", "eicar_zip_member", "missing_definitions"}
+             "includetext", "eicar_exact_file", "eicar_zip_member", "missing_definitions",
+             "clean_tex", "clean_texzip", "eicar_tex_source", "eicar_texzip_member"}
          and all(row.get("passed") is True for row in corpus), "document_refresh_corpus_incomplete")
+    need(all(row.get("outcome") == "clean" and row.get("native_source_empty") is True
+             for row in corpus if row["case"] in {"clean_tex", "clean_texzip"})
+         and all(row.get("outcome") == "detected" for row in corpus
+                 if row["case"] in {"eicar_tex_source", "eicar_texzip_member"}),
+         "document_refresh_native_source_corpus_incomplete")
     layouts = proof.get("docx_layout_corpus", [])
     need(type(layouts) is list and len(layouts) == 2
          and {row.get("case") for row in layouts} == {"styled_multipage_fit", "rendered_reflow_refusal"}
@@ -215,7 +221,7 @@ def proof_contract(proof: Any, contract: Any, source_hashes: dict[str, str], *, 
         raise RefreshDenied("document_refresh_definition_header_invalid") from None
     need(timedelta(0) <= age < CANDIDATE_MAX_AGE, "document_refresh_candidate_not_fresh")
     return {"issued_at_utc": timestamp.isoformat(), "expires_at_utc": (timestamp + AGE_LIMIT).isoformat(),
-            "definition_number": number, "local_cases": 21,
+            "definition_number": number, "local_cases": 25,
             "renderer_version": contract.ACCEPTED_RENDERER,
             "rendered_fonts_sha256": fit["layout"]["rendered_fonts_sha256"]}
 
@@ -230,7 +236,7 @@ def write_new(path: Path, value: Any) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
-def build_contract(value: Any, nonce: str, recipe_sha: str) -> dict[str, Any]:
+def build_contract(value: Any, nonce: str, recipe_sha: str, *, historical_v1: bool = False) -> dict[str, Any]:
     """Check actual native Build fields; a caller-supplied summary is insufficient."""
     need(type(value) is dict and re.fullmatch(r"[a-f0-9]{32}", nonce), "document_refresh_native_build_invalid")
     build_id = value.get("id", "")
@@ -267,11 +273,17 @@ def build_contract(value: Any, nonce: str, recipe_sha: str) -> dict[str, Any]:
          and source["object"] == "hirewiz-document-refresh-source/" + nonce + "/source.tar.gz"
          and re.fullmatch(r"[1-9][0-9]{0,19}", str(source.get("generation", ""))),
          "document_refresh_native_source_unverified")
+    renderer_base = RENDERER_BASE
+    if historical_v1:
+        sys.path.insert(0, str(ROOT / "infra/gcp"))
+        from document_refresh_probe import LEGACY_BASE_IMAGE
+
+        renderer_base = LEGACY_BASE_IMAGE
     return {"version": 1, "kind": "native_cloud_build", "nonce": nonce, "build_id": build_id,
         "build_resource": value.get("name"), "builder_service_account": BUILDER,
         "source_bucket": source["bucket"], "source_object": source["object"],
         "source_generation": str(source["generation"]), "refresh_dockerfile_sha256": recipe_sha,
-        "fixed_renderer_base": RENDERER_BASE, "immutable_image": REPOSITORY + "@" + images[0]["digest"]}
+        "fixed_renderer_base": renderer_base, "immutable_image": REPOSITORY + "@" + images[0]["digest"]}
 
 
 def archive_recipe(raw: bytes, expected_sha: str) -> str:
@@ -390,7 +402,7 @@ def native_build(directory: Path, recipe: bytes, *, nonce: str | None = None) ->
         http.close()
 
 
-def verify_native_build(identity: dict[str, Any]) -> dict[str, Any]:
+def verify_native_build(identity: dict[str, Any], *, historical_v1: bool = False) -> dict[str, Any]:
     """Fresh native Build+generation-bound source read; zero provider mutations."""
     keys = {"version", "kind", "nonce", "build_id", "build_resource", "builder_service_account",
         "source_bucket", "source_object", "source_generation", "source_archive_sha256",
@@ -403,29 +415,38 @@ def verify_native_build(identity: dict[str, Any]) -> dict[str, Any]:
          "document_refresh_native_build_identity_unverified")
     need(re.fullmatch(r"[a-f0-9]{64}", identity.get("local_native_proof_sha256", "")),
          "document_refresh_build_recipe_changed")
-    actual = verify_current_build(identity["build_id"], identity["nonce"], identity["immutable_image"])
+    actual = (verify_current_build(identity["build_id"], identity["nonce"], identity["immutable_image"], historical_v1=True)
+              if historical_v1 else verify_current_build(identity["build_id"], identity["nonce"], identity["immutable_image"]))
     need(all(identity[key] == value for key, value in actual.items()),
          "document_refresh_native_build_readback_changed")
     return actual
 
 
-def verify_current_build(build_id: str, nonce: str, image: str) -> dict[str, Any]:
+def verify_current_build(build_id: str, nonce: str, image: str, *, historical_v1: bool = False) -> dict[str, Any]:
     """Dedicated service-identity verifier for scheduled maintenance."""
-    return _verify_current_build(build_id, nonce, image, release_read_only=False)
+    return _verify_current_build(build_id, nonce, image, release_read_only=False, historical_v1=historical_v1)
 
 
-def verify_current_build_release(build_id: str, nonce: str, image: str) -> dict[str, Any]:
+def verify_current_build_release(build_id: str, nonce: str, image: str, *, historical_v1: bool = False) -> dict[str, Any]:
     """Fixed normal-manager read-only entry; no ADC or controller-UID dependency."""
-    return _verify_current_build(build_id, nonce, image, release_read_only=True)
+    return _verify_current_build(build_id, nonce, image, release_read_only=True, historical_v1=historical_v1)
 
 
-def _verify_current_build(build_id: str, nonce: str, image: str, *, release_read_only: bool) -> dict[str, Any]:
+def _verify_current_build(build_id: str, nonce: str, image: str, *, release_read_only: bool, historical_v1: bool = False) -> dict[str, Any]:
     """Reconstruct current native provenance without asserting a lost local proof."""
     need(type(build_id) is str and re.fullmatch(r"[a-f0-9-]{36}", build_id)
          and type(nonce) is str and re.fullmatch(r"[a-f0-9]{32}", nonce)
          and type(image) is str and re.fullmatch(re.escape(REPOSITORY) + r"@sha256:[a-f0-9]{64}", image),
          "document_refresh_native_build_identity_unverified")
-    recipe_sha = hashlib.sha256((ROOT / "infra/document-processing/refresh.Dockerfile").read_bytes()).hexdigest()
+    need(type(historical_v1) is bool, "document_refresh_contract_version_invalid")
+    if historical_v1:
+        sys.path.insert(0, str(ROOT / "infra/gcp"))
+        from document_refresh_probe import legacy_source
+
+        recipe = legacy_source("refresh.Dockerfile")
+    else:
+        recipe = (ROOT / "infra/document-processing/refresh.Dockerfile").read_bytes()
+    recipe_sha = hashlib.sha256(recipe).hexdigest()
     if release_read_only:
         sys.path.insert(0, str(ROOT / "infra/gcp"))
         from document_refresh_auth import ReleaseReadOnlyHttp
@@ -435,7 +456,7 @@ def _verify_current_build(build_id: str, nonce: str, image: str, *, release_read
         http = native_http()
     try:
         value = native_json(http, "GET", f"https://cloudbuild.googleapis.com/v1/projects/{PROJECT}/locations/{REGION}/builds/{build_id}")
-        actual = build_contract(value, nonce, recipe_sha)
+        actual = build_contract(value, nonce, recipe_sha, historical_v1=historical_v1)
         need(actual["immutable_image"] == image, "document_refresh_native_build_readback_changed")
         archive_sha = archive_recipe(read_native_source(http, actual), recipe_sha)
     finally:
@@ -443,7 +464,11 @@ def _verify_current_build(build_id: str, nonce: str, image: str, *, release_read
     sys.path.insert(0, str(ROOT / "backend"))
     from scripts import document_test_image as engines
 
-    actual.update(source_archive_sha256=archive_sha, source_sha256=engines.source_hashes())
+    if historical_v1:
+        source_hashes = json.loads(legacy_source("policy.json"))["source_sha256"]
+    else:
+        source_hashes = engines.source_hashes()
+    actual.update(source_archive_sha256=archive_sha, source_sha256=source_hashes)
     return actual
 
 

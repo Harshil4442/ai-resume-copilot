@@ -1,0 +1,22 @@
+{
+  "files": {
+    "payload.txt": {
+      "original_source": "infra/gcp/document_refresh_payload.txt",
+      "sha256": "eb26e5c53a472a8209112ad92769b00087e2e18ee0618f648680239a31882558"
+    },
+    "policy.json": {
+      "original_source": "infra/document-processing/policy.json",
+      "sha256": "dbd15ce3120bb6211bb6c1d7b166aaddbd8b80e00a72d564e6274ef10db3aaf1"
+    },
+    "receipt.txt": {
+      "original_source": "infra/gcp/document_refresh_receipt.txt",
+      "sha256": "38ac8c560c693ca84afd48e71fb3ca5df52c138f6a387254863cadbaa6a0ac34"
+    },
+    "refresh.Dockerfile": {
+      "original_source": "infra/document-processing/refresh.Dockerfile",
+      "sha256": "aeab51c4d7fb774573bf13ff471522c1742d1836dfcab812379770c7142fe6e7"
+    }
+  },
+  "scope": "Read-only validation of pre-native-format V1 serving receipt; never native-format capability or promotion authority",
+  "source_commit": "523d743d02fbb09037a2aca88cb0e07d3d714203"
+}

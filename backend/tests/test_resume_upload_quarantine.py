@@ -491,7 +491,7 @@ def test_disabled_route_does_not_query_new_tables_or_sign(context, monkeypatch):
 
 
 @pytest.mark.parametrize("body", [{"size_bytes": schemas.MAX_BYTES+1}, {"size_bytes": True}, {"size_bytes": 0},
-    {"sha256": "A"*64}, {"filename": "source.tex"}, {"filename": "bad\x00.pdf"}, {"owner_id": 2}])
+    {"sha256": "A"*64}, {"filename": "source.rtf"}, {"filename": "bad\x00.pdf"}, {"owner_id": 2}])
 def test_upload_metadata_strict_and_additional_formats_stay_closed(body):
     base = {"filename": "resume.pdf", "size_bytes": 100, "sha256": "a"*64}
     with pytest.raises(ValidationError):

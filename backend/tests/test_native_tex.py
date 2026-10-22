@@ -14,7 +14,10 @@ from backend.app.routers.resume import _validated_resume_upload
 from backend.app.services import native_tex
 from backend.app.services.resume_artifacts import render_resume_version
 from backend.app.services.resume_layout import ResumeLayoutError, extract_source_units
-from backend.tests.native_tex_ci_fixtures import configure_native_compiler
+from backend.tests.native_tex_ci_fixtures import (
+    configure_native_compiler,
+    configure_synthetic_native_inspector,
+)
 
 FIXTURE = Path(__file__).parent / "fixtures/native_tex"
 
@@ -92,6 +95,7 @@ def test_file_execution_and_unsupported_dependencies_fail_before_compilation(com
 
 
 def test_unavailable_or_mutable_compiler_does_not_execute_host_tex(monkeypatch):
+    configure_synthetic_native_inspector(monkeypatch)
     monkeypatch.setenv("APP_ENV", "production")
     monkeypatch.setenv("NATIVE_TEX_IMAGE", "tex:latest")
     monkeypatch.delenv("NATIVE_TEX_COMPILER_URL", raising=False)

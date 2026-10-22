@@ -335,7 +335,8 @@ def test_reviewed_stdin_policy_and_disabled_pins_agree(config):
     raw = (config.ROOT / "infra/document-processing/policy.json").read_bytes()
     policy = config.decode(raw)
     draft = config.decode((config.ROOT / "infra/gcp/document-worker.disabled.json").read_bytes())
-    assert hashlib.sha256(raw).hexdigest() == config.POLICY_SHA256 == "dbd15ce3120bb6211bb6c1d7b166aaddbd8b80e00a72d564e6274ef10db3aaf1"
+    assert hashlib.sha256(raw).hexdigest() == config.POLICY_SHA256
+    assert config.POLICY_SHA256 != config.LEGACY_V1_POLICY_SHA256
     assert draft["policy_sha256"] == config.POLICY_SHA256
     assert policy["deployment_proven"] is False
     assert policy["version"] == 3
@@ -358,6 +359,75 @@ def test_reviewed_stdin_policy_and_disabled_pins_agree(config):
         assert controls[key] is False
     assert config.plan()["api_wiring_enabled"] is False
     assert config.render(IMAGE, RELEASE)["runtime_isolation_proven"] is False
+
+
+def _historical_snapshot(config):
+    value = snapshots(config)
+    for template in (value["service"]["template"], value["revision"]):
+        for entry in template["containers"][0]["env"]:
+            if entry["name"] == "DOCUMENT_WORKER_POLICY_SHA256":
+                entry["value"] = config.LEGACY_V1_POLICY_SHA256
+    return value
+
+
+def test_explicit_historical_profile_is_readonly_and_cannot_change_current_render_pins(config):
+    value = _historical_snapshot(config)
+    with pytest.raises(config.ConfigurationDenied):
+        config.check_snapshot(value, IMAGE, RELEASE)
+    report = config.check_snapshot(value, IMAGE, RELEASE, historical_v1=True)
+    assert report["historical_v1"] is True
+    assert report["input_authority"] == "untrusted_offline_snapshot"
+    assert report["runtime_isolation_proven"] is False and report["effective_iam_proven"] is False
+    assert report["api_wiring_enabled"] is False and report["native_calls"] == 0
+    assert config.api_environment(config.ACCEPTED_ORIGIN)["DOCUMENT_WORKER_POLICY_SHA256"] == config.POLICY_SHA256
+    assert config.render(IMAGE, RELEASE)["service"]["template"]["containers"][0]["env"][1]["value"] == config.POLICY_SHA256
+    with pytest.raises(config.ConfigurationDenied):
+        config.check_snapshot(snapshots(config), IMAGE, RELEASE, historical_v1=True)
+
+
+@pytest.mark.parametrize("historical", [False, True])
+def test_unknown_observed_policy_is_refused_in_both_profiles(config, historical):
+    value = _historical_snapshot(config)
+    for template in (value["service"]["template"], value["revision"]):
+        template["containers"][0]["env"][1]["value"] = "0" * 64
+    with pytest.raises(config.ConfigurationDenied):
+        config.check_snapshot(value, IMAGE, RELEASE, historical_v1=historical)
+
+
+@pytest.mark.parametrize("historical", ["true", 1, None])
+def test_historical_profile_is_not_a_truthy_policy_waiver(config, historical):
+    with pytest.raises(config.ConfigurationDenied):
+        config.check_snapshot(_historical_snapshot(config), IMAGE, RELEASE, historical_v1=historical)
+
+
+@pytest.mark.parametrize("change", [
+    lambda value: value["service"].update(ingress="INGRESS_TRAFFIC_ALL"),
+    lambda value: value["revision"]["containers"][0].update(sandboxLauncher=False),
+    lambda value: value["service_iam"].update(bindings=[{"role": "roles/run.invoker", "members": ["allUsers"]}]),
+])
+def test_historical_profile_keeps_original_runtime_and_iam_checks(config, change):
+    value = _historical_snapshot(config)
+    change(value)
+    with pytest.raises(config.ConfigurationDenied):
+        config.check_snapshot(value, IMAGE, RELEASE, historical_v1=True)
+
+
+@pytest.mark.parametrize("change", ["byte", "missing", "symlink"])
+def test_historical_profile_requires_exact_archived_policy_bytes(config, tmp_path, monkeypatch, change):
+    value = _historical_snapshot(config)
+    original = config.ROOT / "infra/gcp/document_legacy_v1/policy.json"
+    raw = original.read_bytes()
+    _private_policy_proposal(config, tmp_path, monkeypatch)
+    path = tmp_path / "infra/gcp/document_legacy_v1/policy.json"
+    path.parent.mkdir(parents=True)
+    if change == "byte":
+        path.write_bytes(raw + b" ")
+    elif change == "symlink":
+        target = path.with_name("synthetic-policy.json")
+        target.write_bytes(raw)
+        path.symlink_to(target)
+    with pytest.raises(config.ConfigurationDenied):
+        config.check_snapshot(value, IMAGE, RELEASE, historical_v1=True)
 
 
 def _private_policy_proposal(config, tmp_path, monkeypatch):

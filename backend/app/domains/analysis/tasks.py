@@ -27,9 +27,15 @@ class RetryableRunError(RuntimeError):
 
 
 def _retryable(exc: Exception) -> bool:
+    from ...services.resume_layout import ResumeProcessingUnavailable
+
     current: BaseException | None = exc
     while current is not None:
         if getattr(current, "budget_exhausted", False):
+            return False
+        if isinstance(current, ResumeProcessingUnavailable):
+            # Retrying this whole run would generate the same proposal again;
+            # an unavailable inspector/compiler needs service recovery instead.
             return False
         if getattr(current, "retryable", False):
             return True

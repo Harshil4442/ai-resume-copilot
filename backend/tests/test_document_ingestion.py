@@ -14,6 +14,7 @@ import pytest
 from backend.app import models
 from backend.app.routers import resume
 from backend.app.services import document_ingestion as ingestion
+from backend.app.services import parsing
 from backend.tests.test_resume_source import _client, _source_bytes
 
 URL = "https://document-worker.test-region.run.app/inspect"
@@ -223,7 +224,7 @@ def test_actual_upload_safety_failure_creates_no_resume_or_analysis_hold(monkeyp
     def failure(*args, **kwargs):
         raise ingestion.DocumentInspectionError(refused=refused)
     monkeypatch.setattr(resume, "inspect_resume_document", failure)
-    monkeypatch.setattr(resume, "parse_resume_file", lambda *a, **k: pytest.fail("API host must not parse PDF/DOCX"))
+    monkeypatch.setattr(parsing, "parse_resume_file", lambda *a, **k: pytest.fail("API host must not parse PDF/DOCX"))
     monkeypatch.setattr(resume, "enrich_resume_skills", lambda *a, **k: pytest.fail("Safety refusal must precede AI"))
     try:
         response = client.post("/api/resume/parse", files={"file": ("source.pdf", _source_bytes("pdf"), "application/pdf")}, data={"enrich_skills": "true"})
@@ -245,7 +246,7 @@ def test_actual_pdf_upload_does_not_open_document_inside_api(monkeypatch):
         inspected.append((source, source_format))
         return "Synthetic text", {}, [], 0.0, {}
     monkeypatch.setattr(resume, "inspect_resume_document", inspect)
-    monkeypatch.setattr(resume, "parse_resume_file", lambda *a, **k: pytest.fail("Host parsing forbidden"))
+    monkeypatch.setattr(parsing, "parse_resume_file", lambda *a, **k: pytest.fail("Host parsing forbidden"))
     monkeypatch.setattr(resume, "_validated_resume_upload", lambda *a, **k: pytest.fail("Host PDF/ZIP validation forbidden"))
     try:
         response = client.post("/api/resume/parse", files={"file": ("source.pdf", original, "application/pdf")})

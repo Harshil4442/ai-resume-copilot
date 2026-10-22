@@ -3,10 +3,11 @@ from __future__ import annotations
 
 import hashlib
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from ...services import document_ingestion
+from ...services.resume_layout import ResumeLayoutError, ResumeProcessingUnavailable
 
 
 class ScanUnavailable(RuntimeError):
@@ -28,9 +29,13 @@ class VerifiedInspection:
     scan_engine: str
     scan_version: str
     scan_definitions: str
+    native_compilation: dict[str, Any] | None = field(default=None, repr=False)
 
     def receipt(self) -> dict[str, Any]:
-        return {name: getattr(self, name) for name in ("sha256", "size_bytes", "source_format", "worker_image", "policy_sha256", "scan_engine", "scan_version", "scan_definitions")}
+        result = {name: getattr(self, name) for name in ("sha256", "size_bytes", "source_format", "worker_image", "policy_sha256", "scan_engine", "scan_version", "scan_definitions")}
+        if self.native_compilation is not None:
+            result["native_compilation"] = self.native_compilation
+        return result
 
 
 def validate_receipt(result: Any, content: bytes, kind: str) -> VerifiedInspection:
@@ -63,14 +68,29 @@ def validate_receipt(result: Any, content: bytes, kind: str) -> VerifiedInspecti
 
 def inspect(content: bytes, *, source_format: str) -> VerifiedInspection:
     try:
-        # The six-path V3 client is independently owned. Root supplies this exact
-        # approved interface after its freeze; missing interface refuses, never falls back.
+        if source_format in {"tex", "texzip"}:
+            from ...services.native_tex import compile_project_inspected
+
+            compiled = compile_project_inspected(content, source_format)
+            original = validate_receipt(compiled.source_inspection, content, source_format)
+            pdf = validate_receipt(compiled.pdf_inspection, compiled.pdf, "pdf")
+            return replace(original, parsed=pdf.parsed, native_compilation={
+                "renderer_image": compiled.renderer_image,
+                "renderer_policy_sha256": compiled.renderer_policy_sha256,
+                "pdf_inspection": pdf.receipt(),
+            })
+        # A missing private receipt interface refuses admission; no local
+        # scanner, parser or native-upload fallback may release the source.
         function = document_ingestion.inspect_resume_document_with_receipt
         return validate_receipt(function(content, source_format=source_format), content, source_format)
     except document_ingestion.DocumentInspectionError as exc:
         if exc.status_code == 422:
             raise ScanRefused("document_refused") from None
         raise ScanUnavailable("scan_unavailable") from None
+    except ResumeProcessingUnavailable:
+        raise ScanUnavailable("scan_unavailable") from None
+    except ResumeLayoutError:
+        raise ScanRefused("document_refused") from None
     except ScanUnavailable:
         raise
     except Exception:

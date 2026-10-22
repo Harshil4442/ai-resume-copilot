@@ -112,7 +112,7 @@ def persist_tailoring_failure(exc: Exception) -> str:
     """Keep an allowlisted reason from the native cause, with bounded traversal."""
     from ...services.llm_client import LLMProviderError, TailoringOutputError
     from ...services.model_cost_policy import ModelCostUnavailable
-    from ...services.resume_layout import ResumeLayoutError
+    from ...services.resume_layout import ResumeLayoutError, ResumeProcessingUnavailable
 
     current: BaseException | None = exc
     seen: set[int] = set()
@@ -124,6 +124,8 @@ def persist_tailoring_failure(exc: Exception) -> str:
             return _PREFIX + ("generation_unavailable" if current.budget_exhausted else "provider_unavailable")
         if isinstance(current, ModelCostUnavailable):
             return _PREFIX + "generation_unavailable"
+        if isinstance(current, ResumeProcessingUnavailable):
+            return _PREFIX + "tex_worker_unavailable"
         if isinstance(current, (ResumeLayoutError, TailoringOutputError)):
             reason = _MESSAGES.get(str(current))
             if reason is not None:

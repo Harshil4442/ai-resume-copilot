@@ -34,6 +34,7 @@ SOURCES = (
     "backend/app/services/market/security.py",
     "infra/document-processing/docx_renderer.py", "infra/document-processing/writer_owner.py",
     "backend/app/services/resume_layout.py",
+    "backend/app/services/native_project.py",
     "backend/app/services/pdf_streams.py", "backend/app/services/docx_layout_validation.py",
 )
 IMAGE_ID = re.compile(r"sha256:[0-9a-f]{64}\Z")
@@ -49,6 +50,7 @@ _FAILURE_STAGES = frozenset({
 _FAILURE_CASES = frozenset({
     "clean_pdf", "clean_docx", "page_counter", "active_pdf", "includetext",
     "eicar_exact_file", "eicar_zip_member", "missing_definitions",
+    "clean_tex", "clean_texzip", "eicar_tex_source", "eicar_texzip_member",
     "styled_multipage_fit", "rendered_reflow_refusal",
     "clamd_two_clean", "clamd_source_eicar", "clamd_candidate_eicar", "clamd_zip_member_eicar",
     "clamd_encrypted_pdf", "clamd_encrypted_zip", "clamd_max_filesize", "clamd_max_scansize",
@@ -924,6 +926,17 @@ def corpus() -> list[tuple[str, str, bytes, str]]:
         for entry in original.infolist():
             output.writestr(entry, original.read(entry))
         output.writestr("word/standalone-antivirus-test.txt", EICAR)
+    clean_tex = rb"\documentclass{article}\begin{document}Candidate Example: Python, SQL\end{document}"
+    texzip = io.BytesIO()
+    infected_texzip = io.BytesIO()
+    project_main = rb"\documentclass{article}\usepackage{graphicx}\begin{document}\input{sections/skills}\includegraphics{asset.pdf}\end{document}"
+    for target, detected in ((texzip, False), (infected_texzip, True)):
+        with ZipFile(target, "w", ZIP_DEFLATED) as output:
+            output.writestr("resume.tex", project_main)
+            output.writestr("sections/skills.tex", b"Python, SQL")
+            output.writestr("asset.pdf", pdf())
+            if detected:
+                output.writestr("standalone-antivirus-test.tex", EICAR)
     if len(EICAR) != 68:
         raise DocumentImageError()
     return [("clean_pdf", "pdf", pdf(), "clean"), ("clean_docx", "docx", clean_docx, "clean"),
@@ -932,7 +945,11 @@ def corpus() -> list[tuple[str, str, bytes, str]]:
             ("includetext", "docx", docx('INCLUDETEXT "https://fixture.invalid/candidate.docx"'), "refused"),
             ("eicar_exact_file", "pdf", EICAR, "detected"),
             ("eicar_zip_member", "docx", infected.getvalue(), "detected"),
-            ("missing_definitions", "pdf", pdf(), "missing")]
+            ("missing_definitions", "pdf", pdf(), "missing"),
+            ("clean_tex", "tex", clean_tex, "clean"),
+            ("clean_texzip", "texzip", texzip.getvalue(), "clean"),
+            ("eicar_tex_source", "tex", EICAR, "detected"),
+            ("eicar_texzip_member", "texzip", infected_texzip.getvalue(), "detected")]
 
 
 def docx_layout_corpus(image: str) -> list[tuple[str, bytes, dict]]:
@@ -1257,10 +1274,15 @@ def check(platform: str, *, image: str | None = None) -> dict:
                     raise DocumentImageError()
             elif (code or result.get("sha256") != envelope["sha256"] or result.get("size_bytes") != len(content)
                   or result.get("source_format") != kind or result.get("scan", {}).get("engine") != "ClamAV"
-                  or (kind == "docx" and "Python" not in result.get("parsed", {}).get("skills", []))):
+                  or (kind == "docx" and "Python" not in result.get("parsed", {}).get("skills", []))
+                  or (kind in {"tex", "texzip"} and (result.get("parsed") != {
+                      "raw_text": "", "sections": {}, "skills": [], "experience_years": 0.0,
+                      "contact_info": {key: None for key in ("name", "email", "phone", "linkedin", "github")}}
+                      or type(result["parsed"].get("experience_years")) not in {int, float}))):
                 raise DocumentImageError()
             observations.append({"case": name, "outcome": outcome, "passed": True,
-                                 **({"scan": result["scan"]} if outcome == "clean" else {})})
+                                 **({"scan": result["scan"]} if outcome == "clean" else {}),
+                                 **({"native_source_empty": True} if outcome == "clean" and kind in {"tex", "texzip"} else {})})
             _progress("case_validation", case=name, exit_code=code, completed_cases=len(observations))
         _progress("clamd_corpus")
         for name, payload, expected_outcome, resident in clamd_corpus():

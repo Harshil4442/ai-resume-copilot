@@ -81,7 +81,7 @@ def payload(content, kind="pdf", **changes):
     return json.dumps(value).encode()
 
 
-@pytest.mark.parametrize("changes", [{"version": True}, {"version": 2}, {"source_format": "tex"},
+@pytest.mark.parametrize("changes", [{"version": True}, {"version": 2}, {"source_format": "rtf"},
     {"sha256": "f" * 64}, {"content_base64": "!!"}, {"filename": "private-marker"}])
 def test_envelope_refuses_without_any_scan(processor, monkeypatch, changes):
     monkeypatch.setattr(processor, "scan_original", lambda _: pytest.fail("scanner reached"))

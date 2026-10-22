@@ -15,7 +15,14 @@ from ... import models as core
 from ... import schemas as core_schemas
 from ..common import utcnow
 from .models import ResumeUpload
-from .schemas import MEDIA_TYPES, SourceAccess, UploadCreate, UploadIntent, UploadStatus
+from .schemas import (
+    EXTENSION_FORMATS,
+    MEDIA_TYPES,
+    SourceAccess,
+    UploadCreate,
+    UploadIntent,
+    UploadStatus,
+)
 from .storage import ObjectStore, StorageUnavailable, valid_generation
 
 ACTIVE_STATES = ("awaiting_upload", "queued", "inspecting")
@@ -71,7 +78,7 @@ def create(db: Session, owner_id: int, body: UploadCreate, key: str, store: Obje
     if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", key):
         fail(400, "idempotency_key_required")
     now = utcnow()
-    kind = body.filename.rsplit(".", 1)[1].lower()
+    kind = EXTENSION_FORMATS[body.filename.rsplit(".", 1)[1].lower()]
     digest = hashlib.sha256(json.dumps(body.model_dump(), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     key_digest = hashlib.sha256(key.encode()).hexdigest()
     lock_owner(db, owner_id)

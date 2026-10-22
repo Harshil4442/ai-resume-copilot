@@ -1,4 +1,4 @@
-"""Inspect uploaded PDF/DOCX bytes outside the credential-bearing API process.
+"""Inspect uploaded source bytes outside the credential-bearing API process.
 
 Only a configured private worker may admit a document. Its immutable image and
 policy are deployment bindings, not evidence of sandbox isolation by themselves.
@@ -28,7 +28,7 @@ HTTP_DEADLINE_SECONDS = 75
 _HASH = re.compile(r"[a-f0-9]{64}\Z")
 _IMAGE = re.compile(r"[a-zA-Z0-9._/:-]+@sha256:[a-f0-9]{64}\Z")
 _UNAVAILABLE = "Resume safety checks are temporarily unavailable. Please try uploading again later; no analysis units were charged."
-_REFUSED = "This document could not pass the resume safety checks. Upload a plain PDF or DOCX without active content or encryption; no analysis units were charged."
+_REFUSED = "This document could not pass the resume safety checks. Use PDF/DOCX without active content or encryption, or a supported TeX source project without unsafe commands or dependencies; no analysis units were charged."
 
 
 class DocumentInspectionError(ValueError):
@@ -238,7 +238,7 @@ async def _inspect_http(config: WorkerConfig, payload: bytes, token: str) -> byt
 
 
 def inspect_resume_document_with_receipt(source: bytes, *, source_format: str) -> InspectedResume:
-    if source_format not in {"pdf", "docx"} or not isinstance(source, bytes) or not 0 < len(source) <= MAX_SOURCE_BYTES:
+    if source_format not in {"pdf", "docx", "tex", "texzip"} or not isinstance(source, bytes) or not 0 < len(source) <= MAX_SOURCE_BYTES:
         raise DocumentInspectionError(refused=True)
     config = worker_config()
     payload = json.dumps({

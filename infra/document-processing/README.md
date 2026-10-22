@@ -1,4 +1,32 @@
-# Private PDF/DOCX inspection and DOCX render validation worker
+# Private resume inspection and DOCX render validation worker
+
+## Native source admission
+
+The existing `POST /inspect` protocol now admits `tex` and `texzip` sources as
+well as PDF/DOCX. The HTTP host decodes only the bounded JSON envelope and its
+hash. Inside the disposable sandbox, ClamAV must accept the exact original
+source/archive before `native_project.read_project` validates its regular paths,
+UTF-8 source, dependency set, root main file, file count and expanded size.
+Embedded PDF assets also pass the existing passive-content PDF validator.
+Scanner detection refuses admission; scanner errors, stale definitions, changed
+bytes or failed sandbox cleanup remain unavailable. Existing limits and
+PDF/DOCX validators are unchanged.
+
+A native source receipt deliberately carries empty parsed fields. It proves
+source admission, not candidate facts or compilation. The application must pass
+the admitted source to the existing isolated compiler, then send its exact PDF
+through private PDF inspection before extracting facts, preparing a sealed
+artifact or releasing the upload. No compiler, model or network operation runs
+in this source-inspection branch. The source validator is copied into the image
+and must be covered by the same build/runtime source hashes as other helpers.
+
+This is an additive format capability in policy schema version 3, with a new
+policy hash and immutable image required for release. It does not retroactively
+inspect legacy TeX files or establish deployed native-format acceptance. Native
+release observations must include clean standalone/project sources, source and
+archive-member antivirus refusals, unsupported-project refusal, exact receipt
+identity and cleanup; compiled PDF inspection and sealed preview/download are
+separate observations within the existing resume acceptance outcome.
 
 ## Current DOCX render draft
 

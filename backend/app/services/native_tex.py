@@ -13,125 +13,38 @@ import re
 import subprocess
 import unicodedata
 from contextlib import closing
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from io import BytesIO
-from pathlib import PurePosixPath
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit
-from zipfile import ZIP_DEFLATED, BadZipFile, ZipFile, ZipInfo
 
-from .resume_layout import ResumeLayoutError
+from .native_project import CLASSES as CLASSES
+from .native_project import DANGEROUS as DANGEROUS
+from .native_project import DEPENDENCY as DEPENDENCY
+from .native_project import DYNAMIC_COMMANDS as DYNAMIC_COMMANDS
+from .native_project import DYNAMIC_DATES as DYNAMIC_DATES
+from .native_project import EXTENSIONS as EXTENSIONS
+from .native_project import INCLUDE as INCLUDE
+from .native_project import MAX_FILES as MAX_FILES
+from .native_project import MAX_PROJECT_BYTES as MAX_PROJECT_BYTES
+from .native_project import NATIVE_FORMATS as NATIVE_FORMATS
+from .native_project import PACKAGES as PACKAGES
+from .native_project import PATH as PATH
+from .native_project import Project as Project
+from .native_project import _path as _path
+from .native_project import read_project as read_project
+from .resume_layout import ResumeLayoutError, ResumeProcessingUnavailable
 
-NATIVE_FORMATS = {"tex", "texzip"}
-MAX_PROJECT_BYTES = 5 * 1024 * 1024
-MAX_FILES = 64
+if TYPE_CHECKING:
+    from .document_ingestion import InspectedResume, WorkerConfig
+
 MAX_PDF_BYTES = 10 * 1024 * 1024
 VALIDATOR = "hirewiz-native-tex-v2"
-# Deliberately small supported dependency set, all supplied in the pinned image.
-PACKAGES = {"fontenc", "inputenc", "lmodern", "geometry", "hyperref", "xcolor", "color",
-    "array", "tabularx", "graphicx", "url", "amsmath", "amssymb", "textcomp", "babel",
-    "multicol", "fancyhdr", "parskip"}
-CLASSES = {"article", "report", "book"}
-EXTENSIONS = {".tex", ".sty", ".cls", ".png", ".jpg", ".jpeg", ".pdf"}
-PATH = re.compile(r"[A-Za-z0-9][A-Za-z0-9_./-]{0,159}\Z")
-DANGEROUS = re.compile(r"\\(?:write18|openin|openout|read|write|directlua|pdfobj|pdfcatalog|pdfannot|special|catcode)\b")
-DYNAMIC_COMMANDS = re.compile(r"\\(?:csname|endcsname|scantokens)\b|\^\^")
-DYNAMIC_DATES = re.compile(r"\\(?:today|year|month|day|time|pdfcreationdate|pdffilemoddate|maketitle)\b")
-DEPENDENCY = re.compile(r"\\(?:usepackage|RequirePackage|documentclass|LoadClass)(?:\[[^\]\n]*\])?\s*\{([^{}]+)\}")
-INCLUDE = re.compile(r"\\(?:input|include|includegraphics)(?:\[[^\]\n]*\])?\s*\{([^{}]+)\}")
 SPAN = re.compile(r"\\resume(?:Item|Bullet)\{([^{}\\\n]+)\}|\\item(?:\[[^{}\\\n\]]{1,16}\])?\s+([^{}\\\n]+)|(?m:^([A-Za-z][^{}\\\n%]+)$)")
 
 
 def digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
-
-
-def _path(name: str) -> str:
-    path = PurePosixPath(name)
-    if (not PATH.fullmatch(name) or path.is_absolute() or str(path) != name
-            or any(part in {".", ".."} or part.startswith(".") for part in path.parts)
-            or path.suffix not in EXTENSIONS):
-        raise ResumeLayoutError("The TeX project contains an unsafe path or unsupported file. Upload a flat, path-safe source project or a PDF.")
-    return name
-
-
-@dataclass(frozen=True)
-class Project:
-    files: dict[str, bytes]
-    main: str
-    kind: str
-
-    def bytes(self) -> bytes:
-        if self.kind == "tex":
-            return self.files[self.main]
-        output = BytesIO()
-        with ZipFile(output, "w", compression=ZIP_DEFLATED) as archive:
-            for name, data in sorted(self.files.items()):
-                info = ZipInfo(name, date_time=(2000, 1, 1, 0, 0, 0))
-                info.compress_type = ZIP_DEFLATED
-                info.external_attr = 0o100600 << 16
-                archive.writestr(info, data)
-        return output.getvalue()
-
-
-def read_project(data: bytes, kind: str) -> Project:
-    if kind not in NATIVE_FORMATS or not 0 < len(data) <= MAX_PROJECT_BYTES:
-        raise ResumeLayoutError("Native TeX source must be nonempty and at most 5 MB. Upload PDF or DOCX instead.")
-    if kind == "tex":
-        files = {"resume.tex": data}
-    else:
-        files = {}
-        try:
-            with ZipFile(BytesIO(data)) as archive:
-                entries = archive.infolist()
-                if not 0 < len(entries) <= MAX_FILES:
-                    raise ResumeLayoutError("TeX projects support at most 64 source/assets files. Remove generated files or upload PDF.")
-                total = 0
-                for entry in entries:
-                    if entry.is_dir():
-                        continue
-                    name = _path(entry.filename)
-                    mode = entry.external_attr >> 16
-                    if name in files or entry.flag_bits & 1 or (mode & 0o170000) not in {0, 0o100000}:
-                        raise ResumeLayoutError("Encrypted, duplicate or linked TeX archive entries are unsupported. Upload regular source files only.")
-                    total += entry.file_size
-                    if total > MAX_PROJECT_BYTES:
-                        raise ResumeLayoutError("The TeX project expands beyond 5 MB. Remove generated assets or upload PDF.")
-                    files[name] = archive.read(entry)
-        except (BadZipFile, RuntimeError, OSError) as exc:
-            raise ResumeLayoutError("The TeX ZIP project is malformed. Upload a regular source ZIP or the original PDF.") from exc
-    mains = []
-    for name, data in files.items():
-        if PurePosixPath(name).suffix not in {".tex", ".sty", ".cls"}:
-            continue
-        try:
-            text = data.decode("utf-8")
-        except UnicodeDecodeError as exc:
-            raise ResumeLayoutError("TeX source must use UTF-8 text. Export UTF-8 source or upload PDF.") from exc
-        text = re.sub(r"(?<!\\)%[^\n]*", "", text)
-        if "\x00" in text or DANGEROUS.search(text):
-            raise ResumeLayoutError("The TeX project uses unsupported executable/file primitives. Remove them or upload the original PDF.")
-        if DYNAMIC_COMMANDS.search(text):
-            raise ResumeLayoutError("The TeX project uses dynamically constructed commands that may contain an unsupported interactive action. Use literal supported commands or upload the original/custom PDF.")
-        if DYNAMIC_DATES.search(text):
-            raise ResumeLayoutError("The TeX project uses a dynamic date or time whose original rendered value cannot be preserved. Replace it with the intended literal date in your source, or upload the original/custom PDF.")
-        if re.search(r"\\documentclass\b", text):
-            mains.append(name)
-        for match in DEPENDENCY.finditer(text):
-            for dep in match[1].split(","):
-                dep = dep.strip()
-                if dep not in PACKAGES | CLASSES and dep + ".sty" not in files and dep + ".cls" not in files:
-                    raise ResumeLayoutError("The TeX project needs an unsupported dependency. Use the supported package list or upload the original PDF.")
-        for match in INCLUDE.finditer(text):
-            target = match[1].strip()
-            candidates = {target, target + ".tex", target + ".pdf", target + ".png", target + ".jpg"}
-            if not any(candidate in files for candidate in candidates):
-                raise ResumeLayoutError("An included TeX source or asset is missing. Include every project file in the ZIP or upload PDF.")
-    if len(mains) != 1:
-        raise ResumeLayoutError("The TeX project needs exactly one documentclass entry file. Remove extra main files or upload PDF.")
-    if "/" in mains[0]:
-        raise ResumeLayoutError("Put the main TeX file at the ZIP root and use root-relative includes, or upload PDF.")
-    return Project(files, mains[0], kind)
 
 
 def source_units(data: bytes, kind: str, eligible) -> list[dict]:
@@ -174,22 +87,109 @@ def patch_project(data: bytes, kind: str, units: list[dict], replacements: dict[
     return Project(files, project.main, kind).bytes()
 
 
-def compile_project(data: bytes, kind: str) -> tuple[bytes, str]:
+@dataclass(frozen=True)
+class InspectedNativeCompilation:
+    """Exact compiled bytes and private admission evidence; no candidate repr."""
+
+    pdf: bytes = field(repr=False)
+    renderer_image: str
+    renderer_policy_sha256: str
+    source_inspection: InspectedResume = field(repr=False)
+    pdf_inspection: InspectedResume = field(repr=False)
+
+
+def _inspected(source: bytes, kind: str, config: WorkerConfig) -> InspectedResume:
+    from .document_ingestion import (
+        DocumentInspectionError,
+        InspectedResume,
+        _decode_receipt,
+        inspect_resume_document_with_receipt,
+    )
+
+    try:
+        receipt = inspect_resume_document_with_receipt(source, source_format=kind)
+    except DocumentInspectionError as exc:
+        if exc.status_code == 422:
+            raise ResumeLayoutError("The TeX project or compiled PDF could not pass private resume safety checks. Use a plain original/custom PDF or supported source project.") from None
+        raise ResumeProcessingUnavailable("Private TeX resume safety checks are unavailable. Keep the original/custom file and try again later.") from None
+    if (type(receipt) is not InspectedResume or receipt.sha256 != digest(source)
+            or type(receipt.size_bytes) is not int or receipt.size_bytes != len(source)
+            or receipt.source_format != kind or receipt.worker_image != config.image
+            or receipt.policy_sha256 != config.policy or receipt.scan_engine != "ClamAV"
+            or any(not isinstance(value, str) or not 0 < len(value) <= 200
+                   or any(ord(char) < 32 or ord(char) > 126 for char in value)
+                   for value in (receipt.scan_version, receipt.scan_definitions))):
+        raise ResumeProcessingUnavailable("The private TeX safety receipt could not be verified. Keep the original/custom file and try again later.")
+    parsed = receipt.parsed
+    try:
+        if not isinstance(parsed, tuple) or len(parsed) != 5:
+            raise ValueError
+        # Reuse the worker contract's complete parsed/receipt validator even if
+        # an unexpected helper result bypassed the transport decoder.
+        receipt = _decode_receipt(json.dumps({
+            "version": 1, "sha256": receipt.sha256, "size_bytes": receipt.size_bytes,
+            "source_format": receipt.source_format, "worker_image": receipt.worker_image,
+            "policy_sha256": receipt.policy_sha256,
+            "scan": {"engine": receipt.scan_engine, "version": receipt.scan_version,
+                     "definitions": receipt.scan_definitions},
+            "parsed": dict(zip(("raw_text", "sections", "skills", "experience_years", "contact_info"), parsed, strict=True)),
+        }).encode(), source, kind, config)
+    except (ValueError, TypeError, UnicodeError, OverflowError):
+        raise ResumeProcessingUnavailable("The private TeX safety receipt could not be verified. Keep the original/custom file and try again later.") from None
+    parsed = receipt.parsed
+    if kind in NATIVE_FORMATS and (
+                parsed[0] != "" or parsed[1] != {} or parsed[2] != []
+                or type(parsed[3]) not in (int, float) or parsed[3] != 0
+                or not isinstance(parsed[4], dict)
+                or set(parsed[4]) - {"name", "email", "phone", "linkedin", "github"}
+                or any(value is not None for value in parsed[4].values())):
+        raise ResumeProcessingUnavailable("The private TeX safety receipt could not be verified. Keep the original/custom file and try again later.")
+    return receipt
+
+
+def compile_project_inspected(data: bytes, kind: str) -> InspectedNativeCompilation:
+    from .document_ingestion import MAX_SOURCE_BYTES, DocumentInspectionError, worker_config
+
+    try:
+        config = worker_config()
+    except DocumentInspectionError:
+        raise ResumeProcessingUnavailable("Private TeX resume safety checks are unavailable. Keep the original/custom file and try again later.") from None
+    source_inspection = _inspected(data, kind, config)
     project = read_project(data, kind)
+    pdf, image, policy = _compile_project(project)
+    if len(pdf) > MAX_SOURCE_BYTES:
+        raise ResumeLayoutError("The compiled TeX PDF exceeds the 5 MB private safety-check limit. Reduce the source or included assets, or use a smaller original/custom PDF.")
+    pdf_inspection = _inspected(pdf, "pdf", config)
+    return InspectedNativeCompilation(pdf, image, policy, source_inspection, pdf_inspection)
+
+
+def compile_project(data: bytes, kind: str) -> tuple[bytes, str]:
+    inspected = compile_project_inspected(data, kind)
+    return inspected.pdf, inspected.renderer_image
+
+
+def _compile_project(project: Project) -> tuple[bytes, str, str]:
     image = os.getenv("NATIVE_TEX_IMAGE", "")
+    policy = os.getenv("NATIVE_TEX_ISOLATION_POLICY_SHA256", "")
+    if not re.fullmatch(r"[a-f0-9]{64}", policy):
+        raise ResumeProcessingUnavailable("The private TeX worker isolation contract is unavailable. Use your original/custom PDF until the reviewed worker is configured.")
     payload = json.dumps({"protocol": "hirewiz-tex-v1", "main": project.main,
         "files": [{"path": name, "data": base64.b64encode(value).decode()} for name, value in sorted(project.files.items())]}).encode()
     remote = os.getenv("NATIVE_TEX_COMPILER_URL", "")
     if remote:
         from .native_tex_transport import remote_compile
         image = os.getenv("NATIVE_TEX_IMAGE_DIGEST", "")
-        response = remote_compile(payload, url=remote, image=image,
-            policy=os.getenv("NATIVE_TEX_ISOLATION_POLICY_SHA256", ""))
-        return _compiler_pdf(response), image
+        response = remote_compile(payload, url=remote, image=image, policy=policy)
+        if (type(response) is not dict or response.get("renderer_image") != image
+                or response.get("isolation_policy_sha256") != policy
+                or response.get("request_sha256") != digest(payload)
+                or response.get("renderer") != "pdftex-no-shell-escape-v1"):
+            raise ResumeProcessingUnavailable("The isolated TeX worker returned an invalid artifact. Use the original/custom PDF until the worker is checked.")
+        return _compiler_pdf(response), image, policy
     # Docker is a local evidence driver, never Docker-in-Docker on Cloud Run.
     if (os.getenv("APP_ENV", "production").lower() not in {"test", "dev", "development", "local"}
             or not re.fullmatch(r"(?:[a-zA-Z0-9._/:-]+@)?sha256:[a-f0-9]{64}", image)):
-        raise ResumeLayoutError("The isolated TeX compiler is unavailable. Upload the original compiled PDF or a custom PDF/DOCX; your source is not converted on the API host.")
+        raise ResumeProcessingUnavailable("The isolated TeX compiler is unavailable. Upload the original compiled PDF or a custom PDF/DOCX; your source is not converted on the API host.")
     import uuid
     container = "hirewiz-tex-" + uuid.uuid4().hex
     command = ["docker", "run", "--rm", "--name", container, "--pull=never", "--network=none",
@@ -200,13 +200,22 @@ def compile_project(data: bytes, kind: str) -> tuple[bytes, str]:
         "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=16m,uid=65534,gid=65534", "-i", image]
     try:
         result = subprocess.run(command, input=payload, capture_output=True, timeout=30, check=False)
-        if result.returncode or len(result.stdout) > 15 * 1024 * 1024:
-            raise ValueError("compiler_refused")
-        response = json.loads(result.stdout)
-        return _compiler_pdf(response), image
+        if len(result.stdout) > 15 * 1024 * 1024:
+            raise ResumeProcessingUnavailable("The isolated TeX worker returned an invalid artifact. Use the original/custom PDF until the worker is checked.")
+        try:
+            response = json.loads(result.stdout)
+        except (ValueError, TypeError):
+            raise ResumeProcessingUnavailable("The isolated TeX worker returned an invalid artifact. Use the original/custom PDF until the worker is checked.") from None
+        if result.returncode:
+            if result.returncode == 1 and response == {"error": "compile_refused"}:
+                raise ValueError("compiler_refused")
+            raise ResumeProcessingUnavailable("The isolated TeX compiler is unavailable. Upload the original compiled PDF or a custom PDF/DOCX; your source is not converted on the API host.")
+        return _compiler_pdf(response), image, policy
     except ResumeLayoutError:
         raise
-    except (OSError, subprocess.TimeoutExpired, ValueError, KeyError) as exc:
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise ResumeProcessingUnavailable("The isolated TeX compiler is unavailable. Upload the original compiled PDF or a custom PDF/DOCX; your source is not converted on the API host.") from exc
+    except (ValueError, KeyError) as exc:
         raise ResumeLayoutError("The TeX source did not compile safely or overflowed its layout. Check missing assets, unsupported fonts/dependencies and text length, or use the original/custom PDF.") from exc
     finally:
         # subprocess timeout does not stop Docker's daemon-side container.
@@ -229,7 +238,7 @@ def _compiler_pdf(response: Any) -> bytes:
             raise ValueError("invalid_compiler_artifact")
         return pdf
     except (KeyError, TypeError, ValueError) as exc:
-        raise ResumeLayoutError("The isolated TeX worker returned an invalid artifact. Use the original/custom PDF until the worker is checked.") from exc
+        raise ResumeProcessingUnavailable("The isolated TeX worker returned an invalid artifact. Use the original/custom PDF until the worker is checked.") from exc
 
 
 def _compact(text: str) -> str:
@@ -472,19 +481,88 @@ def validate_claims(edits: list[dict], evidence: list[dict]) -> None:
 
 def prepare_artifact(data: bytes, kind: str, edits: list[dict], approved_evidence: list[dict] | None = None) -> dict[str, Any]:
     from .resume_layout import _candidate, _validated_edits
+    inspected = compile_project_inspected(data, kind)
     units = source_units(data, kind, _candidate)
     replacements = _validated_edits(units, edits)
     validate_claims(edits, approved_evidence or [])
     native = patch_project(data, kind, units, replacements) if replacements else data
-    before, image = compile_project(data, kind)
-    after, _ = compile_project(native, kind) if replacements else (before, image)
-    validation = validate_layout(before, after, units, replacements)
-    return {"validator": VALIDATOR, "renderer_image": image, "source_sha256": digest(data),
+    candidate = compile_project_inspected(native, kind) if replacements else inspected
+    if (inspected.renderer_image != candidate.renderer_image
+            or inspected.renderer_policy_sha256 != candidate.renderer_policy_sha256):
+        raise ResumeProcessingUnavailable("The private TeX renderer changed during preparation. Keep the original/custom file and try again later.")
+    before, after = inspected.pdf, candidate.pdf
+    seal: dict[str, Any] = {"validator": VALIDATOR, "renderer_image": inspected.renderer_image,
+        "renderer_policy_sha256": inspected.renderer_policy_sha256, "source_sha256": digest(data),
         "edits_sha256": digest(json.dumps(edits, sort_keys=True, separators=(",", ":")).encode()),
         "pdf_sha256": digest(after), "size": len(after), "media_type": "application/pdf",
         "pdf_base64": base64.b64encode(after).decode(), "native_sha256": digest(native),
-        "native_base64": base64.b64encode(native).decode(), "validation": validation,
+        "native_base64": base64.b64encode(native).decode(),
+        "inspection_version": 1, "inspections": {
+            "source": _inspection_metadata(inspected.source_inspection),
+            "source_pdf": _inspection_metadata(inspected.pdf_inspection),
+            "candidate": _inspection_metadata(candidate.source_inspection),
+            "candidate_pdf": _inspection_metadata(candidate.pdf_inspection)},
         "classification": "tailored" if replacements else "unchanged_source_snapshot"}
+    try:
+        _validate_seal_inspections(seal, data, kind, native, after, original_pdf=before)
+    except (KeyError, TypeError, ValueError):
+        raise ResumeProcessingUnavailable("The private TeX safety receipts could not be verified. Keep the original/custom file and try again later.") from None
+    seal["validation"] = validate_layout(before, after, units, replacements)
+    return seal
+
+
+def _inspection_metadata(inspection: InspectedResume) -> dict[str, Any]:
+    from .document_ingestion import InspectedResume
+
+    # Deliberately exclude parsed candidate facts from durable seal metadata.
+    if type(inspection) is not InspectedResume:
+        raise ResumeProcessingUnavailable("The private TeX safety receipts could not be verified. Keep the original/custom file and try again later.")
+    return {"sha256": inspection.sha256, "size_bytes": inspection.size_bytes,
+        "source_format": inspection.source_format, "worker_image": inspection.worker_image,
+        "policy_sha256": inspection.policy_sha256, "scan_engine": inspection.scan_engine,
+        "scan_version": inspection.scan_version, "scan_definitions": inspection.scan_definitions}
+
+
+def _validate_inspection_metadata(record: Any, kind: str, source: bytes | None) -> None:
+    if (not isinstance(record, dict) or set(record) != {
+            "sha256", "size_bytes", "source_format", "worker_image", "policy_sha256",
+            "scan_engine", "scan_version", "scan_definitions"}
+            or not isinstance(record["sha256"], str) or not re.fullmatch(r"[a-f0-9]{64}", record["sha256"])
+            or type(record["size_bytes"]) is not int or not 0 < record["size_bytes"] <= MAX_PROJECT_BYTES
+            or record["source_format"] != kind
+            or not isinstance(record["worker_image"], str)
+            or not re.fullmatch(r"[a-zA-Z0-9._/:-]+@sha256:[a-f0-9]{64}", record["worker_image"])
+            or not isinstance(record["policy_sha256"], str) or not re.fullmatch(r"[a-f0-9]{64}", record["policy_sha256"])
+            or record["scan_engine"] != "ClamAV"
+            or any(not isinstance(value, str) or not 0 < len(value) <= 200
+                   or any(ord(char) < 32 or ord(char) > 126 for char in value)
+                   for value in (record["scan_version"], record["scan_definitions"]))
+            or source is not None and (record["sha256"] != digest(source) or record["size_bytes"] != len(source))):
+        raise ValueError("invalid_inspection_metadata")
+
+
+def _validate_seal_inspections(seal: dict, data: bytes, kind: str, native: bytes, pdf: bytes,
+                               *, original_pdf: bytes | None = None) -> None:
+    records = seal["inspections"]
+    if (type(seal["inspection_version"]) is not int or seal["inspection_version"] != 1
+            or kind not in NATIVE_FORMATS or not isinstance(records, dict)
+            or set(records) != {"source", "source_pdf", "candidate", "candidate_pdf"}
+            or not isinstance(seal["renderer_image"], str)
+            or not re.fullmatch(r"(?:[a-zA-Z0-9._/:-]+@)?sha256:[a-f0-9]{64}", seal["renderer_image"])
+            or not isinstance(seal["renderer_policy_sha256"], str)
+            or not re.fullmatch(r"[a-f0-9]{64}", seal["renderer_policy_sha256"])
+            or type(seal["size"]) is not int or seal["size"] != len(pdf)
+            or seal["native_sha256"] != digest(native) or seal["pdf_sha256"] != digest(pdf)
+            or not 0 < len(native) <= MAX_PROJECT_BYTES or not 0 < len(pdf) <= MAX_PROJECT_BYTES):
+        raise ValueError("invalid_inspection_seal")
+    for name, source_kind, content in (("source", kind, data), ("source_pdf", "pdf", original_pdf),
+                                       ("candidate", kind, native), ("candidate_pdf", "pdf", pdf)):
+        _validate_inspection_metadata(records[name], source_kind, content)
+    if any((record["worker_image"], record["policy_sha256"]) != (
+            records["source"]["worker_image"], records["source"]["policy_sha256"]) for record in records.values()):
+        raise ValueError("inspection_worker_changed")
+    if native == data and (records["source"] != records["candidate"] or records["source_pdf"] != records["candidate_pdf"]):
+        raise ValueError("unchanged_inspection_changed")
 
 
 def sealed_bytes(seal: dict | None, data: bytes, kind: str, edits: list[dict], output: str) -> bytes:
@@ -493,6 +571,18 @@ def sealed_bytes(seal: dict | None, data: bytes, kind: str, edits: list[dict], o
     if (seal.get("validator") != VALIDATOR or seal.get("source_sha256") != digest(data)
             or seal.get("edits_sha256") != digest(json.dumps(edits, sort_keys=True, separators=(",", ":")).encode())):
         raise ResumeLayoutError("The TeX source or edits changed after review. Prepare a new version and review it again.")
+    if "inspection_version" in seal:
+        try:
+            # New seals verify both retained outputs even when only one is requested.
+            if not isinstance(seal["native_base64"], str) or not isinstance(seal["pdf_base64"], str):
+                raise ValueError("invalid_artifact_encoding")
+            native = base64.b64decode(seal["native_base64"], validate=True)
+            pdf = base64.b64decode(seal["pdf_base64"], validate=True)
+            _validate_seal_inspections(seal, data, kind, native, pdf)
+            return pdf if output == "pdf" else native
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ResumeLayoutError("The sealed TeX artifact failed integrity verification. Prepare a new version; do not use this file.") from exc
+    # Historical v2 seals retain their original retrieval contract and policy.
     try:
         key = "pdf" if output == "pdf" else "native"
         result = base64.b64decode(seal[key + "_base64"], validate=True)

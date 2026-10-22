@@ -37,6 +37,12 @@ class ResumeLayoutError(ValueError):
         self.repair_hint = repair_hint
 
 
+class ResumeProcessingUnavailable(ResumeLayoutError):
+    """A processing service or receipt failed; this is not a document refusal."""
+
+    content_repair_allowed = False
+
+
 # PDFium must not be called simultaneously from multiple threads, even for
 # different documents. All PDF operations in this module share this lock.
 _PDF_LOCK = threading.RLock()

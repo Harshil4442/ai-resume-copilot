@@ -14,7 +14,7 @@ from ..database import get_db
 from ..rate_limiter import limiter
 from ..security import get_current_user
 from ..services.document_ingestion import DocumentInspectionError, inspect_resume_document
-from ..services.parsing import enrich_resume_skills, parse_resume_file
+from ..services.parsing import enrich_resume_skills
 
 router = APIRouter(prefix="/resume", tags=["resume"])
 
@@ -214,6 +214,13 @@ async def parse_resume(
     owner_id = current_user.id
     filename = file.filename or ""
     content_type = file.content_type or ""
+    # Native uploads must enter durable quarantine through the control API.
+    filename, source_format = _resume_upload_kind(filename, content_type)
+    if source_format in {"tex", "texzip"}:
+        raise HTTPException(
+            status_code=409,
+            detail="TeX projects require the secure upload workflow. Reload Resume upload and upload the source there; no analysis units were charged.",
+        )
 
     # Read one byte beyond the cap so oversized uploads are rejected without
     # buffering an unbounded request body in application memory.
@@ -223,22 +230,12 @@ async def parse_resume(
             status_code=413,
             detail=f"File is larger than {MAX_UPLOAD_BYTES // (1024 * 1024)}MB limit.",
         )
-    # Determine only metadata in the API process. ZIP/XML/PDF inspection and
-    # deterministic extraction for PDF/DOCX belong to the private scan worker.
-    filename, source_format = _resume_upload_kind(filename, content_type)
+    # PDF/DOCX inspection and extraction run only in the private scan worker.
     from ..services.resume_layout import ResumeLayoutError
     try:
-        if source_format in {"pdf", "docx"}:
-            raw_text, sections, skills, exp_years, contact_info = await run_in_threadpool(
-                inspect_resume_document, file_bytes, source_format=source_format
-            )
-        else:
-            # Native projects retain their separate compiler path. Their full
-            # quarantine/scan and post-compile isolation gate remains open.
-            _validated_resume_upload(filename, content_type, file_bytes)
-            raw_text, sections, skills, exp_years, contact_info = await run_in_threadpool(
-                parse_resume_file, file_bytes, filename=filename, use_llm=False
-            )
+        raw_text, sections, skills, exp_years, contact_info = await run_in_threadpool(
+            inspect_resume_document, file_bytes, source_format=source_format
+        )
     except DocumentInspectionError as exc:
         raise HTTPException(exc.status_code, str(exc)) from None
     except ResumeLayoutError as exc:

@@ -1,7 +1,7 @@
 # HireWiz development and deployment progress
 
-Updated **22 October 2026** after the accepted runtime repair and canonical
-frontend promotion. The original six outcomes below remain **OPEN** until their
+Updated **23 October 2026 (IST)** after the accepted runtime repair, canonical
+preview correction and local native-upload implementation. The original six outcomes below remain **OPEN** until their
 complete development and production acceptance requirements are met within the
 owner-approved pilot. A deployed service, a successful migration, source
 validation or a passing build is supporting evidence within an outcome; it is
@@ -13,13 +13,15 @@ now deployed. The canonical website's account-availability endpoint returns
 Google sign-in passed. Native Google verification reached the owner, but human
 password submission, completed native enrollment and browser pairing remain
 unverified. Existing original/approved-tailored PDF review and a fresh
-PDF upload/parse succeeded. One fresh post-repair tailoring attempt failed at
-Gemini with **HTTP 402** before a change plan or document editing; AI Studio
-confirms **Tier 1 Prepay / No credits**. Reserved AI units were waived, the
-balance remains **7**, and no new resume version was saved. There was no
-automatic generation retry. Internal HireWiz credits do not fund Google's
-provider balance.
-
+PDF upload/parse succeeded. The earlier HTTP 402 failure is retained as
+historical evidence. After the owner reported a **₹500 AI Studio top-up**, one
+bounded UI tailoring request completed two successful Gemini calls, with
+**US$0.063133** recorded model cost from actual token usage. Both proposed plans
+then failed the deterministic PDF editor with **`unsupported_pdf_text_stream`**.
+No version was saved, no user AI units were committed and the balance remains
+**7**. Provider funding is now usable; actual wallet balance and final provider
+invoice/tax were not independently verified. Local PDF stream diagnosis is in
+progress before another paid generation.
 Expense-policy secret version **3** is now accepted on all three application
 services, with canonical traffic verified and renewal rollout tags cleaned.
 Model-policy secret version **2** is unchanged. The finite expense-policy
@@ -29,11 +31,11 @@ retained spending history are unchanged. **The overall goal is not complete.**
 | Original outcome | Status | Completed work within this outcome | Remaining acceptance |
 |---|---|---|---|
 | Official job search, ranking and user-selected job counts | OPEN | Deterministic search/ranking, selected counts and settlement safeguards are deployed. All 20 reviewed origins are enabled and healthy; all refreshed after activation. The recorded aggregate shows 1,366 open postings freshly checked. Authenticated search configuration and mobile layout were observed. | Verify preferences/resume matching, pagination, requested counts, fresh/closed-job handling and per-delivered-result charges/recovery in a completed candidate search. The owner account has no service credits and no paid search was launched. Keep the twenty-origin scope visible; worldwide expansion and an independent >95% coverage assessment remain follow-on work. |
-| Resume tailoring preserving PDF, DOCX and LaTeX formatting | OPEN | Source-preserving document engines, private rendering/scanning, upload coordination and source-selection/review safeguards are deployed. Existing original/approved-tailored PDFs preview and download with one A4 page, nine annotations and visually preserved fonts/sections/layout. A fresh deterministic PDF upload/parse retained byte-identical original download and passed 26 persisted scan/custody checks. The deployed Gemini compatibility fix now has a real post-repair observation: HTTP 402 before planning/layout, waived units, balance 7 and no saved version. | Fund the provider account before a separately approved new generation; do not retry automatically. Complete truthful new tailoring, evidence review, original/custom/tailored selection and deletion/cleanup across PDF, DOCX and LaTeX. A provider billing refusal is not a demonstrated formatting defect, and existing PDF review does not establish complete new-generation acceptance. |
+| Resume tailoring preserving PDF, DOCX and LaTeX formatting | OPEN | Source-preserving document engines, private rendering/scanning, upload coordination and source-selection/review safeguards are deployed. Existing original/approved-tailored PDFs preview and download with one A4 page, nine annotations and visually preserved fonts/sections/layout. A fresh deterministic PDF upload/parse retained byte-identical original download and passed 26 persisted scan/custody checks. After the owner-funded top-up, Gemini successfully generated two plans within one bounded UI request. Both were rejected by deterministic PDF stream editing; no version or customer AI charge was committed and the balance remains 7. | Repair and locally verify `unsupported_pdf_text_stream` before another paid generation; fail deterministic incompatibility before model calls. Complete truthful new tailoring, evidence review, original/custom/tailored selection and deletion/cleanup across PDF, DOCX and LaTeX. The current failure is in PDF text-stream editing; existing PDF review does not establish complete new-generation acceptance. |
 | Candidate-reviewed direct company applications | OPEN | Schema19, native Firestore/KMS account/device infrastructure, website transport/pairing configuration and the Razorpay/Greenhouse companion implementation are deployed or packaged. The proxy/clock repair is accepted, canonical account availability is HTTP 200 with both options true, and fresh ordinary Google sign-in passed. Native Google verification was received. The owner reports companion 0.8.0 installed; pairing remains unverified. | Complete human password submission/native enrollment and browser pairing, then verify required/conditional form parity and the candidate-reviewed upload/receipt/recovery journey. Receipt of verification does not prove enrollment or pairing. Actual attachment, native upload, final submission and typed-control gates remain held; real employer writes remain follow-on work. |
 | Paid search/application credits, profitable finite packs and payment recovery | OPEN | Three finite packs, separate service-credit/AI-unit balances, exact quotes, reservations, settlement/refunds and interrupted/duplicate recovery are deployed. New unlimited offers are removed. Expense-policy secret version 3 is accepted on all three application services through 29 October; model-policy secret version 2 is unchanged. Prices, expense caps and retained spending history are unchanged. | Paid sales/checkout and real payment/application charging remain held. Production payments, refunds/recovery and actual-cost calibration are unaccepted; estimate-based margins are not proven profit. Resolve the commercial hosting arrangement before selling. |
-| Fast responsive pages and SEO | OPEN | PR28 main-tree frontend deployment A8 is promoted on both canonical domains and retains the SEO corrections. Public homepage checks at requested widths of 390, 768 and 1,440 pixels show no horizontal overflow and working mobile navigation. Authenticated search/billing views were also observed at 390 pixels without horizontal overflow. Canonical metadata checks verify pricing-specific sharing metadata, noindex on login/registration and authentication routes absent from the sitemap. | Verify complete authenticated laptop/PC/mobile journeys, production accessibility/SEO and measured loading performance. The observed pages and server timings do not establish complete usability acceptance, Core Web Vitals or mobile field-data performance. |
-| GCP/Vercel deployment, preserved-data migration and monitoring | OPEN | Preserved-data cutover and schema19 migration remain intact. PR28 runtime fixes are accepted: API/analysis retain the exact c67d144 image; the matching A8 frontend is canonical on both domains. Expense-policy-3 revisions now serve 100% on all three application services, with renewal tags cleaned and model policy 2 unchanged. Fresh ordinary Google sign-in and canonical account availability passed. Consumer queues/schedules, reviewed-source ingestion and selected owner-inbox monitoring delivery were previously verified. | Complete human native enrollment/pairing, provider-funded truthful tailoring and the remaining pilot journeys. Verify unexercised alert routes and required operational acceptance. Preserve commercial and employer-write holds; deployment completion alone does not close all six outcomes. |
+| Fast responsive pages and SEO | OPEN | PR30 main `523d743d` is canonical on both domains and retains the SEO corrections. Its actual owner UI verifies exact TeX/DOCX source selection and no fallback for an unavailable requested file. Public homepage checks at requested widths of 390, 768 and 1,440 pixels show no horizontal overflow and working mobile navigation. Authenticated search/billing views were also observed at 390 pixels without horizontal overflow. Canonical metadata checks verify pricing-specific sharing metadata, noindex on login/registration and authentication routes absent from the sitemap. | Verify complete authenticated laptop/PC/mobile journeys, production accessibility/SEO and measured loading performance. The observed pages and server timings do not establish complete usability acceptance, Core Web Vitals or mobile field-data performance. |
+| GCP/Vercel deployment, preserved-data migration and monitoring | OPEN | Preserved-data cutover and schema19 migration remain intact. PR28 runtime fixes are accepted: API/analysis retain the exact c67d144 image; PR30 frontend deployment wX38 is canonical on both domains. Expense-policy-3 revisions now serve 100% on all three application services, with renewal tags cleaned and model policy 2 unchanged. Fresh ordinary Google sign-in and canonical account availability passed. Consumer queues/schedules, reviewed-source ingestion and selected owner-inbox monitoring delivery were previously verified. | Complete human native enrollment/pairing, repair and verify truthful new tailoring and the remaining pilot journeys. Verify unexercised alert routes and required operational acceptance. Preserve commercial and employer-write holds; deployment completion alone does not close all six outcomes. |
 
 ## Scope and owner controls
 
@@ -84,6 +86,16 @@ redirect retained. Automatic custom-domain assignment remains disabled. At
 **22 October, 20:42:41 UTC**, the canonical same-origin account-availability
 GET returned HTTP 200 and exactly `fresh_registration: true` and
 `legacy_enrollment: true`.
+
+PR30 subsequently merged as **`523d743d02fbb09037a2aca88cb0e07d3d714203`**,
+with the same Git tree as its tested head. Production deployment
+**`dpl_wX38bqW2nyU8QjkV1i8MKhqKp4WH`** was promoted once and both actual
+domain records point to it; the apex 308 redirect and disabled automatic domain
+assignment are retained. At **22 October, 22:23:49 UTC**, canonical account
+availability again returned exactly both options `true`. Actual authenticated
+UI checks verified unavailable-ID, TeX31 and DOCX30 selection without another
+file's download controls. GCP images, database and expense/model policies were
+unchanged by this frontend correction.
 
 The following configuration-only expense-policy renewal is accepted. All three
 services use expense-policy secret version **3** and unchanged model-policy
@@ -196,6 +208,41 @@ changes. Missing or malformed explicit IDs cannot select another file. Deferred
 list and late-PDF-response regressions cover this boundary. This source change
 does not establish a successful new tailoring operation.
 
+### Native upload safety implementation awaiting deployment
+
+The existing outcome 2 includes this deterministic upload work alongside PDF
+stream repair and pending human enrollment. New source changes route TeX/ZIP through the
+existing owner-bound quarantine and cleanup chain. Source inspection precedes
+project validation and isolated compilation; the exact compiler PDF receives
+private inspection/extraction before candidate facts or a new seal are released.
+The pure project validator is separated from compiler/transport code so it can
+be included in the secretless inspector image without application clients.
+
+The frontend uses direct native upload with exact format/MIME/hash/size checks;
+it refuses new native uploads when secure upload is unavailable. Existing native
+original downloads retain their owner-bound legacy compatibility. New native
+multipart parses are refused to prevent bypassing quarantine. Service outages
+remain retryable during upload processing; source refusals schedule cleanup.
+An inspector/compiler outage during tailoring stops the run and waives customer
+units instead of regenerating paid AI proposals or requeuing the same run. Original bytes, cancellation
+leases, generation-pinned writes and deletion obligations remain intact.
+
+Migration **`20261023_0020`** expands only the existing upload-format constraint.
+Local PostgreSQL checks cover retained PDF data through upgrade/downgrade,
+refusal of a lossy downgrade once native cleanup history exists, late results
+after cancellation and detached cleanup after resume deletion. Focused frontend
+checks cover native transport and source identity. New artifact preparation also
+retains metadata for original/candidate source and PDF inspection while preserving
+historical sealed downloads.
+
+This implementation is awaiting integrated Linux/container verification,
+reviewed native image/policy rollout, schema20 application, coordinator/API
+deployment and canonical synthetic TeX/ZIP acceptance with exact sealed review
+and cleanup evidence. Production remains on schema19 and its previously accepted
+scanner until that rollout is complete. No new full checkpoint is closed, no AI
+test was initiated by this native implementation, and no paid sales or employer
+writes were activated.
+
 The GCP notification channel routes to the owner's selected signed-in Google
 account. Definition attention, missing heartbeat, API 5xx and latency policies
 are configured; the subsequent terminal Cloud Build operation alert reuses that
@@ -275,20 +322,32 @@ respective acceptance and owner review are complete.
 
 The Gemini request-compatibility correction is deployed: Gemini 3+ requests
 omit unsupported `candidate_count` while preserving output-token and budget
-limits. One fresh post-repair owner-approved tailoring run reached Gemini and
-failed with **HTTP 402** before creating a change plan or editing the document.
-AI Studio independently shows **Tier 1 Prepay / No credits** and requires a
-positive provider balance to resume service. The two reserved AI units were
+limits. Before the top-up, one post-repair owner-approved tailoring run reached Gemini
+and failed with **HTTP 402** before creating a change plan or editing the document.
+At that historical observation, AI Studio showed **Tier 1 Prepay / No credits**
+and required a positive provider balance to resume service. The two reserved AI units were
 waived, the verified balance stayed at **7**, and no new resume version was
 saved. There was no automatic retry. No provider usage receipt was returned,
 so the provider-cost outcome remains unknown rather than assumed free. This
 billing refusal does not demonstrate a format-preservation failure. Internal
 HireWiz credit adjustments cannot fund Google's provider account.
 
-A successful new generation remains unaccepted. Resume only through an
-explicitly reviewed action after provider funding is available; preserve the
-original/custom-file alternatives, evidence checks, exact quote and finite
-expense controls. No provider purchase was made during these observations.
+After the owner reported the **₹500** provider top-up, one new UI request
+(`run_ff82dad704884d9b9cfdf2305b0d7d65`) reached **`gemini-3.6-flash`** and
+completed two bounded generation attempts. Both have real token-usage receipts;
+the recorded combined model cost is **63,133 USD micros (US$0.063133)**, not a
+verified invoice total. The deterministic editor rejected both attempts with
+**`unsupported_pdf_text_stream`**. The run terminated with waived user units,
+balance **7**, and no saved version. No second UI generation request was made.
+The earlier HTTP 402 run and its unknown provider-cost outcome remain unchanged.
+The AI Studio wallet widget did not expose a usable balance; successful real
+requests establish usable funding without asserting the remaining rupee balance.
+
+A successful new generation remains unaccepted. Diagnose and repair the PDF
+stream incompatibility locally and preflight deterministic support before another
+paid attempt. Preserve original/custom-file alternatives, evidence checks,
+exact quote and finite expense controls. The agent did not make a provider
+purchase, enable auto-reload or change billing settings.
 
 The three finite offers remain Starter **₹649 / 100 service credits + 2 AI
 units**, Growth **₹1,099 / 300 + 6**, and Scale **₹2,199 / 700 + 15**. Deployed

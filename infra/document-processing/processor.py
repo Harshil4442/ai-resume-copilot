@@ -1,4 +1,4 @@
-"""Secretless PDF/DOCX inspection, invoked only inside the Cloud Run sandbox.
+"""Secretless resume inspection, invoked only inside the Cloud Run sandbox.
 
 ClamAV must accept the exact original before any document parser sees it. This
 module provides no host-execution fallback, database or optional model work.
@@ -74,7 +74,7 @@ def decode_request(payload: bytes) -> tuple[str, bytes, str]:
                            parse_constant=lambda _: (_ for _ in ()).throw(InspectionUnavailable()))
         if (type(value) is not dict or set(value) != {"version", "source_format", "content_base64", "sha256"}
                 or type(value["version"]) is not int or value["version"] != 1
-                or value["source_format"] not in {"pdf", "docx"}
+                or value["source_format"] not in {"pdf", "docx", "tex", "texzip"}
                 or not isinstance(value["sha256"], str)
                 or not re.fullmatch(r"[a-f0-9]{64}", value["sha256"])
                 or not isinstance(value["content_base64"], str)):
@@ -1032,6 +1032,22 @@ def validate_docx(content: bytes) -> None:
         raise InspectionDenied() from None
 
 
+def validate_native_source(content: bytes, kind: str) -> None:
+    """Validate a scanned project only; no compiler or extractor runs here."""
+    from app.services.native_project import read_project
+    from app.services.resume_layout import ResumeLayoutError
+
+    try:
+        project = read_project(content, kind)
+        # PDF assets are untrusted inputs too. The compiler later consumes them
+        # as graphics, so retain the same passive-content admission as a PDF.
+        for name, asset in project.files.items():
+            if name.endswith(".pdf"):
+                validate_pdf(asset)
+    except ResumeLayoutError:
+        raise InspectionDenied() from None
+
+
 def inspect(payload: bytes) -> dict:
     kind, content, sha256 = decode_request(payload)
     with tempfile.TemporaryDirectory(prefix="document-", dir="/tmp") as directory:
@@ -1042,9 +1058,17 @@ def inspect(payload: bytes) -> dict:
         if path.read_bytes() != content:
             raise InspectionUnavailable()
         try:
-            (validate_pdf if kind == "pdf" else validate_docx)(content)
-            from app.services.parsing import parse_resume_file
-            raw_text, sections, skills, experience, contact = parse_resume_file(content, filename="original." + kind, use_llm=False)
+            if kind in {"tex", "texzip"}:
+                validate_native_source(content, kind)
+                # This is source admission, not candidate extraction. The
+                # coordinator must inspect the separately compiled PDF before
+                # releasing parsed facts or an artifact for review.
+                raw_text, sections, skills, experience = "", {}, [], 0.0
+                contact = {name: None for name in ("name", "email", "phone", "linkedin", "github")}
+            else:
+                (validate_pdf if kind == "pdf" else validate_docx)(content)
+                from app.services.parsing import parse_resume_file
+                raw_text, sections, skills, experience, contact = parse_resume_file(content, filename="original." + kind, use_llm=False)
             parsed = {"raw_text": raw_text, "sections": sections, "skills": skills,
                       "experience_years": experience, "contact_info": contact}
             if (not isinstance(raw_text, str) or type(sections) is not dict

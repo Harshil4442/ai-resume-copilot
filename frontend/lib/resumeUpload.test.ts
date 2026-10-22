@@ -8,6 +8,13 @@ vi.mock("./api", () => ({ apiPostForm: vi.fn() }));
 const id = "rup_" + "a".repeat(32);
 const resume = { resume_id: 42, source_available: true, source_format: "pdf", skills: ["Python"], experience_years: 1, sections: {}, contact_info: {} };
 const fetchMock = vi.fn<typeof fetch>();
+const formats = [
+  { name: "resume.PDF", type: "application/pdf", kind: "pdf", media: "application/pdf" },
+  { name: "resume.docx", type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", kind: "docx", media: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" },
+  { name: "resume.TeX", type: "text/plain", kind: "tex", media: "application/x-tex" },
+  { name: "project.ZIP", type: "application/x-zip-compressed", kind: "texzip", media: "application/zip" },
+] as const;
+const nativeFormats = formats.slice(2);
 
 function file(size = 20, name = "resume.pdf", type = "application/pdf") {
   const bytes = new Uint8Array(size);
@@ -19,10 +26,11 @@ function file(size = 20, name = "resume.pdf", type = "application/pdf") {
 function json(value: unknown, status = 200) { return new Response(JSON.stringify(value), { status, headers: { "Content-Type": "application/json" } }); }
 function status(state = "released") { return { upload_id: id, state, error_code: null, resume: state === "released" ? resume : null }; }
 function intent(value: File) {
+  const media: string = formats.find((format) => value.name.toLowerCase().endsWith(format.kind === "texzip" ? ".zip" : `.${format.kind}`))!.media;
   const query = new URLSearchParams({ "X-Goog-Algorithm": "GOOG4-RSA-SHA256", "X-Goog-Credential": "synthetic-signer", "X-Goog-Date": "20261010T000000Z",
     "X-Goog-Expires": "300", "X-Goog-SignedHeaders": "content-type;host;x-goog-content-length-range;x-goog-if-generation-match", "X-Goog-Signature": "a".repeat(512) });
   return { upload_id: id, state: "awaiting_upload", upload_url: `https://storage.googleapis.com/synthetic-quarantine/quarantine/${id}/source?${query}`,
-    method: "PUT", headers: { "Content-Type": /\.pdf$/i.test(value.name) ? "application/pdf" : "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    method: "PUT", headers: { "Content-Type": media,
       "x-goog-if-generation-match": "0", "x-goog-content-length-range": `${value.size},${value.size}` },
     upload_grant_expires_at: new Date(Date.now()+300_000).toISOString(), expires_at: new Date(Date.now()+900_000).toISOString() };
 }
@@ -45,6 +53,21 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
 describe("direct private resume upload contract", () => {
+  it.each(formats)("uses secure upload for $kind with exact bytes and canonical media", async ({ name, type, kind, media }) => {
+    const value = file(20, name, type);
+    const saved = { ...resume, source_format: kind };
+    serve(value, { complete: async () => json({ ...status(), resume: saved }) });
+    expect(await uploadResumeFile(value)).toEqual(saved);
+    expect(fetchMock.mock.calls.map(([url, init]) => [init?.method, String(url).startsWith("https://storage.googleapis.com/") ? "storage" : url])).toEqual([
+      ["POST", "/api/backend/resume/uploads"], ["PUT", "storage"], ["POST", `/api/backend/resume/uploads/${id}/complete`],
+    ]);
+    const create = JSON.parse(fetchMock.mock.calls[0][1]!.body as string);
+    expect(create).toMatchObject({ filename: name, size_bytes: value.size, sha256: createHash("sha256").update(new Uint8Array(20).fill(7)).digest("hex") });
+    expect(puts()[0][1]?.body).toBe(value);
+    expect((puts()[0][1]?.headers as Record<string, string>)["Content-Type"]).toBe(media);
+    expect(apiPostForm).not.toHaveBeenCalled();
+  });
+
   it("hashes exact 5 MiB, sends original File once, then returns only the saved verdict", async () => {
     const value = file(MAX_RESUME_BYTES); serve(value);
     const store = vi.spyOn(Storage.prototype, "setItem");
@@ -102,8 +125,8 @@ describe("direct private resume upload contract", () => {
     expect(puts()).toHaveLength(1); expect(deletes()).toHaveLength(1);
   });
 
-  it("cancellation during PUT requests cleanup and never calls completion", async () => {
-    const value=file(); const controller=new AbortController(); let started!:()=>void;
+  it.each([formats[0], ...nativeFormats])("cancellation during $kind PUT requests cleanup and never calls completion", async ({ name, type }) => {
+    const value=file(20, name, type); const controller=new AbortController(); let started!:()=>void;
     const uploading=new Promise<void>((resolve)=>{started=resolve;});
     serve(value);
     const standard=fetchMock.getMockImplementation()!;
@@ -139,8 +162,8 @@ describe("direct private resume upload contract", () => {
     expect(puts()).toHaveLength(0); expect(deletes()).toHaveLength(1);
   });
 
-  it("refuses a released format that disagrees with the original file", async () => {
-    const value = file(); serve(value, { complete: async () => json({ ...status(), resume: { ...resume, source_format: "docx" } }) });
+  it.each(formats)("refuses a released format that disagrees with the original $kind file", async ({ name, type, kind }) => {
+    const value = file(20, name, type); serve(value, { complete: async () => json({ ...status(), resume: { ...resume, source_format: kind === "pdf" ? "docx" : "pdf" } }) });
     await expect(uploadResumeFile(value)).rejects.toThrow("Saved resume could not be verified");
     expect(puts()).toHaveLength(1); expect(deletes()).toHaveLength(1);
   });
@@ -189,6 +212,18 @@ describe("direct private resume upload contract", () => {
     await expect(uploadResumeFile(file())).rejects.toThrow("Secure resume upload is unavailable");
     expect(apiPostForm).not.toHaveBeenCalled(); expect(puts()).toHaveLength(0);
   });
+
+  it.each(nativeFormats)("never falls back after a $kind control or scanner failure", async ({ name, type }) => {
+    const value = file(20, name, type);
+    fetchMock.mockResolvedValue(json({}, 503));
+    await expect(uploadResumeFile(value)).rejects.toThrow("Secure resume upload is unavailable");
+    expect(puts()).toHaveLength(0);
+    fetchMock.mockClear();
+    serve(value, { complete: async () => json(status("rejected")) });
+    await expect(uploadResumeFile(value)).rejects.toThrow("did not pass resume safety checks");
+    expect(puts()).toHaveLength(1); expect(deletes()).toHaveLength(1);
+    expect(apiPostForm).not.toHaveBeenCalled();
+  });
 });
 
 describe("capability and size admission",()=>{
@@ -218,12 +253,30 @@ describe("capability and size admission",()=>{
     await expect(uploadResumeFile(file(MAX_RESUME_BYTES))).rejects.toThrow("cannot pass through the current website upload route");
     expect(fetchMock).not.toHaveBeenCalled(); expect(apiPostForm).not.toHaveBeenCalled();
   });
-  it("preserves the native TeX path, original File and bounded legacy upload",async()=>{
-    const value=file(MAX_LEGACY_RESUME_BYTES,"resume.tex","application/x-tex");
-    vi.mocked(apiPostForm).mockResolvedValue(resume);
-    expect(await uploadResumeFile(value,{enrichSkills:true})).toEqual(resume);
-    const [path,form]=vi.mocked(apiPostForm).mock.calls[0];
-    expect(path).toBe("/resume/parse"); expect(form.get("file")).toBe(value); expect(form.get("enrich_skills")).toBe("true"); expect(fetchMock).not.toHaveBeenCalled();
+  it.each(nativeFormats)("allows full five-MiB $kind only through the secure route", async ({ name, type, kind }) => {
+    const value = file(MAX_RESUME_BYTES, name, type);
+    const saved = { ...resume, source_format: kind };
+    serve(value, { complete: async () => json({ ...status(), resume: saved }) });
+    expect(await uploadResumeFile(value)).toEqual(saved);
+    expect(puts()).toHaveLength(1); expect(puts()[0][1]?.body).toBe(value);
+    expect(apiPostForm).not.toHaveBeenCalled();
+  });
+  it.each(nativeFormats)("refuses new $kind files before any request when secure upload is disabled", async ({ name, type }) => {
+    vi.stubEnv("NEXT_PUBLIC_RESUME_DIRECT_UPLOAD_ENABLED", "false");
+    await expect(uploadResumeFile(file(MAX_LEGACY_RESUME_BYTES, name, type))).rejects.toThrow("Secure upload is unavailable for TeX and ZIP source projects");
+    expect(fetchMock).not.toHaveBeenCalled(); expect(apiPostForm).not.toHaveBeenCalled();
+  });
+  it.each(nativeFormats)("does not transmit a $kind file for an altered upload media grant", async ({ name, type }) => {
+    const value = file(20, name, type); const instructions = intent(value);
+    instructions.headers["Content-Type"] = "application/pdf";
+    serve(value, { instruction: instructions });
+    await expect(uploadResumeFile(value)).rejects.toThrow("Secure upload instructions are invalid");
+    expect(puts()).toHaveLength(0); expect(deletes()).toHaveLength(1); expect(apiPostForm).not.toHaveBeenCalled();
+  });
+  it("does not send a pre-aborted ZIP project or request an upload grant", async () => {
+    const controller = new AbortController(); controller.abort();
+    await expect(uploadResumeFile(file(20, "project.zip", "application/zip"), { signal: controller.signal })).rejects.toMatchObject({ name: "AbortError" });
+    expect(fetchMock).not.toHaveBeenCalled(); expect(apiPostForm).not.toHaveBeenCalled();
   });
   it("legacy cancellation stops waiting and warns that an original may have been saved",async()=>{
     vi.stubEnv("NEXT_PUBLIC_RESUME_DIRECT_UPLOAD_ENABLED","false");

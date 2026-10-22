@@ -5,6 +5,7 @@ import copy
 import importlib.util
 import json
 import sys
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import urlsplit
@@ -81,11 +82,12 @@ class Http:
             value = self.services[path.rsplit('/', 1)[-1]]
         return SimpleNamespace(status=200), json.dumps(value).encode()
 
-def fixture_probe(monkeypatch):
-    acceptance = probe.NativeAcceptance(NEW, '01234567-0123-0123-0123-012345678901', 'owned-build', 'a' * 64,
+def fixture_probe(monkeypatch, *, contract_version=2, required_case_count=10, policy=None, image=NEW):
+    acceptance = probe.NativeAcceptance(image, '01234567-0123-0123-0123-012345678901', 'owned-build', 'a' * 64,
         'b' * 64, {}, transition.PARENT + '/jobs/hirewiz-doc-six-' + NONCE[:12],
         'owned-job-uid', 'owned-execution', 'owned-execution-uid', 'c' * 64, 'd' * 64,
-        probe.POLICY, probe.FONT, probe.RENDERER, '2026-10-19T00:00:00+00:00')
+        probe.POLICY if policy is None else policy, probe.FONT, probe.RENDERER, '2026-10-19T00:00:00+00:00',
+        contract_version, required_case_count)
     monkeypatch.setattr(probe, 'verify_successor', lambda *args: acceptance)
     calls = []
     monkeypatch.setattr(probe, 'verify_current_successor', lambda image, actual: calls.append((image, actual['uid'])))
@@ -118,6 +120,7 @@ def test_worker_then_three_exact_caller_pins_then_captured_flags(monkeypatch, tm
         current = http.services[name]
         env = transition.environment(current['template'])
         assert env['DOCUMENT_WORKER_IMAGE_DIGEST']['value'] == NEW
+        assert env['DOCUMENT_WORKER_POLICY_SHA256']['value'] == probe.POLICY
         assert all(env[key]['value'] == 'true' for key in transition.PAUSE[name])
         assert current['template']['containers'][0]['image'] == APP
         assert env['DATABASE_URL'] == transition.environment(before[name]['template'])['DATABASE_URL']
@@ -125,6 +128,95 @@ def test_worker_then_three_exact_caller_pins_then_captured_flags(monkeypatch, tm
     assert len(proof_calls) == 3 and result['synchronous_callers_drained'] is False
     assert result['admission_restored'] is True
     assert all(path.stat().st_mode & 0o777 == 0o600 for path in (tmp_path / 'rollout').iterdir())
+
+
+def test_known_prior_v1_pins_are_read_as_v1_but_worker_and_callers_move_to_v2(monkeypatch, tmp_path):
+    proof_calls = fixture_probe(monkeypatch)
+    http = Http()
+    old_image = probe.REPOSITORY + '@sha256:' + 'e' * 64
+    assert probe.POLICY != probe.LEGACY_POLICY
+    for name, actual in http.services.items():
+        for entry in actual['template']['containers'][0]['env']:
+            if entry['name'] == 'DOCUMENT_WORKER_IMAGE_DIGEST':
+                entry['value'] = old_image
+            elif entry['name'] == 'DOCUMENT_WORKER_POLICY_SHA256':
+                entry['value'] = probe.LEGACY_POLICY
+        if name == transition.WORKER:
+            actual['template']['containers'][0]['image'] = old_image
+    run(tmp_path, http)
+    assert proof_calls[0][0] == old_image
+    for _, sent in http.writes[:3]:
+        env = transition.environment(sent['template'])
+        assert env['DOCUMENT_WORKER_IMAGE_DIGEST']['value'] == old_image
+        assert env['DOCUMENT_WORKER_POLICY_SHA256']['value'] == probe.LEGACY_POLICY
+    worker = http.writes[3][1]['template']
+    assert worker['containers'][0]['image'] == NEW
+    assert transition.environment(worker)['DOCUMENT_WORKER_POLICY_SHA256']['value'] == probe.POLICY
+    for actual in http.services.values():
+        env = transition.environment(actual['template'])
+        assert env['DOCUMENT_WORKER_IMAGE_DIGEST']['value'] == NEW
+        assert env['DOCUMENT_WORKER_POLICY_SHA256']['value'] == probe.POLICY
+
+
+@pytest.mark.parametrize('changed', [
+    {'contract_version': 1}, {'contract_version': True}, {'contract_version': 2.0},
+    {'required_case_count': 6}, {'required_case_count': 10.0},
+    {'policy': '0' * 64}, {'image': APP},
+])
+def test_noncurrent_or_unbound_acceptance_never_authorizes_a_patch(monkeypatch, tmp_path, changed):
+    fixture_probe(monkeypatch, **changed)
+    http = Http()
+    with pytest.raises(transition.TransitionDenied, match='current_acceptance_required'):
+        run(tmp_path, http)
+    assert http.writes == []
+
+
+def test_each_patch_independently_requires_current_v2_ten_case_authority(monkeypatch, tmp_path):
+    fixture_probe(monkeypatch)
+    acceptance = probe.verify_successor()
+    http = Http()
+    owner = transition.Journal(tmp_path / 'journal')
+    controller = transition.Controller(http, probe, owner, candidate_image=NEW)
+    try:
+        with pytest.raises(transition.TransitionDenied, match='current_acceptance_required'):
+            controller.patch(transition.CALLERS[0], 'close', {},
+                             acceptance=replace(acceptance, contract_version=1, required_case_count=6))
+        assert http.writes == []
+    finally:
+        owner.close()
+
+
+def test_a_legacy_second_verification_stops_after_close_without_worker_write(monkeypatch, tmp_path):
+    fixture_probe(monkeypatch)
+    accepted = probe.verify_successor()
+    values = iter([accepted, replace(accepted, contract_version=1, required_case_count=6)])
+    monkeypatch.setattr(probe, 'verify_successor', lambda *args: next(values))
+    http = Http()
+    with pytest.raises(transition.TransitionDenied, match='current_acceptance_required'):
+        run(tmp_path, http)
+    assert [name for name, _ in http.writes] == list(transition.CALLERS)
+    for name in transition.CALLERS:
+        env = transition.environment(http.services[name]['template'])
+        assert all(env[key]['value'] == 'false' for key in transition.PAUSE[name])
+    assert http.services[transition.WORKER]['template']['containers'][0]['image'] == probe.BASE_IMAGE
+
+
+def test_unknown_observed_prior_policy_stops_before_any_write(monkeypatch, tmp_path):
+    fixture_probe(monkeypatch)
+    http = Http()
+    for entry in http.services[transition.WORKER]['template']['containers'][0]['env']:
+        if entry['name'] == 'DOCUMENT_WORKER_POLICY_SHA256':
+            entry['value'] = '0' * 64
+    with pytest.raises(probe.NativeProofDenied, match='serving_policy_unverified'):
+        run(tmp_path, http)
+    assert http.writes == []
+
+
+@pytest.mark.parametrize('policy', [None, '', 'A' * 64, True])
+def test_worker_image_change_requires_explicit_bounded_policy(policy):
+    with pytest.raises(transition.TransitionDenied, match='worker_policy_unverified'):
+        transition.mutate_template(service(transition.WORKER), transition.WORKER, 'worker', NONCE,
+                                   NEW, {}, {}, worker_policy_sha256=policy)
 
 @pytest.mark.parametrize('lost_at', [1, 4, 7, 9])
 def test_unknown_write_never_repeats_or_reopens_remaining_callers(monkeypatch, tmp_path, lost_at):

@@ -50,9 +50,14 @@ def proof():
     return {"platform": "linux/amd64", "scope": "local_native_docker_only", "cloud_run_isolation_proven": False,
         "runtime_source_bytes_verified": True, "restricted_container_metadata_verified": True,
         "source_sha256": {"owned-source": "c" * 64}, "image_id": "sha256:" + "d" * 64,
-        "corpus": [{"case": name, "passed": True, "scan": copy.deepcopy(scan)} for name in (
+        "corpus": [{"case": name, "passed": True, "scan": copy.deepcopy(scan),
+                    **({"outcome": "clean", "native_source_empty": True}
+                       if name in {"clean_tex", "clean_texzip"} else {}),
+                    **({"outcome": "detected"} if name in {"eicar_tex_source", "eicar_texzip_member"} else {})}
+                   for name in (
             "clean_pdf", "clean_docx", "page_counter", "active_pdf", "includetext",
-            "eicar_exact_file", "eicar_zip_member", "missing_definitions")],
+            "eicar_exact_file", "eicar_zip_member", "missing_definitions", "clean_tex", "clean_texzip",
+            "eicar_tex_source", "eicar_texzip_member")],
         "docx_layout_corpus": [{"case": "styled_multipage_fit", "passed": True, "layout": {
             "renderer": {"renderer_version": "reviewed-renderer", "font_manifest_sha256": "a" * 64,
                 "policy_sha256": "b" * 64, "image_digest": "local-document-image@sha256:" + "d" * 64},
@@ -63,8 +68,21 @@ def proof():
 
 def test_local_proof_keeps_native_acceptance_separate_and_font_exact():
     facts = refresh.proof_contract(proof(), contract(), {"owned-source": "c" * 64}, now=NOW)
-    assert facts["local_cases"] == 21
+    assert facts["local_cases"] == 25
     assert facts["expires_at_utc"] == "2026-10-19T06:24:15+00:00"
+
+
+@pytest.mark.parametrize("change", ["old_corpus", "source_facts", "no_detection"])
+def test_native_source_proof_cannot_be_replaced_by_old_or_unverified_cases(change):
+    value = proof()
+    if change == "old_corpus":
+        value["corpus"] = value["corpus"][:8]
+    elif change == "source_facts":
+        next(row for row in value["corpus"] if row["case"] == "clean_tex")["native_source_empty"] = False
+    else:
+        next(row for row in value["corpus"] if row["case"] == "eicar_texzip_member")["outcome"] = "clean"
+    with pytest.raises(refresh.RefreshDenied):
+        refresh.proof_contract(value, contract(), {"owned-source": "c" * 64}, now=NOW)
 
 
 @pytest.mark.parametrize("change", ["font", "renderer", "source", "image", "missing_case", "cleanup", "cloud_claim", "stale"])
