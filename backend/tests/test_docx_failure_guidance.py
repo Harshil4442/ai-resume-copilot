@@ -45,10 +45,12 @@ def controls(monkeypatch):
     resume = types.ModuleType(prefix + ".services.resume_layout")
     _definitions("backend/app/services/resume_layout.py", {"ResumeLayoutError"}, resume.__dict__)
     llm = types.ModuleType(prefix + ".services.llm_client")
-    _definitions("backend/app/services/llm_client.py", {"TailoringOutputError"}, llm.__dict__)
+    _definitions("backend/app/services/llm_client.py", {"LLMProviderError", "TailoringOutputError"}, llm.__dict__)
+    costs = types.ModuleType(prefix + ".services.model_cost_policy")
+    _definitions("backend/app/services/model_cost_policy.py", {"ModelCostUnavailable"}, costs.__dict__)
     ingestion = types.ModuleType(prefix + ".services.document_ingestion")
     ingestion._tls_context = lambda: ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    for module in (resume, llm, ingestion):
+    for module in (resume, llm, ingestion, costs):
         monkeypatch.setitem(sys.modules, module.__name__, module)
     artifact = types.ModuleType(prefix + ".services.docx_artifact")
     artifact.__package__ = prefix + ".services"

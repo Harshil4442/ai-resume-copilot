@@ -1,7 +1,7 @@
 # HireWiz development and deployment progress
 
-Updated **22 October 2026 (Asia/Kolkata)**; runtime baseline **21 October, 22:55 UTC**,
-with the subsequent owner-upload evidence below. This replaces the earlier
+Updated **22 October 2026, 18:00 UTC**; runtime observations below include the
+subsequent owner upload, frontend promotion and native-clock diagnosis. This replaces the earlier
 21 October operational state. The original six outcomes below remain **OPEN**
 until their complete development and production acceptance requirements are met
 within the owner-approved pilot. A deployed service, a successful migration,
@@ -15,18 +15,19 @@ Existing original and previously approved tailored PDFs were previewed and
 downloaded successfully. A fresh owner PDF upload and deterministic parse also
 succeeded, with the balance unchanged at 7 AI units. Fresh Google sign-in, native
 enrollment and the complete resume, pairing, paid-search and application journeys
-remain unaccepted. Backend availability HTTP 403 responses and the observed
-HTTP ASGI scheme are under repair. **The overall goal is
+remain unaccepted. The HTTPS proxy correction is staged at zero traffic. Signed
+availability now reaches the native guard, where a measured clock difference
+causes HTTP 503; its source correction is under validation. **The overall goal is
 not complete.**
 
 | Original outcome | Status | Completed work within this outcome | Remaining acceptance |
 |---|---|---|---|
 | Official job search, ranking and user-selected job counts | OPEN | Deterministic search/ranking, selected counts and settlement safeguards are deployed. All 20 reviewed origins are enabled and healthy; all refreshed after activation. The latest aggregate shows 1,366 open postings freshly checked. | Verify the authenticated candidate journey: preferences/resume matching, pagination, requested counts, fresh/closed-job handling and per-delivered-result charges/recovery. Keep the twenty-origin scope visible. No worldwide or >95% coverage claim is established. |
-| Resume tailoring preserving PDF, DOCX and LaTeX formatting | OPEN | Source-preserving document engines, private rendering/scanning, the upload coordinator and the deployed source-selection/review safeguards are available. Fresh scanner acceptance and genuine scheduled scan/cleanup endpoint successes are recorded. Optional AI capability is enabled behind reviewed cost/consent/quote controls. The owner's existing original resume 28 and previously approved tailored version 2 previewed and downloaded on the canonical site; both retain one A4 page and nine annotations, with fonts, sections and layout visually preserved. A fresh PDF upload created resume 29 and completed the reservation, safety-check, extraction and parsed UI stages without an AI call; the balance stayed at 7 AI units. | Independently verify the new upload's scan/custody evidence and original-download byte identity. Complete approved-evidence review, new truthful tailoring, original/custom/tailored selection and deletion/cleanup across the supported formats. Existing PDF review and the new PDF parse do not establish new generation or complete PDF/DOCX/LaTeX acceptance. Scheduled HTTP 200 responses alone do not prove processing or deletion of an actual resume. |
-| Candidate-reviewed direct company applications | OPEN | Schema19, native Firestore/KMS account/device infrastructure, website transport/pairing configuration and the configured Razorpay/Greenhouse companion implementation are deployed or packaged. The API account/ingress/pairing and basic assistance capabilities are enabled. The owner's existing Chrome session reaches the authenticated dashboard. | Resolve the observed backend HTTP 403 responses; independently verify fresh Google sign-in and native enrollment, companion installation/pairing, required/conditional form parity and the candidate-reviewed upload/submission/receipt/recovery journey. The account-enrollment page is unavailable and presents no password fields. Actual attachment, native upload, final submission and typed-control gates remain held; no real candidate submission acceptance is claimed. |
+| Resume tailoring preserving PDF, DOCX and LaTeX formatting | OPEN | Source-preserving document engines, private rendering/scanning, the upload coordinator and the deployed source-selection/review safeguards are available. Fresh scanner acceptance and genuine scheduled scan/cleanup endpoint successes are recorded. Optional AI capability is enabled behind reviewed cost/consent/quote controls. The owner's existing original resume 28 and previously approved tailored version 2 previewed and downloaded on the canonical site; both retain one A4 page and nine annotations, with fonts, sections and layout visually preserved. A fresh PDF upload created resume 29 and completed the reservation, safety-check, extraction and parsed UI stages without an AI call; the balance stayed at 7 AI units. | Independently verify the new upload's scan/custody evidence; its original-download byte identity has passed. Complete approved-evidence review, new truthful tailoring, original/custom/tailored selection and deletion/cleanup across the supported formats. Existing PDF review and the new PDF parse do not establish new generation or complete PDF/DOCX/LaTeX acceptance. Scheduled HTTP 200 responses alone do not prove processing or deletion of an actual resume. |
+| Candidate-reviewed direct company applications | OPEN | Schema19, native Firestore/KMS account/device infrastructure, website transport/pairing configuration and the configured Razorpay/Greenhouse companion implementation are deployed or packaged. The API account/ingress/pairing and basic assistance capabilities are enabled. The owner's existing Chrome session reaches the authenticated dashboard. | Publish and verify the staged proxy and new clock-synchronization corrections; independently verify fresh Google sign-in and native enrollment, companion installation/pairing, required/conditional form parity and the candidate-reviewed upload/submission/receipt/recovery journey. The account-enrollment page is unavailable and presents no password fields. Actual attachment, native upload, final submission and typed-control gates remain held; no real candidate submission acceptance is claimed. |
 | Paid search/application credits, profitable finite packs and payment recovery | OPEN | Three finite packs, separate service-credit/AI-unit balances, exact quotes, reservations, settlement/refunds and interrupted/duplicate recovery are implemented in the deployed source. Numeric expense/model policies version 2 are installed with the matching application. New unlimited offers are removed. | Paid sales and checkout remain held. Production payment, paid-search/application charging, refunds/recovery and actual-cost calibration remain unaccepted. Estimated margins are not proven profit. Resolve the commercial hosting arrangement before commercial activation. |
-| Fast responsive pages and SEO | OPEN | The base e361 frontend is promoted. The live public homepage renders without horizontal overflow at 390, 768 and 1,440-pixel requested widths; mobile navigation opens and closes. SEO metadata corrections in this revision passed local lint/type checks and await follow-up publication at this snapshot. | Verify complete authenticated laptop/PC/mobile journeys, current production accessibility/SEO and measured loading performance. A healthy homepage or earlier lab measurement does not establish complete production performance acceptance. |
-| GCP/Vercel deployment, preserved-data migration and monitoring | OPEN | Preserved-data cutover, schema19 migration, the final application rollout, frontend promotion, coordinator activation, clean traffic routes, resumed consumer queues/schedules, genuine scheduled successes, fresh source ingestion and live monitoring are recorded. Selected GCP/GitHub alerts have reached the owner's Google inbox. | Resolve the backend availability HTTP 403 responses, verify fresh Google sign-in/native enrollment and complete production resume, search, pairing and candidate-approved application/recovery journeys. Verify the still-unexercised notification routes and required operational acceptance. Preserve the paid-sales hold. |
+| Fast responsive pages and SEO | OPEN | The SEO-corrected main-tree frontend is promoted. The live public homepage renders without horizontal overflow at 390, 768 and 1,440-pixel requested widths; mobile navigation opens and closes. Canonical HTTP checks verify pricing-specific sharing metadata, noindex on login/registration and authentication routes absent from the sitemap. | Verify complete authenticated laptop/PC/mobile journeys, current production accessibility/SEO and measured loading performance. A healthy homepage or earlier lab measurement does not establish complete production performance acceptance. |
+| GCP/Vercel deployment, preserved-data migration and monitoring | OPEN | Preserved-data cutover, schema19 migration, the final application rollout, frontend promotion, coordinator activation, clean traffic routes, resumed consumer queues/schedules, genuine scheduled successes, fresh source ingestion and live monitoring are recorded. Selected GCP/GitHub alerts have reached the owner's Google inbox. | Resolve the native availability clock rejection, verify fresh Google sign-in/native enrollment and complete production resume, search, pairing and candidate-approved application/recovery journeys. Verify the still-unexercised notification routes and required operational acceptance. Preserve the paid-sales hold. |
 
 ## Scope and owner controls
 
@@ -45,11 +46,13 @@ instruction does not change provider terms. See the existing
 
 ## Current deployed state
 
-The application source is **`e36152ee4e991315c76f4baccb39b0363b966271`**.
+The backend application source remains **`e36152ee4e991315c76f4baccb39b0363b966271`**.
 Its immutable application digest is
 `sha256:8516787317856d33080435478d772700b37930680fcf996cb26332e5340529ac`.
-The existing READY Vercel deployment
-**`dpl_BrrA4z8xXkwhkjtnTB1jZqEQeFC2`** was promoted without creating another build.
+The SEO update merged as **`103e3baec4e6c44f3abb9ea81c4eb4e3f86f5f85`**;
+its tree matches the tested pull request. READY Vercel deployment
+**`dpl_3kp8p6xBzvJB2czYxeyoJ5yCk8bd`** was promoted and checked on the
+canonical site. The preceding deployment remains available for rollback.
 The canonical site and backend health returned HTTP 200. Full user-journey
 acceptance is still pending.
 
@@ -138,9 +141,8 @@ A subsequent fresh upload of the same **122,522-byte original PDF** created
 resume **29** through the canonical site. The UI progressed through reserved
 space, safety checks and extraction to **Resume parsed**. The operation used
 deterministic extraction without an AI call, and the balance remained **7 AI
-units** before and after. The UI retains the original source PDF. Independent
-scan/custody readback and the new original-download byte comparison remain
-pending. No new tailoring generation or DOCX/LaTeX upload acceptance is claimed.
+units** before and after. The UI retains the original source PDF. The new original download is byte-identical to the upload. Independent
+scan/custody readback remains pending. No new tailoring generation or DOCX/LaTeX upload acceptance is claimed.
 Private PDFs, rendered pages, the fresh-upload screenshot and
 `fresh-upload.result.json` remain in the operator's `owner-resume-review` evidence
 directory outside this repository.
@@ -181,8 +183,7 @@ missing sign-in `noindex` and pricing inheriting homepage Open Graph metadata.
 The frontend-only correction in this revision removes those authentication
 routes from the sitemap, adds their `noindex,nofollow`, and gives pricing its own
 Open Graph title, description and canonical sharing URL while retaining the
-share image. Focused lint and frontend type checks passed; publication and a
-fresh HTTP metadata check are pending at this snapshot. Backend images,
+share image. The update is published; fresh canonical HTTP checks verify all three corrections. Backend images,
 credentials, authentication behavior and layout are unchanged by this correction.
 
 ## Remaining owner acceptance
@@ -202,8 +203,13 @@ trusted-proxy setting for the observed Cloud Run peer; the exact-peer
 configuration repair is staged with zero production traffic. Its health and
 HTTPS redirect checks pass, and unsigned requests remain rejected. A fresh signed
 availability check reaches the native guard but returns HTTP 503. Structural
-configuration checks pass; the failing native runtime step is being isolated.
-The repair has not been promoted, and enrollment acceptance remains pending.
+configuration and signature-input binding checks pass. A bounded diagnostic
+measured the signed issue time 11,747 ms ahead of the native provider-clock lower
+bound. The temporary diagnostics were restored. The new source adds a bounded,
+authenticated availability-only clock synchronization without loosening the
+five-second expiry, custody checks or durable replay protection. Its deployment
+and enrollment acceptance remain pending. See the
+[runtime diagnosis](RUNTIME_READINESS_2026-10-22.md).
 Do not seed an account/device, replace the owner's identity, invent credentials
 or bypass ordinary proof.
 
@@ -211,7 +217,7 @@ Existing original/approved-tailored PDF preview and download, plus a fresh owner
 PDF upload and deterministic parse, succeeded as described above. The new
 upload's original preview/download also succeeded, and the downloaded bytes
 exactly match the uploaded 122,522-byte PDF. Independent scan/custody evidence,
-new tailoring,
+a new successful tailoring run,
 other supported formats, ordinary browser pairing, paid search and candidate
 submission remain unaccepted. Complete those
 genuine journeys within the existing consent/price/credit/permission controls.

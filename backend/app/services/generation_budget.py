@@ -84,6 +84,25 @@ def _count(value: Any) -> int | None:
     return value if type(value) is int and 0 <= value <= 2_147_483_647 else None
 
 
+def provider_error_code(error: Exception) -> str:
+    """Finite diagnostics only; never persist provider messages or request data."""
+    import httpx
+    from google.genai.errors import APIError
+
+    status = None
+    if isinstance(error, httpx.HTTPStatusError):
+        status = error.response.status_code
+    elif isinstance(error, APIError):
+        status = error.code
+    if type(status) is int and 100 <= status <= 599:
+        return f"provider_http_{status}"
+    if isinstance(error, (httpx.TimeoutException, TimeoutError)):
+        return "provider_timeout"
+    if isinstance(error, httpx.NetworkError):
+        return "provider_network_error"
+    return "provider_error"
+
+
 def _usage(response: Any, provider: str) -> tuple[int, int, str] | None:
     if provider == "google":
         usage = getattr(response, "usage_metadata", None)
@@ -239,7 +258,7 @@ def persistent_run_budget(factory, run_id: str):
             if event is not None:
                 event.status = "failed" if error else "succeeded"
                 event.latency_ms = max(0, latency_ms)
-                event.error_code = "provider_error" if error else None
+                event.error_code = provider_error_code(error) if error else None
             usage = _usage(response, liability.provider) if error is None else None
             if usage is None:
                 liability.cost_state = "outcome_unknown" if error else "usage_unavailable"

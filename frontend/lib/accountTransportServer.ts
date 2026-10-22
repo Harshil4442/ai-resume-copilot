@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { candidateIngressHeaders } from "./candidateIngressServer";
+import { candidateIngressFetch } from "./candidateIngressFetch";
 import { getToken } from "next-auth/jwt";
 import { AUTH_BODY_LIMIT, candidateAuthSecret, csrfMatches, websiteOrigin } from "./candidateAuthServer";
 import { boundedPairingBytes } from "./browserPairingGateway";
@@ -61,9 +61,9 @@ export async function handleAccount(request: NextRequest, operation: string, leg
     }
     const base = process.env.BACKEND_URL?.trim().replace(/\/+$/, "").replace(/\/api$/, "") || (process.env.NODE_ENV !== "production" ? "http://127.0.0.1:8000" : "");
     if (!base) return failed();
-    const response = await fetch(`${base}/api/auth/${policy.path}`, { method: request.method, redirect: "error", cache: "no-store",
-      signal: AbortSignal.timeout(20000), headers: candidateIngressHeaders(`/api/auth/${policy.path}`, { method: request.method, body: raw ? new Uint8Array(raw).buffer : undefined, headers: { "Content-Type": "application/json",
-        ...(operation !== "register" ? { Authorization: `Bearer ${token!.accessToken}` } : {}) } }), body: raw ? new Uint8Array(raw).buffer : undefined });
+    const response = await candidateIngressFetch(base, `/api/auth/${policy.path}`, { method: request.method,
+      signal: AbortSignal.timeout(20000), headers: { "Content-Type": "application/json",
+        ...(operation !== "register" ? { Authorization: `Bearer ${token!.accessToken}` } : {}) }, body: raw ? new Uint8Array(raw).buffer : undefined });
     if (!response.ok) return failed([401, 409, 422, 429].includes(response.status) ? response.status : 503);
     const bytes = await boundedPairingBytes(response.body, operation === "export" ? ACCOUNT_EXPORT_LIMIT : ACCOUNT_REPLY_LIMIT);
     const data: unknown = JSON.parse(new TextDecoder("utf8", { fatal: true }).decode(bytes));

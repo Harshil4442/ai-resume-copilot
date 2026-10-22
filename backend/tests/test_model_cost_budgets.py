@@ -15,6 +15,7 @@ from backend.app.services import model_cost_policy as cost_policy
 from backend.app.services.generation_budget import (
     GenerationBudgetExhausted,
     persistent_run_budget,
+    provider_error_code,
 )
 from backend.app.services.guardrails import billable_operation
 from backend.app.services.model_cost_policy import (
@@ -123,6 +124,30 @@ def test_policy_has_no_free_unknown_ambiguous_or_wildcard_prices(mutation):
     mutation(policy)
     with pytest.raises(ValueError):
         ModelCostPolicy.model_validate(policy)
+
+
+def test_provider_status_diagnostics_keep_unknown_expense_reserved_and_never_store_error_body(context):
+    from google.genai.errors import APIError
+
+    run_id = new_run(context)
+    with persistent_run_budget(context, run_id) as budget:
+        record = admit(budget)
+        error = APIError(403, {"error": {"message": "private-provider-body private@example.com"}})
+        budget.finish(record, latency_ms=103, error=error)
+    with context() as db:
+        event = db.get(models.ModelCallEvent, record["event_id"])
+        run = db.get(models.AnalysisRun, run_id)
+        assert event.error_code == "provider_http_403"
+        assert event.cost_state == "outcome_unknown"
+        assert run.model_cost_reserved_micros == event.reserved_cost_micros > 0
+        assert run.model_cost_settled_micros == 0
+        assert "private" not in event.error_code
+
+
+def test_provider_diagnostics_distinguish_network_timeout_and_unknown_without_reflection():
+    assert provider_error_code(httpx.ReadTimeout("private timeout text")) == "provider_timeout"
+    assert provider_error_code(httpx.ConnectError("private URL")) == "provider_network_error"
+    assert provider_error_code(RuntimeError("provider_http_403 private text")) == "provider_error"
 
 
 def test_reservation_survives_crash_and_new_context_without_reset(context):

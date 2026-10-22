@@ -237,6 +237,25 @@ def test_real_factory_is_structural_then_composes_sdk_and_retains_one_safe_ack(i
         assert all(call.kwargs["retry"] is None for call in rpc.call_args_list)
 
 
+def test_clock_synchronization_retains_five_second_expiry_and_requires_a_new_nonce(ingress):
+    from app.domains.candidate_ingress.contracts import IngressClockSynchronizationRequired
+
+    c = ingress
+    future = assertion(c, issued=NOW + 15000, expires=NOW + 20000)
+    with pytest.raises(IngressClockSynchronizationRequired) as denied:
+        send(c, future)
+    assert not c.transport.mutations
+    hint = denied.value
+    assert 0 < hint.lower_ms <= hint.upper_ms and hint.upper_ms - hint.lower_ms <= 501
+    corrected = assertion(c, issued=hint.lower_ms, expires=hint.lower_ms + 5000)
+    assert corrected.request_id != future.request_id
+    assert send(c, corrected) is None
+    assert len(c.transport.mutations) == 1
+    with pytest.raises(GuardUnavailable):
+        send(c, corrected)
+    assert len(c.transport.mutations) == 1
+
+
 @pytest.mark.parametrize("header", ["", "malformed", "e30.e30", "a" * 2049])
 def test_unauthenticated_header_never_allocates_sdk_clients(ingress, header):
     c = ingress

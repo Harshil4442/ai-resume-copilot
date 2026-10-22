@@ -5,7 +5,12 @@ from __future__ import annotations
 from fastapi import HTTPException, Request
 
 from ..domains.candidate_ingress import replay
-from ..domains.candidate_ingress.contracts import CANONICAL_OPERATIONS, HEADER, MAX_HEADER_BYTES
+from ..domains.candidate_ingress.contracts import (
+    CANONICAL_OPERATIONS,
+    HEADER,
+    MAX_HEADER_BYTES,
+    IngressClockSynchronizationRequired,
+)
 from ..domains.recovery.store import GuardDenied, GuardUnavailable
 
 _CHECKED = object()
@@ -43,6 +48,12 @@ def require_candidate_ingress(request: Request) -> None:
             values[0], method=request.method, path=raw_path, raw=raw, authorization=bearer
         )
         request.state._private_candidate_ingress = _CHECKED
+    except IngressClockSynchronizationRequired as exc:
+        headers = {"Cache-Control": "private, no-store", "Pragma": "no-cache"}
+        if request.method == "GET" and raw_path == b"/api/auth/candidate/v1/availability":
+            headers["X-Hirewiz-Ingress-Time-Lower"] = str(exc.lower_ms)
+            headers["X-Hirewiz-Ingress-Time-Upper"] = str(exc.upper_ms)
+        raise HTTPException(503, "Private candidate transport is unavailable", headers=headers) from None
     except GuardUnavailable:
         raise HTTPException(
             503,

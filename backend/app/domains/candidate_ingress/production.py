@@ -23,7 +23,13 @@ from ..recovery.gcp_pairing import pairing_control_record
 from ..recovery.gcp_partitioned_contracts import PartitionedRoot
 from ..recovery.gcp_service import control_record
 from ..recovery.store import GuardUnavailable
-from .contracts import MAX_HEADER_BYTES, IngressAssertion, IngressControl, IngressResource
+from .contracts import (
+    MAX_HEADER_BYTES,
+    IngressAssertion,
+    IngressClockSynchronizationRequired,
+    IngressControl,
+    IngressResource,
+)
 from .crypto import IngressKey
 from .replay import CONTROL_NAMESPACE, CandidatePrivateIngress, GcpCandidateIngressReplay
 
@@ -304,12 +310,19 @@ class ConfiguredCandidateIngress:
             environment.check(config.resource)
             # Check the lower UTC bound once before the inner verifier uses the
             # upper bound. An assertion dated in the uncertain future cannot pass.
+            lower, upper = environment.not_before_ms(), environment.now_ms()
+            if claimed.issued_at_ms > lower or claimed.expires_at_ms <= upper:
+                # The HMAC/input binding already passed above and native custody
+                # is fresh. A time estimate is safe to return, never an admission.
+                raise IngressClockSynchronizationRequired(lower, upper)
             key.verify(header, resource=config.resource, method=method, path=path, raw=raw,
-                       authorization=authorization, now_ms=environment.not_before_ms())
+                       authorization=authorization, now_ms=lower)
             CandidatePrivateIngress(replay, key).authorize(
                 header, method=method, path=path, raw=raw, authorization=authorization
             )
             self._configured()
+        except IngressClockSynchronizationRequired:
+            raise
         except Exception:
             raise GuardUnavailable("Private candidate ingress authorization is unavailable") from None
         finally:

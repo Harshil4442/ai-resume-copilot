@@ -6,3 +6,5 @@
 - [ADR-004: PostgreSQL usage ledger](004-usage-ledger.md)
 - [ADR-005: Approved evidence boundary](005-approved-evidence.md)
 - [ADR-006: Data and artifact ownership](006-data-and-artifact-ownership.md)
+- [ADR-007: Candidate-reviewed browser assistance](007-reviewed-browser-assistance.md)
+- [ADR-008: Private transport clock synchronization](008-private-ingress-clock-synchronization.md)

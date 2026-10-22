@@ -11,12 +11,26 @@ from pydantic import Field, field_validator, model_validator
 
 from ..recovery.contracts import Contract, Digest, Timestamp
 from ..recovery.gcp_contracts import RegistryPin
+from ..recovery.store import GuardUnavailable
 
 ISSUER: Literal["hirewiz_candidate_bff_v1"] = "hirewiz_candidate_bff_v1"
 AUDIENCE: Literal["hirewiz:candidate-auth-private_v1"] = "hirewiz:candidate-auth-private_v1"
 MAX_FRESHNESS_MS: Literal[5000] = 5_000
 MAX_HEADER_BYTES = 2_048
 HEADER = "x-hirewiz-candidate-ingress"
+
+
+class IngressClockSynchronizationRequired(GuardUnavailable):
+    """A verified caller may synchronize its estimate; this grants no admission."""
+
+    def __init__(self, lower_ms: int, upper_ms: int):
+        if (type(lower_ms) is not int or type(upper_ms) is not int
+                or not 0 < lower_ms <= upper_ms <= 2**53 - 1 or upper_ms - lower_ms > 501):
+            raise ValueError("A bounded fresh ingress time interval is required")
+        self.lower_ms, self.upper_ms = lower_ms, upper_ms
+        super().__init__("Private candidate clock synchronization is required")
+
+
 CANONICAL_OPERATIONS = frozenset(
     {
         ("GET", "/api/auth/candidate/v1/availability"),

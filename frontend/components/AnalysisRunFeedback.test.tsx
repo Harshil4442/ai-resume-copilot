@@ -78,6 +78,16 @@ it("does not claim released units while an expense hold is unresolved", () => {
   expect(screen.getByRole("alert")).not.toHaveTextContent("No analysis units were charged");
 });
 
+it.each(["provider_unavailable", "generation_unavailable"] as const)("explains %s without blaming resume formatting", (reason_code) => {
+  render(<AnalysisRunFeedback run={{ ...base, usage_state: "waived", failure_guidance: { reason_code, next_action: "retry_later" } }} />);
+  const alert = screen.getByRole("alert");
+  expect(alert).toHaveTextContent("AI resume editing is temporarily unavailable.");
+  expect(alert).toHaveTextContent("No analysis units were charged.");
+  expect(alert).toHaveTextContent("Your original resume is unchanged.");
+  expect(alert).not.toHaveTextContent("review your source and approved evidence");
+  expect(screen.getByRole("link", { name: "Choose original or custom resume" })).toHaveAttribute("href", "/resume");
+});
+
 it("keeps succeeded, cancelled and pending operations out of the failure actions", () => {
   const snapshot = vi.fn();
   const view = render(<AnalysisRunFeedback run={{ ...base, status: "succeeded" }} onSaveSourceSnapshot={snapshot} />);
