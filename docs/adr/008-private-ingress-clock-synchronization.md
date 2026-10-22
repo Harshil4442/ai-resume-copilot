@@ -40,4 +40,3 @@ availability, enrollment and device pairing remain separate acceptance work.
 Validation covers a fifteen-second caller clock difference with real HMAC/native
 guard definitions, strict five-second assertions, replay refusal, bounded numeric
 hints, private-body isolation, monotonic estimates and no business-POST replay.
-
