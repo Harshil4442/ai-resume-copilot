@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from uuid import UUID
 
+from pydantic import ValidationError
+
 from ..candidate_accounts.contracts import CandidateCredentialRevision
 from .contracts import canonical, fingerprint
 from .gcp_buffer import BufferedTransaction
@@ -144,7 +146,12 @@ class GcpCandidateCookieLogout:
                     or origin.expires_at_ms != session.expires_at_ms):
                 raise GuardDenied("Rotated cookie lacks immutable original ownership")
             confirmed[:] = [True]
-        self.scoped._run(read)
+        try:
+            self.scoped._run(read)
+        except ValidationError:
+            # Missing or malformed retained ownership is unavailable proof,
+            # never permission to clear a different subject's cookie.
+            raise GuardUnavailable("Rotated cookie lacks valid retained ownership") from None
         return confirmed[0]
 
     def deny_cookie_session(self, context: CandidateWebSession, revision: CandidateCredentialRevision,

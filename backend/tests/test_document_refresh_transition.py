@@ -21,6 +21,7 @@ def load(name):
     return module
 transition = load('document_refresh_transition')
 probe = load('document_refresh_probe')
+profile = load('document_renderer_profiles')
 NONCE = 'a' * 32
 NEW = probe.REPOSITORY + '@sha256:' + 'b' * 64
 APP = 'us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz@sha256:' + 'c' * 64
@@ -29,7 +30,7 @@ def service(name):
     resource = transition.PARENT + '/services/' + name
     revision = resource + '/revisions/' + name + '-00001-owned'
     env = [dict(name=k, value=v) for k, v in zip(transition.PINS,
-        (probe.BASE_IMAGE, probe.POLICY, probe.RENDERER, probe.FONT), strict=True)]
+        (profile.IMAGE, probe.POLICY, profile.RENDERER, profile.FONT), strict=True)]
     env.append({'name': 'DOCUMENT_WORKER_URL', 'value': 'https://hirewiz-document-inspector-mqff62d75a-uc.a.run.app/inspect'})
     if name != transition.WORKER:
         env.extend([{'name': k, 'value': 'true'} for k in transition.PAUSE[name]])
@@ -39,7 +40,7 @@ def service(name):
     return {'name': resource, 'uid': probe.SERVICE_UID if name == transition.WORKER else '01234567-0123-0123-0123-012345678901',
         'generation': '1', 'observedGeneration': '1', 'etag': 'owned1',
         'template': {'revision': revision, 'serviceAccount': transition.ACCOUNTS[name], 'timeout': '90s',
-                     'containers': [{'image': probe.BASE_IMAGE if name == transition.WORKER else APP, 'env': env}]},
+                     'containers': [{'image': profile.IMAGE if name == transition.WORKER else APP, 'env': env}]},
         'terminalCondition': {'state': 'CONDITION_SUCCEEDED'}, 'latestCreatedRevision': revision, 'latestReadyRevision': revision,
         'traffic': [{'type': 'TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST', 'percent': 100}],
         'trafficStatuses': [{'revision': revision, 'percent': 100}], 'labels': {'retained': 'owned'},
@@ -86,11 +87,17 @@ def fixture_probe(monkeypatch, *, contract_version=2, required_case_count=10, po
     acceptance = probe.NativeAcceptance(image, '01234567-0123-0123-0123-012345678901', 'owned-build', 'a' * 64,
         'b' * 64, {}, transition.PARENT + '/jobs/hirewiz-doc-six-' + NONCE[:12],
         'owned-job-uid', 'owned-execution', 'owned-execution-uid', 'c' * 64, 'd' * 64,
-        probe.POLICY if policy is None else policy, probe.FONT, probe.RENDERER, '2026-10-19T00:00:00+00:00',
+        probe.POLICY if policy is None else policy, profile.FONT, profile.RENDERER, '2026-10-19T00:00:00+00:00',
         contract_version, required_case_count)
     monkeypatch.setattr(probe, 'verify_successor', lambda *args: acceptance)
     calls = []
     monkeypatch.setattr(probe, 'verify_current_successor', lambda image, actual: calls.append((image, actual['uid'])))
+    def current_build(build_id, nonce, image):
+        assert build_id == '01234567-0123-0123-0123-012345678901' and nonce == NONCE and image == NEW
+        return {'kind': 'native_cloud_build', 'immutable_image': image,
+                'fixed_renderer_base': profile.IMAGE, 'source_sha256': copy.deepcopy(profile.SOURCES)}
+    monkeypatch.setattr(probe, 'build_module', lambda: SimpleNamespace(
+        RENDERER_BASE=profile.IMAGE, verify_current_build=current_build))
     return calls
 
 def run(tmp_path, http):
@@ -102,7 +109,7 @@ def test_actual_caller_verifier_full_resource_interface(monkeypatch, tmp_path):
     owner = transition.Journal(tmp_path / 'journal')
     try:
         controller = transition.Controller(Http(), probe, owner)
-        probe.verify_caller_pins(controller, probe.BASE_IMAGE)
+        probe.verify_caller_pins(controller, profile.IMAGE)
     finally:
         owner.close()
 
@@ -115,7 +122,7 @@ def test_worker_then_three_exact_caller_pins_then_captured_flags(monkeypatch, tm
     for name, sent in http.writes[:3]:
         env = transition.environment(sent['template'])
         assert all(env[key]['value'] == 'false' for key in transition.PAUSE[name])
-        assert env['DOCUMENT_WORKER_IMAGE_DIGEST']['value'] == probe.BASE_IMAGE
+        assert env['DOCUMENT_WORKER_IMAGE_DIGEST']['value'] == profile.IMAGE
     for name in transition.CALLERS:
         current = http.services[name]
         env = transition.environment(current['template'])
@@ -125,7 +132,8 @@ def test_worker_then_three_exact_caller_pins_then_captured_flags(monkeypatch, tm
         assert current['template']['containers'][0]['image'] == APP
         assert env['DATABASE_URL'] == transition.environment(before[name]['template'])['DATABASE_URL']
         assert current['ingress'] == before[name]['ingress']
-    assert len(proof_calls) == 3 and result['synchronous_callers_drained'] is False
+    assert [image for image, _ in proof_calls] == [profile.IMAGE, NEW, NEW, NEW]
+    assert result['synchronous_callers_drained'] is False
     assert result['admission_restored'] is True
     assert all(path.stat().st_mode & 0o777 == 0o600 for path in (tmp_path / 'rollout').iterdir())
 
@@ -141,6 +149,10 @@ def test_known_prior_v1_pins_are_read_as_v1_but_worker_and_callers_move_to_v2(mo
                 entry['value'] = old_image
             elif entry['name'] == 'DOCUMENT_WORKER_POLICY_SHA256':
                 entry['value'] = probe.LEGACY_POLICY
+            elif entry['name'] == 'DOCUMENT_WORKER_DOCX_RENDERER_VERSION':
+                entry['value'] = probe.LEGACY_RENDERER
+            elif entry['name'] == 'DOCUMENT_WORKER_DOCX_FONT_MANIFEST_SHA256':
+                entry['value'] = probe.LEGACY_FONT
         if name == transition.WORKER:
             actual['template']['containers'][0]['image'] = old_image
     run(tmp_path, http)
@@ -198,7 +210,7 @@ def test_a_legacy_second_verification_stops_after_close_without_worker_write(mon
     for name in transition.CALLERS:
         env = transition.environment(http.services[name]['template'])
         assert all(env[key]['value'] == 'false' for key in transition.PAUSE[name])
-    assert http.services[transition.WORKER]['template']['containers'][0]['image'] == probe.BASE_IMAGE
+    assert http.services[transition.WORKER]['template']['containers'][0]['image'] == profile.IMAGE
 
 
 def test_unknown_observed_prior_policy_stops_before_any_write(monkeypatch, tmp_path):

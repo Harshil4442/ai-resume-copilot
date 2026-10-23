@@ -319,10 +319,16 @@ def test_strict_current_four_service_join_and_caller_pins_remain_required(monkey
         service=lambda name: http.services[name.rsplit("/", 1)[-1]],
         preflight=lambda: {"service": http.services["hirewiz-document-inspector"]})
     monkeypatch.setattr(refresh, "infra", lambda _: transition.transition)
+    proofs = []
+    def verify_current(image, actual):
+        assert image == transition.profile.IMAGE and actual['uid'] == p.SERVICE_UID
+        proofs.append(image)
+    monkeypatch.setattr(p, "verify_current_successor", verify_current)
     recovery.joined(reader, p, refresh, {JOB})
     http.services["ai-resume-parser"]["template"]["containers"][0]["env"][0]["value"] = native.IMAGE
     with pytest.raises(p.NativeProofDenied):
         recovery.joined(reader, p, refresh, {JOB})
+    assert proofs == [transition.profile.IMAGE, transition.profile.IMAGE]
     assert http.writes == []
 
 

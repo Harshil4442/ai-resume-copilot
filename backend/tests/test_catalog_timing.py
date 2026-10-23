@@ -181,7 +181,9 @@ def test_framework_500_body_is_observed_without_exception_text(application, capl
     app, _engine = application
     caplog.set_level(logging.INFO, logger="catalog_latency")
     db = Mock()
-    db.query.return_value.select_from.return_value.outerjoin.return_value.filter.return_value.order_by.return_value.populate_existing.return_value.all.side_effect = RuntimeError("PRIVATE_SQL_PARAMS_TOKEN_URL")
+    snapshot = db.query.return_value.select_from.return_value
+    snapshot.outerjoin.return_value = snapshot
+    snapshot.filter.return_value.order_by.return_value.populate_existing.return_value.all.side_effect = RuntimeError("PRIVATE_SQL_PARAMS_TOKEN_URL")
     app.dependency_overrides[get_db] = lambda: db
 
     async def run():
