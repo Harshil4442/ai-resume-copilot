@@ -485,6 +485,7 @@ def test_workflow_initializes_runner_paths_after_job_expression_validation(tmp_p
     }, capture_output=True, timeout=5)
     assert result.returncode == 0, result.stderr.decode()
     assert env_file.read_text().splitlines() == [
+        f"RESUME_DIRECTORY={runner_temp}/document-refresh-original-39901631586",
         f"HISTORY_DIRECTORY={runner_temp}/document-refresh-history",
         f"OUTPUT_DIRECTORY={runner_temp}/document-refresh-42-2",
     ]
@@ -499,7 +500,7 @@ def test_full_source_workflow_reuses_trusted_scope_and_retained_history_without_
     workflow = yaml.safe_load((refresh.ROOT / ".github/workflows/document-refresh.yml").read_text())
     trigger = workflow.get("on", workflow.get(True))
     assert trigger["workflow_dispatch"]["inputs"]["mode"]["options"] == [
-        "monitor", "refresh", "full-source-refresh"]
+        "monitor", "refresh", "full-source-refresh", "resume-full-source-refresh"]
     job = workflow["jobs"]["maintenance"]
     assert job["if"] == (
         "github.repository == 'Harshil4442/ai-resume-copilot' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)")
@@ -514,7 +515,7 @@ def test_full_source_workflow_reuses_trusted_scope_and_retained_history_without_
     assert candidate["if"] == "env.REFRESH_MODE == 'full-source-refresh'"
     assert "--prior-history-directory" in candidate["run"] and "--recover-failed-native-job" in candidate["run"]
     history = next(step for step in job["steps"] if step.get("name") == "Retrieve prior owned native proof journals")
-    assert history["if"] == "env.REFRESH_MODE == 'refresh' || env.REFRESH_MODE == 'full-source-refresh'"
+    assert history["if"] == "env.REFRESH_MODE == 'refresh' || env.REFRESH_MODE == 'full-source-refresh' || env.REFRESH_MODE == 'resume-full-source-refresh'"
     assert 'startswith("document-refresh-refresh-") or startswith("document-refresh-full-source-refresh-")' in history["run"]
     assert 'startswith("document-refresh-full-source-candidate-' not in history["run"]
     guard = next(step for step in job["steps"] if step.get("name") == "Require explicitly provisioned maintenance identity")
@@ -554,3 +555,36 @@ def test_full_source_workflow_sends_only_reviewed_full_pipeline_argv(tmp_path, r
     expected = ["backend/scripts/document_refresh.py", "--mode", "full-source-refresh", "--publish-candidate",
                 "--prior-history-directory", "private history", "--output-directory", directory]
     assert json.loads(capture.read_bytes()) == expected + (["--recover-failed-native-job", recovery] if recovery else [])
+
+
+def test_retained_candidate_workflow_sends_only_fixed_resume_argv(tmp_path):
+    import json
+    import os
+    import subprocess
+    import sys
+
+    import yaml
+    from infra.gcp import document_renderer_profiles as profile
+
+    workflow = yaml.safe_load((refresh.ROOT / ".github/workflows/document-refresh.yml").read_text())
+    steps = workflow["jobs"]["maintenance"]["steps"]
+    step = next(row for row in steps if row.get("name") ==
+                "Reverify the retained candidate and continue once without a new Build")
+    retrieve = next(row for row in steps if row.get("name") == "Retrieve the exact retained already-built candidate")
+    assert step["if"] == retrieve["if"] == "env.REFRESH_MODE == 'resume-full-source-refresh'"
+    assert "gh run download 39901631586" in retrieve["run"]
+    assert "document-refresh-full-source-refresh-39901631586-1" in retrieve["run"]
+    binary = tmp_path / "backend/.venv/bin/python"
+    binary.parent.mkdir(parents=True)
+    binary.write_text("#!" + sys.executable + "\nimport json,os,sys\n"
+                      "from pathlib import Path\nPath(os.environ['CAPTURE_ARGS']).write_text(json.dumps(sys.argv[1:]))\n")
+    binary.chmod(0o700)
+    capture = tmp_path / "args.json"
+    original = "original $(touch SHOULD_NOT_EXIST)"
+    result = subprocess.run(["/bin/bash", "-eu", "-c", step["run"]], cwd=tmp_path,
+        env={**os.environ, "RESUME_DIRECTORY": original, "HISTORY_DIRECTORY": "private history",
+             "OUTPUT_DIRECTORY": "private output", "CAPTURE_ARGS": str(capture)}, capture_output=True, timeout=5)
+    assert result.returncode == 0 and not (tmp_path / "SHOULD_NOT_EXIST").exists()
+    assert json.loads(capture.read_bytes()) == ["backend/scripts/document_refresh.py", "--mode", "resume-full-source-refresh",
+        "--publish-candidate", "--resume-candidate-directory", original, "--resume-manifest-sha256", profile.PARTIAL_MANIFEST_SHA256,
+        "--prior-history-directory", "private history", "--output-directory", "private output"]

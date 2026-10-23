@@ -224,7 +224,8 @@ def verify_claim(body: dict[str, Any], acknowledgment: dict[str, Any], build: An
         http.close()
 
 
-def prepare(directory: Path, history: Path | None, selected: str | None, *, refresh_module: Any) -> str | None:
+def prepare(directory: Path, history: Path | None, selected: str | None, *, refresh_module: Any,
+            resuming_original: Path | None = None) -> str | None:
     build = refresh_module
     build.need(selected is None or type(selected) is str and JOB.fullmatch(selected), "document_refresh_recovery_exact_job_required")
     if history is None:
@@ -233,7 +234,16 @@ def prepare(directory: Path, history: Path | None, selected: str | None, *, refr
     build.need(history.is_absolute() and history.is_dir() and not history.is_symlink(), "document_refresh_prior_history_refused")
     runs = list(history.iterdir())
     build.need(len(runs) <= 3, "document_refresh_prior_history_bound")
-    records, pending, record_roots = {}, [], []
+    records: dict[str, Any] = {}
+    pending: list[tuple[str, dict[str, bytes], Path]] = []
+    record_roots: list[Path] = []
+    resume = None
+    if resuming_original is not None:
+        resume = build.infra("document_refresh_resume")
+        build.need(selected is None, "document_resume_cannot_recover_another_job")
+        resume.partial_snapshot(resuming_original, build)
+    consumed = None
+    known_partials = 0
     for run in runs:
         build.need(run.is_dir() and not run.is_symlink(), "document_refresh_prior_unknown_reconcile_only")
         root = run / "terminal-recoveries"
@@ -245,6 +255,27 @@ def prepare(directory: Path, history: Path | None, selected: str | None, *, refr
             build.need(previous.get("status") == "document_refresh_serving" and previous.get("admission_restored") is True,
                        "document_refresh_prior_unknown_reconcile_only")
         else:
+            # Only the known pre-Job shape needs the additive resume reader;
+            # ordinary V1/V2 failed journals keep their original verifier path.
+            partial_shape = {"build-started.json", "source-upload-acknowledged.json", "build-create-started.json",
+                             "build-acknowledged.json", "native-build-identity.json", "terminal-recoveries"}
+            if {entry.name for entry in run.iterdir()} == partial_shape:
+                if resume is None:
+                    resume = build.infra("document_refresh_resume")
+                known = resume.original_partial(run, build)
+            else:
+                known = False
+            if known:
+                assert resume is not None
+                known_partials += 1
+                build.need(known_partials == 1, "document_resume_duplicate_partial_history")
+                if resuming_original is None:
+                    if consumed is None:
+                        consumed = resume.verify_consumed_partial(runs, build)
+                    build.need(consumed is True, "document_refresh_prior_unknown_reconcile_only")
+                # This is the same exact acknowledged operation, never a new
+                # Build/recovery admission. Its carried old claim stays in roots.
+                continue
             try:
                 files = snapshot(run, build)
                 binding = build.decode(files["native-proof/binding.json"])
@@ -298,7 +329,11 @@ def prepare(directory: Path, history: Path | None, selected: str | None, *, refr
         if selected is not None:
             _, files, original = targets[0]
             chosen = verify_failed(original, files, clients, probe, build)
-        joined(clients, probe, build, set(facts) | ({selected} if chosen else set()))
+        failed_jobs = set(facts)
+        if chosen is not None:
+            assert selected is not None
+            failed_jobs.add(selected)
+        joined(clients, probe, build, failed_jobs)
         target_root = directory / "terminal-recoveries"
         target_root.mkdir(mode=0o700)
         for job, (files, raw, _) in records.items():
@@ -311,6 +346,7 @@ def prepare(directory: Path, history: Path | None, selected: str | None, *, refr
                     stream.write(content)
         if chosen is None:
             return None
+        assert selected is not None
         nonce = uuid.uuid4().hex
         build.need(nonce != build.decode(targets[0][1]["native-proof/binding.json"])["build_identity"]["nonce"],
                    "document_refresh_recovery_successor_nonce_reused")

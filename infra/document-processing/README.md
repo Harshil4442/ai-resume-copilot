@@ -503,3 +503,45 @@ The candidate result binds the actual immutable registry digest and local
 worker/caller pin transition remain necessary. The separate schema19-to-20
 rollout and native upload admission remain pending; candidate publication does
 not perform either action. Release read-only credentials cannot publish.
+
+
+### One retained full-source candidate continuation
+
+The reviewed `0a7e5506…` image has the same renderer version and all 68
+non-cache font, renderer and configuration inventory entries as serving V1
+`240f6df0…`. Seven generated fontconfig cache binaries differ. Its raw manifest
+is therefore explicitly pinned to `82d048a3…` only for the exact image and
+Build/source chain in `infra/gcp/document_renderer_profiles.py`; legacy/default
+`abaf429c…` pins remain unchanged. The distribution-package comparison also
+records `libexpat1` changing from `2.8.3-1~deb13u1` to `2.9.0-1~deb13u1`.
+No cache path is ignored by a runtime guard.
+
+The explicit `resume-full-source-refresh` workflow mode retrieves original run
+39901631586/artifact 12479705895. It requires the exact nineteen-file manifest
+`9d20a0b548b2de03fe61939cd714e697bef42426cd526f1714c598b7d269f5b1`,
+rechecks actual Build e89eecfb-81e0-4b29-97b3-dd02a04ac04e and its
+generation-bound archive, all thirteen source inputs, the same immutable image,
+25 local cases and definition freshness. It does not upload source or create
+another Build. Its nonce-bound create-only resume claim precedes the existing
+single native Job Create/Run and V2 ten-case proof; the existing transition and
+prior-Job retirement order are reused. Other unknown history still refuses.
+
+The equivalent CLI requires owned private extracted directories (0700; regular
+files0600), the provisioned maintenance identity and a fresh output directory:
+
+```sh
+backend/.venv/bin/python backend/scripts/document_refresh.py \
+  --mode resume-full-source-refresh --publish-candidate \
+  --resume-candidate-directory "$ORIGINAL_CANDIDATE_DIRECTORY" \
+  --resume-manifest-sha256 9d20a0b548b2de03fe61939cd714e697bef42426cd526f1714c598b7d269f5b1 \
+  --prior-history-directory "$HISTORY_DIRECTORY" \
+  --output-directory "$OUTPUT_DIRECTORY"
+```
+
+Existing resume intent, existing/unknown claim, or native Job presence requires
+read-only reconciliation of that exact operation. Keep original ACKs and every
+new marker; do not remove markers, select a new nonce, or dispatch the same
+candidate again. A candidate/local-proof result is not native acceptance or a
+serving-release claim. A later normal refresh can account for this one original
+partial only after the separate completed resume, its immutable claim and fresh
+actual current V2 acceptance/caller join have been verified.

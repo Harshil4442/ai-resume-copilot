@@ -85,6 +85,27 @@ def build_module() -> Any:
     return load_source("hirewiz_document_refresh_build", ROOT / "backend/scripts/document_refresh.py")
 
 
+def renderer_identity(image: str, *, historical_v1: bool = False,
+                      build_identity: dict[str, Any] | None = None) -> tuple[str, str]:
+    """Fixed expected renderer/font pins for a genuinely verified immutable image."""
+    need(type(image) is str and IMAGE.fullmatch(image) and type(historical_v1) is bool,
+         "document_native_renderer_profile_invalid")
+    profile = load_source("hirewiz_document_renderer_profiles", HERE / "document_renderer_profiles.py")
+    need(build_identity is None or build_identity.get("immutable_image") == image,
+         "document_native_renderer_build_profile_changed")
+    if image == profile.IMAGE or profile.uses_profile(build_identity):
+        need(not historical_v1, "document_native_historical_renderer_profile_refused")
+        return profile.RENDERER, profile.FONT
+    return (LEGACY_RENDERER, LEGACY_FONT) if historical_v1 else (RENDERER, FONT)
+
+
+def verify_renderer_build(build: dict[str, Any]) -> None:
+    profile = load_source("hirewiz_document_renderer_profiles", HERE / "document_renderer_profiles.py")
+    need((build.get("immutable_image") != profile.IMAGE or profile.matches_build(build))
+         and (build.get("fixed_renderer_base") != profile.IMAGE or profile.uses_profile(build)),
+         "document_native_renderer_build_profile_changed")
+
+
 def legacy_source(name: str) -> bytes:
     """Exact frozen V1 evidence for read-only observation, never V2 admission."""
     need(name in LEGACY_SOURCE_HASHES, "document_native_legacy_source_invalid")
@@ -228,7 +249,8 @@ def validate_execution(row: Any, job: dict[str, Any], image: str, nonce: str, *,
          "document_native_execution_not_singleton")
 
 
-def validate_payload(payload: Any, image: str, execution: str, now: datetime, *, require_fresh: bool = True, historical_v1: bool = False) -> dict[str, Any]:
+def validate_payload(payload: Any, image: str, execution: str, now: datetime, *, require_fresh: bool = True,
+                     historical_v1: bool = False, build_identity: dict[str, Any] | None = None) -> dict[str, Any]:
     need(type(historical_v1) is bool, "document_native_contract_version_invalid")
     path = HERE / "document_legacy_v1/receipt.txt" if historical_v1 else HERE / "document_refresh_receipt.txt"
     raw = legacy_source("receipt.txt") if historical_v1 else path.read_bytes()
@@ -242,8 +264,9 @@ def validate_payload(payload: Any, image: str, execution: str, now: datetime, *,
     need(valid is True and payload.get("execution_name") == execution.rsplit("/", 1)[-1],
          "document_native_required_cases_not_complete")
     identity = payload["identity_preflight"]
-    need(identity["font_manifest_sha256"] == (LEGACY_FONT if historical_v1 else FONT)
-         and identity["renderer_version"] == (LEGACY_RENDERER if historical_v1 else RENDERER)
+    renderer, fonts = renderer_identity(image, historical_v1=historical_v1, build_identity=build_identity)
+    need(identity["font_manifest_sha256"] == fonts
+         and identity["renderer_version"] == renderer
          and identity["font_manifest_process_writable"] is False,
          "document_native_renderer_or_fonts_changed")
     scans = [row["scan"] for row in payload["cases"] if "scan" in row]
@@ -374,9 +397,22 @@ def verify_caller_pins(clients: Any, image: str, *, policy_sha256: str | None = 
     """Old acceptance evidence is retained until both actual serving callers move."""
     policy = POLICY if policy_sha256 is None else policy_sha256
     need(type(policy) is str and policy in {POLICY, LEGACY_POLICY}, "document_native_caller_policy_unverified")
+    identity = None
+    profile = load_source("hirewiz_document_renderer_profiles", HERE / "document_renderer_profiles.py")
+    builds = build_module()
+    if policy == POLICY and image != profile.IMAGE and getattr(builds, "RENDERER_BASE", BASE_IMAGE) == profile.IMAGE:
+        # After the reviewed daily recipe repin, only a fresh actual Build can
+        # select that parent's font profile for a different immutable successor.
+        worker = clients.service(PARENT + "/services/hirewiz-document-inspector")
+        labels = worker.get("labels", {})
+        need(worker.get("template", {}).get("containers", [{}])[0].get("image") == image,
+             "document_native_caller_profile_worker_changed")
+        verifier = builds.verify_current_build_release if getattr(clients, "read_only_release", False) else builds.verify_current_build
+        identity = verifier(labels.get("hirewiz-refresh-build"), labels.get("hirewiz-refresh-nonce"), image)
+    renderer, fonts = renderer_identity(image, historical_v1=policy == LEGACY_POLICY, build_identity=identity)
     pins = {"DOCUMENT_WORKER_URL": WORKER_URL, "DOCUMENT_WORKER_IMAGE_DIGEST": image, "DOCUMENT_WORKER_POLICY_SHA256": policy,
-            "DOCUMENT_WORKER_DOCX_RENDERER_VERSION": LEGACY_RENDERER if policy == LEGACY_POLICY else RENDERER,
-            "DOCUMENT_WORKER_DOCX_FONT_MANIFEST_SHA256": LEGACY_FONT if policy == LEGACY_POLICY else FONT}
+            "DOCUMENT_WORKER_DOCX_RENDERER_VERSION": renderer,
+            "DOCUMENT_WORKER_DOCX_FONT_MANIFEST_SHA256": fonts}
     for name in ("ai-resume-parser", "hirewiz-analysis-worker", "hirewiz-resume-coordinator"):
         service = clients.service(PARENT + "/services/" + name)
         containers = service.get("template", {}).get("containers", [])
@@ -704,15 +740,18 @@ class NativeAcceptance:
 def acceptance(clients: Clients, image: str, build: dict[str, Any], job: dict[str, Any],
                execution: dict[str, Any], *, historical_v1: bool = False) -> NativeAcceptance:
     nonce = build["nonce"]
+    verify_renderer_build(build)
+    renderer, fonts = renderer_identity(image, historical_v1=historical_v1, build_identity=build)
     validate_job(job, image, nonce, historical_v1=historical_v1)
     validate_execution(execution, job, image, nonce, historical_v1=historical_v1)
     payload = native_payload(clients, job, execution, historical_v1=historical_v1)
-    facts = validate_payload(payload, image, execution["name"], datetime.now(UTC), historical_v1=historical_v1)
+    facts = validate_payload(payload, image, execution["name"], datetime.now(UTC),
+                             historical_v1=historical_v1, build_identity=build)
     return NativeAcceptance(image, build["build_id"], build["build_resource"], build["source_archive_sha256"],
         build["refresh_dockerfile_sha256"], build["source_sha256"], job["name"], job["uid"],
         execution["name"], execution["uid"], hashlib.sha256(rendered_payload(image, historical_v1=historical_v1).encode()).hexdigest(),
         facts["payload_sha256"], LEGACY_POLICY if historical_v1 else POLICY,
-        LEGACY_FONT if historical_v1 else FONT, LEGACY_RENDERER if historical_v1 else RENDERER,
+        fonts, renderer,
         facts["definition_expires_at"], 1 if historical_v1 else 2, 6 if historical_v1 else 10)
 
 
@@ -863,7 +902,7 @@ def cleanup_successor(image: str, build_identity: dict[str, Any], journal: Path)
         # Expired prior definitions cannot authorize serving, but may be retired
         # after newer native acceptance and all serving caller pins are proven.
         validate_payload(native_payload(clients, job, execution, historical_v1=historical_v1), image, execution["name"],
-                         datetime.now(UTC), require_fresh=False, historical_v1=historical_v1)
+                         datetime.now(UTC), require_fresh=False, historical_v1=historical_v1, build_identity=build)
         owner.write("delete.started.json", {"name": job["name"], "uid": job["uid"], "etag": job["etag"], "automatic_replay": False})
         deleted = clients.delete(job)
         owner.write("delete.acknowledged.json", {"name": deleted.get("name")})
