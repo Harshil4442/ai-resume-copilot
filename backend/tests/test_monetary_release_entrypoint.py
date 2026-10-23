@@ -235,13 +235,14 @@ def test_legacy_release_still_refuses_the_current_extended_chain(tmp_path):
     browser = 'backend/alembic/versions/20261014_0017_browser_assistance.py'
     pacing = 'backend/alembic/versions/20261015_0018_employer_host_pacing.py'
     typed = 'backend/alembic/versions/20261015_0019_browser_typed_controls.py'
-    assert {catalogue, browser, pacing, typed} <= tracked
+    native = 'backend/alembic/versions/20261023_0020_native_resume_quarantine.py'
+    assert {catalogue, browser, pacing, typed, native} <= tracked
     # Preserve the historical chain check in a finite copy before the catalogue
     # migration, whose module-level SQL constants fail the legacy parser closed.
     prefix = tmp_path / 'pre_catalogue'
     (prefix / 'backend/alembic/versions').mkdir(parents=True)
     (prefix / 'backend/alembic.ini').write_bytes((ROOT / 'backend/alembic.ini').read_bytes())
-    prefix_tracked = tracked - {catalogue, browser, pacing, typed}
+    prefix_tracked = tracked - {catalogue, browser, pacing, typed, native}
     for path in sorted(prefix_tracked):
         (prefix / path).write_bytes((ROOT / path).read_bytes())
     chain = release.source_guard.migration_chain(prefix, prefix_tracked)
@@ -251,7 +252,7 @@ def test_legacy_release_still_refuses_the_current_extended_chain(tmp_path):
     for operation in (release.source_guard.migration_chain, release.source_guard.migration_head):
         with pytest.raises(release.source_guard.PreflightDenied, match="Unsupported module-level migration assignment"):
             operation(ROOT, tracked)
-    assert release.source_guard.migration_chain(ROOT, tracked, allow_literal_sql=True) == (*release.CHAIN, "20261015_0019")
+    assert release.source_guard.migration_chain(ROOT, tracked, allow_literal_sql=True) == (*release.CHAIN, "20261015_0019", "20261023_0020")
 
 
 def native_identity(plan, monkeypatch, *, policy_update=None, ci_update=None, build_update=None):

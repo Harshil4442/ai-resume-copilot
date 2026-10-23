@@ -1,4 +1,5 @@
 """Isolated routing/protocol contracts; no provider calls or app imports."""
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -23,15 +24,20 @@ def diagnostic():
     return load("document_connectivity_test", "infra/gcp/document_connectivity.py")
 
 
-def test_offline_contract_matches_current_worker_and_network(diagnostic, monkeypatch):
+def test_offline_contract_matches_frozen_v1_worker_and_network(diagnostic, monkeypatch):
     worker = load("diagnostic_worker_contract", "infra/gcp/document_worker.py")
     network = load("diagnostic_network_contract", "infra/gcp/document_network.py")
     monkeypatch.setattr(diagnostic, "_request", lambda *args, **kwargs: pytest.fail("offline network call"))
     result = diagnostic.plan()
     assert (diagnostic.ORIGIN, diagnostic.IMAGE, diagnostic.POLICY, diagnostic.RENDERER,
             diagnostic.FONTS, diagnostic.IDENTITY) == (
-        worker.ACCEPTED_ORIGIN, worker.ACCEPTED_IMAGE, worker.POLICY_SHA256,
+        worker.ACCEPTED_ORIGIN, worker.ACCEPTED_IMAGE, worker.LEGACY_V1_POLICY_SHA256,
         worker.ACCEPTED_RENDERER, worker.ACCEPTED_FONT_MANIFEST, worker.API_INVOKER)
+    legacy = ROOT / "infra/gcp/document_legacy_v1"
+    manifest = json.loads((legacy / "manifest.json").read_bytes())
+    assert diagnostic.POLICY == hashlib.sha256((legacy / "policy.json").read_bytes()).hexdigest()
+    assert diagnostic.POLICY == manifest["files"]["policy.json"]["sha256"]
+    assert diagnostic.POLICY != worker.POLICY_SHA256
     assert diagnostic.PRIVATE_IPS == frozenset(network.PRIVATE_GOOGLE_IPS)
     assert (result["network"], result["subnet"]) == (network.NETWORK, network.SUBNET)
     assert result["native_calls"] == result["processing_post_retries"] == result["job_task_retries"] == 0

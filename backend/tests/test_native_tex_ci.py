@@ -15,6 +15,7 @@ from types import SimpleNamespace
 import pytest
 from backend.app.services import native_tex
 from backend.scripts import native_tex_test_image as contract
+from backend.tests.native_tex_ci_fixtures import configure_synthetic_native_inspector
 from pypdf import PdfReader
 
 IMAGE = "sha256:" + "1" * 64
@@ -260,6 +261,9 @@ def test_actual_strict_umask_build_attests_and_nonroot_compiler_preserves_source
     tmp_path, monkeypatch
 ):
     # Real Docker source build, verification and compiler: no subprocess mocks.
+    # Source/PDF inspection delivery is explicitly synthetic here; genuine AV
+    # evidence comes from the separate source-pinned document-engine corpus.
+    configure_synthetic_native_inspector(monkeypatch)
     platform = contract.verify_image(contract.required_test_image(), contract.source_hashes())[
         "platform"
     ]

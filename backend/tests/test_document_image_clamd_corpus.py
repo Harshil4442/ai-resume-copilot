@@ -95,10 +95,11 @@ class ClamdCorpusTests(unittest.TestCase):
         self.assertNotIn(original, [unit['text'] for unit in candidate_units])
         self.assertNotEqual(source, candidate)
 
-    def test_ordinary_eight_cases_keep_identity_only_clean_docx(self):
+    def test_ordinary_twelve_cases_keep_identity_only_clean_docx(self):
         ordinary = self.namespace['corpus']()
         self.assertEqual([row[0] for row in ordinary], ['clean_pdf', 'clean_docx', 'page_counter',
-            'active_pdf', 'includetext', 'eicar_exact_file', 'eicar_zip_member', 'missing_definitions'])
+            'active_pdf', 'includetext', 'eicar_exact_file', 'eicar_zip_member', 'missing_definitions',
+            'clean_tex', 'clean_texzip', 'eicar_tex_source', 'eicar_texzip_member'])
         docx = next(content for name, _, content, _ in ordinary if name == 'clean_docx')
         paragraphs = [paragraph.text for paragraph in Document(io.BytesIO(docx)).paragraphs]
         self.assertEqual(paragraphs, ['Candidate Example', 'SKILLS', 'Python, SQL'])
