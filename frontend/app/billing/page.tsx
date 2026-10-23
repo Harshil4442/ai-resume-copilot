@@ -220,7 +220,7 @@ function BillingContent({ requestedSku }: { requestedSku: string | null }) {
   const [currentTier, setCurrentTier] = useState<string | null>(null);
   const [premiumUntil, setPremiumUntil] = useState<string | null>(null);
   const [analysisUnits, setAnalysisUnits] = useState(0);
-  const [serviceCredits, setServiceCredits] = useState(0);
+  const [serviceCredits, setServiceCredits] = useState<number | null | undefined>(undefined);
   const [usageHistory, setUsageHistory] = useState<UsageHistoryResponse | null>(null);
   const [usageLoading, setUsageLoading] = useState(true);
   const [indiaBillingConfirmed, setIndiaBillingConfirmed] = useState(false);
@@ -233,13 +233,21 @@ function BillingContent({ requestedSku }: { requestedSku: string | null }) {
   const [error, setError] = useState<string | null>(null);
 
   const refreshProfile = useCallback(async () => {
-    const profile = await apiGet<{ tier?: string; ai_credits?: number; job_service_credits?: number; premium_until?: string | null }>("/auth/profile");
+    const profile = await apiGet<components["schemas"]["UserProfileResponse"]>("/auth/profile");
     if (!mountedRef.current) return;
     setCurrentTier(profile.tier || "free");
     setAnalysisUnits(profile.ai_credits ?? 0);
-    setServiceCredits(profile.job_service_credits ?? 0);
     setPremiumUntil(profile.premium_until || null);
   }, []);
+
+  const refreshServiceCredits = useCallback(() =>
+    apiGet<components["schemas"]["UserMeResponse"]>("/auth/me").then((account) => {
+      if (!mountedRef.current) return;
+      const balance = account.job_service_credits;
+      setServiceCredits(Number.isSafeInteger(balance) && balance >= 0 ? balance : null);
+    }).catch(() => {
+      if (mountedRef.current) setServiceCredits(null);
+    }), []);
 
   const refreshUsage = useCallback(async () => {
     try {
@@ -284,6 +292,7 @@ function BillingContent({ requestedSku }: { requestedSku: string | null }) {
       // Authentication middleware owns signed-out navigation. A catalog can
       // still be shown safely if profile refresh is momentarily unavailable.
     });
+    void refreshServiceCredits();
     refreshUsage().catch(() => {
       // The current balance still comes from the profile if history is unavailable.
     });
@@ -292,7 +301,7 @@ function BillingContent({ requestedSku }: { requestedSku: string | null }) {
       mountedRef.current = false;
       pollRunRef.current += 1;
     };
-  }, [refreshCatalog, refreshProfile, refreshUsage]);
+  }, [refreshCatalog, refreshProfile, refreshServiceCredits, refreshUsage]);
 
   const visibleProducts = useMemo(() => {
     if (!catalog) return [];
@@ -348,13 +357,13 @@ function BillingContent({ requestedSku }: { requestedSku: string | null }) {
       }
       window.dispatchEvent(new Event("refresh_analysis_units"));
       try {
-        await refreshProfile();
+        await Promise.all([refreshProfile(), refreshServiceCredits()]);
       } catch {
         // The verified order status is authoritative. A later profile refresh
         // will pick up the entitlement if this request briefly fails.
       }
     },
-    [refreshProfile],
+    [refreshProfile, refreshServiceCredits],
   );
 
   useEffect(() => {
@@ -698,7 +707,7 @@ function BillingContent({ requestedSku }: { requestedSku: string | null }) {
 
         <section className="grid gap-5 border-y border-border py-6 sm:grid-cols-3" aria-label="Current entitlement">
           <div><p className="data-label">Analysis units</p><p className="mt-2 text-3xl font-semibold text-primary">{currentTier ? analysisUnits : "..."}</p><p className="mt-1 text-xs text-muted-foreground">{currentTier === "premium" ? "Existing paid access terms remain; new AI requests depend on available funding." : "Finite balance after reservations and releases."}</p></div>
-          <div className="sm:border-l sm:border-border sm:pl-6"><p className="data-label">Job service credits</p><p className="mt-2 text-3xl font-semibold text-primary">{currentTier ? serviceCredits : "..."}</p><p className="mt-1 text-xs text-muted-foreground">New verified employer jobs and separately approved supported applications. Each action shows its cost before approval.</p></div>
+          <div className="sm:border-l sm:border-border sm:pl-6"><p className="data-label">Job service credits</p><p className="mt-2 text-3xl font-semibold text-primary">{serviceCredits === undefined ? "..." : serviceCredits ?? "Unavailable"}</p><p className="mt-1 text-xs text-muted-foreground">{serviceCredits === null ? "Could not verify your available balance. Refresh this page to try again." : "New verified employer jobs and separately approved supported applications. Each action shows its cost before approval."}</p></div>
           <div className="sm:border-l sm:border-border sm:pl-6"><p className="data-label">Access period</p><p className="mt-2 text-lg font-semibold text-foreground">{currentTier === "premium" && premiumUntil ? `Through ${new Date(premiumUntil).toLocaleDateString("en-IN")}` : currentTier === "premium" ? "Active" : "Free tier"}</p><p className="mt-1 text-xs text-muted-foreground">Premium ends automatically. No renewal payment is scheduled.</p></div>
         </section>
 

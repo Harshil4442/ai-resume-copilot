@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { encode } from "next-auth/jwt";
 
 import type { CreditBundleProduct } from "../lib/billingProducts";
+import type { components } from "../lib/generated/api";
 import { searchSummary, type EmployerApplication, type EmployerSearch, type JobServiceCatalog } from "../lib/employerJobs";
 import type { ServiceCreditHistoryPage } from "../lib/serviceCreditHistory";
 
@@ -62,15 +63,16 @@ function fixture() {
     const token = await encode({ secret: process.env.PLAYWRIGHT_AUTH_SECRET || "playwright-secret-at-least-thirty-two-characters", token: { sub: "424242", email: "fixture@example.com", name: "Taylor Example", hirewizUserId: 424242, accessToken: "local-fixture-token" }, maxAge: 3600 });
     await context.addCookies([{ name: "next-auth.session-token", value: token, url: baseURL, httpOnly: true, sameSite: "Lax" }]);
     await context.addInitScript(() => { localStorage.setItem("hirewiz_cookie_consent", JSON.stringify({ version: 2, preference: "essential", savedAt: new Date().toISOString() })); });
-    await context.route((url) => url.pathname.startsWith("/api/backend/") || url.pathname === "/api/account/profile", async (route) => {
+    await context.route((url) => url.pathname.startsWith("/api/backend/") || /^\/api\/account\/(profile|me)$/.test(url.pathname), async (route) => {
       const request = route.request();
       const url = new URL(request.url());
-      const path = url.pathname.replace(/^\/api\/account\/profile$/, "/auth/profile").replace("/api/backend", "");
+      const path = url.pathname.replace(/^\/api\/account\/(profile|me)$/, "/auth/$1").replace("/api/backend", "");
       const method = request.method();
       const body = request.headers()["content-type"]?.includes("application/json") ? request.postDataJSON() as Record<string, unknown> : {};
       requests.push({ path, method, body, query: url.searchParams.toString() });
       let value: unknown; let status = 200;
-      if (path === "/auth/profile") value = { email: "fixture@example.com", tier: state.premium ? "premium" : "free", ai_credits: 40, job_service_credits: catalog.balance, profile_completeness: 80, full_name: "Taylor Example", skills: ["Python"], missing_fields: [], premium_until: "2026-11-08T10:00:00Z" };
+      if (path === "/auth/profile") value = { email: "fixture@example.com", tier: state.premium ? "premium" : "free", ai_credits: 40, profile_completeness: 80, full_name: "Taylor Example", skills: ["Python"], missing_fields: [], premium_until: "2026-11-08T10:00:00Z" } satisfies components["schemas"]["UserProfileResponse"];
+      else if (path === "/auth/me") value = { id: 424242, email: "fixture@example.com", tier: state.premium ? "premium" : "free", ai_credits: 40, job_service_credits: catalog.balance } satisfies components["schemas"]["UserMeResponse"];
       else if (path === "/v1/features") value = { features: { career_workspace: { enabled: true } } };
       else if (path === "/analytics/summary") value = { profile_completeness: 80, average_match_score: 0, resume_count: 1, applications_count: 0, match_history: [] };
       else if (path === "/v1/reminders") value = [];
@@ -357,7 +359,11 @@ test("billing links keep manual choice and ignore an unsupported product", async
 
 
 test("exactly three finite packs disclose both balances and permit Scale review without payment", async ({ page, context, baseURL }) => {
-  const f = fixture(); await f.install(context, baseURL!); await page.goto("/billing");
+  const f = fixture(); f.catalog.balance = 3; await f.install(context, baseURL!); await page.goto("/billing");
+  const currentCredits = page.getByRole("region", { name: "Current entitlement" }).getByText("Job service credits", { exact: true }).locator("..");
+  await expect(currentCredits.getByText("3", { exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Service history" }).getByText("Available balance", { exact: true }).locator("..")).toContainText(/3\s+credits/);
+  expect(f.requests.some((request) => request.path === "/auth/me")).toBe(true);
   await expect(page.getByRole("article")).toHaveCount(3);
   for (const [name, credits, units, total] of [["Starter",100,2,"₹649"],["Growth",300,6,"₹1,099"],["Scale",700,15,"₹2,199"]] as const) {
     const pack = page.getByRole("article").filter({ has: page.getByRole("heading", { name, exact: true }) });

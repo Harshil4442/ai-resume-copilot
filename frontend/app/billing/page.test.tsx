@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), track: vi.fn() }));
@@ -67,7 +67,8 @@ function purchaseRequest(quote = originalQuote) {
 
 function read(url: string) {
   if (url === "/public/billing/catalog") return Promise.resolve(catalog());
-  if (url === "/auth/profile") return Promise.resolve({ tier: "free", ai_credits: 0, job_service_credits: 0 });
+  if (url === "/auth/profile") return Promise.resolve({ tier: "free", ai_credits: 0 });
+  if (url === "/auth/me") return Promise.resolve({ tier: "free", ai_credits: 0, job_service_credits: 0 });
   if (url === "/v1/usage-events?limit=20") return Promise.resolve({ balance: 0, items: [] });
   if (url === "/billing/recent-order") return Promise.resolve(null);
   if (url === "/v1/employer-jobs/credits?limit=10") return Promise.resolve({ balance: 0, reserved_credits: 0, reservations: [], operations: [], items: [], next_cursor: null });
@@ -99,6 +100,60 @@ beforeEach(() => {
   window.Razorpay = hostedCheckout as unknown as NonNullable<Window["Razorpay"]>;
 });
 afterEach(() => { cleanup(); delete window.Razorpay; });
+
+describe("billing account balance", () => {
+  it("matches the authoritative account and ledger balance when profile omits service credits", async () => {
+    let resolveAccount!: (account: { job_service_credits: number }) => void;
+    const account = new Promise<{ job_service_credits: number }>((resolve) => { resolveAccount = resolve; });
+    state.get.mockImplementation((url: string) => {
+      if (url === "/auth/profile") return Promise.resolve({ tier: "premium", ai_credits: 7, premium_until: "2026-11-01T00:00:00Z" });
+      if (url === "/auth/me") return account;
+      if (url === "/v1/employer-jobs/credits?limit=10") return Promise.resolve({ balance: 3, reserved_credits: 0, reservations: [], operations: [], items: [], next_cursor: null });
+      return read(url);
+    });
+
+    render(<BillingPage />);
+    await screen.findByText("Premium active");
+    const entitlement = screen.getByRole("region", { name: "Current entitlement" });
+    const balance = within(entitlement).getByText("Job service credits").parentElement!;
+    expect(within(balance).getByText("...")).toBeInTheDocument();
+    expect(within(balance).queryByText("0")).not.toBeInTheDocument();
+    expect(await within(screen.getByRole("region", { name: "Service history" })).findByText("3")).toBeInTheDocument();
+
+    await act(async () => { resolveAccount({ job_service_credits: 3 }); });
+    expect(within(balance).getByText("3")).toBeInTheDocument();
+    expect(within(balance).queryByText("0")).not.toBeInTheDocument();
+    expect(state.get).toHaveBeenCalledWith("/auth/me");
+    expect(state.post).not.toHaveBeenCalled();
+  });
+
+  it.each([0, 3])("shows a verified balance of %s independently of unavailable profile metadata", async (balance) => {
+    state.get.mockImplementation((url: string) => url === "/auth/profile" ? Promise.reject(new Error("Profile unavailable"))
+      : url === "/auth/me" ? Promise.resolve({ job_service_credits: balance }) : read(url));
+    render(<BillingPage />);
+    const card = within(screen.getByRole("region", { name: "Current entitlement" })).getByText("Job service credits").parentElement!;
+    expect(await within(card).findByText(String(balance))).toBeInTheDocument();
+    expect(within(screen.getByText("Current access").parentElement!).getByText("Checking status")).toBeInTheDocument();
+  });
+
+  it.each([undefined, null, "3", -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])("does not invent zero for an invalid account balance (%s)", async (balance) => {
+    state.get.mockImplementation((url: string) => url === "/auth/me" ? Promise.resolve({ job_service_credits: balance }) : read(url));
+    render(<BillingPage />);
+    const card = within(screen.getByRole("region", { name: "Current entitlement" })).getByText("Job service credits").parentElement!;
+    expect(await within(card).findByText("Unavailable")).toBeInTheDocument();
+    expect(within(card).queryByText("0")).not.toBeInTheDocument();
+    expect(within(card).getByText(/Refresh this page to try again/)).toBeInTheDocument();
+  });
+
+  it("shows unavailable when the authoritative account read fails", async () => {
+    state.get.mockImplementation((url: string) => url === "/auth/me" ? Promise.reject(new Error("Account unavailable")) : read(url));
+    render(<BillingPage />);
+    const card = within(screen.getByRole("region", { name: "Current entitlement" })).getByText("Job service credits").parentElement!;
+    expect(await within(card).findByText("Unavailable")).toBeInTheDocument();
+    expect(within(card).queryByText("0")).not.toBeInTheDocument();
+    expect(state.post).not.toHaveBeenCalled();
+  });
+});
 
 describe("billing checkout quote acceptance", () => {
   it.each(["legacy", "missing allowance", "inconsistent allowance", "duplicate SKU"])("never starts checkout for a catalog containing only %s offers", async (failure) => {
