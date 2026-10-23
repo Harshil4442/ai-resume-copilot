@@ -2,7 +2,7 @@ name: Document definitions maintenance
 
 on:
   schedule:
-    - cron: "17 * * * *"
+    - cron: "17,47 * * * *"
     - cron: "37 1 * * *"
   workflow_dispatch:
     inputs:

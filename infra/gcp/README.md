@@ -137,8 +137,15 @@ warning to tune against representative traffic, not a published SLO. These polic
 monitor runtime health and definition maintenance; deployment-job failures remain in
 the deployment workflow's own notification scope.
 
-The email channel readback is enabled with `VERIFICATION_STATUS_UNSPECIFIED`, which is
-different from `UNVERIFIED`; Google did not request channel verification. Inbox delivery
-was not tested. Preserve the channel and policy handles during future deployments.
+The selected email channel is enabled. Its default
+`VERIFICATION_STATUS_UNSPECIFIED` is different from `UNVERIFIED`; Google did not
+request channel verification. Actual prior owner-INBOX receipts establish
+scanner-definition attention open/resolved and missing-heartbeat delivery. Fresh
+read-only metadata confirms the listed policies and the separate terminal Cloud
+Build policy remain enabled and mapped to that same channel. These receipts do
+not establish condition-specific delivery for API 5xx, latency, terminal Cloud
+Build or Vercel failures; those routes remain configured or unexercised until an
+actual corresponding receipt exists. No production incident or test notification
+was induced. Preserve the channel and policy handles during future deployments.
 See [channel verification semantics](https://docs.cloud.google.com/monitoring/api/ref_v3/rest/v3/projects.notificationChannels)
 and [metric-absence behavior](https://docs.cloud.google.com/monitoring/alerts/metric-absence).

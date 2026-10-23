@@ -1,478 +1,212 @@
 # HireWiz development and deployment progress
 
-Updated **23 October 2026 (IST)** after canonical PDF repair and successful
-funded tailoring, preview and download acceptance. The original six outcomes below remain **OPEN** until their
-complete development and production acceptance requirements are met within the
-owner-approved pilot. A deployed service, a successful migration, source
-validation or a passing build is supporting evidence within an outcome; it is
-not an additional checkpoint or proof of a complete customer journey.
+Updated **24 October 2026 (IST)** after the schema21 rollout, pilot reopening and
+canonical frontend promotion. Original outcomes **1 and 4 are COMPLETE within
+the approved free twenty-origin pilot**; the other four remain **OPEN**. Global
+coverage, sales, real payments and commercial profitability remain follow-on
+work. The goal remains unfinished until the other pilot outcomes are accepted.
 
-The runtime proxy, native clock and Gemini request-compatibility corrections are
-now deployed. The canonical website's account-availability endpoint returns
-**HTTP 200** with both registration options strictly `true`. Fresh ordinary
-Google sign-in passed. The owner's enrollment request was rejected before any
-password/account change because the legacy account has an existing password.
-The owner does not remember it; one ordinary saved-password login also failed.
-Proper Google ownership recovery is now deployed through
-[PR33](https://github.com/Harshil4442/ai-resume-copilot/pull/33). Its staged and
-canonical checks passed; API and analysis serve source `923412fa` / image
-`9e15a887`, and both website domains serve deployment `aGncpTCw`. The live
-`/account-recovery` form is open after fresh Google sign-in. The owner must
-choose, confirm and submit the new password personally; no agent reset or
-enrollment completion is claimed. Native enrollment and pairing remain
-unaccepted. Following the **₹500 AI Studio top-up**, the PDF stream correction
-was deployed through [PR32](https://github.com/Harshil4442/ai-resume-copilot/pull/32).
-One new bounded UI request created draft **Version 3** with **four retained
-changes and one omitted change**, using one Gemini call with **US$0.033041**
-recorded model cost. Its actual downloaded PDF passes the unchanged native
-fidelity guards: one page, nine links, original fonts and 147 unedited text-object
-positions preserved. The original file is byte-identical. The two-unit quote was
-waived under this owner's existing legacy Premium entitlement; the balance
-remains **7**, so this is not evidence of paid-unit deduction. Earlier failures
-remain historical evidence below. Provider wallet balance and invoice/tax were
-not independently verified.
-Expense-policy secret version **3** is now accepted on all three application
-services, with canonical traffic verified and renewal rollout tags cleaned.
-Model-policy secret version **2** is unchanged. The finite expense-policy
-expiry is **29 October 2026, 20:28:54.855717 UTC**. Prices, economic caps and
-retained spending history are unchanged. On 23 October, the exact-source private operator completed native capture, the authorized one-time grant of exactly **3 unpaid search credits**, and an independent read-only status check for the same owner, opportunity and resume 28. The owner then ran one quoted **3-result** search for **Software Engineer**, using resume 28, worldwide scope and a 30-day publication filter. The UI delivered **Product Manager, Dashboard**, **Product Manager, Compute** and **GTM Engineer** at Vercel. The requested count and **3-credit debit** settled, but all three titles violate the requested role; a one- or two-skill catalogue overlap shown as 100% did not establish role relevance. The current service-credit balance is **0**; AI units are unchanged. No payment was fabricated and no employer application was written. Role relevance remains unaccepted; the deterministic correction is source-only until reviewed, tested and deployed. No compensating wallet mutation or new testing campaign has been performed. **The overall goal is not complete.**
+Schema **`20261023_0021`** is committed. The API, analysis worker, employer worker
+and resume coordinator now serve accepted source **`7a00839d`**, immutable image
+**`c1ce5b32`**. Reopening is accepted: the three reviewed worker queues are RUNNING
+and the three existing schedules are ENABLED. The employer-application queue
+remains PAUSED; sales, checkout and employer submission remain held.
 
-| Original outcome | Status | Completed work within this outcome | Remaining acceptance |
-|---|---|---|---|
-| Official job search, ranking and user-selected job counts | OPEN | Deterministic search/ranking, selected counts and settlement safeguards are deployed. All 20 reviewed origins are enabled and healthy; all refreshed after activation. The recorded aggregate shows 1,366 open postings freshly checked. Authenticated search configuration and mobile layout were observed. | Verify preferences/resume matching, pagination, requested counts, fresh/closed-job handling and per-delivered-result charges/recovery in a completed candidate search. The one-time unpaid three-credit search returned the requested three jobs and charged three credits, but all three PM/GTM titles mismatched Software Engineer. The balance is now zero. Fix title-role eligibility/ranking, verify qualifying partial-result refunds, and complete the remaining search journey; do not pad results or rewrite the completed run. Keep the twenty-origin scope visible; worldwide expansion and an independent >95% coverage assessment remain follow-on work. |
-| Resume tailoring preserving PDF, DOCX and LaTeX formatting | OPEN | Source-preserving engines, private scanning and source-selection safeguards are deployed. Fresh PDF upload/parse passed 26 persisted custody checks and retained a byte-identical original. PR32 is canonical on API/analysis. A real funded request created draft Version 3 with four changes and one safely omitted proposal. Its actual preview/download is byte-identical to regeneration through the full unchanged fidelity guard: one page, nine links, original fonts and 147 unedited text-object positions preserved. | Complete supported DOCX/LaTeX quarantine, compilation, tailoring and sealed-review acceptance, plus original/custom/tailored selection and deletion/cleanup. The successful PDF draft remains for the candidate's review; it has not been approved or submitted by the agent. |
-| Candidate-reviewed direct company applications | OPEN | Schema19, native Firestore/KMS account/device infrastructure, website transport/pairing configuration and the Razorpay/Greenhouse companion implementation are deployed or packaged. Canonical account availability and ordinary Google sign-in pass. Read-only account metadata confirms the current enrollment refusal is an existing-password prerequisite, with no native account or changed password saved. The owner reports companion 0.8.0 installed. PR33 recovery is deployed on API/analysis and both website domains; its live form and fresh Google sign-in were verified. | Complete human password submission/native enrollment and browser pairing, then verify required/conditional form parity and the candidate-reviewed recovery journey. Actual employer attachment, native upload, final submission and typed-control gates remain held; real employer writes remain follow-on work. |
-| Paid search/application credits, profitable finite packs and payment recovery | OPEN | Three finite packs, separate service-credit/AI-unit balances, exact quotes, reservations, settlement/refunds and interrupted/duplicate recovery are deployed. New unlimited offers are removed. Expense-policy secret version 3 is accepted on all three application services through 29 October; model-policy secret version 2 is unchanged. Prices, expense caps and retained spending history are unchanged. | Paid sales/checkout and real payment/application charging remain held. Production payments, refunds/recovery and actual-cost calibration are unaccepted; estimate-based margins are not proven profit. Resolve the commercial hosting arrangement before selling. |
-| Fast responsive pages and SEO | OPEN | PR30 main `523d743d` is canonical on both domains and retains the SEO corrections. Its actual owner UI verifies exact TeX/DOCX source selection and no fallback for an unavailable requested file. Public homepage checks at requested widths of 390, 768 and 1,440 pixels show no horizontal overflow and working mobile navigation. Authenticated search/billing views were also observed at 390 pixels without horizontal overflow. Canonical metadata checks verify pricing-specific sharing metadata, noindex on login/registration and authentication routes absent from the sitemap. | Verify complete authenticated laptop/PC/mobile journeys, production accessibility/SEO and measured loading performance. The observed pages and server timings do not establish complete usability acceptance, Core Web Vitals or mobile field-data performance. |
-| GCP/Vercel deployment, preserved-data migration and monitoring | OPEN | Preserved-data cutover and schema19 remain intact. PR33 API/analysis image 9e15a887 serves 100% after staged and canonical health/config checks; rollout tags are cleaned. Recovery frontend aGncpTCw is canonical on both domains, with automatic custom-domain assignment still disabled. Expense policy 3/model policy 2, employer service and coordinator remain unchanged. Ordinary Google sign-in and a real new PDF tailoring/download journey passed. Queues/schedules, ingestion and selected owner-inbox alerts were previously verified. | Complete native recovery/enrollment/pairing, the native-format rollout and remaining pilot journeys. Verify unexercised alert routes and required operational acceptance. Preserve commercial and employer-write holds; deployment completion alone does not close all six outcomes. |
+Production frontend **`dpl_BRu51zQTN7zUESLPML34PdvB8eMg`** contains the
+upload-reconciliation correction from source **`7529c041`**, merged normally as **`533fc005`**. It was promoted at
+**23 October 2026, 22:46:17 UTC**; both canonical aliases were verified at
+**22:46:23 UTC**. It supersedes the earlier H18/f3 billing release. Actual
+password reset, native enrollment and fresh native password sign-in have passed;
+companion pairing and the final canonical upload check remain under diagnosis.
+A single fresh native-password-session upload POST received upstream **503** at
+**22:48:59.327 UTC**, before a known upload ID was returned. Browser-device
+preparation also received upstream **503** at **22:42:19.214 UTC**, without a
+known creation or pairing ID. These later failures are separate from the deployed
+429 status-reconciliation correction. Neither attempt may be blindly repeated.
+Deployment alone does not close an outcome.
 
 ## Scope and owner controls
 
-On **16 October**, the owner selected the clearly labeled pilot: twenty reviewed
-employer origins and the Razorpay/Greenhouse application portal first. Worldwide
-expansion and an independent >95% coverage assessment are follow-on work.
-Discovery coverage and completed-application coverage are separate measures.
+The owner-approved **free-prelaunch pilot** covers twenty reviewed employer
+origins and candidate-reviewed Razorpay/Greenhouse assistance. Worldwide expansion
+and an independent greater-than-95-percent coverage assessment remain follow-on
+work. Discovery, preparation, assistance and confirmed submission are separate
+measures.
 
-The owner authorized continued prelaunch deployment on the existing free Vercel
-plan and plans to upgrade when selling. No Pro purchase or paid-sales activation
-has been performed or is authorized by this continuation. Checkout remains off.
-Provider eligibility must be resolved before commercial activation; the owner
-instruction does not change provider terms. See the existing
-[operations guide](../../infra/gcp/README.md) and
-[full acceptance requirements](../requirements/JOB_SEARCH_AND_APPLICATION.md).
+Paid sales/checkout and real employer writes remain held. No real payment or
+employer application may be created as a smoke test. Existing controlled fixtures
+cover accounting, submission and recovery boundaries; they are not production
+payment or employer receipts. Commercial activation requires its own hosting,
+provider and economic acceptance. These deliberate holds remain separate from
+unfinished free-pilot journeys within the same six outcomes.
 
-Report free-prelaunch pilot acceptance separately from the intentionally held
-commercial and real-employer actions within these same six outcomes. A real
-payment or employer application must not be created as a smoke test. Existing
-controlled browser/database/provider-boundary fixtures cover accounting,
-submission and recovery behavior; they are not production payment or employer
-receipts. The remaining base-pilot journeys include ordinary enrollment/pairing,
-truthful current tailoring and authenticated usability. The sales hold is not a
-reason to repeat migrations or keep deploying the same source.
+| Original outcome | Status | Accepted evidence within this outcome | Smallest remaining pilot acceptance |
+|---|---|---|---|
+| Official job search, ranking and user-selected job counts | COMPLETE (free pilot) | Twenty reviewed origins were enabled and refreshed; the retained aggregate recorded 1,366 open postings at that observation. The earlier wrong-role search and its separate audited quality adjustment remain preserved. After reopening, a genuine three-result Software Engineer search returned **3 of 3** appropriate engineering roles. Its quote was **1 credit per job**; it charged **3**, released **0**, left **0 held** and **0 available**, while AI stayed **7**. | Approved free-pilot search acceptance is complete. Worldwide expansion and the independent greater-than-95-percent coverage target remain follow-on work. Preserve exact completed search and settlement history; no additional testing campaign is implied. |
+| Resume tailoring preserving PDF, DOCX and LaTeX formatting | OPEN | Real PDF Version 3 retained four safe edits and omitted one unsafe proposal; its download preserves one page, nine links, fonts and 147 unedited positions. New native DOCX, TeX and TeX ZIP originals were downloaded with exact source-hash matches. The unchanged DOCX snapshot is byte-identical. TeX and ZIP sealed PDFs were downloaded, visually checked and matched to their previews; both retain their two links. Persisted source/scan receipts and closed cleanup generations are available for all three formats. | Conclude the persisted scan/cleanup review and canonical upload acceptance after diagnosing the newer upstream 503 before a known upload ID. The deployed 429 correction has not been shown to fail by this separate response. An independent release-user GCS marker read is permission-unavailable; it is not an SD03 requirement and no IAM expansion is needed. Keep original/custom/tailored selection and unchanged-versus-tailored labels truthful; unchanged snapshots do not prove new tailoring. |
+| Candidate-reviewed direct company applications | OPEN | Ordinary Google sign-in passed; the human reports foreground sign-in within five seconds. The human completed password reset; the password-changed email reached INBOX at **23 October 2026, 22:28:41 UTC**. Native enrollment and a fresh native password sign-in both reached the Dashboard. The first reset email also reached INBOX with SPF, DKIM and DMARC passing. Companion 0.8.0 installation is reported. A single browser-device preparation attempt received upstream 503 at **22:42:19.214 UTC**, without a known creation or pairing ID. | Diagnose/reconcile the existing companion attempt without another Start or write, then verify candidate-reviewed Razorpay assistance/recovery within the held employer-write controls. Do not seed an identity/device or bypass proof; employer attachment, upload and final submission are not smoke tests. |
+| Paid search/application credits, profitable finite packs and payment recovery | COMPLETE (free pilot) | Three finite packs, separate service/AI balances, exact quotes, reservations, idempotent settlement and recovery controls are implemented. The promoted billing page displayed the actual **3** service credits. The quote of **1 per job** delivered **3 of 3** Software Engineer roles, charged **3**, released **0**, and left **0 held / 0 available**; AI remained **7**. Expense-policy **3** and model-policy **2** retain their reviewed authority. | Approved free-pilot credit, quote and settlement acceptance is complete. Paid checkout, real payment/refund receipts, commercial activation and actual-cost profitability remain explicitly unaccepted follow-on work. Unknown provider liabilities must not become zero cost. |
+| Fast responsive pages and SEO | OPEN | Public views were observed at 390, 768 and 1,440 pixels without horizontal overflow; signed-in search/billing views were also observed at 390 pixels. Exact-source preview and canonical pricing/auth metadata corrections were accepted. The reset form passed desktop/mobile layout, fragment-removal and normal-session stability checks. The billing balance correction and subsequent upload-status reconciliation correction are promoted on both domains. | Finish authenticated pilot flows on required device sizes, keyboard access, loading/pending states and actionable errors, including clear 503/unknown states and the canonical upload check after the deployed ZIP 429 correction. Preserve noindex/no-referrer and reset-token privacy. These observations do not establish complete accessibility, Core Web Vitals or mobile field performance. |
+| GCP/Vercel deployment, preserved-data migration and monitoring | OPEN | Schema21 migration, all four source7a/imagec1ce services, final reopening and canonical health are accepted. Three worker queues are running and all three schedules produced natural HTTP 200 runs; the application queue remains paused. The H18/f3 billing release and its successor upload-reconciliation release are promoted and both canonical aliases verified. A genuine manual document monitor restored current heartbeat freshness; existing alert/channel mapping and prior inbox delivery are recorded below. | Complete companion pairing and remaining native resume acceptance. Land this reviewed cron mitigation through the normal source workflow and retain honest natural-versus-manual monitoring evidence. Preserve alert handles and distinguish configured routes from actual condition-specific incident/inbox delivery. No deployment-only completion claim. |
 
-## Current deployed state
+## Current rollout state and preserved authority
 
-The accepted runtime repair is pull request **28**, tested at
-**`efb35866dd850341e4f4f1f08da67323f5269d88`** and merged as
-**`88ed491742030a8553c2419d9340a803b397e572`**. The merged and tested Git trees
-are identical. API and analysis use immutable image digest
-`sha256:c67d144ee7a02efa7df44ee78babf1ad3b562bc2f8d5c12e81a32804117eb64e`.
-At the runtime-repair acceptance boundary, both served 100% canonical traffic:
+The accepted backend source is
+**`7a00839dc90a93caebb0b3b5f2e9e03c51e941e9`**. Its normal merge into main is
+**`9a60f2ac9c484de431628b77c48074255c8f6df4`**, with the identical Git tree
+**`01e25ec0831d89c9bb4e05641650ff76f46136f0`**. All four services use accepted
+immutable image **`sha256:c1ce5b32…`** and a single untagged 100-percent route.
 
-- `ai-resume-parser-runtime-a30b52b32136`
-- `hirewiz-analysis-worker-runtime-a30b52b32136`
+| Service | Accepted canonical revision |
+|---|---|
+| API | `ai-resume-parser-activate-387054174fd0` |
+| Analysis worker | `hirewiz-analysis-worker-activate-d2598748799e` |
+| Employer worker | `hirewiz-employer-worker-activate-f5d5e2474f5c` |
+| Resume coordinator | `hirewiz-resume-coordinator-activate-a48ebe3f111c` |
 
-Their old runtime rollout tags were cleaned after acceptance. The employer
-worker retained its reviewed e361 image and behavior. The private coordinator
-retains its reviewed F7 runtime image; the runtime repair did not replace it.
-Prior revisions remain available for rollback. No schema, customer balance or
-spending history was reset by this repair.
+Canonical API, analysis and employer health checks passed. Natural scheduler
+attempts independently matched HTTP 200 on the final revisions: scan at
+**21:53:16 UTC**, cleanup at **21:50:21 UTC** and maintenance at **21:50:16 UTC** on
+23 October. The analysis, employer-ingestion and employer-search queues are
+RUNNING. The cleanup, scan and maintenance schedules are ENABLED. The
+employer-application queue remains PAUSED. No forced scheduled invocation or
+employer submission was used to obtain these results.
 
-READY Vercel deployment **`dpl_A8eCkxaZjvK3d7rAVUKYTPodqQKV`** was promoted
-once. Fresh actual alias records verify both `www.hirewizhq.com` and
-`hirewizhq.com` on that exact deployment, with the existing apex-to-www 308
-redirect retained. Automatic custom-domain assignment remains disabled. At
-**22 October, 20:42:41 UTC**, the canonical same-origin account-availability
-GET returned HTTP 200 and exactly `fresh_registration: true` and
-`legacy_enrollment: true`.
+The additive migration preserves prior data and the single revision chain,
+including the native upload-format change. Original intents, actual operation
+acknowledgments, financial/retained-data comparisons and reconciliation history
+remain authoritative. Completed writes must not be replayed for cleaner receipts.
+The one reviewed conditional recovery preserved the original unknown attempt and
+accepted only an actual provider acknowledgment before original reconciliation.
 
-PR30 subsequently merged as **`523d743d02fbb09037a2aca88cb0e07d3d714203`**,
-with the same Git tree as its tested head. Production deployment
-**`dpl_wX38bqW2nyU8QjkV1i8MKhqKp4WH`** was promoted once and both actual
-domain records point to it; the apex 308 redirect and disabled automatic domain
-assignment are retained. At **22 October, 22:23:49 UTC**, canonical account
-availability again returned exactly both options `true`. Actual authenticated
-UI checks verified unavailable-ID, TeX31 and DOCX30 selection without another
-file's download controls. GCP images, database and expense/model policies were
-unchanged by this frontend correction.
+The two historical failed/waived model runs retain **120,742 USD micros** of
+unresolved cost holds. The schema21 guard permits only coherent terminal history
+with its complete financial fingerprint unchanged. It neither settles those costs
+nor changes customer credits, and it admits no active work through the drain check.
 
-The following configuration-only expense-policy renewal is accepted. All three
-services use expense-policy secret version **3** and unchanged model-policy
-secret version **2**, retain their existing images and prices, and serve 100%
-canonical traffic on these revisions:
+The V2 inspector uses immutable image **`0a7…`**, its reviewed exact-image renderer
+profile, **25 local cases and 10 native cases**, with inspector and caller pins
+joined. Definitions expire **25 October 2026, 06:24:11 UTC**. A successor requires
+the existing reviewed maintenance workflow; stale validity or arbitrary renderer
+hashes must never be substituted. Inspector acceptance remains separate from
+rendered native-upload QA and cleanup evidence.
 
-- `ai-resume-parser-expense-855b625c68d8`
-- `hirewiz-analysis-worker-expense-855b625c68d8`
-- `hirewiz-employer-worker-expense-855b625c68d8`
+The coordinator retains its dedicated identity and reviewed limits. Actual
+reopening is recorded above; sales and employer-write holds remain independent.
+The H18 billing release used frontend source **`f3c05034`**. The later
+upload-reconciliation source **`7529c0413f4bee797ee1203fd3f1119f0b4ea4d7`** was merged
+as **`533fc005c0455119947e25a9f0ada2c9be17935f`** and promoted on 23 October.
+Both `hirewizhq.com` and `www.hirewizhq.com` resolve to the accepted successor;
+canonical alias readback passed at **22:46:23 UTC**. Automatic custom-domain
+assignment remains disabled. These frontend-only corrections required no backend
+image or schema change.
 
-Publication, staged verification, all three promotions, joined canonical
-acceptance and renewal-tag cleanup passed. The expense-policy window ends
-**29 October 2026, 20:28:54.855717 UTC**. Retained expense-policy-2 revisions
-are not usable after **23 October, 05:07:52 UTC** unless the rollback
-configuration attaches a valid reviewed expense policy. Keeping an old revision
-does not extend its policy authority. No balance, spending history, price or
-economic cap was reset by the renewal.
+## Accepted product evidence and remaining human journey
 
-Discovery and the analysis/employer consumers are active. Optional AI capability
-is enabled on the API and analysis worker only; actual AI work still requires
-its finite balance, current cost authority, consent and exact accepted quote.
-Basic source matching, feed refresh, deterministic ranking and accounting do not
-require an AI call. Coordinator upload/scan capabilities are enabled. The
-application queue, automatic submission, checkout, browser attachment/native
-upload/final-submit and typed-control gates remain held.
+The original PDF is **122,522 bytes** and remains byte-identical. Real Version 3
+was created in one Gemini attempt with **33,041 USD micros** of recorded model
+cost. Its actual **140,451-byte** download is byte-identical to regeneration
+through the unchanged fidelity guard. The two-unit quote was waived by the
+existing legacy Premium entitlement; AI balance remained **7**. Historical funding
+and PDF-stream failures remain preserved, rather than current blockers or
+zero-cost receipts. No agent approved or submitted that draft.
 
-The analysis, employer ingestion and employer search queues resumed. The existing
-scan, cleanup and maintenance schedules resumed. At **21 October, 22:30 UTC**,
-all three produced matching Scheduler HTTP 200 and endpoint-specific Cloud Run
-POST 200 observations on the actual serving revisions. These were genuine
-scheduled runs, with no forced invocation. They may represent idle maintenance;
-they do not prove an actual owner's resume was scanned or deleted.
+The wrong-document preview repair rejects explicit unavailable/malformed IDs
+instead of showing another source. New native DOCX, TeX and ZIP source downloads
+match their originals. The DOCX unchanged-source snapshot is byte-identical;
+TeX/ZIP sealed PDF snapshots were downloaded and matched to their preview bytes.
+Rendered QA passed: the plain TeX PDF has two clean pages and the ZIP PDF one;
+each retains two clickable links. Persisted database records for all three native
+formats include source identity, scan receipts and closed quarantine generations;
+the final bounded observer remains pending. The separate release-user GCS marker
+read was permission-denied. Report that independent read as unavailable rather
+than claiming marker PASS; SD03 does not require expanding release-user GCS access.
 
-## Live employer catalogue
+The ZIP UI's unavailable message followed actual GET 429 and DELETE 429 responses,
+despite its source being saved. The two-file frontend correction now reconciles
+status GETs with bounded polling and avoids an implicit cleanup DELETE on uncertain
+status. The change was staged, normally merged as `533fc005` from `7529c041`,
+and promoted as BRu at **22:46:17 UTC**, with both aliases verified. Its 78 focused
+tests and two browser cases passed. One follow-up upload POST in a fresh native
+password session received upstream **503** at **22:48:59.327 UTC** before a known
+upload ID was returned; that newer boundary remains under diagnosis and does not
+exercise the saved-upload GET 429 reconciliation path. No duplicate upload POST
+is authorized by an unknown response. A saved source or unchanged snapshot does
+not establish actual tailored output.
 
-The audited seed created sixteen sources and updated the original four,
-preserving their IDs, the original 386 postings and retained customer/dispatch
-state. After activation, a read-only aggregate at
-**21 October, 22:36:34 UTC** verified:
+The previous forgotten-password Google loop is historical. The release directs
+users to `/forgot-password` and `/reset-password`; it neither implicitly enrolls
+nor auto-logs in after reset. The first real reset email reached INBOX at **23 October 2026, 22:11:13 UTC**,
+with SPF, DKIM and DMARC passing. The human chose, entered and
+submitted the new password, then received the password-changed email in INBOX at
+**23 October 2026, 22:28:41 UTC**. Native enrollment completed in the UI, and a
+fresh native password sign-in reached the Dashboard. The old timed Google
+forgotten-password loop is deprecated; it must not be presented as a remaining
+recovery step.
 
-- **20/20** reviewed sources enabled, healthy and successfully refreshed since
-  the activation boundary; no source error code or active/expired scan claim.
-- **20** new refresh dispatches completed. Actual successful source state was
-  checked separately from dispatch completion.
-- **1,366 open postings**, all freshly checked; **1,056 first seen** since the
-  activation boundary. The open total is not a count of newly created postings.
-- **46 postings closed** since the boundary; 1,442 total retained postings and
-  76 marked closed in the complete snapshot.
+Reset tokens remain private, single-use and absent from the URL after handoff;
+posted/uncertain confirmation must not auto-repeat. Existing acknowledgment and
+PENDING rules remain intact. Companion installation alone does not establish
+pairing: browser-device preparation received upstream **503** at
+**22:42:19.214 UTC**, with no known creation/pairing ID. The existing attempt is
+under diagnosis; another Start or write is not authorized.
 
-This establishes live freshness for the twenty-origin catalogue. It does not
-establish candidate-search/ranking/payment acceptance or worldwide recall.
-See the [reviewed origin register](EMPLOYER_ORIGIN_REGISTRY_2026-10-13.md) and
-[coverage protocol](COVERAGE_AUDIT_PROTOCOL_2026-10-09.md).
+The latest actual search followed a displayed three-credit balance and an exact
+three-result quote at **one credit per job**. Three of three Software Engineer
+roles were returned; exactly **3** service credits were charged, **0** released,
+and **0 held / 0 available** remained, while AI stayed **7**. The older
+irrelevant result and separate audited quality adjustment remain distinct history.
+These actual results complete original outcomes 1 and 4 within the approved free
+twenty-origin pilot. They do not establish worldwide coverage, paid sales, real
+payment acceptance or commercial profitability.
 
-## Preserved data, documents and monitoring
+Finite offers remain Starter **₹649 / 100 service credits + 2 AI units**, Growth
+**₹1,099 / 300 + 6**, and Scale **₹2,199 / 700 + 15**. Prices remain one service
+credit per newly delivered qualifying job, twenty per confirmed complete assisted
+application and two AI units for optional tailoring. Unknown submission outcomes
+retain their hold for reconciliation; another POST is not a recovery strategy.
+Expense-policy3 expires **29 October 2026, 20:28:54.855717 UTC**. Estimate-based
+margins and funding controls do not prove commercial profit or payment acceptance.
 
-The preserved-data F7 cutover completed on **16 October at 09:31 UTC**. Its
-source/target comparison covered 49 tables and 9 sequences before the additive
-schema18 migrations. The original database and the retained protected backup
-remain preserved. Do not repeat the data transfer, credential issuance,
-retirement or completed migrations as part of ordinary updates.
+## Monitoring, history and reporting limits
 
-Schema19 was committed and freshly observed with retained data/ACL checks. The
-closed-admission application rollout then completed with a joined schema19
-observation. These operations did not authorize sales or complete the six user
-outcomes. The original failed transaction journal, its known-rollback evidence
-and all subsequent operation journals remain retained.
+The preserved-data cutover compared **49 tables and 9 sequences** before the
+additive migrations. Original database, protected backup and operation journals
+remain preserved. Prior revisions are rollback resources only while their
+policies and dependencies remain valid.
 
-Document refresh run **`39662737698`** produced accepted inspector digest
-`sha256:240f6df0df2c82d69067e162ca40870ab77069a0b80e3d8b64abcda312b5a78d`;
-the inspector and all three caller pins were verified. Its definition validity
-ends **24 October at 06:25:49 UTC**; use the existing maintenance workflow for
-successors without extending stale definitions. The genuine refresh event and
-an actual heartbeat metric point were observed. The heartbeat lacks a run/image
-label, so its correlation with the accepted refresh comes from the independent
-serving/artifact proof. See [document maintenance](DOCUMENT_DEFINITION_MAINTENANCE.md).
+Prior actual INBOX evidence established scanner-definition attention open/resolved,
+missing-heartbeat and GitHub failure notifications. Fresh metadata confirms all
+five existing GCP alert policies are enabled and still use the selected email
+channel. This mapping and historical delivery do not prove API 5xx, latency,
+terminal Cloud Build or Vercel condition-specific delivery; those remain
+configured or unexercised where actual incident/inbox evidence is absent.
 
-Using the owner's existing authenticated Chrome session on the canonical site,
-the original resume and previously approved tailored PDF both
-previewed and downloaded successfully. Each PDF has **one A4 page and nine
-annotations**. Visual comparison preserved the fonts, section structure and
-layout. This establishes limited acceptance of existing PDF preview/download.
+Document-definition monitoring is separate from the application maintenance
+schedule. After the observed gap following **18:18 UTC**, a genuine scheduled
+GitHub run materialized at **22:07:17 UTC** and completed successfully at
+**22:07:56 UTC** on 23 October. It appeared after the manual recovery's fresh
+preimage check, which had found no active run. The separately authorized
+**manual** monitor completed at **22:08:35 UTC**, emitted a fresh
+event at **22:08:27 UTC**, and produced observed positive heartbeat metric points.
+The new positive metric points are fresh under the unchanged two-hour absence window.
+No Build, native Job, deployment, scanner-validity extension or synthetic heartbeat
+was performed. This manual recovery does not prove future cron reliability.
 
-A subsequent fresh upload of the same **122,522-byte original PDF** created
-a fresh source record through the canonical site. The UI progressed through reserved
-space, safety checks and extraction to **Resume parsed**. The operation used
-deterministic extraction without an AI call, and the balance remained **7 AI
-units** before and after. The UI retains the original source PDF. The new
-original download is byte-identical to the upload. Subsequent read-only metadata
-observation verified all 26 persisted receipt/custody checks; it did not retrieve
-current object metadata. That observation did not establish new tailoring or
-DOCX/LaTeX upload acceptance.
-Private PDFs, rendered pages, the fresh-upload screenshot and
-`fresh-upload.result.json` remain in the operator's `owner-resume-review` evidence
-directory outside this repository.
+The one-line mitigation changes monitor cron from `17 * * * *` to
+`17,47 * * * *`; daily refresh `37 1 * * *`, permissions, WIF, environment,
+concurrency and alert thresholds remain unchanged. It adds a second hourly
+opportunity and is included in this source change for review. Natural
+cadence must remain honestly distinguished from the manual recovery. Do not
+force a production failure or send a test email to manufacture alert acceptance.
 
-Later canonical checks uploaded synthetic **36,890-byte DOCX** and **933-byte
-TeX** resumes. Both parsed deterministically, with the AI balance unchanged at
-**7**. The DOCX's owner-bound receipt records release after one ClamAV inspection
-attempt, with no error and matching source size/hash. Both original downloads
-are byte-identical to their inputs. The TeX source uses the existing separate
-deterministic route; this is not evidence of TeX quarantine/scan, compilation,
-new tailoring or deletion/cleanup acceptance.
-
-That journey exposed a transient preview-selection defect: the URL for the new
-TeX source briefly displayed the previous cached DOCX while its list refreshed.
-The frontend correction binds explicit resume requests to that exact source,
-refreshes the list on entry and resets selector overrides when owner or document
-changes. Missing or malformed explicit IDs cannot select another file. Deferred
-list and late-PDF-response regressions cover this boundary. This source change
-does not establish a successful new tailoring operation.
-
-### Separate native upload work awaiting acceptance (PR31)
-
-The existing outcome 2 includes this deterministic upload work alongside PDF
-stream repair and pending human enrollment. Separate [PR31](https://github.com/Harshil4442/ai-resume-copilot/pull/31) routes TeX/ZIP through the
-existing owner-bound quarantine and cleanup chain. Source inspection precedes
-project validation and isolated compilation; the exact compiler PDF receives
-private inspection/extraction before candidate facts or a new seal are released.
-The pure project validator is separated from compiler/transport code so it can
-be included in the secretless inspector image without application clients.
-
-The frontend uses direct native upload with exact format/MIME/hash/size checks;
-it refuses new native uploads when secure upload is unavailable. Existing native
-original downloads retain their owner-bound legacy compatibility. New native
-multipart parses are refused to prevent bypassing quarantine. Service outages
-remain retryable during upload processing; source refusals schedule cleanup.
-An inspector/compiler outage during tailoring stops the run and waives customer
-units instead of regenerating paid AI proposals or requeuing the same run. Original bytes, cancellation
-leases, generation-pinned writes and deletion obligations remain intact.
-
-Migration **`20261023_0020`** expands only the existing upload-format constraint.
-Local PostgreSQL checks cover retained PDF data through upgrade/downgrade,
-refusal of a lossy downgrade once native cleanup history exists, late results
-after cancellation and detached cleanup after resume deletion. Focused frontend
-checks cover native transport and source identity. New artifact preparation also
-retains metadata for original/candidate source and PDF inspection while preserving
-historical sealed downloads.
-
-This separate implementation remains unmerged and is awaiting corrected
-expanded-corpus/component fixture acceptance,
-reviewed native image/policy rollout, schema20 application, coordinator/API
-deployment and canonical synthetic TeX/ZIP acceptance with exact sealed review
-and cleanup evidence. Production remains on schema19 and its previously accepted
-scanner until that rollout is complete. No new full checkpoint is closed, no AI
-test was initiated by this native implementation, and no paid sales or employer
-writes were activated.
-
-The GCP notification channel routes to the owner's selected signed-in Google
-account. Definition attention, missing heartbeat, API 5xx and latency policies
-are configured; the subsequent terminal Cloud Build operation alert reuses that
-same owner channel. The new Cloud Build rule covers its matching future terminal
-operations, not every possible build or deployment failure.
-
-Read-only owner-mailbox evidence verified actual **INBOX** delivery of GCP
-scanner-definition attention open/resolved messages and GitHub maintenance/main
-CI failure messages. An attention-resolved email alone does not prove scanner
-recovery; the separate successful native refresh provides that evidence.
-Actual missing-heartbeat firing and prior resolved notices were subsequently
-found in the owner's INBOX. The latest incident opened at **22 October,
-21:37:10 UTC** after no hourly GitHub monitor runs materialized following the
-successful 18:31 run. Existing monitor-only run **39860463269** then succeeded
-at **21:51:29 UTC**, reverified the current inspector pin/accepted native receipt,
-and emitted a genuine fresh heartbeat observed in native metrics. Refresh,
-build and pin-transition steps were skipped. Incident closure and subsequent
-cron cadence were not established by that observation. GitHub documents that
-[scheduled events can be delayed or dropped](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule);
-the cause of this particular run-creation gap remains unknown.
-
-Vercel failure and the new native Cloud Build rule's live delivery remain
-unexercised. API 5xx/latency policies are configured, without retained
-condition-specific incident/inbox proof. No synthetic heartbeat, forced
-production failure or test email was used to create this evidence.
-Preserve the notification channel and policy resource handles listed in the
-[operations guide](../../infra/gcp/README.md).
-
-## Public-page checks and metadata follow-up
-
-The live e361 homepage was visually checked at requested viewport widths of
-390, 768 and 1,440 pixels. Each had one main heading, no horizontal overflow and
-a working responsive layout. The mobile navigation opened and closed. The
-browser override was reset afterward. This covers the public homepage, not the
-signed-in application forms or complete accessibility acceptance.
-
-One anonymous HTTP GET per route from the owner network measured first-byte
-times of 125 ms for the homepage, 608 ms for pricing and 78 ms for login, with
-all three returning HTTP 200. Cache state was uncontrolled. These are server and
-transfer timings, not browser rendering, before/after improvement, Core Web
-Vitals or mobile field-data scores. The separate official PageSpeed mobile lab
-request returned HTTP 429; no score is claimed and it was not repeatedly retried.
-
-The bounded public metadata audit found login/registration in the sitemap,
-missing sign-in `noindex` and pricing inheriting homepage Open Graph metadata.
-The frontend-only correction in this revision removes those authentication
-routes from the sitemap, adds their `noindex,nofollow`, and gives pricing its own
-Open Graph title, description and canonical sharing URL while retaining the
-share image. The update is published; fresh canonical HTTP checks verify all three corrections. Backend images,
-credentials, authentication behavior and layout are unchanged by this correction.
-
-## Remaining owner acceptance
-
-The current recovery change adds `/account-recovery` and explicit forgot-password
-links. It is limited to legacy accounts that have an existing HireWiz password
-and no native account or Google link. A recent ordinary Google sign-in and a
-separate, nonce-bound signed Google assertion must identify the same candidate
-and email. Recovery accepts authoritative Gmail or verified Workspace mailbox
-ownership; generic third-party Google email verification is insufficient. See
-[Google's verification guidance](https://developers.google.com/identity/gsi/web/guides/verify-google-id-token).
-
-The one-use recovery challenge binds the original email/credential preimage and
-a distinct binary purpose. With explicit recovery/enrollment consent, its final
-transaction consumes the proof, replaces the password and creates the native
-PENDING account/link together, immediately denying old legacy sessions. The
-ordinary current-password enrollment guard remains unchanged. Existing native
-accounts cannot use this route. Native activation still requires its original
-acknowledgments; an uncertain outcome permits a password-verified status check,
-never automatic resubmission. The existing optional email outbox receives a
-notice with no secret payload; delivery has not been independently accepted.
-This code does not introduce a migration, provider account or purchase. Source
-checks are complete, while deployment and human recovery acceptance remain pending.
-The owner must personally enter and submit the new password in the deployed UI.
-
-Fresh ordinary Google sign-in now succeeds on the canonical website and
-reaches the authenticated dashboard. The repaired same-origin availability
-endpoint returns HTTP 200 with both registration options true. Native Google
-verification was received. The human submission returned HTTP 401 before saving:
-read-only metadata proves this legacy owner has an existing password and no
-native account/link. The owner forgot that password and one saved-password login
-failed. Recovery must use a proper purpose-bound proof, not a database reset or
-removal of the ordinary enrollment guard. The owner reports installing companion
-0.8.0; independent pairing and the complete browser-assisted journey are still
-pending. Do not seed an account/device, replace the owner's identity, invent
-credentials or bypass ordinary proof. The earlier proxy/clock failures remain
-retained as historical failures; the accepted successor and its bounded signed
-handshake are documented in the [runtime diagnosis](RUNTIME_READINESS_2026-10-22.md).
-
-Existing original/approved-tailored PDF preview and download, plus a fresh owner
-PDF upload and deterministic parse, succeeded as described above. The new
-upload's original preview/download also succeeded, and the downloaded bytes
-exactly match the uploaded 122,522-byte PDF. A read-only owner-bound observation
-also passed all 26 persisted receipt/custody checks, including storage generation
-pins, completed release and recorded quarantine cleanup. This did not independently
-retrieve current object metadata. The new PDF tailoring/download run described
-below has now succeeded. Other supported formats, ordinary browser pairing, paid search and candidate
-submission remain unaccepted. Complete those
-genuine journeys within the existing consent/price/credit/permission controls.
-Keep unavailable submission capabilities visibly unavailable until their
-respective acceptance and owner review are complete.
-
-The Gemini request-compatibility correction is deployed: Gemini 3+ requests
-omit unsupported `candidate_count` while preserving output-token and budget
-limits. Before the top-up, one post-repair owner-approved tailoring run reached Gemini
-and failed with **HTTP 402** before creating a change plan or editing the document.
-At that historical observation, AI Studio showed **Tier 1 Prepay / No credits**
-and required a positive provider balance to resume service. The two reserved AI units were
-waived, the verified balance stayed at **7**, and no new resume version was
-saved. There was no automatic retry. No provider usage receipt was returned,
-so the provider-cost outcome remains unknown rather than assumed free. This
-billing refusal does not demonstrate a format-preservation failure. Internal
-HireWiz credit adjustments cannot fund Google's provider account.
-
-After the owner reported the **₹500** provider top-up, one new UI request
-(`run_ff82dad704884d9b9cfdf2305b0d7d65`) reached **`gemini-3.6-flash`** and
-completed two bounded generation attempts. Both have real token-usage receipts;
-the recorded combined model cost is **63,133 USD micros (US$0.063133)**, not a
-verified invoice total. The deterministic editor rejected both attempts with
-**`unsupported_pdf_text_stream`**. The run terminated with waived user units,
-balance **7**, and no saved version. No retry was made until the native repair
-was deployed and canonically verified.
-The earlier HTTP 402 run and its unknown provider-cost outcome remain unchanged.
-The AI Studio wallet widget did not expose a usable balance; successful real
-requests establish usable funding without asserting the remaining rupee balance.
-
-That failure led to the bounded native repair below. Original/custom-file
-alternatives, evidence checks, exact quotes and finite expense controls remain
-intact. The agent did not make a provider
-purchase, enable auto-reload or change billing settings.
-
-
-The minimal PDF correction keeps the existing scanner image/policy and schema19.
-On the exact original PDF, a local trimmed passage reproduces the same public
-stream error because native cursor precision exceeds the retained **0.1 point**
-limit. A separate changed passage passes the complete fidelity checks. The
-original failed run's proposals were not retained, so this reproducer does not
-prove its internal stream-error subtype.
-
-The operations correction probes at most twelve proposed edits, once per run,
-when an unattributed PDF stream refusal occurs. It discards only individually
-rejected changes and verifies the complete surviving batch before saving. No
-survivors, interacting failures or failed final validation terminate without
-another model call or an unchanged tailored version. The font, geometry, pixel,
-source-content and cursor-precision guards remain intact. PR32 is merged and
-deployed: source `088c0a5f`, immutable image `4f1d9932`, API and analysis revisions
-`runtime-33d9c039a790`. Staged/canonical checks passed and rollout tags were cleaned.
-
-The subsequent single UI request `run_09396a1536544288ab4bb4283c342951` succeeded
-in one generation attempt and created draft Version 3
-`rsv_cc35b6cc7d1342a3a9c712fe5b147f0c`, bound to original resume 28. Four edits
-were retained and one omitted; no unchanged snapshot was substituted. The one
-real Gemini receipt settled **33,041 USD micros**, with no remaining reservation.
-The quoted two product units were waived by the owner's existing legacy Premium
-grant; no unit deduction is claimed. The actual browser download is **140,451
-bytes**, SHA256 `4318ab723079348edb1fa6283967ca69b49bc5104751cd1c2dfce27b88776c07`.
-It is byte-identical to regeneration through the unchanged native fidelity
-validator. All 151 text objects retain their font/style; 147 unedited positions,
-one A4 page and all nine annotations/links are preserved. No agent approval or
-employer application occurred. This closes the PDF failure investigation within
-outcome 2; its other-format and cleanup acceptance remains open.
-
-The three finite offers remain Starter **₹649 / 100 service credits + 2 AI
-units**, Growth **₹1,099 / 300 + 6**, and Scale **₹2,199 / 700 + 15**. Deployed
-prices are one service credit per newly delivered qualifying job, twenty per
-confirmed complete assisted application, and two AI units for optional tailoring.
-Unknown submission outcomes retain their hold for reconciliation and never
-justify another POST. These are finite estimate-based offers, not an assertion
-that production payments or profit have been accepted. See
+There is **no dependable remaining completion ETA**. Do not invent original
+outcome estimates, sum independent operator durations or add CI/deployment
+checkpoints to these six outcomes. Retain earlier receipts in private evidence
+and the existing [historical progress archive](archive/AUTO_APPLY_PROGRESS_THROUGH_F6_2026-10-15.md)
+and [validation history](archive/AUTO_APPLY_VALIDATION_HISTORY_THROUGH_2026-10-13.md).
+See the [requirements](../requirements/JOB_SEARCH_AND_APPLICATION.md),
+[operations guide](../../infra/gcp/README.md),
+[document maintenance](DOCUMENT_DEFINITION_MAINTENANCE.md),
 [finite packs](FINITE_PACK_IMPLEMENTATION_2026-10-09.md) and
 [cost policy](COST_PRICING_POLICY_2026-10-09.md).
-
-## Timing and operator lessons
-
-There is **no dependable remaining completion ETA**. Original per-outcome
-estimates and measured whole-outcome durations were not recoverable from the
-retained reporting documents/history. Do not invent them or reuse the withdrawn
-conditional 2–4-hour release estimate. When one of these same six outcomes meets
-its full acceptance, report its recorded estimate if available, measured elapsed
-time and identifiable waits against that row.
-
-Measured operation times are supporting evidence, not whole-outcome completion
-times: schema19 migration **540.78 seconds**; closed-admission rollout
-**1,761.94 seconds**; coordinator promotion **19.46 seconds**; read-only analysis
-promotion reconciliation **18.27 seconds**; employer promotion **26.88 seconds**;
-API promotion **65.22 seconds**; final traffic-tag cleanup **67.90 seconds**.
-The later PR28 frontend promotion completed in **5.52 seconds** at
-**22 October, 20:37:48 UTC**, followed by independent canonical readback.
-These independent phase timings must not be summed into an end-to-end duration
-or presented as completion of a whole outcome.
-
-- Run the Vercel CLI from a responsive local working directory. In this rollout,
-  `vercel` 64 `api --help` from the Desktop repository hung for over two minutes
-  at zero CPU and that read-only process was terminated; the identical command
-  with its working directory set to `/tmp` completed in **0.082 seconds**.
-  Subsequent Vercel API/promotion commands from `/tmp` succeeded. This is an
-  observed working-directory-dependent hang; the particular underlying file or
-  filesystem cause was not proved. Do not turn this into a `TMPDIR` diagnosis.
-  Historical CLI flag-forwarding mistakes are a separate issue.
-- Compare immutable revision configuration with the original reviewed template
-  and same-plan journal. Native activity/scaling status can legitimately change
-  after traffic moves; a full live Revision JSON hash is not an immutable
-  configuration identity. Retain the original full hash as audit evidence.
-- An untagged zero-traffic candidate can be Ready while the service's
-  `latestReadyRevision` remains the old 100% serving revision. Reconcile the
-  original acknowledged stage against the exact candidate/configuration and old
-  route; do not restage. Postpromotion still requires the expected serving
-  candidate and exact traffic/configuration proof.
-- Google RPC success code zero can be omitted in protobuf JSON. Handle that
-  omission only in the exact known status schema; retain independent matching
-  Scheduler/Cloud Run evidence. Do not classify arbitrary missing fields,
-  unknown operations or incomplete acknowledgements as success.
-- An acknowledged mutation followed by a readback mismatch requires
-  reconciliation of that same original operation. Keep intent/ACK journals and
-  exact preimages; never create a new folder, repeat a promotion or issue another
-  request merely to obtain a cleaner report.
-
-Earlier deployment states, expired scanner pins, paused schedules, previous
-candidate builds and validation counts are historical context, not the current
-state. Preserve their records and use the existing
-[historical progress archive](archive/AUTO_APPLY_PROGRESS_THROUGH_F6_2026-10-15.md)
-and [validation history](archive/AUTO_APPLY_VALIDATION_HISTORY_THROUGH_2026-10-13.md)
-for earlier evidence. Builds and regressions remain supporting verification,
-not additional delivery checkpoints.
