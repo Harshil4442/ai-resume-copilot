@@ -14,6 +14,7 @@ from pydantic import Field, model_validator
 
 from ..candidate_accounts.production import CandidateNativeConfiguration, _pairs
 from .contracts import Contract, Identifier, canonical
+from .native_diagnostics import native_phase
 from .pairing_auth import PinnedAssertions, public_jwk
 from .store import GuardDenied, GuardUnavailable
 
@@ -49,6 +50,7 @@ class BrowserPairingNativeConfiguration(CandidateNativeConfiguration):
     claim_key: KmsSigningConfiguration
 
 
+@native_phase("browser_pairing", "configuration")
 def configuration() -> BrowserPairingNativeConfiguration:
     from ..candidate_accounts.production import _configuration
     if os.environ.get("BROWSER_PAIRING_NATIVE_ENABLED") != "true":
@@ -122,6 +124,7 @@ class ConfiguredBrowserPairing:
         self._native: NativeBrowserPairing | None = None
         self._lock = Lock()
 
+    @native_phase("browser_pairing", "service")
     def _service(self) -> NativeBrowserPairing:
         current = configuration()
         if (canonical(current.model_dump(mode="json")) != self._raw
@@ -140,7 +143,8 @@ class ConfiguredBrowserPairing:
                 from .gcp_password import GcpPasswordCandidateBoundary
                 from .gcp_password_attempts import GcsPasswordSigning
                 from .password_reauth import SqlPasswordCredentials
-                accounts = production_candidate_accounts()._composition()
+                with native_phase("browser_pairing", "account_composition"):
+                    accounts = production_candidate_accounts()._composition()
                 lifetime, scoped = accounts.lifetime, accounts.scoped
                 publication = scoped.publication
                 bucket = publication.bucket
@@ -181,7 +185,8 @@ class ConfiguredBrowserPairing:
 
     def candidate(self, operation: str, raw: bytes, assertion: str, signature: str) -> dict:
         native = self._service()
-        result = native.candidate(operation, raw, assertion, signature)
+        with native_phase("browser_pairing", "native_operation"):
+            result = native.candidate(operation, raw, assertion, signature)
         self._service()
         return result
 
@@ -193,7 +198,8 @@ class ConfiguredBrowserPairing:
             body = exact_json(raw)
             if body.get("extension_id") != current.extension_id or body.get("revision") != current.executor_revision:
                 raise GuardDenied("Device extension/revision does not match the protected deployment")
-        result = native.device(operation, raw, origin)
+        with native_phase("browser_pairing", "native_operation"):
+            result = native.device(operation, raw, origin)
         if "device_claim" in result:
             claim = result["device_claim"]["payload"]
             if claim.get("extension_id") != current.extension_id or claim.get("executor_revision") != current.executor_revision:

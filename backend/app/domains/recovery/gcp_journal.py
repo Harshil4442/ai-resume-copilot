@@ -17,6 +17,7 @@ from .gcp_contracts import JournalIntent, JournalReceipt, RegistryPin, WitnessBo
 from .gcp_media import BoundedSink, DownloadClient
 from .gcp_pairing_contracts import PairingJournalIntent
 from .gcp_partitioned_contracts import ScopedJournalIntent
+from .native_diagnostics import native_phase
 from .store import GuardDenied, GuardUnavailable
 
 if TYPE_CHECKING:
@@ -63,34 +64,37 @@ def _exact_bytes(bucket: Bucket, path: str, expected: bytes, *, generation: str 
                  timeout: float) -> str:
     if type(expected) is not bytes or not 0 < len(expected) <= 65_536:
         raise GuardUnavailable("Expected object bytes must be positive and bounded")
-    live = bucket.blob(path)
-    _sdk_configuration(bucket)
-    live.reload(retry=None, timeout=timeout)
-    found_generation = _generation(live._properties.get("generation"))
-    if generation is not None and found_generation != generation:
-        raise GuardUnavailable("Live witness generation changed")
-    _metadata(live, len(expected))
+    with native_phase("witness_bytes", "live_metadata"):
+        live = bucket.blob(path)
+        _sdk_configuration(bucket)
+        live.reload(retry=None, timeout=timeout)
+        found_generation = _generation(live._properties.get("generation"))
+        if generation is not None and found_generation != generation:
+            raise GuardUnavailable("Live witness generation changed")
+        _metadata(live, len(expected))
     # Fresh metadata request pins both the generation and precondition before media IO.
-    _sdk_configuration(bucket)
-    exact = bucket.blob(path, generation=int(found_generation))
-    exact.reload(if_generation_match=int(found_generation), retry=None, timeout=timeout)
-    if _metadata(exact, len(expected)) != found_generation:
-        raise GuardUnavailable("Exact-generation metadata disagrees")
-    _sdk_configuration(bucket)
-    proxy = DownloadClient(bucket.client, bucket.name, path, found_generation, len(expected))
-    sink = BoundedSink(len(expected))
-    try:
-        bucket.blob(path, generation=int(found_generation)).download_to_file(
-            sink, client=cast(Client, proxy), start=0, end=len(expected), raw_download=True,
-            single_shot_download=False, if_generation_match=int(found_generation),
-            retry=None, timeout=timeout, checksum=None,
-        )
-        found = sink.getvalue()
-    finally:
-        proxy.close_responses()
-        sink.close()
-    if found != expected:
-        raise GuardUnavailable("Generation-bound object bytes disagree")
+    with native_phase("witness_bytes", "exact_metadata"):
+        _sdk_configuration(bucket)
+        exact = bucket.blob(path, generation=int(found_generation))
+        exact.reload(if_generation_match=int(found_generation), retry=None, timeout=timeout)
+        if _metadata(exact, len(expected)) != found_generation:
+            raise GuardUnavailable("Exact-generation metadata disagrees")
+    with native_phase("witness_bytes", "bounded_media"):
+        _sdk_configuration(bucket)
+        proxy = DownloadClient(bucket.client, bucket.name, path, found_generation, len(expected))
+        sink = BoundedSink(len(expected))
+        try:
+            bucket.blob(path, generation=int(found_generation)).download_to_file(
+                sink, client=cast(Client, proxy), start=0, end=len(expected), raw_download=True,
+                single_shot_download=False, if_generation_match=int(found_generation),
+                retry=None, timeout=timeout, checksum=None,
+            )
+            found = sink.getvalue()
+        finally:
+            proxy.close_responses()
+            sink.close()
+        if found != expected:
+            raise GuardUnavailable("Generation-bound object bytes disagree")
     return found_generation
 
 
@@ -170,6 +174,7 @@ class GcsWitnessFence:
         self.bucket, self.identity, self.pin = bucket, identity, pin
         self.raw, self.rpc_timeout = raw, rpc_timeout
 
+    @native_phase("execution_witness", "check")
     def check(self, pin: RegistryPin) -> None:
         # A retained pending denial must block old OPEN rows/witnesses even when
         # the corresponding native Commit never persisted. No cached absence.
@@ -182,7 +187,8 @@ class GcsWitnessFence:
             raise GuardUnavailable("Registry deployment pin changed")
         _sdk_configuration(self.bucket)
         try:
-            self.bucket.blob(closure_path(pin)).reload(retry=None, timeout=self.rpc_timeout)
+            with native_phase("execution_witness", "closure", expected=(NotFound,)):
+                self.bucket.blob(closure_path(pin)).reload(retry=None, timeout=self.rpc_timeout)
         except NotFound:
             return
         except (GoogleAPICallError, RetryError, OSError, TimeoutError):
@@ -200,7 +206,8 @@ class GcsWitnessFence:
             raise GuardUnavailable("Registry deployment pin changed")
         _sdk_configuration(self.bucket)
         try:
-            identity = self.identity.identity()
+            with native_phase("execution_witness", "identity"):
+                identity = self.identity.identity()
             if identity != {"name": pin.database, "uid": str(pin.database_uid),
                             "type": "FIRESTORE_NATIVE"}:
                 raise GuardUnavailable("Current database incarnation disagrees")

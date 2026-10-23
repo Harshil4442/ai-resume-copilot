@@ -15,6 +15,7 @@ from google.api_core.exceptions import Aborted
 
 from .contracts import canonical
 from .gcp_contracts import AmbiguousCommit, RpcCommit, RpcSnapshot, RpcWrite
+from .native_diagnostics import native_phase
 from .store import GuardDenied, GuardUnavailable
 
 MAX_DOCUMENTS = 64
@@ -82,8 +83,9 @@ class FirestoreRpc:
         from google.cloud.firestore_admin_v1.types import Database
 
         try:
-            response = self.admin.get_database(request={"name": self.database_resource},
-                                               retry=None, timeout=self.rpc_timeout)
+            with native_phase("firestore_rpc", "identity"):
+                response = self.admin.get_database(request={"name": self.database_resource},
+                                                   retry=None, timeout=self.rpc_timeout)
             if (not isinstance(response, Database) or response.name != self.database_resource
                     or response.type_ != Database.DatabaseType.FIRESTORE_NATIVE
                     or str(UUID(response.uid)) != response.uid):
