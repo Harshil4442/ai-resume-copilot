@@ -87,10 +87,17 @@ def verify_failed(path: Path, files: dict[str, bytes], clients: Any, probe: Any,
     binding = values["native-proof/binding.json"]
     identity, image = binding["build_identity"], binding["image"]
     nonce = identity["nonce"]
-    actual = build.verify_native_build(identity)
+    # Select the historical profile only from the actual exact Job image/policy.
+    # Saved success/disposition data does not choose a weaker verifier.
+    observed_job = clients.job(probe.PARENT + "/jobs/hirewiz-doc-six-" + nonce[:12])
+    historical_v1 = probe.historical_v1_for_serving(
+        {"template": observed_job.get("template", {}).get("template", {})}, image)
+    actual = (build.verify_native_build(identity, historical_v1=True)
+              if historical_v1 else build.verify_native_build(identity))
     build.need(image == identity["immutable_image"] and binding == {
         "image": image, "build_identity": identity,
-        "probe_sha256": sha(probe.rendered_payload(image).encode())}, "document_refresh_recovery_binding_changed")
+        "probe_sha256": sha(probe.rendered_payload(image, historical_v1=historical_v1).encode())},
+        "document_refresh_recovery_binding_changed")
     build.need(values["native-build-identity.json"] ==
                {key: value for key, value in identity.items()
                 if key not in {"local_native_proof_sha256", "source_sha256"}}
@@ -98,11 +105,12 @@ def verify_failed(path: Path, files: dict[str, bytes], clients: Any, probe: Any,
                "document_refresh_recovery_build_proof_changed")
     local = values["local-native-proof.json"]
     # Historical local proof freshness is not extended; the new candidate must
-    # acquire fresh definitions and pass all 21 cases itself.
+    # acquire fresh definitions and pass all 25 current cases itself.
     issued = local["corpus"][0]["scan"]["definitions"].split("/", 1)[1]
     from datetime import datetime
 
-    build.proof_contract(local, build.accepted(), identity["source_sha256"], now=datetime.fromisoformat(issued))
+    arguments = {"historical_v1": True} if historical_v1 else {}
+    build.proof_contract(local, build.accepted(), identity["source_sha256"], now=datetime.fromisoformat(issued), **arguments)
     build.need(values["build-started.json"] == {"nonce": nonce,
         "recipe_sha256": identity["refresh_dockerfile_sha256"],
         "source_archive_sha256": identity["source_archive_sha256"], "automatic_replay": False,
@@ -116,8 +124,9 @@ def verify_failed(path: Path, files: dict[str, bytes], clients: Any, probe: Any,
     build.need(values["build-acknowledged.json"] == {"nonce": nonce, "build_id": actual["build_id"],
         "operation_name": "operations/build/" + build.PROJECT + "/" + encoded, "automatic_replay": False},
         "document_refresh_recovery_build_ack_changed")
-    owner = probe.Journal(path / "native-proof", image, identity)
-    job = probe.owned_job(clients, owner, image, nonce)
+    owner = probe.Journal(path / "native-proof", image, identity, historical_v1=historical_v1)
+    job = probe.owned_job(clients, owner, image, nonce, historical_v1=historical_v1)
+    build.need(job == observed_job, "document_refresh_recovery_job_changed_during_profile_selection")
     marker = owner.read("run.started.json")
     build.need(set(marker) == {"job_name", "job_uid", "etag", "automatic_replay"}
         and marker["job_name"] == job["name"] and marker["job_uid"] == job["uid"]
@@ -141,7 +150,7 @@ def verify_failed(path: Path, files: dict[str, bytes], clients: Any, probe: Any,
         and bool(execution.get("completionTime")) and probe.integer(execution.get("taskCount"), 1)
         and probe.integer(execution.get("failedCount"), 1)
         and all(probe.integer(execution.get(key, 0), 0) for key in ("succeededCount", "runningCount", "cancelledCount", "retriedCount"))
-        and probe.task_matches(execution.get("template"), probe.desired(image, nonce)["template"]["template"])
+        and probe.task_matches(execution.get("template"), probe.desired(image, nonce, historical_v1=historical_v1)["template"]["template"])
         and probe.integer(job.get("executionCount"), 1)
         and job.get("latestCreatedExecution", {}).get("name") in (execution["name"], execution["name"].rsplit("/", 1)[-1])
         and job["latestCreatedExecution"].get("completionStatus") == "EXECUTION_FAILED",
@@ -153,12 +162,15 @@ def verify_failed(path: Path, files: dict[str, bytes], clients: Any, probe: Any,
             and probe.integer(row.get("taskCount"), 1) and probe.integer(row.get("failedCount"), 1)
             and all(probe.integer(row.get(key, 0), 0) for key in ("succeededCount", "runningCount", "cancelledCount", "retriedCount"))
             and row.get("completionTime") == execution.get("completionTime")
-            and probe.task_matches(row.get("template"), probe.desired(image, nonce)["template"]["template"]),
+            and probe.task_matches(row.get("template"), probe.desired(image, nonce, historical_v1=historical_v1)["template"]["template"]),
             "document_refresh_recovery_execution_failure_changed")
-    payload = probe.native_payload(clients, job, execution)
-    parser = probe.load_source("hirewiz_terminal_failure_parser", probe.HERE / "document_refresh_receipt.txt")
-    build.need(sha((probe.HERE / "document_refresh_receipt.txt").read_bytes()) == probe.PARSER_SHA
-        and parser.validate(payload, image, probe.POLICY, probe.runtime_hashes()) is False
+    payload = probe.native_payload(clients, job, execution, historical_v1=historical_v1)
+    parser_path = probe.HERE / ("document_legacy_v1/receipt.txt" if historical_v1 else "document_refresh_receipt.txt")
+    parser_raw = probe.legacy_source("receipt.txt") if historical_v1 else parser_path.read_bytes()
+    parser = probe.load_source("hirewiz_terminal_failure_parser_v1" if historical_v1 else "hirewiz_terminal_failure_parser", parser_path)
+    policy = probe.LEGACY_POLICY if historical_v1 else probe.POLICY
+    build.need(sha(parser_raw) == (probe.LEGACY_SOURCE_HASHES["receipt.txt"] if historical_v1 else probe.PARSER_SHA)
+        and parser.validate(payload, image, policy, probe.runtime_hashes(historical_v1=historical_v1)) is False
         and set(payload) == parser.TOP and payload["failure_stage"] == "identity_preflight"
         and payload["outer_runtime_user_verified"] is True
         and all(row == {"case": name, "passed": False, "attempted": False}
@@ -179,6 +191,7 @@ def joined(clients: Any, probe: Any, build: Any, failed_jobs: set[str]) -> None:
     snapshot = clients.preflight()
     service = snapshot["service"]
     image = service["template"]["containers"][0]["image"]
+    policy = probe.policy_for_serving(service, image)
     build.need(service.get("labels", {}).get("hirewiz-refresh-job") not in failed_jobs,
                "document_refresh_recovery_failed_job_serving")
     if image != probe.BASE_IMAGE:
@@ -189,7 +202,7 @@ def joined(clients: Any, probe: Any, build: Any, failed_jobs: set[str]) -> None:
     for name in ("hirewiz-document-inspector", "ai-resume-parser", "hirewiz-analysis-worker", "hirewiz-resume-coordinator"):
         value = clients.service(probe.PARENT + "/services/" + name)
         controller.ready(name, value, uid=probe.SERVICE_UID if name == "hirewiz-document-inspector" else None)
-    probe.verify_caller_pins(clients, image)
+    probe.verify_caller_pins(clients, image, policy_sha256=policy)
 
 
 def object_name(uid: str) -> str:

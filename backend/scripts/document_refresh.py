@@ -172,7 +172,19 @@ def monitor(*, now: datetime) -> dict[str, Any]:
             "definitions": result, "promotion_performed": False}
 
 
-def proof_contract(proof: Any, contract: Any, source_hashes: dict[str, str], *, now: datetime) -> dict[str, Any]:
+def proof_contract(proof: Any, contract: Any, source_hashes: dict[str, str], *, now: datetime,
+                   historical_v1: bool = False) -> dict[str, Any]:
+    need(type(historical_v1) is bool, "document_refresh_contract_version_invalid")
+    policy = contract.POLICY_SHA256
+    if historical_v1:
+        # A retained failed V1 probe is read-only recovery evidence. It cannot
+        # satisfy today's candidate or native V2 acceptance contract.
+        sys.path.insert(0, str(ROOT / "infra/gcp"))
+        from document_refresh_probe import LEGACY_POLICY, legacy_source
+
+        need(source_hashes == json.loads(legacy_source("policy.json"))["source_sha256"],
+             "document_refresh_historical_source_changed")
+        policy = LEGACY_POLICY
     need(type(proof) is dict and proof.get("platform") == "linux/amd64"
          and proof.get("scope") == "local_native_docker_only"
          and proof.get("cloud_run_isolation_proven") is False
@@ -182,10 +194,12 @@ def proof_contract(proof: Any, contract: Any, source_hashes: dict[str, str], *, 
          and re.fullmatch(r"sha256:[a-f0-9]{64}", proof.get("image_id", "")),
          "document_refresh_local_proof_unverified")
     corpus = proof.get("corpus", [])
-    need(type(corpus) is list and len(corpus) == 12
-         and {row.get("case") for row in corpus} == {"clean_pdf", "clean_docx", "page_counter", "active_pdf",
-             "includetext", "eicar_exact_file", "eicar_zip_member", "missing_definitions",
-             "clean_tex", "clean_texzip", "eicar_tex_source", "eicar_texzip_member"}
+    cases = {"clean_pdf", "clean_docx", "page_counter", "active_pdf", "includetext", "eicar_exact_file",
+             "eicar_zip_member", "missing_definitions"}
+    if not historical_v1:
+        cases.update({"clean_tex", "clean_texzip", "eicar_tex_source", "eicar_texzip_member"})
+    need(type(corpus) is list and len(corpus) == len(cases)
+         and {row.get("case") for row in corpus} == cases
          and all(row.get("passed") is True for row in corpus), "document_refresh_corpus_incomplete")
     need(all(row.get("outcome") == "clean" and row.get("native_source_empty") is True
              for row in corpus if row["case"] in {"clean_tex", "clean_texzip"})
@@ -200,7 +214,7 @@ def proof_contract(proof: Any, contract: Any, source_hashes: dict[str, str], *, 
     renderer = fit.get("layout", {}).get("renderer", {})
     need(type(renderer) is dict and renderer.get("renderer_version") == contract.ACCEPTED_RENDERER
          and renderer.get("font_manifest_sha256") == contract.ACCEPTED_FONT_MANIFEST
-         and renderer.get("policy_sha256") == contract.POLICY_SHA256
+         and renderer.get("policy_sha256") == policy
          and renderer.get("image_digest") == "local-document-image@" + proof["image_id"]
          and re.fullmatch(r"[a-f0-9]{64}", fit.get("layout", {}).get("rendered_fonts_sha256", "")),
          "document_refresh_renderer_changed_review_required")
@@ -221,7 +235,7 @@ def proof_contract(proof: Any, contract: Any, source_hashes: dict[str, str], *, 
         raise RefreshDenied("document_refresh_definition_header_invalid") from None
     need(timedelta(0) <= age < CANDIDATE_MAX_AGE, "document_refresh_candidate_not_fresh")
     return {"issued_at_utc": timestamp.isoformat(), "expires_at_utc": (timestamp + AGE_LIMIT).isoformat(),
-            "definition_number": number, "local_cases": 25,
+            "definition_number": number, "local_cases": 21 if historical_v1 else 25,
             "renderer_version": contract.ACCEPTED_RENDERER,
             "rendered_fonts_sha256": fit["layout"]["rendered_fonts_sha256"]}
 
