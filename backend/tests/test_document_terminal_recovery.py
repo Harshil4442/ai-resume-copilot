@@ -22,22 +22,26 @@ JOB = "hirewiz-doc-six-" + native.NONCE[:12]
 
 
 class Failed(native.Fake):
-    def __init__(self):
+    def __init__(self, *, historical_v1=False):
         super().__init__()
         self.created = self.ran = True
         self.j, self.ex = native.completed()
+        if historical_v1:
+            self.j["template"] = p.desired(native.IMAGE, native.NONCE, historical_v1=True)["template"]
+            self.ex["template"] = copy.deepcopy(self.j["template"]["template"])
         self.ex.update(succeededCount=0, failedCount=1, retriedCount=0,
                        conditions=[{"type": "Completed", "state": "CONDITION_FAILED",
                                     "executionReason": "NON_ZERO_EXIT_CODE"}])
         self.j["latestCreatedExecution"] = {"name": self.ex["name"].rsplit("/", 1)[-1],
                                            "completionStatus": "EXECUTION_FAILED"}
         self.run_done, self.run_error = True, 10
-        self.report = native.payload()
+        self.report = native.historical_payload() if historical_v1 else native.payload()
         diagnostic = native.diag(1, "not_validated", "not_started")
         diagnostic["failure_phase"] = None
-        self.report.update(all_required_passed=False, failure_stage="identity_preflight",
+        self.report.update(failure_stage="identity_preflight",
             identity_preflight={"passed": False, "cleanup_passed": True, "diagnostic": diagnostic},
-            cases=[{"case": name, "attempted": False, "passed": False} for name in native.parser.NAMES])
+            cases=[{"case": row["case"], "attempted": False, "passed": False} for row in self.report["cases"]])
+        self.report["all_six_passed" if historical_v1 else "all_required_passed"] = False
 
     def operation(self, name):
         if not name.endswith("/run"):
@@ -83,7 +87,7 @@ class Storage:
         pass
 
 
-def write_run(path, identity, proof):
+def write_run(path, identity, proof, *, historical_v1=False):
     path.mkdir(mode=0o700)
     (path / "native-proof").mkdir(mode=0o700)
     source = {"bucket": identity["source_bucket"], "object": identity["source_object"],
@@ -102,8 +106,8 @@ def write_run(path, identity, proof):
                                       if key not in {"source_sha256", "local_native_proof_sha256"}},
         "local-native-proof.json": proof,
         "native-proof/binding.json": {"image": native.IMAGE, "build_identity": identity,
-            "probe_sha256": recovery.sha(p.rendered_payload(native.IMAGE).encode())},
-        "native-proof/create.started.json": {"body_sha256": recovery.sha(p.canonical(p.desired(native.IMAGE, native.NONCE))),
+            "probe_sha256": recovery.sha(p.rendered_payload(native.IMAGE, historical_v1=historical_v1).encode())},
+        "native-proof/create.started.json": {"body_sha256": recovery.sha(p.canonical(p.desired(native.IMAGE, native.NONCE, historical_v1=historical_v1))),
                                             "automatic_replay": False},
         "native-proof/create.acknowledged.json": {"name": p.PARENT + "/operations/create"},
         "native-proof/run.started.json": {"job_name": native.job()["name"], "job_uid": native.JOB_UID,
@@ -114,23 +118,28 @@ def write_run(path, identity, proof):
         refresh.write_new(path / name, value)
 
 
-@pytest.fixture
-def setup(tmp_path, monkeypatch):
+@pytest.fixture(params=(False, True), ids=("current_v2", "frozen_v1"))
+def setup(tmp_path, monkeypatch, request):
     history = tmp_path / "history"
     history.mkdir(mode=0o700)
     original = history / "original"
     proof = local.proof()
+    historical_v1 = request.param
+    if historical_v1:
+        proof["source_sha256"] = json.loads(p.legacy_source("policy.json"))["source_sha256"]
+        proof["corpus"] = proof["corpus"][:8]
+        proof["docx_layout_corpus"][0]["layout"]["renderer"]["policy_sha256"] = p.LEGACY_POLICY
     raw = (json.dumps(proof, sort_keys=True, indent=2, allow_nan=False) + "\n").encode()
     identity = native.build()
     identity.update(source_sha256=proof["source_sha256"], local_native_proof_sha256=recovery.sha(raw),
         builder_service_account=refresh.BUILDER, source_bucket=refresh.PROJECT + "_cloudbuild",
         source_object="hirewiz-document-refresh-source/" + native.NONCE + "/source.tar.gz",
         source_generation="7", fixed_renderer_base=refresh.RENDERER_BASE)
-    write_run(original, identity, proof)
-    failed, storage, joins = Failed(), Storage(), []
+    write_run(original, identity, proof, historical_v1=historical_v1)
+    failed, storage, joins = Failed(historical_v1=historical_v1), Storage(), []
     monkeypatch.setattr(refresh, "accepted", local.contract)
-    def verify(value):
-        assert value == identity
+    def verify(value, **kwargs):
+        assert value == identity and kwargs == ({"historical_v1": True} if historical_v1 else {})
         return copy.deepcopy(identity)
     monkeypatch.setattr(refresh, "verify_native_build", verify)
     monkeypatch.setattr(refresh, "native_http", lambda: storage)
@@ -139,7 +148,7 @@ def setup(tmp_path, monkeypatch):
     monkeypatch.setattr(recovery, "joined", lambda *args: joins.append(args[-1]))
     monkeypatch.setattr(recovery.uuid, "uuid4", lambda: SimpleNamespace(hex=NEW_NONCE))
     return SimpleNamespace(history=history, original=original, identity=identity, native=failed,
-                           storage=storage, joins=joins, root=tmp_path)
+                           storage=storage, joins=joins, root=tmp_path, historical_v1=historical_v1)
 
 
 def output(setup, name="next"):
@@ -230,6 +239,18 @@ def test_scheduled_default_cannot_recover_unselected_failure(setup):
     assert not setup.storage.calls
 
 
+@pytest.mark.parametrize("change", ("unknown_policy", "foreign_image"))
+def test_saved_recovery_cannot_choose_profile_over_actual_native_job(setup, change):
+    container = setup.native.j["template"]["template"]["containers"][0]
+    if change == "unknown_policy":
+        next(row for row in container["env"] if row["name"] == "DOCUMENT_WORKER_POLICY_SHA256")["value"] = "0" * 64
+    else:
+        container["image"] = native.NEXT
+    with pytest.raises(p.NativeProofDenied, match="serving_policy_unverified"):
+        recovery.prepare(output(setup), setup.history, JOB, refresh_module=refresh)
+    assert not setup.storage.calls and setup.native.calls["create"] == setup.native.calls["start"] == 0
+
+
 @pytest.mark.parametrize("marker", ["transition", "native-proof/acceptance.json", "native-proof/delete.started.json"])
 def test_transition_acceptance_or_cleanup_marker_blocks_recovery(setup, marker):
     path = setup.original / marker
@@ -273,7 +294,7 @@ def test_native_failure_boundaries_remain_closed(setup, change):
     elif change == "attempted":
         value.report["cases"][0]["attempted"] = True
     else:
-        value.report["all_required_passed"] = True
+        value.report["all_six_passed" if setup.historical_v1 else "all_required_passed"] = True
     with pytest.raises((refresh.RefreshDenied, p.NativeProofDenied, ValueError)):
         recovery.prepare(output(setup), setup.history, JOB, refresh_module=refresh)
     assert not setup.storage.calls

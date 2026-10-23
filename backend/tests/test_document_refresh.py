@@ -85,6 +85,25 @@ def test_native_source_proof_cannot_be_replaced_by_old_or_unverified_cases(chang
         refresh.proof_contract(value, contract(), {"owned-source": "c" * 64}, now=NOW)
 
 
+def test_retained_v1_local_proof_requires_exact_frozen_sources_and_explicit_profile():
+    import json
+
+    from infra.gcp import document_refresh_probe as probe
+
+    value = proof()
+    source = json.loads(probe.legacy_source("policy.json"))["source_sha256"]
+    value["source_sha256"] = copy.deepcopy(source)
+    value["corpus"] = value["corpus"][:8]
+    value["docx_layout_corpus"][0]["layout"]["renderer"]["policy_sha256"] = probe.LEGACY_POLICY
+    assert refresh.proof_contract(value, contract(), source, now=NOW, historical_v1=True)["local_cases"] == 21
+    with pytest.raises(refresh.RefreshDenied, match="corpus_incomplete"):
+        refresh.proof_contract(value, contract(), source, now=NOW)
+    drift = {**source, "backend/app/services/native_project.py": "0" * 64}
+    value["source_sha256"] = drift
+    with pytest.raises(refresh.RefreshDenied, match="historical_source_changed"):
+        refresh.proof_contract(value, contract(), drift, now=NOW, historical_v1=True)
+
+
 @pytest.mark.parametrize("change", ["font", "renderer", "source", "image", "missing_case", "cleanup", "cloud_claim", "stale"])
 def test_image_or_engine_drift_never_becomes_an_automatic_successor(change):
     value = proof()
