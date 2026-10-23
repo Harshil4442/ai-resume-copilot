@@ -1,7 +1,7 @@
 # HireWiz development and deployment progress
 
 Updated **23 October 2026 (IST)** after the accepted runtime repair, canonical
-preview correction and local native-upload implementation. The original six outcomes below remain **OPEN** until their
+preview correction and the funded tailoring diagnosis. The original six outcomes below remain **OPEN** until their
 complete development and production acceptance requirements are met within the
 owner-approved pilot. A deployed service, a successful migration, source
 validation or a passing build is supporting evidence within an outcome; it is
@@ -208,10 +208,10 @@ changes. Missing or malformed explicit IDs cannot select another file. Deferred
 list and late-PDF-response regressions cover this boundary. This source change
 does not establish a successful new tailoring operation.
 
-### Native upload safety implementation awaiting deployment
+### Separate native upload work awaiting acceptance (PR31)
 
 The existing outcome 2 includes this deterministic upload work alongside PDF
-stream repair and pending human enrollment. New source changes route TeX/ZIP through the
+stream repair and pending human enrollment. Separate [PR31](https://github.com/Harshil4442/ai-resume-copilot/pull/31) routes TeX/ZIP through the
 existing owner-bound quarantine and cleanup chain. Source inspection precedes
 project validation and isolated compilation; the exact compiler PDF receives
 private inspection/extraction before candidate facts or a new seal are released.
@@ -235,7 +235,8 @@ checks cover native transport and source identity. New artifact preparation also
 retains metadata for original/candidate source and PDF inspection while preserving
 historical sealed downloads.
 
-This implementation is awaiting integrated Linux/container verification,
+This separate implementation remains unmerged and is awaiting corrected
+expanded-corpus/component fixture acceptance,
 reviewed native image/policy rollout, schema20 application, coordinator/API
 deployment and canonical synthetic TeX/ZIP acceptance with exact sealed review
 and cleanup evidence. Production remains on schema19 and its previously accepted
@@ -348,6 +349,22 @@ stream incompatibility locally and preflight deterministic support before anothe
 paid attempt. Preserve original/custom-file alternatives, evidence checks,
 exact quote and finite expense controls. The agent did not make a provider
 purchase, enable auto-reload or change billing settings.
+
+
+The minimal PDF correction keeps the existing scanner image/policy and schema19.
+On the exact original PDF, a local trimmed passage reproduces the same public
+stream error because native cursor precision exceeds the retained **0.1 point**
+limit. A separate changed passage passes the complete fidelity checks. The
+original failed run's proposals were not retained, so this reproducer does not
+prove its internal stream-error subtype.
+
+The operations correction probes at most twelve proposed edits, once per run,
+when an unattributed PDF stream refusal occurs. It discards only individually
+rejected changes and verifies the complete surviving batch before saving. No
+survivors, interacting failures or failed final validation terminate without
+another model call or an unchanged tailored version. The font, geometry, pixel,
+source-content and cursor-precision guards remain intact. This is source under
+review; production and successful real new tailoring acceptance remain pending.
 
 The three finite offers remain Starter **₹649 / 100 service credits + 2 AI
 units**, Growth **₹1,099 / 300 + 6**, and Scale **₹2,199 / 700 + 15**. Deployed
