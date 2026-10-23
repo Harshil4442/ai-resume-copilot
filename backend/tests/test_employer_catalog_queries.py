@@ -320,3 +320,31 @@ def test_snapshot_dependency_rechecks_jwt_without_trusting_middleware(snapshot_d
     with _select_statements(engine) as statements, _snapshot_client(db) as client:
         response = client.get("/api/v1/employer-jobs/catalog", headers={"Authorization": "Bearer synthetic"})
     assert response.status_code == 401 and len(calls) == 2 and statements == []
+
+
+def test_catalog_legacy_reset_epoch_revokes_bearer_without_extra_snapshot_query(snapshot_db):
+    engine, db = snapshot_db
+    db.query(core.User).filter_by(id=1).update({"credential_epoch": 1})
+    db.commit()
+    with _snapshot_client(db) as client:
+        for epoch, status in ((None, 401), (0, 401), (1, 200)):
+            with _select_statements(engine) as statements:
+                response = client.get("/api/v1/employer-jobs/catalog", headers={
+                    "Authorization": "Bearer " + create_access_token(subject="1", credential_epoch=epoch),
+                })
+            assert response.status_code == status
+            assert len(statements) == 1
+            if status == 200:
+                assert response.json()["balance"] == 13
+
+
+def test_catalog_legacy_bearer_cannot_adopt_mapped_native_account(snapshot_db):
+    _, db = snapshot_db
+    db.add(core.CandidatePasswordAccount(user_id=1, subject_uuid=str(uuid4()), account_binding_id=str(uuid4()),
+        principal_sha256="a" * 64, credential_sha256="b" * 64, auth_generation=1, state="ACTIVE"))
+    db.commit()
+    with _snapshot_client(db) as client:
+        response = client.get("/api/v1/employer-jobs/catalog", headers={
+            "Authorization": "Bearer " + create_access_token(subject="1"),
+        })
+    assert response.status_code == 401

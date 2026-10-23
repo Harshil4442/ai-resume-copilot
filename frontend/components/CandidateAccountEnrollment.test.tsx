@@ -70,7 +70,7 @@ describe("explicit enrollment of the same existing account", () => {
   it("uses the exact Google nonce and requires a separate consented enrollment click", async () => {
     const request = vi.mocked(fetch);
     await ready();
-    expect(screen.getByRole("link", { name: "Forgot your HireWiz password?" })).toHaveAttribute("href", "/account-recovery");
+    expect(screen.getByRole("link", { name: "Forgot your HireWiz password?" })).toHaveAttribute("href", "/forgot-password");
     expect(screen.getByRole("button", { name: "Verify my Google account" })).toBeDisabled();
     expect(screen.queryByTestId("google-script")).toBeNull();
     await verifiedGoogle(request);

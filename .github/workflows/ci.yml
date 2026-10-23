@@ -84,6 +84,7 @@ jobs:
           tests/test_monetary_cutover_preflight_postgres.py
           tests/test_monetary_cutover_deleted_role_postgres.py tests/test_monetary_cutover_session_ids_postgres.py
           app/routers/candidate_accounts.py app/routers/sensitive_auth.py app/routers/candidate_ingress.py
+          app/routers/password_reset.py tests/test_email_password_reset.py tests/test_browser_submit_native.py
           tests/test_sensitive_auth_http.py tests/test_legacy_password_compatibility.py
           tests/test_candidate_account_lifecycle.py tests/test_candidate_legacy_auth_guards.py
           tests/test_candidate_private_ingress.py tests/test_candidate_private_ingress_http.py
@@ -122,6 +123,8 @@ jobs:
           ../infra/gcp/browser_schema19_release.py
           tests/test_browser_schema19_contract.py tests/test_browser_schema19_release.py
           tests/test_browser_schema19_step_postgres.py tests/test_neon_schema19_release_transport.py
+          ../infra/gcp/email_password_schema21_release.py
+          tests/test_email_password_schema21_release.py tests/test_email_password_schema21_postgres.py
       - name: Check modified legacy authentication imports
         working-directory: backend
         run: .venv/bin/ruff check --select I,F app/routers/auth.py app/security.py app/schemas.py
@@ -135,6 +138,7 @@ jobs:
           scripts/monetary_cutover_preflight.py scripts/native_tex_test_image.py
           app/billing/cost_policy.py
           app/routers/candidate_accounts.py app/routers/sensitive_auth.py app/routers/candidate_ingress.py
+          app/routers/password_reset.py
           ../infra/gcp/release_preflight.py ../infra/gcp/monetary_release.py scripts/monetary_schema_step.py
           scripts/model_key_revocation_observer.py scripts/legacy_credential_inventory.py
           scripts/ci_registry_cache.py
@@ -146,6 +150,8 @@ jobs:
           scripts/database_transfer.py scripts/ci_database_transfer_clients.py
           scripts/browser_schema19_contract.py scripts/browser_schema19_step.py
           scripts/neon_direct_identity.py ../infra/gcp/browser_schema19_release.py
+          scripts/email_password_schema21_contract.py scripts/email_password_schema21_step.py
+          ../infra/gcp/email_password_schema21_release.py
       - name: Compile backend
         run: backend/.venv/bin/python -m compileall -q backend/app
       - name: Configure verified public cache without restarting PostgreSQL

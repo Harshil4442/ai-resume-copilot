@@ -4,8 +4,9 @@ import Script from "next/script";
 import { useSession } from "next-auth/react";
 import { usePathname } from "next/navigation";
 import posthog from "posthog-js";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import CoreWebVitals from "./CoreWebVitals";
+import { isPasswordResetPath, isPasswordResetUrl, setResetGoogleExclusion } from "../lib/passwordResetPrivacy";
 
 const STORAGE_KEY = "hirewiz_cookie_consent";
 const CONSENT_VERSION = 2;
@@ -64,7 +65,7 @@ function removeAnalyticsStorage() {
   }
 }
 
-export default function AnalyticsConsent({
+function AllowedAnalyticsConsent({
   gaMeasurementId,
   posthogKey,
   posthogHost,
@@ -106,6 +107,8 @@ export default function AnalyticsConsent({
       persistence: "localStorage+cookie",
       respect_dnt: true,
       opt_out_capturing_by_default: false,
+      before_send: (event) => !event || isPasswordResetPath(window.location.pathname)
+        || isPasswordResetUrl(event.properties.$current_url) || isPasswordResetUrl(event.properties.$referrer) ? null : event,
     });
     posthog.opt_in_capturing();
   }, [posthogHost, posthogKey, preference]);
@@ -220,4 +223,17 @@ export default function AnalyticsConsent({
       ) : null}
     </>
   );
+}
+
+
+export default function AnalyticsConsent(props: Parameters<typeof AllowedAnalyticsConsent>[0]) {
+  const pathname = usePathname();
+  const sensitive = isPasswordResetPath(pathname);
+  useLayoutEffect(() => {
+    setResetGoogleExclusion(sensitive, props.gaMeasurementId || undefined);
+    if (!sensitive) return;
+    window.gtag?.("consent", "update", { analytics_storage: "denied" });
+    try { posthog.opt_out_capturing(); } catch { /* A fresh reset page never initializes the SDK. */ }
+  }, [sensitive, props.gaMeasurementId]);
+  return sensitive ? null : <AllowedAnalyticsConsent {...props} />;
 }

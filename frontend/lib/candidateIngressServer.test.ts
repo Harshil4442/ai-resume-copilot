@@ -39,6 +39,14 @@ describe("website server private ingress signer", () => {
     expect(() => candidateIngressHeaders(recoveryPath + "/", input, now, id)).toThrow("AUTH_UNAVAILABLE");
     expect(() => candidateIngressHeaders(recoveryPath, { method: "GET" }, now, id)).toThrow("AUTH_UNAVAILABLE");
   });
+  it.each(["request", "confirm"])("requires private custody and exact POST path for password reset %s", (operation) => {
+    const resetPath = `/api/auth/password-reset/${operation}`;
+    expect(candidateIngressHeaders(resetPath, input, now, id).has("x-hirewiz-candidate-ingress")).toBe(true);
+    expect(() => candidateIngressHeaders(resetPath, { method: "GET" }, now, id)).toThrow("AUTH_UNAVAILABLE");
+    expect(() => candidateIngressHeaders(resetPath + "/", input, now, id)).toThrow("AUTH_UNAVAILABLE");
+    vi.stubEnv("CANDIDATE_AUTH_TRANSPORT_SECRET", ""); vi.stubEnv("CANDIDATE_AUTH_TRANSPORT_KEY_ID", "");
+    expect(() => candidateIngressHeaders(resetPath, input, now, id)).toThrow("AUTH_UNAVAILABLE");
+  });
   it("keeps ordinary legacy auth available without private provision but refuses native", () => {
     vi.stubEnv("CANDIDATE_AUTH_TRANSPORT_SECRET", ""); vi.stubEnv("CANDIDATE_AUTH_TRANSPORT_KEY_ID", "");
     expect(candidateIngressHeaders("/api/auth/login", input).has("x-hirewiz-candidate-ingress")).toBe(false);

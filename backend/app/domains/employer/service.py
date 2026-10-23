@@ -95,7 +95,7 @@ def catalog(db, user_id):
         return _catalog_response(user.job_service_credits, sources)
 
 
-def catalog_for_verified_subject(db: Session, user_id: int):
+def catalog_for_verified_subject(db: Session, user_id: int, *, credential_epoch=None, native_validated: bool = False):
     """Read owner existence/balance and bounded sources in one fresh SQL snapshot.
 
     The route validates the JWT first. This advisory read never replaces financial
@@ -109,12 +109,15 @@ def catalog_for_verified_subject(db: Session, user_id: int):
             models.EmployerSource.enabled.is_(True),
         ).order_by(models.EmployerSource.employer, models.EmployerSource.id).limit(500).subquery()
         source = aliased(models.EmployerSource, bounded)
-        rows = db.query(core.User.id, core.User.job_service_credits, source).select_from(
+        rows = db.query(core.User.id, core.User.job_service_credits, source, core.User.credential_epoch,
+                        core.CandidatePasswordAccount.user_id).select_from(
             core.User,
-        ).outerjoin(source, true()).filter(core.User.id == user_id).order_by(
+        ).outerjoin(core.CandidatePasswordAccount, core.CandidatePasswordAccount.user_id == core.User.id).outerjoin(source, true()).filter(core.User.id == user_id).order_by(
             source.employer, source.id,
         ).populate_existing().all()
-    if not rows:
+    if (not rows or rows[0][4] is not None and not native_validated
+            or rows[0][4] is None and int(rows[0][3] or 0) > 0
+            and (type(credential_epoch) is not int or credential_epoch != rows[0][3])):
         raise HTTPException(401, "Not authenticated", headers={"WWW-Authenticate": "Bearer"})
     with catalog_span("catalog_owner_lookup"):
         balance = rows[0][1]

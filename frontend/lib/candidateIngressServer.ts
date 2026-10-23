@@ -10,6 +10,7 @@ const OPERATIONS = new Set([
   "POST /api/auth/candidate/v1/google-enrollment-challenge", "POST /api/auth/candidate/v1/enroll-google",
   "POST /api/auth/candidate/v1/enroll-password", "POST /api/auth/google-login",
   "POST /api/auth/candidate/v1/recovery-google-challenge", "POST /api/auth/candidate/v1/recover-google",
+  "POST /api/auth/password-reset/request", "POST /api/auth/password-reset/confirm",
   "POST /api/auth/register", "POST /api/auth/login", "POST /api/auth/delete-account",
 ]);
 const fail = () => { throw new Error("AUTH_UNAVAILABLE"); };
@@ -27,17 +28,18 @@ function bytes(body?: BodyInit | null) {
 }
 export function candidateIngressHeaders(path: string, init: RequestInit = {}, now = Date.now(), requestId = randomUUID()) {
   const method = init.method || "GET";
+  const privateRequired = path.startsWith("/api/auth/candidate/") || path.startsWith("/api/auth/password-reset/");
   const headers = new Headers(init.headers);
   headers.delete("x-hirewiz-candidate-ingress");
   if (!OPERATIONS.has(`${method} ${path}`)) {
-    if (path.startsWith("/api/auth/candidate/")) return fail();
+    if (privateRequired) return fail();
     return headers;
   }
   const configured = process.env.CANDIDATE_AUTH_TRANSPORT_SECRET?.trim();
   const keyId = process.env.CANDIDATE_AUTH_TRANSPORT_KEY_ID?.trim();
   // Ordinary unenrolled legacy auth remains available without provision. A
   // mapped account/native endpoint will fail closed at its backend branch.
-  if (!configured && !keyId && !path.startsWith("/api/auth/candidate/")) return headers;
+  if (!configured && !keyId && !privateRequired) return headers;
   if (!configured || !/^[a-f0-9]{64}$/.test(configured) || !keyId || !/^[a-z][a-z0-9_-]{0,63}$/.test(keyId)
       || configured === process.env.BROWSER_PAIRING_GATEWAY_SECRET?.trim()
       || configured === process.env.NEXTAUTH_SECRET?.trim()) return fail();

@@ -496,6 +496,47 @@ def test_exact_native_begin_and_original_single_use_export(native):
         assert call.kwargs["retry"] is None and call.kwargs["timeout"] == 2.0
 
 
+def recovery_mailbox_rows(native):
+    rows = native.native.values()
+    subject = rows["v3_subjects", str(native.context.subject_uuid)]
+    mailbox = {"version": 1, **{field: subject[field] for field in (
+        "subject_uuid", "candidate_id", "account_binding_id", "principal_sha256")}, "email_sha256": "e" * 64}
+    key = "v3_recovery_mailboxes", subject["subject_uuid"]
+    rows[key] = mailbox
+    return rows, key
+
+
+def test_recovery_mailbox_census_preserves_only_exact_enrollment_bound_hash(native):
+    rows, key = recovery_mailbox_rows(native)
+    assert key in validate_scoped_rows(rows)
+    assert rows[key]["email_sha256"] == "e" * 64
+    assert "auth_generation" not in rows[key]
+
+
+@pytest.mark.parametrize("field,value", (
+    ("version", True), ("version", 2), ("candidate_id", 17.0), ("candidate_id", 18),
+    ("subject_uuid", str(uuid4())), ("account_binding_id", str(uuid4())),
+    ("principal_sha256", "f" * 64), ("email_sha256", "E" * 64), ("email_sha256", "short"),
+    ("auth_generation", 1),
+))
+def test_recovery_mailbox_census_rejects_changed_owner_shape_or_digest(native, field, value):
+    rows, _ = recovery_mailbox_rows(native)
+    rows["v3_recovery_mailboxes", str(native.context.subject_uuid)][field] = value
+    with pytest.raises(GuardUnavailable):
+        validate_scoped_rows(rows)
+
+
+def test_recovery_mailbox_census_rejects_foreign_key_or_missing_enrollment(native):
+    rows, key = recovery_mailbox_rows(native)
+    rows["v3_recovery_mailboxes", str(uuid4())] = rows.pop(key)
+    with pytest.raises(GuardUnavailable):
+        validate_scoped_rows(rows)
+    rows, _ = recovery_mailbox_rows(native)
+    rows = {identity: raw for identity, raw in rows.items() if identity[0] != "v3_activations"}
+    with pytest.raises(GuardUnavailable):
+        validate_scoped_rows(rows)
+
+
 @pytest.mark.parametrize("persisted", [False, True])
 def test_unknown_begin_never_exports_or_retries_even_with_new_operation(native, persisted):
     c = native

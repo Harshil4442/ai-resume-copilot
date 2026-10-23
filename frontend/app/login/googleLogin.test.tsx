@@ -97,7 +97,7 @@ describe("Google sign-in redirect failures", () => {
 
   it("offers explicit forgotten-password recovery without automatically starting Google", async () => {
     render(<LoginPage />);
-    expect(screen.getByRole("link", { name: "Forgot your HireWiz password?" })).toHaveAttribute("href", "/account-recovery");
+    expect(screen.getByRole("link", { name: "Forgot your HireWiz password?" })).toHaveAttribute("href", "/forgot-password");
     expect(mocked.signIn).not.toHaveBeenCalled();
     expect(mocked.prepareConsent).not.toHaveBeenCalled();
   });

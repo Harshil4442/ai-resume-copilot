@@ -90,7 +90,7 @@ def enroll_google(service: CandidateAccountService, candidate_id: int, proof: Go
         except IntegrityError:
             raise GuardDenied(FAILURE) from None
         revision = _revision(row)
-    _activate(service, revision, google=True)
+    _activate(service, revision, google=True, email=identity.email)
     return candidate_id
 
 
@@ -100,9 +100,10 @@ def enroll_password(service: CandidateAccountService, candidate_id: int, passwor
         if (user is None or db.get(CandidatePasswordAccount, candidate_id) is not None
                 or not user.password_hash or not verify_password(password, user.password_hash)):
             raise GuardDenied(FAILURE)
+        email = user.email  # Bound to the current-password-verified enrollment before native IO.
         revision = _revision(_pending(db, user, user.password_hash, digest(secrets.token_urlsafe(32))))
         db.commit()
-    _activate(service, revision, google=False)
+    _activate(service, revision, google=False, email=email)
     return candidate_id
 
 
@@ -120,14 +121,15 @@ def _revision(row: CandidatePasswordAccount) -> CandidateCredentialRevision:
         auth_generation=row.auth_generation, credential_sha256=row.credential_sha256)
 
 
-def _activate(service: CandidateAccountService, revision: CandidateCredentialRevision, *, google: bool) -> None:
-    if service.retention.enroll(revision) is not True or service.retention.check_account(revision) is not True:
+def _activate(service: CandidateAccountService, revision: CandidateCredentialRevision, *, google: bool, email: str) -> None:
+    if (service.retention.enroll(revision) is not True or service.retention.check_account(revision) is not True
+            or service.retention.bind_recovery_mailbox(revision, digest(email)) is not True):
         raise GuardUnavailable(FAILURE)
     with service.sessions() as db:
         user = db.query(User).filter_by(id=revision.candidate_id).with_for_update().one_or_none()
         row = db.query(CandidatePasswordAccount).filter_by(user_id=revision.candidate_id).with_for_update().one_or_none()
         identity = db.query(CandidateGoogleIdentity).filter_by(user_id=revision.candidate_id).with_for_update().one_or_none() if google else None
-        if (user is None or row is None or row.state != "PENDING" or _revision(row) != revision
+        if (user is None or user.email != email or row is None or row.state != "PENDING" or _revision(row) != revision
                 or digest(user.password_hash) != revision.credential_sha256
                 or (google and (identity is None or identity.state != "PENDING" or identity.principal_sha256 != revision.principal_sha256))):
             raise GuardUnavailable(FAILURE)

@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import re
+
 from ..candidate_accounts.contracts import CandidateCredentialRevision
 from .gcp_partitioned_contracts import ScopedCredentialRevision
 from .gcp_password_lifetime import GcpPasswordLifetimeCoordinator, PasswordLifetimeOwnedAck
 from .gcp_password_reset import GcpPasswordCredentialProjection
-from .gcp_scoped_authority import ScopedCandidateAuthority
+from .gcp_scoped_authority import ScopedCandidateAuthority, current_subject
 from .password_reauth import CandidateWebSession
 from .store import GuardDenied, GuardUnavailable
 
@@ -28,6 +30,39 @@ class GcpProtectedCandidateLifetimes:
     def activate(self, ack: PasswordLifetimeOwnedAck, issuer: GcpPasswordLifetimeCoordinator) -> bool:
         self.scoped.activate(issuer, ack)
         return True
+
+    def _mailbox(self, revision: CandidateCredentialRevision, email_sha256: str):
+        expected = _revision(revision)
+        if type(email_sha256) is not str or re.fullmatch(r"[a-f0-9]{64}", email_sha256) is None:
+            raise GuardDenied("Exact recovery mailbox digest required")
+        record = {"version": 1, "subject_uuid": str(expected.subject_uuid), "candidate_id": expected.candidate_id,
+            "account_binding_id": str(expected.account_binding_id), "principal_sha256": expected.principal_sha256,
+            "email_sha256": email_sha256}
+        return expected, record
+
+    def bind_recovery_mailbox(self, revision: CandidateCredentialRevision, email_sha256: str) -> bool:
+        """Trusted post-credential-proof port; immutable within the original subject."""
+        expected, record = self._mailbox(revision, email_sha256)
+        def bind(tx):
+            self.scoped.publication._root(tx, opened=True)
+            subject = current_subject(tx, expected.subject_uuid)
+            if subject.model_dump(mode="json", exclude={"enrollment_operation"}) != expected.model_dump(mode="json"):
+                raise GuardDenied("Recovery mailbox does not own current protected credentials")
+            tx.put("v3_recovery_mailboxes", str(expected.subject_uuid), record, immutable=True)
+        self.scoped._run(bind)
+        return True
+
+    def check_recovery_mailbox(self, revision: CandidateCredentialRevision, email_sha256: str) -> bool:
+        expected, record = self._mailbox(revision, email_sha256)
+        result: list[bool] = []
+        def check(tx):
+            self.scoped.publication._root(tx, opened=True)
+            subject = current_subject(tx, expected.subject_uuid)
+            if subject.model_dump(mode="json", exclude={"enrollment_operation"}) != expected.model_dump(mode="json"):
+                raise GuardDenied("Recovery mailbox does not own current protected credentials")
+            result[:] = [tx.get("v3_recovery_mailboxes", str(expected.subject_uuid)) == record]
+        self.scoped._run(check)
+        return result[0]
 
     def check_account(self, revision: CandidateCredentialRevision) -> bool:
         return self.scoped.check_account(_revision(revision))

@@ -24,7 +24,7 @@ from ...domains.employer import (
 from ...domains.employer import (
     credit_history as service_credit_history,
 )
-from ...security import decode_access_token_user_id, get_current_user, oauth2_scheme
+from ...security import decode_access_token_identity, get_current_user, oauth2_scheme
 from .admin import require_admin
 
 router = APIRouter(prefix="/employer-jobs", tags=["employer-jobs"])
@@ -57,7 +57,12 @@ _saved_search_reads = APIRouter(route_class=_PrivateSavedSearchReadRoute)
 
 @router.get("/catalog")
 def get_catalog(db: Session = Depends(get_db), token: str = Depends(oauth2_scheme)):
-    return service.catalog_for_verified_subject(db, decode_access_token_user_id(token))
+    user_id, claims = decode_access_token_identity(token)
+    native = "candidate_lifetime" in claims
+    if native:
+        get_current_user(token=token, db=db)  # Existing independent current native denial check.
+    return service.catalog_for_verified_subject(db, user_id, credential_epoch=claims.get("credential_epoch"),
+                                                native_validated=native)
 
 
 @router.post("/searches", status_code=201, responses={
