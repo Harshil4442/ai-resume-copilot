@@ -10,6 +10,7 @@ from typing import Any
 import sentry_sdk
 
 from .catalog_timing import CatalogTimingEvent
+from .domains.recovery.native_diagnostics import NativeFailureEvent
 
 correlation_id_var: contextvars.ContextVar[str] = contextvars.ContextVar(
     "correlation_id",
@@ -19,6 +20,9 @@ correlation_id_var: contextvars.ContextVar[str] = contextvars.ContextVar(
 
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
+        native = getattr(record, "native_failure", None)
+        if isinstance(native, NativeFailureEvent):
+            return json.dumps(native.payload(), separators=(",", ":"), allow_nan=False)
         timing = getattr(record, "catalog_timing", None)
         if isinstance(timing, CatalogTimingEvent):
             return json.dumps(timing.payload(), separators=(",", ":"), allow_nan=False)

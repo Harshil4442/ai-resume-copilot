@@ -31,6 +31,7 @@ from .gcp_partitioned_contracts import (
 from .gcp_publication import record
 from .gcp_publication_scan import NativeAuthorityScanner, ScannedAuthorityRecord
 from .gcp_rpc import FirestoreRpc
+from .native_diagnostics import native_phase
 from .store import GuardDenied, GuardUnavailable
 
 
@@ -91,13 +92,15 @@ class PartitionedPublicationCoordinator:
             rpc = self.registry.rpc
             assert isinstance(rpc, FirestoreRpc)
             native = resource.pin.authority.registry
-            if rpc.identity() != {"name": native.database, "uid": str(native.database_uid), "type": "FIRESTORE_NATIVE"}:
-                raise ValueError("V3 immutable database identity changed")
+            with native_phase("protected_publication", "identity"):
+                if rpc.identity() != {"name": native.database, "uid": str(native.database_uid), "type": "FIRESTORE_NATIVE"}:
+                    raise ValueError("V3 immutable database identity changed")
             _exact_bytes(self.bucket, resource.path, canonical(resource.pin.model_dump(mode="json")).encode(),
                 generation=resource.generation, timeout=2.0)
         except Exception:
             raise GuardUnavailable("Fresh protected V3 identity/resource is unavailable") from None
 
+    @native_phase("protected_publication", "root")
     def _root(self, tx: BufferedTransaction, *, opened: bool) -> PartitionedRoot:
         try:
             value = PartitionedRoot.model_validate(tx.get("v3_root", "current"))
@@ -110,7 +113,8 @@ class PartitionedPublicationCoordinator:
     def _fresh_open(self) -> None:
         self._fresh()
         try:
-            self.bucket.blob(self.resource.close_path).reload(retry=None, timeout=2.0)
+            with native_phase("protected_publication", "closure", expected=(NotFound,)):
+                self.bucket.blob(self.resource.close_path).reload(retry=None, timeout=2.0)
         except NotFound:
             return
         except Exception:

@@ -17,6 +17,7 @@ from sqlalchemy import Engine, create_engine
 from ..recovery.contracts import Contract, canonical, fingerprint
 from ..recovery.gcp_contracts import WitnessBody, WitnessPin
 from ..recovery.gcp_partitioned_contracts import PartitionedResource
+from ..recovery.native_diagnostics import native_phase
 from ..recovery.pairing_contracts import PositiveInteger
 from ..recovery.store import GuardDenied, GuardUnavailable
 
@@ -199,11 +200,16 @@ class ConfiguredCandidateAccounts:
             return self._instance
 
     def _invoke(self, operation: Callable[[CandidateAccountService], Result]) -> Result:
-        current = self._composition()
-        current.fence.check(current.fence.pin.registry)
-        result = operation(current.service)
-        self._composition()  # Retain exact deployment configuration after IO.
-        current.fence.check(current.fence.pin.registry)
+        with native_phase("candidate_account", "composition"):
+            current = self._composition()
+        with native_phase("candidate_account", "pre_witness"):
+            current.fence.check(current.fence.pin.registry)
+        with native_phase("candidate_account", "service"):
+            result = operation(current.service)
+        with native_phase("candidate_account", "post_configuration"):
+            self._composition()  # Retain exact deployment configuration after IO.
+        with native_phase("candidate_account", "post_witness"):
+            current.fence.check(current.fence.pin.registry)
         return result
 
     def __getattr__(self, name: str):
@@ -269,5 +275,6 @@ class ConfiguredCandidateAccounts:
         self._invoke(lambda service: service.prepare_delete(context))
 
 
+@native_phase("candidate_account", "configuration")
 def production_candidate_accounts() -> ConfiguredCandidateAccounts:
     return ConfiguredCandidateAccounts(_configuration())
