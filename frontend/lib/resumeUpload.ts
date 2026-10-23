@@ -7,6 +7,8 @@ export const MAX_LEGACY_RESUME_BYTES = 4 * 1024 * 1024; // leave multipart headr
 const MAX_WAIT_MS = 240_000;
 const CONTROL_TIMEOUT_MS = 10_000;
 const POLL_MS = 2000;
+const RATE_LIMIT_POLL_MS = 5000;
+const MAX_RATE_LIMIT_POLL_MS = 10_000;
 const PDF = "application/pdf";
 const DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const MEDIA: Record<ResumeSourceFormat, string> = { pdf: PDF, docx: DOCX, tex: "application/x-tex", texzip: "application/zip" };
@@ -42,7 +44,7 @@ export class ResumeUploadCancelled extends Error {
 }
 
 class ControlFailure extends Error {
-  constructor(public readonly status: number, public readonly code: string | null = null) { super("Secure resume upload is unavailable. Please try again later."); }
+  constructor(public readonly status: number, public readonly code: string | null = null, public readonly retryAfterMs: number | null = null) { super("Secure resume upload is unavailable. Please try again later."); }
 }
 
 type Intent = { upload_id: string; state: string; upload_url: string | null; method: "PUT"; headers: Record<string, string>; upload_grant_expires_at: string; expires_at: string };
@@ -98,7 +100,7 @@ async function control(path: string, method: string, signal: AbortSignal, body?:
       const error = await jsonResponse(response);
       if (record(error) && record(error.detail) && typeof error.detail.code === "string" && /^[a-z_]{1,64}$/.test(error.detail.code)) code = error.detail.code;
     } catch { /* Discard error bodies; never display source content or URLs. */ }
-    throw new ControlFailure(response.status, code);
+    throw new ControlFailure(response.status, code, response.status === 429 ? retryAfterDelay(response.headers.get("Retry-After")) : null);
   }
   return jsonResponse(response);
 }
@@ -138,14 +140,29 @@ function validateStatus(value: unknown, id: string, sourceFormat: ResumeSourceFo
 }
 
 function canReconcile(error: unknown): boolean {
-  return (error instanceof ControlFailure && error.status >= 500) || error instanceof TypeError
+  return (error instanceof ControlFailure && (error.status === 429 || error.status >= 500)) || error instanceof TypeError
     || (error instanceof DOMException && ["TimeoutError", "AbortError"].includes(error.name));
 }
 
-async function delay(signal: AbortSignal): Promise<void> {
+function retryAfterDelay(value: string | null): number {
+  const header = value?.trim() ?? "";
+  let milliseconds = RATE_LIMIT_POLL_MS;
+  if (/^[0-9]{1,10}$/.test(header)) milliseconds = Number(header) * 1000;
+  else if (/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{2} (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{4} \d{2}:\d{2}:\d{2} GMT$/.test(header)) {
+    const parsed = Date.parse(header);
+    if (Number.isFinite(parsed)) milliseconds = parsed - Date.now();
+  }
+  return Math.min(MAX_RATE_LIMIT_POLL_MS, Math.max(RATE_LIMIT_POLL_MS, milliseconds));
+}
+
+function reconciliationDelay(error: unknown): number {
+  return error instanceof ControlFailure && error.status === 429 ? error.retryAfterMs ?? RATE_LIMIT_POLL_MS : POLL_MS;
+}
+
+async function delay(signal: AbortSignal, milliseconds = POLL_MS): Promise<void> {
   stopped(signal);
   await new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => { signal.removeEventListener("abort", abort); resolve(); }, POLL_MS);
+    const timer = setTimeout(() => { signal.removeEventListener("abort", abort); resolve(); }, milliseconds);
     function abort() { clearTimeout(timer); reject(new DOMException("Upload stopped", "AbortError")); }
     signal.addEventListener("abort", abort, { once: true });
   });
@@ -214,13 +231,16 @@ export async function uploadResumeFile(file: File, options: Options = {}): Promi
     // PUT is sent only once. Lost/ambiguous responses are resolved through the
     // owner-bound server verdict; no blind PUT retry or legacy fallback occurs.
     let completionAttempts = 0;
+    let completionAllowed = true;
+    let waitMs = POLL_MS;
     let current: Status | null = null;
     while (true) {
       stopped(signal);
-      if (current === null || current.state === "awaiting_upload") {
+      if (completionAllowed) {
+        completionAllowed = false;
         if (++completionAttempts > 3) throw new Error("Your upload could not be queued. Check your saved resumes before trying again.");
-        try { current = validateStatus(await control(`/resume/uploads/${id}/complete`, "POST", signal), id, sourceFormat); }
-        catch (error) { stopped(signal); if (!canReconcile(error)) throw error; }
+        try { current = validateStatus(await control(`/resume/uploads/${id}/complete`, "POST", signal), id, sourceFormat); waitMs = POLL_MS; }
+        catch (error) { stopped(signal); if (!canReconcile(error)) throw error; waitMs = reconciliationDelay(error); }
       }
       if (current?.state === "released") { progress("completed"); return current.resume!; }
       if (current && ["rejected", "failed", "cancelled", "expired"].includes(current.state)) {
@@ -228,9 +248,13 @@ export async function uploadResumeFile(file: File, options: Options = {}): Promi
           : "Your resume could not be saved. No analysis units were charged. Temporary upload cleanup is scheduled.");
       }
       progress(current?.state === "inspecting" ? "inspecting" : "queued");
-      await delay(signal);
-      try { current = validateStatus(await control(`/resume/uploads/${id}`, "GET", signal), id, sourceFormat); }
-      catch (error) { stopped(signal); if (!canReconcile(error)) throw error; }
+      await delay(signal, waitMs);
+      try {
+        current = validateStatus(await control(`/resume/uploads/${id}`, "GET", signal), id, sourceFormat);
+        // Only a verified owner-bound status can authorize another completion.
+        completionAllowed = current.state === "awaiting_upload";
+        waitMs = POLL_MS;
+      } catch (error) { stopped(signal); if (!canReconcile(error)) throw error; waitMs = reconciliationDelay(error); }
     }
   } catch (error) {
     const cleanup = id ? await cancelIntent(id) : "not_started";
@@ -240,6 +264,7 @@ export async function uploadResumeFile(file: File, options: Options = {}): Promi
       : cleanup === "already_saved" ? "Resume checks took too long. Your resume finished saving before cleanup. Review your saved resumes."
       : cleanup === "not_started" ? "Resume checks took too long before a file was sent. Try again."
       : "Resume checks took too long. Cleanup could not be confirmed; check your saved resumes before trying again.");
+    if (id && error instanceof ControlFailure) throw new Error("Your resume status could not be confirmed. Check your saved resumes.");
     throw error;
   }
 }

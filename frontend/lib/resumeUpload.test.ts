@@ -23,7 +23,7 @@ function file(size = 20, name = "resume.pdf", type = "application/pdf") {
   Object.defineProperty(value, "arrayBuffer", { value: async () => bytes.buffer });
   return value;
 }
-function json(value: unknown, status = 200) { return new Response(JSON.stringify(value), { status, headers: { "Content-Type": "application/json" } }); }
+function json(value: unknown, status = 200, headers: Record<string, string> = {}) { return new Response(JSON.stringify(value), { status, headers: { "Content-Type": "application/json", ...headers } }); }
 function status(state = "released") { return { upload_id: id, state, error_code: null, resume: state === "released" ? resume : null }; }
 function intent(value: File) {
   const media: string = formats.find((format) => value.name.toLowerCase().endsWith(format.kind === "texzip" ? ".zip" : `.${format.kind}`))!.media;
@@ -45,6 +45,8 @@ function serve(value: File, overrides: { instruction?: ReturnType<typeof intent>
 }
 const puts = () => fetchMock.mock.calls.filter(([url]) => String(url).startsWith("https://storage.googleapis.com/"));
 const deletes = () => fetchMock.mock.calls.filter(([, init]) => init?.method === "DELETE");
+const completions = () => fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/complete"));
+const gets = () => fetchMock.mock.calls.filter(([, init]) => init?.method === "GET");
 
 beforeEach(() => {
   vi.resetAllMocks(); vi.stubEnv("NEXT_PUBLIC_RESUME_DIRECT_UPLOAD_ENABLED", "true");
@@ -110,6 +112,102 @@ describe("direct private resume upload contract", () => {
     const result=uploadResumeFile(value, { onProgress:(p)=>{if(p.phase==="queued") waiting();} });
     await queued; await vi.advanceTimersByTimeAsync(2000);
     expect(await result).toEqual(resume); expect(completed).toBe(2); expect(puts()).toHaveLength(1);
+  });
+
+  it("waits for a throttled status read, then releases the exact ZIP without repeating completion or deleting it", async () => {
+    vi.useFakeTimers(); const value = file(20, "project.zip", "application/zip"); let checks = 0;
+    const saved = { ...resume, source_format: "texzip" };
+    serve(value, { complete: async () => json(status("queued")), get: async () => ++checks === 1
+      ? json({}, 429, { "Retry-After": "8" }) : json({ ...status(), resume: saved }) });
+    let waiting!: () => void; const queued = new Promise<void>((resolve) => { waiting = resolve; });
+    const result = uploadResumeFile(value, { onProgress: (p) => { if (p.phase === "queued") waiting(); } });
+    await queued; await vi.advanceTimersByTimeAsync(2000); expect(gets()).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(7999); expect(gets()).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1); expect(await result).toEqual(saved);
+    expect(puts()).toHaveLength(1); expect(completions()).toHaveLength(1); expect(deletes()).toHaveLength(0);
+  });
+
+  it("reconciles a throttled completion through GET before allowing any further completion", async () => {
+    vi.useFakeTimers(); const value = file();
+    serve(value, { complete: async () => json({}, 429, { "Retry-After": "6" }) });
+    let waiting!: () => void; const queued = new Promise<void>((resolve) => { waiting = resolve; });
+    const result = uploadResumeFile(value, { onProgress: (p) => { if (p.phase === "queued") waiting(); } });
+    await queued; await vi.advanceTimersByTimeAsync(5999); expect(gets()).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(1); expect(await result).toEqual(resume);
+    expect(puts()).toHaveLength(1); expect(completions()).toHaveLength(1); expect(deletes()).toHaveLength(0);
+  });
+
+  it("does not replay ambiguous completion while status is throttled; only verified awaiting_upload allows it", async () => {
+    vi.useFakeTimers(); const value = file(); let checks = 0; let complete = 0;
+    serve(value, { complete: async () => { if (++complete === 1) throw new TypeError("synthetic lost completion"); return json(status()); },
+      get: async () => ++checks === 1 ? json({}, 429) : json(status("awaiting_upload")) });
+    let waiting!: () => void; const queued = new Promise<void>((resolve) => { waiting = resolve; });
+    const result = uploadResumeFile(value, { onProgress: (p) => { if (p.phase === "queued") waiting(); } });
+    await queued; await vi.advanceTimersByTimeAsync(2000); expect(completions()).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(4999); expect(completions()).toHaveLength(1); expect(gets()).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1); expect(await result).toEqual(resume);
+    expect(fetchMock.mock.calls.map(([, init]) => init?.method)).toEqual(["POST", "PUT", "POST", "GET", "GET", "POST"]);
+    expect(puts()).toHaveLength(1); expect(deletes()).toHaveLength(0);
+  });
+
+  it.each([
+    { header: "0", wait: 5000 }, { header: "-1", wait: 5000 }, { header: "NaN", wait: 5000 },
+    { header: "https://synthetic-attacker.invalid/retry", wait: 5000 }, { header: "9".repeat(256), wait: 5000 },
+    { header: "9999999999", wait: 10_000 }, { header: "1e9", wait: 5000 },
+  ])("bounds an untrusted Retry-After $header without rapid polling or extending the deadline", async ({ header, wait }) => {
+    vi.useFakeTimers(); const value = file(); let checks = 0;
+    serve(value, { complete: async () => json(status("queued")), get: async () => ++checks === 1 ? json({}, 429, { "Retry-After": header }) : json(status()) });
+    let waiting!: () => void; const queued = new Promise<void>((resolve) => { waiting = resolve; });
+    const result = uploadResumeFile(value, { onProgress: (p) => { if (p.phase === "queued") waiting(); } });
+    await queued; await vi.advanceTimersByTimeAsync(2000 + wait - 1); expect(gets()).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1); expect(await result).toEqual(resume);
+    expect(completions()).toHaveLength(1); expect(puts()).toHaveLength(1); expect(deletes()).toHaveLength(0);
+  });
+
+  it("honors a valid HTTP-date Retry-After within the bounded wait", async () => {
+    vi.useFakeTimers(); vi.setSystemTime(new Date("2026-10-24T00:00:00Z")); const value = file(); let checks = 0;
+    serve(value, { complete: async () => json(status("queued")), get: async () => ++checks === 1
+      ? json({}, 429, { "Retry-After": new Date(Date.now() + 8000).toUTCString() }) : json(status()) });
+    let waiting!: () => void; const queued = new Promise<void>((resolve) => { waiting = resolve; });
+    const result = uploadResumeFile(value, { onProgress: (p) => { if (p.phase === "queued") waiting(); } });
+    await queued; await vi.advanceTimersByTimeAsync(9999); expect(gets()).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1); expect(await result).toEqual(resume); expect(deletes()).toHaveLength(0);
+  });
+
+  it.each([400, 401, 403, 404, 409, 422])("does not retry status HTTP %s or encourage an unconfirmed duplicate upload", async (code) => {
+    vi.useFakeTimers(); const value = file();
+    serve(value, { complete: async () => json(status("queued")), get: async () => json({}, code) });
+    let waiting!: () => void; const queued = new Promise<void>((resolve) => { waiting = resolve; });
+    const result = uploadResumeFile(value, { onProgress: (p) => { if (p.phase === "queued") waiting(); } });
+    const rejected = expect(result).rejects.toThrow("Your resume status could not be confirmed. Check your saved resumes.");
+    await queued; await vi.advanceTimersByTimeAsync(2000); await rejected;
+    expect(gets()).toHaveLength(1); expect(completions()).toHaveLength(1); expect(puts()).toHaveLength(1); expect(deletes()).toHaveLength(1);
+  });
+
+  it("repeated 429 stays within the original four-minute deadline and requests cleanup only once", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(AbortSignal, "timeout").mockImplementation((milliseconds) => {
+      const controller = new AbortController(); setTimeout(() => controller.abort(new DOMException("Deadline", "TimeoutError")), milliseconds); return controller.signal;
+    });
+    const value = file();
+    serve(value, { complete: async () => json({}, 429, { "Retry-After": "9999999999" }), get: async () => json({}, 429, { "Retry-After": "9999999999" }) });
+    let waiting!: () => void; const queued = new Promise<void>((resolve) => { waiting = resolve; });
+    const result = uploadResumeFile(value, { onProgress: (p) => { if (p.phase === "queued") waiting(); } });
+    const rejected = expect(result).rejects.toThrow(/took too long.*check your saved resumes/i);
+    await queued; await vi.advanceTimersByTimeAsync(240_000); await rejected;
+    expect(gets().length).toBeGreaterThan(0); expect(gets().length).toBeLessThanOrEqual(24);
+    expect(completions()).toHaveLength(1); expect(puts()).toHaveLength(1); expect(deletes()).toHaveLength(1);
+  });
+
+  it("cancels a throttled status wait without another GET, completion or PUT", async () => {
+    vi.useFakeTimers(); const value = file(); const controller = new AbortController();
+    serve(value, { complete: async () => json(status("queued")), get: async () => json({}, 429, { "Retry-After": "10" }) });
+    let waiting!: () => void; const queued = new Promise<void>((resolve) => { waiting = resolve; });
+    const result = uploadResumeFile(value, { signal: controller.signal, onProgress: (p) => { if (p.phase === "queued") waiting(); } });
+    const rejected = expect(result).rejects.toMatchObject({ name: "ResumeUploadCancelled", cleanup: "requested" });
+    await queued; await vi.advanceTimersByTimeAsync(2000); controller.abort(); await rejected;
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(gets()).toHaveLength(1); expect(completions()).toHaveLength(1); expect(puts()).toHaveLength(1); expect(deletes()).toHaveLength(1);
   });
 
   it.each(["rejected", "failed", "expired", "cancelled"])("does not publish a %s verdict or charge/approve anything", async (state) => {
