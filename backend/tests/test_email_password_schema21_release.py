@@ -206,9 +206,9 @@ def test_native20_target_uses_distinct_phase_reader_and_retains_transport_acl_gu
         reviewed.release, "verify_fresh_role_phase", lambda *args: observed.append("serving_acl")
     )
     monkeypatch.setattr(
-        reviewed.fresh,
-        "verify_financial_state",
-        lambda _db, _module, schema: observed.append(("financial18", schema)),
+        step,
+        "verify_financial_catalog",
+        lambda _db, _module: observed.append("additive_financial_catalog"),
     )
     monkeypatch.setattr(contract, "verify_shape", lambda *args: observed.append("catalog20"))
     monkeypatch.setattr(contract, "verify_before_shape", lambda *args: observed.append("catalog19"))
@@ -230,7 +230,7 @@ def test_native20_target_uses_distinct_phase_reader_and_retains_transport_acl_gu
     )
     assert "serving_acl" in observed and "exact19_permissions" in observed and "drained" in observed
     assert ("catalog20" if phase == contract.SCHEMA else "catalog19") in observed
-    assert ("financial18", reviewed.previous.step.BEFORE) in observed
+    assert "additive_financial_catalog" in observed
     assert observed.count("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY") == 2
 
 

@@ -23,7 +23,6 @@ sys.path[:0] = [
 import browser_schema19_release as previous
 import fresh_cutover_docker as docker
 import fresh_cutover_writes as writes
-import fresh_monetary_release as fresh
 import rolling_native as native
 import rolling_release as rolling
 from browser_schema19_release import PriorSource, bootstrap_identity, verify_permissions
@@ -162,9 +161,9 @@ class NativeSchema21Boundary(native.NativeRollingBoundary):
                         release.verify_fresh_role_phase(
                             connection, neon.FRESH_RELEASE_ACTORS, "serving", sessions
                         )
-                        # Financial semantics are unchanged in 19. The independent
-                        # marker/native contract and all new DDL are checked too.
-                        fresh.verify_financial_state(connection, module, previous.step.BEFORE)
+                        # In-place additive release preserves coherent terminal
+                        # uncertainty; it never settles unknown provider costs.
+                        step.verify_financial_catalog(connection, module)
                         if self.schema == contract.SCHEMA:
                             contract.verify_shape(connection, 2200)
                         else:
