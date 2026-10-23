@@ -3,9 +3,14 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const auth = vi.hoisted(() => ({ status: "authenticated", id: "12", email: "owned@example.invalid", csrf: vi.fn() }));
+const googleScript = vi.hoisted(() => ({ loaded: false }));
 vi.mock("next-auth/react", () => ({ useSession: () => ({ status: auth.status, data: { user: { id: auth.id, email: auth.email } } }), getCsrfToken: auth.csrf }));
-vi.mock("next/script", () => ({ default: ({ src, onReady, onError }: { src: string; onReady: () => void; onError: () => void }) =>
-  <div data-testid="google-script" data-src={src}><button type="button" onClick={onReady}>Load Google verification</button><button type="button" onClick={onError}>Fail Google verification</button></div> }));
+vi.mock("next/script", () => ({ default: function Script({ src, onReady, onError }: { src: string; onReady: () => void; onError: () => void }) {
+  const ready = React.useRef(onReady);
+  // Next Script's documented onReady contract also runs on a cached-script remount.
+  React.useEffect(() => { if (googleScript.loaded) ready.current(); }, []);
+  return <div data-testid="google-script" data-src={src}><button type="button" onClick={() => { googleScript.loaded = true; onReady(); }}>Load Google verification</button><button type="button" onClick={onError}>Fail Google verification</button></div>;
+} }));
 
 import CandidateAccountRecovery from "./CandidateAccountRecovery";
 
@@ -19,6 +24,7 @@ let initialize: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   auth.status = "authenticated"; auth.id = "12"; auth.email = "owned@example.invalid";
+  googleScript.loaded = false;
   auth.csrf.mockReset().mockResolvedValue("c".repeat(64));
   challenge.expires_at_ms = Date.now() + 300000; callback = null;
   initialize = vi.fn((value) => { callback = value.callback; });
@@ -26,7 +32,7 @@ beforeEach(() => {
   vi.stubGlobal("fetch", vi.fn(async (url) => Response.json(String(url).endsWith("/availability")
     ? { fresh_registration: true, legacy_enrollment: true } : { status: "GOOGLE_ENROLLMENT_AVAILABLE" })));
 });
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 async function ready() {
   const view = render(<CandidateAccountRecovery />);
@@ -140,8 +146,74 @@ describe("explicit authoritative-Google recovery of an unenrolled account", () =
     await ready(); await verify(request);
     vi.spyOn(Date, "now").mockReturnValue(challenge.expires_at_ms);
     fireEvent.click(screen.getByRole("button", { name: "Replace password and enroll this account" }));
-    expect(screen.getByRole("alert")).toHaveTextContent("Complete fresh Google verification");
+    expect(screen.getByRole("alert")).toHaveTextContent("Google verification expired");
+    expect(screen.queryByText(/Google verification received/)).toBeNull();
+    expect(screen.getByLabelText("New HireWiz password")).toHaveValue(password);
+    expect(screen.getByLabelText("Confirm new HireWiz password")).toHaveValue(password);
+    expect(screen.getByRole("checkbox", { name: consent })).toBeChecked();
+    expect(screen.getByRole("button", { name: "Verify Google again" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Replace password and enroll this account" })).toBeDisabled();
     expect(request).toHaveBeenCalledTimes(3);
+  });
+
+  it("expires visibly without a click, then reuses Google with a fresh nonce only on explicit verification", async () => {
+    const request = vi.mocked(fetch);
+    await ready();
+    vi.useFakeTimers();
+    fireEvent.change(screen.getByLabelText("New HireWiz password"), { target: { value: password } });
+    fireEvent.change(screen.getByLabelText("Confirm new HireWiz password"), { target: { value: password } });
+    fireEvent.click(screen.getByRole("checkbox", { name: consent }));
+    request.mockResolvedValueOnce(Response.json(challenge));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Verify Google for recovery" })));
+    fireEvent.click(screen.getByRole("button", { name: "Load Google verification" }));
+    const staleCallback = callback;
+    act(() => callback?.({ credential: idToken }));
+    expect(screen.getByText(/Google verification expires at/)).toBeInTheDocument();
+    await act(async () => vi.advanceTimersByTimeAsync(300000));
+    expect(screen.queryByText(/Google verification received/)).toBeNull();
+    expect(screen.getByRole("alert")).toHaveTextContent("Your new password and consent are still here");
+    expect(screen.getByLabelText("New HireWiz password")).toHaveValue(password);
+    expect(screen.getByRole("checkbox", { name: consent })).toBeChecked();
+    expect(request).toHaveBeenCalledTimes(3);
+    expect(screen.getByRole("button", { name: "Replace password and enroll this account" })).toBeDisabled();
+    act(() => staleCallback?.({ credential: idToken }));
+    expect(screen.queryByText(/Google verification received/)).toBeNull();
+    const fresh = { ...challenge, challenge_id: "f6d9dc99-84fa-4a52-af5a-0ed921e7b048", nonce: "f".repeat(43), expires_at_ms: Date.now() + 300000 };
+    request.mockResolvedValueOnce(Response.json(fresh));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Verify Google again" })));
+    expect(request).toHaveBeenCalledTimes(4);
+    expect(initialize).toHaveBeenCalledTimes(2);
+    expect(initialize).toHaveBeenLastCalledWith(expect.objectContaining({ nonce: fresh.nonce }));
+    act(() => staleCallback?.({ credential: idToken }));
+    expect(screen.getByRole("button", { name: "Replace password and enroll this account" })).toBeDisabled();
+    const freshToken = "fresh-google-recovery-token-".repeat(10);
+    act(() => callback?.({ credential: freshToken }));
+    // A duplicate callback cannot replace the accepted fresh assertion.
+    act(() => callback?.({ credential: idToken }));
+    expect(screen.getByRole("button", { name: "Replace password and enroll this account" })).toBeEnabled();
+    request.mockResolvedValueOnce(Response.json({ status: "ENROLLED" }));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Replace password and enroll this account" })));
+    expect(JSON.parse(request.mock.calls[4][1]!.body as string)).toEqual({ challenge_id: fresh.challenge_id, nonce: fresh.nonce,
+      id_token: freshToken, password, accepted_enrollment: true, accepted_recovery: true });
+    expect(screen.getByRole("link", { name: "Sign out before signing in again" })).toBeInTheDocument();
+    expect(request).toHaveBeenCalledTimes(5);
+  });
+
+  it("does not send recovery if the proof expires while CSRF is resolving", async () => {
+    const request = vi.mocked(fetch);
+    await ready(); await verify(request);
+    let finish: ((value: string) => void) | undefined;
+    auth.csrf.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    fireEvent.click(screen.getByRole("button", { name: "Replace password and enroll this account" }));
+    vi.spyOn(Date, "now").mockReturnValue(challenge.expires_at_ms);
+    await act(async () => finish?.("c".repeat(64)));
+    expect(request).toHaveBeenCalledTimes(3);
+    expect(screen.getByRole("alert")).toHaveTextContent("Google verification expired");
+    expect(screen.queryByText(/Google verification received/)).toBeNull();
+    expect(screen.getByLabelText("New HireWiz password")).toHaveValue(password);
+    expect(screen.getByRole("checkbox", { name: consent })).toBeChecked();
+    expect(screen.getByRole("button", { name: "Verify Google again" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Replace password and enroll this account" })).toBeDisabled();
   });
 
   it("explains an unsupported mailbox before loading any Google recovery script", async () => {
