@@ -77,6 +77,27 @@ OUTPUT_SCHEMAS: dict[str, dict[str, Any]] = {
 }
 
 
+def _isolate_pdf_stream_edits(source_bytes: bytes, edits: list[dict]) -> list[dict] | None:
+    """Keep proven individual edits after a batch stream refusal; never rebuild layout.
+
+    The model contract allows at most twelve proposals. A caller may probe this
+    once per run and must validate the complete retained batch before saving it.
+    Global, interacting and all-refused failures return no partial result.
+    """
+    from ...services.resume_layout import ResumeLayoutError, apply_source_edits
+
+    if not 2 <= len(edits) <= 12:
+        return None
+    retained = []
+    for edit in edits:
+        try:
+            apply_source_edits(source_bytes, "pdf", [edit])
+        except ResumeLayoutError:
+            continue
+        retained.append(edit)
+    return retained if 0 < len(retained) < len(edits) else None
+
+
 def _model_identity() -> tuple[str, str]:
     api_base = (os.getenv("LLM_API_BASE") or "").lower()
     if "googleapis" in api_base:
@@ -594,6 +615,7 @@ def execute_resume_tailor(
         last_validation_error: Exception | None = None
         known_unit_ids = {unit["unit_id"] for unit in source_units}
         first_constraint: tuple[str, str | None] | None = None
+        pdf_stream_isolation_attempted = False
         for _attempt in range(3):
             candidate = None
             try:
@@ -639,6 +661,28 @@ def execute_resume_tailor(
                     except ResumeLayoutError as exc:
                         unit_id = getattr(exc, "unit_id", None)
                         edits = candidate["source_edits"]
+                        if (
+                            source_format == "pdf"
+                            and unit_id not in known_unit_ids
+                            and str(exc) == "The original PDF text stream cannot be updated safely."
+                            and not pdf_stream_isolation_attempted
+                        ):
+                            # Stream serialization can reject one proposal without
+                            # identifying it. Isolate at most twelve proposals once;
+                            # the next loop verifies the complete surviving batch.
+                            pdf_stream_isolation_attempted = True
+                            retained = _isolate_pdf_stream_edits(source_bytes, edits)
+                            if retained is not None:
+                                omitted = len(edits) - len(retained)
+                                candidate["source_edits"] = retained
+                                candidate["partial_tailoring"] = True
+                                candidate["omitted_edits"] = int(candidate.get("omitted_edits", 0)) + omitted
+                                log.warning(
+                                    "Tailoring PDF stream proposals excluded run_id=%s attempt=%d "
+                                    "reason=unsupported_pdf_text_stream omitted=%d retained=%d",
+                                    run.id, _attempt + 1, omitted, len(retained),
+                                )
+                                continue
                         if (
                             unit_id not in known_unit_ids
                             or len(edits) <= 1
@@ -691,8 +735,14 @@ def execute_resume_tailor(
                     len(source_units),
                     edit_count,
                 )
-                if getattr(exc, "content_repair_allowed", True) is False:
-                    break  # Infrastructure verification cannot be repaired by another model call.
+                if (
+                    pdf_stream_isolation_attempted
+                    or reason == "unsupported_pdf_text_stream"
+                    or getattr(exc, "content_repair_allowed", True) is False
+                ):
+                    # Native stream/verification limits need deterministic recovery,
+                    # not another paid proposal. Never save an unchanged fallback.
+                    break
                 repair_note = f"Source unit {unit_id}: {exc}" if unit_id else str(exc)
                 hint = getattr(exc, "repair_hint", None)
                 if isinstance(hint, str) and hint:
