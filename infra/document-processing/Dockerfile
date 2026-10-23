@@ -27,7 +27,7 @@ COPY backend/app/services/parsing.py /opt/document/app/services/parsing.py
 COPY backend/app/services/market/skill_extractor.py backend/app/services/market/skill_taxonomy.py \
      backend/app/services/market/security.py /opt/document/app/services/market/
 COPY backend/app/services/resume_layout.py backend/app/services/pdf_streams.py \
-     backend/app/services/docx_layout_validation.py /opt/document/app/services/
+     backend/app/services/docx_layout_validation.py backend/app/services/native_project.py /opt/document/app/services/
 COPY infra/document-processing/processor.py infra/document-processing/service.py \
      infra/document-processing/docx_renderer.py infra/document-processing/writer_owner.py /opt/document/
 # Generated from actual installed Linux files and version, verified again on

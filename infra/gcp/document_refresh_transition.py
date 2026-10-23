@@ -1,6 +1,6 @@
 """Bounded fail-closed document maintenance; no credentials or actions at import.
 
-A fresh native six-case proof gates every transition. Exact-image refusal makes
+A fresh current V2 ten-case proof gates every transition. Exact-image refusal makes
 old in-flight callers fail safely during this short maintenance window; this
 controller never claims those callers drained. Unknown PATCH outcomes stop the
 pipeline, retain the closed flags, and permit only same-operation readback.
@@ -71,7 +71,8 @@ def environment(template: dict[str, Any]) -> dict[str, dict[str, Any]]:
 
 
 def mutate_template(current: dict[str, Any], service: str, phase: str, nonce: str,
-                    image: str, pins: dict[str, str], captured: dict[str, Any]) -> dict[str, Any]:
+                    image: str, pins: dict[str, str], captured: dict[str, Any], *,
+                    worker_policy_sha256: str | None = None) -> dict[str, Any]:
     """Only documented image/pin/flag/revision fields may change; all else stays exact."""
     need(service in SERVICES and phase in {"close", "worker", "pins", "open"}
          and re.fullmatch(r"[a-f0-9]{32}", nonce), "document_transition_action_refused")
@@ -80,11 +81,15 @@ def mutate_template(current: dict[str, Any], service: str, phase: str, nonce: st
     need(template.get("serviceAccount") == ACCOUNTS[service], "document_transition_caller_identity_changed")
     env = environment(template)
     if service == WORKER:
+        need(type(worker_policy_sha256) is str and re.fullmatch(r"[a-f0-9]{64}", worker_policy_sha256),
+             "document_transition_worker_policy_unverified")
         need(set(env) == {"DOCUMENT_WORKER_IMAGE_DIGEST", "DOCUMENT_WORKER_POLICY_SHA256"},
              "document_transition_worker_environment_changed")
         template["containers"][0]["image"] = image
         env["DOCUMENT_WORKER_IMAGE_DIGEST"] = {"name": "DOCUMENT_WORKER_IMAGE_DIGEST", "value": image}
+        env["DOCUMENT_WORKER_POLICY_SHA256"] = {"name": "DOCUMENT_WORKER_POLICY_SHA256", "value": worker_policy_sha256}
     else:
+        need(worker_policy_sha256 is None, "document_transition_action_refused")
         for key in PAUSE[service]:
             if phase == "open":
                 if captured[key] is None:
@@ -147,9 +152,19 @@ def checked_json(http: Any, method: str, resource: str, body: Any = None, *, que
     return value
 
 
+def require_current_acceptance(acceptance: Any, image: str | None, probe: Any) -> None:
+    need(type(image) is str and getattr(acceptance, "image", None) == image
+         and type(getattr(acceptance, "contract_version", None)) is int and acceptance.contract_version == 2
+         and type(getattr(acceptance, "required_case_count", None)) is int and acceptance.required_case_count == 10
+         and getattr(acceptance, "policy_sha256", None) == probe.POLICY,
+         "document_transition_current_acceptance_required")
+
+
 class Controller:
-    def __init__(self, http: Any, probe: Any, owner: Journal, *, seconds: int = 1800):
+    def __init__(self, http: Any, probe: Any, owner: Journal, *, seconds: int = 1800,
+                 candidate_image: str | None = None):
         self.http, self.probe, self.owner = http, probe, owner
+        self.candidate_image = candidate_image
         self.deadline = time.monotonic() + seconds
         self.observed: dict[str, dict[str, Any]] = {}
 
@@ -178,8 +193,10 @@ class Controller:
              and value["template"].get("serviceAccount") == ACCOUNTS[service],
              "document_transition_service_identity_changed")
 
-    def patch(self, service: str, phase: str, template: dict[str, Any], *, labels: dict[str, str] | None = None) -> None:
+    def patch(self, service: str, phase: str, template: dict[str, Any], *, acceptance: Any,
+              labels: dict[str, str] | None = None) -> None:
         """A single etag-fenced PATCH, then only its native LRO GETs and exact readbacks."""
+        require_current_acceptance(acceptance, self.candidate_image, self.probe)
         need(time.monotonic() < self.deadline, "document_transition_deadline_reconcile_only")
         before = self.observed[service]
         need(self.service(service) == before, "document_transition_preimage_changed")
@@ -237,10 +254,12 @@ def transition(image: str, build: dict[str, Any], native_journal: Path, journal:
     owner = Journal(journal)
     try:
         acceptance = probe.verify_successor(image, build, native_journal)
+        require_current_acceptance(acceptance, image, probe)
         owner.write("native-acceptance.json", asdict(acceptance))
-        run = Controller(http, probe, owner)
+        run = Controller(http, probe, owner, candidate_image=image)
         captured = {}
         prior_image = None
+        prior_policy = None
         for name in SERVICES:
             value = run.service(name)
             run.ready(name, value, uid=probe.SERVICE_UID if name == WORKER else None)
@@ -250,6 +269,7 @@ def transition(image: str, build: dict[str, Any], native_journal: Path, journal:
                 prior_image = value["template"]["containers"][0]["image"]
                 if prior_image != probe.BASE_IMAGE:
                     probe.verify_current_successor(prior_image, value)
+                prior_policy = probe.policy_for_serving(value, prior_image)
             else:
                 need(env.get("DOCUMENT_WORKER_IMAGE_DIGEST") == {"name": "DOCUMENT_WORKER_IMAGE_DIGEST", "value": prior_image},
                      "document_transition_existing_mixed_pins_reconcile_only")
@@ -257,26 +277,28 @@ def transition(image: str, build: dict[str, Any], native_journal: Path, journal:
                 need(all(row is None or set(row) == {"name", "value"} and row["value"] in {"true", "false"}
                          for row in captured[name].values()), "document_transition_admission_flag_unverified")
         need(prior_image != image, "document_transition_already_current_reconcile_only")
-        probe.verify_caller_pins(run, prior_image)
+        probe.verify_caller_pins(run, prior_image, policy_sha256=prior_policy)
         owner.write("captured-flags.json", captured)
         # No claim of quiescence: old in-flight callers can finish or safely503.
         for name in CALLERS:
             template = mutate_template(run.observed[name], name, "close", build["nonce"], image, {}, captured[name])
-            run.patch(name, "close", template)
+            run.patch(name, "close", template, acceptance=acceptance)
         acceptance = probe.verify_successor(image, build, native_journal)
+        require_current_acceptance(acceptance, image, probe)
         labels = dict(zip(LABELS, (build["build_id"], build["nonce"], acceptance.job_name.rsplit("/", 1)[-1]), strict=True))
-        run.patch(WORKER, "worker", mutate_template(run.observed[WORKER], WORKER, "worker", build["nonce"], image, {}, {}), labels=labels)
+        run.patch(WORKER, "worker", mutate_template(run.observed[WORKER], WORKER, "worker", build["nonce"], image, {}, {},
+            worker_policy_sha256=acceptance.policy_sha256), acceptance=acceptance, labels=labels)
         probe.verify_current_successor(image, run.observed[WORKER])
         pins = dict(zip(PINS, (image, acceptance.policy_sha256, acceptance.renderer_version,
                                acceptance.font_manifest_sha256), strict=True))
         for name in CALLERS:
             template = mutate_template(run.observed[name], name, "pins", build["nonce"], image, pins, captured[name])
-            run.patch(name, "pins", template)
+            run.patch(name, "pins", template, acceptance=acceptance)
         probe.verify_caller_pins(run, image)
         probe.verify_current_successor(image, run.observed[WORKER])
         for name in CALLERS:
             template = mutate_template(run.observed[name], name, "open", build["nonce"], image, {}, captured[name])
-            run.patch(name, "open", template)
+            run.patch(name, "open", template, acceptance=acceptance)
         probe.verify_caller_pins(run, image)
         probe.verify_current_successor(image, run.observed[WORKER])
         need(all(run.service(name) == run.observed[name] for name in SERVICES),

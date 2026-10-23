@@ -6,7 +6,13 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, Strict
 from ...schemas import ResumeParseResponse
 
 MAX_BYTES = 5 * 1024 * 1024
-MEDIA_TYPES = {"pdf": "application/pdf", "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"}
+EXTENSION_FORMATS = {"pdf": "pdf", "docx": "docx", "tex": "tex", "zip": "texzip"}
+MEDIA_TYPES = {
+    "pdf": "application/pdf",
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "tex": "application/x-tex",
+    "texzip": "application/zip",
+}
 
 
 class UploadCreate(BaseModel):
@@ -22,8 +28,8 @@ class UploadCreate(BaseModel):
         name = value.replace("\\", "/").rsplit("/", 1)[-1].strip()
         if not name or len(name.encode("utf-8")) > 255 or any(ord(c) < 32 or ord(c) == 127 for c in name):
             raise ValueError("Invalid resume filename")
-        if name.rsplit(".", 1)[-1].lower() not in {"pdf", "docx"}:
-            raise ValueError("Direct safe upload currently supports PDF and DOCX")
+        if "." not in name or name.rsplit(".", 1)[-1].lower() not in EXTENSION_FORMATS:
+            raise ValueError("Secure upload supports PDF, DOCX, TeX and supported TeX ZIP projects")
         return name
 
 

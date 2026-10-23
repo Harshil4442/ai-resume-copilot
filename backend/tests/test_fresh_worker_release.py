@@ -127,7 +127,7 @@ def test_unbound_worker_cannot_configure_api_or_analysis(monkeypatch):
     assert set(release.NATIVE_ENV).isdisjoint(env)
 
 
-@pytest.mark.parametrize("change", [None, "uid", "key", "extra-invoker", "tex-invoker"])
+@pytest.mark.parametrize("change", [None, "uid", "key", "extra-invoker", "tex-invoker", "tex-extra-invoker"])
 def test_runtime_gate_freshly_reads_only_exact_additional_upload_caller(binding, monkeypatch, change):
     adapter, plan, states = boundary(monkeypatch, runtime_phase=True)
     documents = release.documents
@@ -155,9 +155,12 @@ def test_runtime_gate_freshly_reads_only_exact_additional_upload_caller(binding,
         keys.append({"keyType": "USER_MANAGED"})
     if change == "extra-invoker":
         states[documents.SERVICE]["service_iam"]["bindings"][0]["members"].append("allAuthenticatedUsers")
-    if change == "tex-invoker":
+    if change in {"tex-invoker", "tex-extra-invoker"}:
         states[tex.SERVICE]["service_iam"]["bindings"][0]["members"].append("serviceAccount:" + principal)
-    if change is None:
+        states[tex.SERVICE]["service_iam"]["bindings"][0]["members"].sort()
+    if change == "tex-extra-invoker":
+        states[tex.SERVICE]["service_iam"]["bindings"][0]["members"].append("allUsers")
+    if change in {None, "tex-invoker"}:
         report = adapter.verify_document_configuration(plan)
         assert report["service_iam_phase"] == "api-and-resume-coordinator"
         assert report["native_tex"]["configuration_matches"] is True
@@ -166,3 +169,11 @@ def test_runtime_gate_freshly_reads_only_exact_additional_upload_caller(binding,
         with pytest.raises(release.ReleaseDenied):
             adapter.verify_document_configuration(plan)
     assert reads == ["identity", "keys"]
+
+
+def test_compiler_coordinator_cannot_skip_private_inspector_caller_admission(binding, monkeypatch):
+    adapter, plan, states = boundary(monkeypatch, runtime_phase=True)
+    states[tex.SERVICE]["service_iam"]["bindings"][0]["members"].append(
+        "serviceAccount:" + release.documents.UPLOAD_COORDINATOR)
+    with pytest.raises(release.ReleaseDenied, match="tex_coordinator_inspector_binding_missing"):
+        adapter.verify_document_configuration(plan)

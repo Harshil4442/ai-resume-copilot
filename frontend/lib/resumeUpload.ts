@@ -1,6 +1,6 @@
 import { accountApiPath } from "./accountTransportClient";
 import { apiPostForm } from "./api";
-import type { ResumeParseResponse } from "./types";
+import type { ResumeParseResponse, ResumeSourceFormat } from "./types";
 
 export const MAX_RESUME_BYTES = 5 * 1024 * 1024;
 export const MAX_LEGACY_RESUME_BYTES = 4 * 1024 * 1024; // leave multipart headroom below Vercel's 4.5 MB limit
@@ -9,6 +9,7 @@ const CONTROL_TIMEOUT_MS = 10_000;
 const POLL_MS = 2000;
 const PDF = "application/pdf";
 const DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const MEDIA: Record<ResumeSourceFormat, string> = { pdf: PDF, docx: DOCX, tex: "application/x-tex", texzip: "application/zip" };
 const STATES = new Set(["awaiting_upload", "queued", "inspecting", "released", "rejected", "failed", "cancelled", "expired"]);
 const FORMATS = new Set([PDF, DOCX, "application/x-tex", "text/x-tex", "text/plain", "application/zip", "application/x-zip-compressed", "application/octet-stream", ""]);
 
@@ -26,7 +27,7 @@ export function directResumeUploadEnabled(): boolean {
 }
 
 export function usesDirectResumeUpload(file: File): boolean {
-  return directResumeUploadEnabled() && /\.(pdf|docx)$/i.test(file.name);
+  return directResumeUploadEnabled() && /\.(pdf|docx|tex|zip)$/i.test(file.name);
 }
 
 export class ResumeUploadCancelled extends Error {
@@ -54,6 +55,9 @@ function stopped(signal: AbortSignal): void { if (signal.aborted) throw new DOME
 export function validateResumeFile(file: File): void {
   if (!/\.(pdf|docx|tex|zip)$/i.test(file.name) || !FORMATS.has(file.type) || file.size <= 0 || file.size > MAX_RESUME_BYTES) {
     throw new Error("Choose PDF, DOCX, TeX or a source ZIP project no larger than 5 MB.");
+  }
+  if (!directResumeUploadEnabled() && /\.(tex|zip)$/i.test(file.name)) {
+    throw new Error("Secure upload is unavailable for TeX and ZIP source projects. Please try again later.");
   }
   if (!usesDirectResumeUpload(file) && file.size > MAX_LEGACY_RESUME_BYTES) {
     throw new Error("Secure direct upload is not enabled for this file format yet. Use a file up to 4 MB; larger files cannot pass through the current website upload route.");
@@ -123,7 +127,7 @@ function validateIntent(value: unknown, file: File, media: string): Intent {
   return value as unknown as Intent;
 }
 
-function validateStatus(value: unknown, id: string, sourceFormat: "pdf" | "docx"): Status {
+function validateStatus(value: unknown, id: string, sourceFormat: ResumeSourceFormat): Status {
   if (!record(value) || value.upload_id !== id || typeof value.state !== "string" || !STATES.has(value.state)
     || (value.error_code !== null && (typeof value.error_code !== "string" || value.error_code.length > 64))) throw new Error("Resume status could not be verified.");
   if (value.state === "released" && (!record(value.resume) || !Number.isSafeInteger(value.resume.resume_id) || Number(value.resume.resume_id) <= 0
@@ -192,8 +196,8 @@ export async function uploadResumeFile(file: File, options: Options = {}): Promi
     const sha256 = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
     const key = crypto.randomUUID();
     progress("creating");
-    const sourceFormat = /\.pdf$/i.test(file.name) ? "pdf" : "docx";
-    const media = sourceFormat === "pdf" ? PDF : DOCX;
+    const sourceFormat: ResumeSourceFormat = /\.pdf$/i.test(file.name) ? "pdf" : /\.docx$/i.test(file.name) ? "docx" : /\.tex$/i.test(file.name) ? "tex" : "texzip";
+    const media = MEDIA[sourceFormat];
     const raw = await control("/resume/uploads", "POST", signal,
       { filename: file.name, size_bytes: file.size, sha256, enrich_skills: options.enrichSkills ?? false }, { "Idempotency-Key": key });
     // Remember a valid opaque ID even if the remaining capability is refused.
@@ -220,7 +224,7 @@ export async function uploadResumeFile(file: File, options: Options = {}): Promi
       }
       if (current?.state === "released") { progress("completed"); return current.resume!; }
       if (current && ["rejected", "failed", "cancelled", "expired"].includes(current.state)) {
-        throw new Error(current.state === "rejected" ? "This document did not pass resume safety checks. Use a plain PDF or DOCX without active content or encryption. No analysis units were charged."
+        throw new Error(current.state === "rejected" ? "This document did not pass resume safety checks. Check your source file for unsupported or unsafe content. No analysis units were charged."
           : "Your resume could not be saved. No analysis units were charged. Temporary upload cleanup is scheduled.");
       }
       progress(current?.state === "inspecting" ? "inspecting" : "queued");

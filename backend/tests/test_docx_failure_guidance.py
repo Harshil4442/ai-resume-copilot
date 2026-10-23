@@ -43,7 +43,7 @@ def controls(monkeypatch):
         package.__path__ = []
         monkeypatch.setitem(sys.modules, package.__name__, package)
     resume = types.ModuleType(prefix + ".services.resume_layout")
-    _definitions("backend/app/services/resume_layout.py", {"ResumeLayoutError"}, resume.__dict__)
+    _definitions("backend/app/services/resume_layout.py", {"ResumeLayoutError", "ResumeProcessingUnavailable"}, resume.__dict__)
     llm = types.ModuleType(prefix + ".services.llm_client")
     _definitions("backend/app/services/llm_client.py", {"LLMProviderError", "TailoringOutputError"}, llm.__dict__)
     costs = types.ModuleType(prefix + ".services.model_cost_policy")

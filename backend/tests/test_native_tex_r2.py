@@ -11,7 +11,10 @@ from backend.app.domains.employer.artifacts import materialize
 from backend.app.models import Resume, ResumeVersion
 from backend.app.services import native_tex
 from backend.app.services.resume_layout import ResumeLayoutError
-from backend.tests.native_tex_ci_fixtures import configure_native_compiler
+from backend.tests.native_tex_ci_fixtures import (
+    configure_native_compiler,
+    configure_synthetic_native_inspector,
+)
 from backend.tests.test_career_workspace import _client, _native_source
 from pypdf import PdfReader, PdfWriter
 from pypdf.generic import ArrayObject, DictionaryObject, NameObject, TextStringObject
@@ -29,6 +32,7 @@ def source(text: str) -> bytes:
     r"Updated \month/\day.", r"Updated \the\time.", r"\maketitle",
     r"Updated \pdfcreationdate."])
 def test_dynamic_date_refusal_preserves_original_source_and_never_starts_compiler(text, monkeypatch):
+    configure_synthetic_native_inspector(monkeypatch)
     data = source(text)
     before = data[:]
     monkeypatch.setattr(native_tex.subprocess, "run", lambda *a, **kw: pytest.fail("refused source must not start a compiler"))
@@ -38,6 +42,7 @@ def test_dynamic_date_refusal_preserves_original_source_and_never_starts_compile
 
 
 def test_existing_dynamic_date_version_api_refuses_without_saving_a_version_or_changing_source(monkeypatch):
+    configure_synthetic_native_inspector(monkeypatch)
     data = source(r"Updated \today.")
     engine, factory, client = _client()
     monkeypatch.setattr(native_tex.subprocess, "run", lambda *a, **kw: pytest.fail("API must refuse before compiling"))
@@ -161,6 +166,7 @@ def test_malformed_private_compiler_contract_is_a_structured_refusal(response):
 
 @pytest.mark.parametrize("response", [None, []])
 def test_malformed_local_compiler_json_cleans_only_owned_container(response, monkeypatch):
+    configure_synthetic_native_inspector(monkeypatch)
     monkeypatch.setenv("APP_ENV", "test")
     monkeypatch.setenv("NATIVE_TEX_IMAGE", MOCK_IMAGE)
     monkeypatch.delenv("NATIVE_TEX_COMPILER_URL", raising=False)

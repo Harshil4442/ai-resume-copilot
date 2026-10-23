@@ -35,7 +35,7 @@ class Failed(native.Fake):
         self.report = native.payload()
         diagnostic = native.diag(1, "not_validated", "not_started")
         diagnostic["failure_phase"] = None
-        self.report.update(all_six_passed=False, failure_stage="identity_preflight",
+        self.report.update(all_required_passed=False, failure_stage="identity_preflight",
             identity_preflight={"passed": False, "cleanup_passed": True, "diagnostic": diagnostic},
             cases=[{"case": name, "attempted": False, "passed": False} for name in native.parser.NAMES])
 
@@ -273,7 +273,7 @@ def test_native_failure_boundaries_remain_closed(setup, change):
     elif change == "attempted":
         value.report["cases"][0]["attempted"] = True
     else:
-        value.report["all_six_passed"] = True
+        value.report["all_required_passed"] = True
     with pytest.raises((refresh.RefreshDenied, p.NativeProofDenied, ValueError)):
         recovery.prepare(output(setup), setup.history, JOB, refresh_module=refresh)
     assert not setup.storage.calls

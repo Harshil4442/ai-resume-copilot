@@ -49,9 +49,13 @@ def api_environment(origin: str, image: str) -> dict[str, str]:
             "NATIVE_TEX_IMAGE_DIGEST": image, "NATIVE_TEX_ISOLATION_POLICY_SHA256": POLICY_SHA256}
 
 
-def render(image: str, release: str) -> dict[str, Any]:
-    if not image_valid(image) or type(release) is not str or re.fullmatch(r"[a-f0-9]{40}", release) is None:
+def render(image: str, release: str, *, coordinator_phase: bool = False) -> dict[str, Any]:
+    if (not image_valid(image) or type(release) is not str or re.fullmatch(r"[a-f0-9]{40}", release) is None
+            or type(coordinator_phase) is not bool):
         fail()
+    invokers = ["serviceAccount:" + INVOKER]
+    if coordinator_phase:
+        invokers.append("serviceAccount:" + documents.UPLOAD_COORDINATOR)
     return {"service": {
         "name": RESOURCE, "launchStage": "BETA", "ingress": "INGRESS_TRAFFIC_INTERNAL_ONLY",
         "invokerIamDisabled": False, "defaultUriDisabled": False,
@@ -71,14 +75,18 @@ def render(image: str, release: str) -> dict[str, Any]:
                         {"name": "NATIVE_TEX_ISOLATION_POLICY_SHA256", "value": POLICY_SHA256}]}]}},
         "initial_service_iam": {"version": 3, "bindings": []},
         "runtime_service_iam": {"version": 3, "bindings": [
-            {"role": "roles/run.invoker", "members": ["serviceAccount:" + INVOKER]}]},
+            {"role": "roles/run.invoker", "members": sorted(invokers)}]},
         "native_deployment_proven": False, "native_compile_proven": False}
 
 
-def check_snapshot(snapshot: dict, image: str, release: str, *, runtime_phase: bool = False) -> dict:
+def check_snapshot(snapshot: dict, image: str, release: str, *, runtime_phase: bool = False,
+                   coordinator_phase: bool = False) -> dict:
     """Metadata agreement only; caller connectivity/child isolation need execution."""
     try:
-        expected = render(image, release)
+        if (type(runtime_phase) is not bool or type(coordinator_phase) is not bool
+                or coordinator_phase and not runtime_phase):
+            fail()
+        expected = render(image, release, coordinator_phase=coordinator_phase)
         service, revision = snapshot["service"], snapshot["revision"]
         if (type(runtime_phase) is not bool or service.get("name") != RESOURCE
                 or not service.get("uid") or service.get("reconciling", False) is not False
@@ -108,10 +116,17 @@ def check_snapshot(snapshot: dict, image: str, release: str, *, runtime_phase: b
         if service.get("trafficStatuses") is not None:
             documents._traffic_statuses(service["trafficStatuses"], ready)
         phase = "runtime_service_iam" if runtime_phase else "initial_service_iam"
+        if coordinator_phase:
+            # Reuse the existing exact native UID/keyless upload principal.
+            # Caller metadata must be freshly read, never inferred from IAM text.
+            documents._coordinator_identity(snapshot)
         if documents._bindings(snapshot["service_iam"]) != expected[phase]["bindings"]:
             fail()
         for binding in documents._bindings(snapshot["project_iam"], project_conditions=True):
-            if set(binding["members"]) & {"allUsers", "allAuthenticatedUsers", "serviceAccount:" + SERVICE_ACCOUNT}:
+            forbidden = {"allUsers", "allAuthenticatedUsers", "serviceAccount:" + SERVICE_ACCOUNT}
+            if coordinator_phase:
+                forbidden.add("serviceAccount:" + documents.UPLOAD_COORDINATOR)
+            if set(binding["members"]) & forbidden:
                 fail()
         account = snapshot["service_account"]
         keys = snapshot["service_account_keys"].get("keys", [])
@@ -131,5 +146,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--image", required=True)
     parser.add_argument("--release", required=True)
+    parser.add_argument("--coordinator-phase", action="store_true")
     arguments = parser.parse_args()
-    print(json.dumps(render(arguments.image, arguments.release), sort_keys=True))
+    print(json.dumps(render(arguments.image, arguments.release, coordinator_phase=arguments.coordinator_phase), sort_keys=True))

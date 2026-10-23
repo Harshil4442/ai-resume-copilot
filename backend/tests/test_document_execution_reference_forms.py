@@ -182,7 +182,7 @@ def test_current_successor_reference_normalization_retains_identity_and_acceptan
         state.fake.j["template"]["template"]["maxRetries"] = 1
     else:
         receipt = native_helpers.payload()
-        receipt["cases"][4]["layout"]["unchanged_links"] = 0
+        next(row for row in receipt["cases"] if row["case"] == "styled_multipage_fit")["layout"]["unchanged_links"] = 0
         state.fake.pages = {None: {"entries": [native_helpers.event(state.fake.j, state.fake.ex, receipt)]}}
 
     with pytest.raises(p.NativeProofDenied):

@@ -41,11 +41,13 @@ def payload(image=IMAGE, execution=None):
     scan = {"engine": "ClamAV", "version": "1.4.3", "definitions": "28155/" + (NOW - timedelta(hours=1)).isoformat()}
     rows = []
     for name in parser.NAMES:
-        kind = "docx" if name == "clean_docx" or name in parser.NAMES[-2:] else "pdf"
+        kind = {"clean_tex": "tex", "clean_texzip": "texzip", "eicar_tex_source": "tex",
+                "eicar_texzip_member": "texzip"}.get(name,
+                    "docx" if name == "clean_docx" or name in parser.NAMES[-2:] else "pdf")
         binding = {"version": 1, "sha256": "b" * 64, "size_bytes": 100, "source_format": kind}
         if name == "eicar_direct_detection":
             binding = {"sha256": parser.EICAR_SHA, "size_bytes": 68}
-        if name == "eicar_exact_file":
+        if name in {"eicar_exact_file", "eicar_tex_source"}:
             binding.update(sha256=parser.EICAR_SHA, size_bytes=68)
         if name in parser.NAMES[-2:]:
             binding.update(operation="docx_layout", candidate_sha256="c" * 64,
@@ -54,7 +56,9 @@ def payload(image=IMAGE, execution=None):
                "binding_match": True, "diagnostic": diag(), "cleanup_passed": True}
         if name in parser.NAMES[:2]:
             row.update(scan=copy.deepcopy(scan), python_skill_present=True)
-        elif name == "eicar_exact_file":
+        elif name in {"clean_tex", "clean_texzip"}:
+            row.update(scan=copy.deepcopy(scan), native_source_empty=True)
+        elif name in {"eicar_exact_file", "eicar_tex_source", "eicar_texzip_member"}:
             row.update(worker_refused=True, diagnostic=diag(1, "refused"))
         elif name == "eicar_direct_detection":
             row.update(exact_file_unchanged=True, coherent_eicar_detection=True,
@@ -69,7 +73,7 @@ def payload(image=IMAGE, execution=None):
         else:
             row.update(reason="hyperlink_changed", matching_unit_or_none=True, diagnostic=diag(1, "refused"))
         rows.append(row)
-    return {"event": "hirewiz_document_native_six_case_v1", "version": 1,
+    return {"event": "hirewiz_document_native_required_v2", "version": 2,
         "execution_name": execution or "hirewiz-doc-six-" + NONCE[:12] + "-abcde",
         "worker_image": image, "policy_sha256": p.POLICY, "outer_runtime_user_verified": True,
         "activation_flags": {key: False for key in parser.ACTIVATION},
@@ -78,7 +82,18 @@ def payload(image=IMAGE, execution=None):
             "architecture": "x86_64", "runtime_uid": 0, "runtime_gid": 0, "readonly_font_manifest": True,
             "font_manifest_process_writable": False, "renderer_version": p.RENDERER,
             "font_manifest_sha256": p.FONT},
-        "cases": rows, "all_six_passed": True, "failure_stage": None, "elapsed_ms": 100}
+        "cases": rows, "all_required_passed": True, "failure_stage": None, "elapsed_ms": 100}
+
+
+def historical_payload():
+    value = payload()
+    value.update(event="hirewiz_document_native_six_case_v1", version=1, policy_sha256=p.LEGACY_POLICY)
+    value["all_six_passed"] = value.pop("all_required_passed")
+    value["cases"] = [row for row in value["cases"] if row["case"] not in {
+        "clean_tex", "clean_texzip", "eicar_tex_source", "eicar_texzip_member"}]
+    value["identity_preflight"].update(runtime_hashes=p.runtime_hashes(historical_v1=True),
+        renderer_version=p.LEGACY_RENDERER, font_manifest_sha256=p.LEGACY_FONT)
+    return value
 
 
 def job(image=IMAGE, nonce=NONCE):
@@ -171,7 +186,7 @@ class Fake:
         return copy.deepcopy(self.ex)
 
     def entries(self, query, token):
-        assert 'jsonPayload.event="hirewiz_document_native_six_case_v1"' in query
+        assert 'jsonPayload.event="hirewiz_document_native_required_v2"' in query
         if self.pages is not None:
             return self.pages[token]
         return {"entries": [event(self.j, self.ex, payload(execution=self.ex["name"].rsplit("/", 1)[-1]))]}
@@ -210,11 +225,71 @@ def test_no_image_range_or_fixed_parent_acceptance(image):
         p.rendered_payload(image)
 
 
-def test_finite_parser_validates_all_six_isolation_and_definition_age():
+def test_finite_parser_validates_all_required_isolation_and_definition_age():
     data = payload()
     facts = p.validate_payload(data, IMAGE, execution()["name"], NOW)
     assert facts["payload_sha256"] == hashlib.sha256(p.canonical(data)).hexdigest()
     assert datetime.fromisoformat(facts["definition_expires_at"]) == NOW - timedelta(hours=1) + timedelta(days=3)
+
+
+@pytest.mark.parametrize("change", ["old_protocol", "six_cases", "native_facts", "native_format", "native_scan", "eicar_source_hash"])
+def test_native_v2_requires_exact_native_admission_and_antivirus_evidence(change):
+    data = payload()
+    if change == "old_protocol":
+        data.update(event="hirewiz_document_native_six_case_v1", version=1)
+        data["all_six_passed"] = data.pop("all_required_passed")
+    elif change == "six_cases":
+        data["cases"] = [row for row in data["cases"] if row["case"] not in {
+            "clean_tex", "clean_texzip", "eicar_tex_source", "eicar_texzip_member"}]
+    else:
+        row = next(row for row in data["cases"] if row["case"] == (
+            "eicar_tex_source" if change == "eicar_source_hash" else "clean_tex"))
+        if change == "native_facts":
+            row["native_source_empty"] = False
+        elif change == "native_format":
+            row["binding"]["source_format"] = "pdf"
+        elif change == "native_scan":
+            row.pop("scan")
+        else:
+            row["binding"]["sha256"] = "0" * 64
+    with pytest.raises(p.NativeProofDenied):
+        p.validate_payload(data, IMAGE, execution()["name"], NOW)
+
+
+def test_historical_v1_receipt_is_readable_only_when_explicitly_selected():
+    data = historical_payload()
+    assert p.validate_payload(data, IMAGE, execution()["name"], NOW, historical_v1=True)
+    with pytest.raises(p.NativeProofDenied):
+        p.validate_payload(data, IMAGE, execution()["name"], NOW)
+    data["policy_sha256"] = p.POLICY
+    with pytest.raises(p.NativeProofDenied):
+        p.validate_payload(data, IMAGE, execution()["name"], NOW, historical_v1=True)
+
+
+def test_historical_contract_cannot_create_a_new_journal(tmp_path):
+    target = tmp_path / "legacy"
+    with pytest.raises(p.NativeProofDenied, match="historical_create_refused"):
+        p.Journal(target, IMAGE, build(), create=True, historical_v1=True)
+    assert not target.exists()
+
+
+@pytest.mark.parametrize("change", [None, "policy", "duplicate", "image"])
+def test_serving_profile_requires_exact_observed_image_and_known_policy(change):
+    value = service()
+    row = next(row for row in value["template"]["containers"][0]["env"]
+               if row["name"] == "DOCUMENT_WORKER_POLICY_SHA256")
+    row["value"] = p.LEGACY_POLICY
+    if change == "policy":
+        row["value"] = "0" * 64
+    elif change == "duplicate":
+        value["template"]["containers"][0]["env"].append(copy.deepcopy(row))
+    elif change == "image":
+        value["template"]["containers"][0]["image"] = NEXT
+    if change:
+        with pytest.raises(p.NativeProofDenied, match="serving_policy_unverified"):
+            p.historical_v1_for_serving(value, IMAGE)
+    else:
+        assert p.historical_v1_for_serving(value, IMAGE) is True
 
 
 @pytest.mark.parametrize("change", ["case", "link", "pixels", "cleanup", "source", "font", "renderer", "writable", "execution", "flags", "expired", "future", "scan_disagreement", "boolean"])
@@ -223,9 +298,9 @@ def test_receipt_cannot_turn_missing_or_mismatched_evidence_into_acceptance(chan
     if change == "case":
         data["cases"][4] = {"case": parser.NAMES[4], "passed": False, "attempted": False}
     elif change == "link":
-        data["cases"][4]["layout"]["unchanged_links"] = 0
+        data["cases"][parser.NAMES.index("styled_multipage_fit")]["layout"]["unchanged_links"] = 0
     elif change == "pixels":
-        data["cases"][4]["layout"]["outside_changed_regions_pixel_delta"] = 1
+        data["cases"][parser.NAMES.index("styled_multipage_fit")]["layout"]["outside_changed_regions_pixel_delta"] = 1
     elif change == "cleanup":
         data["cases"][0]["diagnostic"]["cleanup_code"] = 1
     elif change == "source":
@@ -256,7 +331,7 @@ def test_readonly_verification_never_adopts_saved_acceptance(native, tmp_path):
     result = p.run_successor(IMAGE, build(), target)
     assert result.job_uid == JOB_UID and result.execution_uid == EX_UID
     assert native.calls["create"] == native.calls["start"] == 1
-    (target / "acceptance.json").write_text('{"all_six_passed":true}')
+    (target / "acceptance.json").write_text('{"all_required_passed":true}')
     assert p.verify_successor(IMAGE, build(), target) == result
     assert native.calls["create"] == native.calls["start"] == 1
     native.pages = {None: {"entries": []}}
@@ -430,6 +505,35 @@ def test_current_labels_cannot_adopt_different_actual_native_service(native):
         p.verify_current_successor(IMAGE, caller_metadata)
 
 
+def test_readonly_current_v1_route_binds_frozen_job_receipt_and_build_profile(native, monkeypatch):
+    native.created, native.ran = True, True
+    old_job = job()
+    old_job["template"] = p.desired(IMAGE, NONCE, historical_v1=True)["template"]
+    native.j, native.ex = completed(old_job)
+    s = service()
+    next(row for row in s["template"]["containers"][0]["env"]
+         if row["name"] == "DOCUMENT_WORKER_POLICY_SHA256")["value"] = p.LEGACY_POLICY
+    native.service = lambda _: copy.deepcopy(s)
+    native.revision = lambda _: revision(s)
+    calls = []
+
+    def old_build(*args, **kwargs):
+        calls.append(kwargs)
+        return build()
+
+    def old_entries(query, token):
+        assert 'jsonPayload.event="hirewiz_document_native_six_case_v1"' in query and token is None
+        return {"entries": [event(native.j, native.ex, historical_payload())]}
+
+    monkeypatch.setattr(p, "build_module", lambda: SimpleNamespace(verify_current_build=old_build))
+    native.entries = old_entries
+    result = p.verify_current_successor(IMAGE, s)
+    assert calls == [{"historical_v1": True}]
+    assert result.contract_version == 1 and result.required_case_count == 6
+    assert result.policy_sha256 == p.LEGACY_POLICY
+    assert native.calls["create"] == native.calls["start"] == native.calls["delete"] == 0
+
+
 def test_sdk_discovery_is_fixed_nonsecret_and_import_is_inert(monkeypatch, tmp_path):
     root = tmp_path / "google-cloud-sdk"
     (root / "lib/googlecloudsdk").mkdir(parents=True)
@@ -485,7 +589,7 @@ def cleanup_fixture(native, monkeypatch, tmp_path):
     def verify_new(image, metadata):
         assert image == NEXT and metadata == s
         verified.append(image)
-        return SimpleNamespace(image=image)
+        return SimpleNamespace(image=image, contract_version=2, required_case_count=10, policy_sha256=p.POLICY)
     monkeypatch.setattr(p, "verify_current_successor", verify_new)
     return target, services, verified
 
@@ -529,6 +633,15 @@ def test_changed_current_consumer_prevents_any_old_job_delete(native, monkeypatc
     target, services, _ = cleanup_fixture(native, monkeypatch, tmp_path)
     services[p.PARENT + "/services/hirewiz-resume-coordinator"]["template"]["containers"][0]["env"][0]["value"] = IMAGE
     with pytest.raises(p.NativeProofDenied, match="caller_pin"):
+        p.cleanup_successor(IMAGE, build(), target)
+    assert native.calls["delete"] == 0 and not (target / "delete.started.json").exists()
+
+
+def test_v1_current_proof_cannot_authorize_retirement(native, monkeypatch, tmp_path):
+    target, services, _ = cleanup_fixture(native, monkeypatch, tmp_path)
+    monkeypatch.setattr(p, "verify_current_successor", lambda *args: SimpleNamespace(
+        image=NEXT, contract_version=1, required_case_count=6, policy_sha256=p.LEGACY_POLICY))
+    with pytest.raises(p.NativeProofDenied, match="v2_successor_required"):
         p.cleanup_successor(IMAGE, build(), target)
     assert native.calls["delete"] == 0 and not (target / "delete.started.json").exists()
 
@@ -649,7 +762,7 @@ def test_official_generated_sdk_requests_use_only_concrete_service_adapter_route
         assert clients.execution(ex["name"])["uid"] == EX_UID
         assert clients.operation(p.PARENT + "/operations/create")["done"] is True
         assert clients.revision(service()["latestReadyRevision"])["uid"] == EX_UID
-        assert clients.entries("synthetic fixed query", None)["entries"][0]["jsonPayload"]["all_six_passed"] is True
+        assert clients.entries("synthetic fixed query", None)["entries"][0]["jsonPayload"]["all_required_passed"] is True
         if not read_only_release:
             assert clients.delete(j)["name"].endswith("/delete")
         assert clients.run.num_retries == clients.logging.num_retries == 0
@@ -727,7 +840,7 @@ def test_explicit_release_route_uses_owned_identity_and_identical_native_proof(m
         native.j["template"]["template"]["maxRetries"] = 1
     elif tamper == "receipt":
         data = payload()
-        data["cases"][4]["layout"]["unchanged_links"] = 0
+        data["cases"][parser.NAMES.index("styled_multipage_fit")]["layout"]["unchanged_links"] = 0
         native.pages = {None: {"entries": [event(native.j, native.ex, data)]}}
     elif tamper == "logs":
         native.pages = {None: {"entries": []}}

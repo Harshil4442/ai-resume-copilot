@@ -5,8 +5,12 @@ export const MAX_ORIGINAL_SOURCE_BYTES = 5 * 1024 * 1024;
 export const ORIGINAL_SOURCE_DEADLINE_MS = 45_000;
 const CONTROL_BYTES = 8192;
 const FAILURE = "Could not verify the original resume file. Please try again.";
-const MEDIA = { pdf: "application/pdf", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" } as const;
+const MEDIA = {
+  pdf: "application/pdf", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  tex: "application/x-tex", texzip: "application/zip",
+} as const;
 type Format = keyof typeof MEDIA;
+const EXTENSIONS: Record<Format, string> = { pdf: "pdf", docx: "docx", tex: "tex", texzip: "zip" };
 export type VerifiedResumeSource = { blob: Blob; filename: string };
 type Binding = { url: string; expires_at: string; sha256: string; size_bytes: number; filename: string; media_type: string };
 
@@ -94,7 +98,11 @@ function validFilename(value: unknown, kind: Format): value is string {
   return typeof value === "string" && value.trim() === value && value.length > 0
     && new TextEncoder().encode(value).length <= 255
     && !/[\\/\x00-\x1f\x7f-\x9f\u2028\u2029\u202a-\u202e\u2066-\u2069]/.test(value)
-    && value.toLowerCase().endsWith(`.${kind}`);
+    && value.toLowerCase().endsWith(`.${EXTENSIONS[kind]}`);
+}
+
+function formatForMedia(media: unknown): Format | null {
+  return (Object.keys(MEDIA) as Format[]).find((kind) => MEDIA[kind] === media) ?? null;
 }
 
 function validate(data: Record<string, unknown>, expectedFormat?: Format): { binding: Binding; expiry: number } {
@@ -104,7 +112,7 @@ function validate(data: Record<string, unknown>, expectedFormat?: Format): { bin
     || typeof data.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(data.sha256)
     || typeof data.size_bytes !== "number" || !Number.isSafeInteger(data.size_bytes)
     || data.size_bytes < 1 || data.size_bytes > MAX_ORIGINAL_SOURCE_BYTES) throw refused();
-  const kind = data.media_type === MEDIA.pdf ? "pdf" : data.media_type === MEDIA.docx ? "docx" : null;
+  const kind = formatForMedia(data.media_type);
   if (!kind || (expectedFormat && expectedFormat !== kind) || !validFilename(data.filename, kind)) throw refused();
   // Check the raw path too: URL parsing must not hide encoded/dot-segment aliases.
   if (!/^https:\/\/storage\.googleapis\.com\/[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]\/clean\/rup_[a-f0-9]{32}\/source\?/.test(data.url)) throw refused();
@@ -187,7 +195,7 @@ export async function fetchDirectResumeSource(resumeId: number, signal?: AbortSi
 
 export function saveVerifiedResumeSource(source: VerifiedResumeSource, signal: AbortSignal): void {
   signal.throwIfAborted();
-  const kind = source.blob.type === MEDIA.pdf ? "pdf" : source.blob.type === MEDIA.docx ? "docx" : null;
+  const kind = formatForMedia(source.blob.type);
   if (!kind || !validFilename(source.filename, kind) || source.blob.size < 1 || source.blob.size > MAX_ORIGINAL_SOURCE_BYTES) throw refused();
   const url = URL.createObjectURL(source.blob);
   try {

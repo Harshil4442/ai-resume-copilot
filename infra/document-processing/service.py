@@ -514,7 +514,7 @@ def _request_identity(payload: bytes) -> tuple[str, int, str]:
         request = json.loads(payload, object_pairs_hook=_pairs)
         if (type(request) is not dict or set(request) != {"version", "source_format", "sha256", "content_base64"}
                 or type(request["version"]) is not int or request["version"] != 1
-                or request["source_format"] not in {"pdf", "docx"}
+                or request["source_format"] not in {"pdf", "docx", "tex", "texzip"}
                 or not isinstance(request["sha256"], str)
                 or not re.fullmatch(r"[a-f0-9]{64}", request["sha256"])
                 or not isinstance(request["content_base64"], str)):

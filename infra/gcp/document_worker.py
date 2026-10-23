@@ -27,7 +27,8 @@ MAINTENANCE_PERMISSIONS = frozenset({"run.services.get", "run.services.getIamPol
 MAINTENANCE_SERVICES = frozenset({SERVICE, "ai-resume-parser", "hirewiz-analysis-worker",
                                  "hirewiz-resume-coordinator"})
 RESOURCE = f"projects/{PROJECT}/locations/{REGION}/services/{SERVICE}"
-POLICY_SHA256 = "dbd15ce3120bb6211bb6c1d7b166aaddbd8b80e00a72d564e6274ef10db3aaf1"
+POLICY_SHA256 = "d3baf46026934f48b8def219b48d348d7b03bc3b4d0cb713a6f222c7299df7f2"
+LEGACY_V1_POLICY_SHA256 = "dbd15ce3120bb6211bb6c1d7b166aaddbd8b80e00a72d564e6274ef10db3aaf1"
 ACCEPTED_IMAGE = (
     f"{REGION}-docker.pkg.dev/{PROJECT}/cloud-run-source-deploy/{SERVICE}"
     "@sha256:624597726ce2fefa2b3574fbf0a8ec4ccdc02a826380d76c5edc8ebbd59aa107"
@@ -316,13 +317,24 @@ def validate_maintenance_identity(snapshot: dict[str, Any], *, expected_uid: str
 
 
 def check_snapshot(snapshot: dict[str, Any], image: str, release: str, *, api_phase: bool = False,
-                   coordinator_phase: bool = False) -> dict[str, Any]:
+                   coordinator_phase: bool = False, historical_v1: bool = False) -> dict[str, Any]:
     """Check bounded native-shaped inputs while explicitly retaining their unknown provenance."""
     try:
-        if (type(api_phase) is not bool or type(coordinator_phase) is not bool
+        if (type(api_phase) is not bool or type(coordinator_phase) is not bool or type(historical_v1) is not bool
                 or coordinator_phase and not api_phase):
             _deny()
         expected = render(image, release)
+        if historical_v1:
+            # Only the fixed pre-native policy may describe an existing V1
+            # service. Rendering new proposals and API pins stays current-only;
+            # this offline comparison grants no native or promotion authority.
+            source = ROOT / "infra/gcp/document_legacy_v1/policy.json"
+            if source.is_symlink():
+                _deny()
+            raw = source.read_bytes()
+            if len(raw) > MAX_INPUT_BYTES or hashlib.sha256(raw).hexdigest() != LEGACY_V1_POLICY_SHA256:
+                _deny()
+            expected["service"]["template"]["containers"][0]["env"][1]["value"] = LEGACY_V1_POLICY_SHA256
         service, revision = snapshot["service"], snapshot["revision"]
         desired = expected["service"]
         generation = service.get("generation")
@@ -393,9 +405,10 @@ def check_snapshot(snapshot: dict[str, Any], image: str, release: str, *, api_ph
                 "service_iam_phase": ("api-and-resume-coordinator" if coordinator_phase
                                       else "api-only" if api_phase else "service-no-bindings"),
                 "traffic_status_checked": statuses is not None,
+                "historical_v1": historical_v1,
                 "effective_iam_proven": False, "runtime_isolation_proven": False,
                 "api_wiring_enabled": False, "native_calls": 0}
-    except (KeyError, TypeError, AttributeError, ValueError):
+    except (OSError, KeyError, TypeError, AttributeError, ValueError):
         _deny()
     raise AssertionError("unreachable")
 

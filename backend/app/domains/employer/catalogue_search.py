@@ -527,6 +527,10 @@ def scan_step(db, plan_id, token):
     # session. Keep at most this chunk's keys, including not-yet-flushed winners.
     winners = {}
     for posting, source in rows:
+        relevance = role_aliases.title_relevance(plan.worker_query["role"], posting.title)
+        if not relevance:
+            plan.posting_cursor = posting.posting_id
+            continue
         projection = db.get(models.EmployerCatalogueProjection, (posting.content_id, plan.projection_version))
         if projection is None or projection.projection_state != "ready":
             content_id, version = posting.content_id, plan.projection_version
@@ -548,7 +552,7 @@ def scan_step(db, plan_id, token):
             frozen = SimpleNamespace(id=posting.posting_id, external_id=posting.external_id, requisition_id=posting.requisition_id)
             key = admissions.opening_identity(frozen, source)
             fit = projected_fit(plan.resume_skills, projection.required_skills, projection.scoring_warnings or [])
-            rank = (-int(round(fit["score"] * 10)), -int(plan.worker_query["role"].lower() in posting.title.lower()), posting.posting_id)
+            rank = (-int(relevance == 2), -int(round(fit["score"] * 10)), posting.posting_id)
             if key not in winners:
                 winner = db.get(models.EmployerCatalogueWinner, (plan.id, key))
                 if winner is None:
@@ -556,10 +560,10 @@ def scan_step(db, plan_id, token):
                     db.add(winner)
                 winners[key] = winner
             winner = winners[key]
-            if winner.posting_id is None or rank < (-winner.score_tenths, -int(winner.title_hit), winner.posting_id):
+            if winner.posting_id is None or rank < (-int(winner.title_hit), -winner.score_tenths, winner.posting_id):
                 winner.posting_id, winner.posting_revision = posting.posting_id, posting.valid_from
                 winner.source_id, winner.source_revision = source.source_id, source.valid_from
-                winner.score_tenths, winner.title_hit = -rank[0], bool(-rank[1])
+                winner.score_tenths, winner.title_hit = -rank[1], bool(-rank[0])
                 winner.fit, winner.preference_evaluation = fit, evaluation
         plan.posting_cursor = posting.posting_id
     plan.state = "classifying" if len(rows) < CHUNK_ROWS else "scanning"
@@ -793,7 +797,7 @@ def _selected(db, plan):
     winner = models.EmployerCatalogueWinner
     return db.query(winner).filter_by(preparation_id=plan.id, stale=False,
         classification_generation=plan.history_generation).order_by(winner.seen,
-        winner.score_tenths.desc(), winner.title_hit.desc(), _id_sort(db, winner.posting_id)).limit(plan.desired_count).all()
+        winner.title_hit.desc(), winner.score_tenths.desc(), _id_sort(db, winner.posting_id)).limit(plan.desired_count).all()
 
 
 def _current_selected(db, plan, selected, *, fence=False):

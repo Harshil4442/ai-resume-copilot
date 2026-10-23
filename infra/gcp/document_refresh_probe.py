@@ -1,7 +1,7 @@
-"""Native six-case scanner-successor acceptance; never promote a service.
+"""Native required-case V2 scanner-successor acceptance; never promote a service.
 
-The payload and finite receipt parser are the exact accepted d2ba sources. Only
-its immutable-image literal is rendered anew. Every new run owns a fresh Job and
+The payload and finite receipt parser bind the required native formats. Only
+the immutable-image literal is rendered anew. Every new run owns a fresh Job and
 journal; unknown Create/Run/Delete outcomes never authorize a repeat. Current
 accepted native Job/Execution resources remain until a newer serving successor
 has been independently verified. Importing this module obtains no credentials.
@@ -31,11 +31,21 @@ PROJECT, NUMBER, REGION = "ai-resume-parser-482412", "157225724590", "us-central
 PARENT = f"projects/{PROJECT}/locations/{REGION}"
 REPOSITORY = f"{REGION}-docker.pkg.dev/{PROJECT}/cloud-run-source-deploy/hirewiz-document-inspector"
 BASE_IMAGE = REPOSITORY + "@sha256:624597726ce2fefa2b3574fbf0a8ec4ccdc02a826380d76c5edc8ebbd59aa107"
-POLICY = "dbd15ce3120bb6211bb6c1d7b166aaddbd8b80e00a72d564e6274ef10db3aaf1"
+POLICY = 'd3baf46026934f48b8def219b48d348d7b03bc3b4d0cb713a6f222c7299df7f2'
 FONT = "abaf429caeeeb5fbcc000c878a315c89e23ecd3dc912bb74df10761c144f7d60"
 RENDERER = "LibreOffice 25.2.3.2 520(Build:2)"
-PAYLOAD_SHA = "eb26e5c53a472a8209112ad92769b00087e2e18ee0618f648680239a31882558"
-PARSER_SHA = "38ac8c560c693ca84afd48e71fb3ca5df52c138f6a387254863cadbaa6a0ac34"
+PAYLOAD_SHA = 'eb8908a0dfe58cd00c200f6e35af86e6d89c60192e3f15a441d3c0f459a06790'
+PARSER_SHA = 'bcd4fc94d6d671188dc74e754d74149ee2e42e95bafab075e84fa5611aa63521'
+LEGACY_POLICY = "dbd15ce3120bb6211bb6c1d7b166aaddbd8b80e00a72d564e6274ef10db3aaf1"
+LEGACY_BASE_IMAGE = REPOSITORY + "@sha256:624597726ce2fefa2b3574fbf0a8ec4ccdc02a826380d76c5edc8ebbd59aa107"
+LEGACY_FONT = "abaf429caeeeb5fbcc000c878a315c89e23ecd3dc912bb74df10761c144f7d60"
+LEGACY_RENDERER = "LibreOffice 25.2.3.2 520(Build:2)"
+LEGACY_SOURCE_HASHES = {
+    "payload.txt": "eb26e5c53a472a8209112ad92769b00087e2e18ee0618f648680239a31882558",
+    "receipt.txt": "38ac8c560c693ca84afd48e71fb3ca5df52c138f6a387254863cadbaa6a0ac34",
+    "refresh.Dockerfile": "aeab51c4d7fb774573bf13ff471522c1742d1836dfcab812379770c7142fe6e7",
+    "policy.json": LEGACY_POLICY,
+}
 ACCOUNT = "hirewiz-document-inspector@" + PROJECT + ".iam.gserviceaccount.com"
 ACCOUNT_UID = "110725727500711902669"
 SERVICE_UID = "7014a5ba-faee-4fbf-8272-a437b1de49ad"
@@ -75,9 +85,40 @@ def build_module() -> Any:
     return load_source("hirewiz_document_refresh_build", ROOT / "backend/scripts/document_refresh.py")
 
 
-def runtime_hashes() -> dict[str, str]:
-    policy = json.loads((ROOT / "infra/document-processing/policy.json").read_bytes())
-    need(hashlib.sha256((ROOT / "infra/document-processing/policy.json").read_bytes()).hexdigest() == POLICY,
+def legacy_source(name: str) -> bytes:
+    """Exact frozen V1 evidence for read-only observation, never V2 admission."""
+    need(name in LEGACY_SOURCE_HASHES, "document_native_legacy_source_invalid")
+    path = HERE / "document_legacy_v1" / name
+    need(not path.is_symlink(), "document_native_legacy_source_invalid")
+    raw = path.read_bytes()
+    need(0 < len(raw) <= MAX_BYTES and hashlib.sha256(raw).hexdigest() == LEGACY_SOURCE_HASHES[name],
+         "document_native_legacy_source_changed")
+    return raw
+
+
+def policy_for_serving(metadata: Any, image: str) -> str:
+    """Select only an explicitly pinned policy on the exact observed image."""
+    need(type(metadata) is dict and type(metadata.get("template")) is dict, "document_native_serving_policy_unverified")
+    containers = metadata["template"].get("containers", [])
+    need(type(containers) is list and len(containers) == 1
+         and type(containers[0]) is dict and containers[0].get("image") == image, "document_native_serving_policy_unverified")
+    env = containers[0].get("env", [])
+    need(type(env) is list, "document_native_serving_policy_unverified")
+    matches = [row for row in env if type(row) is dict and row.get("name") == "DOCUMENT_WORKER_POLICY_SHA256"]
+    need(len(matches) == 1 and set(matches[0]) == {"name", "value"} and type(matches[0]["value"]) is str
+         and matches[0]["value"] in {POLICY, LEGACY_POLICY}, "document_native_serving_policy_unverified")
+    return matches[0]["value"]
+
+
+def historical_v1_for_serving(metadata: Any, image: str) -> bool:
+    return policy_for_serving(metadata, image) == LEGACY_POLICY and POLICY != LEGACY_POLICY
+
+
+def runtime_hashes(*, historical_v1: bool = False) -> dict[str, str]:
+    need(type(historical_v1) is bool, "document_native_contract_version_invalid")
+    raw = legacy_source("policy.json") if historical_v1 else (ROOT / "infra/document-processing/policy.json").read_bytes()
+    policy = json.loads(raw)
+    need(hashlib.sha256(raw).hexdigest() == (LEGACY_POLICY if historical_v1 else POLICY),
          "document_native_policy_changed")
     source = policy["source_sha256"]
     paths = {"infra/document-processing/processor.py": "/opt/document/processor.py",
@@ -90,19 +131,21 @@ def runtime_hashes() -> dict[str, str]:
             continue
         destination = paths.get(path, "/opt/document/" + path.removeprefix("backend/"))
         need(type(digest) is str and re.fullmatch(r"[a-f0-9]{64}", digest)
-             and hashlib.sha256((ROOT / path).read_bytes()).hexdigest() == digest,
+             and (historical_v1 or hashlib.sha256((ROOT / path).read_bytes()).hexdigest() == digest),
              "document_native_runtime_source_changed")
         result[destination] = digest
-    need(len(result) == 11, "document_native_runtime_inventory_changed")
+    need(len(result) == (11 if historical_v1 else 12), "document_native_runtime_inventory_changed")
     return result
 
 
-def rendered_payload(image: str) -> str:
-    need(type(image) is str and IMAGE.fullmatch(image) and image != BASE_IMAGE,
+def rendered_payload(image: str, *, historical_v1: bool = False) -> str:
+    need(type(historical_v1) is bool, "document_native_contract_version_invalid")
+    base = LEGACY_BASE_IMAGE if historical_v1 else BASE_IMAGE
+    need(type(image) is str and IMAGE.fullmatch(image) and image != base,
          "document_native_successor_image_required")
-    raw = (HERE / "document_refresh_payload.txt").read_bytes()
-    need(hashlib.sha256(raw).hexdigest() == PAYLOAD_SHA, "document_native_payload_changed")
-    old = "IMMUTABLE_IMAGE = " + repr(BASE_IMAGE)
+    raw = legacy_source("payload.txt") if historical_v1 else (HERE / "document_refresh_payload.txt").read_bytes()
+    need(hashlib.sha256(raw).hexdigest() == (LEGACY_SOURCE_HASHES["payload.txt"] if historical_v1 else PAYLOAD_SHA), "document_native_payload_changed")
+    old = "IMMUTABLE_IMAGE = " + repr(base)
     text = raw.decode()
     need(text.count(old) == 1, "document_native_payload_image_literal_changed")
     result = text.replace(old, "IMMUTABLE_IMAGE = " + repr(image))
@@ -110,22 +153,22 @@ def rendered_payload(image: str) -> str:
     updates = [node for node in updated.body if isinstance(node, ast.Assign)
                and any(isinstance(target, ast.Name) and target.id == "IMMUTABLE_IMAGE" for target in node.targets)]
     need(len(updates) == 1, "document_native_payload_shape_changed")
-    updates[0].value = ast.Constant(value=BASE_IMAGE)
+    updates[0].value = ast.Constant(value=base)
     need(ast.dump(original, include_attributes=False) == ast.dump(updated, include_attributes=False),
          "document_native_payload_body_changed")
     return result
 
 
-def desired(image: str, nonce: str) -> dict[str, Any]:
+def desired(image: str, nonce: str, *, historical_v1: bool = False) -> dict[str, Any]:
     need(type(nonce) is str and re.fullmatch(r"[a-f0-9]{32}", nonce), "document_native_nonce_invalid")
     job_id = "hirewiz-doc-six-" + nonce[:12]
     task = {"serviceAccount": ACCOUNT, "executionEnvironment": "EXECUTION_ENVIRONMENT_GEN2",
             "maxRetries": 0, "timeout": "600s", "containers": [{
                 "name": "document-native-probe", "image": image, "sandboxLauncher": True,
-                "command": ["/usr/local/bin/python3"], "args": ["-I", "-c", rendered_payload(image)],
+                "command": ["/usr/local/bin/python3"], "args": ["-I", "-c", rendered_payload(image, historical_v1=historical_v1)],
                 "resources": {"limits": {"cpu": "2", "memory": "4Gi"}},
                 "env": [{"name": "DOCUMENT_WORKER_IMAGE_DIGEST", "value": image},
-                        {"name": "DOCUMENT_WORKER_POLICY_SHA256", "value": POLICY}]}]}
+                        {"name": "DOCUMENT_WORKER_POLICY_SHA256", "value": LEGACY_POLICY if historical_v1 else POLICY}]}]}
     return {"name": PARENT + "/jobs/" + job_id, "launchStage": "BETA",
             "labels": {"hirewiz-probe": "document-six-case", "hirewiz-owned": nonce[:12]},
             "template": {"taskCount": 1, "parallelism": 1, "template": task}}
@@ -152,8 +195,8 @@ def integer(value: Any, expected: int) -> bool:
     return type(value) is int and value == expected or type(value) is str and value == str(expected)
 
 
-def validate_job(row: Any, image: str, nonce: str, *, uid: str | None = None) -> None:
-    expected = desired(image, nonce)
+def validate_job(row: Any, image: str, nonce: str, *, uid: str | None = None, historical_v1: bool = False) -> None:
+    expected = desired(image, nonce, historical_v1=historical_v1)
     need(type(row) is dict and row.get("name") == expected["name"]
          and type(row.get("uid")) is str and UUID.fullmatch(row["uid"])
          and (uid is None or row["uid"] == uid) and type(row.get("etag")) is str and 0 < len(row["etag"]) <= 512
@@ -167,7 +210,7 @@ def validate_job(row: Any, image: str, nonce: str, *, uid: str | None = None) ->
          "document_native_job_changed")
 
 
-def validate_execution(row: Any, job: dict[str, Any], image: str, nonce: str, *, uid: str | None = None) -> None:
+def validate_execution(row: Any, job: dict[str, Any], image: str, nonce: str, *, uid: str | None = None, historical_v1: bool = False) -> None:
     job_id = job["name"].rsplit("/", 1)[-1]
     need(type(row) is dict and type(row.get("name")) is str
          and re.fullmatch(re.escape(job["name"] + "/executions/" + job_id + "-") + r"[a-z0-9]{1,20}", row["name"])
@@ -177,7 +220,7 @@ def validate_execution(row: Any, job: dict[str, Any], image: str, nonce: str, *,
          and integer(row.get("taskCount"), 1)
          and integer(row.get("succeededCount"), 1)
          and all(integer(row.get(key, 0), 0) for key in ("failedCount", "cancelledCount", "runningCount", "retriedCount"))
-         and task_matches(row.get("template"), desired(image, nonce)["template"]["template"]),
+         and task_matches(row.get("template"), desired(image, nonce, historical_v1=historical_v1)["template"]["template"]),
          "document_native_execution_not_successful")
     latest = job.get("latestCreatedExecution", {})
     need(integer(job.get("executionCount"), 1)
@@ -185,22 +228,26 @@ def validate_execution(row: Any, job: dict[str, Any], image: str, nonce: str, *,
          "document_native_execution_not_singleton")
 
 
-def validate_payload(payload: Any, image: str, execution: str, now: datetime, *, require_fresh: bool = True) -> dict[str, Any]:
-    raw = (HERE / "document_refresh_receipt.txt").read_bytes()
-    need(hashlib.sha256(raw).hexdigest() == PARSER_SHA, "document_native_parser_changed")
-    parser = load_source("hirewiz_document_refresh_receipt", HERE / "document_refresh_receipt.txt")
+def validate_payload(payload: Any, image: str, execution: str, now: datetime, *, require_fresh: bool = True, historical_v1: bool = False) -> dict[str, Any]:
+    need(type(historical_v1) is bool, "document_native_contract_version_invalid")
+    path = HERE / "document_legacy_v1/receipt.txt" if historical_v1 else HERE / "document_refresh_receipt.txt"
+    raw = legacy_source("receipt.txt") if historical_v1 else path.read_bytes()
+    need(hashlib.sha256(raw).hexdigest() == (LEGACY_SOURCE_HASHES["receipt.txt"] if historical_v1 else PARSER_SHA), "document_native_parser_changed")
+    parser = load_source("hirewiz_document_refresh_receipt_v1" if historical_v1 else "hirewiz_document_refresh_receipt", path)
+    policy = LEGACY_POLICY if historical_v1 else POLICY
     try:
-        valid = parser.validate(payload, image, POLICY, runtime_hashes())
+        valid = parser.validate(payload, image, policy, runtime_hashes(historical_v1=historical_v1))
     except (ValueError, TypeError, KeyError, OverflowError):
-        raise NativeProofDenied("document_native_six_case_receipt_invalid") from None
+        raise NativeProofDenied("document_native_required_receipt_invalid") from None
     need(valid is True and payload.get("execution_name") == execution.rsplit("/", 1)[-1],
-         "document_native_six_cases_not_complete")
+         "document_native_required_cases_not_complete")
     identity = payload["identity_preflight"]
-    need(identity["font_manifest_sha256"] == FONT and identity["renderer_version"] == RENDERER
+    need(identity["font_manifest_sha256"] == (LEGACY_FONT if historical_v1 else FONT)
+         and identity["renderer_version"] == (LEGACY_RENDERER if historical_v1 else RENDERER)
          and identity["font_manifest_process_writable"] is False,
          "document_native_renderer_or_fonts_changed")
     scans = [row["scan"] for row in payload["cases"] if "scan" in row]
-    need(len(scans) == 3 and all(row == scans[0] for row in scans), "document_native_scan_metadata_disagrees")
+    need(len(scans) == (3 if historical_v1 else 5) and all(row == scans[0] for row in scans), "document_native_scan_metadata_disagrees")
     try:
         number, timestamp = scans[0]["definitions"].split("/", 1)
         issued = datetime.fromisoformat(timestamp)
@@ -215,7 +262,8 @@ def validate_payload(payload: Any, image: str, execution: str, now: datetime, *,
 
 
 class Journal:
-    def __init__(self, path: Path, image: str, build: dict[str, Any], *, create: bool = False):
+    def __init__(self, path: Path, image: str, build: dict[str, Any], *, create: bool = False, historical_v1: bool = False):
+        need(not create or historical_v1 is False, "document_native_historical_create_refused")
         need(path.is_absolute() and path.resolve() == path, "document_native_private_journal_required")
         if create:
             need(not path.exists(), "document_native_existing_journal_reconcile_only")
@@ -225,7 +273,7 @@ class Journal:
              "document_native_private_journal_required")
         self.path = path
         self.binding = {"image": image, "build_identity": build,
-                        "probe_sha256": hashlib.sha256(rendered_payload(image).encode()).hexdigest()}
+                        "probe_sha256": hashlib.sha256(rendered_payload(image, historical_v1=historical_v1).encode()).hexdigest()}
         if create:
             self.write("binding.json", self.binding)
         else:
@@ -304,7 +352,7 @@ def validate_serving(clients: Any, service: Any, image: str, name: str, uid: str
     return revision
 
 
-def validate_worker_snapshot(clients: Any, snapshot: dict[str, Any]) -> str:
+def validate_worker_snapshot(clients: Any, snapshot: dict[str, Any], *, historical_v1: bool = False) -> str:
     """Original serving controls, for baseline and successor, without age claims."""
     service = snapshot["service"]
     containers = service.get("template", {}).get("containers", [])
@@ -316,16 +364,19 @@ def validate_worker_snapshot(clients: Any, snapshot: dict[str, Any]) -> str:
     configuration = load_source("hirewiz_document_refresh_worker_contract", HERE / "document_worker.py")
     try:
         configuration.check_snapshot(snapshot, image, service.get("template", {}).get("labels", {}).get("hirewiz-source"),
-                                     api_phase=True, coordinator_phase=True)
+                                     api_phase=True, coordinator_phase=True, historical_v1=historical_v1)
     except configuration.ConfigurationDenied:
         raise NativeProofDenied("document_native_worker_configuration_changed") from None
     return image
 
 
-def verify_caller_pins(clients: Any, image: str) -> None:
+def verify_caller_pins(clients: Any, image: str, *, policy_sha256: str | None = None) -> None:
     """Old acceptance evidence is retained until both actual serving callers move."""
-    pins = {"DOCUMENT_WORKER_URL": WORKER_URL, "DOCUMENT_WORKER_IMAGE_DIGEST": image, "DOCUMENT_WORKER_POLICY_SHA256": POLICY,
-            "DOCUMENT_WORKER_DOCX_RENDERER_VERSION": RENDERER, "DOCUMENT_WORKER_DOCX_FONT_MANIFEST_SHA256": FONT}
+    policy = POLICY if policy_sha256 is None else policy_sha256
+    need(type(policy) is str and policy in {POLICY, LEGACY_POLICY}, "document_native_caller_policy_unverified")
+    pins = {"DOCUMENT_WORKER_URL": WORKER_URL, "DOCUMENT_WORKER_IMAGE_DIGEST": image, "DOCUMENT_WORKER_POLICY_SHA256": policy,
+            "DOCUMENT_WORKER_DOCX_RENDERER_VERSION": LEGACY_RENDERER if policy == LEGACY_POLICY else RENDERER,
+            "DOCUMENT_WORKER_DOCX_FONT_MANIFEST_SHA256": LEGACY_FONT if policy == LEGACY_POLICY else FONT}
     for name in ("ai-resume-parser", "hirewiz-analysis-worker", "hirewiz-resume-coordinator"):
         service = clients.service(PARENT + "/services/" + name)
         containers = service.get("template", {}).get("containers", [])
@@ -446,7 +497,7 @@ class Clients:
                     "upload_coordinator_service_account": upload,
                     "upload_coordinator_service_account_keys": upload_keys}
         snapshot.update(maintenance)
-        validate_worker_snapshot(self, snapshot)
+        validate_worker_snapshot(self, snapshot, historical_v1=historical_v1_for_serving(service, service["template"]["containers"][0]["image"]))
         return snapshot
 
     def maintenance_snapshot(self) -> dict[str, Any]:
@@ -538,20 +589,20 @@ def wait_operation(clients: Clients, acknowledged: dict[str, Any], kind: str, de
     raise NativeProofDenied("document_native_deadline_reconcile_only")
 
 
-def owned_job(clients: Clients, journal: Journal, image: str, nonce: str) -> dict[str, Any]:
-    need(journal.read("create.started.json") == {"body_sha256": hashlib.sha256(canonical(desired(image, nonce))).hexdigest(),
+def owned_job(clients: Clients, journal: Journal, image: str, nonce: str, *, historical_v1: bool = False) -> dict[str, Any]:
+    need(journal.read("create.started.json") == {"body_sha256": hashlib.sha256(canonical(desired(image, nonce, historical_v1=historical_v1))).hexdigest(),
          "automatic_replay": False}, "document_native_create_binding_changed")
     created = operation_result(clients, journal.read("create.acknowledged.json"), "Job")
     need(created is not None, "document_native_create_not_terminal")
     assert created is not None
-    need(created.get("name") == desired(image, nonce)["name"] and type(created.get("uid")) is str
+    need(created.get("name") == desired(image, nonce, historical_v1=historical_v1)["name"] and type(created.get("uid")) is str
          and UUID.fullmatch(created["uid"]), "document_native_create_uid_unverified")
     job = clients.job(created["name"])
-    validate_job(job, image, nonce, uid=created.get("uid"))
+    validate_job(job, image, nonce, uid=created.get("uid"), historical_v1=historical_v1)
     return job
 
 
-def owned_execution(clients: Clients, journal: Journal, job: dict[str, Any], image: str, nonce: str) -> dict[str, Any]:
+def owned_execution(clients: Clients, journal: Journal, job: dict[str, Any], image: str, nonce: str, *, historical_v1: bool = False) -> dict[str, Any]:
     marker = journal.read("run.started.json")
     need(type(marker) is dict and set(marker) == {"job_name", "job_uid", "etag", "automatic_replay"}
          and marker["job_name"] == job["name"] and marker["job_uid"] == job["uid"]
@@ -563,7 +614,7 @@ def owned_execution(clients: Clients, journal: Journal, job: dict[str, Any], ima
     need(type(started.get("name")) is str and type(started.get("uid")) is str
          and UUID.fullmatch(started["uid"]), "document_native_run_uid_unverified")
     execution = clients.execution(started["name"])
-    validate_execution(execution, job, image, nonce, uid=started.get("uid"))
+    validate_execution(execution, job, image, nonce, uid=started.get("uid"), historical_v1=historical_v1)
     return execution
 
 
@@ -586,15 +637,16 @@ def execution_reference(job: dict[str, Any], value: Any) -> str:
     return value
 
 
-def native_payload(clients: Clients, job: dict[str, Any], execution: dict[str, Any]) -> dict[str, Any]:
+def native_payload(clients: Clients, job: dict[str, Any], execution: dict[str, Any], *, historical_v1: bool = False) -> dict[str, Any]:
     job_id, execution_id = job["name"].rsplit("/", 1)[-1], execution["name"].rsplit("/", 1)[-1]
     begin, end = timestamp(job.get("createTime")), timestamp(execution.get("completionTime"))
     need(begin < end, "document_native_event_window_invalid")
+    event = "hirewiz_document_native_six_case_v1" if historical_v1 else "hirewiz_document_native_required_v2"
     query = (f'resource.type="cloud_run_job" AND resource.labels.project_id="{PROJECT}" '
              f'AND resource.labels.location="{REGION}" AND resource.labels.job_name="{job_id}" '
              f'AND labels."run.googleapis.com/execution_name"="{execution_id}" '
              f'AND timestamp>="{job["createTime"]}" AND timestamp<="{execution["completionTime"]}" '
-             'AND jsonPayload.event="hirewiz_document_native_six_case_v1"')
+             f'AND jsonPayload.event="{event}"')
     token = None
     seen: set[str] = set()
     payload = None
@@ -610,12 +662,12 @@ def native_payload(clients: Clients, job: dict[str, Any], execution: dict[str, A
                  and begin <= timestamp(row.get("timestamp")) <= end
                  and type(row.get("jsonPayload")) is dict and len(canonical(row["jsonPayload"])) <= 16384
                  and row["jsonPayload"].get("execution_name") == execution_id
-                 and row["jsonPayload"].get("event") == "hirewiz_document_native_six_case_v1"
+                 and row["jsonPayload"].get("event") == event
                  and payload is None, "document_native_event_scope_or_uniqueness_invalid")
             payload = row["jsonPayload"]
         next_token = response.get("nextPageToken")
         if next_token in (None, ""):
-            need(payload is not None, "document_native_six_case_event_missing")
+            need(payload is not None, "document_native_required_event_missing")
             assert payload is not None
             return payload
         need(type(next_token) is str and 0 < len(next_token) <= 8192
@@ -645,19 +697,23 @@ class NativeAcceptance:
     font_manifest_sha256: str
     renderer_version: str
     definition_expires_at: str
+    contract_version: int
+    required_case_count: int
 
 
 def acceptance(clients: Clients, image: str, build: dict[str, Any], job: dict[str, Any],
-               execution: dict[str, Any]) -> NativeAcceptance:
+               execution: dict[str, Any], *, historical_v1: bool = False) -> NativeAcceptance:
     nonce = build["nonce"]
-    validate_job(job, image, nonce)
-    validate_execution(execution, job, image, nonce)
-    payload = native_payload(clients, job, execution)
-    facts = validate_payload(payload, image, execution["name"], datetime.now(UTC))
+    validate_job(job, image, nonce, historical_v1=historical_v1)
+    validate_execution(execution, job, image, nonce, historical_v1=historical_v1)
+    payload = native_payload(clients, job, execution, historical_v1=historical_v1)
+    facts = validate_payload(payload, image, execution["name"], datetime.now(UTC), historical_v1=historical_v1)
     return NativeAcceptance(image, build["build_id"], build["build_resource"], build["source_archive_sha256"],
         build["refresh_dockerfile_sha256"], build["source_sha256"], job["name"], job["uid"],
-        execution["name"], execution["uid"], hashlib.sha256(rendered_payload(image).encode()).hexdigest(),
-        facts["payload_sha256"], POLICY, FONT, RENDERER, facts["definition_expires_at"])
+        execution["name"], execution["uid"], hashlib.sha256(rendered_payload(image, historical_v1=historical_v1).encode()).hexdigest(),
+        facts["payload_sha256"], LEGACY_POLICY if historical_v1 else POLICY,
+        LEGACY_FONT if historical_v1 else FONT, LEGACY_RENDERER if historical_v1 else RENDERER,
+        facts["definition_expires_at"], 1 if historical_v1 else 2, 6 if historical_v1 else 10)
 
 
 def run_successor(image: str, build_identity: dict[str, Any], journal: Path) -> NativeAcceptance:
@@ -740,6 +796,7 @@ def _verify_current_successor(image: str, service_metadata: dict[str, Any], *, r
     clients = None
     try:
         metadata = json.loads(canonical(service_metadata))
+        historical_v1 = historical_v1_for_serving(metadata, image)
         labels = metadata.get("labels", metadata.get("metadata", {}).get("labels", {}))
         build_id, nonce, job_id = (labels.get(key) for key in (
             "hirewiz-refresh-build", "hirewiz-refresh-nonce", "hirewiz-refresh-job"))
@@ -749,10 +806,12 @@ def _verify_current_successor(image: str, service_metadata: dict[str, Any], *, r
              "document_native_current_labels_invalid")
         builds = build_module()
         if read_only_release:
-            build = builds.verify_current_build_release(build_id, nonce, image)
+            build = (builds.verify_current_build_release(build_id, nonce, image, historical_v1=True)
+                     if historical_v1 else builds.verify_current_build_release(build_id, nonce, image))
             clients = Clients(read_only_release=True)
         else:
-            build = builds.verify_current_build(build_id, nonce, image)
+            build = (builds.verify_current_build(build_id, nonce, image, historical_v1=True)
+                     if historical_v1 else builds.verify_current_build(build_id, nonce, image))
             clients = Clients()
         snapshot = clients.preflight()
         actual = clients.service(PARENT + "/services/hirewiz-document-inspector")
@@ -762,12 +821,12 @@ def _verify_current_successor(image: str, service_metadata: dict[str, Any], *, r
              and actual.get("template", {}).get("containers", [{}])[0].get("image") == image,
              "document_native_current_service_changed")
         snapshot.update(service=actual)
-        need(validate_worker_snapshot(clients, snapshot) == image, "document_native_current_service_changed")
+        need(validate_worker_snapshot(clients, snapshot, historical_v1=historical_v1) == image, "document_native_current_service_changed")
         job = clients.job(PARENT + "/jobs/" + job_id)
-        validate_job(job, image, nonce)
+        validate_job(job, image, nonce, historical_v1=historical_v1)
         latest = job.get("latestCreatedExecution", {}).get("name")
         execution = clients.execution(execution_reference(job, latest))
-        return acceptance(clients, image, build, job, execution)
+        return acceptance(clients, image, build, job, execution, historical_v1=historical_v1)
     except NativeProofDenied:
         raise
     except Exception:  # noqa: BLE001 - vendor errors may contain credential-bearing request details.
@@ -782,20 +841,29 @@ def cleanup_successor(image: str, build_identity: dict[str, Any], journal: Path)
     clients = None
     try:
         build = json.loads(canonical(build_identity))
-        owner = Journal(journal, image, build)
         clients = Clients()
         service = clients.service(PARENT + "/services/hirewiz-document-inspector")
         current = service.get("template", {}).get("containers", [{}])[0].get("image")
         need(current != image, "document_native_current_job_must_be_retained")
-        verify_current_successor(current, service)
+        current_acceptance = verify_current_successor(current, service)
+        need(current_acceptance.contract_version == 2 and current_acceptance.required_case_count == 10
+             and current_acceptance.policy_sha256 == POLICY, "document_native_v2_successor_required_for_retirement")
         verify_caller_pins(clients, current)
-        build_module().verify_native_build(build)
-        job = owned_job(clients, owner, image, build["nonce"])
-        execution = owned_execution(clients, owner, job, image, build["nonce"])
+        nonce = build.get("nonce")
+        need(type(nonce) is str and re.fullmatch(r"[a-f0-9]{32}", nonce), "document_native_nonce_invalid")
+        prior = clients.job(PARENT + "/jobs/hirewiz-doc-six-" + nonce[:12])
+        historical_v1 = historical_v1_for_serving({"template": prior.get("template", {}).get("template", {})}, image)
+        owner = Journal(journal, image, build, historical_v1=historical_v1)
+        if historical_v1:
+            build_module().verify_native_build(build, historical_v1=True)
+        else:
+            build_module().verify_native_build(build)
+        job = owned_job(clients, owner, image, nonce, historical_v1=historical_v1)
+        execution = owned_execution(clients, owner, job, image, nonce, historical_v1=historical_v1)
         # Expired prior definitions cannot authorize serving, but may be retired
         # after newer native acceptance and all serving caller pins are proven.
-        validate_payload(native_payload(clients, job, execution), image, execution["name"],
-                         datetime.now(UTC), require_fresh=False)
+        validate_payload(native_payload(clients, job, execution, historical_v1=historical_v1), image, execution["name"],
+                         datetime.now(UTC), require_fresh=False, historical_v1=historical_v1)
         owner.write("delete.started.json", {"name": job["name"], "uid": job["uid"], "etag": job["etag"], "automatic_replay": False})
         deleted = clients.delete(job)
         owner.write("delete.acknowledged.json", {"name": deleted.get("name")})

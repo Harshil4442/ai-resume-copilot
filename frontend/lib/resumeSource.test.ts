@@ -6,22 +6,26 @@ import { fetchDirectResumeSource, saveVerifiedResumeSource } from "./resumeSourc
 
 const NOW = Date.parse("2026-10-10T12:00:00Z");
 const PDF = new TextEncoder().encode("%PDF-synthetic-source");
+const nativeSources = [
+  { kind: "tex", filename: "original.TeX", media_type: "application/x-tex", bytes: new TextEncoder().encode("\\documentclass{article}\r\n\\begin{document}R\u00e9sum\u00e9\\end{document}\r\n") },
+  { kind: "texzip", filename: "original.ZIP", media_type: "application/zip", bytes: new Uint8Array([80, 75, 3, 4, 0, 255, 13, 10, 128]) },
+] as const;
 let calls: Array<{ url: string; init?: RequestInit }>;
 
-async function binding(bytes = PDF) {
+async function binding(bytes = PDF, format = { filename: "original.pdf", media_type: "application/pdf" }) {
   const hash = Array.from(new Uint8Array(await webcrypto.subtle.digest("SHA-256", bytes))).map((x) => x.toString(16).padStart(2, "0")).join("");
   const query = new URLSearchParams({
     "X-Goog-Algorithm": "GOOG4-RSA-SHA256", "X-Goog-Credential": "read-signer@synthetic-project.iam.gserviceaccount.com/20261010/auto/storage/goog4_request",
     "X-Goog-Date": "20261010T120000Z", "X-Goog-Expires": "60", "X-Goog-SignedHeaders": "host",
-    "X-Goog-Signature": "a".repeat(512), generation: "123", "response-content-type": "application/pdf",
+    "X-Goog-Signature": "a".repeat(512), generation: "123", "response-content-type": format.media_type,
   });
   return { url: `https://storage.googleapis.com/synthetic-clean/clean/rup_${"a".repeat(32)}/source?${query}`,
     expires_at: "2026-10-10T12:01:00Z", sha256: hash, size_bytes: bytes.length,
-    filename: "original.pdf", media_type: "application/pdf" };
+    filename: format.filename, media_type: format.media_type };
 }
 
-function fileResponse(bytes: Uint8Array, url: string) {
-  const response = new Response(new Uint8Array(bytes).buffer, { headers: { "Content-Type": "application/pdf", "Content-Length": String(bytes.length) } });
+function fileResponse(bytes: Uint8Array, url: string, media = "application/pdf") {
+  const response = new Response(new Uint8Array(bytes).buffer, { headers: { "Content-Type": media, "Content-Length": String(bytes.length) } });
   Object.defineProperty(response, "url", { value: url });
   return response;
 }
@@ -29,7 +33,7 @@ function fileResponse(bytes: Uint8Array, url: string) {
 function responses(meta: Awaited<ReturnType<typeof binding>>, bytes = PDF) {
   vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
     calls.push({ url, init });
-    return calls.length === 1 ? Response.json(meta) : fileResponse(bytes, meta.url);
+    return calls.length === 1 ? Response.json(meta) : fileResponse(bytes, meta.url, meta.media_type);
   }));
 }
 
@@ -39,7 +43,7 @@ beforeEach(() => {
   vi.stubGlobal("Blob", BrowserBlob);
   vi.spyOn(Date, "now").mockReturnValue(NOW);
 });
-afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
 it("gets one owner-authenticated control and one secretless generation-pinned file", async () => {
   const meta = await binding(); responses(meta);
@@ -51,6 +55,57 @@ it("gets one owner-authenticated control and one secretless generation-pinned fi
   expect(calls[0].init).toMatchObject({ credentials: "same-origin", cache: "no-store", redirect: "error" });
   expect(calls[1].init).toMatchObject({ credentials: "omit", referrerPolicy: "no-referrer", cache: "no-store", redirect: "error", method: "GET" });
   expect(calls[1].init?.headers).toBeUndefined();
+});
+
+it.each(nativeSources)("verifies the $kind source grant and preserves exact native bytes", async (format) => {
+  const meta = await binding(format.bytes, format); responses(meta, format.bytes);
+  const file = await fetchDirectResumeSource(7, undefined, format.kind);
+  expect(file?.filename).toBe(format.filename);
+  expect(file?.blob.type).toBe(format.media_type);
+  expect(Buffer.compare(Buffer.from(await file!.blob.arrayBuffer()), Buffer.from(format.bytes))).toBe(0);
+  expect(calls.map((call) => call.url)).toEqual(["/api/backend/resume/7/source-access", meta.url]);
+  expect(calls[0].init).toMatchObject({ credentials: "same-origin", cache: "no-store", redirect: "error" });
+  expect(calls[1].init).toMatchObject({ method: "GET", credentials: "omit", referrerPolicy: "no-referrer", redirect: "error" });
+});
+
+it.each(nativeSources)("refuses a $kind grant for the other native source kind before storage access", async (format) => {
+  const meta = await binding(format.bytes, format); responses(meta, format.bytes);
+  await expect(fetchDirectResumeSource(7, undefined, format.kind === "tex" ? "texzip" : "tex")).rejects.toThrow("Could not verify the original resume file.");
+  expect(calls).toHaveLength(1);
+});
+
+it.each(nativeSources)("requires matching $kind filename, canonical MIME and signed response MIME", async (format) => {
+  const meta = await binding(format.bytes, format);
+  for (const change of ["extension", "media", "signed-media"]) {
+    calls = [];
+    const altered = { ...meta };
+    if (change === "extension") altered.filename = format.kind === "tex" ? "original.zip" : "original.texzip";
+    if (change === "media") altered.media_type = format.kind === "tex" ? "text/plain" : "application/x-zip-compressed";
+    if (change === "signed-media") {
+      const target = new URL(altered.url); target.searchParams.set("response-content-type", "application/pdf"); altered.url = target.href;
+    }
+    responses(altered, format.bytes);
+    await expect(fetchDirectResumeSource(7, undefined, format.kind)).rejects.toThrow("Could not verify the original resume file.");
+    expect(calls).toHaveLength(1);
+  }
+});
+
+it.each(nativeSources)("refuses changed $kind storage identity, MIME, size or hash without retry or legacy request", async (format) => {
+  const meta = await binding(format.bytes, format);
+  for (const change of ["identity", "media", "length", "hash"]) {
+    calls = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      if (calls.length === 1) return Response.json(meta);
+      const bytes = new Uint8Array(format.bytes);
+      if (change === "hash") bytes[0] ^= 1;
+      const response = fileResponse(bytes, change === "identity" ? meta.url.replace("generation=123", "generation=456") : meta.url, change === "media" ? "application/pdf" : format.media_type);
+      if (change === "length") response.headers.set("Content-Length", String(bytes.length + 1));
+      return response;
+    }));
+    await expect(fetchDirectResumeSource(7, undefined, format.kind)).rejects.toThrow("Could not verify the original resume file.");
+    expect(calls).toHaveLength(2);
+  }
 });
 
 it("verifies exactly five MiB before returning a blob", async () => {
@@ -201,26 +256,26 @@ it("deadline cancels a stalled response even when the synthetic fetch ignores it
   expect(cancelled).toBe(true); expect(calls).toHaveLength(2); expect(vi.getTimerCount()).toBe(0);
 });
 
-it("owner cancellation during hashing cannot publish a blob", async () => {
-  const meta = await binding(); responses(meta);
+it.each([{ kind: "pdf", filename: "original.pdf", media_type: "application/pdf", bytes: PDF }, ...nativeSources] as const)("owner cancellation during $kind hashing cannot publish a blob", async (format) => {
+  const meta = await binding(format.bytes, format); responses(meta, format.bytes);
   let finish!: (value: ArrayBuffer) => void;
   const digest = new Promise<ArrayBuffer>((resolve) => { finish = resolve; });
   const started = vi.fn(() => digest);
   vi.stubGlobal("crypto", { subtle: { digest: started } });
-  const controller = new AbortController(); const operation = fetchDirectResumeSource(7, controller.signal);
+  const controller = new AbortController(); const operation = fetchDirectResumeSource(7, controller.signal, format.kind);
   const assertion = expect(operation).rejects.toMatchObject({ name: "AbortError" });
   await vi.waitFor(() => expect(started).toHaveBeenCalledOnce()); controller.abort(); await assertion;
   finish(new ArrayBuffer(32));
 });
 
-it("download releases blob URL and stale callers cannot create one", async () => {
+it.each([{ kind: "pdf", filename: "original.pdf", media_type: "application/pdf", bytes: PDF }, ...nativeSources])("$kind download releases blob URL and stale callers cannot create one", async (format) => {
   const create = vi.fn(() => "blob:owned"); const revoke = vi.fn();
   vi.stubGlobal("URL", class extends URL { static createObjectURL = create; static revokeObjectURL = revoke; });
   vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
   vi.useFakeTimers(); const controller = new AbortController();
-  saveVerifiedResumeSource({ blob: new Blob([PDF], { type: "application/pdf" }), filename: "original.pdf" }, controller.signal);
+  saveVerifiedResumeSource({ blob: new Blob([format.bytes], { type: format.media_type }), filename: format.filename }, controller.signal);
   expect(create).toHaveBeenCalledOnce(); await vi.runAllTimersAsync(); expect(revoke).toHaveBeenCalledWith("blob:owned");
-  controller.abort(); expect(() => saveVerifiedResumeSource({ blob: new Blob([PDF], { type: "application/pdf" }), filename: "original.pdf" }, controller.signal)).toThrow();
+  controller.abort(); expect(() => saveVerifiedResumeSource({ blob: new Blob([format.bytes], { type: format.media_type }), filename: format.filename }, controller.signal)).toThrow();
   expect(create).toHaveBeenCalledOnce();
 });
 
@@ -251,11 +306,37 @@ it("enabled source preview uses verified direct bytes and exact missing404 fallb
   vi.unstubAllEnvs();
 });
 
-it("tailored and TeX source requests remain on the existing version/source transport", async () => {
+it.each(nativeSources)("native $kind downloads use direct grants and fall back only for explicit missing binding", async (format) => {
   vi.stubEnv("NEXT_PUBLIC_RESUME_DIRECT_UPLOAD_ENABLED", "true");
-  const { fetchResumeSource, fetchResumeVersionPdf } = await import("./career");
+  const { fetchResumeSource } = await import("./career");
+  const meta = await binding(format.bytes, format); responses(meta, format.bytes);
+  const source = await fetchResumeSource(7, undefined, format.kind);
+  expect(Buffer.compare(Buffer.from(await source.arrayBuffer()), Buffer.from(format.bytes))).toBe(0);
+  expect(calls.map((call) => call.url)).toEqual(["/api/backend/resume/7/source-access", meta.url]);
+  calls = [];
+  vi.stubGlobal("fetch", vi.fn(async (uri: string) => {
+    calls.push({ url: uri });
+    return calls.length === 1 ? Response.json({ detail: { code: "direct_source_not_found" } }, { status: 404 }) : fileResponse(format.bytes, uri, format.media_type);
+  }));
+  const legacy = await fetchResumeSource(7, undefined, format.kind);
+  expect(legacy.type).toBe(format.media_type);
+  expect(Buffer.compare(Buffer.from(await legacy.arrayBuffer()), Buffer.from(format.bytes))).toBe(0);
+  expect(calls.map((call) => call.url)).toEqual(["/api/backend/resume/7/source-access", "/api/backend/resume/7/source"]);
+});
+
+it.each(nativeSources)("native $kind control refusal never reaches the legacy source route", async (format) => {
+  vi.stubEnv("NEXT_PUBLIC_RESUME_DIRECT_UPLOAD_ENABLED", "true");
+  const { fetchResumeSource } = await import("./career");
+  vi.stubGlobal("fetch", vi.fn(async (uri: string) => { calls.push({ url: uri }); return Response.json({ detail: { code: "resume_not_found" } }, { status: 404 }); }));
+  await expect(fetchResumeSource(7, undefined, format.kind)).rejects.toThrow("Could not verify the original resume file.");
+  expect(calls.map((call) => call.url)).toEqual(["/api/backend/resume/7/source-access"]);
+});
+
+it("tailored PDF requests remain on the existing version transport", async () => {
+  vi.stubEnv("NEXT_PUBLIC_RESUME_DIRECT_UPLOAD_ENABLED", "true");
+  const { fetchResumeVersionPdf } = await import("./career");
   vi.stubGlobal("fetch", vi.fn(async (uri: string) => { calls.push({ url: uri }); return fileResponse(PDF, uri); }));
-  await fetchResumeVersionPdf("version/7"); await fetchResumeSource(7, undefined, "tex");
-  expect(calls.map((call) => call.url)).toEqual(["/api/backend/v1/resume-versions/version%2F7/download?format=pdf", "/api/backend/resume/7/source"]);
+  await fetchResumeVersionPdf("version/7");
+  expect(calls.map((call) => call.url)).toEqual(["/api/backend/v1/resume-versions/version%2F7/download?format=pdf"]);
   vi.unstubAllEnvs();
 });

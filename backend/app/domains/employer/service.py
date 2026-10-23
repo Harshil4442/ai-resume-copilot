@@ -400,8 +400,9 @@ def _prepare_bounded_search(db, row, payload):
     stamps = {posting.id: (source_mark, posting_mark) for posting, _, source_mark, posting_mark in rows}
     truncated = len(candidates) > 1000
     evaluations = {posting.id: evaluate(payload.preferences, posting.preference_metadata, provider=source.platform) for posting, source in candidates[:1000]}
-    ranked = [(posting, source, basic_match(resume.skills or [], posting.description, posting.title)) for posting, source in candidates[:1000] if evaluations[posting.id]["eligible"]]
-    ranked.sort(key=lambda item: (-item[2]["score"], -int(payload.role.lower() in item[0].title.lower()), item[0].id))
+    ranked = [(posting, source, basic_match(resume.skills or [], posting.description, posting.title)) for posting, source in candidates[:1000]
+              if evaluations[posting.id]["eligible"] and role_aliases.title_relevance(payload.role, posting.title)]
+    ranked.sort(key=lambda item: (-int(role_aliases.title_relevance(payload.role, item[0].title) == 2), -item[2]["score"], item[0].id))
     unique: dict[str, tuple[SimpleNamespace, SimpleNamespace, dict]] = {}
     for item in ranked:
         item[0].opening_key = admissions.opening_identity(item[0], item[1])

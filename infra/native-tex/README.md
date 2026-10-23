@@ -10,7 +10,7 @@ independent for every application.
 
 Only UTF-8 projects with one root entry file and up to 64 regular source/assets
 files, totaling 5 MB, are supported. Includes must be root-relative and present.
-The package allowlist is in `native_tex.py`; the compiler never installs packages
+The package allowlist is in `backend/app/services/native_project.py`; the compiler never installs packages
 while handling a document. Native fonts supported by this image include Computer
 Modern and Latin Modern. `.sty`/`.cls` project files are retained. Generated TeX
 files, encrypted/linked/unsafe ZIP entries and unsupported dependencies are
@@ -21,6 +21,33 @@ source editing or the original/custom PDF. PDFs with unreadable CID/unknown font
 mappings are refused; for example, some legacy Computer Modern symbol bullets
 need a Unicode-mapped font/source or a readable original/custom PDF. Typography and protected glyph
 geometry are checked conservatively; edits that reflow protected content fail.
+
+## Quarantine and private inspection
+
+New TeX/ZIP uploads use the existing owner-bound direct-upload quarantine. The
+legacy multipart parse endpoint refuses new native uploads so it cannot bypass
+the durable receipt and cleanup chain. Existing original source downloads remain
+available through their established owner checks.
+
+The private inspector scans the exact original project before validating source
+paths, packages or assets. Its native-source receipt contains no candidate facts.
+Only after that succeeds may the isolated compiler run. Its exact returned PDF
+passes the private PDF scanner/extractor before parsed facts, layout validation
+or a new review artifact can be released. The compiled PDF must fit the existing
+5 MB inspection limit; oversized output receives explicit guidance. No source or
+PDF is rebuilt into a substitute template, and none of these steps calls an AI
+model.
+
+New seals retain versioned metadata for original/candidate source and PDF
+inspection, together with the compiler image/policy and exact file hashes.
+Historical v2 sealed downloads are preserved; they are not retrospectively
+claimed to have the new inspection evidence. Service outages remain retryable
+and do not become permanent document refusals. The existing cancellation,
+generation-pinned storage and detached cleanup rules also apply to native uploads.
+
+Source implementation and synthetic tests do not establish deployed acceptance.
+See [current delivery evidence](../../docs/delivery/AUTO_APPLY_PROGRESS.md) for
+the actual rollout and remaining native-format checks.
 
 The v2 admission policy refuses dynamically constructed commands such as
 `\\csname`, TeX character-code constructions and computed date/time commands.

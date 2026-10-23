@@ -28,9 +28,9 @@ step = load("hirewiz_current_chain_step", "backend/scripts/monetary_schema_step.
 observer = load("hirewiz_current_chain_observer", "backend/scripts/monetary_cutover_preflight.py")
 
 
-def test_typed_source_extends_the_frozen_schema18_release_without_expanding_its_forward_steps():
+def test_typed_and_native_source_extend_frozen_schema18_release_without_expanding_its_forward_steps():
     tracked = {p.relative_to(ROOT).as_posix() for p in (ROOT / "backend/alembic/versions").glob("*.py")}
-    assert release.source_guard.migration_chain(ROOT, tracked, allow_literal_sql=True) == (*release.CHAIN, "20261015_0019")
+    assert release.source_guard.migration_chain(ROOT, tracked, allow_literal_sql=True) == (*release.CHAIN, "20261015_0019", "20261023_0020")
     assert release.CUTOVER_CHAIN == step.CHAIN == observer.SCHEMA_ORDER
     assert step.CHAIN[0] == "20261008_0009" and step.CHAIN[-1] == "20261015_0018"
     assert len(step.CHAIN) == 10

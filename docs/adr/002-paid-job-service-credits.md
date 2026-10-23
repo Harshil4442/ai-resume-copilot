@@ -40,3 +40,17 @@ clear pricing while keeping legacy Premium analysis behavior compatible.
 Trade-off: two balances require more explanatory UI and reconciliation. They prevent
 unbounded employer execution through an existing unlimited analysis entitlement and make
 costs and refunds auditable. PostgreSQL is the authority; Redis and browser state are not.
+
+On 23 October 2026 the owner authorized a separate noncommercial testing exception:
+`hirewiz-owner-prelaunch-search-20261023-v1` may grant exactly three unpaid service
+credits to the reviewed owner, once globally. This does not relax captured-payment
+requirements for paid entitlements. A reviewed one-shot operator command must bind the
+existing authenticated operator, exact native database/schema, existing runtime write
+permissions, opportunity and owned source resume. The owner lock, campaign transaction
+lock and deterministic ledger identity cap the campaign even after account unlink.
+The grant and actual-actor audit commit together; exact request replay is idempotent,
+while changed terms conflict. Do not create a payment, receipt, invoice, income entry,
+AI-unit grant or new admin permission. Existing nonpayment operating-pool guards fund
+the search expense at ordinary admission; the credits are never classified as prepaid.
+Checkout, sales, employer writes, prices and expense limits remain unchanged. This
+records source support only; an actual grant and completed search require separate evidence.

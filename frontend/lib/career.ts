@@ -42,7 +42,7 @@ async function fetchResumeBlob(path: string, signal?: AbortSignal): Promise<Blob
 }
 
 export async function fetchResumeSource(resumeId: number, signal?: AbortSignal, sourceFormat?: ResumeSourceFormat): Promise<Blob> {
-  if (directResumeSourceEnabled() && (sourceFormat === undefined || sourceFormat === "pdf" || sourceFormat === "docx")) {
+  if (directResumeSourceEnabled()) {
     const file = await fetchDirectResumeSource(resumeId, signal, sourceFormat);
     if (file) return file.blob;
   }

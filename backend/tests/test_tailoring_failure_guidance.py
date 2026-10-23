@@ -14,7 +14,12 @@ from backend.app.domains.analysis.tailoring_failures import (
 from backend.app.models import AnalysisRun, Resume, ResumeVersion, UsageEvent, User
 from backend.app.security import get_current_user
 from backend.app.services import llm_client
-from backend.app.services.resume_layout import ResumeLayoutError, apply_source_edits
+from backend.app.services.resume_layout import (
+    ResumeLayoutError,
+    ResumeProcessingUnavailable,
+    apply_source_edits,
+    extract_source_units,
+)
 from backend.tests.native_docx_ci_fixtures import configure_native_docx_worker
 from backend.tests.test_analysis_runs import (
     PDF_OVERFLOW_ORIGINAL,
@@ -117,12 +122,19 @@ def test_real_rejected_layout_refunds_once_and_polling_has_actionable_guidance(m
         engine.dispose()
 
 
-def test_unavailable_real_tex_compiler_maps_to_original_pdf_next_action(monkeypatch):
+@pytest.mark.parametrize("stage", ["inspector", "compiler"])
+def test_unavailable_private_tex_processing_stops_ai_repair_and_refunds_once(monkeypatch, stage):
+    import hashlib
+
+    from backend.app.services import document_ingestion, native_tex
+
     engine, factory = _database()
     monkeypatch.setattr(tasks, "SessionLocal", factory)
     monkeypatch.delenv("NATIVE_TEX_COMPILER_URL", raising=False)
     monkeypatch.delenv("NATIVE_TEX_IMAGE", raising=False)
     monkeypatch.delenv("NATIVE_TEX_IMAGE_DIGEST", raising=False)
+    monkeypatch.delenv("NATIVE_TEX_ISOLATION_POLICY_SHA256", raising=False)
+    monkeypatch.delenv("DOCUMENT_WORKER_URL", raising=False)
     source = b"\\documentclass{article}\n\\begin{document}\nDeveloped reliable Python services for customers and improved system performance.\n\\end{document}\n"
     with factory() as db:
         resume = db.get(Resume, 10)
@@ -130,22 +142,50 @@ def test_unavailable_real_tex_compiler_maps_to_original_pdf_next_action(monkeypa
         resume.source_format = "tex"
         db.commit()
     calls = []
+    inspected = []
+    if stage == "compiler":
+        monkeypatch.setenv("DOCUMENT_WORKER_URL", "https://private-test.run.app/inspect")
+        monkeypatch.setenv("DOCUMENT_WORKER_IMAGE_DIGEST", "private-test@sha256:" + "a" * 64)
+        monkeypatch.setenv("DOCUMENT_WORKER_POLICY_SHA256", "b" * 64)
 
-    def propose(**kwargs):
-        calls.append(kwargs)
-        return _source_edit_response(kwargs["source_units"], replacement=TAILORED_EXPERIENCE)
+        def source_inspection(content, *, source_format):
+            # Synthetic successful admission isolates the compiler preflight.
+            # It is not scanner or native isolation evidence.
+            inspected.append((content, source_format))
+            return document_ingestion.InspectedResume(
+                parsed=("", {}, [], 0.0, {}), sha256=hashlib.sha256(content).hexdigest(),
+                size_bytes=len(content), source_format=source_format,
+                worker_image="private-test@sha256:" + "a" * 64, policy_sha256="b" * 64,
+                scan_engine="ClamAV", scan_version="1.4.3", scan_definitions="1/current",
+            )
 
-    monkeypatch.setattr(llm_client, "tailor_resume_from_evidence", propose)
+        monkeypatch.setattr(document_ingestion, "inspect_resume_document_with_receipt", source_inspection)
+    monkeypatch.setattr(document_ingestion, "_identity_token", lambda *args: pytest.fail("Live identity reached"))
+    monkeypatch.setattr(native_tex.subprocess, "run", lambda *args, **kwargs: pytest.fail("Host compiler reached"))
+    proposal = _source_edit_response(extract_source_units(source, "tex"), replacement=TAILORED_EXPERIENCE)
+
+    def response(messages):
+        calls.append(messages)
+        return json.dumps(proposal)
+
+    monkeypatch.setattr(llm_client, "_chat", response)
     try:
         run_id = _create_tailoring_run(factory)
         assert tasks.process_analysis_run(run_id) == "failed"
+        assert tasks.process_analysis_run(run_id) == "failed"
+        assert len(calls) == 1
+        assert inspected == ([(source, "tex")] if stage == "compiler" else [])
         with factory() as db:
             run = db.get(AnalysisRun, run_id)
             data = schemas.AnalysisRunResponse.model_validate(run).model_dump(mode="json")
             assert data["failure_guidance"] == {"reason_code": "tex_worker_unavailable", "next_action": "use_original_or_custom"}
             assert run.committed_units == 0 and run.usage_state == "released"
+            assert run.attempt_count == 1 and run.result_payload is None
+            assert db.get(User, 1).ai_credits == 50
             assert db.get(Resume, 10).source_document == source
             assert db.query(ResumeVersion).count() == 0
+            events = db.query(UsageEvent).order_by(UsageEvent.created_at).all()
+            assert [(event.event_type, event.amount) for event in events] == [("reserve", -2), ("release", 2)]
     finally:
         engine.dispose()
 
@@ -206,6 +246,17 @@ def test_bounded_cause_traversal_and_arbitrary_reason_attributes_are_generic():
     assert public_tailoring_guidance("job_match", "failed", "resume-tailoring-failure/v1:font_unsupported") is None
     assert public_tailoring_guidance("resume_tailor", "succeeded", "resume-tailoring-failure/v1:font_unsupported") is None
     assert public_tailoring_guidance("resume_tailor", "queued", None) is None
+
+
+def test_unavailable_tex_processing_guidance_uses_class_without_exposing_private_details():
+    error = llm_client.TailoringOutputError("Could not preserve the resume format")
+    error.__cause__ = ResumeProcessingUnavailable("Private provider response /private/resume.tex private@example.test")
+    marker = persist_tailoring_failure(error)
+    assert marker == "resume-tailoring-failure/v1:tex_worker_unavailable"
+    assert public_tailoring_guidance("resume_tailor", "failed", marker) == {
+        "reason_code": "tex_worker_unavailable", "next_action": "use_original_or_custom",
+    }
+    assert "private" not in marker
 
 
 @pytest.mark.parametrize("budget_exhausted,reason", [(False, "provider_unavailable"), (True, "generation_unavailable")])

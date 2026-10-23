@@ -10,7 +10,8 @@ from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
 ORDINARY = ("clean_pdf", "clean_docx", "page_counter", "active_pdf", "includetext",
-            "eicar_exact_file", "eicar_zip_member", "missing_definitions")
+            "eicar_exact_file", "eicar_zip_member", "missing_definitions",
+            "clean_tex", "clean_texzip", "eicar_tex_source", "eicar_texzip_member")
 LAYOUT = ("styled_multipage_fit", "rendered_reflow_refusal")
 CLAMD = ("clamd_two_clean", "clamd_source_eicar", "clamd_candidate_eicar", "clamd_zip_member_eicar",
          "clamd_encrypted_pdf", "clamd_encrypted_zip", "clamd_max_filesize", "clamd_max_scansize",
@@ -34,7 +35,7 @@ class NativeCorpusGuards(unittest.TestCase):
                        "request_clamd_corpus": [{"case": name} for name in CLAMD]}
         self.contracts = [(name, ("public synthetic " + name).encode(), "clean", name == CLAMD[-1]) for name in CLAMD]
 
-    def test_all_twenty_one_groups_and_exact_validator_arguments(self):
+    def test_all_twenty_five_groups_and_exact_validator_arguments(self):
         ordinary, layouts = self.validate(self.report, self.contracts)
         self.assertIs(ordinary, self.report["corpus"])
         self.assertIs(layouts, self.report["docx_layout_corpus"])
