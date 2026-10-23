@@ -4,7 +4,7 @@ import { ArrowRight, CheckCircle2, KeyRound } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { passwordReset } from "../lib/passwordResetClient";
-import { clearPasswordResetToken, readPasswordResetToken } from "../lib/passwordResetLink";
+import { readPasswordResetLink, setPasswordResetOutcome } from "../lib/passwordResetLink";
 import { Button } from "./ui/Button";
 
 type Stage = "loading" | "ready" | "invalid" | "complete" | "uncertain";
@@ -16,39 +16,46 @@ export default function PasswordResetConfirm() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const token = useRef<string | null>(null);
+  const binding = useRef<symbol | null>(null);
   const initialized = useRef(false);
   const active = useRef<AbortController | null>(null);
   useLayoutEffect(() => {
     if (initialized.current) return;
     initialized.current = true;
-    token.current = readPasswordResetToken();
-    setStage(token.current ? "ready" : "invalid");
+    const retained = readPasswordResetLink();
+    token.current = retained.token;
+    binding.current = retained.binding;
+    setStage(retained.token ? "ready" : retained.outcome === "submitted" ? "uncertain" : retained.outcome ?? "invalid");
   }, []);
   useEffect(() => () => { active.current?.abort(); }, []);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (active.current || stage !== "ready" || !token.current) return;
+    if (active.current || stage !== "ready" || !token.current || !binding.current) return;
     if (Array.from(password).length < 10 || Array.from(password).length > 128) {
       setError("Choose a password between 10 and 128 characters."); return;
     }
     if (password !== confirmation) { setError("The passwords do not match. Enter the same new password in both fields."); return; }
     const proof = token.current;
+    const owner = binding.current;
     const controller = new AbortController(); active.current = controller;
     setBusy(true); setError(null);
     let posted = false;
     try {
       const result = await passwordReset("confirm", { token: proof, new_password: password },
-        controller.signal, () => { posted = true; clearPasswordResetToken(proof); });
+        controller.signal, () => {
+          if (!setPasswordResetOutcome(owner, "submitted")) throw new Error("RESET_NOT_SENT");
+          posted = true;
+        });
       if (controller.signal.aborted) return;
-      if (result === "PASSWORD_RESET") { clearPasswordResetToken(proof); token.current = null; setStage("complete"); }
-      else if (result === "RESET_LINK_INVALID") { clearPasswordResetToken(proof); token.current = null; setStage("invalid"); }
+      if (result === "PASSWORD_RESET") { setPasswordResetOutcome(owner, "complete"); token.current = null; setStage("complete"); }
+      else if (result === "RESET_LINK_INVALID") { setPasswordResetOutcome(owner, "invalid"); token.current = null; setStage("invalid"); }
       else if (result === "RATE_LIMITED") setError("Too many attempts. Please wait before trying again.");
       else if (result === "RESET_REQUEST_REJECTED") setError("The request was rejected. Check your password and try again.");
-      else { clearPasswordResetToken(proof); token.current = null; setStage("uncertain"); }
+      else { setPasswordResetOutcome(owner, "uncertain"); token.current = null; setStage("uncertain"); }
     } catch {
       if (!controller.signal.aborted) {
-        if (posted) { clearPasswordResetToken(proof); token.current = null; setStage("uncertain"); }
+        if (posted) { setPasswordResetOutcome(owner, "uncertain"); token.current = null; setStage("uncertain"); }
         else setError("The reset was not sent. Check your connection and try again.");
       }
     } finally {

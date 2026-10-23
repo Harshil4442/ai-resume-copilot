@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import PasswordResetConfirm from "./PasswordResetConfirm";
 import PasswordResetRequest from "./PasswordResetRequest";
 import SessionProviderWrapper from "./SessionProviderWrapper";
-import { capturePasswordResetLink, clearPasswordResetToken, readPasswordResetToken } from "../lib/passwordResetLink";
+import { capturePasswordResetLink, clearPasswordResetToken, readPasswordResetLink, readPasswordResetToken } from "../lib/passwordResetLink";
 
 const auth = vi.hoisted(() => ({ csrf: vi.fn(), status: "loading" as "loading" | "unauthenticated", pathname: "/" }));
 vi.mock("next-auth/react", () => ({ getCsrfToken: auth.csrf, useSession: () => ({ data: null, status: auth.status }),
@@ -54,13 +54,34 @@ describe("human email-link password reset", () => {
     vi.mocked(fetch).mockImplementation(() => new Promise((done) => { resolve = done; }));
     await submit(); await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
     expect(readPasswordResetToken()).toBeNull();
+    expect(readPasswordResetLink().outcome).toBe("submitted");
     auth.status = "unauthenticated";
     view.rerender(<SessionProviderWrapper><PasswordResetConfirm /></SessionProviderWrapper>);
     expect(screen.queryByLabelText("New password")).toBeNull();
-    expect(screen.getByRole("link", { name: "Request a new link" })).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("could not confirm the reset outcome");
+    expect(screen.getByRole("link", { name: "Go to sign in" })).toHaveAttribute("href", "/logout");
+    expect(screen.getByRole("link", { name: "Contact support" })).toHaveAttribute("href", "/contact");
+    expect(screen.queryByRole("link", { name: "Request a new link" })).toBeNull();
     await act(async () => resolve?.(Response.json({ status: "PASSWORD_RESET" })));
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(document.body.innerHTML).not.toContain(token);
+  });
+  it.each([
+    { status: "PASSWORD_RESET", code: 200, outcome: "complete", action: "Continue to sign in" },
+    { status: "RESET_LINK_INVALID", code: 400, outcome: "invalid", action: "Request a new link" },
+    { status: "RESET_UNAVAILABLE", code: 503, outcome: "uncertain", action: "Contact support" },
+  ])("retains the finite $outcome outcome across an owner remount without retaining proof", async ({ status, code, outcome, action }) => {
+    history.replaceState(null, "", `/reset-password#token=${token}`);
+    capturePasswordResetLink(); auth.pathname = "/reset-password";
+    const view = render(<SessionProviderWrapper><PasswordResetConfirm /></SessionProviderWrapper>);
+    fill(); vi.mocked(fetch).mockResolvedValue(Response.json({ status }, { status: code })); await submit();
+    await screen.findByRole("link", { name: action });
+    auth.status = "unauthenticated";
+    view.rerender(<SessionProviderWrapper><PasswordResetConfirm /></SessionProviderWrapper>);
+    expect(screen.getByRole("link", { name: action })).toBeInTheDocument();
+    expect(screen.queryByLabelText("New password")).toBeNull();
+    expect(readPasswordResetLink()).toEqual(expect.objectContaining({ token: null, outcome }));
+    expect(document.body.innerHTML).not.toContain(token); expect(fetch).toHaveBeenCalledTimes(1);
   });
   it("clears unsubmitted proof on an observed route exit before returning without a new link", () => {
     history.replaceState(null, "", `/reset-password#token=${token}`);
@@ -85,8 +106,21 @@ describe("human email-link password reset", () => {
     await act(async () => resolve?.(Response.json({ status: "PASSWORD_RESET" })));
     await screen.findByRole("link", { name: "Continue to sign in" });
     expect(readPasswordResetToken()).toBe(next);
+    expect(readPasswordResetLink().outcome).toBeNull();
     expect(location.hash).toBe(""); expect(document.body.innerHTML).not.toContain(next);
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+  it("refuses an old capture before POST when a newer link arrives during CSRF preparation", async () => {
+    confirm(); fill();
+    let resolve: ((csrf: string) => void) | undefined;
+    auth.csrf.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+    await submit(); await waitFor(() => expect(auth.csrf).toHaveBeenCalledTimes(1));
+    const next = "N".repeat(43);
+    history.replaceState(null, "", `/reset-password#token=${next}`); capturePasswordResetLink();
+    await act(async () => resolve?.("c".repeat(64)));
+    expect(await screen.findByRole("alert")).toHaveTextContent("reset was not sent");
+    expect(fetch).not.toHaveBeenCalled();
+    expect(readPasswordResetLink()).toEqual(expect.objectContaining({ token: next, outcome: null }));
   });
   it("starts no email request automatically and only explicitly resends a generic request", async () => {
     render(<PasswordResetRequest />);

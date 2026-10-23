@@ -42,4 +42,19 @@ describe("private reset fragment capture", () => {
     expect(readPasswordResetToken()).toBeNull();
     expect(location.hash).toBe("");
   });
+  it("retains only a finite submitted outcome and rejects stale capture-bound updates", async () => {
+    const { capturePasswordResetLink, readPasswordResetLink, setPasswordResetOutcome } = await import("./passwordResetLink");
+    history.replaceState(null, "", `/reset-password#token=${token}`);
+    const first = readPasswordResetLink();
+    expect(setPasswordResetOutcome(Symbol(), "submitted")).toBe(false);
+    expect(readPasswordResetLink().token).toBe(token);
+    expect(setPasswordResetOutcome(first.binding, "submitted")).toBe(true);
+    expect(readPasswordResetLink()).toEqual(expect.objectContaining({ token: null, outcome: "submitted" }));
+    expect(JSON.stringify(readPasswordResetLink())).not.toContain(token);
+    history.replaceState(null, "", `/reset-password#token=${"N".repeat(43)}`);
+    expect(readPasswordResetLink()).toEqual(expect.objectContaining({ token: "N".repeat(43), outcome: null }));
+    expect(setPasswordResetOutcome(first.binding, "uncertain")).toBe(false);
+    history.replaceState(null, "", "/forgot-password"); capturePasswordResetLink();
+    expect(readPasswordResetLink()).toEqual(expect.objectContaining({ token: null, outcome: null }));
+  });
 });
