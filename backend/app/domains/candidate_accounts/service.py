@@ -82,6 +82,14 @@ class CandidateAccountService:
         from .enrollment import enroll_google
         return enroll_google(self, candidate_id, proof, **values)
 
+    def google_recovery_challenge(self, candidate_id: int, proof: GoogleBearerProof) -> dict:
+        from .legacy_recovery import google_recovery_challenge
+        return google_recovery_challenge(self, candidate_id, proof)
+
+    def recover_google(self, candidate_id: int, proof: GoogleBearerProof, **values) -> int:
+        from .legacy_recovery import recover_google
+        return recover_google(self, candidate_id, proof, **values)
+
     def enroll_password(self, candidate_id: int, password: str) -> int:
         from .enrollment import enroll_password
         return enroll_password(self, candidate_id, password)

@@ -251,6 +251,7 @@ export default function CandidateAccountEnrollment() {
       </form> : null}
     {message && !enrolled ? <p role="status" className="text-sm leading-7">{message}</p> : null}
     {error ? <p role="alert" className="text-sm leading-7 text-coral">{error}</p> : null}
+    {!enrolled && !pending ? <Link href="/account-recovery" className="block text-sm font-semibold text-primary underline">Forgot your HireWiz password?</Link> : null}
     <Link href="/dashboard" className="inline-block text-sm font-semibold text-primary underline underline-offset-4">Return to your workspace</Link>
   </section>;
 }

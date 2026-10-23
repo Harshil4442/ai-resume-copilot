@@ -32,7 +32,8 @@ export async function GET(request: NextRequest, context: Context) {
 
 export async function POST(request: NextRequest, context: Context) {
   const operation = (await context.params).operation;
-  if (!["register", "registration-status", "google-enrollment-challenge", "enroll-google", "enroll-password"].includes(operation)) return new NextResponse(null, { status: 404 });
+  if (!["register", "registration-status", "google-enrollment-challenge", "enroll-google", "enroll-password", "recovery-google-challenge", "recover-google"].includes(operation)) return new NextResponse(null, { status: 404 });
+  const recovery = ["recovery-google-challenge", "recover-google"].includes(operation);
   if (request.headers.get("origin") !== websiteOrigin(request) || !csrfMatches(request, request.headers.get("x-hirewiz-account-csrf") || "") || request.nextUrl.search
       || request.headers.get("content-type") !== "application/json" || request.headers.has("content-encoding")) {
     return NextResponse.json({ status: "REJECTED" }, { status: 403, headers: HEADERS });
@@ -40,10 +41,11 @@ export async function POST(request: NextRequest, context: Context) {
   try {
     const headers = new Headers({ "Content-Type": "application/json" });
     let expectedCandidate: number | null = null;
-    if (["google-enrollment-challenge", "enroll-google", "enroll-password"].includes(operation)) {
+    if (["google-enrollment-challenge", "enroll-google", "enroll-password"].includes(operation) || recovery) {
       const token = await getToken({ req: request, secret: candidateAuthSecret() });
-      if (!token || typeof token.accessToken !== "string" || !Number.isSafeInteger(token.hirewizUserId) || Number(token.hirewizUserId) <= 0) return NextResponse.json({ status: "AUTHENTICATION_FAILED" }, { status: 401, headers: HEADERS });
-      if (token.browserPairingSession != null) return NextResponse.json({ status: "ALREADY_ENROLLED" }, { status: 409, headers: HEADERS });
+      if (!token || typeof token.accessToken !== "string" || !Number.isSafeInteger(token.hirewizUserId) || Number(token.hirewizUserId) <= 0) return NextResponse.json({ status: recovery ? "RECOVERY_AUTHENTICATION_FAILED" : "AUTHENTICATION_FAILED" }, { status: 401, headers: HEADERS });
+      if (token.browserPairingSession != null) return NextResponse.json({ status: recovery ? "RECOVERY_UNAVAILABLE" : "ALREADY_ENROLLED" }, { status: 409, headers: HEADERS });
+      if (recovery && token.candidateSignInMethod !== "google") return NextResponse.json({ status: "RECOVERY_AUTHENTICATION_FAILED" }, { status: 401, headers: HEADERS });
       headers.set("Authorization", `Bearer ${token.accessToken}`);
       expectedCandidate = Number(token.hirewizUserId);
     }
@@ -54,14 +56,24 @@ export async function POST(request: NextRequest, context: Context) {
     const raw = await boundedPairingBytes(request.body, AUTH_BODY_LIMIT);
     const reply = await backendAuth(`candidate/v1/${operation}`, { method: "POST", headers, body: raw });
     if (reply.status === 429) return NextResponse.json({ status: "RATE_LIMITED" }, { status: 429, headers: HEADERS });
+    if (recovery && !reply.ok) {
+      const refusals: Record<string, number> = { RECOVERY_AUTHENTICATION_FAILED: 401, RECOVERY_EMAIL_PROOF_REQUIRED: 403, RECOVERY_UNAVAILABLE: 409 };
+      if (Object.keys(reply.data).join(",") === "status" && typeof reply.data.status === "string" && refusals[reply.data.status] === reply.status) {
+        return NextResponse.json({ status: reply.data.status }, { status: reply.status, headers: HEADERS });
+      }
+      if (reply.status === 422) return NextResponse.json({ status: "RECOVERY_REQUEST_REJECTED" }, { status: 422, headers: HEADERS });
+      // An untyped failure may follow the PENDING commit. Preserve uncertainty;
+      // only the exact pre-commit refusal contract authorizes another review.
+      return NextResponse.json({ status: "UNAVAILABLE" }, { status: 503, headers: HEADERS });
+    }
     if (!reply.ok) return NextResponse.json({ status: reply.status === 401 ? "AUTHENTICATION_FAILED" : "UNAVAILABLE" }, { status: reply.status === 401 ? 401 : 503, headers: HEADERS });
-    if (["register", "enroll-google", "enroll-password"].includes(operation) && reply.data.status === "ENROLLED"
+    if (["register", "enroll-google", "enroll-password", "recover-google"].includes(operation) && reply.data.status === "ENROLLED"
         && typeof reply.data.user_id === "number" && Number.isSafeInteger(reply.data.user_id) && reply.data.user_id > 0
         && (expectedCandidate === null || reply.data.user_id === expectedCandidate)
         && Object.keys(reply.data).sort().join(",") === "status,user_id") {
       return NextResponse.json({ status: "ENROLLED" }, { headers: HEADERS });
     }
-    if (operation === "google-enrollment-challenge" && Object.keys(reply.data).sort().join(",") === "challenge_id,client_id,expires_at_ms,nonce"
+    if (["google-enrollment-challenge", "recovery-google-challenge"].includes(operation) && Object.keys(reply.data).sort().join(",") === "challenge_id,client_id,expires_at_ms,nonce"
         && typeof reply.data.challenge_id === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(reply.data.challenge_id)
         && typeof reply.data.nonce === "string" && /^[A-Za-z0-9_-]{32,128}$/.test(reply.data.nonce)
         && typeof reply.data.client_id === "string" && reply.data.client_id.length > 0 && reply.data.client_id.length <= 512

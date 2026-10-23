@@ -6,6 +6,7 @@ from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse
 from jose import JWTError, jwt
 from pydantic import ConfigDict, EmailStr, Field, SecretStr, field_validator
 from sqlalchemy.orm import Session
@@ -13,6 +14,11 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..domains.candidate_accounts.access import context_from_claims
 from ..domains.candidate_accounts.google import GoogleBearerProof, verify_google_identity
+from ..domains.candidate_accounts.legacy_recovery import (
+    RecoveryAuthenticationFailed,
+    RecoveryEmailProofRequired,
+    RecoveryUnavailable,
+)
 from ..domains.candidate_accounts.service import production_candidate_accounts
 from ..domains.recovery.pairing_contracts import PairingContract
 from ..domains.recovery.store import GuardDenied, GuardUnavailable
@@ -101,6 +107,21 @@ class PasswordEnrollment(EnrollmentConsent):
     password: SecretStr = Field(min_length=1, max_length=128, repr=False)
 
 
+class GoogleRecovery(EnrollmentConsent):
+    challenge_id: UUID
+    nonce: SecretStr = Field(min_length=32, max_length=128, repr=False)
+    id_token: SecretStr = Field(min_length=100, max_length=4096, repr=False)
+    password: SecretStr = Field(min_length=10, max_length=128, repr=False)
+    accepted_recovery: Literal[True]
+
+    @field_validator("accepted_recovery", mode="before")
+    @classmethod
+    def explicit_recovery(cls, value: object) -> object:
+        if type(value) is not bool or value is not True:
+            raise ValueError("Explicit true recovery consent is required")
+        return value
+
+
 class EmptyEnrollmentChallenge(PairingContract):
     pass
 
@@ -111,6 +132,50 @@ def _google_bearer(token: str) -> GoogleBearerProof:
         return GoogleBearerProof.model_validate(claims.get("google_identity"))
     except (JWTError, ValueError, TypeError):
         raise GuardDenied("Fresh Google sign-in required") from None
+
+
+def _recovery_failure(error: Exception) -> JSONResponse:
+    status, code = (401, "RECOVERY_AUTHENTICATION_FAILED") if isinstance(error, RecoveryAuthenticationFailed) else (
+        (403, "RECOVERY_EMAIL_PROOF_REQUIRED") if isinstance(error, RecoveryEmailProofRequired) else (
+            (409, "RECOVERY_UNAVAILABLE") if isinstance(error, RecoveryUnavailable) else (503, "RECOVERY_UNAVAILABLE")))
+    return JSONResponse(status_code=status, content={"status": code},
+        headers={"Cache-Control": "private, no-store"})
+
+
+@router.post("/recovery-google-challenge")
+@limiter.limit("5/minute")
+def google_recovery_challenge(request: Request, payload: EmptyEnrollmentChallenge,
+        current_user: User = Depends(get_current_user), token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    candidate_id = int(current_user.id)
+    db.rollback()
+    try:
+        try:
+            proof = _google_bearer(token)
+        except GuardDenied:
+            raise RecoveryAuthenticationFailed("Fresh Google sign-in required") from None
+        return production_candidate_accounts().google_recovery_challenge(candidate_id, proof)
+    except (GuardDenied, GuardUnavailable) as error:
+        return _recovery_failure(error)
+
+
+@router.post("/recover-google")
+@limiter.limit("5/minute")
+def recover_google(request: Request, payload: GoogleRecovery,
+        current_user: User = Depends(get_current_user), token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    candidate_id = int(current_user.id)
+    db.rollback()
+    try:
+        try:
+            proof = _google_bearer(token)
+            identity = verify_google_identity(payload.id_token.get_secret_value(), nonce=payload.nonce.get_secret_value())
+        except GuardDenied:
+            raise RecoveryAuthenticationFailed("Fresh Google ownership proof required") from None
+        uid = production_candidate_accounts().recover_google(candidate_id, proof,
+            challenge_id=str(payload.challenge_id), nonce=payload.nonce.get_secret_value(),
+            identity=identity, password=payload.password.get_secret_value())
+    except (GuardDenied, GuardUnavailable) as error:
+        return _recovery_failure(error)
+    return {"user_id": uid, "status": "ENROLLED"}
 
 
 @router.post("/google-enrollment-challenge")

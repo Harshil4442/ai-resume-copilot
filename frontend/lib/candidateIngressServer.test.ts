@@ -29,6 +29,16 @@ describe("website server private ingress signer", () => {
     expect(candidateIngressHeaders(path, { ...input, headers: { authorization: "Bearer replacement" } }, now, id).get("x-hirewiz-candidate-ingress")).not.toBe(first);
     expect(candidateIngressHeaders(path, input, now, "11234567-89ab-cdef-0123-456789abcdef").get("x-hirewiz-candidate-ingress")).not.toBe(first);
   });
+  it.each(["recovery-google-challenge", "recover-google"])("signs only the exact new recovery POST %s", (operation) => {
+    const recoveryPath = `/api/auth/candidate/v1/${operation}`;
+    const value = candidateIngressHeaders(recoveryPath, input, now, id).get("x-hirewiz-candidate-ingress")!;
+    const data = JSON.parse(Buffer.from(value.split(".")[0], "base64url").toString());
+    expect(data).toMatchObject({ method: "POST", path: recoveryPath, request_id: id });
+    expect(JSON.stringify(data)).not.toContain("synthetic-private-only");
+    expect(value).not.toBe(candidateIngressHeaders(path, input, now, id).get("x-hirewiz-candidate-ingress"));
+    expect(() => candidateIngressHeaders(recoveryPath + "/", input, now, id)).toThrow("AUTH_UNAVAILABLE");
+    expect(() => candidateIngressHeaders(recoveryPath, { method: "GET" }, now, id)).toThrow("AUTH_UNAVAILABLE");
+  });
   it("keeps ordinary legacy auth available without private provision but refuses native", () => {
     vi.stubEnv("CANDIDATE_AUTH_TRANSPORT_SECRET", ""); vi.stubEnv("CANDIDATE_AUTH_TRANSPORT_KEY_ID", "");
     expect(candidateIngressHeaders("/api/auth/login", input).has("x-hirewiz-candidate-ingress")).toBe(false);
