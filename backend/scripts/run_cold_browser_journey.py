@@ -5,9 +5,12 @@ Not collected by pytest. Only this invocation's schema and processes are removed
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 import hashlib
 import io
 import json
+import math
 import os
 import re
 import selectors
@@ -182,12 +185,82 @@ def _run_bounded(command, *, cwd, env, timeout):
 
 
 
+def _public_lab_failure_attachment(attachment: object) -> dict[str, object] | None:
+    """Accept only the fixed public-lab diagnostic schema, never attachment paths."""
+    if not isinstance(attachment, dict) or attachment.get("name") != "public-lab-failure-v1":
+        return None
+    if attachment.get("contentType") != "application/json":
+        return None
+    body = attachment.get("body")
+    if not isinstance(body, str) or len(body) > 8192:
+        return None
+    try:
+        value = json.loads(base64.b64decode(body, validate=True))
+    except (ValueError, UnicodeError, binascii.Error, RecursionError):
+        return None
+
+    def keys(item, expected):
+        return isinstance(item, dict) and set(item) == set(expected)
+
+    def integer(item, lower, upper):
+        return type(item) is int and lower <= item <= upper
+
+    def counts(item, expected):
+        return keys(item, expected) and all(integer(count, 0, 255) for count in item.values())
+
+    if not keys(value, ("path", "width", "response_status", "errors", "snapshot")):
+        return None
+    if value["path"] not in ("/", "/pricing") or type(value["path"]) is not str:
+        return None
+    if not integer(value["width"], 390, 1440) or value["width"] not in (390, 1440):
+        return None
+    if value["response_status"] is not None and not integer(value["response_status"], 100, 599):
+        return None
+    if not counts(value["errors"], ("page", "console", "request", "script")):
+        return None
+    snapshot = value["snapshot"]
+    if snapshot is not None:
+        if not keys(snapshot, ("ready_state", "visibility", "h1_count", "ancestors", "csp")):
+            return None
+        if snapshot["ready_state"] not in ("loading", "interactive", "complete"):
+            return None
+        if snapshot["visibility"] not in ("visible", "hidden", "prerender"):
+            return None
+        if not integer(snapshot["h1_count"], 0, 1024):
+            return None
+        if snapshot["csp"] is not None and not counts(snapshot["csp"], ("script", "style", "other")):
+            return None
+        ancestors = snapshot["ancestors"]
+        if not isinstance(ancestors, list) or len(ancestors) > 8:
+            return None
+        for ancestor in ancestors:
+            if not keys(ancestor, ("hidden", "display", "visibility", "content_visibility", "bounds")):
+                return None
+            if type(ancestor["hidden"]) is not bool:
+                return None
+            if ancestor["display"] not in ("none", "contents", "block", "inline", "inline-block", "flex", "inline-flex", "grid", "inline-grid", "other"):
+                return None
+            if ancestor["visibility"] not in ("visible", "hidden", "collapse", "other"):
+                return None
+            if ancestor["content_visibility"] not in ("visible", "auto", "hidden", "other"):
+                return None
+            bounds = ancestor["bounds"]
+            if not isinstance(bounds, list) or len(bounds) != 4:
+                return None
+            if any(type(number) not in (int, float) or abs(number) > 1_000_000 or not math.isfinite(number) for number in bounds):
+                return None
+            if bounds[2] < 0 or bounds[3] < 0:
+                return None
+    return value
+
+
 def _browser_failure_summary(report: Path) -> dict[str, object]:
     """Export bounded diagnostic categories/locations, never raw browser errors.
 
     Playwright errors can contain credentials, candidate content or request data.
     The raw report remains local; only fixed categories and this spec's numeric
-    locations may enter the uploaded summary.
+    locations and independently allowlisted public-lab diagnostics may enter the
+    uploaded summary. Raw errors and attachment files are never copied.
     """
     if not report.is_file():
         return {"report_state": "absent"}
@@ -198,11 +271,20 @@ def _browser_failure_summary(report: Path) -> dict[str, object]:
     except (OSError, UnicodeError, json.JSONDecodeError):
         return {"report_state": "unreadable"}
     failures: list[dict[str, object]] = []
+    public_lab_failures: list[dict[str, object]] = []
 
     def visit(value: object) -> None:
         if len(failures) >= 8:
             return
         if isinstance(value, dict):
+            attachments = value.get("attachments")
+            if isinstance(attachments, list) and len(public_lab_failures) < 4:
+                for attachment in attachments[:8]:
+                    diagnostic = _public_lab_failure_attachment(attachment)
+                    if diagnostic is not None and diagnostic not in public_lab_failures:
+                        public_lab_failures.append(diagnostic)
+                    if len(public_lab_failures) >= 4:
+                        break
             errors = value.get("errors")
             if isinstance(errors, list):
                 for error in errors[:8]:
@@ -254,7 +336,10 @@ def _browser_failure_summary(report: Path) -> dict[str, object]:
                 visit(item)
 
     visit(content)
-    return {"report_state": "read", "failures": failures}
+    summary: dict[str, object] = {"report_state": "read", "failures": failures}
+    if public_lab_failures:
+        summary["public_lab_failures"] = public_lab_failures
+    return summary
 
 
 def _docx(path, label):

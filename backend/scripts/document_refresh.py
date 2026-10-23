@@ -173,9 +173,18 @@ def monitor(*, now: datetime) -> dict[str, Any]:
 
 
 def proof_contract(proof: Any, contract: Any, source_hashes: dict[str, str], *, now: datetime,
-                   historical_v1: bool = False) -> dict[str, Any]:
+                   historical_v1: bool = False, image: str | None = None,
+                   build_identity: dict[str, Any] | None = None) -> dict[str, Any]:
     need(type(historical_v1) is bool, "document_refresh_contract_version_invalid")
     policy = contract.POLICY_SHA256
+    renderer_version, font_manifest = contract.ACCEPTED_RENDERER, contract.ACCEPTED_FONT_MANIFEST
+    profile = infra("document_renderer_profiles") if image is not None or build_identity is not None else None
+    need(build_identity is None or type(build_identity) is dict
+         and image == build_identity.get("immutable_image"), "document_refresh_renderer_build_profile_changed")
+    if profile is not None and (image == profile.IMAGE or profile.uses_profile(build_identity)):
+        need(not historical_v1 and profile.uses_profile(build_identity)
+             and source_hashes == profile.SOURCES, "document_refresh_renderer_build_profile_changed")
+        renderer_version, font_manifest = profile.RENDERER, profile.FONT
     if historical_v1:
         # A retained failed V1 probe is read-only recovery evidence. It cannot
         # satisfy today's candidate or native V2 acceptance contract.
@@ -212,8 +221,8 @@ def proof_contract(proof: Any, contract: Any, source_hashes: dict[str, str], *, 
          and all(row.get("passed") is True for row in layouts), "document_refresh_layout_incomplete")
     fit = next(row for row in layouts if row["case"] == "styled_multipage_fit")
     renderer = fit.get("layout", {}).get("renderer", {})
-    need(type(renderer) is dict and renderer.get("renderer_version") == contract.ACCEPTED_RENDERER
-         and renderer.get("font_manifest_sha256") == contract.ACCEPTED_FONT_MANIFEST
+    need(type(renderer) is dict and renderer.get("renderer_version") == renderer_version
+         and renderer.get("font_manifest_sha256") == font_manifest
          and renderer.get("policy_sha256") == policy
          and renderer.get("image_digest") == "local-document-image@" + proof["image_id"]
          and re.fullmatch(r"[a-f0-9]{64}", fit.get("layout", {}).get("rendered_fonts_sha256", "")),
@@ -236,7 +245,7 @@ def proof_contract(proof: Any, contract: Any, source_hashes: dict[str, str], *, 
     need(timedelta(0) <= age < CANDIDATE_MAX_AGE, "document_refresh_candidate_not_fresh")
     return {"issued_at_utc": timestamp.isoformat(), "expires_at_utc": (timestamp + AGE_LIMIT).isoformat(),
             "definition_number": number, "local_cases": 21 if historical_v1 else 25,
-            "renderer_version": contract.ACCEPTED_RENDERER,
+            "renderer_version": renderer_version,
             "rendered_fonts_sha256": fit["layout"]["rendered_fonts_sha256"]}
 
 
@@ -610,6 +619,9 @@ def _verify_current_build(build_id: str, nonce: str, image: str, *, release_read
     else:
         source_hashes = engines.source_hashes()
     actual.update(source_archive_sha256=archive_sha, source_sha256=source_hashes)
+    profile = infra("document_renderer_profiles")
+    need(image != profile.IMAGE or profile.matches_build(actual),
+         "document_refresh_renderer_build_profile_changed")
     return actual
 
 
@@ -637,7 +649,8 @@ def candidate(directory: Path, *, publish: bool, now: datetime, nonce: str | Non
     image = installed[0]["Id"]
     need(recipe.read_bytes() == raw, "document_refresh_source_changed")
     proof = engines.check("linux/amd64", image=image)
-    facts = proof_contract(proof, contract, before, now=datetime.now(UTC))
+    facts = proof_contract(proof, contract, before, now=datetime.now(UTC), image=digest,
+                           build_identity={**identity, "source_sha256": before})
     need(engines.source_hashes() == before, "document_refresh_source_changed")
     proof_sha = write_new(directory / "local-native-proof.json", proof)
     image = proof["image_id"]
@@ -675,7 +688,8 @@ def full_source_candidate(directory: Path, *, publish: bool, now: datetime,
     need(type(installed) is list and len(installed) == 1 and digest in installed[0].get("RepoDigests", []),
          "document_refresh_pulled_digest_unverified")
     proof = engines.check("linux/amd64", image=installed[0]["Id"])
-    facts = proof_contract(proof, accepted(), before, now=datetime.now(UTC))
+    facts = proof_contract(proof, accepted(), before, now=datetime.now(UTC), image=digest,
+                           build_identity={**identity, "source_sha256": before})
     need(full_source_snapshot()[1:] == (before, policy), "document_refresh_source_changed")
     proof_sha = write_new(directory / "local-native-proof.json", proof)
     observed = definition(header(docker, proof["image_id"]), now=datetime.now(UTC))
@@ -690,7 +704,8 @@ def full_source_candidate(directory: Path, *, publish: bool, now: datetime,
 
 
 def infra(name: str) -> Any:
-    need(name in {"document_refresh_probe", "document_refresh_transition", "document_refresh_recovery"},
+    need(name in {"document_refresh_probe", "document_refresh_transition", "document_refresh_recovery",
+                  "document_renderer_profiles", "document_refresh_resume"},
          "document_refresh_module_refused")
     spec = importlib.util.spec_from_file_location("hirewiz_" + name, ROOT / "infra/gcp" / (name + ".py"))
     need(spec is not None and spec.loader is not None, "document_refresh_module_unavailable")
@@ -718,6 +733,26 @@ def refresh(directory: Path, *, publish: bool, now: datetime, prior_journal: Pat
     selected = full_source_candidate if full_source else candidate
     value = (selected(directory, publish=publish, now=now) if nonce is None else
              selected(directory, publish=publish, now=now, nonce=nonce))
+    return finish_refresh(directory, value, prior_journal=prior_journal, history=history)
+
+
+def resume_refresh(directory: Path, original: Path, *, manifest_sha256: str, publish: bool,
+                   now: datetime, prior_journal: Path | None = None, history: Path | None = None) -> dict[str, Any]:
+    """Continue one acknowledged candidate; source upload/Build are never sent."""
+    need(history is not None, "document_resume_other_history_required")
+    infra("document_refresh_recovery").prepare(directory, history, None,
+        refresh_module=sys.modules[__name__], resuming_original=original)
+    value = infra("document_refresh_resume").resume_candidate(directory, original,
+        manifest_sha256=manifest_sha256, publish=publish, now=now, build=sys.modules[__name__])
+    result = finish_refresh(directory, value, prior_journal=prior_journal, history=history)
+    result.update(original_manifest_sha256=manifest_sha256, resumed_existing_build=True)
+    return result
+
+
+def finish_refresh(directory: Path, value: dict[str, Any], *, prior_journal: Path | None = None,
+                   history: Path | None = None) -> dict[str, Any]:
+    """Shared native one-send, transition and actual-prior retirement ordering."""
+    probe = infra("document_refresh_probe")
     image, build = value["candidate_registry_digest"], value["build_identity"]
     native = directory / "native-proof"
     acceptance = probe.run_successor(image, build, native)
@@ -809,14 +844,18 @@ def emit_status(result: dict[str, Any]) -> None:
 def main() -> None:
     os.umask(0o077)
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=("monitor", "candidate", "full-source-candidate", "refresh", "full-source-refresh", "reconcile"), required=True)
+    parser.add_argument("--mode", choices=("monitor", "candidate", "full-source-candidate", "refresh", "full-source-refresh", "resume-full-source-refresh", "reconcile"), required=True)
     parser.add_argument("--output-directory", type=Path, required=True)
     parser.add_argument("--publish-candidate", action="store_true")
     parser.add_argument("--prior-native-journal", type=Path)
     parser.add_argument("--transition-journal", type=Path)
     parser.add_argument("--prior-history-directory", type=Path)
     parser.add_argument("--recover-failed-native-job")
+    parser.add_argument("--resume-candidate-directory", type=Path)
+    parser.add_argument("--resume-manifest-sha256")
     args = parser.parse_args()
+    need(args.mode == "resume-full-source-refresh" or args.resume_candidate_directory is None
+         and args.resume_manifest_sha256 is None, "document_resume_arguments_mode_required")
     need(args.recover_failed_native_job is None or args.mode in {"refresh", "full-source-refresh"} and args.publish_candidate,
          "document_refresh_recovery_requires_explicit_refresh")
     need(args.output_directory.is_absolute() and not args.output_directory.exists(),
@@ -824,6 +863,13 @@ def main() -> None:
     args.output_directory.mkdir(mode=0o700)
     if args.mode == "monitor":
         result = monitor(now=datetime.now(UTC))
+        emit_status(result)
+    elif args.mode == "resume-full-source-refresh":
+        need(args.resume_candidate_directory is not None and args.resume_manifest_sha256 is not None,
+             "document_resume_original_candidate_required")
+        result = resume_refresh(args.output_directory, args.resume_candidate_directory,
+            manifest_sha256=args.resume_manifest_sha256, publish=args.publish_candidate, now=datetime.now(UTC),
+            prior_journal=args.prior_native_journal, history=args.prior_history_directory)
         emit_status(result)
     elif args.mode in {"refresh", "full-source-refresh"}:
         arguments = {"publish": args.publish_candidate, "now": datetime.now(UTC),

@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "observed_at": "2026-10-23T05:03:48.616999+00:00",
+  "accepted_image": "us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz-document-inspector@sha256:240f6df0df2c82d69067e162ca40870ab77069a0b80e3d8b64abcda312b5a78d",
+  "accepted_manifest_sha256": "abaf429caeeeb5fbcc000c878a315c89e23ecd3dc912bb74df10761c144f7d60",
+  "candidate_image": "us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz-document-inspector@sha256:0a7e550623f0485945f9bbe52573091aabedfd612eb353e6a8bbb920e2ffa94f",
+  "candidate_manifest_sha256": "82d048a3ec9dd856d503b93d7e6f6a44a14388639ad3989046d9cf9cfa6291c1",
+  "baseline_verified_expected_abaf": true,
+  "accepted_renderer_version": "LibreOffice 25.2.3.2 520(Build:2)",
+  "candidate_renderer_version": "LibreOffice 25.2.3.2 520(Build:2)",
+  "accepted_file_count": 76,
+  "candidate_file_count": 76,
+  "unchanged_file_count": 69,
+  "changed_file_count": 7,
+  "changed_files": [
+    {
+      "path": "/var/cache/fontconfig/246184dc75a16901ca37d96895904249-le64.cache-9",
+      "class": "fontconfig_cache",
+      "accepted_sha256": "9d60fd790da85e665cd6565d44691a046a65e5e7b5e93a77bded7638c3b8c7ba",
+      "candidate_sha256": "24b03d3a709a809c9d28e6df9f425235417fdc9a5dbdd897a8fe1f4b378e724d"
+    },
+    {
+      "path": "/var/cache/fontconfig/3047814df9a2f067bd2d96a2b9c36e5a-le64.cache-9",
+      "class": "fontconfig_cache",
+      "accepted_sha256": "dd17deabc57f928f3f48ebe7cc769872892c3bb3b7ccb4e6420cffab3e83e18c",
+      "candidate_sha256": "193e67cccbef107baa26ddadf8d458fc1c4b0012453a16717cc08631b6050325"
+    },
+    {
+      "path": "/var/cache/fontconfig/3830d5c3ddfd5cd38a049b759396e72e-le64.cache-9",
+      "class": "fontconfig_cache",
+      "accepted_sha256": "423c1c5316315bc9545fd73b7de6ec128292483563d959f1aab88231c776280f",
+      "candidate_sha256": "59c2eac5a0dd0aa6a8e6bfa9e3f7a0f319ec21f298393009b71f15b3dd448064"
+    },
+    {
+      "path": "/var/cache/fontconfig/4c599c202bc5c08e2d34565a40eac3b2-le64.cache-9",
+      "class": "fontconfig_cache",
+      "accepted_sha256": "7426c83fef48c101040474bf7f6a563481ec4ad98301b30c7abb24d39797468e",
+      "candidate_sha256": "99cade5a4d14bdd24c5f7d585427c2fef16dbe9ae7c3b69f629d0be20b2a6e53"
+    },
+    {
+      "path": "/var/cache/fontconfig/7ef2298fde41cc6eeb7af42e48b7d293-le64.cache-9",
+      "class": "fontconfig_cache",
+      "accepted_sha256": "877f99e66021fc49079b4c38c6ef2dd0aef0cb3ba0ea7bc7c7443c863004fa42",
+      "candidate_sha256": "200dbd72f1810d849a3e224cbf79708cd0ddd70fa0b8c4ce5824552fe72abfe3"
+    },
+    {
+      "path": "/var/cache/fontconfig/d589a48862398ed80a3d6066f4f56f4c-le64.cache-9",
+      "class": "fontconfig_cache",
+      "accepted_sha256": "8edb4ec3118e080885568cc24d7f4544e81a921dc084ffcd7b7e2c88759cf539",
+      "candidate_sha256": "c5dc12482584172524361c11c15b51c9911413695bf61a9298b3f0143a110115"
+    },
+    {
+      "path": "/var/cache/fontconfig/da43223dd54fb3bb4243ae19d4b583b2-le64.cache-9",
+      "class": "fontconfig_cache",
+      "accepted_sha256": "a917e7a998ecd2dee7b3ceadddc97fd026640021a7d6b580ac391e87b1127699",
+      "candidate_sha256": "799283083fd74bffaf4d206c5e7c21bcf8c8672281ffaefc12bb223e6040737e"
+    }
+  ],
+  "changed_package_count": 1,
+  "changed_packages": [
+    {
+      "package": "libexpat1",
+      "accepted": "2.8.3-1~deb13u1",
+      "candidate": "2.9.0-1~deb13u1"
+    }
+  ],
+  "classification": "cache_only",
+  "no_corpus_or_cloud_actions": true,
+  "scope": "Read-only installed inventory comparison; not native acceptance or deployment proof",
+  "comparison_evidence_sha256": "853754b8be6191a3a4a5b73319cc1ccb75cd8c0134b0dc60a850ea3b15e45b2d"
+}

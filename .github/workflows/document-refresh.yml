@@ -9,7 +9,7 @@ on:
       mode:
         description: Audit expiry or execute reviewed definition/full-source maintenance
         type: choice
-        options: [monitor, refresh, full-source-refresh]
+        options: [monitor, refresh, full-source-refresh, resume-full-source-refresh]
         default: monitor
       recover_failed_native_job:
         description: Exact failed synthetic Job to reconcile once before a fresh full refresh
@@ -42,6 +42,7 @@ jobs:
       - name: Initialize private maintenance paths
         run: |
           umask 077
+          printf '%s\n' "RESUME_DIRECTORY=$RUNNER_TEMP/document-refresh-original-39901631586" >> "$GITHUB_ENV"
           printf '%s\n' "HISTORY_DIRECTORY=$RUNNER_TEMP/document-refresh-history" >> "$GITHUB_ENV"
           printf '%s\n' "OUTPUT_DIRECTORY=$RUNNER_TEMP/document-refresh-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -71,13 +72,13 @@ jobs:
         if: env.REFRESH_MODE == 'monitor'
         run: backend/.venv/bin/python backend/scripts/document_refresh.py --mode monitor --output-directory "$OUTPUT_DIRECTORY"
       - name: Retrieve prior owned native proof journals
-        if: env.REFRESH_MODE == 'refresh' || env.REFRESH_MODE == 'full-source-refresh'
+        if: env.REFRESH_MODE == 'refresh' || env.REFRESH_MODE == 'full-source-refresh' || env.REFRESH_MODE == 'resume-full-source-refresh'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           umask 077
           mkdir -m 700 "$HISTORY_DIRECTORY"
-          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" --jq '.artifacts[] | select(.expired == false and (.name | (startswith("document-refresh-refresh-") or startswith("document-refresh-full-source-refresh-")))) | [.workflow_run.id, .id, .name, .workflow_run.head_branch] | @tsv' > "$RUNNER_TEMP/document-refresh-artifacts.tsv"
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" --jq '.artifacts[] | select(.expired == false and (.name | (startswith("document-refresh-refresh-") or startswith("document-refresh-full-source-refresh-") or startswith("document-refresh-resume-full-source-refresh-")))) | [.workflow_run.id, .id, .name, .workflow_run.head_branch] | @tsv' > "$RUNNER_TEMP/document-refresh-artifacts.tsv"
           python -c 'import os,pathlib; p=pathlib.Path(os.environ["RUNNER_TEMP"])/"document-refresh-artifacts.tsv"; rows=[r for r in p.read_text().splitlines() if r.split("\t")[-1]==os.environ["GITHUB_REF_NAME"]]; p.write_text("\n".join(rows[:3]) + "\n")'
           while IFS=$'\t' read -r run artifact_id artifact branch; do
             test -n "$run" || continue
@@ -85,6 +86,20 @@ jobs:
           done < "$RUNNER_TEMP/document-refresh-artifacts.tsv"
           find "$HISTORY_DIRECTORY" -type d -exec chmod 700 {} +
           find "$HISTORY_DIRECTORY" -type f -exec chmod 600 {} +
+      - name: Retrieve the exact retained already-built candidate
+        if: env.REFRESH_MODE == 'resume-full-source-refresh'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          umask 077
+          mkdir -m 700 "$RESUME_DIRECTORY"
+          gh run download 39901631586 --repo "$GITHUB_REPOSITORY" --name document-refresh-full-source-refresh-39901631586-1 --dir "$RESUME_DIRECTORY"
+          find "$RESUME_DIRECTORY" -type d -exec chmod 700 {} +
+          find "$RESUME_DIRECTORY" -type f -exec chmod 600 {} +
+      - name: Reverify the retained candidate and continue once without a new Build
+        if: env.REFRESH_MODE == 'resume-full-source-refresh'
+        run: |
+          backend/.venv/bin/python backend/scripts/document_refresh.py --mode resume-full-source-refresh --publish-candidate --resume-candidate-directory "$RESUME_DIRECTORY" --resume-manifest-sha256 9d20a0b548b2de03fe61939cd714e697bef42426cd526f1714c598b7d269f5b1 --prior-history-directory "$HISTORY_DIRECTORY" --output-directory "$OUTPUT_DIRECTORY"
       - name: Build, prove, transition exact pins and restore admission
         if: env.REFRESH_MODE == 'refresh'
         run: |
@@ -113,7 +128,9 @@ jobs:
         if: always()
         run: |
           echo '### Document definition maintenance' >> "$GITHUB_STEP_SUMMARY"
-          if [[ "$REFRESH_MODE" = full-source-refresh ]]; then
+          if [[ "$REFRESH_MODE" = resume-full-source-refresh ]]; then
+            echo 'Exact-candidate continuation rechecks the original artifact, actual Build/archive/source and 25 local cases, then requires a single create-only resume claim and native V2 ten-case acceptance before the unchanged pin transition/retirement. It does not upload source or create another Build. Any unknown claim/Job/transition outcome is read-only reconciliation, never replay.' >> "$GITHUB_STEP_SUMMARY"
+          elif [[ "$REFRESH_MODE" = full-source-refresh ]]; then
             echo 'Full-source refresh publishes 13 source inputs plus the policy file and requires verification of 12 copied runtime files, 25 synthetic local cases and native V2 ten-case acceptance before the bounded worker/three-caller pin transition. Inspect the retained result and native journals for the actual outcome; this summary alone proves no completion. No new IAM, sales or employer submission is enabled. Unknown outcomes require read-only reconciliation, never another send.' >> "$GITHUB_STEP_SUMMARY"
           else
             echo 'Refresh requires actual native V2 ten-case acceptance before the bounded fail-closed worker and three-caller pin transition. On failure retain this journal, inspect the same native operation, and keep admission closed; rerunning a failed POST/PATCH is not recovery. Monitor emits an expiry heartbeat for the configured Cloud Monitoring alert.' >> "$GITHUB_STEP_SUMMARY"

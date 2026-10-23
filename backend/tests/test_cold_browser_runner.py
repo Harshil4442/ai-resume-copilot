@@ -1,6 +1,7 @@
 """Bounded local orchestration failures; actual product assertions live in Chromium."""
 from __future__ import annotations
 
+import base64
 import json
 import os
 import ssl
@@ -156,6 +157,103 @@ def test_browser_failure_summary_exposes_only_fixed_categories_and_spec_location
     result = _browser_failure_summary(report)
     assert result == {"report_state": "read", "failures": [{"category": "assertion", "spec_line": 47, "spec_column": 19}]}
     assert "secret" not in json.dumps(result) and "/private/" not in json.dumps(result)
+
+
+def _public_lab_diagnostic():
+    return {"path": "/pricing", "width": 390, "response_status": 200,
+            "errors": {"page": 1, "console": 2, "request": 3, "script": 1},
+            "snapshot": {"ready_state": "complete", "visibility": "visible", "h1_count": 1,
+                         "csp": {"script": 1, "style": 0, "other": 0},
+                         "ancestors": [{"hidden": True, "display": "none", "visibility": "visible",
+                                        "content_visibility": "visible", "bounds": [0, -2.5, 0, 0]}]}}
+
+
+def _public_lab_attachment(diagnostic):
+    return {"name": "public-lab-failure-v1", "contentType": "application/json",
+            "body": base64.b64encode(json.dumps(diagnostic).encode()).decode()}
+
+
+def test_public_lab_failure_exports_only_bounded_schema_without_opening_attachment_paths(tmp_path):
+    diagnostic = _public_lab_diagnostic()
+    attachment = _public_lab_attachment(diagnostic)
+    attachment["path"] = "/private/secret-cookie-file"
+    attachment["request"] = {"Authorization": "secret-token"}
+    report = tmp_path / "playwright.json"
+    report.write_text(json.dumps({"results": [{"attachments": [attachment], "errors": [{
+        "message": "expect(secret-candidate).toBeVisible()", "actual": "secret-password"}]}]}))
+    result = _browser_failure_summary(report)
+    assert result == {"report_state": "read", "failures": [{"category": "assertion"}],
+                      "public_lab_failures": [diagnostic]}
+    assert "secret" not in json.dumps(result) and "/private/" not in json.dumps(result)
+
+
+@pytest.mark.parametrize("missing", ["snapshot", "csp"])
+def test_public_lab_failure_retains_fixed_context_if_observation_is_unavailable(tmp_path, missing):
+    diagnostic = _public_lab_diagnostic()
+    diagnostic.update(path="/", width=1440, response_status=None)
+    if missing == "snapshot":
+        diagnostic["snapshot"] = None
+    else:
+        diagnostic["snapshot"]["csp"] = None
+    report = tmp_path / "playwright.json"
+    report.write_text(json.dumps({"attachments": [_public_lab_attachment(diagnostic)]}))
+    assert _browser_failure_summary(report)["public_lab_failures"] == [diagnostic]
+
+
+@pytest.mark.parametrize("mutate", [
+    lambda item: item.update(raw_error="secret-password"),
+    lambda item: item.update(path="/pricing?token=secret"),
+    lambda item: item.update(width=True),
+    lambda item: item.update(width=1024),
+    lambda item: item.update(response_status=600),
+    lambda item: item["errors"].update(message="secret-cookie"),
+    lambda item: item["errors"].update(page=256),
+    lambda item: item["errors"].update(page=False),
+    lambda item: item["snapshot"].update(text="secret-candidate"),
+    lambda item: item["snapshot"].update(ready_state="secret-token"),
+    lambda item: item["snapshot"].update(visibility="secret-url"),
+    lambda item: item["snapshot"].update(h1_count=1025),
+    lambda item: item["snapshot"]["csp"].update(blockedURI="secret-url"),
+    lambda item: item["snapshot"]["ancestors"].extend([item["snapshot"]["ancestors"][0]] * 8),
+    lambda item: item["snapshot"]["ancestors"][0].update(html="secret-candidate"),
+    lambda item: item["snapshot"]["ancestors"][0].update(hidden="secret"),
+    lambda item: item["snapshot"]["ancestors"][0].update(display="secret-style"),
+    lambda item: item["snapshot"]["ancestors"][0].update(bounds=[0, 0, -1, 0]),
+    lambda item: item["snapshot"]["ancestors"][0].update(bounds=[0, float("nan"), 0, 0]),
+    lambda item: item["snapshot"]["ancestors"][0].update(bounds=[0, float("inf"), 0, 0]),
+    lambda item: item["snapshot"]["ancestors"][0].update(bounds=[10**400, 0, 0, 0]),
+])
+def test_public_lab_failure_rejects_raw_fields_and_invalid_or_unbounded_values(tmp_path, mutate):
+    diagnostic = _public_lab_diagnostic()
+    mutate(diagnostic)
+    report = tmp_path / "playwright.json"
+    report.write_text(json.dumps({"attachments": [_public_lab_attachment(diagnostic)]}))
+    assert _browser_failure_summary(report) == {"report_state": "read", "failures": []}
+
+
+@pytest.mark.parametrize("attachment", [
+    {"name": "public-lab-failure-v1", "contentType": "application/json", "path": "/private/secret"},
+    {"name": "public-lab-failure-v1", "contentType": "application/json", "body": "secret-not-base64"},
+    {"name": "public-lab-failure-v1", "contentType": "application/json", "body": "A" * 8193},
+    {"name": "public-lab-failure-v1", "contentType": "text/plain", "body": "secret"},
+    {"name": "raw-browser-log", "contentType": "application/json", "body": "secret"},
+])
+def test_public_lab_failure_ignores_wrong_oversized_or_path_only_attachments(tmp_path, attachment):
+    report = tmp_path / "playwright.json"
+    report.write_text(json.dumps({"attachments": [attachment]}))
+    assert _browser_failure_summary(report) == {"report_state": "read", "failures": []}
+
+
+def test_public_lab_failure_deduplicates_and_bounds_retained_diagnostics(tmp_path):
+    diagnostics = []
+    for count in range(7):
+        item = _public_lab_diagnostic()
+        item["errors"]["page"] = count
+        diagnostics.append(item)
+    attachments = [_public_lab_attachment(item) for item in [diagnostics[0], *diagnostics]]
+    report = tmp_path / "playwright.json"
+    report.write_text(json.dumps({"attachments": attachments}))
+    assert _browser_failure_summary(report)["public_lab_failures"] == diagnostics[:4]
 
 
 def test_browser_failure_summary_reports_missing_browser_without_raw_global_error(tmp_path):

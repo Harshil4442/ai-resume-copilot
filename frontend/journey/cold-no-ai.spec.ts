@@ -11,6 +11,7 @@ type PublicLabState = {
   events: { at: number; duration: number; interactionId: number; name: string }[];
   truncated: boolean;
   firstHiddenAt: number | null;
+  csp: { script: number; style: number; other: number };
   observers: PerformanceObserver[];
 };
 type PublicLabWindow = Window & { __hirewizPublicLab?: PublicLabState };
@@ -23,12 +24,27 @@ async function measurePublicLab(browser: import("@playwright/test").Browser, bas
     const labContext = await browser.newContext({ ignoreHTTPSErrors: true }); // Owned CI loopback TLS only.
     await labContext.route((url) => url.origin !== baseURL, guardExternal);
     const labPage = await labContext.newPage();
+    const errors = { page: 0, console: 0, request: 0, script: 0 };
+    const increment = (key: keyof typeof errors) => { errors[key] = Math.min(255, errors[key] + 1); };
+    labPage.on("pageerror", () => increment("page"));
+    labPage.on("console", (message) => { if (message.type() === "error") increment("console"); });
+    labPage.on("requestfailed", (request) => {
+      increment("request");
+      if (request.resourceType() === "script") increment("script");
+    });
+    let responseStatus: number | null = null;
     try {
       await labPage.setViewportSize({ width, height: 900 });
       await labPage.addInitScript(() => {
         const state: PublicLabState = { supported: [...PerformanceObserver.supportedEntryTypes],
-          lcp: null, shifts: [], events: [], truncated: false, firstHiddenAt: null, observers: [] };
+          lcp: null, shifts: [], events: [], truncated: false, firstHiddenAt: null,
+          csp: { script: 0, style: 0, other: 0 }, observers: [] };
         (window as PublicLabWindow).__hirewizPublicLab = state;
+        document.addEventListener("securitypolicyviolation", (event) => {
+          const key = event.effectiveDirective.startsWith("script-src") ? "script"
+            : event.effectiveDirective.startsWith("style-src") ? "style" : "other";
+          state.csp[key] = Math.min(255, state.csp[key] + 1);
+        });
         document.addEventListener("visibilitychange", () => {
           if (document.visibilityState === "hidden" && state.firstHiddenAt === null) state.firstHiddenAt = performance.now();
         });
@@ -62,6 +78,7 @@ async function measurePublicLab(browser: import("@playwright/test").Browser, bas
         }
       });
       const response = await labPage.goto(`${baseURL}${path}`, { waitUntil: "load" });
+      responseStatus = response?.status() ?? null;
       expect(response?.status()).toBe(200);
       await expect(labPage.locator("h1")).toHaveCount(1);
       await expect(labPage.locator("h1")).toBeVisible();
@@ -127,6 +144,34 @@ async function measurePublicLab(browser: import("@playwright/test").Browser, bas
       }
       if (metrics.lcp_ms !== null) expect(metrics.lcp_ms).toBeGreaterThan(0);
       measurements.push({ path, width, height: 900, ...metrics });
+    } catch (error) {
+      // Fixed public-lab metadata only: never serialize DOM text, URLs or errors.
+      try {
+        const snapshotPromise = labPage.evaluate(() => {
+          const heading = document.querySelector("h1");
+          const ancestors = [];
+          for (let node: Element | null = heading; node && ancestors.length < 8; node = node.parentElement) {
+            const style = getComputedStyle(node);
+            const rect = node.getBoundingClientRect();
+            const bounded = (value: number) => Math.round(Math.max(-1_000_000, Math.min(1_000_000, value)) * 100) / 100;
+            const display = ["none", "contents", "block", "inline", "inline-block", "flex", "inline-flex", "grid", "inline-grid"].includes(style.display) ? style.display : "other";
+            const visibility = ["visible", "hidden", "collapse"].includes(style.visibility) ? style.visibility : "other";
+            const contentVisibility = ["visible", "auto", "hidden"].includes(style.contentVisibility) ? style.contentVisibility : "other";
+            ancestors.push({ hidden: node.hasAttribute("hidden"), display, visibility, content_visibility: contentVisibility,
+              bounds: [rect.x, rect.y, rect.width, rect.height].map(bounded) });
+          }
+          return { ready_state: document.readyState, visibility: document.visibilityState,
+            h1_count: Math.min(1024, document.querySelectorAll("h1").length), ancestors,
+            csp: (window as PublicLabWindow).__hirewizPublicLab?.csp ?? null };
+        }).catch(() => null);
+        let diagnosticTimer: ReturnType<typeof setTimeout> | undefined;
+        const snapshot = await Promise.race([snapshotPromise, new Promise<null>((resolve) => {
+          diagnosticTimer = setTimeout(() => resolve(null), 1000);
+        })]).finally(() => { if (diagnosticTimer !== undefined) clearTimeout(diagnosticTimer); });
+        await test.info().attach("public-lab-failure-v1", { contentType: "application/json",
+          body: Buffer.from(JSON.stringify({ path, width, response_status: responseStatus, errors, snapshot })) });
+      } catch { /* Diagnostics must not replace the original failure. */ }
+      throw error;
     } finally { await labContext.close(); }
   }
   return { scope: "Disposable CI production Next on loopback; unthrottled Chromium; fresh per-page browser cache; shared warmed server",
