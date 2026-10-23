@@ -35,5 +35,5 @@ export async function guardedSignOut() {
 
 export function postLoginPath(defaultPath: string) {
   const value = new URLSearchParams(window.location.search).get("returnTo");
-  return value && /^\/browser-companion\?pairing=[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(value) ? value : defaultPath;
+  return value === "/account-recovery" ? value : value && /^\/browser-companion\?pairing=[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(value) ? value : defaultPath;
 }

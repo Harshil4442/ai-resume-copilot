@@ -77,7 +77,7 @@ export default function LoginPage() {
     try {
       await prepareGoogleRegistrationConsent();
       trackEvent("oauth_started", { method: "google", surface: "login" });
-      await signIn("google", { callbackUrl: "/dashboard" });
+      await signIn("google", { callbackUrl: postLoginPath("/dashboard") });
     } catch (googleError) {
       setError(googleError instanceof Error ? googleError.message : "Could not start Google sign-in.");
       setLoading(false);
@@ -117,6 +117,8 @@ export default function LoginPage() {
             </Button>
             <Button type="button" variant="secondary" disabled={!ready || loading || !email || !password} onClick={() => void checkRegistration()}>Check secure registration status</Button>
           </form>
+
+          <p className="mt-4 text-sm"><Link href="/account-recovery" className="font-semibold text-primary underline">Forgot your HireWiz password?</Link></p>
 
           {googleAvailable ? (
             <div className="mt-6 border-t border-border pt-6">

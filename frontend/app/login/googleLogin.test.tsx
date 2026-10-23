@@ -7,6 +7,7 @@ const mocked = vi.hoisted(() => ({
   signIn: vi.fn(),
   prepareConsent: vi.fn(),
   push: vi.fn(),
+  postLoginPath: vi.fn((path: string) => path),
 }));
 
 vi.mock("next-auth/react", () => ({
@@ -23,7 +24,7 @@ vi.mock("../../lib/auth", () => ({ prepareGoogleRegistrationConsent: mocked.prep
 vi.mock("../../lib/useHydrated", () => ({ useHydrated: () => true }));
 vi.mock("../../lib/candidateAuthClient", () => ({
   candidateRegistration: vi.fn(),
-  postLoginPath: (path: string) => path,
+  postLoginPath: mocked.postLoginPath,
 }));
 
 import LoginPage from "./page";
@@ -33,6 +34,7 @@ beforeEach(() => {
   mocked.getProviders.mockResolvedValue({ google: { id: "google", type: "oauth" } });
   mocked.signIn.mockResolvedValue(undefined);
   mocked.prepareConsent.mockResolvedValue(undefined);
+  mocked.postLoginPath.mockImplementation((path: string) => path);
   window.history.replaceState({}, "", "/login");
 });
 
@@ -91,6 +93,23 @@ describe("Google sign-in redirect failures", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(/sign-in.*unavailable/i);
     expect(screen.getByRole("alert")).not.toHaveTextContent(/invalid email or password/i);
     expect(mocked.push).not.toHaveBeenCalled();
+  });
+
+  it("offers explicit forgotten-password recovery without automatically starting Google", async () => {
+    render(<LoginPage />);
+    expect(screen.getByRole("link", { name: "Forgot your HireWiz password?" })).toHaveAttribute("href", "/account-recovery");
+    expect(mocked.signIn).not.toHaveBeenCalled();
+    expect(mocked.prepareConsent).not.toHaveBeenCalled();
+  });
+
+  it("returns a consented ordinary Google sign-in to the fixed recovery destination", async () => {
+    mocked.postLoginPath.mockReturnValue("/account-recovery");
+    render(<LoginPage />);
+    const button = await screen.findByRole("button", { name: "Continue with Google" });
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(button);
+    await waitFor(() => expect(mocked.signIn).toHaveBeenCalledWith("google", { callbackUrl: "/account-recovery" }));
+    expect(mocked.prepareConsent).toHaveBeenCalledOnce();
   });
 
 });

@@ -10,7 +10,7 @@ from functools import partial
 from google.auth import exceptions as google_exceptions
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token as google_id_token
-from pydantic import Field
+from pydantic import Field, PrivateAttr
 
 from ..recovery.contracts import Contract, Digest, Timestamp
 from ..recovery.store import GuardDenied, GuardUnavailable
@@ -23,6 +23,12 @@ class GoogleIdentity(Contract):
     authenticated_at_ms: Timestamp
     issued_at_ms: int = 0
     name: str = ""
+    # Only the actual signature/nonce verifier sets this private fact. It is
+    # absent from JSON, bearer claims and model reconstruction by a caller.
+    _recovery_nonce_sha256: str | None = PrivateAttr(default=None)
+
+    def verified_recovery_nonce(self, nonce: str) -> bool:
+        return self._recovery_nonce_sha256 is not None and self._recovery_nonce_sha256 == hashlib.sha256(nonce.encode()).hexdigest()
 
     def bearer_claim(self) -> dict:
         return self.model_dump(exclude={"email", "issued_at_ms", "name"}, mode="json")
@@ -63,10 +69,19 @@ def verify_google_identity(token: str, *, nonce: str | None = None,
                 raise ValueError
         principal = json.dumps({"issuer": "https://accounts.google.com", "subject": subject,
                                 "audience": client_id}, sort_keys=True, separators=(",", ":"))
-        return GoogleIdentity(principal_sha256=hashlib.sha256(principal.encode()).hexdigest(),
+        identity = GoogleIdentity(principal_sha256=hashlib.sha256(principal.encode()).hexdigest(),
             proof_sha256=hashlib.sha256(token.encode()).hexdigest(), email=email.strip().lower(),
             authenticated_at_ms=now, issued_at_ms=claims["iat"] * 1000 if type(claims.get("iat")) is int else 0,
             name=claims.get("name") if type(claims.get("name")) is str else "")
+        hosted_domain = claims.get("hd")
+        # Google is authoritative for Gmail and verified hosted-domain mail,
+        # not merely for a third-party address verified when an account began.
+        authoritative = identity.email.endswith("@gmail.com") or (
+            type(hosted_domain) is str and bool(hosted_domain.strip())
+        )
+        if nonce is not None and authoritative:
+            identity._recovery_nonce_sha256 = hashlib.sha256(nonce.encode()).hexdigest()
+        return identity
     except google_exceptions.TransportError:
         raise GuardUnavailable("Google identity verification is unavailable") from None
     except (ValueError, TypeError, google_exceptions.GoogleAuthError):

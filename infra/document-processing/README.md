@@ -477,3 +477,29 @@ three-consumer pin transition, retained proof cleanup and expiry/heartbeat alert
 are documented in [the maintenance runbook](../../docs/delivery/DOCUMENT_DEFINITION_MAINTENANCE.md).
 The workflow requires explicit root-provisioned WIF/SA UID and notification
 activation; source and synthetic tests alone do not establish live maintenance.
+
+### Full-source candidate publication
+
+The `full-source-candidate` mode in `backend/scripts/document_refresh.py` publishes
+the current inspector source using the existing dedicated maintenance identity:
+
+```sh
+.venv/bin/python scripts/document_refresh.py --mode full-source-candidate \
+  --output-directory /absolute/new/private-directory --publish-candidate
+```
+
+Its context contains the thirteen `document_test_image.SOURCES` files and the
+exact policy file, with canonical regular paths and independently checked bytes.
+The separate `native_cloud_build_full_source_v1` profile uses a `source-<nonce>`
+tag, the exact full Dockerfile, thirteen source labels and the existing
+generation-zero nonce-owned source namespace. The historical receipt field
+`refresh_dockerfile_sha256` carries this profile's full Dockerfile hash;
+`fixed_renderer_base` is null because this profile builds the complete renderer.
+The old one-file definitions-only profile and frozen V1 read-only evidence retain
+their existing behavior.
+
+The candidate result binds the actual immutable registry digest and local
+25-case engine proof. Existing V2 ten-case native acceptance and the reviewed
+worker/caller pin transition remain necessary. The separate schema19-to-20
+rollout and native upload admission remain pending; candidate publication does
+not perform either action. Release read-only credentials cannot publish.
