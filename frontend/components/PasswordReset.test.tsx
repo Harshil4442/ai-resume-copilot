@@ -3,14 +3,18 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import PasswordResetConfirm from "./PasswordResetConfirm";
 import PasswordResetRequest from "./PasswordResetRequest";
-import { capturePasswordResetLink, takePasswordResetToken } from "../lib/passwordResetLink";
+import SessionProviderWrapper from "./SessionProviderWrapper";
+import { capturePasswordResetLink, clearPasswordResetToken, readPasswordResetToken } from "../lib/passwordResetLink";
 
-const auth = vi.hoisted(() => ({ csrf: vi.fn() }));
-vi.mock("next-auth/react", () => ({ getCsrfToken: auth.csrf }));
+const auth = vi.hoisted(() => ({ csrf: vi.fn(), status: "loading" as "loading" | "unauthenticated", pathname: "/" }));
+vi.mock("next-auth/react", () => ({ getCsrfToken: auth.csrf, useSession: () => ({ data: null, status: auth.status }),
+  SessionProvider: ({ children }: { children: React.ReactNode }) => children }));
+vi.mock("next/navigation", () => ({ usePathname: () => auth.pathname }));
 const token = "T".repeat(43), password = "human-new-password-123";
 beforeEach(() => {
   auth.csrf.mockReset().mockResolvedValue("c".repeat(64));
-  takePasswordResetToken();
+  clearPasswordResetToken();
+  auth.status = "loading"; auth.pathname = "/";
   history.replaceState(null, "", "/");
   vi.stubGlobal("fetch", vi.fn());
 });
@@ -27,6 +31,63 @@ function fill(newPassword = password, confirmation = newPassword) {
 async function submit() { fireEvent.click(screen.getByRole("button", { name: "Update password" })); }
 
 describe("human email-link password reset", () => {
+  it("keeps an unsubmitted link across the actual session-owner keyed remount", () => {
+    history.replaceState(null, "", `/reset-password#token=${token}`);
+    capturePasswordResetLink(); auth.pathname = "/reset-password";
+    const view = render(<SessionProviderWrapper><PasswordResetConfirm /></SessionProviderWrapper>);
+    const firstField = screen.getByLabelText("New password");
+    expect(location.hash).toBe("");
+    auth.status = "unauthenticated";
+    view.rerender(<SessionProviderWrapper><PasswordResetConfirm /></SessionProviderWrapper>);
+    expect(screen.getByLabelText("New password")).not.toBe(firstField);
+    expect(screen.getByLabelText("Confirm new password")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(document.body.innerHTML).not.toContain(token);
+    expect(fetch).not.toHaveBeenCalled(); expect(auth.csrf).not.toHaveBeenCalled();
+  });
+  it("clears a posted link before an owner remount and cannot send an uncertain reset again", async () => {
+    history.replaceState(null, "", `/reset-password#token=${token}`);
+    capturePasswordResetLink(); auth.pathname = "/reset-password";
+    const view = render(<SessionProviderWrapper><PasswordResetConfirm /></SessionProviderWrapper>);
+    fill();
+    let resolve: ((response: Response) => void) | undefined;
+    vi.mocked(fetch).mockImplementation(() => new Promise((done) => { resolve = done; }));
+    await submit(); await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    expect(readPasswordResetToken()).toBeNull();
+    auth.status = "unauthenticated";
+    view.rerender(<SessionProviderWrapper><PasswordResetConfirm /></SessionProviderWrapper>);
+    expect(screen.queryByLabelText("New password")).toBeNull();
+    expect(screen.getByRole("link", { name: "Request a new link" })).toBeInTheDocument();
+    await act(async () => resolve?.(Response.json({ status: "PASSWORD_RESET" })));
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(document.body.innerHTML).not.toContain(token);
+  });
+  it("clears unsubmitted proof on an observed route exit before returning without a new link", () => {
+    history.replaceState(null, "", `/reset-password#token=${token}`);
+    capturePasswordResetLink(); auth.pathname = "/reset-password";
+    const view = render(<SessionProviderWrapper><PasswordResetConfirm /></SessionProviderWrapper>);
+    expect(screen.getByLabelText("New password")).toBeInTheDocument();
+    history.replaceState(null, "", "/forgot-password"); auth.pathname = "/forgot-password";
+    view.rerender(<SessionProviderWrapper><p>Request another reset link</p></SessionProviderWrapper>);
+    history.replaceState(null, "", "/reset-password"); auth.pathname = "/reset-password";
+    view.rerender(<SessionProviderWrapper><PasswordResetConfirm /></SessionProviderWrapper>);
+    expect(screen.queryByLabelText("New password")).toBeNull();
+    expect(screen.getByRole("alert")).toHaveTextContent("invalid, has expired, or has already been used");
+    expect(fetch).not.toHaveBeenCalled();
+  });
+  it("does not clear a newer captured link when an older request completes", async () => {
+    confirm(); fill();
+    let resolve: ((response: Response) => void) | undefined;
+    vi.mocked(fetch).mockImplementation(() => new Promise((done) => { resolve = done; }));
+    await submit(); await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    const next = "N".repeat(43);
+    history.replaceState(null, "", `/reset-password#token=${next}`); capturePasswordResetLink();
+    await act(async () => resolve?.(Response.json({ status: "PASSWORD_RESET" })));
+    await screen.findByRole("link", { name: "Continue to sign in" });
+    expect(readPasswordResetToken()).toBe(next);
+    expect(location.hash).toBe(""); expect(document.body.innerHTML).not.toContain(next);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
   it("starts no email request automatically and only explicitly resends a generic request", async () => {
     render(<PasswordResetRequest />);
     expect(fetch).not.toHaveBeenCalled(); expect(auth.csrf).not.toHaveBeenCalled();

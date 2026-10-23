@@ -5,34 +5,41 @@ beforeEach(() => { vi.resetModules(); window.history.replaceState({ existing: tr
 afterEach(() => { window.history.replaceState(null, "", "/"); });
 
 describe("private reset fragment capture", () => {
-  it("removes the fragment before use and transfers the token once without storage or DOM", async () => {
+  it("removes the fragment and permits same-document remount reads without storage or DOM", async () => {
     window.history.replaceState({ existing: true }, "", `/reset-password#token=${token}`);
-    const { capturePasswordResetLink, takePasswordResetToken } = await import("./passwordResetLink");
+    const { capturePasswordResetLink, clearPasswordResetToken, readPasswordResetToken } = await import("./passwordResetLink");
     const writes = vi.spyOn(Storage.prototype, "setItem");
     capturePasswordResetLink();
     expect(location.href).not.toContain(token);
     expect(location.hash).toBe("");
     expect(history.state).toEqual({ existing: true });
     expect(document.documentElement.innerHTML).not.toContain(token);
-    expect(takePasswordResetToken()).toBe(token);
-    expect(takePasswordResetToken()).toBeNull();
+    expect(readPasswordResetToken()).toBe(token);
+    expect(readPasswordResetToken()).toBe(token);
+    clearPasswordResetToken(token);
+    expect(readPasswordResetToken()).toBeNull();
     expect(writes).not.toHaveBeenCalled();
     writes.mockRestore();
   });
   it.each(["token=short", `token=${token}&token=${token}`, `token=${token}&other=x`, `unknown=${token}`, "token=%00".repeat(2)])("strips malformed fragment %s without retaining it", async (fragment) => {
     history.replaceState(null, "", `/reset-password#${fragment}`);
-    const { takePasswordResetToken } = await import("./passwordResetLink");
-    expect(takePasswordResetToken()).toBeNull();
+    const { readPasswordResetToken } = await import("./passwordResetLink");
+    expect(readPasswordResetToken()).toBeNull();
     expect(location.hash).toBe("");
   });
-  it("captures a later new link in the same document without reusing a consumed token", async () => {
-    const { takePasswordResetToken } = await import("./passwordResetLink");
+  it("clears proof on route exit and replaces it on a new capture without stale clearing", async () => {
+    const { capturePasswordResetLink, clearPasswordResetToken, readPasswordResetToken } = await import("./passwordResetLink");
     history.replaceState(null, "", `/reset-password#token=${token}`);
-    expect(takePasswordResetToken()).toBe(token);
+    expect(readPasswordResetToken()).toBe(token);
     history.replaceState(null, "", "/forgot-password");
-    expect(takePasswordResetToken()).toBeNull();
+    capturePasswordResetLink();
+    expect(readPasswordResetToken()).toBeNull();
     history.replaceState(null, "", `/reset-password#token=${"N".repeat(43)}`);
-    expect(takePasswordResetToken()).toBe("N".repeat(43));
+    expect(readPasswordResetToken()).toBe("N".repeat(43));
+    clearPasswordResetToken(token);
+    expect(readPasswordResetToken()).toBe("N".repeat(43));
+    history.replaceState(null, "", "/reset-password#token=invalid");
+    expect(readPasswordResetToken()).toBeNull();
     expect(location.hash).toBe("");
   });
 });

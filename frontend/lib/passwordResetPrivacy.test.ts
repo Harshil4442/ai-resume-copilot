@@ -32,8 +32,8 @@ describe("reset telemetry exclusion before hydration", () => {
     expect((window as unknown as Record<string, unknown>)["ga-disable-G-SYNTHETIC"]).toBe(true);
     expect(options.beforeSend({ message: "private" })).toBeNull();
     expect(options.beforeBreadcrumb({ data: { url: location.href } })).toBeNull();
-    const { takePasswordResetToken } = await import("./passwordResetLink");
-    expect(takePasswordResetToken()).toBe(token);
+    const { readPasswordResetToken } = await import("./passwordResetLink");
+    expect(readPasswordResetToken()).toBe(token);
     history.replaceState(null, "", "/dashboard");
     (window as unknown as Record<string, unknown>)["ga-disable-G-SYNTHETIC"] = false;
     instrumentation.onRouterTransitionStart("/reset-password#token=private", "push");

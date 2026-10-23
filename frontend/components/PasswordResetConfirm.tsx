@@ -4,7 +4,7 @@ import { ArrowRight, CheckCircle2, KeyRound } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { passwordReset } from "../lib/passwordResetClient";
-import { takePasswordResetToken } from "../lib/passwordResetLink";
+import { clearPasswordResetToken, readPasswordResetToken } from "../lib/passwordResetLink";
 import { Button } from "./ui/Button";
 
 type Stage = "loading" | "ready" | "invalid" | "complete" | "uncertain";
@@ -21,7 +21,7 @@ export default function PasswordResetConfirm() {
   useLayoutEffect(() => {
     if (initialized.current) return;
     initialized.current = true;
-    token.current = takePasswordResetToken();
+    token.current = readPasswordResetToken();
     setStage(token.current ? "ready" : "invalid");
   }, []);
   useEffect(() => () => { active.current?.abort(); }, []);
@@ -33,21 +33,22 @@ export default function PasswordResetConfirm() {
       setError("Choose a password between 10 and 128 characters."); return;
     }
     if (password !== confirmation) { setError("The passwords do not match. Enter the same new password in both fields."); return; }
+    const proof = token.current;
     const controller = new AbortController(); active.current = controller;
     setBusy(true); setError(null);
     let posted = false;
     try {
-      const result = await passwordReset("confirm", { token: token.current, new_password: password },
-        controller.signal, () => { posted = true; });
+      const result = await passwordReset("confirm", { token: proof, new_password: password },
+        controller.signal, () => { posted = true; clearPasswordResetToken(proof); });
       if (controller.signal.aborted) return;
-      if (result === "PASSWORD_RESET") { token.current = null; setStage("complete"); }
-      else if (result === "RESET_LINK_INVALID") { token.current = null; setStage("invalid"); }
+      if (result === "PASSWORD_RESET") { clearPasswordResetToken(proof); token.current = null; setStage("complete"); }
+      else if (result === "RESET_LINK_INVALID") { clearPasswordResetToken(proof); token.current = null; setStage("invalid"); }
       else if (result === "RATE_LIMITED") setError("Too many attempts. Please wait before trying again.");
       else if (result === "RESET_REQUEST_REJECTED") setError("The request was rejected. Check your password and try again.");
-      else { token.current = null; setStage("uncertain"); }
+      else { clearPasswordResetToken(proof); token.current = null; setStage("uncertain"); }
     } catch {
       if (!controller.signal.aborted) {
-        if (posted) { token.current = null; setStage("uncertain"); }
+        if (posted) { clearPasswordResetToken(proof); token.current = null; setStage("uncertain"); }
         else setError("The reset was not sent. Check your connection and try again.");
       }
     } finally {

@@ -5,7 +5,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { SessionProvider, useSession } from "next-auth/react";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { capturePasswordResetLink } from "../lib/passwordResetLink";
 
 // Keep these destinations aligned with the authentication matcher in proxy.ts.
 const PRIVATE_ROUTES = ["/dashboard", "/resume", "/jobs", "/employer-jobs", "/workspace", "/market", "/learning", "/profile", "/billing"];
@@ -35,6 +36,8 @@ function OwnerQueryProvider({
 function SessionOwnerBoundary({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession();
   const pathname = usePathname();
+  // A route exit clears proof; a same-document owner-boundary remount does not.
+  useEffect(() => { capturePasswordResetLink(); }, [pathname]);
   const privatePage = PRIVATE_ROUTES.some((route) => pathname === route || pathname.startsWith(`${route}/`));
   const identity = session?.user?.id || session?.user?.email;
   const owner = status === "authenticated"
