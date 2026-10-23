@@ -19,6 +19,12 @@ async function request(operation: string, token?: Record<string, unknown>, body?
     headers: { cookie, "x-hirewiz-account-csrf":csrf, origin: foreign ? "https://attacker.example.com" : origin, "Content-Type": "application/json" }, body });
 }
 const params = (operation: string) => ({ params: Promise.resolve({ operation }) });
+function recoveryBackendReply(data: unknown, status = 200) {
+  const fetch = vi.fn(async (url) => String(url).endsWith("/availability")
+    ? Response.json({ fresh_registration: true, legacy_enrollment: true }) : Response.json(data, { status }));
+  vi.stubGlobal("fetch", fetch);
+  return fetch;
+}
 
 describe("candidate website projected BFF contracts", () => {
   const legacy = { hirewizUserId: 12, accessToken: "synthetic-private-legacy-bearer", candidateSignInMethod: "google" };
@@ -27,7 +33,7 @@ describe("candidate website projected BFF contracts", () => {
     const reply = await GET(await request("eligibility", legacy), params("eligibility"));
     expect(await reply.json()).toEqual({status:"GOOGLE_ENROLLMENT_AVAILABLE"}); expect(fetch).not.toHaveBeenCalled();
   });
-  it.each(["google-enrollment-challenge", "enroll-google", "enroll-password"])("requires same-owner private bearer, CSRF and no existing native account for %s", async (operation) => {
+  it.each(["google-enrollment-challenge", "enroll-google", "enroll-password", "recovery-google-challenge", "recover-google"])("requires same-owner private bearer, CSRF and no existing native account for %s", async (operation) => {
     const fetch = vi.fn(); vi.stubGlobal("fetch", fetch);
     expect((await POST(await request(operation, undefined, "{}"), params(operation))).status).toBe(401);
     expect((await POST(await request(operation, retained, "{}"), params(operation))).status).toBe(409);
@@ -56,6 +62,47 @@ describe("candidate website projected BFF contracts", () => {
       const result=await POST(await request(operation,legacy,"{}"),params(operation));
       expect(result.status).toBe(503); expect(await result.json()).toEqual({status:"UNAVAILABLE"});
     }
+  });
+  it.each(["recovery-google-challenge", "recover-google"])("requires ordinary Google sign-in before %s", async (operation) => {
+    const fetch = vi.fn(); vi.stubGlobal("fetch", fetch);
+    const result = await POST(await request(operation, { ...legacy, candidateSignInMethod: "password" }, "{}"), params(operation));
+    expect(result.status).toBe(401); expect(await result.json()).toEqual({ status: "RECOVERY_AUTHENTICATION_FAILED" });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+  it("forwards exact recovery consent/proof and projects same-owner success without a session grant", async () => {
+    const body = JSON.stringify({ challenge_id: context.account_binding_id, nonce: "n".repeat(43), id_token: "synthetic-proof",
+      password: "synthetic-password", accepted_enrollment: true, accepted_recovery: true });
+    const fetch = recoveryBackendReply({ status: "ENROLLED", user_id: 12 });
+    const result = await POST(await request("recover-google", legacy, body), params("recover-google"));
+    expect(result.status).toBe(200); expect(await result.json()).toEqual({ status: "ENROLLED" });
+    const sent = fetch.mock.calls[1] as unknown as [string, RequestInit];
+    expect(sent[0]).toBe("https://backend.example.com/api/auth/candidate/v1/recover-google");
+    expect(sent[1].body?.toString()).toBe(body);
+    expect(new Headers(sent[1].headers).get("authorization")).toBe(`Bearer ${legacy.accessToken}`);
+    expect(new Headers(sent[1].headers).get("x-hirewiz-candidate-ingress")).toBeTruthy();
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+  it.each([[401, "RECOVERY_AUTHENTICATION_FAILED"], [403, "RECOVERY_EMAIL_PROOF_REQUIRED"], [409, "RECOVERY_UNAVAILABLE"]] as const)("preserves only exact pre-commit recovery refusal %s", async (status, code) => {
+    const fetch = recoveryBackendReply({ status: code }, status);
+    const result = await POST(await request("recover-google", legacy, "{}"), params("recover-google"));
+    expect(result.status).toBe(status); expect(await result.json()).toEqual({ status: code });
+    expect(result.headers.get("cache-control")).toBe("private, no-store");
+    expect(fetch.mock.calls.map(([url]) => String(url))).toEqual(["https://backend.example.com/api/auth/candidate/v1/availability", "https://backend.example.com/api/auth/candidate/v1/recover-google"]);
+  });
+  it.each([
+    [401, { detail: "private backend reason" }],
+    [401, { status: "RECOVERY_AUTHENTICATION_FAILED", private: "private backend reason" }],
+    [503, { status: "RECOVERY_AUTHENTICATION_FAILED" }],
+    [200, { status: "ENROLLED", user_id: 13 }],
+  ] as const)("keeps malformed or unknown recovery result %s unavailable", async (status, data) => {
+    recoveryBackendReply(data, status);
+    const result = await POST(await request("recover-google", legacy, "{}"), params("recover-google"));
+    expect(result.status).toBe(503); expect(await result.json()).toEqual({ status: "UNAVAILABLE" });
+  });
+  it("does not leak sensitive validation details from a rejected recovery body", async () => {
+    recoveryBackendReply({ detail: [{ input: "private-password" }] }, 422);
+    const result = await POST(await request("recover-google", legacy, "{}"), params("recover-google"));
+    expect(result.status).toBe(422); expect(await result.json()).toEqual({ status: "RECOVERY_REQUEST_REJECTED" });
   });
   it("decodes private eligibility with the issuer's trimmed secret", async () => {
     vi.stubEnv("NEXTAUTH_SECRET", ` ${secret} `);

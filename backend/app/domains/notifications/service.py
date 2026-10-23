@@ -125,6 +125,12 @@ class DeliverySummary:
 def _message(item: models.NotificationOutbox) -> tuple[str, str]:
     app_url = (os.getenv("FRONTEND_URL") or "https://www.hirewizhq.com").rstrip("/")
     payload = item.payload or {}
+    if item.notification_type == "account_recovery_requested":
+        return (
+            "HireWiz account recovery requested",
+            "A password recovery and browser account enrollment request was made for your HireWiz account. "
+            f"If you did not request this, contact support: {app_url}/contact",
+        )
     if item.notification_type == "welcome":
         return (
             "Welcome to HireWiz",
