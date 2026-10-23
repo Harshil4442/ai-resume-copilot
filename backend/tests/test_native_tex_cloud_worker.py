@@ -173,6 +173,81 @@ def test_only_exact_future_runtime_invoker_is_permitted_after_isolation():
         deployment.check_snapshot(value, IMAGE, RELEASE)
 
 
+def coordinator_snapshot():
+    value = snapshot()
+    documents = deployment.documents
+    principal = documents.UPLOAD_COORDINATOR
+    value["service_iam"] = deployment.render(IMAGE, RELEASE, coordinator_phase=True)["runtime_service_iam"]
+    value["upload_coordinator_service_account"] = {
+        "name": f"projects/{documents.PROJECT}/serviceAccounts/{principal}",
+        "projectId": documents.PROJECT, "email": principal, "uniqueId": documents.UPLOAD_COORDINATOR_UID,
+    }
+    value["upload_coordinator_service_account_keys"] = {"keys": [{"keyType": "SYSTEM_MANAGED"}]}
+    return value
+
+
+def test_only_opted_in_exact_keyless_upload_coordinator_may_join_runtime():
+    value = coordinator_snapshot()
+    report = deployment.check_snapshot(value, IMAGE, RELEASE, runtime_phase=True, coordinator_phase=True)
+    assert report["configuration_matches"] is True and report["native_compile_proven"] is False
+    with pytest.raises(deployment.TexConfigurationDenied):
+        deployment.check_snapshot(value, IMAGE, RELEASE, runtime_phase=True)
+    with pytest.raises(deployment.TexConfigurationDenied):
+        deployment.check_snapshot(value, IMAGE, RELEASE, coordinator_phase=True)
+    assert deployment.render(IMAGE, RELEASE)["runtime_service_iam"]["bindings"] == [{
+        "role": "roles/run.invoker", "members": ["serviceAccount:" + deployment.INVOKER]}]
+
+
+@pytest.mark.parametrize("fault", ["uid", "disabled", "key", "missing-identity", "foreign-invoker", "public", "project-role"])
+def test_coordinator_permission_requires_exact_identity_and_service_only_role(fault):
+    value = coordinator_snapshot()
+    if fault == "uid":
+        value["upload_coordinator_service_account"]["uniqueId"] = "1" * 21
+    elif fault == "disabled":
+        value["upload_coordinator_service_account"]["disabled"] = True
+    elif fault == "key":
+        value["upload_coordinator_service_account_keys"]["keys"] = [{"keyType": "USER_MANAGED"}]
+    elif fault == "missing-identity":
+        del value["upload_coordinator_service_account"]
+    elif fault in {"foreign-invoker", "public"}:
+        value["service_iam"]["bindings"][0]["members"].append(
+            "allUsers" if fault == "public" else "serviceAccount:other@example.invalid")
+    else:
+        value["project_iam"]["bindings"] = [{"role": "roles/viewer", "members": [
+            "serviceAccount:" + deployment.documents.UPLOAD_COORDINATOR]}]
+    with pytest.raises(deployment.TexConfigurationDenied):
+        deployment.check_snapshot(value, IMAGE, RELEASE, runtime_phase=True, coordinator_phase=True)
+
+
+def test_coordinator_role_uses_same_exact_compiler_audience_and_scoped_config(monkeypatch):
+    from backend.app.services.native_tex_transport import remote_compile
+    from google.oauth2 import id_token
+
+    monkeypatch.setenv("SERVICE_ROLE", "resume-upload-coordinator")
+    environment = deployment.api_environment(deployment.ACCEPTED_ORIGIN, IMAGE)
+    payload = b"synthetic source project request"
+    data = {**receipt(), "request_sha256": hashlib.sha256(payload).hexdigest(), "renderer_image": IMAGE,
+            "isolation_policy_sha256": deployment.POLICY_SHA256}
+    seen = []
+    def token(request, audience):
+        assert type(request).__name__ == "BoundedIdentityRequest"
+        assert audience == deployment.ACCEPTED_ORIGIN
+        seen.append("metadata_identity")
+        return "synthetic-coordinator-id-token"
+    def receive(request):
+        assert str(request.url) == environment["NATIVE_TEX_COMPILER_URL"] and request.content == payload
+        assert request.headers["Authorization"] == "Bearer synthetic-coordinator-id-token"
+        assert request.headers["X-HireWiz-TeX-Policy"] == environment["NATIVE_TEX_ISOLATION_POLICY_SHA256"]
+        seen.append("one_compile_request")
+        return httpx.Response(200, json=data)
+    monkeypatch.setattr(id_token, "fetch_id_token", token)
+    actual = httpx.Client
+    monkeypatch.setattr(httpx, "Client", lambda **kwargs: actual(**kwargs, transport=httpx.MockTransport(receive)))
+    assert remote_compile(payload, url=environment["NATIVE_TEX_COMPILER_URL"], image=IMAGE,
+                          policy=environment["NATIVE_TEX_ISOLATION_POLICY_SHA256"]) == data
+    assert seen == ["metadata_identity", "one_compile_request"]
+
+
 @pytest.mark.parametrize("change", [None, "request", "policy", "image", "renderer", "extra", "redirect"])
 def test_private_transport_binds_exact_request_and_runtime_receipt(change, monkeypatch):
     from backend.app.services.native_tex_transport import remote_compile

@@ -1003,8 +1003,20 @@ class FreshNativeBoundary(release.NativeBoundary):
                 ),
                 "service_account_keys": {"keys": tex_keys},
             }
+            tex_coordinator_phase = runtime_phase and any(
+                "serviceAccount:" + documents.UPLOAD_COORDINATOR in binding.get("members", [])
+                for binding in tex_snapshot["service_iam"].get("bindings", [])
+            )
+            if tex_coordinator_phase:
+                # Native upload compilation also requires the exact already
+                # admitted inspector caller; reuse its freshly read IAM facts.
+                if not coordinator_phase:
+                    raise release.ReleaseDenied("fresh_tex_coordinator_inspector_binding_missing")
+                for name in ("upload_coordinator_service_account", "upload_coordinator_service_account_keys"):
+                    tex_snapshot[name] = snapshot[name]
             tex_report = tex.check_snapshot(
                 tex_snapshot, tex_image, source.release, runtime_phase=runtime_phase,
+                coordinator_phase=tex_coordinator_phase,
             )
             routing = release.document_routing
             routing.verify_network(

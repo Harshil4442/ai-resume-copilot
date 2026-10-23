@@ -643,14 +643,17 @@ def candidate(directory: Path, *, publish: bool, now: datetime, nonce: str | Non
                 "controlled_worker_and_api_rollout", "verify_exact_serving_image_header_and_complete_upload_path"]}
 
 
-def full_source_candidate(directory: Path, *, publish: bool, now: datetime) -> dict[str, Any]:
+def full_source_candidate(directory: Path, *, publish: bool, now: datetime,
+                          nonce: str | None = None) -> dict[str, Any]:
     """Publish/check exact source only; no Job, deployment, IAM or promotion."""
     sys.path.insert(0, str(ROOT / "backend"))
     from scripts import document_test_image as engines
 
     need(publish, "document_refresh_explicit_native_build_required")
     contents, before, policy = full_source_snapshot()
-    identity = native_build(directory, contents[FULL_SOURCE_DOCKERFILE], full_source=True)
+    identity = (native_build(directory, contents[FULL_SOURCE_DOCKERFILE], full_source=True)
+                if nonce is None else native_build(directory, contents[FULL_SOURCE_DOCKERFILE],
+                                                   nonce=nonce, full_source=True))
     digest = identity["immutable_image"]
     docker = engines.docker_command()
     command(docker + ["pull", digest], seconds=180)
@@ -685,9 +688,11 @@ def infra(name: str) -> Any:
 
 
 def refresh(directory: Path, *, publish: bool, now: datetime, prior_journal: Path | None = None,
-            history: Path | None = None, recover_failed_native_job: str | None = None) -> dict[str, Any]:
+            history: Path | None = None, recover_failed_native_job: str | None = None,
+            full_source: bool = False) -> dict[str, Any]:
     """Full controlled pipeline. No serialized acceptance result grants authority."""
     need(recover_failed_native_job is None or publish is True, "document_refresh_recovery_requires_explicit_refresh")
+    need(type(full_source) is bool, "document_refresh_contract_version_invalid")
     nonce = infra("document_refresh_recovery").prepare(
         directory, history, recover_failed_native_job, refresh_module=sys.modules[__name__])
     probe = infra("document_refresh_probe")
@@ -696,8 +701,9 @@ def refresh(directory: Path, *, publish: bool, now: datetime, prior_journal: Pat
         preflight.preflight()
     finally:
         preflight.close()
-    value = (candidate(directory, publish=publish, now=now) if nonce is None else
-             candidate(directory, publish=publish, now=now, nonce=nonce))
+    selected = full_source_candidate if full_source else candidate
+    value = (selected(directory, publish=publish, now=now) if nonce is None else
+             selected(directory, publish=publish, now=now, nonce=nonce))
     image, build = value["candidate_registry_digest"], value["build_identity"]
     native = directory / "native-proof"
     acceptance = probe.run_successor(image, build, native)
@@ -789,7 +795,7 @@ def emit_status(result: dict[str, Any]) -> None:
 def main() -> None:
     os.umask(0o077)
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=("monitor", "candidate", "full-source-candidate", "refresh", "reconcile"), required=True)
+    parser.add_argument("--mode", choices=("monitor", "candidate", "full-source-candidate", "refresh", "full-source-refresh", "reconcile"), required=True)
     parser.add_argument("--output-directory", type=Path, required=True)
     parser.add_argument("--publish-candidate", action="store_true")
     parser.add_argument("--prior-native-journal", type=Path)
@@ -797,7 +803,7 @@ def main() -> None:
     parser.add_argument("--prior-history-directory", type=Path)
     parser.add_argument("--recover-failed-native-job")
     args = parser.parse_args()
-    need(args.recover_failed_native_job is None or args.mode == "refresh" and args.publish_candidate,
+    need(args.recover_failed_native_job is None or args.mode in {"refresh", "full-source-refresh"} and args.publish_candidate,
          "document_refresh_recovery_requires_explicit_refresh")
     need(args.output_directory.is_absolute() and not args.output_directory.exists(),
          "document_refresh_fresh_output_directory_required")
@@ -805,10 +811,13 @@ def main() -> None:
     if args.mode == "monitor":
         result = monitor(now=datetime.now(UTC))
         emit_status(result)
-    elif args.mode == "refresh":
-        result = refresh(args.output_directory, publish=args.publish_candidate,
-                         now=datetime.now(UTC), prior_journal=args.prior_native_journal, history=args.prior_history_directory,
-                         recover_failed_native_job=args.recover_failed_native_job)
+    elif args.mode in {"refresh", "full-source-refresh"}:
+        arguments = {"publish": args.publish_candidate, "now": datetime.now(UTC),
+                     "prior_journal": args.prior_native_journal, "history": args.prior_history_directory,
+                     "recover_failed_native_job": args.recover_failed_native_job}
+        if args.mode == "full-source-refresh":
+            arguments["full_source"] = True
+        result = refresh(args.output_directory, **arguments)
         emit_status(result)
     elif args.mode == "full-source-candidate":
         result = full_source_candidate(args.output_directory, publish=args.publish_candidate, now=datetime.now(UTC))

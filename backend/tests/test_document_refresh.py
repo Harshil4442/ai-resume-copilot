@@ -246,14 +246,130 @@ def test_scanner_failure_emits_fixed_immediate_unavailable_without_repeating_ope
     assert "private" not in capsys.readouterr().out
 
 
-def test_prior_unknown_run_blocks_new_build_before_any_external_action(monkeypatch, tmp_path):
+@pytest.mark.parametrize("full_source", [False, True])
+def test_prior_unknown_run_blocks_new_build_before_any_external_action(monkeypatch, tmp_path, full_source):
     history = tmp_path / "history"
     failed = history / "original-run"
     failed.mkdir(parents=True)
     (failed / "build-create-started.json").write_text('{"automatic_replay":false}')
     monkeypatch.setattr(refresh, "candidate", lambda *args, **kw: pytest.fail("Unknown run must not start another Build"))
+    monkeypatch.setattr(refresh, "full_source_candidate", lambda *args, **kw: pytest.fail("Unknown source run must not start another Build"))
     with pytest.raises(refresh.RefreshDenied, match="prior_unknown_reconcile_only"):
-        refresh.refresh(tmp_path / "new", publish=True, now=NOW, history=history)
+        refresh.refresh(tmp_path / "new", publish=True, now=NOW, history=history, full_source=full_source)
+
+
+@pytest.mark.parametrize("full_source", [False, True])
+@pytest.mark.parametrize("nonce", [None, "f" * 32])
+def test_refresh_selects_one_profile_and_passes_exact_candidate_to_native_transition(
+    monkeypatch, tmp_path, full_source, nonce
+):
+    calls = []
+    image = refresh.REPOSITORY + "@sha256:" + "a" * 64
+    build = {"immutable_image": image, "nonce": nonce or "b" * 32,
+             "kind": refresh.FULL_SOURCE_KIND if full_source else "native_cloud_build"}
+    chosen = "full_source_candidate" if full_source else "candidate"
+    forbidden = "candidate" if full_source else "full_source_candidate"
+
+    def prepare(directory, history, selected, **kwargs):
+        assert directory == tmp_path and history == tmp_path / "history" and selected == "hirewiz-doc-six-" + "c" * 12
+        calls.append("recovery")
+        return nonce
+
+    def candidate(directory, *, publish, now, **kwargs):
+        assert directory == tmp_path and publish is True and now == NOW
+        assert kwargs == ({"nonce": nonce} if nonce is not None else {})
+        calls.append(chosen)
+        return {"candidate_registry_digest": image, "build_identity": build}
+
+    def successor(actual_image, actual_build, journal):
+        assert actual_image == image and actual_build is build and journal == tmp_path / "native-proof"
+        calls.append("native_ten")
+        return SimpleNamespace(definition_expires_at="2026-10-25T06:24:00+00:00")
+
+    def transition(actual_image, actual_build, native_journal, journal, **kwargs):
+        assert actual_image == image and actual_build is build
+        assert native_journal == tmp_path / "native-proof" and journal == tmp_path / "transition"
+        calls.append("transition")
+        return {"status": "document_refresh_serving", "admission_restored": True,
+                "prior_image": refresh.RENDERER_BASE}
+
+    probe = SimpleNamespace(Clients=lambda: SimpleNamespace(preflight=lambda: calls.append("preflight"),
+        close=lambda: calls.append("preflight_closed")), run_successor=successor)
+    modules = {"document_refresh_recovery": SimpleNamespace(prepare=prepare),
+               "document_refresh_probe": probe,
+               "document_refresh_transition": SimpleNamespace(transition=transition)}
+    monkeypatch.setattr(refresh, "infra", modules.__getitem__)
+    monkeypatch.setattr(refresh, chosen, candidate)
+    monkeypatch.setattr(refresh, forbidden, lambda *args, **kwargs: pytest.fail("A second/old-overlay build is forbidden"))
+    monkeypatch.setattr(refresh, "native_http", lambda: SimpleNamespace(close=lambda: calls.append("http_closed")))
+    result = refresh.refresh(tmp_path, publish=True, now=NOW, history=tmp_path / "history",
+        recover_failed_native_job="hirewiz-doc-six-" + "c" * 12, full_source=full_source)
+    assert result["status"] == "document_refresh_serving"
+    assert calls == ["recovery", "preflight", "preflight_closed", chosen, "native_ten", "transition", "http_closed"]
+
+
+def test_full_source_unknown_native_outcome_never_builds_or_sends_twice(monkeypatch, tmp_path):
+    calls = []
+    build = {"nonce": "a" * 32}
+
+    def candidate(*args, **kwargs):
+        calls.append("one_build")
+        return {"candidate_registry_digest": "exact-image", "build_identity": build}
+
+    def unknown(image, actual, journal):
+        assert actual is build
+        calls.append("one_native_attempt")
+        raise RuntimeError("Synthetic unknown native outcome")
+
+    probe = SimpleNamespace(Clients=lambda: SimpleNamespace(preflight=lambda: None, close=lambda: None),
+                            run_successor=unknown)
+    modules = {"document_refresh_recovery": SimpleNamespace(prepare=lambda *args, **kwargs: None),
+               "document_refresh_probe": probe}
+    monkeypatch.setattr(refresh, "infra", modules.__getitem__)
+    monkeypatch.setattr(refresh, "full_source_candidate", candidate)
+    monkeypatch.setattr(refresh, "candidate", lambda *args, **kwargs: pytest.fail("No overlay retry"))
+    with pytest.raises(RuntimeError, match="Synthetic unknown"):
+        refresh.refresh(tmp_path, publish=True, now=NOW, full_source=True)
+    assert calls == ["one_build", "one_native_attempt"]
+
+
+@pytest.mark.parametrize("nonce", [None, "f" * 32])
+def test_full_source_candidate_passes_reserved_recovery_nonce_to_exact_native_builder(monkeypatch, tmp_path, nonce):
+    calls = []
+    monkeypatch.setattr(refresh, "full_source_snapshot", lambda: (
+        {refresh.FULL_SOURCE_DOCKERFILE: b"synthetic recipe"}, {}, "a" * 64))
+
+    def native(directory, recipe, **kwargs):
+        assert directory == tmp_path and recipe == b"synthetic recipe"
+        assert kwargs == {"full_source": True, **({"nonce": nonce} if nonce is not None else {})}
+        calls.append("one_full_source_build")
+        raise RuntimeError("Synthetic stop before Docker or provider activity")
+
+    monkeypatch.setattr(refresh, "native_build", native)
+    with pytest.raises(RuntimeError, match="Synthetic stop"):
+        refresh.full_source_candidate(tmp_path, publish=True, now=NOW, nonce=nonce)
+    assert calls == ["one_full_source_build"]
+
+
+def test_full_source_cli_selects_same_pipeline_with_history_and_recovery(monkeypatch, tmp_path):
+    import sys
+
+    output, history = tmp_path / "new", tmp_path / "history"
+    calls = []
+
+    def pipeline(directory, **kwargs):
+        assert directory == output and kwargs["full_source"] is True and kwargs["publish"] is True
+        assert kwargs["history"] == history and kwargs["recover_failed_native_job"] == "hirewiz-doc-six-" + "a" * 12
+        calls.append("pipeline")
+        return {"status": "synthetic_only"}
+
+    monkeypatch.setattr(sys, "argv", ["document_refresh.py", "--mode", "full-source-refresh", "--publish-candidate",
+        "--output-directory", str(output), "--prior-history-directory", str(history),
+        "--recover-failed-native-job", "hirewiz-doc-six-" + "a" * 12])
+    monkeypatch.setattr(refresh, "refresh", pipeline)
+    monkeypatch.setattr(refresh, "emit_status", lambda value: calls.append("status"))
+    refresh.main()
+    assert calls == ["pipeline", "status"]
 
 
 def test_prior_native_journal_and_existing_once_markers_are_retained_byte_exact(tmp_path):
@@ -356,3 +472,66 @@ def test_workflow_initializes_runner_paths_after_job_expression_validation(tmp_p
     assert not list(runner_temp.iterdir())  # Controller owns fresh directory creation.
     artifact = next(step for step in job["steps"] if step.get("name") == "Retain bounded maintenance evidence")
     assert artifact["if"] == "always() && env.OUTPUT_DIRECTORY != ''"
+
+
+def test_full_source_workflow_reuses_trusted_scope_and_retained_history_without_ref_bypass():
+    import yaml
+
+    workflow = yaml.safe_load((refresh.ROOT / ".github/workflows/document-refresh.yml").read_text())
+    trigger = workflow.get("on", workflow.get(True))
+    assert trigger["workflow_dispatch"]["inputs"]["mode"]["options"] == [
+        "monitor", "refresh", "full-source-refresh"]
+    job = workflow["jobs"]["maintenance"]
+    assert job["if"] == (
+        "github.repository == 'Harshil4442/ai-resume-copilot' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)")
+    assert job["environment"] == "document-maintenance"
+    assert workflow["permissions"] == {"contents": "read", "id-token": "write", "actions": "read"}
+    auth = next(step for step in job["steps"] if step.get("uses", "").startswith("google-github-actions/auth@"))
+    assert auth["with"] == {
+        "workload_identity_provider": "${{ vars.DOCUMENT_REFRESH_WIF_PROVIDER }}",
+        "service_account": "${{ vars.DOCUMENT_REFRESH_SERVICE_ACCOUNT }}"}
+    candidate = next(step for step in job["steps"] if step.get("name") ==
+                     "Build full-source inspector, prove native cases and transition exact pins")
+    assert candidate["if"] == "env.REFRESH_MODE == 'full-source-refresh'"
+    assert "--prior-history-directory" in candidate["run"] and "--recover-failed-native-job" in candidate["run"]
+    history = next(step for step in job["steps"] if step.get("name") == "Retrieve prior owned native proof journals")
+    assert history["if"] == "env.REFRESH_MODE == 'refresh' || env.REFRESH_MODE == 'full-source-refresh'"
+    assert 'startswith("document-refresh-refresh-") or startswith("document-refresh-full-source-refresh-")' in history["run"]
+    assert 'startswith("document-refresh-full-source-candidate-' not in history["run"]
+    guard = next(step for step in job["steps"] if step.get("name") == "Require explicitly provisioned maintenance identity")
+    assert 'test "$REFRESH_MODE" = refresh || test "$REFRESH_MODE" = full-source-refresh' in guard["run"]
+    artifact = next(step for step in job["steps"] if step.get("name") == "Retain bounded maintenance evidence")
+    assert artifact["with"]["name"] == "document-refresh-${{ env.REFRESH_MODE }}-${{ github.run_id }}-${{ github.run_attempt }}"
+    assert artifact["with"]["path"] == "${{ env.OUTPUT_DIRECTORY }}/**/*.json"
+    assert artifact["with"]["retention-days"] == 14
+    summary = next(step for step in job["steps"] if step.get("name") == "Surface required action")
+    assert "six-case" not in summary["run"] and "native V2 ten-case acceptance" in summary["run"]
+
+
+@pytest.mark.parametrize("recovery", ["", "$(touch SHOULD_NOT_EXIST) ; exact job data"])
+def test_full_source_workflow_sends_only_reviewed_full_pipeline_argv(tmp_path, recovery):
+    import json
+    import os
+    import subprocess
+    import sys
+
+    import yaml
+
+    workflow = yaml.safe_load((refresh.ROOT / ".github/workflows/document-refresh.yml").read_text())
+    step = next(row for row in workflow["jobs"]["maintenance"]["steps"] if row.get("name") ==
+                "Build full-source inspector, prove native cases and transition exact pins")
+    binary = tmp_path / "backend/.venv/bin/python"
+    binary.parent.mkdir(parents=True)
+    binary.write_text("#!" + sys.executable + "\nimport json,os,sys\n"
+                      "from pathlib import Path\nPath(os.environ['CAPTURE_ARGS']).write_text(json.dumps(sys.argv[1:]))\n")
+    binary.chmod(0o700)
+    capture = tmp_path / "args.json"
+    directory = "private output $(touch SHOULD_NOT_EXIST)"
+    result = subprocess.run(["/bin/bash", "-eu", "-c", step["run"]], cwd=tmp_path,
+        env={**os.environ, "OUTPUT_DIRECTORY": directory, "HISTORY_DIRECTORY": "private history",
+             "RECOVER_FAILED_NATIVE_JOB": recovery, "CAPTURE_ARGS": str(capture)},
+        capture_output=True, timeout=5)
+    assert result.returncode == 0 and not (tmp_path / "SHOULD_NOT_EXIST").exists()
+    expected = ["backend/scripts/document_refresh.py", "--mode", "full-source-refresh", "--publish-candidate",
+                "--prior-history-directory", "private history", "--output-directory", directory]
+    assert json.loads(capture.read_bytes()) == expected + (["--recover-failed-native-job", recovery] if recovery else [])

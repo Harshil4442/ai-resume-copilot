@@ -3,7 +3,7 @@
 import { getCsrfToken, useSession } from "next-auth/react";
 import Link from "next/link";
 import Script from "next/script";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { components } from "../lib/generated/api";
 import { Button } from "./ui/Button";
@@ -25,6 +25,8 @@ const LOGIN = "/login?returnTo=%2Faccount-recovery";
 class RecoveryRefusal extends Error {
   constructor(readonly code: string) { super("Account recovery was refused"); }
 }
+
+class RecoveryProofExpired extends Error {}
 
 function googleId(): GoogleId | undefined {
   return (window as Window & { google?: { accounts?: { id?: GoogleId } } }).google?.accounts?.id;
@@ -66,6 +68,7 @@ function RecoveryForm({ email }: { email: string }) {
   const [busy, setBusy] = useState(false);
   const [challenge, setChallenge] = useState<Challenge | null>(null);
   const [verified, setVerified] = useState(false);
+  const [expired, setExpired] = useState(false);
   const [blocked, setBlocked] = useState(false);
   const [pending, setPending] = useState(false);
   const [enrolled, setEnrolled] = useState(false);
@@ -81,6 +84,21 @@ function RecoveryForm({ email }: { email: string }) {
   const googleButton = useRef<HTMLDivElement>(null);
   const scriptTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const expireProof = useCallback((selected: Challenge) => {
+    if (!mounted.current || activeChallenge.current !== selected) return;
+    proof.current = null; activeChallenge.current = null; initialized.current = false;
+    if (scriptTimer.current) clearTimeout(scriptTimer.current);
+    googleId()?.cancel?.();
+    setChallenge(null); setVerified(false); setExpired(true); setMessage(null);
+    setError("Google verification expired. Your new password and consent are still here. Verify Google again before submitting recovery.");
+  }, []);
+
+  useEffect(() => {
+    if (!challenge) return;
+    const timer = setTimeout(() => expireProof(challenge), Math.max(0, challenge.expires_at_ms - Date.now()));
+    return () => clearTimeout(timer);
+  }, [challenge, expireProof]);
+
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -93,7 +111,7 @@ function RecoveryForm({ email }: { email: string }) {
   async function startGoogle() {
     if (active.current || blocked || pending || enrolled || challenge || !accepted) return;
     const controller = new AbortController(); active.current = controller;
-    setBusy(true); setError(null);
+    setBusy(true); setError(null); setMessage(null); setExpired(false);
     try {
       const data = await post("recovery-google-challenge", {}, controller);
       if (Object.keys(data).sort().join(",") !== "challenge_id,client_id,expires_at_ms,nonce"
@@ -103,9 +121,10 @@ function RecoveryForm({ email }: { email: string }) {
           || !Number.isSafeInteger(data.expires_at_ms) || (data.expires_at_ms as number) <= Date.now()
           || (data.expires_at_ms as number) > Date.now() + 300000) throw new Error();
       if (controller.signal.aborted) return;
-      activeChallenge.current = data as Challenge; setChallenge(data as Challenge);
+      const selected = data as Challenge;
+      activeChallenge.current = selected; setChallenge(selected);
       scriptTimer.current = setTimeout(() => {
-        if (!mounted.current || initialized.current) return;
+        if (!mounted.current || activeChallenge.current !== selected || initialized.current) return;
         activeChallenge.current = null; setBlocked(true);
         setError("Google verification could not load. Reload before a fresh recovery review.");
       }, 15000);
@@ -122,9 +141,10 @@ function RecoveryForm({ email }: { email: string }) {
   }
 
   function initializeGoogle() {
-    if (!challenge || initialized.current || !mounted.current) return;
+    if (!challenge || activeChallenge.current !== challenge || initialized.current || !mounted.current) return;
+    if (challenge.expires_at_ms <= Date.now()) { expireProof(challenge); return; }
     const id = googleId();
-    if (!id || !googleButton.current || challenge.expires_at_ms <= Date.now()) {
+    if (!id || !googleButton.current) {
       setBlocked(true); setError("Google verification is unavailable or expired. Reload before a fresh recovery review."); return;
     }
     if (scriptTimer.current) clearTimeout(scriptTimer.current);
@@ -132,8 +152,9 @@ function RecoveryForm({ email }: { email: string }) {
     try {
       id.initialize({ client_id: challenge.client_id, nonce: challenge.nonce, auto_select: false, ux_mode: "popup",
         callback: (reply) => {
-          if (!mounted.current || activeChallenge.current?.challenge_id !== challenge.challenge_id || proof.current) return;
-          if (challenge.expires_at_ms <= Date.now() || typeof reply.credential !== "string" || reply.credential.length < 100 || reply.credential.length > 4096) {
+          if (!mounted.current || activeChallenge.current !== challenge || proof.current) return;
+          if (challenge.expires_at_ms <= Date.now()) { expireProof(challenge); return; }
+          if (typeof reply.credential !== "string" || reply.credential.length < 100 || reply.credential.length > 4096) {
             activeChallenge.current = null; setBlocked(true); setError("Google verification expired or could not be verified. Reload for a fresh recovery review."); return;
           }
           proof.current = { challenge, idToken: reply.credential }; setVerified(true); setError(null);
@@ -150,26 +171,31 @@ function RecoveryForm({ email }: { email: string }) {
     if (active.current || blocked || pending || enrolled || !accepted || password.length < 10 || password.length > 128 || password !== confirmation) return;
     const selected = proof.current;
     if (!selected || selected.challenge.expires_at_ms <= Date.now()) {
-      proof.current = null; activeChallenge.current = null; setVerified(false); setBlocked(true);
-      setError("Complete fresh Google verification before recovery. Reload for a fresh review."); return;
+      if (selected) expireProof(selected.challenge);
+      return;
     }
     const controller = new AbortController(); active.current = controller;
-    let sent = false;
+    let sent = false, keepForm = false;
     setBusy(true); setError(null); setMessage(null);
     try {
       const body: components["schemas"]["GoogleRecovery"] = { challenge_id: selected.challenge.challenge_id, nonce: selected.challenge.nonce,
         id_token: selected.idToken, password, accepted_enrollment: true, accepted_recovery: true };
-      const result = await post("recover-google", body, controller, () => { sent = true; });
+      const result = await post("recover-google", body, controller, () => {
+        if (proof.current !== selected || selected.challenge.expires_at_ms <= Date.now()) throw new RecoveryProofExpired();
+        sent = true;
+      });
       if (Object.keys(result).join(",") !== "status" || result.status !== "ENROLLED") throw new Error();
       if (!controller.signal.aborted) { setEnrolled(true); setMessage("Your password was replaced and this existing account is enrolled. Sign out, then sign in again with Google or your new HireWiz password."); }
     } catch (failure) {
       if (!controller.signal.aborted) {
-        if (failure instanceof RecoveryRefusal) { setBlocked(true); setError(refusalMessage(failure.code)); }
+        if (failure instanceof RecoveryProofExpired) { keepForm = true; expireProof(selected.challenge); }
+        else if (failure instanceof RecoveryRefusal) { setBlocked(true); setError(refusalMessage(failure.code)); }
         else if (sent) { setPending(true); setError("The recovery outcome is uncertain. Check enrollment status using your account email and the new password you chose. Do not submit recovery again."); }
         else { setBlocked(true); setError("Recovery was not sent. Reload and review your sign-in before starting again."); }
       }
     } finally {
-      proof.current = null; activeChallenge.current = null; setPassword(""); setConfirmation(""); setAccepted(false); setVerified(false);
+      proof.current = null; activeChallenge.current = null; setVerified(false);
+      if (!keepForm) { setPassword(""); setConfirmation(""); setAccepted(false); }
       active.current = null;
       if (!controller.signal.aborted) setBusy(false);
     }
@@ -207,10 +233,10 @@ function RecoveryForm({ email }: { email: string }) {
         <p className="text-xs leading-6 text-muted-foreground">Use 10–128 characters. Your Google password is never requested here.{confirmation && confirmation !== password ? " The new passwords must match." : ""}</p>
         <label className="flex items-start gap-3 text-sm leading-7"><input className="mt-1.5" type="checkbox" checked={accepted} onChange={(event) => setAccepted(event.target.checked)} disabled={busy} />I want to replace my forgotten HireWiz password and enroll this existing account for browser approval. Old HireWiz sessions will end. Each device and application still needs separate approval.</label>
         <div className="space-y-3"><p className="text-xs leading-6 text-muted-foreground">Starting verification loads Google Identity Services. Choose the same Google account whose email is already on your HireWiz account.</p>
-          {!challenge ? <Button type="button" variant="secondary" disabled={busy || !accepted} onClick={() => void startGoogle()}>Verify Google for recovery</Button>
-            : <><div ref={googleButton} aria-label="Google recovery verification" />{!verified ? <p className="text-sm">Use the Google button to verify this recovery. If it expires, reload for a fresh review.</p> : null}</>}
-          {challenge ? <Script src={GOOGLE_SCRIPT} strategy="afterInteractive" onReady={initializeGoogle} onError={() => {
-            if (!mounted.current || activeChallenge.current?.challenge_id !== challenge.challenge_id) return;
+          {!challenge ? <Button type="button" variant="secondary" disabled={busy || !accepted} onClick={() => void startGoogle()}>{expired ? "Verify Google again" : "Verify Google for recovery"}</Button>
+            : <><div ref={googleButton} aria-label="Google recovery verification" /><p className="text-sm">Google verification expires at {new Date(challenge.expires_at_ms).toLocaleTimeString()}. If it expires, verify again here; your password and consent stay in this form.</p>{!verified ? <p className="text-sm">Use the Google button to verify this recovery.</p> : null}</>}
+          {challenge ? <Script key={challenge.challenge_id} src={GOOGLE_SCRIPT} strategy="afterInteractive" onReady={initializeGoogle} onError={() => {
+            if (!mounted.current || activeChallenge.current !== challenge) return;
             activeChallenge.current = null; setBlocked(true); setError("Google verification could not load. Reload before a fresh recovery review.");
           }} /> : null}
         </div>
