@@ -18,7 +18,7 @@ from backend.tests import test_employer_admissions_postgres as pg
 from backend.tests import test_resume_upload_quarantine as upload
 from backend.tests.test_resume_source import _client
 from pydantic import ValidationError
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 
 pg_engine = upload.pg_engine
 SOURCE = b"synthetic TeX project; no actual compiler or scanner is used here"
@@ -46,7 +46,6 @@ def compiled(content=SOURCE, kind="tex"):
 @pytest.fixture
 def context(pg_engine, monkeypatch):
     result = upload.context.__wrapped__(pg_engine, monkeypatch)
-    pg._migrate(pg_engine, "20261023_0020")
     monkeypatch.setattr(native_tex, "compile_project_inspected", lambda data, kind: compiled(data, kind))
     return result
 
@@ -148,19 +147,22 @@ def test_native_resume_deletion_retains_detached_cleanup_and_closes_both_targets
 
 def test_schema20_preserves_rows_and_refuses_lossy_downgrade(context, pg_engine):
     identifier, _ = upload.queue(context, content=SOURCE, filename="project.zip")
+    pg._migrate(pg_engine, "20261023_0020", direction="downgrade")
+    assert "credential_epoch" not in {column["name"] for column in inspect(pg_engine).get_columns("users")}
     with pytest.raises(RuntimeError, match="cleanup history must be retained"):
         pg._migrate(pg_engine, "20261015_0019", direction="downgrade")
     with context[0]() as db:
         assert db.scalar(text("SELECT version_num FROM alembic_version")) == "20261023_0020"
         assert db.get(ResumeUpload, identifier).source_format == "texzip"
-        assert db.get(core.User, 1).ai_credits == 100
+        assert db.scalar(text("SELECT ai_credits FROM users WHERE id=1")) == 100
 
 
 def test_schema19_to20_preserves_existing_pdf_custody_and_round_trips(pg_engine, monkeypatch):
     context = upload.context.__wrapped__(pg_engine, monkeypatch)
     identifier, _ = upload.queue(context)
     assert tasks.process(context[0], identifier, context[1])
-    pg._migrate(pg_engine, "20261015_0019")
+    pg._migrate(pg_engine, "20261015_0019", direction="downgrade")
+    assert "credential_epoch" not in {column["name"] for column in inspect(pg_engine).get_columns("users")}
 
     def snapshot():
         with pg_engine.connect() as db:

@@ -222,7 +222,7 @@ def login(request: Request, payload: AuthLoginRequest, db: Session = Depends(get
                                  browser_pairing_session=result.context.model_dump(mode="json"))
     if not verify_password(payload.password, u.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password")
-    token = create_access_token(subject=str(u.id))
+    token = create_access_token(subject=str(u.id), credential_epoch=int(u.credential_epoch or 0))
     return AuthTokenResponse(access_token=token, user_id=u.id, token_type="bearer")
 
 @router.post("/google-login", response_model=AuthTokenResponse)
@@ -298,7 +298,8 @@ def google_login(request: Request, payload: AuthGoogleLoginRequest, db: Session 
         db.commit()
         db.refresh(u)
 
-    token = create_access_token(subject=str(u.id), google_identity=identity.bearer_claim())
+    token = create_access_token(subject=str(u.id), google_identity=identity.bearer_claim(),
+                                credential_epoch=int(u.credential_epoch or 0))
     return AuthTokenResponse(access_token=token, user_id=u.id, token_type="bearer")
 
 @router.get("/me", response_model=UserMeResponse)

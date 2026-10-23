@@ -133,7 +133,7 @@ def recover_google(service: CandidateAccountService, candidate_id: int, proof: G
             raise RecoveryUnavailable(FAILURE) from None
         revision = _revision(row)
     try:
-        _activate(service, revision, google=True)
+        _activate(service, revision, google=True, email=identity.email)
     except Exception:
         # Once SQL committed, even a later guard denial is an uncertain outcome.
         # Keep PENDING/original ACK custody; never report a retryable rejection.

@@ -1,34 +1,37 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+
 from sqlalchemy import (
+    JSON,
     BigInteger,
     Boolean,
+    CheckConstraint,
     Column,
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
-    JSON,
     LargeBinary,
     String,
     Text,
     UniqueConstraint,
-    Index,
 )
 from sqlalchemy.orm import column_property, deferred, relationship
-from .database import Base
 
+from .database import Base
 
 FREE_SIGNUP_ANALYSIS_UNITS = 50
 
 
 def _utcnow():
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True)
     password_hash = Column(String, default="")
+    credential_epoch = Column(BigInteger, nullable=False, default=0, server_default="0")
     tier = Column(String, default="free")
     ai_credits = Column(Integer, default=FREE_SIGNUP_ANALYSIS_UNITS, nullable=False)
     job_service_credits = Column(Integer, default=0, nullable=False)
@@ -52,8 +55,8 @@ class User(Base):
             return True  # legacy lifetime grant
         expires = self.premium_until
         if expires.tzinfo is None:
-            expires = expires.replace(tzinfo=timezone.utc)
-        return expires > datetime.now(timezone.utc)
+            expires = expires.replace(tzinfo=UTC)
+        return expires > datetime.now(UTC)
 
 
 class CandidatePasswordAccount(Base):
@@ -66,6 +69,26 @@ class CandidatePasswordAccount(Base):
     credential_sha256 = Column(String(64), nullable=False)
     auth_generation = Column(BigInteger, nullable=False)
     state = Column(String(24), nullable=False)
+
+
+class PasswordResetToken(Base):
+    """One-use mailbox proof; no plaintext reset token is retained."""
+    __tablename__ = "password_reset_tokens"
+    __table_args__ = (
+        CheckConstraint("status IN ('PENDING','PROCESSING','COMPLETED','INVALIDATED','UNAVAILABLE')", name="ck_password_reset_status"),
+        Index("ix_password_reset_owner_created", "user_id", "created_at"),
+    )
+    id = Column(String(64), primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    token_sha256 = Column(String(64), nullable=False, unique=True)
+    email_sha256 = Column(String(64), nullable=False)
+    credential_sha256 = Column(String(64), nullable=False)
+    native_revision_sha256 = Column(String(64), nullable=True)
+    legacy_epoch = Column(BigInteger, nullable=False)
+    status = Column(String(24), nullable=False)
+    created_at = Column(DateTime, nullable=False, default=_utcnow)
+    expires_at = Column(DateTime, nullable=False)
+    consumed_at = Column(DateTime, nullable=True)
 
 
 class CandidateLifetimeHistory(Base):
@@ -672,9 +695,8 @@ class AdminAuditEvent(Base):
 
 
 # Register employer-domain tables for metadata and controlled Alembic releases.
-from .domains.employer import models as _employer_models  # noqa: E402,F401
-from .domains.dispatch import models as _dispatch_models  # noqa: E402,F401
-
 # Register private admission aliases after the core run model is defined.
 from .domains.analysis import models as _analysis_models  # noqa: E402,F401
 from .domains.browser_assistance import models as _browser_assistance_models  # noqa: E402,F401
+from .domains.dispatch import models as _dispatch_models  # noqa: E402,F401
+from .domains.employer import models as _employer_models  # noqa: E402,F401

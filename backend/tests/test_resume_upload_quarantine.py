@@ -110,7 +110,8 @@ def pg_engine():
 
 @pytest.fixture
 def context(pg_engine, monkeypatch):
-    pg_checks._migrate(pg_engine, "20261010_0014")
+    # Runtime services use the current ORM, including the reset credential epoch.
+    pg_checks._migrate(pg_engine, "20261023_0021")
     factory = sessionmaker(bind=pg_engine, autoflush=False)
     with factory() as db:
         db.add_all([core.User(id=1, email="synthetic-owner@example.invalid", ai_credits=100),
@@ -441,6 +442,10 @@ def test_expired_abandonment_has_bounded_sweep_and_closure(context):
 
 def test_migration_populated_downgrade_refuses_and_empty_roundtrip(context, pg_engine):
     admission(context)
+    # Leave the current service schema before exercising the actual old DDL.
+    # No current User ORM reads/writes occur after removing credential_epoch.
+    pg_checks._migrate(pg_engine, "20261010_0014", "downgrade")
+    assert "credential_epoch" not in {column["name"] for column in inspect(pg_engine).get_columns("users")}
     with pytest.raises(RuntimeError, match="retained resume-upload cleanup obligations"):
         pg_checks._migrate(pg_engine, "20261009_0013", "downgrade")
     assert "resume_uploads" in inspect(pg_engine).get_table_names()

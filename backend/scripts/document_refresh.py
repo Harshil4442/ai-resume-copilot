@@ -27,7 +27,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[2]
 PROJECT, REGION, SERVICE = "ai-resume-parser-482412", "us-central1", "hirewiz-document-inspector"
 REPOSITORY = f"{REGION}-docker.pkg.dev/{PROJECT}/cloud-run-source-deploy/{SERVICE}"
-RENDERER_BASE = REPOSITORY + "@sha256:624597726ce2fefa2b3574fbf0a8ec4ccdc02a826380d76c5edc8ebbd59aa107"
+RENDERER_BASE = REPOSITORY + "@sha256:0a7e550623f0485945f9bbe52573091aabedfd612eb353e6a8bbb920e2ffa94f"
 BUILDER = f"hirewiz-builder-20261014@{PROJECT}.iam.gserviceaccount.com"
 DOCKER_BUILDER = "gcr.io/cloud-builders/docker@sha256:40c2fb4fcd0ad51376eef166c2e7b2b40a3508d5776e2bf33db3783ab39d0f2e"
 AGE_LIMIT = timedelta(days=3)

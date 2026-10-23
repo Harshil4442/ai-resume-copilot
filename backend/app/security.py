@@ -70,9 +70,14 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 
 def create_access_token(*, subject: str, expires_delta: timedelta | None = None,
-                        candidate_lifetime: dict | None = None, google_identity: dict | None = None) -> str:
+                        candidate_lifetime: dict | None = None, google_identity: dict | None = None,
+                        credential_epoch: int | None = None) -> str:
     expire = datetime.now(UTC) + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
     to_encode: dict = {"sub": subject, "exp": expire}
+    if credential_epoch is not None:
+        if type(credential_epoch) is not int or not 0 <= credential_epoch < 2**63:
+            raise ValueError("Invalid credential epoch")
+        to_encode["credential_epoch"] = credential_epoch
     if candidate_lifetime is not None:
         from .domains.candidate_accounts.access import context_from_claims
         context_from_claims({"candidate_lifetime": candidate_lifetime}, candidate_id=int(subject))
@@ -83,8 +88,8 @@ def create_access_token(*, subject: str, expires_delta: timedelta | None = None,
     return jwt.encode(to_encode, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
-def decode_access_token_user_id(token: str) -> int:
-    """Validate the bearer independently of middleware; existence needs a DB read."""
+def decode_access_token_identity(token: str) -> tuple[int, dict]:
+    """Validate signed claims independently of middleware; existence needs a DB read."""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Not authenticated",
@@ -99,7 +104,11 @@ def decode_access_token_user_id(token: str) -> int:
             user_id = int(sub)
         except (JWTError, ValueError, TypeError):
             raise credentials_exception from None
-    return user_id
+    return user_id, payload
+
+
+def decode_access_token_user_id(token: str) -> int:
+    return decode_access_token_identity(token)[0]
 
 
 def get_current_user(
@@ -124,6 +133,14 @@ def get_current_user(
     from .domains.recovery.store import GuardDenied, GuardUnavailable
 
     account = mapped_account(db, user_id)
+    if account is None and int(user.credential_epoch or 0) > 0:
+        try:
+            claims = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+            epoch = claims.get("credential_epoch")
+            if type(epoch) is not int or epoch != user.credential_epoch:
+                raise ValueError("Stale credential epoch")
+        except (JWTError, ValueError):
+            raise HTTPException(status_code=401, detail="Not authenticated") from None
     if account is not None:
         if account.state != "ACTIVE":
             raise HTTPException(status_code=401, detail="Not authenticated")

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 
 from .contracts import Binding, fingerprint
@@ -36,7 +37,8 @@ SCOPED_NAMESPACES = {"v3_activations", "v3_subjects", "v3_account_owners", "v3_c
     "v3_generation_history", "v3_sessions", "v3_session_tombstones", "v3_account_tombstones",
     "v3_subject_tombstones", "v3_pending_session_denials", "v3_pending_subject_denials", "v3_begins", "v3_reset_completions",
     "v3_submit_devices", "v3_submit_key_owners", "v3_submit_device_tombstones",
-    "v3_submit_reservations", "v3_submit_begins", "v3_submit_exports", "v3_pairing_completions", "v3_pairing_revocations"}
+    "v3_submit_reservations", "v3_submit_begins", "v3_submit_exports", "v3_pairing_completions", "v3_pairing_revocations",
+    "v3_recovery_mailboxes"}
 
 
 def validate_scoped_rows(values: dict[tuple[str, str], dict]) -> set[tuple[str, str]]:
@@ -209,6 +211,22 @@ def validate_scoped_rows(values: dict[tuple[str, str], dict]) -> set[tuple[str, 
         if (sorted(chain) != list(range(1, subject.auth_generation + 1))
                 or not chain or chain[subject.auth_generation].credential_sha256 != subject.credential_sha256):
             raise GuardUnavailable("Full scoped generation history detects rollback, missing revision or gap")
+    for (namespace, key), raw in values.items():
+        if namespace != "v3_recovery_mailboxes":
+            continue
+        subject = subjects.get(key)
+        if (subject is None or ("v3_subjects", key) not in expected
+                or type(raw) is not dict or type(raw.get("version")) is not int or raw.get("version") != 1
+                or type(raw.get("candidate_id")) is not int
+                or type(raw.get("email_sha256")) is not str
+                or re.fullmatch(r"[a-f0-9]{64}", raw["email_sha256"]) is None):
+            raise GuardUnavailable("Recovery mailbox census lost exact protected enrollment ownership")
+        mailbox = {"version": 1, "subject_uuid": str(subject.subject_uuid), "candidate_id": subject.candidate_id,
+            "account_binding_id": str(subject.account_binding_id), "principal_sha256": subject.principal_sha256,
+            "email_sha256": raw["email_sha256"]}
+        if raw != mailbox:
+            raise GuardUnavailable("Recovery mailbox census contains an altered or unowned binding")
+        expect(namespace, key, mailbox)
     actual = {identity: value for identity, value in values.items() if identity[0] in SCOPED_NAMESPACES}
     if actual != expected:
         raise GuardUnavailable("Full scoped census contains omitted, unowned or mismatched retained authority rows")

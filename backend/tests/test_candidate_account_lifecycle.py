@@ -32,6 +32,7 @@ class SyntheticFinalActivation:
     """Explicit retained-state simulation, never the production V3 adapter."""
     def __init__(self):
         self.revisions, self.sessions, self.deleted = {}, {}, set()
+        self.mailboxes = {}
         self.allow_activation, self.allow_denial, self.unknown_denial = True, True, False
         self.calls = []
 
@@ -51,6 +52,20 @@ class SyntheticFinalActivation:
         else:
             raise AssertionError("Only real owned native enrollment/session ACKs are accepted")
         return True
+
+    def bind_recovery_mailbox(self, revision, email_sha256):
+        if not self.check_account(revision):
+            return False
+        original = self.mailboxes.get(revision.account_binding_id)
+        record = revision.subject_uuid, revision.principal_sha256, email_sha256
+        if original is not None and original != record:
+            return False
+        self.mailboxes[revision.account_binding_id] = record
+        return True
+
+    def check_recovery_mailbox(self, revision, email_sha256):
+        return self.check_account(revision) and self.mailboxes.get(revision.account_binding_id) == (
+            revision.subject_uuid, revision.principal_sha256, email_sha256)
 
     def check_account(self, revision):
         return (revision.account_binding_id not in self.deleted

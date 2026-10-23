@@ -4602,6 +4602,93 @@
         "title": "ReminderStatusUpdate",
         "type": "object"
       },
+      "ResetCompleted": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "const": "PASSWORD_RESET",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "ResetCompleted",
+        "type": "object"
+      },
+      "ResetConfirm": {
+        "additionalProperties": false,
+        "properties": {
+          "new_password": {
+            "format": "password",
+            "maxLength": 128,
+            "minLength": 10,
+            "title": "New Password",
+            "type": "string",
+            "writeOnly": true
+          },
+          "token": {
+            "format": "password",
+            "maxLength": 43,
+            "minLength": 43,
+            "title": "Token",
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "token",
+          "new_password"
+        ],
+        "title": "ResetConfirm",
+        "type": "object"
+      },
+      "ResetFailed": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "const": "RESET_UNAVAILABLE",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "ResetFailed",
+        "type": "object"
+      },
+      "ResetRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "format": "email",
+            "title": "Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "ResetRequest",
+        "type": "object"
+      },
+      "ResetRequested": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "const": "RESET_LINK_REQUESTED",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "ResetRequested",
+        "type": "object"
+      },
       "ResumeListItem": {
         "properties": {
           "created_at": {
@@ -9209,6 +9296,328 @@
         "summary": "Me",
         "tags": [
           "auth"
+        ]
+      }
+    },
+    "/api/auth/password-reset/confirm": {
+      "post": {
+        "operationId": "confirm_api_auth_password_reset_confirm_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetConfirm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResetCompleted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "408": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResetFailed"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Confirm",
+        "tags": [
+          "password-reset"
+        ]
+      }
+    },
+    "/api/auth/password-reset/request": {
+      "post": {
+        "operationId": "request_link_api_auth_password_reset_request_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResetRequested"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "408": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResetFailed"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Request Link",
+        "tags": [
+          "password-reset"
         ]
       }
     },

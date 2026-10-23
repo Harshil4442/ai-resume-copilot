@@ -118,7 +118,7 @@ export default function LoginPage() {
             <Button type="button" variant="secondary" disabled={!ready || loading || !email || !password} onClick={() => void checkRegistration()}>Check secure registration status</Button>
           </form>
 
-          <p className="mt-4 text-sm"><Link href="/account-recovery" className="font-semibold text-primary underline">Forgot your HireWiz password?</Link></p>
+          <p className="mt-4 text-sm"><Link href="/forgot-password" className="font-semibold text-primary underline">Forgot your HireWiz password?</Link></p>
 
           {googleAvailable ? (
             <div className="mt-6 border-t border-border pt-6">

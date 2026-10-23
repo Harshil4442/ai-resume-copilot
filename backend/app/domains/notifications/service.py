@@ -125,6 +125,9 @@ class DeliverySummary:
 def _message(item: models.NotificationOutbox) -> tuple[str, str]:
     app_url = (os.getenv("FRONTEND_URL") or "https://www.hirewizhq.com").rstrip("/")
     payload = item.payload or {}
+    if item.notification_type in {"password_reset", "password_changed"}:
+        from .password_reset import message
+        return message(item)
     if item.notification_type == "account_recovery_requested":
         return (
             "HireWiz account recovery requested",
@@ -197,8 +200,36 @@ def deliver_pending_notifications(db: Session, *, limit: int = 50) -> DeliverySu
         and (os.getenv("RESEND_API_KEY") or "").strip()
         and (os.getenv("EMAIL_FROM") or "").strip()
     )
+    from .password_reset import configured as reset_configured
+    from .password_reset import deliver as deliver_reset
+    security_sent = security_retried = security_failed = security_claimed = 0
+    if reset_configured():
+        now = utcnow()
+        # Security messages must recover bounded abandoned claims even when
+        # optional lifecycle delivery is disabled.
+        db.query(models.NotificationOutbox).filter(
+            models.NotificationOutbox.notification_type.in_(("password_reset", "password_changed")),
+            models.NotificationOutbox.status == "processing",
+            models.NotificationOutbox.claimed_at < now - timedelta(minutes=15),
+        ).update({models.NotificationOutbox.status: "pending", models.NotificationOutbox.claimed_at: None}, synchronize_session=False)
+        db.commit()
+        reset_ids = [row[0] for row in db.query(models.NotificationOutbox.id).filter_by(status="pending").filter(
+            models.NotificationOutbox.notification_type.in_(("password_reset", "password_changed")),
+            models.NotificationOutbox.available_at <= now).order_by(models.NotificationOutbox.available_at.asc()).limit(limit).all()]
+        for reset_id in reset_ids:
+            if deliver_reset(db, reset_id):
+                security_sent += 1
+            else:
+                item = db.get(models.NotificationOutbox, reset_id)
+                if item is not None and item.status == "failed":
+                    security_failed += 1
+                elif item is not None and item.status == "pending":
+                    security_retried += 1
+            security_claimed += 1
+        db.rollback()
     if not configured:
-        return DeliverySummary(configured=False)
+        return DeliverySummary(configured=reset_configured(), claimed=security_claimed,
+            sent=security_sent, retried=security_retried, failed=security_failed)
 
     now = utcnow()
     stale_claim = now - timedelta(minutes=15)
@@ -221,6 +252,7 @@ def deliver_pending_notifications(db: Session, *, limit: int = 50) -> DeliverySu
             db.query(models.NotificationOutbox.id)
             .filter(
                 models.NotificationOutbox.status == "pending",
+                models.NotificationOutbox.notification_type.notin_(("password_reset", "password_changed")),
                 models.NotificationOutbox.available_at <= now,
             )
             .order_by(models.NotificationOutbox.available_at.asc())
@@ -228,7 +260,7 @@ def deliver_pending_notifications(db: Session, *, limit: int = 50) -> DeliverySu
             .all()
         )
     ]
-    sent = retried = failed = 0
+    sent, retried, failed = security_sent, security_retried, security_failed
     for item_id in item_ids:
         item = (
             db.query(models.NotificationOutbox)
@@ -280,7 +312,7 @@ def deliver_pending_notifications(db: Session, *, limit: int = 50) -> DeliverySu
         sent += 1
     return DeliverySummary(
         configured=True,
-        claimed=len(item_ids),
+        claimed=len(item_ids) + security_claimed,
         sent=sent,
         retried=retried,
         failed=failed,

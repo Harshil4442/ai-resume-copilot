@@ -70,6 +70,7 @@ RELEASE_SCHEMAS = frozenset({
 })
 SCHEMA19_RELEASE_SCHEMA = "20261015_0019"
 SCHEMA20_RELEASE_SCHEMA = "20261023_0020"
+SCHEMA21_RELEASE_SCHEMA = "20261023_0021"
 RELEASE_ACTORS = {
     "observer": ("hirewiz_observer_20261010_r1", 1884182),
     "replacement_runtime": ("hirewiz_runtime_20261010_r1", 1884178),
@@ -115,7 +116,7 @@ class NeonDirectProxyBinding:
     channel_binding: str
     options: str
     purpose: Literal["capture", "preparation", "release_capture", "fresh_release_capture",
-                     "schema19_fresh_release_capture", "schema20_fresh_release_capture"]
+                     "schema19_fresh_release_capture", "schema20_fresh_release_capture", "schema21_fresh_release_capture"]
     actor: str = ACTOR
     actor_oid: int = ACTOR_OID
     database_owner_oid: int = ACTOR_OID
@@ -195,7 +196,7 @@ def _registered(binding: NeonDirectProxyBinding) -> None:
         raise NeonIdentityDenied("neon_direct_native_binding_unavailable")
     if binding.execution_files is not None:
         if (type(binding.execution_files) is not LinuxExecutionFiles
-                or binding.purpose not in {"release_capture", "fresh_release_capture", "schema19_fresh_release_capture", "schema20_fresh_release_capture"}):
+                or binding.purpose not in {"release_capture", "fresh_release_capture", "schema19_fresh_release_capture", "schema20_fresh_release_capture", "schema21_fresh_release_capture"}):
             raise NeonIdentityDenied("neon_linux_execution_files_unavailable")
         try:
             binding.execution_files.validate()
@@ -226,7 +227,7 @@ def _registered(binding: NeonDirectProxyBinding) -> None:
         and binding.options == CAPTURE_OPTIONS
     )
     fresh_release = (
-        binding.purpose in {"fresh_release_capture", "schema19_fresh_release_capture", "schema20_fresh_release_capture"}
+        binding.purpose in {"fresh_release_capture", "schema19_fresh_release_capture", "schema20_fresh_release_capture", "schema21_fresh_release_capture"}
         and type(provenance) is tuple and len(provenance) == 4
         and provenance[0] == PROJECT and provenance[3] == FRESH_CONTROL_RECEIPT_SHA
         and type(provenance[1]) is str
@@ -239,7 +240,9 @@ def _registered(binding: NeonDirectProxyBinding) -> None:
              or (binding.purpose == "schema19_fresh_release_capture"
                  and binding.expected_schema == SCHEMA19_RELEASE_SCHEMA)
              or (binding.purpose == "schema20_fresh_release_capture"
-                 and binding.expected_schema == SCHEMA20_RELEASE_SCHEMA))
+                 and binding.expected_schema == SCHEMA20_RELEASE_SCHEMA)
+             or (binding.purpose == "schema21_fresh_release_capture"
+                 and binding.expected_schema == SCHEMA21_RELEASE_SCHEMA))
         and binding.host == FRESH_DIRECT_HOST and binding.channel_binding in {"prefer", "require"}
         and binding.options == CAPTURE_OPTIONS
     )
@@ -497,7 +500,7 @@ def verify_native_target(
     connection: Any, binding: NeonDirectProxyBinding, database_oid: int
 ) -> None:
     _registered(binding)
-    if binding.purpose in {"fresh_release_capture", "schema19_fresh_release_capture", "schema20_fresh_release_capture"}:
+    if binding.purpose in {"fresh_release_capture", "schema19_fresh_release_capture", "schema20_fresh_release_capture", "schema21_fresh_release_capture"}:
         _verify_fresh_native_target(connection, binding, database_oid)
         return
     control = connection.execute(
@@ -629,7 +632,7 @@ def collect_release_target(
 
 def verify_release_schema(connection: Any, binding: NeonDirectProxyBinding) -> None:
     _registered(binding)
-    if binding.purpose not in {"release_capture", "fresh_release_capture", "schema19_fresh_release_capture", "schema20_fresh_release_capture"}:
+    if binding.purpose not in {"release_capture", "fresh_release_capture", "schema19_fresh_release_capture", "schema20_fresh_release_capture", "schema21_fresh_release_capture"}:
         raise NeonIdentityDenied("neon_release_schema_route_unavailable")
     versions = list(connection.execute(
         text("SELECT version_num FROM public.alembic_version LIMIT 3")
@@ -707,10 +710,21 @@ def collect_schema20_release_target(
         purpose="schema20_fresh_release_capture")
 
 
+
+def collect_schema21_release_target(
+    reader: NativeReleaseSecretReader, reference: str, *, alias: str,
+    database_owner_oid: int, expected_schema: str = SCHEMA21_RELEASE_SCHEMA,
+) -> tuple[NeonDirectProxyBinding, _TransientTarget]:
+    """Disjoint exact-schema21 observation; previous purposes keep their schemas."""
+    return _collect_fresh_release_target(reader, reference, alias=alias,
+        database_owner_oid=database_owner_oid, expected_schema=expected_schema,
+        purpose="schema21_fresh_release_capture")
+
+
 def _collect_fresh_release_target(
     reader: NativeReleaseSecretReader, reference: str, *, alias: str,
     database_owner_oid: int, expected_schema: str,
-    purpose: Literal["fresh_release_capture", "schema19_fresh_release_capture", "schema20_fresh_release_capture"],
+    purpose: Literal["fresh_release_capture", "schema19_fresh_release_capture", "schema20_fresh_release_capture", "schema21_fresh_release_capture"],
 ) -> tuple[NeonDirectProxyBinding, _TransientTarget]:
     """One native source/transport issuer with disjoint exact schema purposes."""
     try:
@@ -718,6 +732,7 @@ def _collect_fresh_release_target(
             purpose == "fresh_release_capture" and expected_schema in RELEASE_SCHEMAS
             or purpose == "schema19_fresh_release_capture" and expected_schema == SCHEMA19_RELEASE_SCHEMA
             or purpose == "schema20_fresh_release_capture" and expected_schema == SCHEMA20_RELEASE_SCHEMA
+            or purpose == "schema21_fresh_release_capture" and expected_schema == SCHEMA21_RELEASE_SCHEMA
         )
         if (type(reference) is not str or RELEASE_REFERENCE.fullmatch(reference) is None
                 or type(alias) is not str or alias not in FRESH_RELEASE_ACTORS
@@ -774,7 +789,7 @@ def _verify_fresh_native_target(
     connection: Any, binding: NeonDirectProxyBinding, database_oid: int,
 ) -> None:
     _registered(binding)
-    if binding.purpose not in {"fresh_release_capture", "schema19_fresh_release_capture", "schema20_fresh_release_capture"}:
+    if binding.purpose not in {"fresh_release_capture", "schema19_fresh_release_capture", "schema20_fresh_release_capture", "schema21_fresh_release_capture"}:
         raise NeonIdentityDenied("neon_fresh_native_binding_unavailable")
     control = connection.execute(text(
         "SELECT p.oid,p.proowner,p.prosecdef,p.prosrc,l.lanname FROM pg_catalog.pg_proc p "

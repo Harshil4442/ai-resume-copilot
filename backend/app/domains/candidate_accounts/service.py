@@ -42,6 +42,8 @@ class CandidateCookieLogout(Protocol):
     def deny_cookie_session(self, context: CandidateWebSession, revision: CandidateCredentialRevision,
                             operation_id: UUID) -> bool: ...
     def confirm_deleted_cookie(self, context: CandidateWebSession, *, auth_generation: int) -> bool: ...
+    def confirm_rotated_cookie(self, context: CandidateWebSession, revision: CandidateCredentialRevision,
+                               *, auth_generation: int) -> bool: ...
 
 
 def credential_digest(encoded: str) -> str:
@@ -101,9 +103,10 @@ class CandidateAccountService:
                 raise GuardDenied("Google account is not explicitly linked")
             user = db.query(User).filter_by(id=link.user_id).one_or_none()
             row = mapped_account(db, link.user_id)
-            if user is None or row is None:
+            if user is None or row is None or user.email != identity.email:
                 raise GuardDenied(FAILURE)
             revision = revision_from_row(row, user.password_hash)
+        email = identity.email
         now = self.now_ms()
         if (not now - 120_000 <= identity.authenticated_at_ms <= now + 5_000
                 or not now - 120_000 <= identity.issued_at_ms <= now + 5_000):
@@ -112,6 +115,7 @@ class CandidateAccountService:
             verified_proof_sha256=identity.proof_sha256, expires_at_ms=now + SESSION_MS)
         if context is None or self.retention.check_session(context, revision) is not True:
             raise GuardUnavailable(UNAVAILABLE)
+        self._bind_login_mailbox(revision, email)
         return CandidateLoginResult(context=context, auth_generation=revision.auth_generation,
                                     expires_at_ms=now + SESSION_MS)
 
@@ -137,6 +141,7 @@ class CandidateAccountService:
     def register(self, *, email: str, password: str, policy_version: str) -> int:
         if not 10 <= len(password) <= 128:
             raise GuardDenied(FAILURE)
+        email = email.strip().lower()  # Capture original verified registration input before native IO.
         encoded = hash_password(password)
         with self.sessions() as db:
             if db.query(User.id).filter_by(email=email.strip().lower()).first() is not None:
@@ -158,12 +163,13 @@ class CandidateAccountService:
             revision = CandidateCredentialRevision(candidate_id=user.id, subject_uuid=account.subject_uuid,
                 account_binding_id=account.account_binding_id, principal_sha256=account.principal_sha256,
                 auth_generation=1, credential_sha256=account.credential_sha256)
-        if self.retention.enroll(revision) is not True or self.retention.check_account(revision) is not True:
+        if (self.retention.enroll(revision) is not True or self.retention.check_account(revision) is not True
+                or self.retention.bind_recovery_mailbox(revision, credential_digest(email)) is not True):
             raise GuardUnavailable(UNAVAILABLE)
         with self.sessions() as db:
             row = db.query(CandidatePasswordAccount).filter_by(user_id=revision.candidate_id).with_for_update().one_or_none()
             user = db.query(User).filter_by(id=revision.candidate_id).with_for_update().one_or_none()
-            if (row is None or user is None or row.state != "PENDING"
+            if (row is None or user is None or row.state != "PENDING" or user.email != email
                     or row.subject_uuid != str(revision.subject_uuid)
                     or row.account_binding_id != str(revision.account_binding_id)
                     or row.principal_sha256 != revision.principal_sha256
@@ -176,6 +182,7 @@ class CandidateAccountService:
         return revision.candidate_id
 
     def login(self, *, email: str, password: str) -> CandidateLoginResult:
+        email = email.strip().lower()
         if type(password) is not str or not 0 < len(password.encode()) <= 1024:
             raise GuardDenied(FAILURE)
         with self.sessions() as db:
@@ -194,8 +201,18 @@ class CandidateAccountService:
         # A concurrent password reset/deletion must be independently denied. No SQL-held external IO.
         if self.retention.check_session(context, revision) is not True:
             raise GuardUnavailable(UNAVAILABLE)
+        self._bind_login_mailbox(revision, email)
         return CandidateLoginResult(context=context, auth_generation=revision.auth_generation,
                                     expires_at_ms=now + SESSION_MS)
+
+    def _bind_login_mailbox(self, revision: CandidateCredentialRevision, email: str) -> None:
+        if self.retention.bind_recovery_mailbox(revision, credential_digest(email)) is not True:
+            raise GuardUnavailable(UNAVAILABLE)
+        with self.sessions() as db:
+            user, row = db.get(User, revision.candidate_id), mapped_account(db, revision.candidate_id)
+            if (user is None or row is None or user.email != email
+                    or revision_from_row(row, user.password_hash) != revision):
+                raise GuardUnavailable(UNAVAILABLE)
 
     def _current(self, context: CandidateWebSession, *, auth_generation: int | None = None) -> CandidateCredentialRevision:
         with self.sessions() as db:
@@ -233,6 +250,12 @@ class CandidateAccountService:
             if self.cookie_logout.confirm_deleted_cookie(context, auth_generation=auth_generation) is not True:
                 raise GuardUnavailable(UNAVAILABLE)
             return
+        if type(auth_generation) is int and 0 < auth_generation < revision.auth_generation:
+            if (context.candidate_id != revision.candidate_id or context.account_binding_id != revision.account_binding_id
+                    or self.retention.check_account(revision) is not True
+                    or self.cookie_logout.confirm_rotated_cookie(context, revision, auth_generation=auth_generation) is not True):
+                raise GuardUnavailable(UNAVAILABLE)
+            return  # Denial only: no old session is authenticated, issued or activated.
         if (context.account_binding_id != revision.account_binding_id
                 or auth_generation != revision.auth_generation
                 or self.cookie_logout.deny_cookie_session(context, revision, operation_id) is not True):
@@ -260,6 +283,73 @@ class CandidateAccountService:
                 raise GuardUnavailable(UNAVAILABLE)
             row.auth_generation, row.credential_sha256 = new.auth_generation, new.credential_sha256
             user.password_hash = encoded
+            db.commit()
+
+    def reset_password_from_email(self, reset_id: str, encoded: str, token: str) -> None:
+        """Consume an already claimed mailbox proof through existing native ports."""
+        from ...models import PasswordResetToken
+        from .email_reset import _valid_token, digest, revision_digest
+        from .enrollment import _revision
+
+        def binding(proof):
+            return (proof.id, proof.user_id, proof.token_sha256, proof.email_sha256,
+                proof.credential_sha256, proof.native_revision_sha256, proof.legacy_epoch,
+                proof.expires_at, proof.consumed_at)
+
+        with self.sessions() as db:
+            proof = db.query(PasswordResetToken).filter_by(id=reset_id).with_for_update().one_or_none()
+            # The original mailbox token is reauthenticated after the SQL claim
+            # boundary, before deriving any owner or issuing native authority.
+            if (proof is None or proof.status != "PROCESSING" or proof.consumed_at is None
+                    or proof.token_sha256 != digest(token) or not _valid_token(proof, token)):
+                raise GuardDenied(FAILURE)
+            verified = binding(proof)
+            user = db.get(User, proof.user_id)
+            row = mapped_account(db, proof.user_id)
+            if user is None or row is None:
+                raise GuardDenied(FAILURE)
+            old = revision_from_row(row, user.password_hash)
+            if (revision_digest(old) != proof.native_revision_sha256
+                    or credential_digest(user.email) != proof.email_sha256
+                    or int(user.credential_epoch or 0) != proof.legacy_epoch
+                    or credential_digest(user.password_hash) != proof.credential_sha256
+                    or old.auth_generation >= 2**53 - 1):
+                raise GuardDenied(FAILURE)
+        if self.retention.check_recovery_mailbox(old, proof.email_sha256) is not True:
+            raise GuardDenied("Recovery mailbox is not independently bound; verified sign-in or support required")
+        context = self.retention.issue(old, expires_at_ms=self.now_ms() + 60_000)
+        if context is None or self.retention.check_session(context, old) is not True:
+            raise GuardUnavailable(UNAVAILABLE)
+        new = old.model_copy(update={"auth_generation": old.auth_generation + 1,
+                                     "credential_sha256": credential_digest(encoded)})
+        with self.sessions() as db:
+            user = db.query(User).filter_by(id=old.candidate_id).with_for_update().one()
+            proof = db.query(PasswordResetToken).filter_by(id=reset_id).with_for_update().one()
+            row = db.query(CandidatePasswordAccount).filter_by(user_id=old.candidate_id).with_for_update().one()
+            if (proof.status != "PROCESSING" or proof.user_id != old.candidate_id
+                    or binding(proof) != verified or not _valid_token(proof, token)
+                    or revision_from_row(row, user.password_hash) != old
+                    or credential_digest(user.email) != proof.email_sha256
+                    or int(user.credential_epoch or 0) != proof.legacy_epoch):
+                raise GuardDenied(FAILURE)
+            user.password_hash, row.state = encoded, "RESET_PENDING"
+            db.commit()  # Deny all sign-in/session use before the native credential cut.
+        if self.retention.advance_credentials(context, old, new) is not True:
+            raise GuardUnavailable(UNAVAILABLE)
+        with self.sessions() as db:
+            user = db.query(User).filter_by(id=old.candidate_id).with_for_update().one()
+            proof = db.query(PasswordResetToken).filter_by(id=reset_id).with_for_update().one()
+            row = db.query(CandidatePasswordAccount).filter_by(user_id=old.candidate_id).with_for_update().one()
+            if (proof.status != "PROCESSING" or proof.user_id != old.candidate_id
+                    or binding(proof) != verified or not _valid_token(proof, token)
+                    or row.state != "RESET_PENDING" or _revision(row) != old
+                    or credential_digest(user.email) != proof.email_sha256
+                    or int(user.credential_epoch or 0) != proof.legacy_epoch or user.password_hash != encoded):
+                raise GuardUnavailable(UNAVAILABLE)
+            row.auth_generation, row.credential_sha256, row.state = new.auth_generation, new.credential_sha256, "ACTIVE"
+            proof.status = "COMPLETED"
+            from ..notifications.password_reset import enqueue_changed
+            enqueue_changed(db, user_id=user.id, recipient=user.email, reset_id=reset_id)
             db.commit()
 
     def prepare_delete(self, context: CandidateWebSession) -> None:

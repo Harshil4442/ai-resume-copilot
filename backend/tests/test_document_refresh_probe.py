@@ -10,6 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 from infra.gcp import document_refresh_probe as p
+from infra.gcp import document_renderer_profiles as profile
 from infra.gcp import document_worker as worker
 
 parser = p.load_source("hirewiz_document_refresh_receipt_test", p.HERE / "document_refresh_receipt.txt")
@@ -547,7 +548,7 @@ def test_sdk_discovery_is_fixed_nonsecret_and_import_is_inert(monkeypatch, tmp_p
     assert p.sdk_library() == root / "lib"
 
 
-def caller_services(image=NEXT):
+def caller_services(image=NEXT, *, font=profile.FONT):
     result = {}
     for name in ("ai-resume-parser", "hirewiz-analysis-worker", "hirewiz-resume-coordinator"):
         s = service(image="app@sha256:" + "c" * 64, name=name, uid=JOB_UID)
@@ -556,13 +557,31 @@ def caller_services(image=NEXT):
             {"name": "DOCUMENT_WORKER_URL", "value": p.WORKER_URL},
             {"name": "DOCUMENT_WORKER_POLICY_SHA256", "value": p.POLICY},
             {"name": "DOCUMENT_WORKER_DOCX_RENDERER_VERSION", "value": p.RENDERER},
-            {"name": "DOCUMENT_WORKER_DOCX_FONT_MANIFEST_SHA256", "value": p.FONT}]
+            {"name": "DOCUMENT_WORKER_DOCX_FONT_MANIFEST_SHA256", "value": font}]
         result[s["name"]] = s
+    worker = service(image)
+    result[worker["name"]] = worker
     return result
 
 
+@pytest.fixture
+def current_caller_build(monkeypatch):
+    """Fresh native Build port for the current accepted daily renderer parent."""
+    calls = []
+
+    def verify(build_id, nonce, image):
+        assert build_id == BUILD_ID and nonce == NONCE
+        calls.append(image)
+        return {**build(), "immutable_image": image, "fixed_renderer_base": profile.IMAGE,
+                "source_sha256": copy.deepcopy(profile.SOURCES)}
+
+    monkeypatch.setattr(p, "build_module", lambda: SimpleNamespace(
+        RENDERER_BASE=profile.IMAGE, verify_current_build=verify))
+    return calls
+
+
 @pytest.mark.parametrize("name", [None, "ai-resume-parser", "hirewiz-analysis-worker", "hirewiz-resume-coordinator"])
-def test_cleanup_requires_all_three_actual_serving_consumers(name):
+def test_cleanup_requires_all_three_actual_serving_consumers(name, current_caller_build):
     services = caller_services()
     revs = {s["latestReadyRevision"]: revision(s) for s in services.values()}
     if name:
@@ -574,12 +593,14 @@ def test_cleanup_requires_all_three_actual_serving_consumers(name):
             p.verify_caller_pins(clients, NEXT)
     else:
         p.verify_caller_pins(clients, NEXT)
+    assert current_caller_build == [NEXT]
 
 
 def cleanup_fixture(native, monkeypatch, tmp_path):
     target = tmp_path / "native"
     p.run_successor(IMAGE, build(), target)
-    services = caller_services()
+    # This retained synthetic native fixture explicitly models the older renderer.
+    services = caller_services(font=p.FONT)
     s = service(NEXT)
     services[s["name"]] = s
     revs = {row["latestReadyRevision"]: revision(row) for row in services.values()}
@@ -873,7 +894,7 @@ def test_explicit_release_route_uses_owned_identity_and_identical_native_proof(m
     assert native.calls["create"] == native.calls["start"] == native.calls["delete"] == 0
 
 
-def test_current_digest_pins_cannot_authorize_a_different_document_service_origin():
+def test_current_digest_pins_cannot_authorize_a_different_document_service_origin(current_caller_build):
     services = caller_services()
     revs = {s["latestReadyRevision"]: revision(s) for s in services.values()}
     bad = revs[services[p.PARENT + "/services/hirewiz-resume-coordinator"]["latestReadyRevision"]]
@@ -882,3 +903,4 @@ def test_current_digest_pins_cannot_authorize_a_different_document_service_origi
             item["value"] = "https://foreign.example/inspect"
     with pytest.raises(p.NativeProofDenied, match="caller_pin"):
         p.verify_caller_pins(SimpleNamespace(service=lambda key: services[key], revision=lambda key: revs[key]), NEXT)
+    assert current_caller_build == [NEXT]

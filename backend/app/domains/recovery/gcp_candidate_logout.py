@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from uuid import UUID
 
+from pydantic import ValidationError
+
 from ..candidate_accounts.contracts import CandidateCredentialRevision
 from .contracts import canonical, fingerprint
 from .gcp_buffer import BufferedTransaction
@@ -116,6 +118,40 @@ class GcpCandidateCookieLogout:
                 raise GuardUnavailable("Deleted cookie lacks genuine native enrollment/session provenance")
             confirmed[:] = [True]
         self.scoped._run(read)
+        return confirmed[0]
+
+    def confirm_rotated_cookie(self, context: CandidateWebSession, revision: CandidateCredentialRevision,
+                               *, auth_generation: int) -> bool:
+        """Read-only proof that this exact old cookie is denied by a newer generation."""
+        frozen = CandidateWebSession.model_validate_json(context.model_dump_json())
+        expected = ScopedCredentialRevision.model_validate_json(revision.model_dump_json())
+        if (type(auth_generation) is not int or not 0 < auth_generation < expected.auth_generation
+                or frozen.candidate_id != expected.candidate_id or frozen.account_binding_id != expected.account_binding_id):
+            raise GuardDenied("Rotated cookie does not own this account")
+        confirmed: list[bool] = []
+        def read(tx: BufferedTransaction) -> None:
+            self.scoped.publication._root(tx, opened=True)
+            subject = current_subject(tx, expected.subject_uuid)
+            session = ScopedSession.model_validate(tx.get("v3_sessions", str(frozen.session_id)))
+            origin = _origin(tx, session.activation_operation).intent.command
+            if (subject.model_dump(mode="json", exclude={"enrollment_operation"}) != expected.model_dump(mode="json")
+                    or session.subject_uuid != expected.subject_uuid or session.principal_sha256 != expected.principal_sha256
+                    or session.account_binding_id != frozen.account_binding_id or session.session_id != frozen.session_id
+                    or session.auth_generation != auth_generation or session.authentication_method != frozen.authentication_method
+                    or not isinstance(origin, (CreateVerifiedPasswordWebSession, CreateVerifiedOAuthWebSession))
+                    or not verified_session_matches(origin, authentication_method=session.authentication_method,
+                        verified_proof_sha256=session.verified_proof_sha256, principal_sha256=expected.principal_sha256)
+                    or origin.account_binding_id != frozen.account_binding_id or origin.session_id != frozen.session_id
+                    or origin.expected_auth_generation != auth_generation or origin.credential_sha256 != session.credential_sha256
+                    or origin.expires_at_ms != session.expires_at_ms):
+                raise GuardDenied("Rotated cookie lacks immutable original ownership")
+            confirmed[:] = [True]
+        try:
+            self.scoped._run(read)
+        except ValidationError:
+            # Missing or malformed retained ownership is unavailable proof,
+            # never permission to clear a different subject's cookie.
+            raise GuardUnavailable("Rotated cookie lacks valid retained ownership") from None
         return confirmed[0]
 
     def deny_cookie_session(self, context: CandidateWebSession, revision: CandidateCredentialRevision,
