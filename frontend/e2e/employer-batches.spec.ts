@@ -122,6 +122,7 @@ test.beforeEach(({ page }) => {
 test.afterEach(({ page }) => expect(errors.get(page)).toEqual([]));
 
 test("exact jobs, files, actions, fixed prices and budget require review before separate approval and queueing", async ({ page, context, baseURL }, info) => {
+  await page.clock.install();
   const f = fixture(); await f.install(context, baseURL!); await page.emulateMedia({ reducedMotion: "reduce" }); await selectBatch(page);
   const dialog = page.getByRole("dialog"); await dialog.getByLabel("Maximum service credit budget").fill("17"); await expect(dialog.getByRole("button", { name: "Create exact batch quote" })).toBeDisabled();
   await dialog.getByLabel("Maximum service credit budget").fill("20"); await dialog.getByRole("button", { name: "Create exact batch quote" }).click();
@@ -148,14 +149,24 @@ test("exact jobs, files, actions, fixed prices and budget require review before 
   await expect(dialog.getByText("7 service credits reserved. Waiting for an employer-confirmed outcome.", { exact: true })).toBeVisible();
   await expect(dialog.getByText("11 service credits reserved. Waiting for an employer-confirmed outcome.", { exact: true })).toBeVisible();
   const before = f.requests.filter((request) => request.method === "GET" && /^\/v1\/employer-jobs\/applications\//.test(request.path)).length;
-  await expect.poll(() => f.requests.filter((request) => request.path === `${base}/application-batches/batch_local_fixture` && request.method === "GET").length).toBeGreaterThan(1);
+  const batchReads = () => f.requests.filter((request) => request.path === `${base}/application-batches/batch_local_fixture` && request.method === "GET").length;
+  const queuedReads = batchReads();
+  const queuedPoll = page.waitForResponse((response) => response.request().method() === "GET" && new URL(response.url()).pathname.endsWith("/application-batches/batch_local_fixture"));
+  // Local quote/approval cache updates also advance the bounded backoff. Cross
+  // its 30s cap without shortening production polling or waiting in real time.
+  await page.clock.fastForward(30_000);
+  await queuedPoll;
+  await expect.poll(batchReads).toBeGreaterThan(queuedReads);
   expect(f.requests.filter((request) => request.method === "GET" && /^\/v1\/employer-jobs\/applications\//.test(request.path)).length).toBe(before);
   f.applications[0].status = "confirmed"; f.applications[0].charged_credits = 7; f.applications[0].reserved_credits = 0; f.applications[1].status = "unknown";
+  const confirmedPoll = page.waitForResponse((response) => response.request().method() === "GET" && new URL(response.url()).pathname.endsWith("/application-batches/batch_local_fixture"));
+  await page.clock.fastForward(30_000);
+  await confirmedPoll;
   await expect(dialog.getByText("Submission confirmed", { exact: true })).toBeVisible(); await expect(dialog.getByText("Outcome unknown", { exact: true })).toBeVisible(); await expect(dialog.getByText(/No automatic repeat send/)).toBeVisible();
   await dialog.getByRole("button", { name: "Cancel remaining batch work" }).click(); await expect(dialog.getByRole("status")).toContainText("Cancellation requested for remaining work"); await expect(dialog.getByText("Submission confirmed", { exact: true })).toBeVisible(); await expect(dialog.getByText("Outcome unknown", { exact: true })).toBeVisible();
   await expect(dialog.getByText("Cancellation requested. This does not recall an in-flight send.", { exact: true })).toBeVisible(); expect(f.applications[1].reserved_credits).toBe(11); await layout(page);
   const terminalReads = f.requests.filter((request) => request.method === "GET" && request.path === `${base}/application-batches/batch_local_fixture`).length;
-  await page.waitForTimeout(2200);
+  await page.clock.fastForward(30_000);
   expect(f.requests.filter((request) => request.method === "GET" && request.path === `${base}/application-batches/batch_local_fixture`).length).toBe(terminalReads);
   await screenshots(page, info.project.name, "status");
   expect(f.requests.filter((request) => request.path.endsWith("/execute"))).toHaveLength(1); expect(f.requests.filter((request) => request.path.endsWith("/approve"))).toHaveLength(1);
