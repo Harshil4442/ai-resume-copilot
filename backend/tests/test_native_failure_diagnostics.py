@@ -7,7 +7,12 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
-from google.api_core.exceptions import NotFound, PermissionDenied
+from google.api_core.exceptions import (
+    NotFound,
+    PermissionDenied,
+    ResourceExhausted,
+    TooManyRequests,
+)
 
 from app.domains.candidate_accounts import production as accounts
 from app.domains.recovery import browser_pairing_production as pairing
@@ -225,12 +230,34 @@ def test_exact_witness_io_labels_keep_existing_calls_cleanup_and_no_retry(events
             "stage": failure, "exception_type": "PermissionDenied"}]
 
 
-def test_firestore_identity_preserves_provider_type_before_existing_safe_wrapper(events):
-    error = PermissionDenied("synthetic private database")
+@pytest.mark.parametrize("exception", [PermissionDenied, ResourceExhausted, TooManyRequests])
+def test_firestore_identity_preserves_provider_type_before_existing_safe_wrapper(events, exception):
+    error = exception("synthetic private database", details=("synthetic private quota metadata",))
+    admin = SimpleNamespace(get_database=Mock(side_effect=error))
+    rpc = FirestoreRpc(object(), admin, database_resource="projects/synthetic-project/databases/registry-db")
+    with pytest.raises(GuardUnavailable) as raised:
+        rpc.identity()
+    assert raised.value.__cause__ is error and admin.get_database.call_count == 1
+    admin.get_database.assert_called_once_with(
+        request={"name": "projects/synthetic-project/databases/registry-db"}, retry=None, timeout=2.0)
+    assert events == [{"event": "native_boundary_failure_v1", "component": "firestore_rpc",
+        "stage": "identity", "exception_type": exception.__name__}]
+    assert "synthetic private" not in json.dumps(events)
+
+
+def test_unknown_quota_exception_name_and_private_details_stay_redacted(events):
+    class PrivateQuotaFailure(ResourceExhausted):
+        def __str__(self):
+            raise AssertionError("Quota error text must never be inspected")
+
+        def __repr__(self):
+            raise AssertionError("Quota error repr must never be inspected")
+
+    error = PrivateQuotaFailure("synthetic private database", details=("private quota owner",))
     admin = SimpleNamespace(get_database=Mock(side_effect=error))
     rpc = FirestoreRpc(object(), admin, database_resource="projects/synthetic-project/databases/registry-db")
     with pytest.raises(GuardUnavailable) as raised:
         rpc.identity()
     assert raised.value.__cause__ is error and admin.get_database.call_count == 1
     assert events == [{"event": "native_boundary_failure_v1", "component": "firestore_rpc",
-        "stage": "identity", "exception_type": "PermissionDenied"}]
+        "stage": "identity", "exception_type": "OtherError"}]

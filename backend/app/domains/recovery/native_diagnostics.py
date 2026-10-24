@@ -24,6 +24,7 @@ _TYPES = frozenset({
     "AttributeError", "ValidationError", "GuardDenied", "GuardUnavailable", "AmbiguousCommit",
     "PermissionDenied", "Forbidden", "Unauthenticated", "Unauthorized", "NotFound",
     "DeadlineExceeded", "Aborted", "FailedPrecondition", "ServiceUnavailable",
+    "ResourceExhausted", "TooManyRequests",
     "InternalServerError", "GoogleAPICallError", "RetryError", "ConnectTimeout", "ReadTimeout",
     "SSLError", "TransportError",
 })
