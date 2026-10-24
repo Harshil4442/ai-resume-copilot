@@ -35,8 +35,35 @@ The existing companion attempt is preserved. The 0.8.1 recovery API and
 frontend are accepted, and an independent API verification passed. The same
 extension's eighteen
 code files are updated to 0.8.1 with its key, permissions and local profile data
-preserved; a human reload and real connection acceptance remain pending.
+preserved. The human completed the same-extension reload; the new runtime
+recognizes the retained ID-less attempt and the original browser key. Real
+connection acceptance remains pending.
 Deployment alone does not close an outcome.
+
+The current request-capacity repair is **not yet deployed**. Actual provider
+metrics show HTTP 429 / gRPC status 8 for Firestore Admin `GetDatabase`, and the
+project's `DatabaseOperationsPerMinutePerProject` quota is **60 per minute**.
+Both inspected quota forms allow only 0–60; the quota API reports that an
+increase through that API is unsupported. No higher quota has been granted.
+Two signed key inspections returned upstream 503 at **24 October, 01:40:56 UTC**
+and **01:45:33 UTC**. Their individual provider exceptions remain unclassified;
+aggregate throttling alone does not attribute every 503 to that cause. A later
+single stock CLI metadata read succeeded. The internal application-answer save
+also failed, and explicit readback still showed no saved answers; it was not
+replayed.
+
+SDK-intercepted production-path tests expose a separate demand defect: one
+candidate confirmation uses **68 metadata calls**, while normal session
+validation uses four and key inspection uses eight. The prepared native repair
+combines redundant same-pin fences around two immutable, read-only marker
+checks, reducing confirmation to **54 calls**, without caching authorization or
+metadata across requests. Transaction, signing, acknowledgment and standalone
+password boundaries retain fresh checks. A 54-call operation remains expensive
+under a shared 60-per-minute quota; this is a reduction, not accepted scalable
+capacity. Frontend request deduplication and bounded progress checks are being
+reviewed separately. Real pairing must still pass before outcomes 3, 5 or 6 can
+close. The approved Google support inquiry returned a form-submission error;
+no case number or quota approval is claimed.
 
 ## Scope and owner controls
 
@@ -57,7 +84,7 @@ unfinished free-pilot journeys within the same six outcomes.
 |---|---|---|---|
 | Official job search, ranking and user-selected job counts | COMPLETE (free pilot) | Twenty reviewed origins were enabled and refreshed; the retained aggregate recorded 1,366 open postings at that observation. The earlier wrong-role search and its separate audited quality adjustment remain preserved. After reopening, a genuine three-result Software Engineer search returned **3 of 3** appropriate engineering roles. Its quote was **1 credit per job**; it charged **3**, released **0**, left **0 held** and **0 available**, while AI stayed **7**. | Approved free-pilot search acceptance is complete. Worldwide expansion and the independent greater-than-95-percent coverage target remain follow-on work. Preserve exact completed search and settlement history; no additional testing campaign is implied. |
 | Resume tailoring preserving PDF, DOCX and LaTeX formatting | COMPLETE (free pilot) | Real PDF Version 3 retained four safe edits and omitted one unsafe proposal; its download preserves one page, nine links, fonts and 147 unedited positions. Native DOCX, TeX and TeX ZIP original downloads match their source hashes. The unchanged DOCX snapshot is byte-identical. TeX and ZIP sealed PDFs were visually checked and matched to their previews; both retain two links. The exact three database records pass source, ClamAV, native-compilation and recorded cleanup-generation checks. After reconciling the failed POST as uncommitted, one fresh canonical ZIP upload parsed successfully and its original download matched all 917 bytes. | Approved free-pilot resume acceptance is complete. An independent release-user GCS marker read remains permission-unavailable and is not claimed as PASS; no IAM expansion is required by SD03. Unsupported layouts still receive conservative refusal or original/custom options. Unchanged snapshots remain labeled unchanged and do not prove new tailoring. |
-| Candidate-reviewed direct company applications | OPEN | Ordinary Google sign-in passed; the human reports foreground sign-in within five seconds. The human completed password reset; the password-changed email reached INBOX at **23 October 2026, 22:28:41 UTC**. Native enrollment and a fresh native password sign-in both reached the Dashboard. The first reset email also reached INBOX with SPF, DKIM and DMARC passing. The same installed companion has its 0.8.1 code update with key, permissions and local profile data preserved; human reload and connection acceptance remain pending. The original ID-less browser-device attempt remains preserved. A genuine one-credit search later returned Razorpay's Lead Software Development Engineer role in Bengaluru. The candidate created an internal application using the exact original-resume identity; its answers remain blank and it needs action. No employer write occurred. | Accept the 0.8.1 recovery and same-extension reload, then verify actual pairing and candidate-reviewed Razorpay assistance/recovery within the held employer-write controls. Do not seed an identity/device or bypass proof; employer attachment, upload and final submission are not smoke tests. |
+| Candidate-reviewed direct company applications | OPEN | Ordinary Google sign-in passed; the human reports foreground sign-in within five seconds. The human completed password reset; the password-changed email reached INBOX at **23 October 2026, 22:28:41 UTC**. Native enrollment and a fresh native password sign-in both reached the Dashboard. The first reset email also reached INBOX with SPF, DKIM and DMARC passing. The same installed companion has its 0.8.1 code update with key, permissions and local profile data preserved; the human reload is complete and real connection acceptance remains pending. The original ID-less browser-device attempt remains preserved. A genuine one-credit search later returned Razorpay's Lead Software Development Engineer role in Bengaluru. The candidate created an internal application using the exact original-resume identity; its answers remain blank and it needs action. No employer write occurred. | Resolve the remaining request-capacity failure, accept the 0.8.1 recovery, then verify actual pairing and candidate-reviewed Razorpay assistance/recovery within the held employer-write controls. Do not seed an identity/device or bypass proof; employer attachment, upload and final submission are not smoke tests. |
 | Paid search/application credits, profitable finite packs and payment recovery | COMPLETE (free pilot) | Three finite packs, separate service/AI balances, exact quotes, reservations, idempotent settlement and recovery controls are implemented. The promoted billing page displayed the actual **3** service credits. The quote of **1 per job** delivered **3 of 3** Software Engineer roles, charged **3**, released **0**, and left **0 held / 0 available**; AI remained **7**. Expense-policy **3** and model-policy **2** retain their reviewed authority. | Approved free-pilot credit, quote and settlement acceptance is complete. Paid checkout, real payment/refund receipts, commercial activation and actual-cost profitability remain explicitly unaccepted follow-on work. Unknown provider liabilities must not become zero cost. |
 | Fast responsive pages and SEO | OPEN | Public views were observed at 390, 768 and 1,440 pixels without horizontal overflow; signed-in search/billing views were also observed at 390 pixels. Fresh signed-in workspace and resume review observations at 320 and 1,024 pixels show no horizontal page overflow. Keyboard focus, mobile navigation and horizontally scrolling section access passed. Exact-source preview and canonical pricing/auth metadata corrections were accepted. The reset form passed desktop/mobile layout, fragment-removal and normal-session stability checks. Both domains serve the billing/upload corrections, and the canonical upload passed. | Finish companion recovery, pending states and actionable errors within the authenticated pilot journey. Preserve noindex/no-referrer and reset-token privacy. These observations do not establish complete accessibility, Core Web Vitals or mobile field performance. |
 | GCP/Vercel deployment, preserved-data migration and monitoring | OPEN | Schema21 migration, reopening and canonical health are accepted. The accepted 0.8.1 API successor serves source471/imagebf23; the other three services retain source7a/imagec1ce. Three worker queues are running and all three schedules produced natural HTTP 200 runs; the application queue remains paused. The 0.8.1 recovery frontend is promoted and both canonical aliases verified. The cron mitigation was normally merged in PR41, but the latest document-monitor heartbeat is overdue under the unchanged two-hour window; mapping, prior inbox delivery and current freshness limits are recorded below. | Deploy and accept companion connection recovery, then verify the final serving versions and held controls. Retain honest natural-versus-manual monitoring evidence. Preserve alert handles and distinguish configured routes from actual condition-specific incident/inbox delivery. No deployment-only completion claim. |
@@ -189,7 +216,7 @@ observations and uncertain completion remain blocked. This source implementation
 and its controlled tests do not establish a paired device or successful
 candidate-reviewed assistance. The eighteen installed code files are updated to
 0.8.1; the extension key, permissions, profile and IndexedDB are preserved.
-Human reload and real recovery remain pending. A fresh connection must not
+Human reload is complete; real recovery remains pending. A fresh connection must not
 silently replace an uncertain attempt.
 
 The accepted three-result search followed a displayed three-credit balance and an exact
