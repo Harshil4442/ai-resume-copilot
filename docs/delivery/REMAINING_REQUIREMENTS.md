@@ -1,5 +1,10 @@
 # Remaining requirements after the discovery pilot
 
+> Historical report: this document records its dated observations, not the current
+> deployment or remaining-work register. See [current pilot progress](AUTO_APPLY_PROGRESS.md)
+> for the six original outcomes and latest accepted serving state. The historical
+> chronology and earlier failures remain preserved below.
+
 ## Verified CI base and funded-search correction — 11 October 2026
 
 Source `c1936ec932e924e45708991f69e48c138b7fe2ed` passes all five jobs in
