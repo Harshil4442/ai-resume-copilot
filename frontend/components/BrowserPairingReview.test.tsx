@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import BrowserPairingReview from "./BrowserPairingReview";
@@ -7,7 +7,7 @@ const pairing = "00000000-0000-4000-8000-000000000001";
 const challenge = { pairing_id: pairing, device_id: "00000000-0000-4000-8000-000000000002",
   challenge_id: "00000000-0000-4000-8000-000000000003", nonce: "00000000-0000-4000-8000-000000000004",
   operation: "confirm_pairing", key_sha256: "a".repeat(64), request_sha256: "b".repeat(64), expires_at_ms: Date.now() + 60000 };
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe("candidate connection review", () => {
   it("does not request anything for an absent connection or before explicit review", async () => {
@@ -72,5 +72,83 @@ describe("candidate connection review", () => {
     await userEvent.click(screen.getByRole("button", { name: "Review connection" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("currently unavailable");
     expect(screen.getByRole("alert")).not.toHaveTextContent("untrusted-secret"); expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it("expires visibly, clears approval/password and makes no automatic network request", async () => {
+    vi.useFakeTimers();
+    const deadline = Date.now() + 60000;
+    const request = vi.fn().mockResolvedValueOnce(Response.json({ status: "ELIGIBLE" }))
+      .mockResolvedValueOnce(Response.json({ csrf_token: "c".repeat(64) }))
+      .mockResolvedValueOnce(Response.json({ ...challenge, expires_at_ms: deadline }));
+    vi.stubGlobal("fetch", request);
+    render(<BrowserPairingReview pairingId={pairing} />);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Review connection" })); });
+    fireEvent.change(screen.getByLabelText("HireWiz password"), { target: { value: "synthetic-review-password" } });
+    fireEvent.click(screen.getByRole("checkbox"));
+    expect(screen.getByRole("button", { name: "Confirm this device" })).toBeEnabled();
+    expect(screen.getByText(/This review expires at/)).toBeVisible();
+    await act(async () => { vi.advanceTimersByTime(60000); });
+    expect(screen.getByRole("status")).toHaveTextContent("This review expired");
+    expect(screen.getByRole("checkbox")).not.toBeChecked();
+    expect(screen.getByRole("checkbox")).toBeDisabled();
+    expect(screen.getByLabelText("HireWiz password")).toHaveValue("");
+    expect(screen.getByLabelText("HireWiz password")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Confirm this device" })).toBeDisabled();
+    expect(screen.getByText(challenge.key_sha256)).toBeVisible();
+    await act(async () => { vi.advanceTimersByTime(120000); });
+    expect(request).toHaveBeenCalledTimes(3);
+  });
+
+  it("checks expiry when a backgrounded review regains focus", async () => {
+    vi.useFakeTimers();
+    const deadline = Date.now() + 60000;
+    const request = vi.fn().mockResolvedValueOnce(Response.json({ status: "ELIGIBLE" }))
+      .mockResolvedValueOnce(Response.json({ csrf_token: "c".repeat(64) }))
+      .mockResolvedValueOnce(Response.json({ ...challenge, expires_at_ms: deadline }));
+    vi.stubGlobal("fetch", request);
+    render(<BrowserPairingReview pairingId={pairing} />);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Review connection" })); });
+    vi.setSystemTime(deadline + 1);
+    fireEvent.focus(window);
+    expect(screen.getByRole("button", { name: "Confirm this device" })).toBeDisabled();
+    expect(screen.getByRole("status")).toHaveTextContent("This review expired");
+    expect(request).toHaveBeenCalledTimes(3);
+  });
+
+  it("renews only after an explicit click and requires fresh password and consent", async () => {
+    vi.useFakeTimers();
+    const now = Date.now();
+    const request = vi.fn().mockResolvedValueOnce(Response.json({ status: "ELIGIBLE" }))
+      .mockResolvedValueOnce(Response.json({ csrf_token: "c".repeat(64) }))
+      .mockResolvedValueOnce(Response.json({ ...challenge, expires_at_ms: now + 60000 }))
+      .mockResolvedValueOnce(Response.json({ status: "ELIGIBLE" }))
+      .mockResolvedValueOnce(Response.json({ csrf_token: "d".repeat(64) }))
+      .mockResolvedValueOnce(Response.json({ ...challenge, challenge_id: "00000000-0000-4000-8000-000000000005", expires_at_ms: now + 120000 }));
+    vi.stubGlobal("fetch", request);
+    render(<BrowserPairingReview pairingId={pairing} />);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Review connection" })); });
+    fireEvent.change(screen.getByLabelText("HireWiz password"), { target: { value: "synthetic-review-password" } });
+    fireEvent.click(screen.getByRole("checkbox"));
+    await act(async () => { vi.advanceTimersByTime(60000); });
+    expect(request).toHaveBeenCalledTimes(3);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Load a fresh review" })); });
+    expect(request).toHaveBeenCalledTimes(6);
+    expect(screen.queryByText(/This review expired/)).toBeNull();
+    expect(screen.getByRole("checkbox")).not.toBeChecked();
+    expect(screen.getByLabelText("HireWiz password")).toHaveValue("");
+    expect(screen.getByRole("button", { name: "Confirm this device" })).toBeDisabled();
+    expect(request.mock.calls.every(([url]) => url !== "/api/browser-pairing/candidate/confirm")).toBe(true);
+  });
+
+  it.each([0, -1, 1.5, null, 8_640_000_000_000_001])("refuses an invalid expiry %s without offering confirmation", async (expires_at_ms) => {
+    const request = vi.fn().mockResolvedValueOnce(Response.json({ status: "ELIGIBLE" }))
+      .mockResolvedValueOnce(Response.json({ csrf_token: "c".repeat(64) }))
+      .mockResolvedValueOnce(Response.json({ ...challenge, expires_at_ms }));
+    vi.stubGlobal("fetch", request);
+    render(<BrowserPairingReview pairingId={pairing} />);
+    await userEvent.click(screen.getByRole("button", { name: "Review connection" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Check its current status in your companion");
+    expect(screen.queryByLabelText("HireWiz password")).toBeNull();
+    expect(request).toHaveBeenCalledTimes(3);
   });
 });

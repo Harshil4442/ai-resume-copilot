@@ -5,22 +5,24 @@ import { canonical, digest } from "../extension/protocol.js";
 
 const uuid = () => crypto.randomUUID();
 async function fixture(stored = null, configChanges = {}) {
-  let checkpoint = stored, permission = true;
+  let checkpoint = stored, permission = true, clock = Date.now();
   const calls = [];
   const configuration = { websiteOrigin: "https://www.hirewizhq.com", extensionId: "a".repeat(32), executorRevision: "owned_test", authorityKey: { public: "synthetic_test_only" }, ...configChanges };
-  const review = { pairing_id: uuid(), device_id: uuid(), key_sha256: "a".repeat(64), request_sha256: "b".repeat(64), expires_at_ms: Date.now() + 120000 };
+  const review = { pairing_id: uuid(), device_id: uuid(), key_sha256: "a".repeat(64), request_sha256: "b".repeat(64), expires_at_ms: clock + 120000 };
   review.review_url = `${configuration.websiteOrigin}/browser-companion?pairing=${review.pairing_id}`;
   const transport = { configuration, claim: null,
     keyDigest: async () => "a".repeat(64),
     prepare: async ({ onPrepared, beforeCreate }) => { calls.push("prepare"); await onPrepared(review); await beforeCreate(); return review; },
-    inspectKey: async () => { calls.push("inspect-key"); return { status: "UNCLAIMED" }; },
+    inspectKey: async () => { calls.push("inspect-key"); return { protocol_version: 2, status: "UNCLAIMED",
+      key_sha256: "a".repeat(64), extension_id: configuration.extensionId, executor_revision: configuration.executorRevision }; },
     lookup: async () => { calls.push("status"); return { pairing_id: review.pairing_id, device_id: review.device_id, status: "CANDIDATE_CONFIRMED" }; },
     identify: async (refresh) => { calls.push(refresh ? "refresh" : "identify"); transport.claim = { payload: { expires_at_ms: Date.now() + 300000 } }; return { paired: true, allowed_actions: [] }; },
   };
   const store = { read: async () => structuredClone(checkpoint), write: async (value) => { checkpoint = structuredClone(value); } };
   const checkPermission = async () => { if (!permission) throw new Error("Permission revoked"); };
-  const runtime = await new PairingRuntime({ transport, store, checkPermission }).initialise();
-  return { runtime, transport, calls, review, store, checkpoint: () => structuredClone(checkpoint), revoke: () => { permission = false; } };
+  const runtime = await new PairingRuntime({ transport, store, checkPermission, now: () => clock }).initialise();
+  return { runtime, transport, calls, review, store, now: () => clock, advance: (milliseconds) => { clock += milliseconds; },
+    checkpoint: () => structuredClone(checkpoint), revoke: () => { permission = false; } };
 }
 
 test("connection intent is durable before any transport operation and grants zero application actions", async () => {
@@ -245,4 +247,128 @@ test("Pause during the first permission await preserves proven-unsent idle and s
   assert.equal(f.runtime.status().phase, "idle"); assert.deepEqual(f.calls, []); assert.equal(f.runtime.valid(f.runtime.state), true);
   f.runtime.checkPermission = async () => undefined;
   await f.runtime.start(); assert.deepEqual(f.calls, ["prepare"]);
+});
+
+async function expiredCreation({ paused = false, unknown = false } = {}) {
+  const f = await fixture(); await f.runtime.start(); f.advance(120001);
+  if (paused) await f.runtime.cancel();
+  if (unknown) await f.runtime.save({ phase: "unknown" });
+  f.transport.lookup = async () => { f.calls.push("status"); return {
+    pairing_id: f.review.pairing_id, device_id: f.review.device_id, status: "EXPIRED" }; };
+  return f;
+}
+
+for (const phase of ["awaiting_candidate", "paused", "unknown"]) {
+  test(`${phase}: expired known creation needs independent signed reads, explicit archive and separate new Start`, async () => {
+    const f = await expiredCreation({ paused: phase === "paused", unknown: phase === "unknown" });
+    const original = f.checkpoint(); const { history, ...record } = original;
+    assert.equal(f.runtime.status().can_inspect_connection, true);
+    await assert.rejects(f.runtime.archiveUnknown(), /Inspect/);
+    const inspected = await f.runtime.inspectUnknown();
+    assert.equal(inspected.phase, phase); assert.equal(inspected.observed_status, "EXPIRED");
+    assert.equal(inspected.can_archive_restart, true); assert.equal(inspected.can_resume_existing, false);
+    assert.deepEqual(f.checkpoint(), original); assert.deepEqual(f.calls, ["prepare", "status", "inspect-key"]);
+    await assert.rejects(f.runtime.start(), /blocked/);
+    const archived = await f.runtime.archiveUnknown();
+    assert.equal(archived.phase, "idle"); assert.equal(archived.connected, false);
+    const { reconciliation, ...saved } = f.checkpoint().history.at(-1);
+    assert.deepEqual(saved, record); assert.deepEqual(f.checkpoint().history.slice(0, -1), history);
+    assert.equal(reconciliation.status, "EXPIRED"); assert.equal(reconciliation.key_status, "UNCLAIMED");
+    for (const key of ["pairing_id", "device_id", "key_sha256", "request_sha256", "binding", "expires_at_ms"]) assert.equal(reconciliation[key], record[key]);
+    assert.deepEqual(f.calls, ["prepare", "status", "inspect-key", "status", "inspect-key"]);
+    const fresh = await new PairingRuntime({ transport: f.transport, store: f.store,
+      checkPermission: async () => undefined, now: f.now }).initialise();
+    assert.equal(fresh.status().phase, "idle"); assert.equal(await f.transport.keyDigest(), record.key_sha256);
+    await assert.rejects(fresh.archiveUnknown(), /Inspect/);
+    const oldRequest = f.review.pairing_id;
+    Object.assign(f.review, { pairing_id: uuid(), device_id: uuid(), request_sha256: "c".repeat(64), expires_at_ms: f.now() + 120000 });
+    f.review.review_url = `${f.transport.configuration.websiteOrigin}/browser-companion?pairing=${f.review.pairing_id}`;
+    assert.notEqual(f.review.pairing_id, oldRequest);
+    assert.equal((await fresh.start()).phase, "awaiting_candidate");
+    assert.equal(f.checkpoint().key_sha256, record.key_sha256); assert.equal(f.checkpoint().history.length, 1);
+    assert.equal(f.checkpoint().history[0].pairing_id, oldRequest);
+    assert.deepEqual(f.calls, ["prepare", "status", "inspect-key", "status", "inspect-key", "prepare"]);
+  });
+}
+
+for (const status of ["REQUESTED", "CANDIDATE_CONFIRMED", "COMPLETED", "ACTIVE", "REVOKED", "UNKNOWN"]) {
+  test(`known ${status} never authorizes archival or another request`, async () => {
+    const f = await fixture(); await f.runtime.start(); const original = f.checkpoint();
+    f.transport.lookup = async () => { f.calls.push("status"); return { pairing_id: f.review.pairing_id, device_id: f.review.device_id, status }; };
+    assert.equal((await f.runtime.inspectUnknown()).can_archive_restart, false);
+    await assert.rejects(f.runtime.archiveUnknown(), /Inspect/); await assert.rejects(f.runtime.start(), /blocked/);
+    assert.deepEqual(f.checkpoint(), original); assert.deepEqual(f.calls, ["prepare", "status"]);
+  });
+}
+
+test("expired previously candidate-confirmed creation stays terminal; no prior confirmation is adopted", async () => {
+  const f = await expiredCreation();
+  // PairingService.status maps an expired REQUESTED or CANDIDATE_CONFIRMED
+  // request to EXPIRED; both device_challenge and complete_device still require
+  // _request's live TTL. Archive preserves history and grants no confirmation.
+  const native = { state: "CANDIDATE_CONFIRMED", expires_at_ms: f.review.expires_at_ms };
+  f.transport.lookup = async () => { f.calls.push("status"); return { pairing_id: f.review.pairing_id,
+    device_id: f.review.device_id, status: f.now() >= native.expires_at_ms ? "EXPIRED" : native.state }; };
+  await f.runtime.inspectUnknown(); await f.runtime.archiveUnknown();
+  assert.equal(native.state, "CANDIDATE_CONFIRMED"); assert.equal(f.runtime.status().phase, "idle");
+  assert.deepEqual(f.runtime.status().allowed_actions, []);
+  assert.deepEqual(f.calls, ["prepare", "status", "inspect-key", "status", "inspect-key"]);
+});
+
+for (const change of ["pairing", "device", "key", "key-response", "authority", "epoch-unavailable", "claimed", "unavailable"]) {
+  test(`expired inspection ${change} drift or denial cannot reset retained state`, async () => {
+    const f = await expiredCreation(); const original = f.checkpoint();
+    const lookup = f.transport.lookup, key = f.transport.inspectKey;
+    if (change === "pairing" || change === "device") f.transport.lookup = async () => ({ ...await lookup(), [change === "pairing" ? "pairing_id" : "device_id"]: uuid() });
+    if (change === "key") f.transport.keyDigest = async () => "c".repeat(64);
+    if (change === "key-response") f.transport.inspectKey = async () => ({ ...await key(), key_sha256: "c".repeat(64) });
+    if (change === "authority") f.transport.inspectKey = async () => { const result = await key(); f.transport.configuration.authorityKey = { public: "different" }; return result; };
+    if (change === "claimed") f.transport.inspectKey = async () => ({ ...await key(), status: "CLAIMED" });
+    if (change === "unavailable" || change === "epoch-unavailable") f.transport.lookup = async () => { f.calls.push("status"); throw new Error(change === "epoch-unavailable" ? "Native authority epoch changed" : "Signed status unavailable"); };
+    await assert.rejects(f.runtime.inspectUnknown());
+    assert.equal(f.runtime.status().can_archive_restart, false);
+    await assert.rejects(f.runtime.archiveUnknown(), /Inspect/); await assert.rejects(f.runtime.start(), /blocked/);
+    assert.deepEqual(f.checkpoint(), original);
+    assert.ok(f.calls.slice(1).every((call) => ["status", "inspect-key"].includes(call)));
+  });
+}
+
+for (const change of ["claimed", "confirmed", "key", "permission", "unknown", "changed-state"]) {
+  test(`archive rechecks expiry and key; later ${change} invalidates the earlier display proof`, async () => {
+    const f = await expiredCreation(); await f.runtime.inspectUnknown(); const original = f.checkpoint();
+    const key = f.transport.inspectKey;
+    if (change === "claimed") f.transport.inspectKey = async () => ({ ...await key(), status: "CLAIMED" });
+    if (change === "confirmed") f.transport.lookup = async () => ({ pairing_id: f.review.pairing_id, device_id: f.review.device_id, status: "CANDIDATE_CONFIRMED" });
+    if (change === "key") f.transport.keyDigest = async () => "c".repeat(64);
+    if (change === "permission") f.revoke();
+    if (change === "unknown") f.transport.lookup = async () => { throw new Error("Exact expiry no longer available"); };
+    if (change === "changed-state") f.transport.inspectKey = async () => { const value = await key(); await f.runtime.save({ request_sha256: "d".repeat(64) }); return value; };
+    await assert.rejects(f.runtime.archiveUnknown());
+    assert.equal(f.runtime.status().can_archive_restart, false); await assert.rejects(f.runtime.start(), /blocked/);
+    assert.equal(f.checkpoint().history.length, original.history.length);
+    assert.equal(f.checkpoint().pairing_id, original.pairing_id);
+    assert.ok(f.calls.slice(1).every((call) => ["status", "inspect-key"].includes(call)));
+  });
+}
+
+test("unknown complete and refresh outcomes never gain expired-creation recovery", async () => {
+  for (const operation of ["complete", "refresh"]) {
+    const f = await fixture(); await f.runtime.start(); if (operation === "refresh") await f.runtime.complete();
+    f.transport.identify = async () => { throw new Error("Unknown completion"); };
+    await assert.rejects(operation === "complete" ? f.runtime.complete() : f.runtime.refresh(), /needs inspection/);
+    f.advance(120001); f.transport.lookup = async () => ({ pairing_id: f.review.pairing_id, device_id: f.review.device_id, status: "EXPIRED" });
+    const original = f.checkpoint(); assert.equal((await f.runtime.inspectUnknown()).can_archive_restart, false);
+    await assert.rejects(f.runtime.archiveUnknown(), /Inspect/); assert.deepEqual(f.checkpoint(), original);
+  }
+});
+
+test("expired recovery does not discard full history or accept a changed retained proof on reload", async () => {
+  const f = await expiredCreation(); const { history, ...record } = f.checkpoint(); assert.deepEqual(history, []);
+  await f.runtime.save({ history: [record, record, record, record] });
+  await f.runtime.inspectUnknown(); await assert.rejects(f.runtime.archiveUnknown(), /history is full/);
+  assert.equal(f.checkpoint().history.length, 4); assert.equal(f.checkpoint().phase, "awaiting_candidate");
+  const g = await expiredCreation(); await g.runtime.inspectUnknown(); await g.runtime.archiveUnknown();
+  const tampered = g.checkpoint(); tampered.history[0].reconciliation.device_id = uuid();
+  await g.store.write(tampered);
+  await assert.rejects(new PairingRuntime({ transport: g.transport, store: g.store, checkPermission: async () => undefined, now: g.now }).initialise(), /Stored connection state/);
 });

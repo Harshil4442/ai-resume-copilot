@@ -4,7 +4,7 @@ import { createHash, createPublicKey } from "node:crypto";
 import { CONFIG } from "../extension/config.js";
 const manifest = JSON.parse(await readFile(new URL("../extension/manifest.json", import.meta.url)));
 assert.equal(manifest.manifest_version, 3);
-assert.equal(manifest.version, "0.8.1");
+assert.equal(manifest.version, "0.8.2");
 assert.deepEqual(manifest.host_permissions, []);
 assert.deepEqual(manifest.optional_host_permissions, ["https://www.hirewizhq.com/*", "https://job-boards.greenhouse.io/*", "https://boards.greenhouse.io/*", "https://*.amazonaws.com/*"]);
 assert.deepEqual(manifest.permissions.sort(), ["scripting", "storage"]);
@@ -15,6 +15,7 @@ assert.equal(CONFIG.mode, "reviewed_assistance");
 assert.equal(CONFIG.websiteOrigin, "https://www.hirewizhq.com");
 assert.equal(CONFIG.portalOrigin, "https://job-boards.greenhouse.io");
 assert.deepEqual(Object.keys(CONFIG.nativePairing).sort(), ["authorityKey", "executorRevision"]);
+// Compatible connection recovery does not change the approved native executor.
 assert.equal(CONFIG.nativePairing.executorRevision, "companion_0_8_1");
 assert.deepEqual(Object.keys(CONFIG.nativePairing.authorityKey).sort(), ["crv", "kty", "x", "y"]);
 assert.equal(CONFIG.nativePairing.authorityKey.kty, "EC");

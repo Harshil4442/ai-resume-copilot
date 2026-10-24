@@ -1,13 +1,15 @@
 # HireWiz candidate-reviewed Chrome companion
 
-The 0.8.1 source package supports separately reviewed Razorpay/Greenhouse answers,
-resume attachment and one final submit action. It adds bounded recovery for an
-uncertain browser connection and pins the reviewed public KMS claim key with the
-`companion_0_8_1` executor. Public pins and an UNCLAIMED inspection grant no account,
-device or application authority. The matching backend extension record and runtime
-configuration require a separate reviewed rollout; packaging alone does not
-activate them. Normal candidates require genuine protected account enrollment,
-current-password approval and native browser pairing.
+The 0.8.2 source package adds recovery for an expired browser connection while
+preserving native protocol 2 and the admitted `companion_0_8_1` executor. This is
+an explicitly compatible connection-recovery patch: employer execution, portal
+adapters, signed wire formats, public KMS pins and optional permissions are
+unchanged. There is no new native `companion_0_8_2` admission. The existing
+separately reviewed Razorpay/Greenhouse answer, attachment and final-submit
+capabilities retain their independent controls and approvals. Public pins and an
+UNCLAIMED inspection grant no account, device or application authority. Packaging
+alone does not enable any held action. Normal candidates require genuine protected
+account enrollment, current-password approval and native browser pairing.
 
 The candidate chooses a saved application and resume, connects this browser by
 reviewing its fingerprint on HireWiz, opens the exact company portal, and reviews
@@ -42,16 +44,30 @@ users complete applications directly on the company portal.
 
 For an existing unpacked install, replace its source files and reload that same
 extension. Keep the browser profile and extension storage; do not remove/reinstall
-or clear its retained key to recover an uncertain connection. Choose **Inspect
-uncertain connection**. A matching existing REQUESTED or CANDIDATE_CONFIRMED create
-can offer **Resume this existing connection**, which reuses its exact public IDs
-and never resends create. A failed prepare or strictly bound legacy 0.8.0 ID-less
-unknown can offer **Archive unclaimed attempt** only after a current signed key
-inspection reports UNCLAIMED in both authorities. Archiving preserves the prior
-checkpoint; a new Start requires another explicit click. CLAIMED, unavailable,
-unknown completion and unknown refresh stay blocked. The four-entry retained
-history is never silently truncated; contact support when full. Nonces and private
-keys are never copied into the connection checkpoint or archive.
+or clear its retained key to recover a connection. The 0.8.2 patch keeps the same
+native executor pin, so existing version-two checkpoints and their binding remain
+valid without migrating or replacing the browser key or history.
+
+Use the companion's connection inspection action. A matching, unexpired REQUESTED
+or CANDIDATE_CONFIRMED create can offer **Resume this existing connection**, which
+reuses its exact public IDs and never resends create. An expired create can offer
+explicit archival only when a fresh signed lookup reports EXPIRED for those same
+pairing/device IDs and a separate signed inspection reports that the retained key
+is UNCLAIMED in both authorities. The local checkpoint must still record create,
+with no completion intent. Historical candidate confirmation does not extend the
+expired request or authorize its completion. A live CANDIDATE_CONFIRMED request,
+CLAIMED key, unavailable inspection, unknown completion or unknown refresh cannot
+use this archival path.
+
+A failed prepare or strictly bound legacy 0.8.0 ID-less unknown retains its separate
+UNCLAIMED inspection requirement. Archiving preserves the prior checkpoint; a new
+Start requires another explicit click and fresh candidate review. The four-entry
+retained history is never silently truncated; contact support when full. Nonces
+and private keys are never copied into the connection checkpoint or archive.
+
+Creation requests still expire after two minutes, candidate confirmation challenges
+after at most one minute, and device completion challenges after at most ten
+seconds. These deadlines are not extended by reopening the popup or website.
 
 Use Node.js 24 and locked dependencies for source validation:
 
@@ -77,7 +93,8 @@ in this artifact. See [the design decision](../docs/adr/007-reviewed-browser-ass
 for expiry, cancellation and database-restore limitations. Existing local synthetic
 and native experiment tests remain separate and do not constitute production proof.
 
-Configured 0.8.1 ZIP SHA-256:
+Configured 0.8.2 ZIP SHA-256: `c952be0f5cf7411a0a5a314b6624fa0264762b0c5668f7eb45805b257de53107`.
+The earlier 0.8.1 archive remains unchanged at SHA-256
 `174cc0b6170c1efeeb8b12ddd460734db89689f5860eca4ae4c6bdd894f9b18a`.
 
 The committed `extension/config.js` contains the reviewed public pins, so the
@@ -85,7 +102,8 @@ ordinary package command and CI `--check` reproduce the configured native archiv
 For a separately reviewed key update, `python3 scripts/package-reviewed.py
 --native-config /absolute/path/to/reviewed-public-pins.json` accepts bounded JSON with
 exactly `executorRevision: "companion_0_8_1"` and `authorityKey`, the actual public
-P-256 claim JWK from the configured KMS version. Use the same argument with
+P-256 claim JWK from the configured KMS version. Package version 0.8.2 does not
+authorize changing either native value. Use the same argument with
 `--check`. This replaces only public `config.js` bytes in the archive; it supplies
 no account, device or action grant. Commit the same reviewed public values into
 `extension/config.js` and regenerate the default archive before publishing an

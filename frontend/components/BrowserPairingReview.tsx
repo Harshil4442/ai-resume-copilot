@@ -17,18 +17,34 @@ export default function BrowserPairingReview({ pairingId }: { pairingId: string 
   const [accepted, setAccepted] = useState(false);
   const [busy, setBusy] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
+  const [expired, setExpired] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [eligibility, setEligibility] = useState<Eligibility | null>(null);
   const active = useRef<AbortController | null>(null);
   useEffect(() => () => active.current?.abort(), []);
   const valid = Boolean(pairingId && UUID.test(pairingId));
+  const reviewExpiry = review?.challenge.expires_at_ms ?? null;
+
+  useEffect(() => {
+    if (reviewExpiry === null) return;
+    const expire = () => { setExpired(true); setPassword(""); setAccepted(false); };
+    const checkExpiry = () => { if (Date.now() >= reviewExpiry) expire(); };
+    const timer = setTimeout(expire, Math.min(Math.max(0, reviewExpiry - Date.now()), 2_147_483_647));
+    document.addEventListener("visibilitychange", checkExpiry);
+    window.addEventListener("focus", checkExpiry);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", checkExpiry);
+      window.removeEventListener("focus", checkExpiry);
+    };
+  }, [reviewExpiry]);
 
   async function post(operation: string, body: object, controller: AbortController, csrf?: string) {
     const response = await fetch(`/api/browser-pairing/candidate/${operation}`, { method: "POST", redirect: "error",
       cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]),
       headers: { "Content-Type": "application/json", ...(csrf ? { "X-Hirewiz-CSRF": csrf } : {}) }, body: JSON.stringify(body) });
     if (!response.ok) throw new Error(response.status === 401 ? "Sign in to HireWiz before reviewing this connection."
-      : response.status === 403 ? "This connection could not be confirmed. Start a fresh review from your companion."
+      : response.status === 403 ? "This connection could not be confirmed. Open your HireWiz companion and choose Check connection status before trying again."
       : "Secure browser pairing is currently unavailable. Your application was not approved by this request.");
     return response.json();
   }
@@ -36,7 +52,7 @@ export default function BrowserPairingReview({ pairingId }: { pairingId: string 
   async function loadReview() {
     if (!valid || active.current) return;
     const controller = new AbortController(); active.current = controller;
-    setBusy(true); setError(null); setReview(null); setAccepted(false); setPassword("");
+    setBusy(true); setError(null); setReview(null); setAccepted(false); setPassword(""); setExpired(false);
     try {
       // This status comes from the retained server session. It conveys no
       // identity or authority and never substitutes for password approval.
@@ -50,8 +66,13 @@ export default function BrowserPairingReview({ pairingId }: { pairingId: string 
       if (status.status !== "ELIGIBLE") return;
       const csrf = await post("csrf", {}, controller);
       const challenge = await post("challenge", { pairing_id: pairingId }, controller, csrf.csrf_token);
-      if (challenge.pairing_id !== pairingId || challenge.operation !== "confirm_pairing") throw new Error("The reviewed connection changed. Start a fresh request from your companion.");
-      if (!controller.signal.aborted) setReview({ csrf: csrf.csrf_token, challenge });
+      if (challenge.pairing_id !== pairingId || challenge.operation !== "confirm_pairing"
+          || !Number.isSafeInteger(challenge.expires_at_ms) || challenge.expires_at_ms <= 0
+          || challenge.expires_at_ms > 8_640_000_000_000_000) throw new Error("The reviewed connection changed. Check its current status in your companion.");
+      if (!controller.signal.aborted) {
+        setReview({ csrf: csrf.csrf_token, challenge });
+        setExpired(challenge.expires_at_ms <= Date.now());
+      }
     } catch (failure) {
       if (!controller.signal.aborted) setError(failure instanceof Error ? failure.message : "Secure browser pairing is currently unavailable.");
     } finally {
@@ -63,7 +84,7 @@ export default function BrowserPairingReview({ pairingId }: { pairingId: string 
   async function confirm(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!review || !accepted || !password || active.current) return;
-    if (review.challenge.expires_at_ms <= Date.now()) { setReview(null); setPassword(""); setAccepted(false); setError("This review expired. Start a fresh request from your companion."); return; }
+    if (expired || review.challenge.expires_at_ms <= Date.now()) { setExpired(true); setPassword(""); setAccepted(false); return; }
     const controller = new AbortController(); active.current = controller;
     setBusy(true); setError(null);
     try {
@@ -87,12 +108,14 @@ export default function BrowserPairingReview({ pairingId }: { pairingId: string 
       : eligibility === "PASSWORD_SIGN_IN_REQUIRED" ? <div className="space-y-3"><p className="text-sm leading-7 text-muted-foreground">Sign in to HireWiz to review this browser connection. Connecting a device requires your HireWiz password.</p><Link className="inline-block text-sm font-semibold text-primary underline underline-offset-4" href={`/login?returnTo=${encodeURIComponent(`/browser-companion?pairing=${pairingId}`)}`}>Sign in and return to this connection</Link></div>
       : eligibility === "LEGACY_ENROLLMENT_UNAVAILABLE" || eligibility === "GOOGLE_ENROLLMENT_AVAILABLE" ? <div role="status" className="space-y-3 text-sm leading-7 text-muted-foreground"><p>Enroll your existing account for reviewed browser assistance. Your saved HireWiz work stays with this account.</p><Link className="inline-block font-semibold text-primary underline underline-offset-4" href="/account-enrollment">Review account enrollment</Link></div>
       : eligibility === "UNAVAILABLE" ? <p role="status" className="text-sm leading-7 text-muted-foreground">Secure browser connection is currently unavailable. No application action has been authorized.</p>
-      : review ? <form onSubmit={confirm} className="space-y-5">
+      : review ? <form onSubmit={confirm} className="space-y-5" aria-describedby="pairing-review-expiry">
         <div className="rounded-xl border border-border p-4"><h2 className="font-semibold">Verify the same request</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">Compare these fingerprints with the connection displayed in your companion.</p><dl className="mt-4 space-y-3 text-xs"><div><dt className="font-semibold">Device key</dt><dd className="mt-1 break-all font-mono">{review.challenge.key_sha256}</dd></div><div><dt className="font-semibold">Connection request</dt><dd className="mt-1 break-all font-mono">{review.challenge.request_sha256}</dd></div></dl></div>
-        <label className="flex items-start gap-3 text-sm leading-6"><input type="checkbox" checked={accepted} onChange={(event) => setAccepted(event.target.checked)} disabled={busy} className="mt-1" />I checked that these fingerprints match my companion and want to connect this device.</label>
-        <label className="grid gap-2 text-sm font-semibold">HireWiz password<input type="password" autoComplete="current-password" maxLength={1024} value={password} onChange={(event) => setPassword(event.target.value)} disabled={busy} required className="field-control" /></label>
+        <p id="pairing-review-expiry" className="text-sm leading-6 text-muted-foreground">This review expires at <time dateTime={new Date(review.challenge.expires_at_ms).toISOString()}>{new Date(review.challenge.expires_at_ms).toLocaleTimeString()}</time>. Connecting a device requires a fresh review.</p>
+        {expired && !busy ? <div role="status" className="space-y-3 rounded-xl border border-border p-4 text-sm leading-6"><p>This review expired. Load a fresh review if the connection request is still active. If the request has also expired, open your HireWiz companion and choose Check connection status.</p><Button type="button" onClick={() => void loadReview()}>Load a fresh review</Button></div> : null}
+        <label className="flex items-start gap-3 text-sm leading-6"><input type="checkbox" checked={accepted} onChange={(event) => setAccepted(event.target.checked)} disabled={busy || expired} className="mt-1" />I checked that these fingerprints match my companion and want to connect this device.</label>
+        <label className="grid gap-2 text-sm font-semibold">HireWiz password<input type="password" autoComplete="current-password" maxLength={1024} value={password} onChange={(event) => setPassword(event.target.value)} disabled={busy || expired} required className="field-control" /></label>
         <p className="text-xs leading-6 text-muted-foreground">Your password is sent only to HireWiz for this confirmation. The companion does not receive it.</p>
-        <Button type="submit" disabled={busy || !accepted || !password}>{busy ? "Confirming…" : "Confirm this device"}</Button>
+        <Button type="submit" disabled={busy || expired || !accepted || !password}>{busy ? "Confirming…" : "Confirm this device"}</Button>
       </form> : <Button onClick={() => void loadReview()} disabled={busy}>{busy ? "Loading review…" : "Review connection"}</Button>}
     {error ? <p role="alert" className="text-sm leading-6 text-coral">{error}</p> : null}
     <Link href="/employer-jobs" className="inline-block text-sm font-semibold text-primary underline underline-offset-4">Return to job search</Link>

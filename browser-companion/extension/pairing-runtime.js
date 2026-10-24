@@ -9,6 +9,7 @@ const UNKNOWN = new Set(["unknown", "unknown_legacy"]);
 const PUBLIC_FIELDS = ["pairing_id", "device_id", "key_sha256", "request_sha256", "expires_at_ms", "review_url"];
 const LEGACY_KEYS = ["version", "phase", "binding", ...PUBLIC_FIELDS, "local_operation_id", "native_operation_id", "updated_at_ms", "resume_phase"];
 const RECORD_KEYS = [...LEGACY_KEYS, "send_kind"].sort().join(",");
+const RECONCILED_KEYS = [...LEGACY_KEYS, "send_kind", "reconciliation"].sort().join(",");
 const KEYS = [...LEGACY_KEYS, "send_kind", "history"].sort().join(",");
 const nullable = (value, pattern) => value === null || typeof value === "string" && pattern.test(value);
 const object = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
@@ -58,7 +59,7 @@ export class PairingRuntime {
       && PUBLIC_FIELDS.every((key) => value[key] === null) && JSON.stringify(value).length <= 2048;
   }
   validRecord(value) {
-    if (!object(value) || Object.keys(value).sort().join(",") !== RECORD_KEYS
+    if (!object(value) || Object.keys(value).sort().join(",") !== (Object.hasOwn(value, "reconciliation") ? RECONCILED_KEYS : RECORD_KEYS)
         || value.version !== 2 || !PHASES.has(value.phase) || value.binding !== this.binding
         || !Number.isSafeInteger(value.updated_at_ms) || value.updated_at_ms <= 0
         || !nullable(value.pairing_id, UUID) || !nullable(value.device_id, UUID)
@@ -83,7 +84,20 @@ export class PairingRuntime {
         || PUBLIC_FIELDS.filter((key) => key !== "key_sha256").some((key) => value[key] !== null))) return false;
     if (value.send_kind === "legacy" && value.phase !== "unknown_legacy") return false;
     if (value.send_kind === "prepare" && !prepared && PUBLIC_FIELDS.some((key) => value[key] !== null)) return false;
-    return (value.phase === "paused") === (value.resume_phase !== null) && JSON.stringify(value).length <= 2048;
+    return (value.phase === "paused") === (value.resume_phase !== null)
+      && (!Object.hasOwn(value, "reconciliation") || this.validExpiredReconciliation(value.reconciliation, value))
+      && JSON.stringify(value).length <= 2048;
+  }
+  validExpiredReconciliation(proof, record) {
+    const keys = ["kind", "inspected_at_ms", "rechecked_at_ms", "status", "key_status", "pairing_id", "device_id",
+      "key_sha256", "request_sha256", "binding", "expires_at_ms", "extension_id", "executor_revision"].sort().join(",");
+    return object(proof) && Object.keys(proof).sort().join(",") === keys
+      && proof.kind === "expired_creation_unclaimed" && proof.status === "EXPIRED" && proof.key_status === "UNCLAIMED"
+      && record.send_kind === "create" && (UNKNOWN.has(record.phase) || this.pendingCreation(record))
+      && ["pairing_id", "device_id", "key_sha256", "request_sha256", "binding", "expires_at_ms"].every((key) => proof[key] === record[key])
+      && proof.extension_id === this.transport.configuration.extensionId && proof.executor_revision === this.transport.configuration.executorRevision
+      && Number.isSafeInteger(proof.inspected_at_ms) && proof.inspected_at_ms >= record.expires_at_ms
+      && Number.isSafeInteger(proof.rechecked_at_ms) && proof.rechecked_at_ms >= proof.inspected_at_ms;
   }
   valid(value) {
     if (!object(value) || Object.keys(value).sort().join(",") !== KEYS || !Array.isArray(value.history) || value.history.length > 4) return false;
@@ -110,7 +124,35 @@ export class PairingRuntime {
       pairing_id: state.pairing_id, device_id: state.device_id, key_sha256: state.key_sha256,
       request_sha256: state.request_sha256, expires_at_ms: state.expires_at_ms, review_url: state.review_url,
       resume_phase: state.resume_phase, message, allowed_actions: [], observed_status: inspected?.status ?? null,
-      can_resume_existing: inspected?.kind === "existing", can_archive_restart: inspected?.kind === "unclaimed" };
+      can_inspect_connection: UNKNOWN.has(state.phase) || this.pendingCreation(state),
+      can_resume_existing: inspected?.kind === "existing",
+      can_archive_restart: ["unclaimed", "expired_unclaimed"].includes(inspected?.kind) };
+  }
+  pendingCreation(state = this.state) {
+    return state.send_kind === "create" && (state.phase === "awaiting_candidate"
+      || state.phase === "paused" && state.resume_phase === "awaiting_candidate");
+  }
+  async checkRetainedCreation(state) {
+    const config = this.transport.configuration;
+    const binding = await digest(canonical({ website_origin: config.websiteOrigin, extension_id: config.extensionId,
+      executor_revision: config.executorRevision, authority_key: config.authorityKey }));
+    const key = await this.transport.keyDigest();
+    if (this.state !== state || state.binding !== binding || state.key_sha256 !== key) throw new Error("The retained connection or browser key changed during inspection");
+  }
+  async expiredCreationProof(state, retained = null) {
+    await this.checkRetainedCreation(state);
+    const status = retained ?? await this.transport.lookup("status", state.pairing_id);
+    if (this.state !== state || status.pairing_id !== state.pairing_id || status.device_id !== state.device_id
+        || status.status !== "EXPIRED" || this.now() < state.expires_at_ms) throw new Error("The exact expired connection could not be verified");
+    const key = await this.transport.inspectKey();
+    await this.checkRetainedCreation(state);
+    if (key.protocol_version !== 2 || key.status !== "UNCLAIMED" || key.key_sha256 !== state.key_sha256
+        || key.extension_id !== this.transport.configuration.extensionId
+        || key.executor_revision !== this.transport.configuration.executorRevision) throw new Error("The retained browser key is claimed or its inspection is unavailable");
+    return { kind: "expired_creation_unclaimed", observed_at_ms: this.now(), status: "EXPIRED", key_status: "UNCLAIMED",
+      pairing_id: state.pairing_id, device_id: state.device_id, key_sha256: state.key_sha256,
+      request_sha256: state.request_sha256, binding: state.binding, expires_at_ms: state.expires_at_ms,
+      extension_id: key.extension_id, executor_revision: key.executor_revision };
   }
   async mutate(phase, operation, success) {
     if (this.busy) throw new Error("A connection request is already running");
@@ -170,7 +212,7 @@ export class PairingRuntime {
     return this.mutate("refreshing", () => this.transport.identify(true), () => ({ phase: "paired" }));
   }
   async inspectUnknown() {
-    if (this.busy || !UNKNOWN.has(this.state.phase)) throw new Error("There is no uncertain connection to inspect");
+    if (this.busy || !(UNKNOWN.has(this.state.phase) || this.pendingCreation())) throw new Error("There is no pending or uncertain connection to inspect");
     this.busy = true; this.inspection = null;
     const state = this.state;
     try {
@@ -180,13 +222,23 @@ export class PairingRuntime {
         if (this.state !== state) throw new Error("The connection changed during inspection");
         this.inspection = { state, status: result.status, kind: result.status === "UNCLAIMED" ? "unclaimed" : "blocked" };
       } else {
+        if (state.send_kind === "create") await this.checkRetainedCreation(state);
         const retained = await this.transport.lookup("status", state.pairing_id);
         if (this.state !== state || retained.pairing_id !== state.pairing_id || retained.device_id !== state.device_id) throw new Error("Current connection status does not match this device");
-        this.inspection = { state, status: retained.status,
-          kind: state.send_kind === "create" && ["REQUESTED", "CANDIDATE_CONFIRMED"].includes(retained.status) && this.now() < state.expires_at_ms ? "existing" : "blocked" };
+        if (state.send_kind === "create" && retained.status === "EXPIRED" && this.now() >= state.expires_at_ms) {
+          const proof = await this.expiredCreationProof(state, retained);
+          this.inspection = { state, status: "EXPIRED", kind: "expired_unclaimed", proof };
+        } else {
+          const live = state.send_kind === "create" && ["REQUESTED", "CANDIDATE_CONFIRMED"].includes(retained.status)
+            && this.now() < state.expires_at_ms;
+          this.inspection = { state, status: retained.status,
+            kind: live && UNKNOWN.has(state.phase) ? "existing" : live && this.pendingCreation(state) ? "pending" : "blocked" };
+        }
       }
       return { ...this.status(this.inspection.kind === "unclaimed" ? "This retained browser key is unclaimed. You may explicitly archive this attempt before starting a new connection."
+        : this.inspection.kind === "expired_unclaimed" ? "This exact connection expired and its browser key is unclaimed. You may explicitly archive it; starting a new connection remains a separate choice."
         : this.inspection.kind === "existing" ? "The original connection exists. Resume that exact connection without creating another."
+        : this.inspection.kind === "pending" ? "This connection is still live. Review and complete this same connection; starting another stays blocked."
           : "The retained key or previous operation remains claimed or unresolved. Starting again and replaying it stay blocked."), busy: false };
     } finally { this.busy = false; }
   }
@@ -204,8 +256,10 @@ export class PairingRuntime {
     } finally { this.busy = false; }
   }
   async archiveUnknown() {
-    if (this.busy || this.inspection?.state !== this.state || this.inspection.kind !== "unclaimed"
-        || !UNKNOWN.has(this.state.phase) || !["prepare", "legacy"].includes(this.state.send_kind)) throw new Error("Inspect this exact unclaimed browser key before archiving the attempt");
+    const expired = this.inspection?.kind === "expired_unclaimed";
+    const eligible = expired ? this.state.send_kind === "create" && (UNKNOWN.has(this.state.phase) || this.pendingCreation())
+      : UNKNOWN.has(this.state.phase) && ["prepare", "legacy"].includes(this.state.send_kind) && this.inspection?.kind === "unclaimed";
+    if (this.busy || this.inspection?.state !== this.state || !eligible) throw new Error("Inspect this exact unclaimed browser key before archiving the attempt");
     const state = this.state, inspection = this.inspection;
     this.busy = true;
     try {
@@ -213,9 +267,22 @@ export class PairingRuntime {
       if (this.state !== state || this.inspection !== inspection) throw new Error("The connection changed during reconciliation");
       if (state.history.length >= 4) throw new Error("Retained connection history is full. Contact support without clearing browser storage.");
       const { history, ...record } = state;
-      await this.save(this.empty([...history, structuredClone(record)]));
+      const archived = structuredClone(record);
+      if (expired) {
+        // Recheck both native facts at the archive click. An earlier inspection
+        // is presentation only and cannot reset a newly claimed/changed key.
+        const proof = await this.expiredCreationProof(state);
+        if (this.state !== state || this.inspection !== inspection) throw new Error("The connection changed during reconciliation");
+        const { observed_at_ms, ...facts } = proof;
+        archived.reconciliation = { ...facts, inspected_at_ms: inspection.proof.observed_at_ms, rechecked_at_ms: observed_at_ms };
+      }
+      await this.save(this.empty([...history, archived]));
       this.transport.pairingId = null; this.transport.deviceId = null; this.transport.claim = null;
-      return { ...this.status("Previous uncertain attempt archived with its evidence. Starting a new connection requires your next explicit click."), busy: false };
+      return { ...this.status(expired ? "Expired connection archived with its reconciliation evidence. Starting a new connection requires your next explicit click."
+        : "Previous uncertain attempt archived with its evidence. Starting a new connection requires your next explicit click."), busy: false };
+    } catch (failure) {
+      if (expired) this.inspection = null;
+      throw failure;
     } finally { this.busy = false; }
   }
   async cancel() {
