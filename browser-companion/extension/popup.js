@@ -55,18 +55,22 @@ async function showConnection(value) {
   element("native-connection").hidden = false;
   const permission = await chrome.permissions.contains({ origins: [`${CONFIG.websiteOrigin}/*`] });
   const idle = !value.busy;
+  const expiredPending = value.phase === "awaiting_candidate" && value.expires_at_ms <= Date.now();
   element("native-permission").disabled = permission;
   element("native-start").disabled = !permission || !idle || value.phase !== "idle";
   element("native-review").disabled = !value.review_url || !idle;
-  element("native-confirmed").disabled = !permission || !idle || value.phase !== "awaiting_candidate";
+  element("native-confirmed").disabled = !permission || !idle || value.phase !== "awaiting_candidate" || expiredPending;
   element("native-complete").disabled = element("native-confirmed").disabled || !element("native-confirmed").checked;
   element("native-refresh").disabled = !permission || !idle || value.phase !== "paired";
   element("native-disconnect").disabled = !permission || !idle || !value.device_id || !(value.phase === "paired" || value.phase === "paused" && value.resume_phase === "paired");
   element("native-pause").disabled = ["idle", "paused"].includes(value.phase);
   element("native-resume").disabled = !idle || value.phase !== "paused";
-  element("native-inspect").disabled = !permission || !idle || !["unknown", "unknown_legacy"].includes(value.phase);
+  element("native-inspect").disabled = !permission || !idle || !value.can_inspect_connection;
+  element("native-inspect").textContent = ["awaiting_candidate", "paused"].includes(value.phase)
+    ? "Check connection status" : "Inspect uncertain connection";
   element("native-resume-existing").disabled = !permission || !idle || !value.can_resume_existing;
   element("native-archive").disabled = !permission || !idle || !value.can_archive_restart;
+  element("native-archive").textContent = value.observed_status === "EXPIRED" ? "Archive expired connection" : "Archive unclaimed attempt";
   const list = element("native-fingerprints"); list.replaceChildren();
   if (value.key_sha256) pair(list, "Browser key SHA-256", value.key_sha256);
   if (value.request_sha256) pair(list, "Connection request SHA-256", value.request_sha256);
@@ -76,7 +80,9 @@ async function showConnection(value) {
     refreshing: "Checking current browser identity…", unknown: "The previous outcome needs inspection. Automatic retry and a new connection are blocked.",
     unknown_legacy: "The earlier connection attempt is retained. Inspect this same browser key before choosing a supported recovery action.",
     paused: "Paused locally. The saved connection remains; this does not revoke an already paired device." };
-  element("native-state").textContent = value.message || labels[value.phase] || "Connection needs inspection.";
+  element("native-state").textContent = value.message || (expiredPending
+    ? "This connection review expired. Check its current status before choosing a recovery action."
+    : labels[value.phase]) || "Connection needs inspection.";
 }
 function connectionAction(id, type) {
   action(id, async () => {

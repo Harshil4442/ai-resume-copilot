@@ -200,3 +200,55 @@ test("missing durable callbacks fail before any native prepare request", async (
   t.mock.method(globalThis, "fetch", async () => { calls++; throw new Error("Unexpected network"); });
   await assert.rejects(f.transport.prepare(), /Durable connection checkpoints/); assert.equal(calls, 0);
 });
+
+for (const keyStatus of ["UNCLAIMED", "CLAIMED"]) {
+  test(`real signed transport/runtime: expired creation with ${keyStatus} key is reconciled without replay`, async (t) => {
+    const f = await setup(), calls = [];
+    let clock = now, checkpoint = null, request = f.request, nonce = f.nonce;
+    f.transport.now = () => clock;
+    t.mock.method(globalThis, "fetch", async (url, options) => {
+      const operation = new URL(url).pathname.split("/").at(-1);
+      calls.push(operation);
+      const { signature, ...payload } = JSON.parse(options.body);
+      assert.equal(options.credentials, "omit"); assert.equal(options.redirect, "error");
+      assert.equal(await webcrypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, f.device.publicKey,
+        Buffer.from(signature, "base64url"), bytes(operation === "create" ? "request" : "transport-request",
+          operation === "create" ? request : payload)), true);
+      if (operation === "prepare") return Response.json({ request, nonce });
+      if (operation === "create") return Response.json({ pairing_id: request.pairing_id, device_id: request.device_id, status: "REQUESTED" });
+      if (operation === "status") {
+        assert.equal(payload.identity, request.pairing_id);
+        return Response.json({ pairing_id: request.pairing_id, device_id: request.device_id,
+          status: clock >= request.expires_at_ms ? "EXPIRED" : "REQUESTED" });
+      }
+      assert.equal(operation, "inspect-key"); assert.deepEqual(payload.key, request.public_key);
+      return Response.json({ protocol_version: 2, key_sha256: request.key_sha256, extension_id: extensionId,
+        executor_revision: f.configuration.executorRevision, status: keyStatus });
+    });
+    const store = { read: async () => structuredClone(checkpoint), write: async (value) => { checkpoint = structuredClone(value); } };
+    const runtime = await new PairingRuntime({ transport: f.transport, store, checkPermission: async () => undefined, now: () => clock }).initialise();
+    await runtime.start(); clock += 120001;
+    const original = structuredClone(checkpoint);
+    if (keyStatus === "CLAIMED") {
+      await assert.rejects(runtime.inspectUnknown(), /claimed/);
+      await assert.rejects(runtime.archiveUnknown(), /Inspect/); await assert.rejects(runtime.start(), /blocked/);
+      assert.deepEqual(checkpoint, original);
+      assert.deepEqual(calls, ["prepare", "create", "status", "inspect-key"]);
+    } else {
+      await runtime.inspectUnknown(); assert.deepEqual(checkpoint, original);
+      await runtime.archiveUnknown(); assert.equal(checkpoint.phase, "idle");
+      assert.deepEqual(calls, ["prepare", "create", "status", "inspect-key", "status", "inspect-key"]);
+      const { reconciliation, ...old } = checkpoint.history[0], { history, ...record } = original;
+      assert.deepEqual(history, []); assert.deepEqual(old, record);
+      assert.equal(reconciliation.request_sha256, sha("request", request));
+      const oldPairing = request.pairing_id;
+      nonce = uuid(); request = { ...request, operation_id: uuid(), pairing_id: uuid(), device_id: uuid(),
+        challenge_id: uuid(), nonce_sha256: sha("nonce", { nonce }), issued_at_ms: clock, expires_at_ms: clock + 120000 };
+      await runtime.start(); assert.notEqual(checkpoint.pairing_id, oldPairing);
+      assert.equal(checkpoint.key_sha256, original.key_sha256); assert.equal(checkpoint.history[0].pairing_id, oldPairing);
+      assert.deepEqual(calls, ["prepare", "create", "status", "inspect-key", "status", "inspect-key", "prepare", "create"]);
+    }
+    assert.equal(f.transport.claim, null);
+    await assert.rejects(webcrypto.subtle.exportKey("jwk", f.device.privateKey));
+  });
+}

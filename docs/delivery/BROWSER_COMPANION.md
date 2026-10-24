@@ -1,6 +1,6 @@
 # Browser companion: disabled MV3 safety foundation
 
-Historical foundation: the early limits below describe the older 8 October checkpoint. See [current pilot progress](AUTO_APPLY_PROGRESS.md) for deployed 0.8.1 recovery and its remaining live acceptance; the [0.8.0 hosted handoff](BROWSER_HOSTED_NETWORK_ACCEPTANCE_2026-10-15.md) is later historical component evidence.
+Historical foundation: the early limits below describe the older 8 October checkpoint. See [current pilot progress](AUTO_APPLY_PROGRESS.md) for verified runtime and remaining live acceptance, and the [package guide](../../browser-companion/README.md) for current recovery controls. The [0.8.0 hosted handoff](BROWSER_HOSTED_NETWORK_ACCEPTANCE_2026-10-15.md) is later historical component evidence.
 
 Date: 2026-10-08. Scope: local synthetic, fill-only development evidence for
 EX02 and parts of EX05–08 / G04A–D in
