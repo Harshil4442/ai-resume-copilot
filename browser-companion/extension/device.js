@@ -55,11 +55,13 @@ async function validate(identity) {
   return identity;
 }
 
-export async function deviceIdentity() {
+export async function deviceIdentity({ requireRetained = false } = {}) {
+  if (typeof requireRetained !== "boolean") throw new Error(UNAVAILABLE);
   const database = await openDatabase();
   try {
     let identity = await retainedIdentity(database);
     if (identity === null) {
+      if (requireRetained) throw new Error(UNAVAILABLE);
       // Crypto awaits occur outside the IDB transaction. The second read and add
       // share one serialized readwrite transaction, so concurrent callers keep
       // the same retained owner instead of overwriting each other's private key.

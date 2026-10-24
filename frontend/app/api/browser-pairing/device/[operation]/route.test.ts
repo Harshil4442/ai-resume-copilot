@@ -7,8 +7,8 @@ const origin = `chrome-extension://${"a".repeat(32)}`;
 const fetchBackend = vi.fn();
 const context = { params: Promise.resolve({ operation: "status" }) };
 const rejected: Record<string, string>[] = [{ origin: "https://www.hirewizhq.com" }, { origin: "" }, { cookie: "candidate-session=synthetic" }, { authorization: "Bearer synthetic" }];
-function request(headers: Record<string, string> = {}) {
-  return new NextRequest("https://www.hirewizhq.com/api/browser-pairing/device/status", { method: "POST",
+function request(headers: Record<string, string> = {}, operation = "status") {
+  return new NextRequest(`https://www.hirewizhq.com/api/browser-pairing/device/${operation}`, { method: "POST",
     headers: { origin, "content-type": "application/json", ...headers }, body: '{"signed":"synthetic-proof"}' });
 }
 beforeEach(() => {
@@ -19,6 +19,18 @@ beforeEach(() => {
 });
 afterEach(() => { vi.resetAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 describe("device BFF contains no candidate web credentials", () => {
+  it("forwards inspect-key once through the credential-free device route", async () => {
+    const reply = { protocol_version: 2, key_sha256: "a".repeat(64), extension_id: "a".repeat(32),
+      executor_revision: "companion_test", status: "UNCLAIMED" };
+    fetchBackend.mockResolvedValueOnce(Response.json(reply));
+    const response = await POST(request({}, "inspect-key"), { params: Promise.resolve({ operation: "inspect-key" }) });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(reply);
+    expect(fetchBackend).toHaveBeenCalledTimes(1);
+    expect(fetchBackend.mock.calls[0][0]).toBe("https://native-backend.example.test/api/v1/browser-pairing/device/inspect-key");
+    expect(fetchBackend.mock.calls[0][1].headers).toEqual({ "Content-Type": "application/json", Origin: origin });
+    expect(fetchBackend.mock.calls[0][1].credentials).toBe("omit");
+  });
   it("forwards only exact extension Origin and bounded signed JSON with no cookie, bearer or candidate assertion", async () => {
     expect((await POST(request(), context)).status).toBe(200);
     const [target, options] = fetchBackend.mock.calls[0];

@@ -1,13 +1,13 @@
 # HireWiz candidate-reviewed Chrome companion
 
-The 0.8.0 source package supports separately reviewed Razorpay/Greenhouse answers,
-resume attachment and one final submit action. The source and reproducible default
-ZIP now pin the actual public KMS claim key and `companion_0_8_0` executor for the
-normal candidate cohort. Public verifier pins grant no account, device or action
-authority. Production stays closed until the later schema19 release, runtime IAM
-and configuration, explicit feature flags and complete user journey are accepted.
-The frozen F7 release remains schema18. Normal candidates still require genuine
-protected account enrollment, current-password approval and native browser pairing.
+The 0.8.1 source package supports separately reviewed Razorpay/Greenhouse answers,
+resume attachment and one final submit action. It adds bounded recovery for an
+uncertain browser connection and pins the reviewed public KMS claim key with the
+`companion_0_8_1` executor. Public pins and an UNCLAIMED inspection grant no account,
+device or application authority. The matching backend extension record and runtime
+configuration require a separate reviewed rollout; packaging alone does not
+activate them. Normal candidates require genuine protected account enrollment,
+current-password approval and native browser pairing.
 
 The candidate chooses a saved application and resume, connects this browser by
 reviewing its fingerprint on HireWiz, opens the exact company portal, and reviews
@@ -40,6 +40,19 @@ Load unpacked and choose the extracted `hirewiz-browser-companion` folder. Pin
 HireWiz. This is a pilot distribution, not a Chrome Web Store publication. Mobile
 users complete applications directly on the company portal.
 
+For an existing unpacked install, replace its source files and reload that same
+extension. Keep the browser profile and extension storage; do not remove/reinstall
+or clear its retained key to recover an uncertain connection. Choose **Inspect
+uncertain connection**. A matching existing REQUESTED or CANDIDATE_CONFIRMED create
+can offer **Resume this existing connection**, which reuses its exact public IDs
+and never resends create. A failed prepare or strictly bound legacy 0.8.0 ID-less
+unknown can offer **Archive unclaimed attempt** only after a current signed key
+inspection reports UNCLAIMED in both authorities. Archiving preserves the prior
+checkpoint; a new Start requires another explicit click. CLAIMED, unavailable,
+unknown completion and unknown refresh stay blocked. The four-entry retained
+history is never silently truncated; contact support when full. Nonces and private
+keys are never copied into the connection checkpoint or archive.
+
 Use Node.js 24 and locked dependencies for source validation:
 
 ```sh
@@ -64,14 +77,14 @@ in this artifact. See [the design decision](../docs/adr/007-reviewed-browser-ass
 for expiry, cancellation and database-restore limitations. Existing local synthetic
 and native experiment tests remain separate and do not constitute production proof.
 
-Configured 0.8.0 ZIP SHA-256:
-`887d6d37c9cfd6c6e2388a8e0e1b97c0e9518199035786a740f4b1e73b0e1675`.
+Configured 0.8.1 ZIP SHA-256:
+`174cc0b6170c1efeeb8b12ddd460734db89689f5860eca4ae4c6bdd894f9b18a`.
 
 The committed `extension/config.js` contains the reviewed public pins, so the
 ordinary package command and CI `--check` reproduce the configured native archive.
 For a separately reviewed key update, `python3 scripts/package-reviewed.py
 --native-config /absolute/path/to/reviewed-public-pins.json` accepts bounded JSON with
-exactly `executorRevision: "companion_0_8_0"` and `authorityKey`, the actual public
+exactly `executorRevision: "companion_0_8_1"` and `authorityKey`, the actual public
 P-256 claim JWK from the configured KMS version. Use the same argument with
 `--check`. This replaces only public `config.js` bytes in the archive; it supplies
 no account, device or action grant. Commit the same reviewed public values into
@@ -117,4 +130,4 @@ independent reconciliation. Before any send claim, cancellation/expiry refunds t
 hold. After a claim it cannot promise an undo or refund without proof. See
 [official receipt research](../docs/delivery/GREENHOUSE_CANDIDATE_RECEIPT_RESEARCH_2026-10-15.md).
 No production activation, live application, provider receipt or paid completion is
-established by these local fixtures. F7/schema18 stays frozen.
+established by these local fixtures. The earlier F7/schema18 evidence is historical.

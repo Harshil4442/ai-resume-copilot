@@ -133,6 +133,7 @@ def test_genuine_registration_pairing_protected_device_no_operator_grant(pairing
     assert len([key for key in all_rows if key[0] == "v3_pairing_completions"]) == 1
     validate_scoped_rows(all_rows)
     assert len(c.kms.calls) == 4
+    assert device(c, "inspect-key", transport(c, "key_status"))["status"] == "CLAIMED"
 
 
 def test_factory_is_structural_and_resource_mismatch_closed(pairing,monkeypatch):
@@ -191,6 +192,7 @@ def test_unknown_native_completion_withholds_protected_activation_and_claim(pair
     assert len(c.kms.calls) == 2
     c.native.fault = None
     assert not c.browser._service().coordinator._owned_pairing
+    assert device(c, "inspect-key", transport(c, "key_status"))["status"] == ("CLAIMED" if persist else "UNCLAIMED")
 
 
 @pytest.mark.parametrize("persist",[False,True])
@@ -204,6 +206,7 @@ def test_unknown_protected_activation_never_exports_or_adopts(pairing,persist):
         complete(c,prepared)
     assert not c.browser._service().coordinator._owned_pairing
     c.native.fault = None
+    assert device(c, "inspect-key", transport(c, "key_status"))["status"] == "CLAIMED"
     if persist:
         validate_scoped_rows(rows(c))
     result = device(c,"status",transport(c,"status",prepared["request"]["pairing_id"]))
@@ -232,6 +235,176 @@ def test_normal_revocation_denies_protected_device_and_preserves_full_census(pai
     from app.domains.recovery.store import GuardDenied
     with pytest.raises(GuardDenied):
         c.browser._service().paired_devices.check_claim(claim)
+    assert device(c, "inspect-key", transport(c, "key_status"))["status"] == "CLAIMED"
+
+
+def test_key_inspection_is_exact_signed_read_with_only_replay_consume(pairing):
+    from app.domains.recovery.pairing_auth import key_fingerprint
+    from app.domains.recovery.store import GuardDenied
+    c = pairing
+    before = set(c.native.data)
+    request = transport(c, "key_status")
+    result = device(c, "inspect-key", request)
+    assert result == {"protocol_version": 2, "key_sha256": key_fingerprint(c.key),
+        "extension_id": EXTENSION, "executor_revision": REVISION, "status": "UNCLAIMED"}
+    added = [json.loads(c.native.data[path][0]) for path in set(c.native.data) - before]
+    assert len(added) == 1 and added[0]["namespace"] == "browser_device_requests"
+    assert added[0]["value"] == {"expires_at_ms": NOW + 5000}
+    assert c.native.calls == [{"browser_device_requests"}]
+    assert not c.kms.calls and not c.native.views
+    assert not c.browser._service().coordinator._issued
+    with pytest.raises(GuardDenied):
+        device(c, "inspect-key", request)
+
+
+def test_key_inspection_http_reply_and_authority_failure_are_bounded(pairing):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from app.routers.v1.browser_pairing import get_browser_pairing, router
+    c = pairing
+    app = FastAPI()
+    app.include_router(router, prefix="/api/v1")
+    app.dependency_overrides[get_browser_pairing] = lambda: c.browser
+    headers = {"Content-Type": "application/json", "Origin": f"chrome-extension://{EXTENSION}"}
+    with TestClient(app) as client:
+        response = client.post("/api/v1/browser-pairing/device/inspect-key",
+            content=canonical(transport(c, "key_status")).encode(), headers=headers)
+        assert response.status_code == 200 and response.json()["status"] == "UNCLAIMED"
+        assert set(response.json()) == {"protocol_version", "key_sha256", "extension_id", "executor_revision", "status"}
+        c.native.seed(c.protected_registry, "v3_root", "current", {"invalid": "synthetic-private-value"})
+        response = client.post("/api/v1/browser-pairing/device/inspect-key",
+            content=canonical(transport(c, "key_status")).encode(), headers=headers)
+        assert response.status_code == 503
+        assert response.json() == {"detail": "Browser pairing is currently unavailable"}
+        assert "no-store" in response.headers["cache-control"]
+
+
+def test_key_inspection_does_not_adopt_or_replay_an_unproven_allocation(pairing):
+    c = pairing
+    prepared = device(c, "prepare", transport(c, "prepare_request"))
+    before = len(c.native.calls)
+    assert device(c, "inspect-key", transport(c, "key_status"))["status"] == "UNCLAIMED"
+    assert c.execution_registry.read("pairing_requests", prepared["request"]["pairing_id"])["state"] == "UNPROVEN"
+    assert c.native.calls[before:] == [{"browser_device_requests"}]
+    assert not c.kms.calls
+
+
+def test_key_inspection_rechecks_protected_absence_after_execution_read(pairing, monkeypatch):
+    from app.domains.recovery.gcp_buffer import BufferedTransaction
+    from app.domains.recovery.pairing_auth import key_fingerprint
+    from app.domains.recovery.store import GuardUnavailable
+    c = pairing
+    key_sha = key_fingerprint(c.key)
+    path = BufferedTransaction(c.execution_registry.rpc, b"test").path("pairing_key_owners", key_sha)
+    original = c.native.read
+    def changed(request, **kwargs):
+        result = original(request, **kwargs)
+        if path in request.documents:
+            c.native.seed(c.protected_registry, "v3_submit_key_owners", key_sha,
+                {"device_id": str(uuid4()), "subject_uuid": str(uuid4()), "registration_operation": str(uuid4())})
+        return result
+    monkeypatch.setattr(c.native.sdk.client.transport.batch_get_documents, "side_effect", changed)
+    with pytest.raises(GuardUnavailable):
+        device(c, "inspect-key", transport(c, "key_status"))
+    assert c.native.calls == [{"browser_device_requests"}]
+
+
+@pytest.mark.parametrize("fault", ["origin", "signature", "key", "extension", "revision", "expired", "version", "extra", "private_key"])
+def test_key_inspection_rejects_wrong_device_proof_and_freshness(pairing, fault):
+    from app.domains.recovery.store import GuardDenied
+    c = pairing
+    request = transport(c, "key_status")
+    origin = f"chrome-extension://{EXTENSION}"
+    if fault == "origin":
+        origin = "chrome-extension://" + "a" * 32
+    elif fault == "signature":
+        request["signature"] = "A" * 86
+    elif fault == "key":
+        request["key"] = jwk(ec.generate_private_key(ec.SECP256R1()))
+    else:
+        request.pop("signature")
+        if fault == "extension":
+            request["extension_id"] = "a" * 32
+        elif fault == "revision":
+            request["revision"] = "unapproved_revision"
+        elif fault == "expired":
+            request["issued_at_ms"] = NOW - 5000
+        elif fault == "version":
+            request["protocol_version"] = True
+        elif fault == "extra":
+            request["device_id"] = str(uuid4())
+        else:
+            request["key"] = {**request["key"], "d": "A" * 43}
+        request["signature"] = sign(c.private, "transport-request", request)
+    with pytest.raises((GuardDenied, ValueError)):
+        c.browser.device("inspect-key", canonical(request).encode(), origin)
+    assert not c.kms.calls and not c.native.calls
+
+
+@pytest.mark.parametrize("fault", ["execution_uid", "protected_uid", "execution_control", "protected_root", "approved_extension", "witness", "resource", "corrupt_owner", "permission", "timeout"])
+def test_key_inspection_never_reports_absence_when_authority_is_unavailable(pairing, monkeypatch, fault):
+    from google.api_core.exceptions import DeadlineExceeded, PermissionDenied
+
+    from app.domains.recovery.gcp_buffer import BufferedTransaction
+    from app.domains.recovery.pairing_auth import key_fingerprint
+    from app.domains.recovery.store import GuardDenied, GuardUnavailable
+    c = pairing
+    key_sha = key_fingerprint(c.key)
+    if fault == "execution_uid":
+        c.native.identities[c.execution.database] = str(uuid4())
+    elif fault == "protected_uid":
+        c.native.identities[c.protected.database] = str(uuid4())
+    elif fault == "execution_control":
+        c.native.seed(c.execution_registry, "pairing_control", "current", {})
+    elif fault == "protected_root":
+        c.native.seed(c.protected_registry, "v3_root", "current", {
+            "pin": c.config.publication_resource.pin.model_dump(mode="json"), "phase": "CLOSED", "close_id": str(uuid4())})
+    elif fault == "approved_extension":
+        c.native.seed(c.execution_registry, "pairing_extensions", f"{EXTENSION}:{REVISION}", {})
+    elif fault == "witness":
+        c.objects[c.config.execution_witness_pin.path] = b"{}", "999"
+    elif fault == "resource":
+        c.objects[c.config.publication_resource.path] = b"{}", "999"
+    elif fault == "corrupt_owner":
+        c.native.seed(c.protected_registry, "v3_submit_key_owners", key_sha, {"invalid": "synthetic-private-value"})
+    else:
+        path = BufferedTransaction(c.protected_registry.rpc, b"test").path("v3_submit_key_owners", key_sha)
+        original = c.native.read
+        def unavailable(request, **kwargs):
+            if path in request.documents:
+                raise (PermissionDenied if fault == "permission" else DeadlineExceeded)("synthetic-private-upstream")
+            return original(request, **kwargs)
+        monkeypatch.setattr(c.native.sdk.client.transport.batch_get_documents, "side_effect", unavailable)
+    with pytest.raises((GuardDenied, GuardUnavailable)):
+        device(c, "inspect-key", transport(c, "key_status"))
+    assert not c.kms.calls and not c.native.views
+    assert all(names == {"browser_device_requests"} for names in c.native.calls)
+
+
+def test_key_inspection_blocks_a_protected_owner_when_execution_was_restored(pairing):
+    from app.domains.recovery.gcp_buffer import BufferedTransaction
+    from app.domains.recovery.pairing_auth import key_fingerprint
+    c = pairing
+    context, prepared, challenge = start(c)
+    confirm(c, context, challenge)
+    complete(c, prepared)
+    path = BufferedTransaction(c.execution_registry.rpc, b"test").path("pairing_key_owners", key_fingerprint(c.key))
+    del c.native.data[path]
+    assert device(c, "inspect-key", transport(c, "key_status"))["status"] == "CLAIMED"
+
+
+def test_key_inspection_detects_disagreeing_retained_owners(pairing):
+    from app.domains.recovery.pairing_auth import key_fingerprint
+    from app.domains.recovery.store import GuardUnavailable
+    c = pairing
+    context, prepared, challenge = start(c)
+    confirm(c, context, challenge)
+    complete(c, prepared)
+    c.native.seed(c.execution_registry, "pairing_key_owners", key_fingerprint(c.key),
+                  {"device_id": str(uuid4()), "subject_uuid": str(uuid4())})
+    with pytest.raises(GuardUnavailable):
+        device(c, "inspect-key", transport(c, "key_status"))
 
 
 def test_paired_device_enters_real_submit_authority_and_sql_projection(pairing,monkeypatch):

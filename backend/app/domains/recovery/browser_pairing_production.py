@@ -193,7 +193,7 @@ class ConfiguredBrowserPairing:
     def device(self, operation: str, raw: bytes, origin: str) -> dict:
         native = self._service()
         current = configuration()
-        if operation == "prepare":
+        if operation in {"prepare", "inspect-key"}:
             from .browser_pairing import exact_json
             body = exact_json(raw)
             if body.get("extension_id") != current.extension_id or body.get("revision") != current.executor_revision:

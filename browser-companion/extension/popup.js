@@ -64,7 +64,9 @@ async function showConnection(value) {
   element("native-disconnect").disabled = !permission || !idle || !value.device_id || !(value.phase === "paired" || value.phase === "paused" && value.resume_phase === "paired");
   element("native-pause").disabled = ["idle", "paused"].includes(value.phase);
   element("native-resume").disabled = !idle || value.phase !== "paused";
-  element("native-inspect").disabled = !permission || !idle || value.phase !== "unknown" || !value.pairing_id;
+  element("native-inspect").disabled = !permission || !idle || !["unknown", "unknown_legacy"].includes(value.phase);
+  element("native-resume-existing").disabled = !permission || !idle || !value.can_resume_existing;
+  element("native-archive").disabled = !permission || !idle || !value.can_archive_restart;
   const list = element("native-fingerprints"); list.replaceChildren();
   if (value.key_sha256) pair(list, "Browser key SHA-256", value.key_sha256);
   if (value.request_sha256) pair(list, "Connection request SHA-256", value.request_sha256);
@@ -72,6 +74,7 @@ async function showConnection(value) {
     awaiting_candidate: "Compare both fingerprints on HireWiz and approve the matching browser.", completing: "Proving this browser's key…",
     paired: value.connected ? "Current browser identity verified. No application action is enabled." : "Connection remembered. Check it again before relying on current identity.",
     refreshing: "Checking current browser identity…", unknown: "The previous outcome needs inspection. Automatic retry and a new connection are blocked.",
+    unknown_legacy: "The earlier connection attempt is retained. Inspect this same browser key before choosing a supported recovery action.",
     paused: "Paused locally. The saved connection remains; this does not revoke an already paired device." };
   element("native-state").textContent = value.message || labels[value.phase] || "Connection needs inspection.";
 }
@@ -112,6 +115,8 @@ connectionAction("native-refresh", "pairing_refresh");
 connectionAction("native-pause", "pairing_cancel");
 connectionAction("native-resume", "pairing_resume");
 connectionAction("native-inspect", "pairing_inspect");
+connectionAction("native-resume-existing", "pairing_resume_existing");
+connectionAction("native-archive", "pairing_archive");
 action("native-disconnect", async () => {
   if (!connection?.device_id || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(connection.device_id)
       || !(connection.phase === "paired" || connection.phase === "paused" && connection.resume_phase === "paired")) throw new Error("A completed browser connection is required.");

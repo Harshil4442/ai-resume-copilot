@@ -58,6 +58,52 @@ class ProtectedPairingDevices:
         self.coordinator, self.scoped = coordinator, scoped
         self.activated, self.deny_sql = activated, deny_sql
 
+    def key_status(self, public_key: dict, *, extension_id: str, executor_revision: str) -> str:
+        """Inspect permanent key ownership only; absence creates no device authority."""
+        from .pairing_auth import key_fingerprint
+        key_sha256 = key_fingerprint(public_key)
+        c, scoped = self.coordinator, self.scoped
+        if c.pin != scoped.publication.resource.pin.authority.target:
+            raise GuardUnavailable("Pairing and protected key inspection pins disagree")
+        protected_owner: list[dict | None] = []
+        execution_owner: list[dict | None] = []
+
+        def checked_owner(value: dict | None, fields: set[str]) -> dict | None:
+            if value is not None:
+                try:
+                    if set(value) != fields or any(type(item) is not str or str(UUID(item)) != item for item in value.values()):
+                        raise ValueError("Key owner metadata changed")
+                except (ValueError, TypeError, AttributeError):
+                    raise GuardUnavailable("Permanent device key ownership is malformed") from None
+            return value
+
+        def protected(tx: BufferedTransaction) -> None:
+            scoped.publication._root(tx, opened=True)
+            owner = checked_owner(tx.get("v3_submit_key_owners", key_sha256),
+                                  {"device_id", "subject_uuid", "registration_operation"})
+            if protected_owner and protected_owner[0] != owner:
+                raise GuardUnavailable("Protected device key ownership changed during inspection")
+            protected_owner[:] = [owner]
+            if tx.overlay:
+                raise GuardUnavailable("Device key inspection must remain read only")
+
+        def execution(tx: BufferedTransaction) -> None:
+            c._control(tx)
+            c.core._extension(tx, extension_id, executor_revision)
+            execution_owner[:] = [checked_owner(tx.get("pairing_key_owners", key_sha256),
+                                               {"device_id", "subject_uuid"})]
+            if tx.overlay:
+                raise GuardUnavailable("Device key inspection must remain read only")
+
+        scoped._run(protected)
+        c.registry.run(execution, before_attempt=lambda: c.fence.check(c.pin))
+        c.fence.check(c.pin)
+        scoped._run(protected)
+        native, retained = execution_owner[0], protected_owner[0]
+        if native is not None and retained is not None and any(native[key] != retained[key] for key in native):
+            raise GuardUnavailable("Execution and protected device key ownership disagree")
+        return "UNCLAIMED" if native is None and retained is None else "CLAIMED"
+
     def _signing(self, evidence: PairingOwnedEvidence, *, challenge_id: str) -> dict:
         scoped = self.scoped
         found = scoped.publication.registry.read("v3_begins", f"signing:{challenge_id}")

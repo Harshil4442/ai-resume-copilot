@@ -11,7 +11,7 @@ from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "browser-companion" / "extension"
-DESTINATION = ROOT / "frontend" / "public" / "downloads" / "hirewiz-browser-companion-0.8.0.zip"
+DESTINATION = ROOT / "frontend" / "public" / "downloads" / "hirewiz-browser-companion-0.8.1.zip"
 
 
 def native_configuration(path: Path) -> bytes:
@@ -28,7 +28,7 @@ def native_configuration(path: Path) -> bytes:
         return value
     value = json.loads(raw, object_pairs_hook=pairs)
     if (type(value) is not dict or set(value) != {"executorRevision", "authorityKey"}
-            or value["executorRevision"] != "companion_0_8_0"):
+            or value["executorRevision"] != "companion_0_8_1"):
         raise ValueError("native_public_configuration_revision")
     key = value["authorityKey"]
     if (type(key) is not dict or set(key) != {"kty", "crv", "x", "y"}
@@ -51,7 +51,7 @@ def main():
     parser.add_argument("--native-config", type=Path, help="Exact reviewed public claim-key/executor pins for normal-user pairing")
     arguments = parser.parse_args()
     manifest = json.loads((SOURCE / "manifest.json").read_text())
-    if (manifest["version"] != "0.8.0" or manifest["host_permissions"] != []
+    if (manifest["version"] != "0.8.1" or manifest["host_permissions"] != []
             or manifest["optional_host_permissions"] != [
                 "https://www.hirewizhq.com/*", "https://job-boards.greenhouse.io/*",
                 "https://boards.greenhouse.io/*", "https://*.amazonaws.com/*"]

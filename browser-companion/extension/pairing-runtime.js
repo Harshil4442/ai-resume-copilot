@@ -3,52 +3,92 @@ import { canonical, digest } from "./protocol.js";
 
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const HEX = /^[a-f0-9]{64}$/;
-const PHASES = new Set(["idle", "preparing", "awaiting_candidate", "completing", "paired", "refreshing", "unknown", "paused"]);
+const PHASES = new Set(["idle", "preparing", "awaiting_candidate", "completing", "paired", "refreshing", "unknown", "unknown_legacy", "paused"]);
 const PENDING = new Set(["preparing", "completing", "refreshing"]);
-const KEYS = ["version", "phase", "binding", "pairing_id", "device_id", "key_sha256", "request_sha256", "expires_at_ms", "review_url", "local_operation_id", "native_operation_id", "updated_at_ms", "resume_phase"].sort().join(",");
+const UNKNOWN = new Set(["unknown", "unknown_legacy"]);
+const PUBLIC_FIELDS = ["pairing_id", "device_id", "key_sha256", "request_sha256", "expires_at_ms", "review_url"];
+const LEGACY_KEYS = ["version", "phase", "binding", ...PUBLIC_FIELDS, "local_operation_id", "native_operation_id", "updated_at_ms", "resume_phase"];
+const RECORD_KEYS = [...LEGACY_KEYS, "send_kind"].sort().join(",");
+const KEYS = [...LEGACY_KEYS, "send_kind", "history"].sort().join(",");
 const nullable = (value, pattern) => value === null || typeof value === "string" && pattern.test(value);
+const object = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 
 export class PairingRuntime {
   constructor({ transport, store, checkPermission, now = () => Date.now() }) {
     Object.assign(this, { transport, store, checkPermission, now });
     this.state = null; this.busy = false; this.abort = null; this.cancelled = false;
-    this.saved = Promise.resolve(); this.generation = 0;
+    this.saved = Promise.resolve(); this.generation = 0; this.inspection = null;
+  }
+  empty(history = []) {
+    return { version: 2, phase: "idle", binding: this.binding, pairing_id: null, device_id: null,
+      key_sha256: null, request_sha256: null, expires_at_ms: null, review_url: null,
+      local_operation_id: null, native_operation_id: null, updated_at_ms: this.now(), resume_phase: null,
+      send_kind: null, history };
   }
   async initialise() {
     const config = this.transport.configuration;
-    this.binding = await digest(canonical({ website_origin: config.websiteOrigin, extension_id: config.extensionId,
-      executor_revision: config.executorRevision, authority_key: config.authorityKey }));
+    const binding = (executor_revision) => digest(canonical({ website_origin: config.websiteOrigin, extension_id: config.extensionId,
+      executor_revision, authority_key: config.authorityKey }));
+    this.binding = await binding(config.executorRevision);
+    this.legacyBinding = await binding("companion_0_8_0");
     const stored = await this.store.read();
-    if (stored === null) {
-      this.state = { version: 1, phase: "idle", binding: this.binding, pairing_id: null, device_id: null,
-        key_sha256: null, request_sha256: null, expires_at_ms: null, review_url: null,
-        local_operation_id: null, native_operation_id: null, updated_at_ms: this.now(), resume_phase: null };
-    } else {
-      if (!this.valid(stored)) throw new Error("Stored connection state needs inspection; starting again is blocked");
-      if (stored.key_sha256 !== null && stored.key_sha256 !== await this.transport.keyDigest()) throw new Error("The saved connection belongs to a different retained device key");
-      this.state = stored;
-      if (PENDING.has(stored.phase)) await this.save({ phase: "unknown", resume_phase: null });
-      this.transport.pairingId = stored.pairing_id; this.transport.deviceId = stored.device_id;
+    if (stored === null) this.state = this.empty();
+    else {
+      if (object(stored) && stored.version === 1 && config.executorRevision === "companion_0_8_1" && this.validLegacy(stored)) {
+        // Preserve the entire old checkpoint and retained IDB key. This grants
+        // no retry: only current signed key inspection can enable an explicit archive.
+        this.state = this.empty([structuredClone(stored)]);
+        await this.save({ phase: "unknown_legacy", send_kind: "legacy", key_sha256: await this.transport.keyDigest(),
+          local_operation_id: stored.local_operation_id, native_operation_id: stored.native_operation_id });
+      } else {
+        if (!this.valid(stored)) throw new Error("Stored connection state needs inspection; starting again is blocked");
+        this.state = stored;
+      }
+      if (this.state.key_sha256 !== null && this.state.key_sha256 !== await this.transport.keyDigest()) throw new Error("The saved connection belongs to a different retained device key");
+      if (PENDING.has(this.state.phase)) await this.save({ phase: "unknown", resume_phase: null });
+      this.transport.pairingId = this.state.pairing_id; this.transport.deviceId = this.state.device_id;
     }
     return this;
   }
-  valid(value) {
-    if (!value || typeof value !== "object" || Array.isArray(value) || Object.keys(value).sort().join(",") !== KEYS
-        || value.version !== 1 || !PHASES.has(value.phase) || value.binding !== this.binding
+  validLegacy(value) {
+    return object(value) && Object.keys(value).sort().join(",") === [...LEGACY_KEYS].sort().join(",")
+      && value.version === 1 && value.phase === "unknown" && value.binding === this.legacyBinding
+      && Number.isSafeInteger(value.updated_at_ms) && value.updated_at_ms > 0
+      && nullable(value.local_operation_id, UUID) && value.native_operation_id === null && value.resume_phase === null
+      && PUBLIC_FIELDS.every((key) => value[key] === null) && JSON.stringify(value).length <= 2048;
+  }
+  validRecord(value) {
+    if (!object(value) || Object.keys(value).sort().join(",") !== RECORD_KEYS
+        || value.version !== 2 || !PHASES.has(value.phase) || value.binding !== this.binding
         || !Number.isSafeInteger(value.updated_at_ms) || value.updated_at_ms <= 0
         || !nullable(value.pairing_id, UUID) || !nullable(value.device_id, UUID)
         || !nullable(value.local_operation_id, UUID) || !nullable(value.native_operation_id, UUID)
         || !nullable(value.key_sha256, HEX) || !nullable(value.request_sha256, HEX)
         || !(value.expires_at_ms === null || Number.isSafeInteger(value.expires_at_ms) && value.expires_at_ms > 0)
-        || !(value.resume_phase === null || ["awaiting_candidate", "paired"].includes(value.resume_phase))) return false;
+        || !(value.resume_phase === null || ["awaiting_candidate", "paired"].includes(value.resume_phase))
+        || ![null, "prepare", "create", "complete", "refresh", "legacy"].includes(value.send_kind)) return false;
     if (value.review_url !== null && (value.pairing_id === null
         || value.review_url !== `${this.transport.configuration.websiteOrigin}/browser-companion?pairing=${value.pairing_id}`)) return false;
-    if (["awaiting_candidate", "completing", "paired", "refreshing", "paused"].includes(value.phase)
-        && [value.pairing_id, value.device_id, value.key_sha256, value.request_sha256, value.expires_at_ms, value.review_url].some((v) => v === null)) return false;
+    const prepared = PUBLIC_FIELDS.every((key) => value[key] !== null);
     if ((value.pairing_id === null) !== (value.device_id === null)) return false;
-    if (["idle", "preparing"].includes(value.phase)
-        && [value.pairing_id, value.device_id, value.key_sha256, value.request_sha256, value.expires_at_ms, value.review_url, value.native_operation_id].some((v) => v !== null)) return false;
+    if (["awaiting_candidate", "completing", "paired", "refreshing", "paused"].includes(value.phase) && !prepared) return false;
+    if (value.send_kind === "create" && !prepared || ["complete", "refresh"].includes(value.send_kind) && !prepared) return false;
+    if (value.phase === "idle" && (value.send_kind !== null || [...PUBLIC_FIELDS, "local_operation_id", "native_operation_id"].some((key) => value[key] !== null))) return false;
+    if (value.phase === "preparing" && !["prepare", "create"].includes(value.send_kind)) return false;
+    if (value.phase === "awaiting_candidate" && value.send_kind !== "create") return false;
+    if (value.phase === "completing" && value.send_kind !== "complete" || value.phase === "refreshing" && value.send_kind !== "refresh") return false;
+    if (value.phase === "paired" && !["complete", "refresh"].includes(value.send_kind)) return false;
+    if (value.phase === "unknown" && !["prepare", "create", "complete", "refresh"].includes(value.send_kind)) return false;
+    if (value.phase === "unknown_legacy" && (value.send_kind !== "legacy" || value.key_sha256 === null
+        || PUBLIC_FIELDS.filter((key) => key !== "key_sha256").some((key) => value[key] !== null))) return false;
+    if (value.send_kind === "legacy" && value.phase !== "unknown_legacy") return false;
+    if (value.send_kind === "prepare" && !prepared && PUBLIC_FIELDS.some((key) => value[key] !== null)) return false;
     return (value.phase === "paused") === (value.resume_phase !== null) && JSON.stringify(value).length <= 2048;
+  }
+  valid(value) {
+    if (!object(value) || Object.keys(value).sort().join(",") !== KEYS || !Array.isArray(value.history) || value.history.length > 4) return false;
+    const { history, ...record } = value;
+    return this.validRecord(record) && history.every((entry) => this.validLegacy(entry) || this.validRecord(entry)) && JSON.stringify(value).length <= 12288;
   }
   async save(changes) {
     const generation = this.generation;
@@ -56,7 +96,7 @@ export class PairingRuntime {
       const next = { ...this.state, ...changes, updated_at_ms: this.now() };
       if (!this.valid(next)) throw new Error("Connection checkpoint is invalid");
       await this.store.write(next);
-      if (generation === this.generation) this.state = next;
+      if (generation === this.generation) { this.state = next; this.inspection = null; }
     };
     const saved = this.saved.then(commit);
     this.saved = saved.catch(() => undefined);
@@ -65,10 +105,12 @@ export class PairingRuntime {
   status(message = "") {
     const state = this.state;
     const current = this.transport.claim?.payload;
+    const inspected = this.inspection?.state === state ? this.inspection : null;
     return { phase: state.phase, busy: this.busy, connected: state.phase === "paired" && Boolean(current && current.expires_at_ms > this.now()),
       pairing_id: state.pairing_id, device_id: state.device_id, key_sha256: state.key_sha256,
       request_sha256: state.request_sha256, expires_at_ms: state.expires_at_ms, review_url: state.review_url,
-      resume_phase: state.resume_phase, message, allowed_actions: [] };
+      resume_phase: state.resume_phase, message, allowed_actions: [], observed_status: inspected?.status ?? null,
+      can_resume_existing: inspected?.kind === "existing", can_archive_restart: inspected?.kind === "unclaimed" };
   }
   async mutate(phase, operation, success) {
     if (this.busy) throw new Error("A connection request is already running");
@@ -77,8 +119,9 @@ export class PairingRuntime {
     try {
       await this.checkPermission();
       if (this.cancelled) throw new Error("Connection paused before the request");
-      // Persist intent before a request can reach any native mutation boundary.
-      await this.save({ phase, local_operation_id: crypto.randomUUID(), native_operation_id: null, resume_phase: null });
+      // Persist operation kind before any corresponding send, including a crash.
+      await this.save({ phase, send_kind: { preparing: "prepare", completing: "complete", refreshing: "refresh" }[phase],
+        local_operation_id: crypto.randomUUID(), native_operation_id: null, resume_phase: null });
       if (this.cancelled) throw new Error("Connection paused before the request");
       const result = await operation();
       if (this.cancelled) throw new Error("Connection paused during a request");
@@ -87,11 +130,10 @@ export class PairingRuntime {
       return { ...this.status(), busy: false };
     } catch (failure) {
       this.transport.claim = null;
-      // A lost response, interruption or cancel cannot prove no native write occurred.
-      if (PENDING.has(this.state.phase) || this.state.phase === "unknown") {
+      if (PENDING.has(this.state.phase) || UNKNOWN.has(this.state.phase)) {
         await this.save({ phase: "unknown", native_operation_id: nullable(failure?.operationId, UUID) ? failure.operationId ?? null : null, resume_phase: null });
       }
-      throw new Error(this.state.phase === "unknown"
+      throw new Error(UNKNOWN.has(this.state.phase)
         ? "Connection outcome needs inspection. Retrying or starting another connection is blocked."
         : "Connection is unavailable. No application action was authorized.");
     } finally {
@@ -100,7 +142,18 @@ export class PairingRuntime {
   }
   async start() {
     if (this.state.phase !== "idle") throw new Error("This connection must be reviewed; starting another request is blocked");
-    return this.mutate("preparing", () => this.transport.prepare(), (review) => ({ phase: "awaiting_candidate", ...review, review_url: review.review_url }));
+    return this.mutate("preparing", () => this.transport.prepare({
+      onPrepared: async (review) => {
+        if (this.cancelled) throw new Error("Connection paused before creation");
+        await this.save(review);
+        if (this.cancelled) throw new Error("Connection paused before creation");
+      },
+      beforeCreate: async () => {
+        if (this.cancelled) throw new Error("Connection paused before creation");
+        await this.save({ send_kind: "create" });
+        if (this.cancelled) throw new Error("Connection paused before creation");
+      },
+    }), (review) => ({ phase: "awaiting_candidate", ...review }));
   }
   async complete() {
     if (this.busy || this.state.phase !== "awaiting_candidate") throw new Error("A reviewed pending connection is required");
@@ -117,19 +170,64 @@ export class PairingRuntime {
     return this.mutate("refreshing", () => this.transport.identify(true), () => ({ phase: "paired" }));
   }
   async inspectUnknown() {
-    if (this.busy || this.state.phase !== "unknown" || this.state.pairing_id === null) throw new Error("There is no known connection to inspect");
-    await this.checkPermission();
-    const retained = await this.transport.lookup("status", this.state.pairing_id);
-    if (retained.pairing_id !== this.state.pairing_id || retained.device_id !== this.state.device_id) throw new Error("Current connection status does not match this device");
-    // Status is evidence for inspection, never permission to replay an uncertain POST.
-    return { ...this.status("Inspection does not enable a retry of the previous request."), observed_status: retained.status };
+    if (this.busy || !UNKNOWN.has(this.state.phase)) throw new Error("There is no uncertain connection to inspect");
+    this.busy = true; this.inspection = null;
+    const state = this.state;
+    try {
+      await this.checkPermission();
+      if (["prepare", "legacy"].includes(state.send_kind)) {
+        const result = await this.transport.inspectKey();
+        if (this.state !== state) throw new Error("The connection changed during inspection");
+        this.inspection = { state, status: result.status, kind: result.status === "UNCLAIMED" ? "unclaimed" : "blocked" };
+      } else {
+        const retained = await this.transport.lookup("status", state.pairing_id);
+        if (this.state !== state || retained.pairing_id !== state.pairing_id || retained.device_id !== state.device_id) throw new Error("Current connection status does not match this device");
+        this.inspection = { state, status: retained.status,
+          kind: state.send_kind === "create" && ["REQUESTED", "CANDIDATE_CONFIRMED"].includes(retained.status) && this.now() < state.expires_at_ms ? "existing" : "blocked" };
+      }
+      return { ...this.status(this.inspection.kind === "unclaimed" ? "This retained browser key is unclaimed. You may explicitly archive this attempt before starting a new connection."
+        : this.inspection.kind === "existing" ? "The original connection exists. Resume that exact connection without creating another."
+          : "The retained key or previous operation remains claimed or unresolved. Starting again and replaying it stay blocked."), busy: false };
+    } finally { this.busy = false; }
+  }
+  async resumeExisting() {
+    if (this.busy || this.inspection?.state !== this.state || this.inspection.kind !== "existing"
+        || this.state.send_kind !== "create" || this.now() >= this.state.expires_at_ms) throw new Error("Inspect the exact pending connection before resuming it");
+    const state = this.state, inspection = this.inspection;
+    this.busy = true;
+    try {
+      await this.checkPermission();
+      if (this.state !== state || this.inspection !== inspection) throw new Error("The connection changed during reconciliation");
+      this.transport.pairingId = state.pairing_id; this.transport.deviceId = state.device_id;
+      await this.save({ phase: "awaiting_candidate" });
+      return { ...this.status("Original connection retained. Review its fingerprints on HireWiz before completing it."), busy: false };
+    } finally { this.busy = false; }
+  }
+  async archiveUnknown() {
+    if (this.busy || this.inspection?.state !== this.state || this.inspection.kind !== "unclaimed"
+        || !UNKNOWN.has(this.state.phase) || !["prepare", "legacy"].includes(this.state.send_kind)) throw new Error("Inspect this exact unclaimed browser key before archiving the attempt");
+    const state = this.state, inspection = this.inspection;
+    this.busy = true;
+    try {
+      await this.checkPermission();
+      if (this.state !== state || this.inspection !== inspection) throw new Error("The connection changed during reconciliation");
+      if (state.history.length >= 4) throw new Error("Retained connection history is full. Contact support without clearing browser storage.");
+      const { history, ...record } = state;
+      await this.save(this.empty([...history, structuredClone(record)]));
+      this.transport.pairingId = null; this.transport.deviceId = null; this.transport.claim = null;
+      return { ...this.status("Previous uncertain attempt archived with its evidence. Starting a new connection requires your next explicit click."), busy: false };
+    } finally { this.busy = false; }
   }
   async cancel() {
     this.cancelled = true; this.abort?.abort(); this.transport.claim = null;
     this.generation += 1;
-    if (this.busy || PENDING.has(this.state.phase) || this.state.phase === "unknown") {
-      this.state = { ...this.state, phase: "unknown", resume_phase: null };
-      await this.save({ phase: "unknown", resume_phase: null });
+    // No intent/checkpoint or send can precede the first permission await.
+    // Keep that proven-unsent state instead of fabricating an unknown operation.
+    if (this.state.phase === "idle") return this.status("Paused before any connection request was sent.");
+    if (this.busy || PENDING.has(this.state.phase) || UNKNOWN.has(this.state.phase)) {
+      const phase = this.state.phase === "unknown_legacy" ? "unknown_legacy" : "unknown";
+      this.state = { ...this.state, phase, resume_phase: null };
+      await this.save({ phase, resume_phase: null });
       return this.status("Further requests paused. The previous outcome still needs inspection.");
     }
     if (["awaiting_candidate", "paired"].includes(this.state.phase)) {

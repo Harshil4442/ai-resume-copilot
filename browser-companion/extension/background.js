@@ -150,14 +150,14 @@ async function assistanceEngine() {
         return result?.documentId === expected.document_id && result?.result ? result.result : { outcome: "blocked", reason: "The reviewed document is no longer available" };
       },
     };
-    let identity = await deviceIdentity();
+    let identity;
     if (nativeAssistance()) {
       const connection = await pairingEngine();
       if (!connection.status().connected || connection.state.phase !== "paired") throw new Error("Complete and check the reviewed native browser connection before application assistance.");
       // Native pairing assigns its durable device ID. The retained private key
       // stays in IndexedDB; the signed identity claim cannot replace that key.
-      identity = { ...identity, device_id: connection.state.device_id };
-    }
+      identity = { ...connection.transport.identity, device_id: connection.state.device_id };
+    } else identity = await deviceIdentity();
     const transport = new AssistanceTransport({ configuration: CONFIG, identity, beforePost: () => permission(CONFIG.websiteOrigin) });
     const store = { read: async () => (await boundedStorage(chrome.storage.local.get("assistance_checkpoint"))).assistance_checkpoint ?? null,
       write: (value) => boundedStorage(chrome.storage.local.set({ assistance_checkpoint: value })) };
@@ -182,7 +182,8 @@ async function pairingEngine() {
       if (!await chrome.permissions.contains({ origins: [`${CONFIG.websiteOrigin}/*`] })) throw new Error("The exact HireWiz connection permission is missing or revoked");
     };
     const configuration = nativeAssistance() ? { ...CONFIG, ...CONFIG.nativePairing, mode: "pairing_only" } : CONFIG;
-    const transport = new PairingTransport({ configuration, identity: await deviceIdentity(), beforePost: checkPermission });
+    const prior = (await boundedStorage(chrome.storage.local.get("pairing_checkpoint"))).pairing_checkpoint ?? null;
+    const transport = new PairingTransport({ configuration, identity: await deviceIdentity({ requireRetained: prior !== null }), beforePost: checkPermission });
     const store = {
       read: async () => (await boundedStorage(chrome.storage.local.get("pairing_checkpoint"))).pairing_checkpoint ?? null,
       write: (value) => boundedStorage(chrome.storage.local.set({ pairing_checkpoint: value })),
@@ -237,7 +238,8 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
         if (message.type === "status") return { mode: CONFIG.mode, native_pairing: true,
           connection: connection.status(), assistance: connection.status().connected ? (await assistanceEngine()).status() : null };
         const operations = { pairing_start: "start", pairing_complete: "complete", pairing_refresh: "refresh",
-          pairing_cancel: "cancel", pairing_resume: "resume", pairing_inspect: "inspectUnknown" };
+          pairing_cancel: "cancel", pairing_resume: "resume", pairing_inspect: "inspectUnknown",
+          pairing_resume_existing: "resumeExisting", pairing_archive: "archiveUnknown" };
         if (message.type === "pairing_status") return { mode: CONFIG.mode, ...connection.status() };
         if (Object.hasOwn(operations, message.type)) {
           if (message.type === "pairing_cancel" && assistancePromise) await (await assistancePromise).cancel();
@@ -271,6 +273,8 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       if (message.type === "pairing_cancel") return current.cancel();
       if (message.type === "pairing_resume") return current.resume();
       if (message.type === "pairing_inspect") return current.inspectUnknown();
+      if (message.type === "pairing_resume_existing") return current.resumeExisting();
+      if (message.type === "pairing_archive") return current.archiveUnknown();
       // Identity connection never enables the fixture application protocol.
       throw new Error("Application actions require separately reviewed authority");
     }
