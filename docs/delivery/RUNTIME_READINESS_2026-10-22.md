@@ -1,5 +1,11 @@
 # Native enrollment and tailoring failure diagnosis
 
+> Historical report: this document records its dated observations, not the current
+> deployment or remaining-work register. See [current pilot progress](AUTO_APPLY_PROGRESS.md)
+> for the six original outcomes and latest accepted serving state. Later password
+> reset, native enrollment and resume acceptance supersede their then-pending status;
+> earlier failures and receipts remain preserved below.
+
 Status: PR28 runtime repair and expense-policy-3 renewal are deployed and
 canonically accepted. Model-policy secret version 2 is unchanged. Complete
 customer journeys remain pending.

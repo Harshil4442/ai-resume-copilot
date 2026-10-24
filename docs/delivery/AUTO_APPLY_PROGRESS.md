@@ -6,18 +6,23 @@ the approved free twenty-origin pilot**; the other three remain **OPEN**. Global
 coverage, sales, real payments and commercial profitability remain follow-on
 work. The goal remains unfinished until the other pilot outcomes are accepted.
 
-Schema **`20261023_0021`** is committed. The API, analysis worker, employer worker
-and resume coordinator now serve accepted source **`7a00839d`**, immutable image
-**`c1ce5b32`**. Reopening is accepted: the three reviewed worker queues are RUNNING
-and the three existing schedules are ENABLED. The employer-application queue
-remains PAUSED; sales, checkout and employer submission remain held.
+Schema **`20261023_0021`** is committed. The canonical API serves the accepted
+0.8.1 recovery source **`47169c10`**, immutable image **`bf23b42b`**, after staged
+and canonical health passed. The analysis worker, employer worker and resume
+coordinator retain accepted source **`7a00839d`** and image **`c1ce5b32`**.
+Reopening is accepted: the three reviewed worker queues are RUNNING and the three
+existing schedules are ENABLED. The employer-application queue remains PAUSED;
+sales, checkout and employer submission remain held.
 
-Production frontend **`dpl_BRu51zQTN7zUESLPML34PdvB8eMg`** contains the
-upload-reconciliation correction from source **`7529c041`**, merged normally as **`533fc005`**. It was promoted at
-**23 October 2026, 22:46:17 UTC**; both canonical aliases were verified at
-**22:46:23 UTC**. It supersedes the earlier H18/f3 billing release. Actual
-password reset, native enrollment and fresh native password sign-in have passed;
-companion pairing remains under diagnosis. The final canonical ZIP upload passed,
+Production frontend **`dpl_3ZDhWrGvpgDsZKWepiZ2uWD55hps`** contains reviewed
+0.8.1 recovery source **`47169c10`**, normally merged as **`bf9b23a4`**. Its
+promotion completed and both canonical aliases were verified at
+**24 October 2026, 01:01:53 UTC**. Both domains serve the exact configured 0.8.1
+archive, and reset-token privacy headers passed. It supersedes the earlier BRu
+upload-reconciliation and H18/f3 billing releases, whose accepted evidence remains
+preserved below. Actual password reset, native enrollment and fresh native
+password sign-in have passed; companion pairing remains pending. The final
+canonical ZIP upload passed,
 and its downloaded original matched the uploaded bytes exactly at
 **23 October 2026, 23:31:41 UTC**.
 A single fresh native-password-session upload POST received upstream **503** at
@@ -26,7 +31,11 @@ preparation also received upstream **503** at **22:42:19.214 UTC**, without a
 known creation or pairing ID. A bounded database lookup found no committed upload
 for the failed request; only after that reconciliation was one fresh upload made.
 These failures are separate from the deployed 429 status-reconciliation correction.
-The existing companion attempt must still be reconciled before a fresh connection.
+The existing companion attempt is preserved. The 0.8.1 recovery API and
+frontend are accepted, and an independent API verification passed. The same
+extension's eighteen
+code files are updated to 0.8.1 with its key, permissions and local profile data
+preserved; a human reload and real connection acceptance remain pending.
 Deployment alone does not close an outcome.
 
 ## Scope and owner controls
@@ -48,25 +57,37 @@ unfinished free-pilot journeys within the same six outcomes.
 |---|---|---|---|
 | Official job search, ranking and user-selected job counts | COMPLETE (free pilot) | Twenty reviewed origins were enabled and refreshed; the retained aggregate recorded 1,366 open postings at that observation. The earlier wrong-role search and its separate audited quality adjustment remain preserved. After reopening, a genuine three-result Software Engineer search returned **3 of 3** appropriate engineering roles. Its quote was **1 credit per job**; it charged **3**, released **0**, left **0 held** and **0 available**, while AI stayed **7**. | Approved free-pilot search acceptance is complete. Worldwide expansion and the independent greater-than-95-percent coverage target remain follow-on work. Preserve exact completed search and settlement history; no additional testing campaign is implied. |
 | Resume tailoring preserving PDF, DOCX and LaTeX formatting | COMPLETE (free pilot) | Real PDF Version 3 retained four safe edits and omitted one unsafe proposal; its download preserves one page, nine links, fonts and 147 unedited positions. Native DOCX, TeX and TeX ZIP original downloads match their source hashes. The unchanged DOCX snapshot is byte-identical. TeX and ZIP sealed PDFs were visually checked and matched to their previews; both retain two links. The exact three database records pass source, ClamAV, native-compilation and recorded cleanup-generation checks. After reconciling the failed POST as uncommitted, one fresh canonical ZIP upload parsed successfully and its original download matched all 917 bytes. | Approved free-pilot resume acceptance is complete. An independent release-user GCS marker read remains permission-unavailable and is not claimed as PASS; no IAM expansion is required by SD03. Unsupported layouts still receive conservative refusal or original/custom options. Unchanged snapshots remain labeled unchanged and do not prove new tailoring. |
-| Candidate-reviewed direct company applications | OPEN | Ordinary Google sign-in passed; the human reports foreground sign-in within five seconds. The human completed password reset; the password-changed email reached INBOX at **23 October 2026, 22:28:41 UTC**. Native enrollment and a fresh native password sign-in both reached the Dashboard. The first reset email also reached INBOX with SPF, DKIM and DMARC passing. Companion 0.8.0 installation is reported. A single browser-device preparation attempt received upstream 503 at **22:42:19.214 UTC**, without a known creation or pairing ID. | Diagnose/reconcile the existing companion attempt without another Start or write, then verify candidate-reviewed Razorpay assistance/recovery within the held employer-write controls. Do not seed an identity/device or bypass proof; employer attachment, upload and final submission are not smoke tests. |
+| Candidate-reviewed direct company applications | OPEN | Ordinary Google sign-in passed; the human reports foreground sign-in within five seconds. The human completed password reset; the password-changed email reached INBOX at **23 October 2026, 22:28:41 UTC**. Native enrollment and a fresh native password sign-in both reached the Dashboard. The first reset email also reached INBOX with SPF, DKIM and DMARC passing. The same installed companion has its 0.8.1 code update with key, permissions and local profile data preserved; human reload and connection acceptance remain pending. The original ID-less browser-device attempt remains preserved. A genuine one-credit search later returned Razorpay's Lead Software Development Engineer role in Bengaluru. The candidate created an internal application using the exact original-resume identity; its answers remain blank and it needs action. No employer write occurred. | Accept the 0.8.1 recovery and same-extension reload, then verify actual pairing and candidate-reviewed Razorpay assistance/recovery within the held employer-write controls. Do not seed an identity/device or bypass proof; employer attachment, upload and final submission are not smoke tests. |
 | Paid search/application credits, profitable finite packs and payment recovery | COMPLETE (free pilot) | Three finite packs, separate service/AI balances, exact quotes, reservations, idempotent settlement and recovery controls are implemented. The promoted billing page displayed the actual **3** service credits. The quote of **1 per job** delivered **3 of 3** Software Engineer roles, charged **3**, released **0**, and left **0 held / 0 available**; AI remained **7**. Expense-policy **3** and model-policy **2** retain their reviewed authority. | Approved free-pilot credit, quote and settlement acceptance is complete. Paid checkout, real payment/refund receipts, commercial activation and actual-cost profitability remain explicitly unaccepted follow-on work. Unknown provider liabilities must not become zero cost. |
 | Fast responsive pages and SEO | OPEN | Public views were observed at 390, 768 and 1,440 pixels without horizontal overflow; signed-in search/billing views were also observed at 390 pixels. Fresh signed-in workspace and resume review observations at 320 and 1,024 pixels show no horizontal page overflow. Keyboard focus, mobile navigation and horizontally scrolling section access passed. Exact-source preview and canonical pricing/auth metadata corrections were accepted. The reset form passed desktop/mobile layout, fragment-removal and normal-session stability checks. Both domains serve the billing/upload corrections, and the canonical upload passed. | Finish companion recovery, pending states and actionable errors within the authenticated pilot journey. Preserve noindex/no-referrer and reset-token privacy. These observations do not establish complete accessibility, Core Web Vitals or mobile field performance. |
-| GCP/Vercel deployment, preserved-data migration and monitoring | OPEN | Schema21 migration, all four source7a/imagec1ce services, final reopening and canonical health are accepted. Three worker queues are running and all three schedules produced natural HTTP 200 runs; the application queue remains paused. The H18/f3 billing release and its successor upload-reconciliation release are promoted and both canonical aliases verified. The cron mitigation was normally merged in PR41; existing alert/channel mapping and prior inbox delivery are recorded below. | Deploy and accept companion connection recovery, then verify the final serving versions and held controls. Retain honest natural-versus-manual monitoring evidence. Preserve alert handles and distinguish configured routes from actual condition-specific incident/inbox delivery. No deployment-only completion claim. |
+| GCP/Vercel deployment, preserved-data migration and monitoring | OPEN | Schema21 migration, reopening and canonical health are accepted. The accepted 0.8.1 API successor serves source471/imagebf23; the other three services retain source7a/imagec1ce. Three worker queues are running and all three schedules produced natural HTTP 200 runs; the application queue remains paused. The 0.8.1 recovery frontend is promoted and both canonical aliases verified. The cron mitigation was normally merged in PR41, but the latest document-monitor heartbeat is overdue under the unchanged two-hour window; mapping, prior inbox delivery and current freshness limits are recorded below. | Deploy and accept companion connection recovery, then verify the final serving versions and held controls. Retain honest natural-versus-manual monitoring evidence. Preserve alert handles and distinguish configured routes from actual condition-specific incident/inbox delivery. No deployment-only completion claim. |
 
 ## Current rollout state and preserved authority
 
-The accepted backend source is
-**`7a00839dc90a93caebb0b3b5f2e9e03c51e941e9`**. Its normal merge into main is
-**`9a60f2ac9c484de431628b77c48074255c8f6df4`**, with the identical Git tree
-**`01e25ec0831d89c9bb4e05641650ff76f46136f0`**. All four services use accepted
-immutable image **`sha256:c1ce5b32…`** and a single untagged 100-percent route.
+The schema21 application release used source
+**`7a00839dc90a93caebb0b3b5f2e9e03c51e941e9`**, normally merged as
+**`9a60f2ac9c484de431628b77c48074255c8f6df4`**, with identical Git tree
+**`01e25ec0831d89c9bb4e05641650ff76f46136f0`**. Its three worker/coordinator
+services retain immutable image **`sha256:c1ce5b32…`**. The later diagnostics-only
+API release used source **`65d743a9b63f32e5509da381279b376804bdb606`** and image
+**`sha256:2077e476…`**. Its accepted 0.8.1 successor now uses source
+**`47169c10c970a87a48bd5d26ece9b146996cd400`** and image **`sha256:bf23b42b…`**.
+The actual promotion acknowledgment and canonical health passed, with the other
+three services, queues and schedules unchanged. Each canonical service has one
+untagged 100-percent route.
 
 | Service | Accepted canonical revision |
 |---|---|
-| API | `ai-resume-parser-activate-387054174fd0` |
+| API | `ai-resume-parser-companion081-a15041a8859a` |
 | Analysis worker | `hirewiz-analysis-worker-activate-d2598748799e` |
 | Employer worker | `hirewiz-employer-worker-activate-f5d5e2474f5c` |
 | Resume coordinator | `hirewiz-resume-coordinator-activate-a48ebe3f111c` |
+
+The 0.8.1 API revision is generation **326**, with independent canonical
+verification passed. Its corresponding frontend
+**`dpl_3ZDhWrGvpgDsZKWepiZ2uWD55hps`** is promoted and both canonical aliases
+were verified at **24 October 2026, 01:01:53 UTC**. No schema, global authority
+epoch, signing key or employer-write hold is changed by this recovery release.
 
 Canonical API, analysis and employer health checks passed. Natural scheduler
 attempts independently matched HTTP 200 on the final revisions: scan at
@@ -100,10 +121,12 @@ reopening is recorded above; sales and employer-write holds remain independent.
 The H18 billing release used frontend source **`f3c05034`**. The later
 upload-reconciliation source **`7529c0413f4bee797ee1203fd3f1119f0b4ea4d7`** was merged
 as **`533fc005c0455119947e25a9f0ada2c9be17935f`** and promoted on 23 October.
-Both `hirewizhq.com` and `www.hirewizhq.com` resolve to the accepted successor;
-canonical alias readback passed at **22:46:23 UTC**. Automatic custom-domain
-assignment remains disabled. These frontend-only corrections required no backend
-image or schema change.
+Its canonical alias readback passed at **22:46:23 UTC**. The later 0.8.1 recovery
+frontend supersedes it on both `hirewizhq.com` and `www.hirewizhq.com`; the latest
+alias readback passed at **24 October 2026, 01:01:53 UTC**. Automatic custom-domain
+assignment remains disabled. The billing/upload corrections themselves required
+no backend image or schema change; the 0.8.1 recovery API successor is recorded
+separately above.
 
 ## Accepted product evidence and remaining human journey
 
@@ -155,17 +178,21 @@ recovery step.
 Reset tokens remain private, single-use and absent from the URL after handoff;
 posted/uncertain confirmation must not auto-repeat. Existing acknowledgment and
 PENDING rules remain intact. Companion installation alone does not establish
-pairing: browser-device preparation received upstream **503** at
-**22:42:19.214 UTC**, with no known creation/pairing ID. The existing attempt is
-under diagnosis; another Start or write is not authorized. The 0.8.1 recovery
-change retains public connection references before creation and inspects both
+pairing. The original browser-device preparation received upstream **503** at
+**22:42:19.214 UTC**, with no known creation/pairing ID, and remains preserved.
+The accepted 0.8.1 API recovery change retains public connection references before
+creation and inspects both
 permanent key-ownership stores using a signed device proof. Only an actual
 UNCLAIMED result can enable an explicit archive of the uncertain attempt;
 starting again remains a separate candidate action. Claimed keys, unavailable
 observations and uncertain completion remain blocked. This source implementation
-and its controlled tests do not establish a deployed recovery or paired device.
+and its controlled tests do not establish a paired device or successful
+candidate-reviewed assistance. The eighteen installed code files are updated to
+0.8.1; the extension key, permissions, profile and IndexedDB are preserved.
+Human reload and real recovery remain pending. A fresh connection must not
+silently replace an uncertain attempt.
 
-The latest actual search followed a displayed three-credit balance and an exact
+The accepted three-result search followed a displayed three-credit balance and an exact
 three-result quote at **one credit per job**. Three of three Software Engineer
 roles were returned; exactly **3** service credits were charged, **0** released,
 and **0 held / 0 available** remained, while AI stayed **7**. The older
@@ -173,6 +200,15 @@ irrelevant result and separate audited quality adjustment remain distinct histor
 These actual results complete original outcomes 1 and 4 within the approved free
 twenty-origin pilot. They do not establish worldwide coverage, paid sales, real
 payment acceptance or commercial profitability.
+
+A separately approved, audited **one-credit unpaid QA promotion** supported one
+later normal search. It returned Razorpay's Lead Software Development Engineer
+role in Bengaluru, charged **1**, refunded **0**, and left **0** service credits
+while AI stayed **7**. This is distinct from the original three-credit search
+settlement and is not a payment or revenue receipt. The candidate then created
+an internal application bound to the exact original resume. All answers remain
+blank, its state needs action, and no employer write or assisted submission is
+claimed.
 
 Finite offers remain Starter **₹649 / 100 service credits + 2 AI units**, Growth
 **₹1,099 / 300 + 6**, and Scale **₹2,199 / 700 + 15**. Prices remain one service
@@ -203,16 +239,23 @@ GitHub run materialized at **22:07:17 UTC** and completed successfully at
 preimage check, which had found no active run. The separately authorized
 **manual** monitor completed at **22:08:35 UTC**, emitted a fresh
 event at **22:08:27 UTC**, and produced observed positive heartbeat metric points.
-The new positive metric points are fresh under the unchanged two-hour absence window.
-No Build, native Job, deployment, scanner-validity extension or synthetic heartbeat
-was performed. This manual recovery does not prove future cron reliability.
+Those positive points were fresh at that observation. The latest observed
+natural run still completed at **22:07:56 UTC** and the latest observed heartbeat
+is the manual **22:08:27 UTC** event on 23 October. At this update it is overdue
+under the unchanged **7,200-second** absence window. No later natural scheduled
+run is observed despite the active `17,47` cron. No Build, native Job, deployment,
+scanner-validity extension or synthetic heartbeat was performed. The existing
+stale-heartbeat alert and prior accepted notification evidence remain recorded;
+this gap alone does not establish a new incident state or a provider-delay cause.
+The manual recovery does not prove ongoing natural cadence.
 
 The one-line mitigation changes monitor cron from `17 * * * *` to
 `17,47 * * * *`; daily refresh `37 1 * * *`, permissions, WIF, environment,
 concurrency and alert thresholds remain unchanged. It adds a second hourly
 opportunity and was normally merged in PR41 as `7c1910c8` at
-**23 October 2026, 23:04:27 UTC**. Natural
-cadence must remain honestly distinguished from the manual recovery. Do not
+**23 October 2026, 23:04:27 UTC**. It is a configured mitigation, not evidence
+that later scheduled runs executed. Natural cadence must remain honestly
+distinguished from the manual recovery. Do not
 force a production failure or send a test email to manufacture alert acceptance.
 
 There is **no dependable remaining completion ETA**. Do not invent original

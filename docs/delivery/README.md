@@ -1,31 +1,43 @@
 # Delivery evidence
 
-Start with the [full product requirements](../requirements/JOB_SEARCH_AND_APPLICATION.md)
-and the [remaining requirements register](REMAINING_REQUIREMENTS.md). A passing component
-report closes only the behavior and environment it actually verifies.
+Start with the [current pilot progress board](AUTO_APPLY_PROGRESS.md) and the
+[full product requirements](../requirements/JOB_SEARCH_AND_APPLICATION.md).
+The board preserves the six original outcomes: **1, 2 and 4 are complete within
+the approved free twenty-origin pilot; 3, 5 and 6 remain open**. Worldwide
+coverage, paid sales, real payment acceptance and commercial profitability remain
+follow-on work. A component report closes only the behavior it verifies.
 
-## Current production
+## Current production and rollout
 
-- [Service-credit links and mobile navigation](FRONTEND_CREDITS_RELEASE_2026-10-09.md):
-  frontend `06cc112` is promoted to both HireWiz domains. Search/application credits remain
-  distinct from analysis units and Premium; a purchase URL cannot make a payment.
-- [Catalog snapshot release](CATALOG_SNAPSHOT_RELEASE_2026-10-09.md): the serving GCP
-  backend remains `e7d8f2b`; its last verified schema is `0009`. This is discovery and
-  application preparation, not completed browser-assisted or automatic applications.
+Schema **`20261023_0021`** is accepted. The canonical API uses 0.8.1 recovery
+source `47169c10` / image `bf23b42b`; the analysis, employer and resume coordinator
+services retain source `7a00839d` / image `c1ce5b32`. The 0.8.1 recovery
+successor is normally merged as `bf9b23a4` from reviewed source `47169c10`.
+Its API promotion, independent canonical health and frontend promotion passed;
+both canonical aliases target `dpl_3ZDhWrGvpgDsZKWepiZ2uWD55hps`, verified
+24 October 2026 at 01:01:53 UTC. Same-extension human reload and real companion
+acceptance remain pending. Use the progress board for remaining work and
+current document-monitor freshness: the last observed heartbeat is overdue under
+the unchanged two-hour window, despite the configured cron mitigation.
 
-## Reviewed source awaiting deployment
+The genuine search, resume-preservation, password-reset, enrollment and finite
+credit evidence is recorded on that board. The candidate's Razorpay application
+is internal preparation with blank answers; it is not an employer receipt. Sales,
+checkout and employer writes remain held, with the employer-application queue
+paused.
 
-- [Candidate website integration](CANDIDATE_WEB_ROOT_INTEGRATION_2026-10-09.md):
-  exact reviewed account transport and actual local browser/API/data checks.
-  Private ingress, protected browser connection and deployment remain open.
-- [Recovery and monetary integration](RECOVERY_MONETARY_INTEGRATION_2026-10-09.md):
-  exact reviewed publication and database-checking source, with activation limits.
-- [Monetary cutover preparation](MONETARY_CUTOVER_PREPARATION_2026-10-09.md):
-  credential consumer inventory and rollout order. Retiring shared credentials, draining
-  work and promoting schema `0010` are still outstanding.
-- [Protected publication](PASSWORD_PUBLICATION_GATE_2026-10-09.md): a bounded emergency
-  closure foundation. Normal per-candidate availability, scalable complete cuts and real
-  protected-resource permissions are separate release requirements.
+## Historical implementation and evidence
+
+The following dated reports retain their original source, environment and
+observation limits; their then-pending work is not the current release register:
+
+- [Service-credit links and mobile navigation](FRONTEND_CREDITS_RELEASE_2026-10-09.md)
+- [Catalog snapshot release](CATALOG_SNAPSHOT_RELEASE_2026-10-09.md)
+- [Candidate website integration](CANDIDATE_WEB_ROOT_INTEGRATION_2026-10-09.md)
+- [Recovery and monetary integration](RECOVERY_MONETARY_INTEGRATION_2026-10-09.md)
+- [Monetary cutover preparation](MONETARY_CUTOVER_PREPARATION_2026-10-09.md)
+- [Protected publication](PASSWORD_PUBLICATION_GATE_2026-10-09.md)
+- [Remaining requirements chronology](REMAINING_REQUIREMENTS.md)
 
 ## Browser and evaluation work
 
