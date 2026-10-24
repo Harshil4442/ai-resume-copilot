@@ -7,6 +7,7 @@ import { SessionProvider, useSession } from "next-auth/react";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { capturePasswordResetLink } from "../lib/passwordResetLink";
+import { retryRead } from "../lib/readQueryPolicy";
 
 // Keep these destinations aligned with the authentication matcher in proxy.ts.
 const PRIVATE_ROUTES = ["/dashboard", "/resume", "/jobs", "/employer-jobs", "/workspace", "/market", "/learning", "/profile", "/billing"];
@@ -22,7 +23,7 @@ function OwnerQueryProvider({
         defaultOptions: {
           queries: {
             staleTime: 30_000,
-            retry: 1,
+            retry: retryRead,
             refetchOnWindowFocus: false,
           },
           mutations: { retry: 0 },

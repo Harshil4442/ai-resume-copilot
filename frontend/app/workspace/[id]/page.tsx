@@ -58,6 +58,8 @@ import {
   stages,
 } from "../../../lib/career";
 import { trackEvent } from "../../../lib/analytics";
+import { retryRead } from "../../../lib/readQueryPolicy";
+import { useProgressQuery } from "../../../lib/useProgressQuery";
 import type { ResumeListResponse, ResumeSourceFormat } from "../../../lib/types";
 
 type Tab = "overview" | "resume" | "learning" | "interview" | "activity" | "outcome";
@@ -103,15 +105,17 @@ const terminal = new Set(["succeeded", "failed", "cancelled"]);
 const interviewQuestionCount = 8;
 
 function useRun(runId: string | null) {
-  return useQuery({
+  return useProgressQuery({
     queryKey: ["analysis-run", runId],
-    queryFn: () => apiGet<AnalysisRun>(`/v1/analysis-runs/${runId}`),
+    queryFn: ({ signal }) => apiGet<AnalysisRun>(`/v1/analysis-runs/${runId}`, signal),
     enabled: Boolean(runId),
-    refetchInterval: (query) => {
-      const run = query.state.data as AnalysisRun | undefined;
-      return run && terminal.has(run.status) ? false : 1_200;
-    },
+    active: (run) => !run || !terminal.has(run.status),
   });
+}
+
+function RunStatusCheck({ query, label }: { query: ReturnType<typeof useRun>; label: string }) {
+  if (!query.pollingPaused) return null;
+  return <div role="status" className="mt-4 space-y-3 text-sm"><p>Automatic progress checks are paused. The existing request may still be running; checking status does not start it again.</p><Button variant="secondary" disabled={query.isFetching} onClick={() => void query.refetch()}>Check {label} status</Button></div>;
 }
 
 function useRunResult(run: AnalysisRun | undefined) {
@@ -215,7 +219,7 @@ function OpportunityContent() {
     queryKey: ["opportunity-match", opportunityId],
     queryFn: () => apiGet<OpportunityMatch>(`/v1/opportunities/${opportunityId}/match`),
     enabled: Boolean(opportunity.data?.latest_match_id),
-    retry: (count, error) => !(error instanceof ApiError && error.status === 404) && count < 1,
+    retry: (count, error) => !(error instanceof ApiError && error.status === 404) && retryRead(count, error),
   });
   const evidence = useQuery({
     queryKey: ["evidence", opportunity.data?.resume_id],
@@ -238,14 +242,14 @@ function OpportunityContent() {
     if (matchRun.data?.status === "succeeded") {
       void queryClient.invalidateQueries({ queryKey: ["opportunity-match", opportunityId] });
       void queryClient.invalidateQueries({ queryKey: ["opportunity", opportunityId] });
-      void queryClient.invalidateQueries({ queryKey: ["nav-profile"] });
+      void queryClient.invalidateQueries({ queryKey: ["profile"] });
     }
   }, [matchRun.data?.status, opportunityId, queryClient]);
 
   useEffect(() => {
     if (tailorRun.data?.status === "succeeded") {
       void queryClient.invalidateQueries({ queryKey: ["opportunity", opportunityId] });
-      void queryClient.invalidateQueries({ queryKey: ["nav-profile"] });
+      void queryClient.invalidateQueries({ queryKey: ["profile"] });
     }
   }, [opportunityId, queryClient, tailorRun.data?.status]);
 
@@ -254,7 +258,7 @@ function OpportunityContent() {
       if (!run || !terminal.has(run.status) || trackedTerminalRuns.current.has(run.id)) continue;
       trackedTerminalRuns.current.add(run.id);
       if (run.operation === "interview_questions" || run.operation === "resume_tailor") {
-        void queryClient.invalidateQueries({ queryKey: ["nav-profile"] });
+        void queryClient.invalidateQueries({ queryKey: ["profile"] });
       }
       trackEvent(run.status === "succeeded" ? "analysis_completed" : "analysis_failed", {
         run_id: run.id,
@@ -502,7 +506,7 @@ function OpportunityContent() {
     : sourceState === "unknown_metadata" ? "The selected resume's original file status is unknown. Refresh details before uploading again."
     : sourceState === "confirmed_absent" ? `${approvedCount > 0 ? "Your evidence is approved, but the selected resume's original file is missing." : "The selected resume's original file is missing."} Upload the original PDF or DOCX again, use it for this opportunity, then import and approve the new upload's facts.`
     : null;
-  const tailoringIsRunning = startTailoring.isPending || Boolean(tailorRun.data && !terminal.has(tailorRun.data.status));
+  const tailoringIsRunning = startTailoring.isPending || Boolean(tailorRunId && (!tailorRun.data || !terminal.has(tailorRun.data.status)));
   const tailoringIssue = connectResume.isPending ? "Connecting the selected resume. Please wait before generating a version or saving a source snapshot." : sourceIssue || (evidence.isLoading ? "Loading evidence for the selected resume before tailoring. You can still save a source snapshot."
     : evidence.isError ? "Could not load evidence for the selected resume. Refresh evidence before tailoring. You can still save a source snapshot."
     : approvedCount === 0 ? "Import and approve relevant evidence above before generating a tailored version. A source snapshot does not require approved evidence."
@@ -513,7 +517,7 @@ function OpportunityContent() {
   const questions = interviewResult.data?.result as unknown as InterviewResult | undefined;
   const interviewQuestions = questions?.questions || [];
   const evidenceBackedCount = interviewQuestions.filter((question) => question.answer_state === "evidence_backed").length;
-  const interviewIsRunning = startInterview.isPending || Boolean(interviewRun.data && !terminal.has(interviewRun.data.status));
+  const interviewIsRunning = startInterview.isPending || Boolean(interviewRunId && (!interviewRun.data || !terminal.has(interviewRun.data.status)));
   const tailored = tailorResult.data?.result as unknown as TailorResult | undefined;
 
   function reviewResumeEvidence() {
@@ -582,8 +586,8 @@ function OpportunityContent() {
                 </select>
               </label>
             ) : null}
-            <div className="grid gap-2 sm:col-span-2 xl:col-span-1"><label className="grid gap-2 text-xs font-bold text-muted-foreground">Match mode · 1 analysis unit<select className="field-control" value={matchMode} onChange={(event) => setMatchMode(event.target.value as "basic" | "enhanced")} disabled={startMatch.isPending || Boolean(matchRun.data && !terminal.has(matchRun.data.status))}><option value="basic">Basic skill comparison · no generative AI</option><option value="enhanced">Enhanced assessment · uses AI</option></select></label><div className="flex items-end gap-2">
-              <Button className="min-h-11 flex-1 whitespace-nowrap xl:flex-none" onClick={() => startMatch.mutate()} disabled={startMatch.isPending || Boolean(matchRun.data && !terminal.has(matchRun.data.status))}>
+            <div className="grid gap-2 sm:col-span-2 xl:col-span-1"><label className="grid gap-2 text-xs font-bold text-muted-foreground">Match mode · 1 analysis unit<select className="field-control" value={matchMode} onChange={(event) => setMatchMode(event.target.value as "basic" | "enhanced")} disabled={startMatch.isPending || Boolean(matchRunId && (!matchRun.data || !terminal.has(matchRun.data.status)))}><option value="basic">Basic skill comparison · no generative AI</option><option value="enhanced">Enhanced assessment · uses AI</option></select></label><div className="flex items-end gap-2">
+              <Button className="min-h-11 flex-1 whitespace-nowrap xl:flex-none" onClick={() => startMatch.mutate()} disabled={startMatch.isPending || Boolean(matchRunId && (!matchRun.data || !terminal.has(matchRun.data.status)))}>
                 {matchRun.data && !terminal.has(matchRun.data.status) ? <LoaderCircle size={16} className="animate-spin" /> : <Sparkles size={16} />}
                 {latestMatch ? "Refresh match" : "Run match"}
               </Button>
@@ -595,6 +599,7 @@ function OpportunityContent() {
         </header>
 
         {(startMatch.isError || matchRun.data) ? <AnalysisRunFeedback run={matchRun.data} /> : null}
+        <RunStatusCheck query={matchRun} label="match" />
         {startMatch.isError ? <p className="mt-3 text-sm text-coral">{startMatch.error instanceof Error ? startMatch.error.message : "Could not start analysis."}</p> : null}
         {stageError || transition.isError ? <p className="mt-3 text-sm text-coral">{stageError || (transition.error instanceof Error ? transition.error.message : "Could not update application stage.")}</p> : null}
         {exportOpportunity.isError ? <p className="mt-3 text-sm text-coral">{exportOpportunity.error instanceof Error ? exportOpportunity.error.message : "Could not export this opportunity."}</p> : null}
@@ -613,7 +618,7 @@ function OpportunityContent() {
             <div className="grid gap-10 xl:grid-cols-[1fr_340px]">
               <section className="min-w-0">
                 {latestMatch ? <MatchSummary match={latestMatch} /> : (
-                  <EmptyState icon={Gauge} title="No match analysis yet" description="Connect a resume and run a match to compare this role with your approved career evidence." action={<Button disabled={startMatch.isPending || !item.resume_id || Boolean(matchRun.data && !terminal.has(matchRun.data.status))} onClick={() => startMatch.mutate()}><Sparkles size={16} /> Run match</Button>} />
+                  <EmptyState icon={Gauge} title="No match analysis yet" description="Connect a resume and run a match to compare this role with your approved career evidence." action={<Button disabled={startMatch.isPending || !item.resume_id || Boolean(matchRunId && (!matchRun.data || !terminal.has(matchRun.data.status)))} onClick={() => startMatch.mutate()}><Sparkles size={16} /> Run match</Button>} />
                 )}
                 {latestMatch?.improvement_tips.length ? (
                   <div className="mt-10 border-t border-border pt-7">
@@ -739,6 +744,7 @@ function OpportunityContent() {
                   </div>
                 </div>
                 <AnalysisRunFeedback run={tailorRun.data} onSaveSourceSnapshot={() => createVersion.mutate()} sourceSnapshotDisabled={connectResume.isPending || !sourceReady || createVersion.isPending} />
+                <RunStatusCheck query={tailorRun} label="tailoring" />
                 {startTailoring.isError ? <p className="mt-3 text-sm text-coral" role="alert">{startTailoring.error instanceof Error ? startTailoring.error.message : "Could not start tailoring."}</p> : null}
                 {tailored ? <p className="mt-4 border-l-2 border-primary pl-4 text-sm font-semibold text-primary" role="status">Version {tailored.version_number} created. Review its proposed changes below before approval.</p> : null}
                 {createVersion.isError ? <p className="mt-3 text-sm text-coral" role="alert">{createVersion.error instanceof Error ? createVersion.error.message : "Could not save the source snapshot."}</p> : null}
@@ -852,6 +858,7 @@ function OpportunityContent() {
                 </div>
               ) : null}
               <AnalysisRunFeedback run={interviewRun.data} />
+              <RunStatusCheck query={interviewRun} label="interview" />
               {startInterview.isError ? <p className="mt-4 text-sm text-coral" role="alert">{startInterview.error instanceof Error ? startInterview.error.message : "Could not generate questions. Please try again."}</p> : null}
               {interviewResult.isLoading ? <div className="mt-6"><LoadingBlock rows={3} /></div> : null}
               {interviewResult.isError ? <div className="mt-4 flex flex-wrap items-center gap-3 text-sm" role="alert"><p className="text-coral">Could not load your interview questions.</p><Button variant="secondary" size="sm" onClick={() => void interviewResult.refetch()}>Retry loading</Button></div> : null}

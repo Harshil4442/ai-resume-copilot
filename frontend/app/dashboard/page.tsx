@@ -20,6 +20,7 @@ import { EmptyState } from "../../components/ui/EmptyState";
 import { LoadingBlock } from "../../components/ui/LoadingBlock";
 import { StatusBadge } from "../../components/ui/StatusBadge";
 import { apiGet } from "../../lib/api";
+import { ownerProfileQueryOptions } from "../../lib/ownerProfile";
 import { trackEvent } from "../../lib/analytics";
 import { finiteCreditBundles } from "../../lib/billingProducts";
 import type { OpportunityList, Reminder } from "../../lib/career";
@@ -42,7 +43,7 @@ function formatDue(value: string) {
 }
 
 export default function DashboardPage() {
-  const profile = useQuery({ queryKey: ["profile"], queryFn: () => apiGet<UserProfile>("/auth/profile") });
+  const profile = useQuery(ownerProfileQueryOptions());
   const analytics = useQuery({ queryKey: ["analytics-summary"], queryFn: () => apiGet<AnalyticsSummary>("/analytics/summary") });
   const features = useQuery({ queryKey: ["feature-decisions"], queryFn: () => apiGet<FeatureResponse>("/v1/features"), staleTime: 60_000 });
   const upgradeTracked = useRef(false);

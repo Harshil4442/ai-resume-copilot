@@ -1,5 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useState } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 const state = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), track: vi.fn() }));
 vi.mock("../../lib/api", () => ({
@@ -10,10 +12,22 @@ vi.mock("../../lib/api", () => ({
   },
 }));
 vi.mock("../../lib/analytics", () => ({ trackEvent: state.track }));
-vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams("sku=starter_bundle") }));
+vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams("sku=starter_bundle"), usePathname: () => "/billing" }));
+vi.mock("next-auth/react", () => ({ useSession: () => ({ status: "authenticated", data: { user: { id: "billing-owner", email: "owner@example.test" } } }) }));
 
 import { ApiError } from "../../lib/api";
-import BillingPage from "./page";
+import ActualBillingPage from "./page";
+import Nav from "../../components/Nav";
+
+const clients = new Set<QueryClient>();
+function BillingPage({ navigation = false }: { navigation?: boolean }) {
+  const [client] = useState(() => {
+    const value = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    clients.add(value);
+    return value;
+  });
+  return <QueryClientProvider client={client}>{navigation ? <Nav /> : null}<ActualBillingPage /></QueryClientProvider>;
+}
 
 type AcceptedQuote = {
   catalog_version: string;
@@ -99,9 +113,28 @@ beforeEach(() => {
   openCheckout.mockClear();
   window.Razorpay = hostedCheckout as unknown as NonNullable<Window["Razorpay"]>;
 });
-afterEach(() => { cleanup(); delete window.Razorpay; });
+afterEach(() => { cleanup(); clients.forEach((client) => client.clear()); clients.clear(); delete window.Razorpay; });
 
 describe("billing account balance", () => {
+  it("shares Nav's profile read and joins its single refresh after verified payment status", async () => {
+    let profileReads = 0;
+    state.get.mockImplementation((url: string) => {
+      if (url === "/auth/profile") return Promise.resolve({ tier: "free", ai_credits: ++profileReads === 1 ? 7 : 9 });
+      if (url === "/v1/features") return Promise.resolve({ features: {} });
+      if (url === "/billing/recent-order") return Promise.resolve(orderStatus());
+      if (url === "/billing/orders/order_original_fixture") return Promise.resolve(orderStatus("paid"));
+      return read(url);
+    });
+    render(<BillingPage navigation />);
+    await screen.findByTitle("7 analysis units remaining");
+    const check = await screen.findByRole("button", { name: "Check payment status" });
+    expect(profileReads).toBe(1);
+    fireEvent.click(check);
+    await screen.findByRole("heading", { name: "Payment confirmed" });
+    await screen.findByTitle("9 analysis units remaining");
+    expect(profileReads).toBe(2);
+    expect(state.post).not.toHaveBeenCalled();
+  });
   it("matches the authoritative account and ledger balance when profile omits service credits", async () => {
     let resolveAccount!: (account: { job_service_credits: number }) => void;
     const account = new Promise<{ job_service_credits: number }>((resolve) => { resolveAccount = resolve; });

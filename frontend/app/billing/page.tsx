@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -23,6 +24,7 @@ import { Button } from "../../components/ui/Button";
 import { LoadingBlock } from "../../components/ui/LoadingBlock";
 import { ServiceCreditHistory } from "../../components/billing/ServiceCreditHistory";
 import { trackEvent } from "../../lib/analytics";
+import { ownerProfileQueryOptions } from "../../lib/ownerProfile";
 import { finiteCreditBundles, isFiniteBundleSku as isSupportedSku, type CreditBundleProduct, type FiniteBundleSku } from "../../lib/billingProducts";
 
 const RAZORPAY_CHECKOUT_SRC = "https://checkout.razorpay.com/v1/checkout.js";
@@ -210,6 +212,7 @@ function usageEventLabel(event: UsageEvent): string {
 }
 
 function BillingContent({ requestedSku }: { requestedSku: string | null }) {
+  const queryClient = useQueryClient();
   const mountedRef = useRef(true);
   const pollRunRef = useRef(0);
   const confirmedOrderRef = useRef(new Set<string>());
@@ -232,13 +235,13 @@ function BillingContent({ requestedSku }: { requestedSku: string | null }) {
   const [recoverablePurchase, setRecoverablePurchase] = useState<{ sku: SupportedSku; acceptedQuote: PurchaseQuoteAcceptance } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const refreshProfile = useCallback(async () => {
-    const profile = await apiGet<components["schemas"]["UserProfileResponse"]>("/auth/profile");
+  const refreshProfile = useCallback(async (force = false) => {
+    const profile = await queryClient.fetchQuery({ ...ownerProfileQueryOptions(), ...(force ? { staleTime: 0 } : {}) });
     if (!mountedRef.current) return;
     setCurrentTier(profile.tier || "free");
     setAnalysisUnits(profile.ai_credits ?? 0);
     setPremiumUntil(profile.premium_until || null);
-  }, []);
+  }, [queryClient]);
 
   const refreshServiceCredits = useCallback(() =>
     apiGet<components["schemas"]["UserMeResponse"]>("/auth/me").then((account) => {
@@ -357,7 +360,9 @@ function BillingContent({ requestedSku }: { requestedSku: string | null }) {
       }
       window.dispatchEvent(new Event("refresh_analysis_units"));
       try {
-        await Promise.all([refreshProfile(), refreshServiceCredits()]);
+        // Join the shared query invalidated by the event above. Force freshness
+        // also when Billing is rendered without a mounted navigation observer.
+        await Promise.all([refreshProfile(true), refreshServiceCredits()]);
       } catch {
         // The verified order status is authoritative. A later profile refresh
         // will pick up the entitlement if this request briefly fails.

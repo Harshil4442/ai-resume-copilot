@@ -11,6 +11,7 @@ import { accountMutationHeaders } from "../lib/accountTransportClient";
 import { getSourcePreservingContent, type Opportunity, type ResumeVersion } from "../lib/career";
 import { applicationStatusLabels, employerJobsBase, safeEmployerUrl, type EmployerApplication, type JobServiceCatalog, type ResumeChoice } from "../lib/employerJobs";
 import { uploadResumeFile, type UploadProgress } from "../lib/resumeUpload";
+import { useProgressQuery } from "../lib/useProgressQuery";
 import type { ResumeListResponse } from "../lib/types";
 import { Button } from "./ui/Button";
 import { ResumeUploadProgress } from "./ResumeUploadProgress";
@@ -53,11 +54,10 @@ export function ArtifactPreview({ application, onReady }: { application: Employe
 }
 
 export default function EmployerApplicationPanel({ id, onClose, onChange, resumes }: Props) {
-  const application = useQuery({
+  const application = useProgressQuery({
     queryKey: ["employer-jobs", "application", id],
     queryFn: ({ signal }) => apiGet<EmployerApplication>(`${employerJobsBase}/applications/${encodeURIComponent(id)}`, signal),
-    staleTime: 0,
-    refetchInterval: (query) => ["queued", "submitting"].includes(query.state.data?.status ?? "") ? 2000 : false,
+    active: (current) => ["queued", "submitting"].includes(current?.status ?? ""),
   });
   const status = application.data?.status;
   useEffect(() => {
@@ -66,7 +66,8 @@ export default function EmployerApplicationPanel({ id, onClose, onChange, resume
   return <Dialog.Root open onOpenChange={(open) => { if (!open) onClose(); }}><Dialog.Portal><Dialog.Overlay className="fixed inset-0 z-[60] bg-black/30 backdrop-blur-sm" /><Dialog.Content className="fixed inset-x-2 top-[3vh] z-[70] mx-auto flex max-h-[94dvh] w-auto max-w-4xl flex-col overflow-hidden rounded-2xl border border-border bg-white shadow-xl sm:inset-x-6 sm:top-[5vh] sm:max-h-[90dvh]">
     <header className="flex shrink-0 items-start justify-between gap-4 border-b border-border p-5 sm:p-6"><div className="min-w-0"><Dialog.Title className="font-display text-2xl sm:text-3xl">Review your application</Dialog.Title><Dialog.Description className="mt-2 text-sm leading-6 text-muted-foreground">Choose the exact file and answers before anything is shared with the employer.</Dialog.Description></div><Dialog.Close asChild><Button variant="ghost" size="icon" aria-label="Close application review"><X size={20} /></Button></Dialog.Close></header>
     <div className="min-h-0 overflow-y-auto overscroll-contain p-5 sm:p-6">
-      {application.isError ? <div role="alert" className="space-y-3"><p className="text-sm text-coral">{application.error.message}</p><Button variant="secondary" onClick={() => void application.refetch()}>Retry loading</Button></div> : application.isLoading || !application.data ? <LoadingBlock rows={5} /> : <ApplicationEditor key={`${id}:${application.data.package_digest}`} application={application.data} onChange={onChange} resumes={resumes} />}
+      {application.pollingPaused && !application.isError ? <div role="status" className="mb-5 space-y-3 text-sm"><p>Automatic status checks are paused. The application may still be in progress.</p><Button variant="secondary" disabled={application.isFetching} onClick={() => void application.refetch()}>Check application status</Button></div> : null}
+      {application.isError ? <div role="alert" className="space-y-3"><p className="text-sm text-coral">{application.error.message}</p><p className="text-sm">Automatic status checks are paused. Checking status does not repeat an employer action.</p><Button variant="secondary" disabled={application.isFetching} onClick={() => void application.refetch()}>Retry loading</Button></div> : application.isLoading || !application.data ? <LoadingBlock rows={5} /> : <ApplicationEditor key={`${id}:${application.data.package_digest}`} application={application.data} onChange={onChange} resumes={resumes} />}
     </div>
   </Dialog.Content></Dialog.Portal></Dialog.Root>;
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { AlertCircle, BriefcaseBusiness, CheckCircle2, Crown, Download, Link as LinkIcon, Save, ShieldOff, Trash2, User } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { guardedSignOut } from "../../lib/candidateAuthClient";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -9,8 +10,9 @@ import CareerMemoryPanel from "../../components/CareerMemoryPanel";
 import { Button } from "../../components/ui/Button";
 import { LoadingBlock } from "../../components/ui/LoadingBlock";
 import { resetAnalyticsIdentity, trackEvent } from "../../lib/analytics";
-import { apiDownload, apiGet, apiPostJson, apiPutJson } from "../../lib/api";
+import { apiDownload, apiPostJson, apiPutJson } from "../../lib/api";
 import type { UserProfile } from "../../lib/types";
+import { ownerProfileQueryKey, ownerProfileQueryOptions } from "../../lib/ownerProfile";
 
 type ProfileForm = Omit<UserProfile, "email" | "profile_completeness" | "missing_fields" | "skills" | "tier" | "ai_credits"> & { skills_text: string };
 
@@ -37,6 +39,7 @@ function splitSkills(text: string) {
 }
 
 export default function ProfilePage() {
+  const queryClient = useQueryClient();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [form, setForm] = useState<ProfileForm>(emptyForm);
   const [loading, setLoading] = useState(true);
@@ -48,11 +51,11 @@ export default function ProfilePage() {
   const [confirmEndPremium, setConfirmEndPremium] = useState(false);
 
   useEffect(() => {
-    apiGet<UserProfile>("/auth/profile")
+    queryClient.fetchQuery(ownerProfileQueryOptions())
       .then((response) => { setProfile(response); setForm(toForm(response)); })
       .catch((loadError) => setError(loadError instanceof Error ? loadError.message : "Failed to load profile"))
       .finally(() => setLoading(false));
-  }, []);
+  }, [queryClient]);
 
   const skills = useMemo(() => splitSkills(form.skills_text), [form.skills_text]);
   function update<K extends keyof ProfileForm>(key: K, value: ProfileForm[K]) {
@@ -67,6 +70,7 @@ export default function ProfilePage() {
     try {
       const { skills_text, ...values } = form;
       const response = await apiPutJson<UserProfile>("/auth/profile", { ...values, skills: splitSkills(skills_text), years_experience: Number(values.years_experience || 0) });
+      queryClient.setQueryData(ownerProfileQueryKey, response);
       setProfile(response);
       setForm(toForm(response));
       setSaved(true);
@@ -84,11 +88,11 @@ export default function ProfilePage() {
     setError(null);
     try {
       await apiPostJson("/billing/end-premium", {});
-      const response = await apiGet<UserProfile>("/auth/profile");
+      window.dispatchEvent(new Event("refresh_analysis_units"));
+      const response = await queryClient.fetchQuery({ ...ownerProfileQueryOptions(), staleTime: 0 });
       setProfile(response);
       setConfirmEndPremium(false);
       trackEvent("premium_access_ended");
-      window.dispatchEvent(new Event("refresh_analysis_units"));
     } catch (accountError) {
       setError(accountError instanceof Error ? accountError.message : "Could not end Premium access.");
     } finally {

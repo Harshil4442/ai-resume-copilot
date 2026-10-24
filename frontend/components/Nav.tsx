@@ -19,13 +19,9 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState, useSyncExternalStore } from "react";
 
 import { apiGet } from "../lib/api";
+import { ownerProfileQueryKey, ownerProfileQueryOptions } from "../lib/ownerProfile";
 import Logo from "./ui/Logo";
 
-type ProfileSummary = {
-  ai_credits: number;
-  tier: string;
-  job_service_credits?: number;
-};
 type FeatureResponse = {
   features: Record<string, { enabled: boolean }>;
 };
@@ -60,13 +56,12 @@ const serverHydrationSnapshot = () => false;
 export default function Nav() {
   const queryClient = useQueryClient();
   const pathname = usePathname();
-  const { data: session, status } = useSession();
+  const { status } = useSession();
   const authenticated = status === "authenticated";
   const [mobileOpen, setMobileOpen] = useState(false);
   const hydrated = useSyncExternalStore(subscribeHydration, clientHydrationSnapshot, serverHydrationSnapshot);
   const profile = useQuery({
-    queryKey: ["nav-profile", session?.user?.email],
-    queryFn: () => apiGet<ProfileSummary>("/auth/profile"),
+    ...ownerProfileQueryOptions(),
     enabled: authenticated,
   });
   const features = useQuery({
@@ -82,8 +77,7 @@ export default function Nav() {
 
   useEffect(() => {
     function refreshCredits() {
-      void queryClient.invalidateQueries({ queryKey: ["nav-profile"] });
-      void queryClient.invalidateQueries({ queryKey: ["profile"] });
+      void queryClient.invalidateQueries({ queryKey: ownerProfileQueryKey });
       void queryClient.invalidateQueries({ queryKey: ["employer-jobs", "catalog"] });
     }
     window.addEventListener("refresh_analysis_units", refreshCredits);
