@@ -47,7 +47,7 @@ test("loopback recorder distinguishes email, manual file and manual submit witho
 test("shipping package pins the public verifier and requests only optional reviewed origins", async () => {
   const manifest = JSON.parse(await readFile(new URL("../extension/manifest.json", import.meta.url)));
   assert.deepEqual(manifest.host_permissions, []);
-  // 0.8.0 declares the reviewed native-network/upload envelope as optional.
+  // 0.8.1 declares the reviewed native-network/upload envelope as optional.
   // Runtime permission requests still bind storage to the exact reviewed origin;
   // declaring this envelope never pre-grants any employer or storage access.
   assert.deepEqual(manifest.optional_host_permissions, ["https://www.hirewizhq.com/*", "https://job-boards.greenhouse.io/*",
@@ -57,7 +57,7 @@ test("shipping package pins the public verifier and requests only optional revie
   assert.equal(manifest.content_scripts, undefined);
   assert.deepEqual(CONFIG, { mode: "reviewed_assistance", websiteOrigin: "https://www.hirewizhq.com",
     portalOrigin: "https://job-boards.greenhouse.io", extensionId: "pnjmegppacleipajnifjmbcopjjffklb",
-    nativePairing: { executorRevision: "companion_0_8_0", authorityKey: { kty: "EC", crv: "P-256",
+    nativePairing: { executorRevision: "companion_0_8_1", authorityKey: { kty: "EC", crv: "P-256",
       x: "s9e6O8vhJr1es7w7VUzYHRPQTQkXvcC_io9LStNFgXU", y: "lhZgC0pB8mkhEaALM7aRf1btp5Z-J-7uUsVOAOl8p5k" } } });
   assert.equal(Object.isFrozen(CONFIG), true);
   const background = await readFile(new URL("../extension/background.js", import.meta.url), "utf8");

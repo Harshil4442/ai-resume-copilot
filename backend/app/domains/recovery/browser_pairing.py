@@ -21,7 +21,7 @@ from .contracts import Digest, Identifier, Timestamp
 from .gcp_buffer import BufferedTransaction
 from .gcp_pairing import GcpPairingCoordinator, _PasswordReadTransaction
 from .gcp_pairing_contracts import PairingCommand
-from .pairing_auth import public_jwk, verify_signature
+from .pairing_auth import key_fingerprint, public_jwk, verify_signature
 from .pairing_contracts import PairingContract, canonical_bytes
 from .password_reauth import (
     CandidateWebSession,
@@ -67,6 +67,17 @@ class PrepareRequest(HttpContract):
     operation: Literal["prepare_request"]
     key: dict[str, str]
     extension_id: Identifier
+    revision: Identifier
+    request_id: UUID
+    issued_at_ms: Timestamp
+    signature: str = Field(pattern=r"^[A-Za-z0-9_-]{86}$")
+
+
+class KeyStatusRequest(HttpContract):
+    protocol_version: Literal[2]
+    operation: Literal["key_status"]
+    key: dict[str, str]
+    extension_id: str = Field(pattern=r"^[a-p]{32}$")
     revision: Identifier
     request_id: UUID
     issued_at_ms: Timestamp
@@ -298,6 +309,20 @@ class NativeBrowserPairing:
 
     def device(self, operation: str, raw: bytes, origin: str) -> dict:
         data = exact_json(raw)
+        if operation == "inspect-key":
+            inspection = KeyStatusRequest.model_validate(data)
+            self._device_origin(origin, extension_id=inspection.extension_id)
+            key = public_jwk(inspection.key)
+            verify_signature(key, "transport-request", inspection.model_dump(mode="json", exclude={"signature"}), inspection.signature)
+            if self.paired_devices is None:
+                raise GuardUnavailable("Protected device key inspection is unavailable")
+            self._consume("browser_device_requests", str(inspection.request_id), context=None,
+                          issued=inspection.issued_at_ms)
+            status = self.paired_devices.key_status(key, extension_id=inspection.extension_id,
+                                                   executor_revision=inspection.revision)
+            return {"protocol_version": 2, "key_sha256": key_fingerprint(key),
+                    "extension_id": inspection.extension_id, "executor_revision": inspection.revision,
+                    "status": status}
         if operation == "prepare":
             prepare = PrepareRequest.model_validate(data)
             self._device_origin(origin, extension_id=prepare.extension_id)

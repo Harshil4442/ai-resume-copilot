@@ -7650,7 +7650,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                operation: "prepare" | "create" | "challenge" | "complete" | "status" | "refresh-challenge" | "refresh";
+                operation: "prepare" | "inspect-key" | "create" | "challenge" | "complete" | "status" | "refresh-challenge" | "refresh";
             };
             cookie?: never;
         };
@@ -7670,6 +7670,34 @@ export interface operations {
                      * @constant
                      */
                     operation: "prepare_request";
+                    /**
+                     * Protocol Version
+                     * @constant
+                     */
+                    protocol_version: 2;
+                    /**
+                     * Request Id
+                     * Format: uuid
+                     */
+                    request_id: string;
+                    /** Revision */
+                    revision: string;
+                    /** Signature */
+                    signature: string;
+                } | {
+                    /** Extension Id */
+                    extension_id: string;
+                    /** Issued At Ms */
+                    issued_at_ms: number;
+                    /** Key */
+                    key: {
+                        [key: string]: string;
+                    };
+                    /**
+                     * Operation
+                     * @constant
+                     */
+                    operation: "key_status";
                     /**
                      * Protocol Version
                      * @constant

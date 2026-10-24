@@ -144,6 +144,13 @@ async function acceptReview() {
   await userEvent.click(screen.getByRole("checkbox"));
 }
 
+it("offers the distinct recovery package and preserves an existing install without any request", () => {
+  render(<BrowserAssistanceReview deviceId={null} reviewId={null} applicationId={null} />);
+  expect(screen.getByRole("link", { name: "Download HireWiz companion 0.8.1" })).toHaveAttribute("href", "/downloads/hirewiz-browser-companion-0.8.1.zip");
+  expect(screen.getByText(/replace its files and reload that same extension; keep its browser storage/)).toBeInTheDocument();
+  expect(request).not.toHaveBeenCalled();
+});
+
 describe("separate exact final-submit approval", () => {
   const approve = () => screen.getByRole("button", { name: "Approve final submission · reserve 20 credits" });
   const consent = () => screen.getByRole("checkbox", { name: /I reviewed every answer, candidate, opening/ });

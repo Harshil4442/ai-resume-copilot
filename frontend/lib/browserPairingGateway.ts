@@ -5,7 +5,7 @@ export const CSRF_COOKIE = "__Host-hirewiz-pairing-csrf";
 export const MAX_PAIRING_BODY = 8192;
 export const MAX_PAIRING_RESPONSE = 16384;
 export const CANDIDATE_OPERATIONS = new Set(["challenge", "confirm", "revoke-challenge", "revoke"]);
-export const DEVICE_OPERATIONS = new Set(["prepare", "create", "challenge", "complete", "status", "refresh-challenge", "refresh"]);
+export const DEVICE_OPERATIONS = new Set(["prepare", "inspect-key", "create", "challenge", "complete", "status", "refresh-challenge", "refresh"]);
 const UUID_PATTERN = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 
 export type RetainedBrowserSession = { candidate_id: number; account_binding_id: string; session_id: string; authentication_method?: "google" };
@@ -138,6 +138,12 @@ function identityPayload(value: unknown, fields: string[], operation: string, li
 }
 
 export function deviceReply(operation: string, value: unknown) {
+  if (operation === "inspect-key") {
+    const data = strictPairingObject(value, ["protocol_version", "key_sha256", "extension_id", "executor_revision", "status"]);
+    if (data.protocol_version !== 2 || typeof data.extension_id !== "string" || !/^[a-p]{32}$/.test(data.extension_id)
+        || !["UNCLAIMED", "CLAIMED"].includes(data.status as string)) throw new Error("Invalid pairing reply");
+    return data;
+  }
   if (value && typeof value === "object" && (value as Record<string, unknown>).status === "UNKNOWN") return candidateReply(operation, value);
   if (operation === "status" || operation === "create") {
     const data = strictPairingObject(value, ["pairing_id", "device_id", "status"]);

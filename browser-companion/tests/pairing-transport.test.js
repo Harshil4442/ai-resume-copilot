@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createHash, webcrypto } from "node:crypto";
 import test from "node:test";
 import { PairingTransport } from "../extension/pairing-transport.js";
+import { PairingRuntime } from "../extension/pairing-runtime.js";
 import { base64url, canonical } from "../extension/protocol.js";
 
 const now = 1800000000000, extensionId = "a".repeat(32);
@@ -45,7 +46,7 @@ test("identity-only client uses raw domain-separated P-256 proofs without bearer
     if (url.endsWith("/prepare")) return Response.json({ request: f.request, nonce: f.nonce });
     return Response.json({ status: "REQUESTED", pairing_id: f.request.pairing_id, device_id: f.request.device_id });
   });
-  const prepared = await f.transport.prepare();
+  const prepared = await f.transport.prepare({ onPrepared: async () => undefined, beforeCreate: async () => undefined });
   assert.equal(prepared.key_sha256, f.request.key_sha256);
   assert.equal(prepared.request_sha256, sha("request", f.request));
   assert.equal(calls.length, 2);
@@ -56,14 +57,14 @@ test("identity-only client uses raw domain-separated P-256 proofs without bearer
 test("client refuses changed request key and does not proceed to creation", async (t) => {
   const f = await setup(); let calls = 0;
   t.mock.method(globalThis, "fetch", async () => { calls++; return Response.json({ request: { ...f.request, key_sha256: "0".repeat(64) }, nonce: f.nonce }); });
-  await assert.rejects(f.transport.prepare(), /exact device/);
+  await assert.rejects(f.transport.prepare({ onPrepared: async () => undefined, beforeCreate: async () => undefined }), /exact device/);
   assert.equal(calls, 1);
 });
 
 test("an unknown commit never causes an automatic repeat POST", async (t) => {
   const f = await setup(); let calls = 0;
   t.mock.method(globalThis, "fetch", async () => { calls++; return Response.json({ status: "UNKNOWN", operation_id: uuid(), retry_allowed: false }); });
-  await assert.rejects(f.transport.prepare(), /retrying.*disabled/);
+  await assert.rejects(f.transport.prepare({ onPrepared: async () => undefined, beforeCreate: async () => undefined }), /retrying.*disabled/);
   assert.equal(calls, 1);
 });
 
@@ -122,4 +123,80 @@ test("companion cancellation rejection preserves the original response bound fai
   await assert.rejects(f.transport.post("status", {}), /Pairing response exceeded its bound/);
   assert.equal(body.locked, false);
   await new Promise((resolve) => setImmediate(resolve));
+});
+
+for (const boundary of ["prepared_receipt", "create_intent"]) {
+  test(`unacknowledged ${boundary} stops real transport before create`, async (t) => {
+    const f = await setup(), calls = [];
+    t.mock.method(globalThis, "fetch", async (url) => { calls.push(url); return Response.json({ request: f.request, nonce: f.nonce }); });
+    await assert.rejects(f.transport.prepare({ onPrepared: async (review) => {
+      assert.deepEqual(Object.keys(review).sort(), ["device_id", "expires_at_ms", "key_sha256", "pairing_id", "request_sha256", "review_url"]);
+      assert.equal(review.request_sha256, sha("request", f.request));
+      if (boundary === "prepared_receipt") throw new Error("Owned storage ACK loss");
+    }, beforeCreate: async () => { if (boundary === "create_intent") throw new Error("Owned storage ACK loss"); } }), /storage ACK loss/);
+    assert.equal(calls.length, 1); assert.match(calls[0], /\/prepare$/);
+  });
+}
+for (const fault of ["create_ack", "create_checkpoint_ack"]) {
+  test(`real signed ${fault} loss preserves public IDs without replay`, async (t) => {
+    const f = await setup(), calls = []; let checkpoint = null, refused = false;
+    const store = { read: async () => structuredClone(checkpoint), write: async (value) => {
+      checkpoint = structuredClone(value);
+      if (fault === "create_checkpoint_ack" && !refused && value.phase === "preparing" && value.send_kind === "create") {
+        refused = true; throw new Error("Owned lost checkpoint ACK");
+      }
+    } };
+    const runtime = await new PairingRuntime({ transport: f.transport, store, checkPermission: async () => undefined, now: () => now }).initialise();
+    t.mock.method(globalThis, "fetch", async (url) => {
+      calls.push(url.split("/").at(-1));
+      if (url.endsWith("/prepare")) return Response.json({ request: f.request, nonce: f.nonce });
+      if (url.endsWith("/create")) {
+        assert.equal(checkpoint.send_kind, "create"); assert.equal(checkpoint.pairing_id, f.request.pairing_id);
+        assert.equal(checkpoint.request_sha256, sha("request", f.request)); throw new Error("Owned lost create ACK");
+      }
+      if (url.endsWith("/status")) return Response.json({ pairing_id: f.request.pairing_id, device_id: f.request.device_id, status: "REQUESTED" });
+      if (url.endsWith("/inspect-key")) return Response.json({ protocol_version: 2, key_sha256: f.request.key_sha256,
+        extension_id: extensionId, executor_revision: f.configuration.executorRevision, status: "UNCLAIMED" });
+      throw new Error("Unexpected operation");
+    });
+    await assert.rejects(runtime.start(), /needs inspection/);
+    assert.equal(checkpoint.pairing_id, f.request.pairing_id); assert.equal(checkpoint.device_id, f.request.device_id);
+    assert.equal(checkpoint.send_kind, fault === "create_ack" ? "create" : "prepare");
+    assert.equal(JSON.stringify(checkpoint).includes(f.nonce), false);
+    assert.equal(Object.keys(checkpoint).some((key) => /nonce|private|signature|claim/.test(key)), false);
+    const restarted = await new PairingRuntime({ transport: f.transport, store, checkPermission: async () => undefined, now: () => now }).initialise();
+    await assert.rejects(restarted.start(), /blocked/);
+    const inspected = await restarted.inspectUnknown();
+    if (fault === "create_ack") { assert.equal(inspected.can_resume_existing, true); await restarted.resumeExisting(); }
+    else { assert.equal(inspected.can_archive_restart, true); await restarted.archiveUnknown(); }
+    assert.deepEqual(calls, fault === "create_ack" ? ["prepare", "create", "status"] : ["prepare", "inspect-key"]);
+  });
+}
+for (const change of [null, "CLAIMED", "key", "revision", "extra", "status"]) {
+  test(`signed key inspection exact binding: ${change ?? "UNCLAIMED"}`, async (t) => {
+    const f = await setup(); let count = 0;
+    t.mock.method(globalThis, "fetch", async (url, options) => {
+      count++; assert.match(url, /\/inspect-key$/);
+      const { signature, ...payload } = JSON.parse(options.body);
+      assert.equal(payload.operation, "key_status"); assert.equal(payload.revision, f.configuration.executorRevision);
+      assert.equal(await webcrypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, f.device.publicKey,
+        Buffer.from(signature, "base64url"), bytes("transport-request", payload)), true);
+      const result = { protocol_version: 2, key_sha256: f.request.key_sha256, extension_id: extensionId,
+        executor_revision: f.configuration.executorRevision, status: change === "CLAIMED" ? "CLAIMED" : "UNCLAIMED" };
+      if (change === "key") result.key_sha256 = "f".repeat(64);
+      if (change === "revision") result.executor_revision = "different";
+      if (change === "extra") result.owner = "unexpected";
+      if (change === "status") result.status = "UNKNOWN";
+      return Response.json(result);
+    });
+    if (change === null || change === "CLAIMED") assert.equal((await f.transport.inspectKey()).status, change ?? "UNCLAIMED");
+    else await assert.rejects(f.transport.inspectKey());
+    assert.equal(count, 1); assert.equal(f.transport.claim, null);
+  });
+}
+
+test("missing durable callbacks fail before any native prepare request", async (t) => {
+  const f = await setup(); let calls = 0;
+  t.mock.method(globalThis, "fetch", async () => { calls++; throw new Error("Unexpected network"); });
+  await assert.rejects(f.transport.prepare(), /Durable connection checkpoints/); assert.equal(calls, 0);
 });

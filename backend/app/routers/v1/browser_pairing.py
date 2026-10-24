@@ -16,6 +16,7 @@ from ...domains.recovery.browser_pairing import (
     CreationProof,
     DeviceLookup,
     DeviceSelection,
+    KeyStatusRequest,
     NativeBrowserPairing,
     PairingSelection,
     PrepareRequest,
@@ -85,8 +86,8 @@ async def candidate(operation: Literal["challenge", "confirm", "revoke-challenge
     return await _dispatch(request, operation, service, candidate=True)
 
 
-@router.post("/device/{operation}", openapi_extra=_request_contract((PrepareRequest, DeviceLookup, CreationProof, ChallengeProof)))
-async def device(operation: Literal["prepare", "create", "challenge", "complete", "status", "refresh-challenge", "refresh"],
+@router.post("/device/{operation}", openapi_extra=_request_contract((PrepareRequest, KeyStatusRequest, DeviceLookup, CreationProof, ChallengeProof)))
+async def device(operation: Literal["prepare", "inspect-key", "create", "challenge", "complete", "status", "refresh-challenge", "refresh"],
                  request: Request,
                  service: NativeBrowserPairing | UnavailableBrowserPairing = Depends(get_browser_pairing)):
     return await _dispatch(request, operation, service, candidate=False)

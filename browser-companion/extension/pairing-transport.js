@@ -71,7 +71,8 @@ export class PairingTransport {
     }
     return data;
   }
-  async prepare() {
+  async prepare({ onPrepared, beforeCreate } = {}) {
+    if (typeof onPrepared !== "function" || typeof beforeCreate !== "function") throw new Error("Durable connection checkpoints are required before preparation");
     this.claim = null;
     const key = publicKey(this.identity.public_key);
     const payload = { protocol_version: 2, operation: "prepare_request", key, extension_id: this.configuration.extensionId,
@@ -82,12 +83,28 @@ export class PairingTransport {
         || canonical(request.public_key) !== canonical(key) || request.key_sha256 !== await digest(domain("public-key", key))
         || request.extension_id !== this.configuration.extensionId || request.executor_revision !== this.configuration.executorRevision
         || request.expires_at_ms <= this.now()) throw new Error("Pairing request does not match this exact device");
+    const review = { pairing_id: request.pairing_id, device_id: request.device_id, key_sha256: request.key_sha256,
+      request_sha256: await digest(domain("request", request)), expires_at_ms: request.expires_at_ms,
+      review_url: `${this.configuration.websiteOrigin}/browser-companion?pairing=${request.pairing_id}` };
+    // Only public reconciliation metadata crosses the durable checkpoint boundary.
+    // A failed/lost checkpoint acknowledgement must stop before creation.
+    await onPrepared(review);
+    await beforeCreate();
     const created = await this.post("create", { pairing_id: request.pairing_id, nonce: prepared.nonce, signature: await this.sign("request", request) });
     if (created.status !== "REQUESTED" || created.pairing_id !== request.pairing_id || created.device_id !== request.device_id) throw new Error("Pairing creation did not return confirmed identity state");
     this.pairingId = request.pairing_id; this.deviceId = request.device_id;
-    return { pairing_id: request.pairing_id, device_id: request.device_id, key_sha256: request.key_sha256,
-      request_sha256: await digest(domain("request", request)), expires_at_ms: request.expires_at_ms,
-      review_url: `${this.configuration.websiteOrigin}/browser-companion?pairing=${request.pairing_id}` };
+    return review;
+  }
+  async inspectKey() {
+    const key = publicKey(this.identity.public_key);
+    const payload = { protocol_version: 2, operation: "key_status", key, extension_id: this.configuration.extensionId,
+      revision: this.configuration.executorRevision, request_id: crypto.randomUUID(), issued_at_ms: this.now() };
+    const result = await this.post("inspect-key", { ...payload, signature: await this.sign("transport-request", payload) });
+    if (Object.keys(result).sort().join(",") !== "executor_revision,extension_id,key_sha256,protocol_version,status"
+        || result.protocol_version !== 2 || result.key_sha256 !== await this.keyDigest()
+        || result.extension_id !== this.configuration.extensionId || result.executor_revision !== this.configuration.executorRevision
+        || !["UNCLAIMED", "CLAIMED"].includes(result.status)) throw new Error("Key inspection does not match this exact browser");
+    return result;
   }
   async lookup(operation, identity) {
     const payload = { protocol_version: 2, operation, identity, request_id: crypto.randomUUID(), issued_at_ms: this.now() };
