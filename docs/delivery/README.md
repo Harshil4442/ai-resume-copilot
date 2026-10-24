@@ -9,22 +9,28 @@ follow-on work. A component report closes only the behavior it verifies.
 
 ## Current production and rollout
 
-Schema **`20261023_0021`** is accepted. The canonical API uses 0.8.1 recovery
-source `47169c10` / image `bf23b42b`; the analysis, employer and resume coordinator
-services retain source `7a00839d` / image `c1ce5b32`. The 0.8.1 recovery
-successor is normally merged as `bf9b23a4` from reviewed source `47169c10`.
-Its API promotion, independent canonical health and frontend promotion passed;
-both canonical aliases target `dpl_3ZDhWrGvpgDsZKWepiZ2uWD55hps`, verified
-24 October 2026 at 01:01:53 UTC. Same-extension human reload and real companion
-acceptance remain pending. Use the progress board for remaining work and
-current document-monitor freshness: the last observed heartbeat is overdue under
-the unchanged two-hour window, despite the configured cron mitigation.
+Schema **`20261023_0021`** is accepted. The canonical API serves request-capacity
+source `0abc7d53` / image `358c9db6` at generation **328**; the analysis, employer
+and resume coordinator retain source `7a00839d` / image `c1ce5b32`. The API stage,
+actual promotion acknowledgment, canonical readbacks and independent verification
+passed. Both canonical aliases target frontend
+`dpl_875XxYMHwUJ3F9pPmVzWY4Sc1fGm`, verified
+**24 October 2026, 03:16:06.122378 UTC**. The same installed 0.8.1 companion was
+reloaded and signed inspection returned **UNCLAIMED**. Fresh reinspection and
+explicit archive preceded one new Start; human persistent-grant approval remains
+pending, so no paired device is accepted. Use the progress board for remaining
+work and timestamped monitoring observations: the natural document monitor passed
+at **01:38:57 UTC**, with run age **3,803 seconds** at the **02:42 UTC** observation.
+Stable unattended cadence remains unproven.
 
 The genuine search, resume-preservation, password-reset, enrollment and finite
 credit evidence is recorded on that board. The candidate's Razorpay application
-is internal preparation with blank answers; it is not an employer receipt. Sales,
-checkout and employer writes remain held, with the employer-application queue
-paused.
+is internal preparation with a successfully saved partial `first_name` answer;
+other answers remain blank, the original file is unchanged, and no employer write
+or receipt is claimed. Sales, checkout and employer writes remain held, with the
+employer-application queue paused. Responsive observations do not establish complete
+accessibility, field Core Web Vitals or mobile field performance. Outcomes **3, 5
+and 6 remain open** until their remaining live acceptance is complete.
 
 ## Historical implementation and evidence
 
