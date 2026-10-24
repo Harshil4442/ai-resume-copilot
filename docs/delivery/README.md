@@ -41,7 +41,10 @@ persistent-device/Greenhouse-host test scope. One separate fresh Start created a
 known request; its single candidate challenge returned **503** before an approval
 form. No confirmation, grant or employer action followed. GCP 500 traces exposed
 a SQLAlchemy shared-pool listener mutation, reproduced by a deterministic test.
-The minimal repair passes **35 focused tests** but is **not deployed yet**.
+The private-view and matching projection repair passes **104 focused tests**,
+including the complete pairing-production cases, but is **not deployed yet**.
+Only the stock Engine/OptionEngine types with redaction are admitted; custom
+subclasses and unredacted views remain refused.
 After that API repair, reconcile the existing request and finish actual pairing,
 native portal inspection, review, cancellation before Fill, revocation and
 zero-execution/accounting readback; these remain unaccepted. Use the progress board for the same remaining

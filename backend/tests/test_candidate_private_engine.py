@@ -5,12 +5,15 @@ from __future__ import annotations
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event
+from types import SimpleNamespace
 
 import pytest
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import Engine, create_engine, event, text
+from sqlalchemy.engine.base import OptionEngine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.pool import QueuePool
 
+from app.domains.browser_assistance.native_pairing import PairingProjection, activation_port
 from app.domains.candidate_accounts.production import _private_engine
 from app.domains.recovery.store import GuardUnavailable
 
@@ -130,6 +133,7 @@ def test_already_private_engine_is_reused_without_pool_initialization():
     try:
         listeners = tuple(source.pool.dispatch.connect)
         assert _private_engine(source) is source
+        assert activation_port(source).sessions.kw["bind"] is source
         assert tuple(source.pool.dispatch.connect) == listeners
     finally:
         source.dispose()
@@ -138,3 +142,65 @@ def test_already_private_engine_is_reused_without_pool_initialization():
 def test_untrusted_non_engine_is_refused():
     with pytest.raises(GuardUnavailable):
         _private_engine(object())
+
+
+def test_real_private_engine_view_composes_with_the_pairing_projection(tmp_path):
+    source = create_engine(
+        f"sqlite:///{tmp_path / 'candidate-pairing-projection.sqlite'}",
+        hide_parameters=False,
+        echo=False,
+    )
+    try:
+        listeners = tuple(source.pool.dispatch.connect)
+        private = _private_engine(source)
+        assert type(private) is OptionEngine
+        projection = activation_port(private)
+        assert type(projection) is PairingProjection
+        assert projection.sessions.kw["bind"] is private
+        with projection.sessions() as session:
+            assert session.scalar(text("SELECT 1")) == 1
+        assert tuple(source.pool.dispatch.connect) == listeners
+        assert private.pool is source.pool and private.dialect is source.dialect
+        assert private.hide_parameters is True and source.hide_parameters is False
+    finally:
+        source.dispose()
+
+
+def test_stock_engine_view_without_redaction_cannot_compose_a_pairing_projection():
+    source = create_engine("sqlite://", hide_parameters=True, echo=False)
+    try:
+        view = source.execution_options()
+        view.hide_parameters = False
+        assert type(view) is OptionEngine and source.hide_parameters is True
+        with pytest.raises(GuardUnavailable, match="Private pairing projection is unavailable"):
+            activation_port(view)
+    finally:
+        source.dispose()
+
+
+@pytest.mark.parametrize("kind", ["engine_subclass", "view_subclass", "duck_type"])
+def test_pairing_projection_rejects_custom_engine_types_even_with_redaction(kind):
+    class CustomEngine(Engine):
+        pass
+
+    class CustomOptionEngine(OptionEngine):
+        pass
+
+    source = create_engine("sqlite://", hide_parameters=True, echo=False)
+    connections = []
+    event.listen(source.pool, "connect", lambda *args: connections.append(True))
+    try:
+        if kind == "engine_subclass":
+            candidate = CustomEngine(source.pool, source.dialect, source.url, hide_parameters=True)
+        elif kind == "view_subclass":
+            candidate = CustomOptionEngine(source, {})
+        else:
+            candidate = SimpleNamespace(
+                hide_parameters=True, pool=source.pool, dialect=source.dialect, echo=False
+            )
+        assert candidate.hide_parameters is True
+        with pytest.raises(GuardUnavailable, match="Private pairing projection is unavailable"):
+            activation_port(candidate)
+        assert connections == []
+    finally:
+        source.dispose()

@@ -10,6 +10,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import Engine
+from sqlalchemy.engine.base import OptionEngine
 from sqlalchemy.orm import sessionmaker
 
 from ...models import CandidatePasswordAccount, User
@@ -24,7 +25,9 @@ from .models import BrowserAssistanceReview as Review
 
 class PairingProjection:
     def __init__(self, engine: Engine):
-        if type(engine) is not Engine or engine.hide_parameters is not True:
+        # Accept the stock private view without admitting arbitrary Engine
+        # subclasses or relaxing the candidate SQL parameter-redaction boundary.
+        if type(engine) not in {Engine, OptionEngine} or engine.hide_parameters is not True:
             raise GuardUnavailable("Private pairing projection is unavailable")
         self.sessions = sessionmaker(bind=engine, expire_on_commit=False)
 
