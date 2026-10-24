@@ -27,6 +27,17 @@ _TYPES = frozenset({
     "ResourceExhausted", "TooManyRequests",
     "InternalServerError", "GoogleAPICallError", "RetryError", "ConnectTimeout", "ReadTimeout",
     "SSLError", "TransportError",
+    # Finite standard Google SDK status and credential class names only. These
+    # labels classify a failure; they do not establish its observed root cause.
+    "GoogleAPIError", "DuplicateCredentialArgs", "Redirection", "MovedPermanently",
+    "NotModified", "TemporaryRedirect", "ResumeIncomplete", "ClientError", "BadRequest",
+    "InvalidArgument", "OutOfRange", "MethodNotAllowed", "Conflict", "AlreadyExists",
+    "LengthRequired", "PreconditionFailed", "RequestRangeNotSatisfiable", "Cancelled",
+    "ServerError", "Unknown", "DataLoss", "MethodNotImplemented", "BadGateway", "GatewayTimeout",
+    "GoogleAuthError", "RefreshError", "UserAccessTokenError", "DefaultCredentialsError",
+    "MutualTLSChannelError", "ClientCertError", "OAuthError", "ReauthFailError",
+    "ReauthSamlChallengeFailError", "MalformedError", "InvalidResource", "InvalidOperation",
+    "InvalidValue", "InvalidType", "ResponseError",
 })
 _GUARDS = {
     "Dedicated Storage SDK metadata suppression is required": "storage_metadata_suppression",
