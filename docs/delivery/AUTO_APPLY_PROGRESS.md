@@ -1,8 +1,9 @@
 # HireWiz development and deployment progress
 
-Updated **24 October 2026 (IST)** after the request-capacity release and accepted
-manual document-maintenance recovery. Original outcomes **1, 2 and 4 are COMPLETE
-within the approved free twenty-origin pilot**; the other three remain **OPEN**. Global
+Updated **25 October 2026 (IST)** after the compatible 0.8.2 frontend/package
+release and accepted manual document-maintenance recovery. Original outcomes
+**1, 2 and 4 are COMPLETE within the approved free twenty-origin pilot**; the other
+three remain **OPEN**. Global
 coverage, sales, real payments and commercial profitability remain follow-on
 work. The goal remains unfinished until the other pilot outcomes are accepted.
 
@@ -20,14 +21,20 @@ remains preserved below. Reopening is accepted: the three reviewed worker queues
 are RUNNING and the three existing schedules are ENABLED. The employer-application queue remains PAUSED;
 sales, checkout and employer submission remain held.
 
-Production frontend **`dpl_875XxYMHwUJ3F9pPmVzWY4Sc1fGm`** contains reviewed
-request-capacity source **`0abc7d53`**, normally merged as **`be95f00c`**. Its
-promotion completed at the earlier recorded observation; both canonical aliases
-still targeted this deployment at **24 October 2026, 15:36 UTC**. Both domains retain
-the configured 0.8.1 archive, and reset-token privacy headers passed. It supersedes the earlier BRu
-upload-reconciliation and H18/f3 billing releases, whose accepted evidence remains
-preserved below. Actual password reset, native enrollment and fresh native
-password sign-in have passed; companion pairing remains pending. The final
+Production frontend **`dpl_HZ2Dg7ns252WaHbcQPU14Da5uJxh`** serves reviewed
+source **`5e2e957d11e3d99b7d7871d59afbf07af443ad6c`**, normally merged in
+**PR49** as **`aa3e6768`**. Both canonical aliases targeted this deployment at
+**24 October 2026, 18:40:35 UTC**. The reviewed 0.8.2 ZIP is **67,162 bytes**,
+SHA-256 **`c952be0f5cf7411a0a5a314b6624fa0264762b0c5668f7eb45805b257de53107`**;
+its staged download and the unchanged 0.8.1 archive returned HTTP 200. Canonical
+0.8.2 download and all eighteen installed source files were verified at
+**18:44:53 UTC**. Native protocol **2** and executor **`companion_0_8_1`** remain
+unchanged; this compatible client recovery patch creates no new native admission
+and changes no backend image, native configuration or employer-write control.
+It supersedes frontend875 while preserving the earlier request-capacity,
+upload-reconciliation and billing evidence below. Reset-token privacy headers
+passed at the staged observation. Actual password reset, native enrollment and
+fresh native password sign-in have passed; companion pairing remains pending. The final
 canonical ZIP upload passed,
 and its downloaded original matched the uploaded bytes exactly at
 **23 October 2026, 23:31:41 UTC**.
@@ -37,15 +44,34 @@ preparation also received upstream **503** at **22:42:19.214 UTC**, without a
 known creation or pairing ID. A bounded database lookup found no committed upload
 for the failed request; only after that reconciliation was one fresh upload made.
 These failures are separate from the deployed 429 status-reconciliation correction.
-The earlier companion attempt and its evidence are preserved. The same extension's eighteen
-code files are updated to 0.8.1 with its key, permissions and local profile data
-preserved. The human completed the same-extension reload; the new runtime
-recognizes the retained ID-less attempt and the original browser key. A genuine
-signed inspection returned **UNCLAIMED**; a fresh reinspection preceded the
-candidate's explicit archive of that uncertain attempt. One separate new Start
-prepared a creation request, and the website fingerprints matched. Persistent
-grant approval is still pending with the human: **no paired device is accepted**.
-Deployment alone does not close an outcome.
+The earlier companion attempt and its evidence are preserved. The previously
+reloaded 0.8.1 runtime recognized the retained ID-less attempt and original key.
+A genuine signed inspection returned **UNCLAIMED**; fresh reinspection preceded
+explicit archival, then one separate Start prepared a creation whose website
+fingerprints matched. That request passed its short creation deadline while
+persistent-grant approval remained pending. The compatible 0.8.2 source files now
+match the reviewed archive, preserving the same extension key, permissions,
+profile and IndexedDB. The human reloaded the same extension, and its enabled
+**Check connection status** control verified the new runtime. Signed inspection
+of the exact retained request reported **EXPIRED**, with the same key **UNCLAIMED**.
+An initial archive attempt correctly refused after its ephemeral inspection was
+lost, before any checkpoint write. Fresh inspection followed by immediate explicit
+archival succeeded, preserving the key, profile and history. The human then
+approved the bounded persistent-device/Greenhouse-host test scope. One separate
+fresh Start created a known request with the same key and new request fingerprint.
+One candidate challenge returned upstream **503** before an approval form appeared;
+no confirmation, device/host grant, paired device or employer action followed.
+The existing request must be reconciled before any further connection ceremony.
+Deployment and expired-request recovery do not close an original outcome.
+
+Sanitized GCP HTTP 500 traces on resume listing, employer catalog and features
+show **`RuntimeError: deque mutated during iteration`** during a SQLAlchemy pool
+connection. Repeated candidate-factory engine creation added listeners to that
+shared pool while another request was iterating them. A deterministic real
+QueuePool test reproduced the same failure. The minimal private engine-view
+repair preserves the pool, dialect, options and redaction; **35 focused tests
+passed**, but **the API repair is not deployed yet**. This demonstrated defect is
+separate from the earlier Firestore quota observations below.
 
 The request-capacity repair is **deployed**. Earlier actual provider
 metrics show HTTP 429 / gRPC status 8 for Firestore Admin `GetDatabase`, and the
@@ -96,10 +122,10 @@ unfinished free-pilot journeys within the same six outcomes.
 |---|---|---|---|
 | Official job search, ranking and user-selected job counts | COMPLETE (free pilot) | Twenty reviewed origins were enabled and refreshed; the retained aggregate recorded 1,366 open postings at that observation. The earlier wrong-role search and its separate audited quality adjustment remain preserved. After reopening, a genuine three-result Software Engineer search returned **3 of 3** appropriate engineering roles. Its quote was **1 credit per job**; it charged **3**, released **0**, left **0 held** and **0 available**, while AI stayed **7**. | Approved free-pilot search acceptance is complete. Worldwide expansion and the independent greater-than-95-percent coverage target remain follow-on work. Preserve exact completed search and settlement history; no additional testing campaign is implied. |
 | Resume tailoring preserving PDF, DOCX and LaTeX formatting | COMPLETE (free pilot) | Real PDF Version 3 retained four safe edits and omitted one unsafe proposal; its download preserves one page, nine links, fonts and 147 unedited positions. Native DOCX, TeX and TeX ZIP original downloads match their source hashes. The unchanged DOCX snapshot is byte-identical. TeX and ZIP sealed PDFs were visually checked and matched to their previews; both retain two links. The exact three database records pass source, ClamAV, native-compilation and recorded cleanup-generation checks. After reconciling the failed POST as uncommitted, one fresh canonical ZIP upload parsed successfully and its original download matched all 917 bytes. | Approved free-pilot resume acceptance is complete. An independent release-user GCS marker read remains permission-unavailable and is not claimed as PASS; no IAM expansion is required by SD03. Unsupported layouts still receive conservative refusal or original/custom options. Unchanged snapshots remain labeled unchanged and do not prove new tailoring. |
-| Candidate-reviewed direct company applications | OPEN | Ordinary Google sign-in passed; the human reports foreground sign-in within five seconds. The human completed password reset; the password-changed email reached INBOX at **23 October 2026, 22:28:41 UTC**. Native enrollment and a fresh native password sign-in both reached the Dashboard. The first reset email also reached INBOX with SPF, DKIM and DMARC passing. The same installed 0.8.1 companion retains its key, permissions and profile. Signed inspection returned **UNCLAIMED**, fresh reinspection preceded explicit archival of the uncertain attempt, and one new Start prepared a creation with matching website fingerprints; human persistent-grant approval remains pending, so no pairing is accepted. A genuine one-credit search returned Razorpay's Lead Software Development Engineer role in Bengaluru. The exact-original internal application now has one successfully saved ordinary `first_name` answer and a loaded preview; other answers remain blank, with **0 reserved / 0 charged**. The active public form remains blank and no employer write occurred. | Complete the pending human approval and verify actual pairing, exact-file/answer review, cancellation before Fill and native device revocation. Retain the separate native inspection/revocation responses and bounded zero-execution/accounting readback. Do not seed an identity/device or bypass proof; employer attachment, upload and final submission are not smoke tests. |
+| Candidate-reviewed direct company applications | OPEN | Ordinary Google sign-in passed; the human reports foreground sign-in within five seconds. The human completed password reset; the password-changed email reached INBOX at **23 October 2026, 22:28:41 UTC**. Native enrollment and a fresh native password sign-in both reached the Dashboard. The first reset email also reached INBOX with SPF, DKIM and DMARC passing. The earlier reloaded 0.8.1 runtime passed signed **UNCLAIMED** inspection and explicit archival before one new Start with matching fingerprints; that creation later passed its deadline without a persistent grant. All eighteen installed 0.8.2 source files match the reviewed ZIP. The human reloaded the same extension; actual exact-request **EXPIRED** and same-key **UNCLAIMED** inspection preceded successful explicit archival, preserving key, permissions, profile and history. The earlier archive refusal after lost ephemeral inspection remains recorded. Human approval for the bounded persistent-device/Greenhouse-host test scope is received. One separate fresh Start created a known request with the same key and a new fingerprint; its single candidate challenge returned **503** before an approval form. No confirmation, grant, pairing or employer action is accepted. Actual GCP 500 traces exposed the shared-pool listener defect; its 35-test private-view repair is prepared but not deployed. A genuine one-credit search returned Razorpay's Lead Software Development Engineer role in Bengaluru. The exact-original internal application now has one successfully saved ordinary `first_name` answer and a loaded preview; other answers remain blank, with **0 reserved / 0 charged**. The active public form remains blank and no employer write occurred. | Deploy the reviewed API repair, reconcile the existing known request without replay, then verify actual candidate confirmation/pairing, native portal inspection, exact-file/answer review, cancellation before Fill and native device revocation. Retain the separate native inspection/revocation responses and bounded zero-execution/accounting readback. Do not seed an identity/device or bypass proof; employer attachment, upload and final submission are not smoke tests. |
 | Paid search/application credits, profitable finite packs and payment recovery | COMPLETE (free pilot) | Three finite packs, separate service/AI balances, exact quotes, reservations, idempotent settlement and recovery controls are implemented. The promoted billing page displayed the actual **3** service credits. The quote of **1 per job** delivered **3 of 3** Software Engineer roles, charged **3**, released **0**, and left **0 held / 0 available**; AI remained **7**. Expense-policy **3** and model-policy **2** retain their reviewed authority. | Approved free-pilot credit, quote and settlement acceptance is complete. Paid checkout, real payment/refund receipts, commercial activation and actual-cost profitability remain explicitly unaccepted follow-on work. Unknown provider liabilities must not become zero cost. |
-| Fast responsive pages and SEO | OPEN | Public views were observed at 390, 768 and 1,440 pixels without horizontal overflow; signed-in search/billing views were also observed at 390 pixels. Fresh signed-in workspace and resume review observations at 320 and 1,024 pixels show no horizontal page overflow. Keyboard focus, mobile navigation and horizontally scrolling section access passed. Exact-source preview and canonical pricing/auth metadata corrections were accepted. The reset form passed desktop/mobile layout, fragment-removal and normal-session stability checks. Both domains now serve the request-deduplication and bounded-polling correction, retaining the billing/upload fixes. The canonical upload passed. | Finish companion recovery, pending states and actionable errors within the authenticated pilot journey. Preserve noindex/no-referrer and reset-token privacy. Complete accessibility, device/connection-segmented field p75 LCP, INP and CLS, and mobile field performance remain unmeasured; these observations do not establish them. |
-| GCP/Vercel deployment, preserved-data migration and monitoring | OPEN | Schema21 migration and reopening are accepted. API generation **331** retains source0abc/image358c9; analysis generation **63** and coordinator generation **22** retain source7a/imagec1ce after the scanner-pin transition. Employer generation **31** is unchanged. Manual maintenance run **40109020215** passed **25 local / 10 native cases** and restored admission; independent native serving/pin and admission-restoration readbacks passed at **16:10:27 / 16:11:46 UTC**. Inspector generation **14**, image9e402666, has definitions valid until **27 October, 06:26:10 UTC**. The historical five-file journal is preserved byte-for-byte; its candidate was neither adopted nor replayed. Three worker queues are running and the retained three natural schedule HTTP 200 observations precede this pin transition; the application queue remains paused. Frontend875 remains on both canonical aliases at **24 October, 15:36 UTC**. Stable unattended document-maintenance cadence remains unproven. | Accept the remaining live companion journey, then update the final delivery record using actual serving versions and held controls. Retain honest natural-versus-manual monitoring evidence and its observation times. Preserve alert handles and distinguish configured routes from actual condition-specific incident/inbox delivery. No deployment-only completion claim. |
+| Fast responsive pages and SEO | OPEN | Public views were observed at 390, 768 and 1,440 pixels without horizontal overflow; signed-in search/billing views were also observed at 390 pixels. Fresh signed-in workspace and resume review observations at 320 and 1,024 pixels show no horizontal page overflow. Keyboard focus, mobile navigation and horizontally scrolling section access passed. Exact-source preview and canonical pricing/auth metadata corrections were accepted. The reset form passed desktop/mobile layout, fragment-removal and normal-session stability checks. Both domains serve the request-deduplication and bounded-polling correction, retaining the billing/upload fixes. The canonical upload passed. The deployed 0.8.2 website source adds visible review deadlines, expired-control clearing and explicit review renewal; the companion source adds bounded expired-create recovery. The same installed runtime was reloaded and passed live expired-request inspection and explicit archival. The first archival refusal correctly preserved state after its ephemeral inspection was lost. The approved fresh connection reached a known request, but a single challenge returned **503** before the review form. The demonstrated SQL pool-listener repair is prepared, not deployed; remaining authenticated review/renewal behavior is unaccepted. | Verify the repaired authenticated connection/review pending states and actionable errors within the existing pilot journey. Preserve noindex/no-referrer and reset-token privacy. Complete accessibility, device/connection-segmented field p75 LCP, INP and CLS, and mobile field performance remain unmeasured; these observations do not establish them. |
+| GCP/Vercel deployment, preserved-data migration and monitoring | OPEN | Schema21 migration and reopening are accepted. API generation **331** retains source0abc/image358c9; analysis generation **63** and coordinator generation **22** retain source7a/imagec1ce after the scanner-pin transition. Employer generation **31** is unchanged. Manual maintenance run **40109020215** passed **25 local / 10 native cases** and restored admission; independent native serving/pin and admission-restoration readbacks passed at **16:10:27 / 16:11:46 UTC**. Inspector generation **14**, image9e402666, has definitions valid until **27 October, 06:26:10 UTC**. The historical five-file journal is preserved byte-for-byte; its candidate was neither adopted nor replayed. Three worker queues are running and the retained three natural schedule HTTP 200 observations precede this pin transition; the application queue remains paused. FrontendHZ2, source5e2e957 / PR49, is promoted on both canonical aliases at **24 October, 18:40:35 UTC**. The canonical 0.8.2 archive and all eighteen installed source files match the reviewed digest. Actual same-extension reload and expired-request archival passed; the approved fresh Start created a known request, but its candidate challenge returned **503** before any confirmation or grant. A minimal API pool-listener repair passes 35 focused tests and is not yet deployed. Stable unattended document-maintenance cadence remains unproven. | Deploy and verify the reviewed API repair, accept the remaining live companion journey, then update the final delivery record using actual serving versions and held controls. Retain honest natural-versus-manual monitoring evidence and its observation times. Preserve alert handles and distinguish configured routes from actual condition-specific incident/inbox delivery. No deployment-only completion claim. |
 
 ## Current rollout state and preserved authority
 
@@ -133,9 +159,11 @@ at generation **328**; its independent canonical verification passed in
 performance or total development time. The later accepted document-maintenance
 transition produced the current revisions above without rebuilding application
 images. Its API health readback matched source0abc and the new revision at
-**24 October, 16:10:27 UTC**. The corresponding frontend
+**24 October, 16:10:27 UTC**. Its earlier frontend
 **`dpl_875XxYMHwUJ3F9pPmVzWY4Sc1fGm`** was promoted and both aliases verified at
-**03:16:06.122378 UTC**; the latest alias readback at **15:36 UTC** still matched.
+**03:16:06.122378 UTC** and again at **15:36 UTC**. The compatible 0.8.2 frontend
+**`dpl_HZ2Dg7ns252WaHbcQPU14Da5uJxh`**, source5e2e957, superseded it on both
+aliases at **18:40:35 UTC** without an API or native configuration change.
 No schema, IAM, global authority epoch,
 signing key, executor configuration or employer-write hold is changed by this
 request-capacity release.
@@ -176,11 +204,11 @@ The H18 billing release used frontend source **`f3c05034`**. The later
 upload-reconciliation source **`7529c0413f4bee797ee1203fd3f1119f0b4ea4d7`** was merged
 as **`533fc005c0455119947e25a9f0ada2c9be17935f`** and promoted on 23 October.
 Its canonical alias readback passed at **22:46:23 UTC**. The later 0.8.1 recovery
-frontend was verified on both domains at **24 October, 01:01:53 UTC**. The current
-request-capacity frontend supersedes it on both `hirewizhq.com` and
-`www.hirewizhq.com`; the latest alias readback passed at
-**24 October 2026, 15:36 UTC**. Automatic custom-domain
-assignment remains disabled. The billing/upload corrections themselves required
+frontend was verified on both domains at **24 October, 01:01:53 UTC**. The
+request-capacity frontend subsequently superseded it on both `hirewizhq.com` and
+`www.hirewizhq.com`. The current compatible 0.8.2 frontend supersedes that release;
+both canonical aliases were verified at **24 October 2026, 18:40:35 UTC**.
+Automatic custom-domain assignment remains disabled. The billing/upload corrections themselves required
 no backend image or schema change; the 0.8.1 recovery API successor is recorded
 separately above.
 
@@ -243,16 +271,38 @@ UNCLAIMED result can enable an explicit archive of the uncertain attempt;
 starting again remains a separate candidate action. Claimed keys, unavailable
 observations and uncertain completion remain blocked. This source implementation
 and its controlled tests do not establish a paired device or successful
-candidate-reviewed assistance. The eighteen installed code files are updated to
-0.8.1; the extension key, permissions, profile and IndexedDB are preserved.
-Human reload is complete. The same installed key returned **UNCLAIMED** in a real
-signed inspection. A fresh reinspection preceded explicit archival of the
-uncertain attempt, preserving its evidence. One separate new Start prepared a
-creation request, and the website fingerprints matched. The human's persistent
-grant approval is **PENDING**: this is not an accepted pairing, review or native
-revocation. The live portal inspection, exact-file/ordinary-answer review, cancellation
-before Fill, native revoke response and zero-execution/accounting observer remain
-pending. A fresh connection must not silently replace an uncertain attempt.
+candidate-reviewed assistance. The earlier 0.8.1 source update and human reload
+were completed. Its retained key returned **UNCLAIMED** in a real signed
+inspection; fresh reinspection preceded explicit archival of the uncertain attempt.
+One separate Start prepared a creation with matching website fingerprints, which
+later passed its deadline without a persistent grant.
+
+The compatible **0.8.2** package is now deployed and its **eighteen installed source
+files** match the reviewed ZIP, as independently checked against the archive.
+The same key, optional permissions, profile, IndexedDB and prior history are
+preserved. The human subsequently reloaded that same extension. Its enabled
+**Check connection status** control established the new runtime, and fresh signed
+inspection reported **EXPIRED** for the exact retained pairing/device IDs plus
+**UNCLAIMED** for the same key. The first archive attempt correctly refused after
+its ephemeral inspection was lost, before a checkpoint write. Fresh inspection
+and immediate explicit archival then succeeded, retaining its reconciliation
+evidence and original history. The update and archival themselves created no
+request or device/host grant. The human subsequently approved the bounded test
+scope, and one separate fresh Start created a known request with the same key and
+a new request fingerprint. Its single candidate challenge returned **503** before
+the approval form appeared; no candidate confirmation or grant occurred.
+A local deadline alone cannot authorize archival. Archival of a live
+candidate-confirmed request or of completion/refresh uncertainty remains blocked.
+
+The human's bundled persistent-device and Greenhouse-host test authorization is
+**RECEIVED**; this authorizes the bounded test, not a claim that native access was
+actually granted. The API pool-listener repair remains undeployed. After its
+reviewed deployment, reconcile the existing known request before any new ceremony,
+then verify actual candidate confirmation/pairing, native portal inspection,
+exact-file/ordinary-answer review, cancellation before Fill, native revocation
+and bounded zero-execution/accounting readback within original
+outcomes **3, 5 and 6**, which stay **OPEN**. No employer fill, upload or final
+submission is required as a smoke test.
 
 The accepted three-result search followed a displayed three-credit balance and an exact
 three-result quote at **one credit per job**. Three of three Software Engineer

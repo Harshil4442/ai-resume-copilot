@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, TypeVar
 from uuid import UUID
 
 from pydantic import ConfigDict, model_validator
-from sqlalchemy import Engine, create_engine
+from sqlalchemy import Engine
 
 from ..recovery.contracts import Contract, canonical, fingerprint
 from ..recovery.gcp_contracts import WitnessBody, WitnessPin
@@ -118,11 +118,14 @@ def _private_engine(source: Engine) -> Engine:
         raise GuardUnavailable(FAILURE)
     if source.hide_parameters is True:
         return source
-    # Reuse the existing configured DBAPI pool, retaining its trusted SSL,
-    # connect_args, timeouts, authentication and connection creation policy.
-    # No connection is acquired, no URL is accepted from a candidate, and no
-    # independently weaker connection configuration is reconstructed.
-    return create_engine(source.url, pool=source.pool, hide_parameters=True, echo=False)
+    # A view retains the trusted pool, dialect, options and engine events without
+    # registering new dialect listeners on a pool already serving other threads.
+    # Reconstructing an Engine with pool=source.pool mutates its connect-event
+    # deque and can interrupt an in-flight checkout. No connection is acquired.
+    private = source.execution_options()
+    private.hide_parameters = True
+    private.echo = False
+    return private
 
 
 def _build(config: CandidateNativeConfiguration) -> _Composition:
