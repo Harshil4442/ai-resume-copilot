@@ -20,14 +20,37 @@ independent serving/caller-pin and admission-restoration readbacks passed at
 **24 October, 16:10:27 / 16:11:46 UTC**. The older five-file journal remains
 byte-identical, and its candidate was neither adopted nor replayed. The earlier
 API stage/promotion evidence remains recorded on the progress board. Both canonical
-aliases target frontend
-`dpl_875XxYMHwUJ3F9pPmVzWY4Sc1fGm`, verified
-**24 October 2026, 15:36 UTC**. The same installed 0.8.1 companion was
-reloaded and signed inspection returned **UNCLAIMED**. Fresh reinspection and
-explicit archive preceded one new Start; human persistent-grant approval remains
-pending, so no paired device is accepted. Use the progress board for remaining
-work and timestamped monitoring observations. The accepted manual refresh does
-not establish stable unattended cadence or new condition-specific alert delivery.
+aliases target frontend **`dpl_HZ2Dg7ns252WaHbcQPU14Da5uJxh`**, source
+**`5e2e957d11e3d99b7d7871d59afbf07af443ad6c`**, verified at
+**24 October 2026, 18:40:35 UTC** after normal PR49 merge **`aa3e6768`**. The
+compatible 0.8.2 archive is **67,162 bytes**, SHA-256
+**`c952be0f5cf7411a0a5a314b6624fa0264762b0c5668f7eb45805b257de53107`**.
+Its canonical download and all eighteen installed source files were verified at
+**18:44:53 UTC**. Native protocol **2**, executor **`companion_0_8_1`**, key and
+permissions remain unchanged. The human reloaded the same extension; its enabled
+status-inspection control and actual expired-request recovery established the new
+runtime. This does not establish a paired device or close the live journey.
+
+The earlier reloaded 0.8.1 runtime passed signed **UNCLAIMED** inspection and
+explicit archival before one new Start with matching fingerprints. That creation
+passed its deadline without a persistent grant. The new runtime obtained exact
+**EXPIRED** and same-key **UNCLAIMED** status. After an initial refusal when its
+ephemeral inspection was lost, fresh inspection and immediate explicit archival
+succeeded, preserving the key and history. The human approved the bounded
+persistent-device/Greenhouse-host test scope. One separate fresh Start created a
+known request; its single candidate challenge returned **503** before an approval
+form. No confirmation, grant or employer action followed. GCP 500 traces exposed
+a SQLAlchemy shared-pool listener mutation, reproduced by a deterministic test.
+The private-view and matching projection repair passes **104 focused tests**,
+including the complete pairing-production cases, but is **not deployed yet**.
+Only the stock Engine/OptionEngine types with redaction are admitted; custom
+subclasses and unredacted views remain refused.
+After that API repair, reconcile the existing request and finish actual pairing,
+native portal inspection, review, cancellation before Fill, revocation and
+zero-execution/accounting readback; these remain unaccepted. Use the progress board for the same remaining
+outcomes and timestamped monitoring observations. The accepted manual refresh
+does not establish stable unattended cadence or new condition-specific alert
+delivery.
 
 The genuine search, resume-preservation, password-reset, enrollment and finite
 credit evidence is recorded on that board. The candidate's Razorpay application
