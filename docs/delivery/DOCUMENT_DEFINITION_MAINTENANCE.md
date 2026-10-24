@@ -1,9 +1,10 @@
 # Immutable document-definition maintenance
 
-This is part of the existing resume/deployment outcome. Source implementation is
-available; the dedicated identity, WIF environment, alerts and the first native
-successor must be provisioned and accepted before maintenance is active. No source
-test or local Docker report establishes Cloud Run acceptance.
+This is part of the existing resume/deployment outcome. The dedicated maintenance
+identity and accepted native successor are provisioned. Current serving versions,
+observed runs and remaining limitations are recorded in
+[the delivery board](AUTO_APPLY_PROGRESS.md). No source test or local Docker
+report establishes Cloud Run acceptance.
 
 ## Runtime and exact acceptance
 
@@ -25,18 +26,18 @@ CA override, redirect or mutation retry. Standard WIF/metadata refresh is used;
 there is no downloaded service-account private key or token in artifacts.
 
 `refresh.Dockerfile` always starts from the immutable renderer
-`624597726ce2fefa2b3574fbf0a8ec4ccdc02a826380d76c5edc8ebbd59aa107`.
+`0a7e550623f0485945f9bbe52573091aabedfd612eb353e6a8bbb920e2ffa94f`.
 Only `/var/lib/clamav` changes. The prior definition directory is replaced, rather
 than merged, and the final user remains 65534. No package/font/Python/renderer
 updates occur in this pipeline. Every new build has a fresh nonce, generation-bound
 one-file GCS archive and native Cloud Build result using the existing repaired
-builder. A genuine original 21-case local check must pass with all twelve source
+builder. A genuine 25-case local check must pass with all required source
 hashes, renderer/font/policy and exact pulled digest unchanged. Definitions must
 be younger than 24 hours; the runtime's original three-day refusal remains.
 
-Next, a new owned Cloud Run Job executes the exact original accepted six-case
+Next, a new owned Cloud Run Job executes the accepted V2 ten-case
 payload with only its image literal changed. Native Job/Execution UIDs, singleton
-execution, actual logs, runtime eleven hashes, font manifest, sandbox policy,
+execution, actual logs, twelve runtime hashes, font manifest, sandbox policy,
 cleanup and native identity/IAM are joined to the Build and generation-bound GCS
 source. The consumed historical d2ba job/journal is never used again. Serializing
 `NativeAcceptance` does not create authority: fresh native reads are required.
@@ -79,7 +80,7 @@ recovery. A completed native acceptance Job is retained while its image serves.
 
 ## Explicit recovery after a definite pre-transition failure
 
-Scheduled runs never recover failures automatically. For the supported case—one
+Scheduled runs never replay failed mutations. For the supported case—one
 completed synthetic Job failed its identity preflight, all six corpus cases stayed
 unattempted and sandbox cleanup completed—an operator may set
 `recover_failed_native_job` to that exact Job name in a `workflow_dispatch` with
@@ -101,7 +102,7 @@ manifest and exactly one new build nonce. An existing claim or unknown claim
 acknowledgment cannot start another pipeline. No new IAM permission is needed.
 The original Job is never rerun or deleted; diagnostic probes are not acceptance
 evidence. The new candidate must acquire fresh definitions and pass the complete
-unchanged 21 local and six native cases before any transition.
+unchanged 25 local and ten native cases before any transition.
 
 The new artifact retains every original journal byte and the immutable claim
 disposition under `terminal-recoveries/`. While the original failed artifact is
@@ -114,10 +115,27 @@ claim stays and prevents another recovery of that Job. A new unknown/partial
 successor still blocks maintenance and requires same-operation reconciliation.
 Deleting a journal or claim is not recovery.
 
+## Acknowledged Build stopped before native acceptance
+
+A separate supported history shape contains exactly five files: Build intent,
+source-upload acknowledgment, Build-create intent, Build acknowledgment and native
+Build identity. It contains no local proof, native Job intent or transition marker.
+Before allowing a fresh refresh, read-only reconciliation validates every file,
+the actual successful Build, generation-bound source archive and exact recipe.
+The historical V1 recipe is recognized only through its frozen source and base;
+its candidate never supplies current acceptance authority.
+
+The deterministic native Job must return an authoritative 404, and the current
+accepted inspector and all caller pins must exclude the abandoned candidate.
+An existing Job, unavailable read, changed acknowledgment or additional marker
+still blocks the run. Original journal bytes and additive reconciliation evidence
+are retained. The old Build is never replayed, resumed or promoted; a new candidate
+uses a different nonce and must pass the full current acceptance pipeline.
+
 ## Schedule, proof retention and alerts
 
 The daily 01:37 UTC run executes **the full refresh**, not candidate publication
-alone. The hourly `:17` run checks the actual serving image and fresh native immutable-image
+alone. The `:17` and `:47` runs check the actual serving image and fresh native immutable-image
 definition receipt (the initial baseline uses its actual image header). Successors
 avoid an hourly multi-GB registry download, limiting monitoring egress and runtime.
 The GitHub artifact retains all metadata-only JSON journals for fourteen days.
