@@ -11,6 +11,7 @@ import { applicationStatusLabels, batchEligibility, batchItemMatches, employerJo
 import { ArtifactPreview } from "./EmployerApplicationPanel";
 import { Button } from "./ui/Button";
 import { LoadingBlock } from "./ui/LoadingBlock";
+import { useProgressQuery } from "../lib/useProgressQuery";
 
 type Props = { id?: string; selected?: EmployerApplication[]; onClose: () => void; onChange: () => void };
 const actions = ["fill", "upload", "submit"] as const;
@@ -25,11 +26,11 @@ export default function EmployerBatchPanel({ id, selected = [], onClose, onChang
   const intent = useRef<{ fingerprint: string; key: string } | null>(null);
   const polledStatuses = useRef<Record<string, EmployerApplication["status"]>>({});
   const catalog = useQuery({ queryKey: ["employer-jobs", "catalog"], queryFn: ({ signal }) => apiGet<JobServiceCatalog>(`${employerJobsBase}/catalog`, signal), staleTime: 0 });
-  const batch = useQuery({
+  const batch = useProgressQuery({
     queryKey: ["employer-jobs", "batch", batchId],
     queryFn: ({ signal }) => apiGet<EmployerApplicationBatch>(`${employerJobsBase}/application-batches/${encodeURIComponent(batchId!)}`, signal),
-    enabled: Boolean(batchId), staleTime: 0,
-    refetchInterval: (query) => Object.values(query.state.data?.application_statuses ?? {}).some((status) => ["queued", "submitting"].includes(status)) ? 2000 : false,
+    enabled: Boolean(batchId),
+    active: (current) => Object.values(current?.application_statuses ?? {}).some((status) => ["queued", "submitting"].includes(status)),
   });
   const ids = batch.data?.items.map((item) => item.application_id) ?? selected.map((app) => app.id);
   const applications = useQueries({ queries: ids.map((applicationId) => ({
@@ -52,8 +53,9 @@ export default function EmployerBatchPanel({ id, selected = [], onClose, onChang
   const routesAvailable = current.every((app) => app.application_mode === "api" && app.posting.application_mode === "api" && catalog.data?.sources.some((source) => source.id === app.posting.source_id && source.application_mode === "api"));
   const prepared = current.every((app) => ["ready", "approved"].includes(app.status) && !app.missing_fields.length && (!app.batch_id || app.batch_id === batchId));
   const boundApproval = current.every((app) => app.status === "approved" && app.batch_id === batchId && !app.missing_fields.length);
-  const canApprove = enabled && routesAvailable && loaded && matches && prepared && unexpired && allReviewed && batch.data?.status === "quoted";
-  const canQueue = enabled && routesAvailable && loaded && matches && boundApproval && unexpired && batch.data?.status === "approved" && (catalog.data?.balance ?? -1) >= (batch.data?.quoted_credits ?? Infinity);
+  const statusVerified = batch.isSuccess && !batch.isFetching;
+  const canApprove = statusVerified && enabled && routesAvailable && loaded && matches && prepared && unexpired && allReviewed && batch.data?.status === "quoted";
+  const canQueue = statusVerified && enabled && routesAvailable && loaded && matches && boundApproval && unexpired && batch.data?.status === "approved" && (catalog.data?.balance ?? -1) >= (batch.data?.quoted_credits ?? Infinity);
   useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(timer); }, []);
   useEffect(() => {
     if (!batch.data) return;
@@ -96,6 +98,7 @@ export default function EmployerBatchPanel({ id, selected = [], onClose, onChang
     <Dialog.Content className="fixed inset-x-2 top-[3vh] z-[70] mx-auto flex max-h-[94dvh] max-w-4xl flex-col overflow-hidden rounded-2xl border border-border bg-white shadow-xl sm:inset-x-6">
       <header className="flex shrink-0 items-start justify-between gap-3 border-b border-border p-5 sm:p-6"><div className="min-w-0"><Dialog.Title className="break-words font-display text-2xl sm:text-3xl">{batch.data?.status === "queued" || batch.data?.status === "cancelled" ? "Batch status" : "Review applications"}</Dialog.Title><Dialog.Description className="mt-2 text-sm leading-6 text-muted-foreground">Only the jobs listed here are included. Approval permits the displayed actions; queueing is a separate step.</Dialog.Description></div><Dialog.Close asChild><Button variant="ghost" size="icon" className="min-h-11 min-w-11 shrink-0" disabled={busy} aria-label="Close batch review"><X size={20} /></Button></Dialog.Close></header>
       <div className="min-h-0 space-y-6 overflow-y-auto overscroll-contain p-5 sm:p-6">
+        {batch.pollingPaused ? <p role="status" className="text-sm leading-6">Automatic batch status checks are paused. Use Refresh batch status to read progress without queueing or sending again.</p> : null}
         {batch.isError || applications.some((query) => query.isError) ? <div role="alert" className="space-y-3"><p className="text-sm text-coral">Could not load the exact batch or one of its applications. Approval and queueing are disabled.</p><Button variant="secondary" onClick={() => { void batch.refetch(); applications.forEach((query) => void query.refetch()); }}>Retry loading</Button></div> : !loaded || (batchId && !batch.data) ? <LoadingBlock rows={4} /> : null}
         {!batchId ? <section className="space-y-3 rounded-xl border border-border bg-surface p-4"><h2 className="font-semibold">Create a fixed batch quote</h2><p className="text-sm leading-6">{current.length} selected jobs · {total} service credits at their saved per-job prices. Creating the quote does not approve or submit anything.</p><label className="grid gap-2 text-sm font-semibold">Maximum service credit budget<input className="field-control" type="number" min={Math.max(1, total)} max={limits?.batch_credit_limit} step={1} value={budget} onChange={(event) => setBudget(event.target.value)} disabled={busy} /></label><p className="text-xs leading-5 text-muted-foreground">Up to {limits?.batch_limit ?? "—"} jobs and {limits?.batch_credit_limit ?? "—"} credits per batch. Unused budget is not charged. Service credits are separate from AI analysis units; optional tailoring has its own quote in Workspace.</p>{duplicate ? <p role="alert" className="text-sm text-coral">Select only one representation of each employer opening.</p> : null}{current.map((app) => { const reason = batchEligibility(app, catalog.data, now); return reason ? <p key={app.id} role="alert" className="text-sm text-coral">{app.posting.title}: {reason}</p> : null; })}<Button className="min-h-11 w-full sm:w-auto" disabled={!quoteReady || busy} onClick={() => quote.mutate()}>{quote.isPending ? <LoaderCircle size={16} className="animate-spin" /> : null}Create exact batch quote</Button></section> : null}
         {batch.data ? <section className="space-y-3 rounded-xl border border-border bg-surface p-4" aria-label="Fixed batch quote"><h2 className="font-semibold">{batch.data.items.length} exact jobs · {batch.data.quoted_credits} quoted service credits</h2><p className="text-sm">Maximum authorized budget: {batch.data.max_total_credits} service credits. Each confirmed complete application uses its displayed fixed price.</p><p className="text-xs leading-5">Batch quote expires {timestamp(batch.data.expires_at)}. Individual package quotes may expire earlier.</p><details className="text-xs"><summary className="min-h-11 cursor-pointer py-3 font-semibold">Application limits</summary><p className="leading-5 text-muted-foreground">Candidate limits: {batch.data.admission_snapshot.daily_limit} admissions per UTC day; {batch.data.admission_snapshot.rolling_limit} in {batch.data.admission_snapshot.rolling_days} days; {batch.data.admission_snapshot.pending_limit} pending or unknown. Limits and available credits are checked again when queueing and before disclosure. These are ceilings, not remaining capacity.</p></details><details className="text-xs"><summary className="min-h-11 cursor-pointer py-3 font-semibold">Batch digest and review link</summary><p className="break-all font-mono">{batch.data.package_digest}</p><Link className="mt-3 inline-block break-all text-primary underline" href={`/employer-jobs/batches/${encodeURIComponent(batch.data.id)}`}>Return to this exact batch</Link></details></section> : null}

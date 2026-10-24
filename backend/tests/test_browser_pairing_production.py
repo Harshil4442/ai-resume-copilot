@@ -513,6 +513,94 @@ def test_protected_uid_change_prevents_signing_even_with_native_session(pairing)
     assert not c.kms.calls
 
 
+def test_confirmation_metadata_budget_keeps_fresh_transaction_fences(pairing):
+    c = pairing
+    context, _, challenge = start(c)
+    metadata = c.native.sdk.admin.transport.get_database
+    before = metadata.call_count
+    assert confirm(c, context, challenge)["status"] == "CANDIDATE_CONFIRMED"
+    # This is the actual SDK path, not a mocked authorization result. The
+    # historical nested same-pin marker fences required 68 metadata calls.
+    assert metadata.call_count - before == 54
+    before = metadata.call_count
+    c.accounts.validate(context, auth_generation=1)
+    assert metadata.call_count - before == 4
+
+
+@pytest.mark.parametrize("marker", ["attempt", "password"])
+@pytest.mark.parametrize("fault", ["uid", "closure", "expiry", "marker_unavailable"])
+def test_compound_marker_reads_never_export_after_dependency_loss(pairing, monkeypatch, marker, fault):
+    from app.domains.recovery.gcp_closure_contracts import closure_path
+    from app.domains.recovery.store import GuardDenied, GuardUnavailable
+
+    c = pairing
+    context, _, challenge = start(c)
+    existing_invocations = {path: raw for path, (raw, _) in c.native.data.items()
+                            if json.loads(raw)["namespace"] == "pairing_invocations"}
+    coordinator = c.browser._service().coordinator
+    original_group = coordinator._before_claim
+    checking, fired = [], []
+
+    def group(intent, claim):
+        checking.append(True)
+        try:
+            return original_group(intent, claim)
+        finally:
+            checking.pop()
+
+    monkeypatch.setattr(coordinator, "_before_claim", group)
+    dependency = coordinator.attempts if marker == "attempt" else coordinator.password_signing
+    original_verify = dependency.verify
+
+    def changed(*args):
+        result = original_verify(*args)
+        if checking and not fired:
+            fired.append(True)
+            if fault == "uid":
+                c.native.identities[c.execution.database] = str(uuid4())
+            elif fault == "closure":
+                c.objects[closure_path(c.execution)] = b"synthetic-close", "999"
+            elif fault == "expiry":
+                monkeypatch.setattr(coordinator, "now_ms", lambda: NOW + 60_000)
+            else:
+                raise GuardUnavailable("Synthetic marker bytes unavailable")
+        return result
+
+    monkeypatch.setattr(dependency, "verify", changed)
+    with pytest.raises((GuardDenied, GuardUnavailable)):
+        confirm(c, context, challenge)
+    assert fired == [True]
+    execution_rows = [json.loads(raw)["namespace"] for path, (raw, _) in c.native.data.items()
+                      if path.startswith(c.execution.database + "/")]
+    assert "pairing_confirmations" not in execution_rows
+    assert {path: raw for path, (raw, _) in c.native.data.items()
+            if json.loads(raw)["namespace"] == "pairing_invocations"} == existing_invocations
+    assert not coordinator._owned_pairing
+    assert not c.native.views
+
+
+def test_compound_marker_fences_are_fresh_after_definite_abort(pairing):
+    c = pairing
+    context, _, challenge = start(c)
+    aborted = []
+
+    def abort_once(names):
+        if "pairing_invocations" in names and not aborted:
+            aborted.append(True)
+            return "abort"
+        return None
+
+    c.native.fault = abort_once
+    metadata = c.native.sdk.admin.transport.get_database
+    before = metadata.call_count
+    assert confirm(c, context, challenge)["status"] == "CANDIDATE_CONFIRMED"
+    assert aborted == [True]
+    # The failed transaction attempt does not reuse its witness checks. A new
+    # before-attempt group makes two additional actual metadata RPCs.
+    assert metadata.call_count - before == 56
+    assert not c.native.views
+
+
 
 def test_google_native_session_still_requires_separate_current_password_pairing(pairing):
     c = pairing

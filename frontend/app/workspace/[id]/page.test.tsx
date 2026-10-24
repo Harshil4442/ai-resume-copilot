@@ -119,3 +119,19 @@ it.each(["resume", "opportunity"])("starts a fresh reviewed intent when the %s c
   expect(requests()[1][2]["Idempotency-Key"]).not.toBe(requests()[0][2]["Idempotency-Key"]);
   expect(requests()[1][1].opportunity_id).toBe(state.id);
 });
+
+it.each([429, 503])("reads an existing run explicitly after HTTP%s without restarting generation", async (status) => {
+  let statusReads = 0;
+  state.get.mockImplementation((url: string) => url.startsWith("/v1/analysis-runs/")
+    ? ++statusReads === 1 ? Promise.reject(new ApiError("Status unavailable", status, {}))
+      : Promise.resolve({ id: "run-one", opportunity_id: state.id, operation: "resume_tailor", status: "cancelled", estimated_units: 7, committed_units: 0 })
+    : read(url));
+  state.post.mockResolvedValue({ id: "run-one", opportunity_id: state.id, operation: "resume_tailor", status: "queued", estimated_units: 7 });
+  await page(); await waitFor(() => expect(generate()).toBeEnabled());
+  fireEvent.click(generate());
+  const statusCheck = await screen.findByRole("button", { name: "Check tailoring status" });
+  expect(generate()).toBeDisabled(); expect(statusReads).toBe(1); expect(requests()).toHaveLength(1);
+  fireEvent.click(statusCheck);
+  await waitFor(() => expect(generate()).toBeEnabled());
+  expect(statusReads).toBe(2); expect(requests()).toHaveLength(1);
+});

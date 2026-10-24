@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { QueryClient, useQuery, useQueryClient } from "@tanstack/react-query";
+import { QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const auth = vi.hoisted(() => ({
@@ -124,4 +124,26 @@ describe("session owner boundary", () => {
     expect(clients).toHaveLength(0);
     expect(screen.queryByTestId("package")).not.toBeInTheDocument();
   });
+});
+
+
+it.each([429, 503])("does not repeat a capacity-refused GET or mutation for HTTP%s", async (status) => {
+  const unavailable = Object.assign(new Error("Unavailable"), { status });
+  const read = vi.fn().mockRejectedValue(unavailable);
+  const change = vi.fn().mockRejectedValue(unavailable);
+  function FailedRequests() {
+    const client = useQueryClient();
+    if (!clients.includes(client)) clients.push(client);
+    const query = useQuery({ queryKey: ["failing-read"], queryFn: read });
+    const mutation = useMutation({ mutationFn: change });
+    return <><p>{query.isError ? "Read unavailable" : "Reading"}</p><button onClick={() => mutation.mutate(undefined)}>Save once</button></>;
+  }
+  vi.useFakeTimers();
+  try {
+    render(<SessionProviderWrapper><FailedRequests /></SessionProviderWrapper>);
+    fireEvent.click(screen.getByRole("button", { name: "Save once" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(read).toHaveBeenCalledTimes(1); expect(change).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("Read unavailable")).toBeInTheDocument();
+  } finally { vi.useRealTimers(); }
 });

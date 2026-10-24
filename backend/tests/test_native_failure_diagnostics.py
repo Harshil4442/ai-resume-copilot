@@ -7,7 +7,9 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
-from google.api_core.exceptions import NotFound, PermissionDenied
+from google.api_core import exceptions as api_errors
+from google.api_core.exceptions import NotFound, PermissionDenied, ResourceExhausted
+from google.auth import exceptions as auth_errors
 
 from app.domains.candidate_accounts import production as accounts
 from app.domains.recovery import browser_pairing_production as pairing
@@ -225,12 +227,70 @@ def test_exact_witness_io_labels_keep_existing_calls_cleanup_and_no_retry(events
             "stage": failure, "exception_type": "PermissionDenied"}]
 
 
-def test_firestore_identity_preserves_provider_type_before_existing_safe_wrapper(events):
-    error = PermissionDenied("synthetic private database")
+_GOOGLE_FAILURES = (
+    api_errors.GoogleAPIError, api_errors.DuplicateCredentialArgs, api_errors.RetryError,
+    api_errors.GoogleAPICallError, api_errors.Redirection, api_errors.MovedPermanently,
+    api_errors.NotModified, api_errors.TemporaryRedirect, api_errors.ResumeIncomplete,
+    api_errors.ClientError, api_errors.BadRequest, api_errors.InvalidArgument,
+    api_errors.FailedPrecondition, api_errors.OutOfRange, api_errors.Unauthorized,
+    api_errors.Unauthenticated, api_errors.Forbidden, api_errors.PermissionDenied,
+    api_errors.NotFound, api_errors.MethodNotAllowed, api_errors.Conflict,
+    api_errors.AlreadyExists, api_errors.Aborted, api_errors.LengthRequired,
+    api_errors.PreconditionFailed, api_errors.RequestRangeNotSatisfiable,
+    api_errors.TooManyRequests, api_errors.ResourceExhausted, api_errors.Cancelled,
+    api_errors.ServerError, api_errors.InternalServerError, api_errors.Unknown,
+    api_errors.DataLoss, api_errors.MethodNotImplemented, api_errors.BadGateway,
+    api_errors.ServiceUnavailable, api_errors.GatewayTimeout, api_errors.DeadlineExceeded,
+    auth_errors.GoogleAuthError, auth_errors.TransportError, auth_errors.RefreshError,
+    auth_errors.UserAccessTokenError, auth_errors.DefaultCredentialsError,
+    auth_errors.MutualTLSChannelError, auth_errors.ClientCertError, auth_errors.OAuthError,
+    auth_errors.ReauthFailError, auth_errors.ReauthSamlChallengeFailError,
+    auth_errors.MalformedError, auth_errors.InvalidResource, auth_errors.InvalidOperation,
+    auth_errors.InvalidValue, auth_errors.InvalidType, auth_errors.OSError,
+    auth_errors.TimeoutError, auth_errors.ResponseError,
+)
+
+
+@pytest.mark.parametrize("exception", _GOOGLE_FAILURES, ids=lambda exception: exception.__name__)
+def test_firestore_identity_preserves_provider_type_before_existing_safe_wrapper(events, monkeypatch, exception):
+    if exception is api_errors.RetryError:
+        error = exception("synthetic private database", RuntimeError("synthetic private cause"))
+    elif issubclass(exception, api_errors.GoogleAPICallError):
+        error = exception("synthetic private database", details=("synthetic private provider metadata",))
+    else:
+        error = exception("synthetic private database")
+
+    def forbidden_text(*args):
+        raise AssertionError("Provider exception contents must never be inspected")
+
+    monkeypatch.setattr(exception, "__str__", forbidden_text)
+    monkeypatch.setattr(exception, "__repr__", forbidden_text)
+    admin = SimpleNamespace(get_database=Mock(side_effect=error))
+    rpc = FirestoreRpc(object(), admin, database_resource="projects/synthetic-project/databases/registry-db")
+    with pytest.raises(GuardUnavailable) as raised:
+        rpc.identity()
+    assert raised.value.__cause__ is error and admin.get_database.call_count == 1
+    admin.get_database.assert_called_once_with(
+        request={"name": "projects/synthetic-project/databases/registry-db"}, retry=None, timeout=2.0)
+    assert events == [{"event": "native_boundary_failure_v1", "component": "firestore_rpc",
+        "stage": "identity", "exception_type": exception.__name__}]
+    assert "synthetic private" not in json.dumps(events)
+
+
+@pytest.mark.parametrize("base", [ResourceExhausted, auth_errors.RefreshError, auth_errors.DefaultCredentialsError])
+def test_unknown_google_exception_name_and_private_details_stay_redacted(events, base):
+    class PrivateSdkFailure(base):
+        def __str__(self):
+            raise AssertionError("Provider error text must never be inspected")
+
+        def __repr__(self):
+            raise AssertionError("Provider error repr must never be inspected")
+
+    error = PrivateSdkFailure("synthetic private database and credential owner")
     admin = SimpleNamespace(get_database=Mock(side_effect=error))
     rpc = FirestoreRpc(object(), admin, database_resource="projects/synthetic-project/databases/registry-db")
     with pytest.raises(GuardUnavailable) as raised:
         rpc.identity()
     assert raised.value.__cause__ is error and admin.get_database.call_count == 1
     assert events == [{"event": "native_boundary_failure_v1", "component": "firestore_rpc",
-        "stage": "identity", "exception_type": "PermissionDenied"}]
+        "stage": "identity", "exception_type": "OtherError"}]

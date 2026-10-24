@@ -623,16 +623,18 @@ class GcpPairingCoordinator:
             raise GuardDenied("Password dispatch cannot adopt another signing admission")
         return password
 
-    def _password_before(self, claim: PasswordSigningClaim) -> None:
-        marker = claim.marker
+    def _password_fresh(self, marker: PasswordSigningMarker) -> None:
         if (marker.pin != self.pin or marker.epoch_generation != self.epoch_generation
                 or not marker.created_at_ms <= self.now_ms() < marker.deadline_ms):
             raise GuardDenied("Signing consumption is outside its pinned lifetime")
+
+    def _password_before(self, claim: PasswordSigningClaim) -> None:
+        marker = claim.marker
+        self._password_fresh(marker)
         self.fence.check(self.pin)
         self.password_signing.verify(marker, claim.receipt)
         self.fence.check(self.pin)
-        if not marker.created_at_ms <= self.now_ms() < marker.deadline_ms:
-            raise GuardDenied("Signing consumption expired during its fresh witness check")
+        self._password_fresh(marker)
 
     def _password_read(self, tx: BufferedTransaction, context: CandidateWebSession,
                        proof: CandidateChallengeProof) -> tuple[dict, dict, int]:
@@ -760,8 +762,15 @@ class GcpPairingCoordinator:
         self.attempts.verify(claim.attempt_marker(), claim.marker)
         password = self._password_binding(intent)
         if password is not None:
-            self._password_before(password.claim)
+            self._password_fresh(password.claim.marker)
+            # Both exact-generation marker checks are read-only and use this
+            # same execution pin. One fresh fence on each side brackets the
+            # complete read group; no transaction, signing or output occurs
+            # between them. Standalone password boundaries remain fenced above.
+            self.password_signing.verify(password.claim.marker, password.claim.receipt)
         self._before(intent)
+        if password is not None:
+            self._password_fresh(password.claim.marker)
 
     def _admit(self, intent: PairingJournalIntent, claim: PairingInvocationClaim) -> bool:
         """Own definite create acknowledgement alone permits the first dispatch.

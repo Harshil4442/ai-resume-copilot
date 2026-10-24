@@ -16,6 +16,8 @@ import { LoadingBlock } from "../../components/ui/LoadingBlock";
 import { ApiError, apiGet, apiPostJson } from "../../lib/api";
 import { applicationStatusLabels, batchEligibility, employerJobsBase, isSearchPreparation, readSavedSearchQuery, searchSummary, type EmployerApplication, type EmployerSavedResultPage, type EmployerSearchCreateResult, type EmployerSearchPreparation, type EmployerSearchSummary, type JobServiceCatalog, type SearchPriceAcceptance } from "../../lib/employerJobs";
 import type { ResumeListResponse } from "../../lib/types";
+import { progressPollDelay } from "../../lib/readQueryPolicy";
+import { usePageVisible } from "../../lib/useProgressQuery";
 
 const ApplicationPanel = dynamic(() => import("../../components/EmployerApplicationPanel"), { loading: () => <LoadingBlock rows={2} /> });
 const BatchPanel = dynamic(() => import("../../components/EmployerBatchPanel"), { loading: () => <LoadingBlock rows={2} /> });
@@ -42,6 +44,8 @@ export default function EmployerJobsPage() {
   const preparationSelection = useRef<string | null>(null);
   const [preparationError, setPreparationError] = useState<string | null>(null);
   const [preparationRetry, setPreparationRetry] = useState(0);
+  const preparationChecks = useRef({ id: null as string | null, attempt: 0, reads: 0 });
+  const pageVisible = usePageVisible();
   const [applicationId, setApplicationId] = useState<string | null>(null);
   const [selectedApplications, setSelectedApplications] = useState<string[]>([]);
   const [batchReview, setBatchReview] = useState<{ id?: string; selected?: EmployerApplication[] } | null>(null);
@@ -98,15 +102,28 @@ export default function EmployerJobsPage() {
   const preparationId = preparation?.id;
   const preparationTerminal = preparation?.status === "failed" || preparation?.status === "cancelled";
   useEffect(() => {
-    if (!preparationId || preparationTerminal) return;
+    if (!preparationId || preparationTerminal || !pageVisible || preparationError) return;
     const identity = preparationId;
+    const explicitCheck = preparationChecks.current.id === identity && preparationChecks.current.attempt !== preparationRetry;
+    if (preparationChecks.current.id !== identity || preparationChecks.current.attempt !== preparationRetry) {
+      preparationChecks.current = { id: identity, attempt: preparationRetry, reads: 0 };
+    }
     const controller = new AbortController();
     let cancelled = false;
     let timer: number | undefined;
+    function schedule(immediate = false) {
+      const delay = progressPollDelay(preparationChecks.current.reads);
+      if (delay === false) {
+        setPreparationError("Automatic progress checks are paused. Read the search status to continue; do not start another search.");
+        return;
+      }
+      timer = window.setTimeout(() => void poll(), immediate ? 0 : delay);
+    }
     async function poll() {
       try {
         const current = await apiGet<EmployerSearchPreparation>(`${employerJobsBase}/search-preparations/${encodeURIComponent(identity)}`, controller.signal);
         if (cancelled) return;
+        preparationChecks.current.reads += 1;
         setPreparation((previous) => previous?.id === current.id &&
           (previous.status === "failed" || previous.status === "cancelled") &&
           current.status !== "completed" ? previous : current);
@@ -120,14 +137,14 @@ export default function EmployerJobsPage() {
           void client.invalidateQueries({ queryKey: ["employer-jobs", "search-summaries"] }); refreshBalances();
         } else if (current.status === "failed" || current.status === "cancelled") {
           intent.current = null; setRecoverableQuery(null); refreshBalances();
-        } else timer = window.setTimeout(() => void poll(), 2000);
+        } else schedule();
       } catch (error) {
         if (!cancelled) setPreparationError(error instanceof Error ? error.message : "Could not read search progress.");
       }
     }
-    timer = window.setTimeout(() => void poll(), 2000);
+    schedule(explicitCheck);
     return () => { cancelled = true; controller.abort(); if (timer !== undefined) window.clearTimeout(timer); };
-  }, [preparationId, preparationTerminal, preparationRetry, client, refreshBalances]);
+  }, [preparationId, preparationTerminal, preparationRetry, preparationError, pageVisible, client, refreshBalances]);
   const searchPreparing = preparation !== null && preparation.status !== "failed" && preparation.status !== "cancelled";
   const searchBusy = search.isPending || searchPreparing;
   const cancelSearch = useMutation({
@@ -195,7 +212,7 @@ export default function EmployerJobsPage() {
           <p className="mt-2 text-sm font-semibold">{preparation.status === "completed" ? `${preparation.charged_credits} service credits charged` : "No service credits charged"}</p>
           {preparation.reserved_credits !== undefined ? <p className="mt-2 text-xs leading-5 text-muted-foreground">{preparation.reserved_credits} service credits held · {preparation.refunded_credits ?? 0} returned. Unused credits return when the search completes or is cancelled.</p> : null}
           <p className="mt-2 text-xs leading-5 text-muted-foreground">Accepted quote: {preparation.accepted_quote.unit_price} per new job · up to {preparation.accepted_quote.maximum_credits} service credits. Checking progress and opening saved results are free.</p>
-          {preparationError ? <div role="alert" className="mt-4 text-sm leading-6"><p>{preparationError}</p><Button type="button" variant="secondary" className="mt-3 min-h-11" onClick={() => { setPreparationError(null); setPreparationRetry((value) => value + 1); }}>Retry search status</Button></div> : searchPreparing ? <div className="mt-4" role="status" aria-label="Search preparation in progress"><LoaderCircle size={20} className="animate-spin" /></div> : <Button type="button" variant="secondary" className="mt-4 min-h-11" onClick={() => { setPreparation(null); setPreparationError(null); }}>Return to saved results</Button>}
+          {preparationError ? <div role="alert" className="mt-4 text-sm leading-6"><p>{preparationError}</p><p className="mt-2">Automatic checks are paused. This status read will not restart the search or charge again.</p><Button type="button" variant="secondary" className="mt-3 min-h-11" onClick={() => { setPreparationError(null); setPreparationRetry((value) => value + 1); }}>Retry search status</Button></div> : searchPreparing ? <div className="mt-4" role="status" aria-label="Search preparation in progress"><LoaderCircle size={20} className="animate-spin" /></div> : <Button type="button" variant="secondary" className="mt-4 min-h-11" onClick={() => { setPreparation(null); setPreparationError(null); }}>Return to saved results</Button>}
           {searchPreparing && preparation.status !== "completed" ? <Button type="button" variant="secondary" className="mt-4 min-h-11" disabled={cancelSearch.isPending} onClick={() => cancelSearch.mutate()}>{cancelSearch.isPending ? "Cancelling search…" : "Cancel search"}</Button> : null}
           {cancelSearch.isError ? <p role="alert" className="mt-3 text-sm leading-6">{cancelSearch.error.message}</p> : null}
         </section> : activeSearch ? <EmployerSavedResults key={activeSearch.id} search={activeSearch} preparing={prepare.isPending} canPrepare={Boolean(resumeId)} onPrepare={(postingId) => prepare.mutate(postingId)} /> : <EmptyState icon={Search} title="Search with your resume and preferences" description="Choose how many verified jobs to find. Review the service credit price before starting." />}

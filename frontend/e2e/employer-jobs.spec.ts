@@ -387,8 +387,14 @@ test("exact PDF MIME failures block approval and allow a safe preview retry", as
 });
 
 test("queued application polling reaches confirmation and refreshes paid status", async ({ page, context, baseURL }) => {
+  await page.clock.install();
   const f = fixture(); f.state.applicationsVisible = true; f.state.executeOutcome = "queued"; f.application.status = "ready"; f.application.missing_fields = []; await f.install(context, baseURL!); await page.goto("/employer-jobs"); await page.getByRole("button", { name: /Backend Engineer Example Studio/ }).click(); const dialog = page.getByRole("dialog"); await dialog.getByRole("checkbox", { name: /I reviewed this employer/ }).check(); await dialog.getByRole("button", { name: "Approve and submit" }).click(); await expect(dialog.getByRole("status")).toContainText("Waiting for an employer-confirmed result");
-  f.application.status = "confirmed"; f.application.charged_credits = 7; f.catalog.balance = 93; await expect(dialog.getByRole("heading", { name: "Employer submission confirmed" })).toBeVisible(); await dialog.getByRole("button", { name: "Close application review" }).click(); await expect(page.getByRole("button", { name: /Backend Engineer Example Studio Submission confirmed/ })).toBeVisible(); await expect(page.getByRole("main").getByText("93", { exact: true })).toBeVisible(); expect(f.requests.filter((r) => r.path.endsWith("/execute"))).toHaveLength(1); expect(f.unexpected).toEqual([]);
+  f.application.status = "confirmed"; f.application.charged_credits = 7; f.catalog.balance = 93;
+  const confirmation = page.waitForResponse((response) => response.request().method() === "GET" && new URL(response.url()).pathname.endsWith("/applications/app_fixture"));
+  // Advance the bounded polling clock only after the real queued response/UI.
+  await page.clock.fastForward(30_000);
+  await confirmation;
+  await expect(dialog.getByRole("heading", { name: "Employer submission confirmed" })).toBeVisible(); await dialog.getByRole("button", { name: "Close application review" }).click(); await expect(page.getByRole("button", { name: /Backend Engineer Example Studio Submission confirmed/ })).toBeVisible(); await expect(page.getByRole("main").getByText("93", { exact: true })).toBeVisible(); expect(f.requests.filter((r) => r.path.endsWith("/execute"))).toHaveLength(1); expect(f.unexpected).toEqual([]);
 });
 
 

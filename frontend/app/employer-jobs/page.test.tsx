@@ -264,3 +264,30 @@ describe("employer page saved-search composition", () => {
     expect(state.post).not.toHaveBeenCalled();
   });
 });
+
+it.each([429, 503])("pauses hidden search polling and requires an explicit status read after HTTP%s", async (status) => {
+  let visible: DocumentVisibilityState = "visible";
+  const visibility = vi.spyOn(document, "visibilityState", "get").mockImplementation(() => visible);
+  let progressReads = 0;
+  state.get.mockImplementation((url: string) => url.endsWith("/search-preparations/search_pending")
+    ? ++progressReads === 1 ? Promise.reject(new ApiError("Status unavailable", status, {})) : Promise.resolve(pendingSearch())
+    : read(url));
+  state.post.mockResolvedValue(pendingSearch());
+  render(<EmployerJobsPage />, { wrapper: withClient() });
+  await screen.findByText("Python Engineer one");
+  fireEvent.click(screen.getByRole("button", { name: /Python Engineer one/ }));
+  await screen.findByRole("heading", { name: "Saved job for one" });
+  vi.useFakeTimers();
+  const tick = async (ms: number) => { await act(async () => { await vi.advanceTimersByTimeAsync(ms); }); };
+  try {
+    fireEvent.click(screen.getByRole("button", { name: "Find jobs" })); await tick(1);
+    expect(screen.getByRole("heading", { name: "Preparing your search" })).toBeInTheDocument();
+    visible = "hidden"; await act(async () => { document.dispatchEvent(new Event("visibilitychange")); });
+    await tick(120000); expect(progressReads).toBe(0);
+    visible = "visible"; await act(async () => { document.dispatchEvent(new Event("visibilitychange")); });
+    await tick(5000); expect(progressReads).toBe(1);
+    await tick(120000); expect(progressReads).toBe(1);
+    fireEvent.click(screen.getByRole("button", { name: "Retry search status" })); await tick(1);
+    expect(progressReads).toBe(2); expect(state.post).toHaveBeenCalledTimes(1);
+  } finally { visibility.mockRestore(); vi.useRealTimers(); }
+});
