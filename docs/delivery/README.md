@@ -10,18 +10,24 @@ follow-on work. A component report closes only the behavior it verifies.
 ## Current production and rollout
 
 Schema **`20261023_0021`** is accepted. The canonical API serves request-capacity
-source `0abc7d53` / image `358c9db6` at generation **328**; the analysis, employer
-and resume coordinator retain source `7a00839d` / image `c1ce5b32`. The API stage,
-actual promotion acknowledgment, canonical readbacks and independent verification
-passed. Both canonical aliases target frontend
+source `0abc7d53` / image `358c9db6` at generation **331** after the accepted
+document-maintenance pin transition. Analysis generation **63**, employer
+generation **31** and coordinator generation **22** retain source `7a00839d` /
+image `c1ce5b32`; the employer service is unchanged. Inspector generation **14**
+serves image `9e402666`, with definitions expiring **27 October, 06:26:10 UTC**.
+Manual maintenance run **40109020215** passed **25 local / 10 native cases**;
+independent serving/caller-pin and admission-restoration readbacks passed at
+**24 October, 16:10:27 / 16:11:46 UTC**. The older five-file journal remains
+byte-identical, and its candidate was neither adopted nor replayed. The earlier
+API stage/promotion evidence remains recorded on the progress board. Both canonical
+aliases target frontend
 `dpl_875XxYMHwUJ3F9pPmVzWY4Sc1fGm`, verified
-**24 October 2026, 03:16:06.122378 UTC**. The same installed 0.8.1 companion was
+**24 October 2026, 15:36 UTC**. The same installed 0.8.1 companion was
 reloaded and signed inspection returned **UNCLAIMED**. Fresh reinspection and
 explicit archive preceded one new Start; human persistent-grant approval remains
 pending, so no paired device is accepted. Use the progress board for remaining
-work and timestamped monitoring observations: the natural document monitor passed
-at **01:38:57 UTC**, with run age **3,803 seconds** at the **02:42 UTC** observation.
-Stable unattended cadence remains unproven.
+work and timestamped monitoring observations. The accepted manual refresh does
+not establish stable unattended cadence or new condition-specific alert delivery.
 
 The genuine search, resume-preservation, password-reset, enrollment and finite
 credit evidence is recorded on that board. The candidate's Razorpay application

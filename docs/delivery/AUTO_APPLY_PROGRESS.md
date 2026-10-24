@@ -1,26 +1,30 @@
 # HireWiz development and deployment progress
 
-Updated **24 October 2026 (IST)** after the request-capacity API and canonical
-frontend promotions. Original outcomes **1, 2 and 4 are COMPLETE within
-the approved free twenty-origin pilot**; the other three remain **OPEN**. Global
+Updated **24 October 2026 (IST)** after the request-capacity release and accepted
+manual document-maintenance recovery. Original outcomes **1, 2 and 4 are COMPLETE
+within the approved free twenty-origin pilot**; the other three remain **OPEN**. Global
 coverage, sales, real payments and commercial profitability remain follow-on
 work. The goal remains unfinished until the other pilot outcomes are accepted.
 
 Schema **`20261023_0021`** is committed. The canonical API serves accepted
 request-capacity source **`0abc7d53`**, immutable image **`358c9db6`**, at generation
-**328**. Staging at generation **327**, the actual promotion acknowledgment,
-canonical readbacks and an independent **37.26-second** verification passed.
-The analysis worker, employer worker and resume
-coordinator retain accepted source **`7a00839d`** and image **`c1ce5b32`**.
-Reopening is accepted: the three reviewed worker queues are RUNNING and the three
-existing schedules are ENABLED. The employer-application queue remains PAUSED;
+**331** after the scanner-pin transition. The application image and source are
+unchanged. Analysis generation **63**, employer generation **31** and coordinator
+generation **22** retain accepted source **`7a00839d`** and image **`c1ce5b32`**.
+Inspector generation **14** serves immutable image **`9e402666`**, with definitions
+expiring **27 October 2026, 06:26:10 UTC**. Manual maintenance run **40109020215**
+passed current local/native acceptance; independent serving and caller-pin
+verification passed at **16:10:27 UTC**, and restoration of captured admission
+flags passed at **16:11:46 UTC**. The earlier API staging and promotion evidence
+remains preserved below. Reopening is accepted: the three reviewed worker queues
+are RUNNING and the three existing schedules are ENABLED. The employer-application queue remains PAUSED;
 sales, checkout and employer submission remain held.
 
 Production frontend **`dpl_875XxYMHwUJ3F9pPmVzWY4Sc1fGm`** contains reviewed
 request-capacity source **`0abc7d53`**, normally merged as **`be95f00c`**. Its
-promotion completed and both canonical aliases were verified at
-**24 October 2026, 03:16:06.122378 UTC**. Both domains retain the configured 0.8.1
-archive, and reset-token privacy headers passed. It supersedes the earlier BRu
+promotion completed at the earlier recorded observation; both canonical aliases
+still targeted this deployment at **24 October 2026, 15:36 UTC**. Both domains retain
+the configured 0.8.1 archive, and reset-token privacy headers passed. It supersedes the earlier BRu
 upload-reconciliation and H18/f3 billing releases, whose accepted evidence remains
 preserved below. Actual password reset, native enrollment and fresh native
 password sign-in have passed; companion pairing remains pending. The final
@@ -95,7 +99,7 @@ unfinished free-pilot journeys within the same six outcomes.
 | Candidate-reviewed direct company applications | OPEN | Ordinary Google sign-in passed; the human reports foreground sign-in within five seconds. The human completed password reset; the password-changed email reached INBOX at **23 October 2026, 22:28:41 UTC**. Native enrollment and a fresh native password sign-in both reached the Dashboard. The first reset email also reached INBOX with SPF, DKIM and DMARC passing. The same installed 0.8.1 companion retains its key, permissions and profile. Signed inspection returned **UNCLAIMED**, fresh reinspection preceded explicit archival of the uncertain attempt, and one new Start prepared a creation with matching website fingerprints; human persistent-grant approval remains pending, so no pairing is accepted. A genuine one-credit search returned Razorpay's Lead Software Development Engineer role in Bengaluru. The exact-original internal application now has one successfully saved ordinary `first_name` answer and a loaded preview; other answers remain blank, with **0 reserved / 0 charged**. The active public form remains blank and no employer write occurred. | Complete the pending human approval and verify actual pairing, exact-file/answer review, cancellation before Fill and native device revocation. Retain the separate native inspection/revocation responses and bounded zero-execution/accounting readback. Do not seed an identity/device or bypass proof; employer attachment, upload and final submission are not smoke tests. |
 | Paid search/application credits, profitable finite packs and payment recovery | COMPLETE (free pilot) | Three finite packs, separate service/AI balances, exact quotes, reservations, idempotent settlement and recovery controls are implemented. The promoted billing page displayed the actual **3** service credits. The quote of **1 per job** delivered **3 of 3** Software Engineer roles, charged **3**, released **0**, and left **0 held / 0 available**; AI remained **7**. Expense-policy **3** and model-policy **2** retain their reviewed authority. | Approved free-pilot credit, quote and settlement acceptance is complete. Paid checkout, real payment/refund receipts, commercial activation and actual-cost profitability remain explicitly unaccepted follow-on work. Unknown provider liabilities must not become zero cost. |
 | Fast responsive pages and SEO | OPEN | Public views were observed at 390, 768 and 1,440 pixels without horizontal overflow; signed-in search/billing views were also observed at 390 pixels. Fresh signed-in workspace and resume review observations at 320 and 1,024 pixels show no horizontal page overflow. Keyboard focus, mobile navigation and horizontally scrolling section access passed. Exact-source preview and canonical pricing/auth metadata corrections were accepted. The reset form passed desktop/mobile layout, fragment-removal and normal-session stability checks. Both domains now serve the request-deduplication and bounded-polling correction, retaining the billing/upload fixes. The canonical upload passed. | Finish companion recovery, pending states and actionable errors within the authenticated pilot journey. Preserve noindex/no-referrer and reset-token privacy. Complete accessibility, device/connection-segmented field p75 LCP, INP and CLS, and mobile field performance remain unmeasured; these observations do not establish them. |
-| GCP/Vercel deployment, preserved-data migration and monitoring | OPEN | Schema21 migration and reopening are accepted. API generation **328** serves source0abc/image358c9 after actual staged/promotion readbacks and independent canonical verification; the other three services retain source7a/imagec1ce. Three worker queues are running and all three schedules produced natural HTTP 200 runs; the application queue remains paused. Frontend875 remains on both canonical aliases at **24 October, 15:36 UTC**. The latest three natural document monitors raised the intended definition-refresh warning. Daily refresh stopped on an older incomplete Build journal before creating another Build; recovery is not yet accepted. Stable unattended cadence remains unproven. | Complete the bounded document-maintenance recovery and remaining live companion journey, then update the final delivery record using actual serving versions and held controls. Retain honest natural-versus-manual monitoring evidence and its observation times. Preserve alert handles and distinguish configured routes from actual condition-specific incident/inbox delivery. No deployment-only completion claim. |
+| GCP/Vercel deployment, preserved-data migration and monitoring | OPEN | Schema21 migration and reopening are accepted. API generation **331** retains source0abc/image358c9; analysis generation **63** and coordinator generation **22** retain source7a/imagec1ce after the scanner-pin transition. Employer generation **31** is unchanged. Manual maintenance run **40109020215** passed **25 local / 10 native cases** and restored admission; independent native serving/pin and admission-restoration readbacks passed at **16:10:27 / 16:11:46 UTC**. Inspector generation **14**, image9e402666, has definitions valid until **27 October, 06:26:10 UTC**. The historical five-file journal is preserved byte-for-byte; its candidate was neither adopted nor replayed. Three worker queues are running and the retained three natural schedule HTTP 200 observations precede this pin transition; the application queue remains paused. Frontend875 remains on both canonical aliases at **24 October, 15:36 UTC**. Stable unattended document-maintenance cadence remains unproven. | Accept the remaining live companion journey, then update the final delivery record using actual serving versions and held controls. Retain honest natural-versus-manual monitoring evidence and its observation times. Preserve alert handles and distinguish configured routes from actual condition-specific incident/inbox delivery. No deployment-only completion claim. |
 
 ## Current rollout state and preserved authority
 
@@ -110,28 +114,35 @@ API release used source **`65d743a9b63f32e5509da381279b376804bdb606`** and image
 The current request-capacity successor uses source
 **`0abc7d530dcd0115a9f2af0c2961f89c55c41077`** and image
 **`sha256:358c9db69074aa7fa383a1562f64742261837d91ebcf8d9593c0a4a97fb8f894`**.
-The actual promotion acknowledgment and canonical health passed, with the other
-three services, queues and schedules unchanged. Each canonical service has one
-untagged 100-percent route.
+That API-only promotion left the other three services, queues and schedules
+unchanged. The later document-maintenance transition repinned the inspector and
+three callers as recorded below. Each canonical service has one untagged
+100-percent route.
 
-| Service | Accepted canonical revision |
-|---|---|
-| API | `ai-resume-parser-capacity24-f537d8c7d181` |
-| Analysis worker | `hirewiz-analysis-worker-activate-d2598748799e` |
-| Employer worker | `hirewiz-employer-worker-activate-f5d5e2474f5c` |
-| Resume coordinator | `hirewiz-resume-coordinator-activate-a48ebe3f111c` |
+| Service | Generation | Accepted canonical revision |
+|---|---|---|
+| API | 331 | `ai-resume-parser-d-4d2e81c43b97-open` |
+| Analysis worker | 63 | `hirewiz-analysis-worker-d-4d2e81c43b97-open` |
+| Employer worker | 31 | `hirewiz-employer-worker-activate-f5d5e2474f5c` |
+| Resume coordinator | 22 | `hirewiz-resume-coordinator-d-4d2e81c43b97-open` |
+| Document inspector | 14 | `hirewiz-document-inspector-d-4d2e81c43b97-worker` |
 
-The current API revision is generation **328**, after its zero-traffic stage at
-generation **327**. Independent canonical verification passed in **37.26 seconds**;
-that is the duration of this check, not page-load performance or total development
-time. Its corresponding frontend **`dpl_875XxYMHwUJ3F9pPmVzWY4Sc1fGm`** is
-promoted and both canonical aliases were verified at
-**24 October 2026, 03:16:06.122378 UTC**. No schema, IAM, global authority epoch,
+The request-capacity API was originally staged at generation **327** and promoted
+at generation **328**; its independent canonical verification passed in
+**37.26 seconds**. That is the duration of this earlier check, not page-load
+performance or total development time. The later accepted document-maintenance
+transition produced the current revisions above without rebuilding application
+images. Its API health readback matched source0abc and the new revision at
+**24 October, 16:10:27 UTC**. The corresponding frontend
+**`dpl_875XxYMHwUJ3F9pPmVzWY4Sc1fGm`** was promoted and both aliases verified at
+**03:16:06.122378 UTC**; the latest alias readback at **15:36 UTC** still matched.
+No schema, IAM, global authority epoch,
 signing key, executor configuration or employer-write hold is changed by this
 request-capacity release.
 
-Canonical API, analysis and employer health checks passed. Natural scheduler
-attempts independently matched HTTP 200 on the final revisions: scan at
+Before this maintenance transition, canonical API, analysis and employer health
+checks passed. Retained natural scheduler attempts independently matched HTTP 200
+on their then-serving revisions: scan at
 **21:53:16 UTC**, cleanup at **21:50:21 UTC** and maintenance at **21:50:16 UTC** on
 23 October. The analysis, employer-ingestion and employer-search queues are
 RUNNING. The cleanup, scan and maintenance schedules are ENABLED. The
@@ -150,9 +161,11 @@ unresolved cost holds. The schema21 guard permits only coherent terminal history
 with its complete financial fingerprint unchanged. It neither settles those costs
 nor changes customer credits, and it admits no active work through the drain check.
 
-The V2 inspector uses immutable image **`0a7…`**, its reviewed exact-image renderer
-profile, **25 local cases and 10 native cases**, with inspector and caller pins
-joined. Definitions expire **25 October 2026, 06:24:11 UTC**. A successor requires
+The V2 inspector now uses immutable image
+**`sha256:9e402666dbe7e518b2d7e5f7893b2d876b5682e296630af1f082e5a6c734e2f4`**,
+with the reviewed **`0a7e…`** renderer parent, **25 local cases and 10 native cases**,
+and inspector/caller pins joined. Definitions expire
+**27 October 2026, 06:26:10 UTC**. A successor requires
 the existing reviewed maintenance workflow; stale validity or arbitrary renderer
 hashes must never be substituted. Inspector acceptance remains separate from
 rendered native-upload QA and cleanup evidence.
@@ -166,7 +179,7 @@ Its canonical alias readback passed at **22:46:23 UTC**. The later 0.8.1 recover
 frontend was verified on both domains at **24 October, 01:01:53 UTC**. The current
 request-capacity frontend supersedes it on both `hirewizhq.com` and
 `www.hirewizhq.com`; the latest alias readback passed at
-**24 October 2026, 03:16:06.122378 UTC**. Automatic custom-domain
+**24 October 2026, 15:36 UTC**. Automatic custom-domain
 assignment remains disabled. The billing/upload corrections themselves required
 no backend image or schema change; the 0.8.1 recovery API successor is recorded
 separately above.
@@ -314,17 +327,33 @@ distinguished from the manual recovery. Do not
 force a production failure or send a test email to manufacture alert acceptance.
 
 At **24 October, 15:36 UTC**, the latest three natural monitor runs had failed
-with the intended `document_refresh_expiry_alert`: the accepted inspector's
-definitions expire at **25 October, 06:24:11 UTC**, within the unchanged 24-hour
+with the intended `document_refresh_expiry_alert`: the then-serving inspector's
+definitions were due to expire at **25 October, 06:24:11 UTC**, within the unchanged 24-hour
 warning window. The daily refresh run **40069909715** stopped earlier with
 `document_refresh_prior_unknown_reconcile_only`, before creating a new Build,
 because its bounded history included a five-file pre-native Build journal.
 Read-only reconciliation found the acknowledged historical Build successful,
 its deterministic Job absent, and the accepted serving inspector on a different
 image. A bounded audit-log query found no matching Job activity within its queried
-window. This supports an additive abandonment reader; it does not establish
-native acceptance for that old candidate or a successful fresh refresh. Original
-artifacts remain preserved, and the expiry warning is not relaxed.
+window. These observations supported the additive abandonment reader; they did
+not establish native acceptance for that old candidate.
+
+The repair was normally merged in **PR47**, source **`bc97d52b`**, merge
+**`1b846c83`**. One normal **manual** maintenance run **40109020215**, from that
+exact main revision, ran at **24 October, 15:53:20–16:06:48 UTC** and succeeded.
+Its actual artifact retains the five original journal files byte-for-byte and
+records their candidate as abandoned before native acceptance. The old Build
+was neither adopted nor replayed. A fresh Build **`4a41de96`** produced image
+**`9e402666`**, which passed **25 local / 10 native cases** before the bounded
+inspector and three-caller pin transition. Independent read-only verification at
+**16:10:27 UTC** accepted its native V2 receipt, serving revision, caller pins and
+API health; the separate **16:11:46 UTC** readback verified all captured admission
+flags restored. Current definitions expire **27 October, 06:26:10 UTC**.
+
+This accepts the bounded manual recovery. It does not prove later natural
+schedule cadence, a fresh condition-specific alert delivery, or completed browser
+assistance. Original artifacts and the earlier warnings remain preserved; the
+24-hour warning and three-day runtime expiry limits are unchanged.
 
 There is **no dependable remaining completion ETA**. Do not invent original
 outcome estimates, sum independent operator durations or add CI/deployment
