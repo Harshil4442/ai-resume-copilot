@@ -6,13 +6,18 @@ Start with the [current six-outcome progress board](AUTO_APPLY_PROGRESS.md),
 
 ## Current production and rollout
 
-The bounded-identity API repair is deployed at generation **335**, source `436585cd`,
-image `2440572b` and revision `ai-resume-parser-id25-23658ba44cb3`. Companion 0.8.3 and
+The bounded-identity API repair is deployed at generation **338**, source `436585cd`,
+image `2440572b` and revision `ai-resume-parser-d-a1fc222a7ed3-open`. Companion 0.8.3 and
 the frontend source `204c2952` are published through production deployment
 `dpl_BPxz9EA5kySSLWhfAK1sQsTKPH8b`. Both aliases and the anonymous 67,235-byte
 ZIP download match the accepted release. The public setup page links to 0.8.3.
-Schema 21 and the other four service revisions are preserved; all five services
-were Ready in the 03:08:30 UTC observation on 25 October 2026.
+Schema 21 and the application images are preserved. The five-service observation
+reconciled at 14:14:57 UTC on 25 October found API 338, analysis 66, employer 31,
+coordinator 25 and inspector 15 Ready. Scheduled document refresh run
+[40169964119](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/40169964119)
+completed its build, native V2 ten-case proof, exact pin transition, admission
+restoration and cleanup. The inspector image is now `b5d97436`, with definitions
+valid until 28 October, 06:24:12 UTC; pairing/account configuration is unchanged.
 
 The source `204c2952` release checks passed before publication. This record is a
 status-only update; it changes no application code or active deployment. API generation 333 and
@@ -20,9 +25,14 @@ frontend 3D4 remain available as rollback releases. Native protocol 2, the admit
 `companion_0_8_1` executor and all held employer/payment controls are unchanged.
 
 Original outcomes **1/2/4 are complete within the approved free pilot**.
-**3/5/6 remain open**: the existing installed 0.8.3 source matches its reviewed
-bundle, but actual reload, retained-request recovery, native pairing, exact-file
+**3/5/6 remain open**: all 18 installed 0.8.3 source files match the reviewed
+bundle, and actual native archival beyond the former four-record limit verifies
+the reloaded retention repair with the same key and history. Subsequent connection
+attempts failed or expired, were reconciled and archived, and returned to Idle.
+Manual fresh connection is pending. Native pairing, exact-file
 review/cancel-before-Fill, revocation and zero-effects/accounting acceptance remain
+unfinished. None of these attempts reached device completion, Fill, upload or
+submission; the final application-fee and effects ledger observation remains
 pending. Publication is not a substitute for this journey.
 
 The [capacity decision](../adr/010-bounded-browser-identity-observations.md)
@@ -34,8 +44,8 @@ retries. The [progress board](AUTO_APPLY_PROGRESS.md) separates actual PDF
 modifications, edited-DOCX native proof and unchanged source snapshots.
 
 Sales, real payments, real employer writes and worldwide coverage expansion
-remain held. Natural expiry monitors and successful scheduler delivery do not
-prove completed daily definition renewal or every alert delivery condition.
+remain held. One completed natural definition refresh is now independently
+observed; stable daily cadence and every alert delivery condition remain unproven.
 Reliable whole-outcome timing estimates are unavailable.
 
 ## Historical implementation and evidence
