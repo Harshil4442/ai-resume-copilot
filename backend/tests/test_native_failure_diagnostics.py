@@ -5,16 +5,28 @@ import json
 import logging
 from types import SimpleNamespace
 from unittest.mock import Mock
+from uuid import uuid4
 
 import pytest
 from google.api_core import exceptions as api_errors
 from google.api_core.exceptions import NotFound, PermissionDenied, ResourceExhausted
 from google.auth import exceptions as auth_errors
+from test_browser_pairing_production import candidate as candidate_request
+from test_browser_pairing_production import (  # noqa: F401 -- intercepted fixture dependencies
+    configured,
+    kms,
+    transport,
+)
+from test_browser_pairing_production import (
+    pairing as native_pairing,  # noqa: F401 -- intercepted pairing fixture
+)
+from test_candidate_production_factory import PASSWORD
 
 from app.domains.candidate_accounts import production as accounts
 from app.domains.recovery import browser_pairing_production as pairing
 from app.domains.recovery import gcp_journal as journal
 from app.domains.recovery import native_diagnostics as diagnostics
+from app.domains.recovery.contracts import canonical
 from app.domains.recovery.gcp_rpc import FirestoreRpc
 from app.domains.recovery.store import GuardUnavailable
 from app.observability import JsonFormatter, correlation_id_var
@@ -167,8 +179,19 @@ def test_closed_configuration_is_reported_without_constructing_native_clients(ev
 
 @pytest.mark.parametrize("operation", ["candidate", "device"])
 @pytest.mark.parametrize("failure", [False, True])
-def test_pairing_native_call_is_never_replayed_and_postcheck_stays_in_order(events, monkeypatch, operation, failure):
-    instance = pairing.ConfiguredBrowserPairing.__new__(pairing.ConfiguredBrowserPairing)
+def test_pairing_native_call_is_never_replayed_and_postcheck_stays_in_order(
+    events, monkeypatch, operation, failure, native_pairing,  # noqa: F811 -- imported intercepted fixture
+):
+    # Real intercepted composition keeps local preflight and identity scope active;
+    # only this diagnostic's target operation is replaced, without replay or writes.
+    c = native_pairing
+    instance = c.browser
+    original_service = instance._service
+    native = original_service()
+    if operation == "candidate":
+        email = f"diagnostic-{uuid4()}@example.test"
+        c.accounts.register(email=email, password=PASSWORD, policy_version="2026-10-08")
+        context = c.accounts.login(email=email, password=PASSWORD).context
     calls = []
     error = PermissionDenied("synthetic private resource")
     def native_call(*args):
@@ -176,22 +199,49 @@ def test_pairing_native_call_is_never_replayed_and_postcheck_stays_in_order(even
         if failure:
             raise error
         return {"status": "synthetic"}
-    native = SimpleNamespace(candidate=native_call, device=native_call)
+    monkeypatch.setattr(native, operation, native_call)
     def service():
         calls.append("service")
-        return native
+        return original_service()
     monkeypatch.setattr(instance, "_service", service)
-    monkeypatch.setattr(pairing, "configuration", lambda: SimpleNamespace())
-    invoke = (lambda: instance.candidate("challenge", b"{}", "private", "private")) if operation == "candidate" else (lambda: instance.device("status", b"{}", "private"))
+    metadata = c.native.sdk.admin.transport.get_database
+    original_identity = metadata.side_effect
+    def identity(request, **kwargs):
+        names = {c.execution.database: "identity.execution", c.protected.database: "identity.protected"}
+        calls.append(names[request.name])
+        return original_identity(request, **kwargs)
+    monkeypatch.setattr(metadata, "side_effect", identity)
+    if operation == "candidate":
+        original_preflight = native.gateway.verify
+        def candidate_preflight(*args, **kwargs):
+            calls.append("preflight")
+            return original_preflight(*args, **kwargs)
+        monkeypatch.setattr(native.gateway, "verify", candidate_preflight)
+        def invoke():
+            return candidate_request(c, context, "challenge", {"pairing_id": str(uuid4())})
+    else:
+        original_preflight = pairing._device_preflight
+        def device_preflight(*args, **kwargs):
+            calls.append("preflight")
+            return original_preflight(*args, **kwargs)
+        monkeypatch.setattr(pairing, "_device_preflight", device_preflight)
+        body = canonical(transport(c, "status", str(uuid4()))).encode()
+        def invoke():
+            return instance.device("status", body, f"chrome-extension://{c.factory_config['extension_id']}")
+    entry = ["service", "preflight", "identity.execution", "identity.protected", "native_operation"]
+    final = ["identity.execution", "identity.protected"]
+    prior_native_writes = len(c.native.calls)
     if failure:
         with pytest.raises(PermissionDenied) as raised:
             invoke()
-        assert raised.value is error and calls == ["service", "native_operation"]
+        assert raised.value is error and calls == [*entry, *final]
         assert events == [{"event": "native_boundary_failure_v1", "component": "browser_pairing",
             "stage": "native_operation", "exception_type": "PermissionDenied"}]
     else:
         assert invoke() == {"status": "synthetic"}
-        assert calls == ["service", "native_operation", "service"] and events == []
+        assert calls == [*entry, "service", *final] and events == []
+    assert calls.count("native_operation") == 1
+    assert len(c.native.calls) == prior_native_writes and c.kms.calls == []
 
 
 @pytest.mark.parametrize("failure", [None, "live_metadata", "exact_metadata", "bounded_media"])
