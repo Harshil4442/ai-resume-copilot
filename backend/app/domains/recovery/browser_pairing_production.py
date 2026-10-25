@@ -15,7 +15,8 @@ from pydantic import Field, model_validator
 from ..candidate_accounts.production import CandidateNativeConfiguration, _pairs
 from .contracts import Contract, Identifier, canonical
 from .native_diagnostics import native_phase
-from .pairing_auth import PinnedAssertions, public_jwk
+from .native_identity_observation import identity_barrier, identity_observation_scope
+from .pairing_auth import PinnedAssertions, public_jwk, verify_signature
 from .store import GuardDenied, GuardUnavailable
 
 if TYPE_CHECKING:
@@ -116,6 +117,64 @@ class RefreshingKmsSigner:
             boundary.close()
 
 
+class _IdentityGuardedSigner:
+    """Fence the actual signing delegate, including an injected SDK boundary."""
+    def __init__(self, signer):
+        self.signer = signer
+
+    def sign(self, payload: dict) -> dict:
+        identity_barrier()
+        try:
+            return self.signer.sign(payload)
+        finally:
+            identity_barrier()
+
+
+def _device_preflight(operation: str, raw: bytes, origin: str,
+                      current: BrowserPairingNativeConfiguration, *, now_ms: int) -> None:
+    """Reject invalid public transport locally, before either metadata dependency.
+
+Known-device signatures still require the native key lookup inside the scope.
+This preflight never consumes a nonce or performs a lookup or provider call.
+"""
+    from .browser_pairing import (
+        FAILURE as REQUEST_FAILURE,
+    )
+    from .browser_pairing import (
+        WINDOW_MS,
+        ChallengeProof,
+        CreationProof,
+        DeviceLookup,
+        KeyStatusRequest,
+        PrepareRequest,
+        exact_json,
+    )
+    if type(origin) is not str or re.fullmatch(r"chrome-extension://[a-p]{32}", origin) is None:
+        raise GuardDenied(REQUEST_FAILURE)
+    data = exact_json(raw)
+    if operation in {"prepare", "inspect-key"}:
+        proof = (PrepareRequest if operation == "prepare" else KeyStatusRequest).model_validate(data)
+        if (proof.extension_id != current.extension_id or proof.revision != current.executor_revision
+                or origin != f"chrome-extension://{proof.extension_id}"):
+            raise GuardDenied(REQUEST_FAILURE)
+        key = public_jwk(proof.key)
+        verify_signature(key, "transport-request", proof.model_dump(mode="json", exclude={"signature"}), proof.signature)
+        if not proof.issued_at_ms <= now_ms < proof.issued_at_ms + WINDOW_MS:
+            raise GuardDenied(REQUEST_FAILURE)
+        return
+    if operation == "create":
+        CreationProof.model_validate(data)
+        return
+    if operation in {"complete", "refresh"}:
+        ChallengeProof.model_validate(data)
+        return
+    lookup = DeviceLookup.model_validate(data)
+    expected = {"challenge": "device_challenge", "status": "status", "refresh-challenge": "refresh_challenge"}
+    if (expected.get(operation) != lookup.operation
+            or not lookup.issued_at_ms <= now_ms < lookup.issued_at_ms + WINDOW_MS):
+        raise GuardDenied(REQUEST_FAILURE)
+
+
 class ConfiguredBrowserPairing:
     def __init__(self, value: BrowserPairingNativeConfiguration):
         self._raw = canonical(value.model_dump(mode="json"))
@@ -152,7 +211,7 @@ class ConfiguredBrowserPairing:
                 coordinator = GcpPairingCoordinator(lifetime.registry,
                     GcsJournal(bucket, publication=publication), lifetime.pin,
                     epoch_generation=current.epoch_generation, fence=accounts.fence,
-                    assertions=assertions, claims=RefreshingKmsSigner(current.claim_key),
+                    assertions=assertions, claims=_IdentityGuardedSigner(RefreshingKmsSigner(current.claim_key)),
                     attempts=GcsPairingAttempts(bucket, publication=publication),
                     password_signing=GcsPasswordSigning(bucket), now_ms=lifetime.now_ms)
                 credentials = SqlPasswordCredentials(accounts.service.sessions.kw["bind"],
@@ -161,13 +220,22 @@ class ConfiguredBrowserPairing:
                 devices = ProtectedPairingDevices(coordinator, scoped,
                     activated=projection.activated, deny_sql=projection.deny_sql)
                 password = GcpPasswordCandidateBoundary(coordinator, scoped=scoped, paired_devices=devices).service(
-                    credentials=credentials, signer=RefreshingKmsSigner(current.assertion_key, issuer=current.assertion_issuer),
+                    credentials=credentials, signer=_IdentityGuardedSigner(
+                        RefreshingKmsSigner(current.assertion_key, issuer=current.assertion_issuer)),
                     issuer=current.assertion_issuer)
                 gateway = GatewayVerifier(key=bytes.fromhex(os.environ["BROWSER_PAIRING_GATEWAY_SECRET"]),
                     issuer="hirewiz_bff_v1", origin=os.environ["BROWSER_PAIRING_WEBSITE_ORIGIN"])
                 self._native = NativeBrowserPairing(coordinator, password, gateway, paired_devices=devices)
         assert self._native is not None
         return self._native
+
+    def _observations(self, native: NativeBrowserPairing):
+        fixed = BrowserPairingNativeConfiguration.model_validate_json(self._raw)
+        return identity_observation_scope((
+            (native.coordinator.registry.rpc, fixed.execution_witness_pin.registry),
+            (native.paired_devices.scoped.publication.registry.rpc,
+             fixed.publication_resource.pin.authority.registry),
+        ))
 
     def assistance_context(self, device_id: str, public_key: dict[str, str]) -> SubmitContext:
         if os.environ.get("BROWSER_ASSISTANCE_NATIVE_PAIRING_ENABLED") != "true":
@@ -176,36 +244,39 @@ class ConfiguredBrowserPairing:
         fixed_key = public_jwk(public_key)
         current = configuration()
         native = self._service()
-        context = native.paired_devices.assistance_context(device_id, fixed_key,
-            extension_id=current.extension_id, executor_revision=current.executor_revision)
-        self._service()
-        if os.environ.get("BROWSER_ASSISTANCE_NATIVE_PAIRING_ENABLED") != "true":
-            raise GuardUnavailable("Native assistance pairing precheck changed")
+        with self._observations(native):
+            context = native.paired_devices.assistance_context(device_id, fixed_key,
+                extension_id=current.extension_id, executor_revision=current.executor_revision)
+            self._service()
+            if os.environ.get("BROWSER_ASSISTANCE_NATIVE_PAIRING_ENABLED") != "true":
+                raise GuardUnavailable("Native assistance pairing precheck changed")
         return context
 
     def candidate(self, operation: str, raw: bytes, assertion: str, signature: str) -> dict:
         native = self._service()
-        with native_phase("browser_pairing", "native_operation"):
-            result = native.candidate(operation, raw, assertion, signature)
-        self._service()
+        from .browser_pairing import PREFIX, exact_json
+        native.gateway.verify(assertion, signature, path=f"{PREFIX}/candidate/{operation}",
+            raw=raw, now_ms=native.coordinator.now_ms())
+        exact_json(raw)
+        with self._observations(native):
+            with native_phase("browser_pairing", "native_operation"):
+                result = native.candidate(operation, raw, assertion, signature)
+            self._service()
         return result
 
     def device(self, operation: str, raw: bytes, origin: str) -> dict:
         native = self._service()
         current = configuration()
-        if operation in {"prepare", "inspect-key"}:
-            from .browser_pairing import exact_json
-            body = exact_json(raw)
-            if body.get("extension_id") != current.extension_id or body.get("revision") != current.executor_revision:
-                raise GuardDenied("Device extension/revision does not match the protected deployment")
-        with native_phase("browser_pairing", "native_operation"):
-            result = native.device(operation, raw, origin)
-        if "device_claim" in result:
-            claim = result["device_claim"]["payload"]
-            if claim.get("extension_id") != current.extension_id or claim.get("executor_revision") != current.executor_revision:
-                raise GuardDenied("Paired device claim differs from the pinned extension deployment")
-            native.paired_devices.check_claim(claim)
-        self._service()
+        _device_preflight(operation, raw, origin, current, now_ms=native.coordinator.now_ms())
+        with self._observations(native):
+            with native_phase("browser_pairing", "native_operation"):
+                result = native.device(operation, raw, origin)
+            if "device_claim" in result:
+                claim = result["device_claim"]["payload"]
+                if claim.get("extension_id") != current.extension_id or claim.get("executor_revision") != current.executor_revision:
+                    raise GuardDenied("Paired device claim differs from the pinned extension deployment")
+                native.paired_devices.check_claim(claim)
+            self._service()
         return result
 
 

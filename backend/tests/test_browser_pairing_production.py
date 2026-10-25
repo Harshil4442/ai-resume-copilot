@@ -519,9 +519,11 @@ def test_confirmation_metadata_budget_keeps_fresh_transaction_fences(pairing):
     metadata = c.native.sdk.admin.transport.get_database
     before = metadata.call_count
     assert confirm(c, context, challenge)["status"] == "CANDIDATE_CONFIRMED"
-    # This is the actual SDK path, not a mocked authorization result. The
-    # historical nested same-pin marker fences required 68 metadata calls.
-    assert metadata.call_count - before == 54
+    # Actual SDK path: explicit operation entry/exit plus both sides of KMS
+    # refresh both database identities. Other immutable metadata observations
+    # are reused only inside this bounded operation; authority reads stay fresh.
+    # Historical nested/same-pin implementations required 68/54 metadata calls.
+    assert metadata.call_count - before == 8
     before = metadata.call_count
     c.accounts.validate(context, auth_generation=1)
     assert metadata.call_count - before == 4
@@ -539,7 +541,7 @@ def test_compound_marker_reads_never_export_after_dependency_loss(pairing, monke
                             if json.loads(raw)["namespace"] == "pairing_invocations"}
     coordinator = c.browser._service().coordinator
     original_group = coordinator._before_claim
-    checking, fired = [], []
+    checking, fired, signing_at_loss = [], [], []
 
     def group(intent, claim):
         checking.append(True)
@@ -556,6 +558,7 @@ def test_compound_marker_reads_never_export_after_dependency_loss(pairing, monke
         result = original_verify(*args)
         if checking and not fired:
             fired.append(True)
+            signing_at_loss.append(len(c.kms.calls))
             if fault == "uid":
                 c.native.identities[c.execution.database] = str(uuid4())
             elif fault == "closure":
@@ -572,9 +575,19 @@ def test_compound_marker_reads_never_export_after_dependency_loss(pairing, monke
     assert fired == [True]
     execution_rows = [json.loads(raw)["namespace"] for path, (raw, _) in c.native.data.items()
                       if path.startswith(c.execution.database + "/")]
-    assert "pairing_confirmations" not in execution_rows
-    assert {path: raw for path, (raw, _) in c.native.data.items()
-            if json.loads(raw)["namespace"] == "pairing_invocations"} == existing_invocations
+    if fault == "uid":
+        # The explicit operation observation changes private-write timing:
+        # internal rows may be quarantined before the final UID refusal. No
+        # subsequent signature or authority may escape, and failed ownership
+        # is discarded. Closure/expiry/marker failures remain immediate below.
+        assert len(c.kms.calls) == signing_at_loss[0]
+        assert not coordinator._password_admitted
+        assert not c.browser._service().paired_devices.scoped._begins
+        assert not any(key[0] == "v3_submit_devices" for key in rows(c))
+    else:
+        assert "pairing_confirmations" not in execution_rows
+        assert {path: raw for path, (raw, _) in c.native.data.items()
+                if json.loads(raw)["namespace"] == "pairing_invocations"} == existing_invocations
     assert not coordinator._owned_pairing
     assert not c.native.views
 
@@ -595,9 +608,9 @@ def test_compound_marker_fences_are_fresh_after_definite_abort(pairing):
     before = metadata.call_count
     assert confirm(c, context, challenge)["status"] == "CANDIDATE_CONFIRMED"
     assert aborted == [True]
-    # The failed transaction attempt does not reuse its witness checks. A new
-    # before-attempt group makes two additional actual metadata RPCs.
-    assert metadata.call_count - before == 56
+    # A definite abort invalidates the complete operation observation. Both
+    # independent identities are freshly renewed before the next attempt.
+    assert metadata.call_count - before == 10
     assert not c.native.views
 
 

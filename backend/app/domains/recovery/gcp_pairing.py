@@ -36,6 +36,7 @@ from .gcp_pairing_contracts import (
 from .gcp_password_attempts import PasswordSigningStore, UnavailablePasswordSigning
 from .gcp_password_contracts import PasswordSigningClaim, PasswordSigningMarker
 from .gcp_service import control_record
+from .native_identity_observation import identity_barrier, quarantine_on_failure
 from .pairing_auth import AssertionVerifier, ClaimIssuer, UnavailableClaims
 from .pairing_contracts import (
     JS_SAFE_MAX,
@@ -479,6 +480,12 @@ class GcpPairingCoordinator:
                 ack = PairingOwnedAck(intent.operation_id, self._issuer)
                 with self._plan_lock:
                     self._owned_pairing[intent.operation_id] = execution, ack, intent
+                def quarantine_ack() -> None:
+                    with self._plan_lock:
+                        owned = self._owned_pairing.get(intent.operation_id)
+                        if owned is not None and owned[1] is ack:
+                            self._owned_pairing.pop(intent.operation_id)
+                quarantine_on_failure(quarantine_ack)
             return execution
         except _Replay:
             return self._receipt_only(intent)
@@ -492,6 +499,7 @@ class GcpPairingCoordinator:
             self._scope.reset(token)
 
     def take_owned_ack(self, execution: PairingExecution) -> PairingOwnedAck:
+        identity_barrier()
         with self._plan_lock:
             owned = self._owned_pairing.get(execution.operation_id)
             if owned is None or owned[0] is not execution:
@@ -499,6 +507,7 @@ class GcpPairingCoordinator:
             return owned[1]
 
     def take_password_owned_ack(self, assertion: CandidateAssertion) -> PairingOwnedAck:
+        identity_barrier()
         with self._plan_lock:
             owned = tuple(self._owned_pairing.values())
         for _execution, ack, intent in owned:
@@ -506,6 +515,7 @@ class GcpPairingCoordinator:
                 reference = intent.password_signing
                 row = self.registry.read("pairing_password_signing_attempts", str(reference.challenge_id))
                 if row is not None and row["marker"]["assertion_sha256"] == fingerprint(assertion.model_dump(mode="json")):
+                    identity_barrier()
                     return ack
         raise GuardDenied("Original native password revocation acknowledgement required")
 
@@ -514,6 +524,7 @@ class GcpPairingCoordinator:
         from .password_reauth import PasswordAccountBinding, RetainedWebSession
         if type(ack) is not PairingOwnedAck or ack._issuer is not self._issuer:
             raise GuardDenied("Original native pairing acknowledgement required")
+        identity_barrier()
         with self._plan_lock:
             owned = self._owned_pairing.pop(ack._operation, None)
         if owned is None or owned[1] is not ack:
@@ -547,6 +558,7 @@ class GcpPairingCoordinator:
             context = signing.marker.context
         self.fence.check(self.pin)
         assert execution.journal is not None
+        identity_barrier()
         return PairingOwnedEvidence(intent=intent, journal=execution.journal, invocation=invocation,
             projection=projection, device=device, confirmation=confirmation, context=context, signing=signing)
 
@@ -727,6 +739,12 @@ class GcpPairingCoordinator:
             if assertion.assertion_id in self._password_admitted:
                 raise GuardDenied("Signing assertion was already admitted")
             self._password_admitted[assertion.assertion_id] = (password, False)
+        def quarantine_password() -> None:
+            with self._plan_lock:
+                owned = self._password_admitted.get(assertion.assertion_id)
+                if owned is not None and owned[0] is password:
+                    self._password_admitted.pop(assertion.assertion_id)
+        quarantine_on_failure(quarantine_password)
 
     def consume_password_candidate(self, command: CandidateDispatchCommand) -> dict:
         """Actual existing core consumption, through its restricted native lifecycle."""

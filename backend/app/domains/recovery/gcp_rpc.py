@@ -80,6 +80,10 @@ class FirestoreRpc:
             raise GuardDenied("RPC document path must belong to the pinned database") from exc
 
     def identity(self) -> dict:
+        from .native_identity_observation import observe_identity
+        return observe_identity(self, self._identity_uncached)
+
+    def _identity_uncached(self) -> dict:
         from google.cloud.firestore_admin_v1.types import Database
 
         try:

@@ -11,6 +11,7 @@ from google.api_core.exceptions import Aborted
 
 from .contracts import canonical, fingerprint
 from .gcp_contracts import AmbiguousCommit, RpcCommit, RpcSnapshot, RpcWrite
+from .native_identity_observation import invalidate_identity_observations
 from .store import GuardDenied, GuardUnavailable
 
 
@@ -162,6 +163,7 @@ class BufferedRegistry:
             try:
                 transaction_id = self.rpc.begin()
             except Aborted:
+                invalidate_identity_observations()
                 if attempt + 1 == self.max_attempts:
                     raise GuardUnavailable("Definite-abort retry budget exhausted") from None
                 continue
@@ -182,6 +184,7 @@ class BufferedRegistry:
                 return
             except Aborted:
                 self._rollback(transaction_id)
+                invalidate_identity_observations()
                 if attempt + 1 == self.max_attempts:
                     raise GuardUnavailable("Definite-abort retry budget exhausted") from None
             except AmbiguousCommit:
@@ -201,11 +204,13 @@ class BufferedRegistry:
         try:
             transaction_id = self.rpc.begin()
         except Aborted as exc:
+            invalidate_identity_observations()
             raise GuardUnavailable("Read-only transaction could not begin") from exc
         try:
             tx = BufferedTransaction(self.rpc, transaction_id)
             return {(namespace, key): tx.get(namespace, key) for namespace, key in keys}
         except Aborted as exc:
+            invalidate_identity_observations()
             raise GuardUnavailable("Read-only transactional snapshot was aborted") from exc
         finally:
             self._rollback(transaction_id)

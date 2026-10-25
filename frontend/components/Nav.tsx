@@ -58,16 +58,18 @@ export default function Nav() {
   const pathname = usePathname();
   const { status } = useSession();
   const authenticated = status === "authenticated";
+  // Keep unrelated header reads out of the quota-sensitive connection/review path.
+  const companionPage = pathname === "/browser-companion";
   const [mobileOpen, setMobileOpen] = useState(false);
   const hydrated = useSyncExternalStore(subscribeHydration, clientHydrationSnapshot, serverHydrationSnapshot);
   const profile = useQuery({
     ...ownerProfileQueryOptions(),
-    enabled: authenticated,
+    enabled: authenticated && !companionPage,
   });
   const features = useQuery({
     queryKey: ["feature-decisions"],
     queryFn: () => apiGet<FeatureResponse>("/v1/features"),
-    enabled: authenticated,
+    enabled: authenticated && !companionPage,
     staleTime: 60_000,
   });
 
@@ -76,19 +78,20 @@ export default function Nav() {
   }, [pathname]);
 
   useEffect(() => {
+    if (companionPage) return;
     function refreshCredits() {
       void queryClient.invalidateQueries({ queryKey: ownerProfileQueryKey });
       void queryClient.invalidateQueries({ queryKey: ["employer-jobs", "catalog"] });
     }
     window.addEventListener("refresh_analysis_units", refreshCredits);
     return () => window.removeEventListener("refresh_analysis_units", refreshCredits);
-  }, [queryClient]);
+  }, [queryClient, companionPage]);
 
   const links = authenticated
     ? appLinks.filter((link) => !link.feature || features.data?.features[link.feature]?.enabled !== false)
     : publicLinks;
-  const units = profile.data?.ai_credits;
-  const serviceCredits = profile.data?.job_service_credits;
+  const units = companionPage ? undefined : profile.data?.ai_credits;
+  const serviceCredits = companionPage ? undefined : profile.data?.job_service_credits;
 
   return (
     <header className="fixed inset-x-0 top-0 z-50 h-16 border-b border-border bg-white/95 backdrop-blur-md">
