@@ -133,7 +133,31 @@ function revisedHostedReview(base: ReturnType<typeof hostedReview>, answers: Rec
   return result;
 }
 beforeEach(() => { vi.resetAllMocks(); vi.stubGlobal("fetch", request); vi.mocked(accountMutationHeaders).mockResolvedValue({ "Content-Type": "application/json", "X-Hirewiz-Account-CSRF": "9".repeat(64) }); vi.mocked(apiDownload).mockResolvedValue(); });
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.useRealTimers(); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.useRealTimers(); vi.restoreAllMocks(); });
+
+function fakeAssistanceClock() {
+  vi.useFakeTimers();
+  vi.spyOn(AbortSignal, "timeout").mockImplementation((milliseconds) => {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(new DOMException("synthetic-private-timeout", "TimeoutError")), milliseconds);
+    return controller.signal;
+  });
+}
+
+function delayedAssistanceResponse(milliseconds: number | null, reply: object) {
+  return (_input: unknown, options: RequestInit) => new Promise<Response>((resolve, reject) => {
+    const signal = options.signal;
+    if (!signal) throw new Error("Expected a bounded assistance request");
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const abort = () => { clearTimeout(timer); reject(signal.reason); };
+    if (signal.aborted) { abort(); return; }
+    signal.addEventListener("abort", abort, { once: true });
+    if (milliseconds !== null) timer = setTimeout(() => {
+      signal.removeEventListener("abort", abort);
+      resolve(Response.json(reply));
+    }, milliseconds);
+  });
+}
 async function loadReview() {
   render(<BrowserAssistanceReview deviceId={null} reviewId={identity} applicationId={null} />);
   await userEvent.click(screen.getByRole("button", { name: "Load exact application review" }));
@@ -144,9 +168,55 @@ async function acceptReview() {
   await userEvent.click(screen.getByRole("checkbox"));
 }
 
+it("retains slow exact review and approval responses beyond the former fifteen-second client deadline", async () => {
+  fakeAssistanceClock();
+  const draft = review();
+  request.mockImplementationOnce(delayedAssistanceResponse(16_000, draft))
+    .mockImplementationOnce(delayedAssistanceResponse(16_000, { ...draft, state: "approved" }));
+  render(<BrowserAssistanceReview deviceId={null} reviewId={identity} applicationId={null} />);
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Load exact application review" })); });
+  await act(async () => { await vi.advanceTimersByTimeAsync(15_001); });
+  expect(screen.getByRole("button", { name: "Loading…" })).toBeDisabled();
+  expect(screen.queryByRole("alert")).toBeNull();
+  await act(async () => { await vi.advanceTimersByTimeAsync(999); });
+  expect(screen.getByRole("button", { name: "Approve reviewed text assistance" })).toBeDisabled();
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Download exact review file" })); });
+  fireEvent.click(screen.getByRole("checkbox"));
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Approve reviewed text assistance" })); });
+  await act(async () => { await vi.advanceTimersByTimeAsync(15_001); });
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(screen.queryByText(/Text assistance approved/)).toBeNull();
+  await act(async () => { await vi.advanceTimersByTimeAsync(999); });
+  expect(screen.getByText(/Text assistance approved/)).toBeVisible();
+  expect(request.mock.calls.map(([url]) => url)).toEqual(["/api/browser-assistance/candidate/review", "/api/browser-assistance/candidate/approve"]);
+  await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+  expect(request).toHaveBeenCalledTimes(2);
+});
+
+it("pauses an unsettled approval at forty seconds without replay or private error disclosure", async () => {
+  fakeAssistanceClock();
+  request.mockResolvedValueOnce(Response.json(review()))
+    .mockImplementationOnce(delayedAssistanceResponse(null, {}));
+  render(<BrowserAssistanceReview deviceId={null} reviewId={identity} applicationId={null} />);
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Load exact application review" })); });
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Download exact review file" })); });
+  fireEvent.click(screen.getByRole("checkbox"));
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Approve reviewed text assistance" })); });
+  await act(async () => { await vi.advanceTimersByTimeAsync(39_999); });
+  expect(screen.queryByRole("alert")).toBeNull();
+  await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+  expect(request.mock.calls[1][1].signal.aborted).toBe(true);
+  expect(screen.getByRole("alert")).toHaveTextContent("no automatic retry");
+  expect(screen.getByRole("alert")).not.toHaveTextContent("synthetic-private-timeout");
+  expect(screen.getByRole("checkbox")).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Approve reviewed text assistance" })).toBeDisabled();
+  await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+  expect(request).toHaveBeenCalledTimes(2);
+});
+
 it("offers the distinct recovery package and preserves an existing install without any request", () => {
   render(<BrowserAssistanceReview deviceId={null} reviewId={null} applicationId={null} />);
-  expect(screen.getByRole("link", { name: "Download HireWiz companion 0.8.3" })).toHaveAttribute("href", "/downloads/hirewiz-browser-companion-0.8.3.zip");
+  expect(screen.getByRole("link", { name: "Download HireWiz companion 0.8.4" })).toHaveAttribute("href", "/downloads/hirewiz-browser-companion-0.8.4.zip");
   expect(screen.getByText(/replace its files and reload that same extension; keep its browser storage/)).toBeInTheDocument();
   expect(request).not.toHaveBeenCalled();
 });

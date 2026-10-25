@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { BROWSER_CLIENT_TIMEOUT_MS } from "../lib/browserTransportTimeouts";
 import { Button } from "./ui/Button";
 
 type Challenge = { challenge_id: string; nonce: string; operation: "confirm_pairing";
@@ -41,7 +42,7 @@ export default function BrowserPairingReview({ pairingId }: { pairingId: string 
 
   async function post(operation: string, body: object, controller: AbortController, csrf?: string) {
     const response = await fetch(`/api/browser-pairing/candidate/${operation}`, { method: "POST", redirect: "error",
-      cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]),
+      cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(BROWSER_CLIENT_TIMEOUT_MS)]),
       headers: { "Content-Type": "application/json", ...(csrf ? { "X-Hirewiz-CSRF": csrf } : {}) }, body: JSON.stringify(body) });
     if (!response.ok) throw new Error(response.status === 401 ? "Sign in to HireWiz before reviewing this connection."
       : response.status === 403 ? "This connection could not be confirmed. Open your HireWiz companion and choose Check connection status before trying again."
@@ -57,7 +58,7 @@ export default function BrowserPairingReview({ pairingId }: { pairingId: string 
       // This status comes from the retained server session. It conveys no
       // identity or authority and never substitutes for password approval.
       const response = await fetch("/api/candidate-account/eligibility", { redirect: "error", cache: "no-store",
-        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]) });
+        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(BROWSER_CLIENT_TIMEOUT_MS)]) });
       const status: unknown = response.ok ? await response.json() : null;
       if (!status || typeof status !== "object" || Array.isArray(status) || Object.keys(status).join(",") !== "status"
           || !("status" in status) || !ELIGIBILITY.has(status.status as Eligibility)) throw new Error("Secure browser pairing is currently unavailable.");

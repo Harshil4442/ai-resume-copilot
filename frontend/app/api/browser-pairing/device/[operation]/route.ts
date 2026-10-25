@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { BROWSER_BACKEND_TIMEOUT_MS } from "../../../../../lib/browserTransportTimeouts";
 import { boundedPairingBytes, DEVICE_OPERATIONS, deviceReply, gatewayConfiguration, MAX_PAIRING_BODY, MAX_PAIRING_RESPONSE } from "../../../../../lib/browserPairingGateway";
 
 const headers = { "Cache-Control": "private, no-store, max-age=0", Pragma: "no-cache", "X-Content-Type-Options": "nosniff" };
@@ -14,7 +15,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ op
     const configuration = gatewayConfiguration();
     const raw = await boundedPairingBytes(request.body, MAX_PAIRING_BODY);
     const response = await fetch(`${configuration.backend}/api/v1/browser-pairing/device/${operation}`, {
-      method: "POST", credentials: "omit", redirect: "error", cache: "no-store", signal: AbortSignal.timeout(12000),
+      method: "POST", credentials: "omit", redirect: "error", cache: "no-store", signal: AbortSignal.timeout(BROWSER_BACKEND_TIMEOUT_MS),
       headers: { "Content-Type": "application/json", Origin: request.headers.get("origin")! }, body: new Uint8Array(raw) });
     if (!response.ok) {
       // Arbitrary cancellation acknowledgements cannot delay or remap this error.
@@ -29,3 +30,4 @@ export async function POST(request: NextRequest, context: { params: Promise<{ op
 }
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+export const maxDuration = 45;

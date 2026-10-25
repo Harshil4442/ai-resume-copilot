@@ -6,3 +6,4 @@ export async function POST(request: NextRequest, context: { params: Promise<{ op
 }
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+export const maxDuration = 45;

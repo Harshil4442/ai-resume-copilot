@@ -2,6 +2,9 @@
 import { base64url, canonical, decode64, digest } from "./protocol.js";
 
 const encoder = new TextEncoder();
+// Allow the bounded native operation to settle before the outer client gives up.
+// This does not extend any signed request, challenge, claim or action deadline.
+const REQUEST_TIMEOUT_MS = 40000;
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const CLAIM_KEYS = ["protocol_version", "operation", "issuer", "audience", "claim_id", "device_id", "subject_uuid", "key_sha256", "key_generation", "auth_generation", "authority_id", "authority_incarnation", "epoch_id", "epoch_generation", "extension_id", "executor_revision", "event_sequence", "event_sha256", "issued_at_ms", "expires_at_ms"].sort().join(",");
 const domain = (kind, data) => encoder.encode(`hirewiz.pairing.${kind}.v2\n${canonical(data)}`);
@@ -38,7 +41,7 @@ export class PairingTransport {
     if (this.signal?.aborted) throw new Error("Connection request was paused");
     const response = await fetch(`${this.configuration.websiteOrigin}/api/browser-pairing/device/${operation}`, {
       method: "POST", credentials: "omit", redirect: "error", cache: "no-store",
-      signal: this.signal ? AbortSignal.any([AbortSignal.timeout(12000), this.signal]) : AbortSignal.timeout(12000),
+      signal: this.signal ? AbortSignal.any([AbortSignal.timeout(REQUEST_TIMEOUT_MS), this.signal]) : AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     if (!response.ok) { cancelBestEffort(response.body); throw new Error("Current pairing is unavailable; no action was authorized"); }
     const reader = response.body.getReader(), chunks = [];

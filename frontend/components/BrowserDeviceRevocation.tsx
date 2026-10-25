@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { BROWSER_CLIENT_TIMEOUT_MS } from "../lib/browserTransportTimeouts";
 import { Button } from "./ui/Button";
 
 type Review = { csrf: string; challenge_id: string; nonce: string; device_id: string; expires_at_ms: number };
@@ -20,7 +21,7 @@ export default function BrowserDeviceRevocation({ deviceId }: { deviceId: string
   const valid = Boolean(deviceId && UUID.test(deviceId));
   async function post(operation: string, body: object, controller: AbortController, csrf?: string) {
     const response = await fetch(`/api/browser-pairing/candidate/${operation}`, { method: "POST", redirect: "error", cache: "no-store",
-      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]),
+      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(BROWSER_CLIENT_TIMEOUT_MS)]),
       headers: { "Content-Type": "application/json", ...(csrf ? { "X-Hirewiz-CSRF": csrf } : {}) }, body: JSON.stringify(body) });
     if (!response.ok) throw new Error("Disconnection could not be verified. Sign in and review this exact device again.");
     return response.json();

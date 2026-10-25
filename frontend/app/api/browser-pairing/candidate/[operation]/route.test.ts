@@ -4,7 +4,7 @@ import { encode } from "next-auth/jwt";
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CSRF_COOKIE } from "../../../../../lib/browserPairingGateway";
-import { POST } from "./route";
+import { maxDuration, POST } from "./route";
 
 const site = "https://www.hirewizhq.com";
 const secret = "synthetic-nextauth-secret-for-http-tests-only";
@@ -12,6 +12,31 @@ const gatewayKey = "a1".repeat(32);
 const retained = { candidate_id: 7, account_binding_id: "00000000-0000-4000-8000-000000000001", session_id: "00000000-0000-4000-8000-000000000002" };
 const fetchBackend = vi.fn();
 const context = (operation: string) => ({ params: Promise.resolve({ operation }) });
+
+function fakeTransportClock() {
+  vi.useFakeTimers();
+  vi.spyOn(AbortSignal, "timeout").mockImplementation((milliseconds) => {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(new DOMException("synthetic-private-timeout", "TimeoutError")), milliseconds);
+    return controller.signal;
+  });
+}
+
+function delayedBackend(milliseconds: number | null, started: () => void) {
+  return (_input: unknown, options: RequestInit) => new Promise<Response>((resolve, reject) => {
+    started();
+    const signal = options.signal;
+    if (!signal) throw new Error("Expected a bounded backend request");
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const abort = () => { clearTimeout(timer); reject(signal.reason); };
+    if (signal.aborted) { abort(); return; }
+    signal.addEventListener("abort", abort, { once: true });
+    if (milliseconds !== null) timer = setTimeout(() => {
+      signal.removeEventListener("abort", abort);
+      resolve(Response.json({ status: "CANDIDATE_CONFIRMED", pairing_id: "00000000-0000-4000-8000-000000000003", device_id: "00000000-0000-4000-8000-000000000004" }));
+    }, milliseconds);
+  });
+}
 
 async function request(operation: string, extra: Record<string, string> = {}, session: unknown = retained,
                        body = "{}", tokenPresent = true) {
@@ -42,9 +67,51 @@ beforeEach(() => {
   vi.stubGlobal("fetch", fetchBackend);
   fetchBackend.mockImplementation(async () => Response.json({ status: "CANDIDATE_CONFIRMED", pairing_id: "00000000-0000-4000-8000-000000000003", device_id: "00000000-0000-4000-8000-000000000004" }));
 });
-afterEach(() => { vi.resetAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
+afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.resetAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
 describe("candidate pairing BFF uses real encrypted NextAuth JWTs", () => {
+  it("preserves the real 13.025-second native confirmation instead of aborting at twelve seconds", async () => {
+    const issued = await csrf();
+    const incoming = await withCsrf("confirm", issued);
+    fakeTransportClock();
+    let started!: () => void;
+    const backendStarted = new Promise<void>((resolve) => { started = resolve; });
+    fetchBackend.mockImplementationOnce(delayedBackend(13_025, started));
+    const pending = POST(incoming, context("confirm"));
+    await backendStarted;
+    expect(fetchBackend).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(13_024);
+    expect(fetchBackend.mock.calls[0][1].signal.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    const response = await pending;
+    expect(response.status).toBe(200);
+    expect((await response.json()).status).toBe("CANDIDATE_CONFIRMED");
+    expect(maxDuration).toBe(45);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(fetchBackend).toHaveBeenCalledTimes(1);
+  });
+  it("aborts an unsettled native confirmation at 35 seconds without replay or private error text", async () => {
+    const issued = await csrf();
+    const incoming = await withCsrf("confirm", issued);
+    fakeTransportClock();
+    let started!: () => void;
+    const backendStarted = new Promise<void>((resolve) => { started = resolve; });
+    fetchBackend.mockImplementationOnce(delayedBackend(null, started));
+    let settled = false;
+    const pending = POST(incoming, context("confirm")).then((response) => { settled = true; return response; });
+    await backendStarted;
+    expect(fetchBackend).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(34_999);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    const response = await pending;
+    expect(fetchBackend.mock.calls[0][1].signal.aborted).toBe(true);
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ detail: "Browser pairing is currently unavailable" });
+    expect(response.headers.get("cache-control")).toContain("no-store");
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(fetchBackend).toHaveBeenCalledTimes(1);
+  });
   it("issues a Secure HttpOnly host-only Strict CSRF cookie after retained server-session authentication", async () => {
     const issued = await csrf();
     const cookie = issued.response.cookies.get(CSRF_COOKIE)!;

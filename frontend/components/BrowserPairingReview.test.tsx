@@ -7,9 +7,71 @@ const pairing = "00000000-0000-4000-8000-000000000001";
 const challenge = { pairing_id: pairing, device_id: "00000000-0000-4000-8000-000000000002",
   challenge_id: "00000000-0000-4000-8000-000000000003", nonce: "00000000-0000-4000-8000-000000000004",
   operation: "confirm_pairing", key_sha256: "a".repeat(64), request_sha256: "b".repeat(64), expires_at_ms: Date.now() + 60000 };
-afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+function timedConfirmation(milliseconds: number | null) {
+  vi.useFakeTimers();
+  vi.spyOn(AbortSignal, "timeout").mockImplementation((delay) => {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(new DOMException("synthetic-private-timeout", "TimeoutError")), delay);
+    return controller.signal;
+  });
+  const request = vi.fn().mockResolvedValueOnce(Response.json({ status: "ELIGIBLE" }))
+    .mockResolvedValueOnce(Response.json({ csrf_token: "c".repeat(64) }))
+    .mockResolvedValueOnce(Response.json({ ...challenge, expires_at_ms: Date.now() + 60_000 }))
+    .mockImplementationOnce((_input: unknown, options: RequestInit) => new Promise<Response>((resolve, reject) => {
+      const signal = options.signal;
+      if (!signal) throw new Error("Expected a bounded candidate request");
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const abort = () => { clearTimeout(timer); reject(signal.reason); };
+      if (signal.aborted) { abort(); return; }
+      signal.addEventListener("abort", abort, { once: true });
+      if (milliseconds !== null) timer = setTimeout(() => {
+        signal.removeEventListener("abort", abort);
+        resolve(Response.json({ status: "CANDIDATE_CONFIRMED", pairing_id: pairing, device_id: challenge.device_id }));
+      }, milliseconds);
+    }));
+  vi.stubGlobal("fetch", request);
+  render(<BrowserPairingReview pairingId={pairing} />);
+  return request;
+}
+
+async function submitTimedConfirmation() {
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Review connection" })); });
+  fireEvent.change(screen.getByLabelText("HireWiz password"), { target: { value: "synthetic-review-password" } });
+  fireEvent.click(screen.getByRole("checkbox"));
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Confirm this device" })); });
+}
 
 describe("candidate connection review", () => {
+  it("shows native confirmation arriving after the former fifteen-second client deadline", async () => {
+    const request = timedConfirmation(16_000);
+    await submitTimedConfirmation();
+    await act(async () => { await vi.advanceTimersByTimeAsync(15_001); });
+    expect(screen.getByRole("button", { name: "Confirming…" })).toBeDisabled();
+    expect(screen.queryByRole("alert")).toBeNull();
+    await act(async () => { await vi.advanceTimersByTimeAsync(999); });
+    expect(screen.getByRole("status")).toHaveTextContent("Candidate confirmation saved");
+    expect(screen.queryByLabelText("HireWiz password")).toBeNull();
+    expect(request).toHaveBeenCalledTimes(4);
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+    expect(request).toHaveBeenCalledTimes(4);
+  });
+  it("stops an unsettled confirmation at forty seconds without retry or private error disclosure", async () => {
+    const request = timedConfirmation(null);
+    await submitTimedConfirmation();
+    await act(async () => { await vi.advanceTimersByTimeAsync(39_999); });
+    expect(screen.getByRole("button", { name: "Confirming…" })).toBeDisabled();
+    expect(screen.queryByRole("alert")).toBeNull();
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(request.mock.calls[3][1].signal.aborted).toBe(true);
+    expect(screen.getByRole("alert")).toHaveTextContent("outcome is unavailable");
+    expect(screen.getByRole("alert")).not.toHaveTextContent("synthetic-private-timeout");
+    expect(screen.queryByLabelText("HireWiz password")).toBeNull();
+    expect(screen.queryByRole("status")).toBeNull();
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+    expect(request).toHaveBeenCalledTimes(4);
+  });
   it("does not request anything for an absent connection or before explicit review", async () => {
     const request = vi.fn(); vi.stubGlobal("fetch", request);
     const view = render(<BrowserPairingReview pairingId={null} />);
