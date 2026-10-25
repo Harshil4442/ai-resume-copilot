@@ -225,9 +225,13 @@ test("migrated checkpoint rejects changed key and never truncates full history",
   const f = await fixture(await legacyCheckpoint(), { executorRevision: "companion_0_8_1" });
   const changed = { ...f.transport, keyDigest: async () => "c".repeat(64) };
   await assert.rejects(new PairingRuntime({ transport: changed, store: f.store, checkPermission: async () => undefined }).initialise(), /different retained device key/);
-  const old = f.checkpoint().history[0]; await f.runtime.save({ history: [old, old, old, old] });
+  const old = f.checkpoint().history[0], history = Array.from({ length: 64 }, () => structuredClone(old));
+  await f.runtime.save({ history });
+  const full = f.checkpoint();
   await f.runtime.inspectUnknown(); await assert.rejects(f.runtime.archiveUnknown(), /history is full/);
-  assert.deepEqual(f.checkpoint().history, [old, old, old, old]);
+  assert.deepEqual(f.checkpoint(), full); assert.deepEqual(f.checkpoint().history, history);
+  await assert.rejects(f.runtime.save({ history: [...history, old] }), /checkpoint is invalid/);
+  assert.deepEqual(f.checkpoint(), full);
 });
 test("wrong identity or terminal status cannot enable existing-connection recovery", async () => {
   const f = await fixture(); await f.runtime.start(); await f.runtime.save({ phase: "unknown" });
@@ -364,9 +368,10 @@ test("unknown complete and refresh outcomes never gain expired-creation recovery
 
 test("expired recovery does not discard full history or accept a changed retained proof on reload", async () => {
   const f = await expiredCreation(); const { history, ...record } = f.checkpoint(); assert.deepEqual(history, []);
-  await f.runtime.save({ history: [record, record, record, record] });
+  const retained = Array.from({ length: 64 }, () => structuredClone(record));
+  await f.runtime.save({ history: retained }); const full = f.checkpoint();
   await f.runtime.inspectUnknown(); await assert.rejects(f.runtime.archiveUnknown(), /history is full/);
-  assert.equal(f.checkpoint().history.length, 4); assert.equal(f.checkpoint().phase, "awaiting_candidate");
+  assert.equal(f.checkpoint().history.length, 64); assert.deepEqual(f.checkpoint(), full);
   const g = await expiredCreation(); await g.runtime.inspectUnknown(); await g.runtime.archiveUnknown();
   const tampered = g.checkpoint(); tampered.history[0].reconciliation.device_id = uuid();
   await g.store.write(tampered);

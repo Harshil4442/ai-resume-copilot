@@ -146,7 +146,7 @@ async function acceptReview() {
 
 it("offers the distinct recovery package and preserves an existing install without any request", () => {
   render(<BrowserAssistanceReview deviceId={null} reviewId={null} applicationId={null} />);
-  expect(screen.getByRole("link", { name: "Download HireWiz companion 0.8.2" })).toHaveAttribute("href", "/downloads/hirewiz-browser-companion-0.8.2.zip");
+  expect(screen.getByRole("link", { name: "Download HireWiz companion 0.8.3" })).toHaveAttribute("href", "/downloads/hirewiz-browser-companion-0.8.3.zip");
   expect(screen.getByText(/replace its files and reload that same extension; keep its browser storage/)).toBeInTheDocument();
   expect(request).not.toHaveBeenCalled();
 });
