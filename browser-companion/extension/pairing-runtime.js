@@ -11,6 +11,8 @@ const LEGACY_KEYS = ["version", "phase", "binding", ...PUBLIC_FIELDS, "local_ope
 const RECORD_KEYS = [...LEGACY_KEYS, "send_kind"].sort().join(",");
 const RECONCILED_KEYS = [...LEGACY_KEYS, "send_kind", "reconciliation"].sort().join(",");
 const KEYS = [...LEGACY_KEYS, "send_kind", "history"].sort().join(",");
+const MAX_HISTORY_RECORDS = 64;
+const MAX_CHECKPOINT_BYTES = 256 * 1024;
 const nullable = (value, pattern) => value === null || typeof value === "string" && pattern.test(value);
 const object = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 
@@ -100,9 +102,10 @@ export class PairingRuntime {
       && Number.isSafeInteger(proof.rechecked_at_ms) && proof.rechecked_at_ms >= proof.inspected_at_ms;
   }
   valid(value) {
-    if (!object(value) || Object.keys(value).sort().join(",") !== KEYS || !Array.isArray(value.history) || value.history.length > 4) return false;
+    if (!object(value) || Object.keys(value).sort().join(",") !== KEYS || !Array.isArray(value.history) || value.history.length > MAX_HISTORY_RECORDS) return false;
     const { history, ...record } = value;
-    return this.validRecord(record) && history.every((entry) => this.validLegacy(entry) || this.validRecord(entry)) && JSON.stringify(value).length <= 12288;
+    return this.validRecord(record) && history.every((entry) => this.validLegacy(entry) || this.validRecord(entry))
+      && new TextEncoder().encode(JSON.stringify(value)).byteLength <= MAX_CHECKPOINT_BYTES;
   }
   async save(changes) {
     const generation = this.generation;
@@ -265,7 +268,7 @@ export class PairingRuntime {
     try {
       await this.checkPermission();
       if (this.state !== state || this.inspection !== inspection) throw new Error("The connection changed during reconciliation");
-      if (state.history.length >= 4) throw new Error("Retained connection history is full. Contact support without clearing browser storage.");
+      if (state.history.length >= MAX_HISTORY_RECORDS) throw new Error("Retained connection history is full. Contact support without clearing browser storage.");
       const { history, ...record } = state;
       const archived = structuredClone(record);
       if (expired) {

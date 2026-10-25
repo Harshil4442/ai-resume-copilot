@@ -201,8 +201,8 @@ test("missing durable callbacks fail before any native prepare request", async (
   await assert.rejects(f.transport.prepare(), /Durable connection checkpoints/); assert.equal(calls, 0);
 });
 
-for (const keyStatus of ["UNCLAIMED", "CLAIMED"]) {
-  test(`real signed transport/runtime: expired creation with ${keyStatus} key is reconciled without replay`, async (t) => {
+for (const [keyStatus, historyCount] of [["UNCLAIMED", 0], ["CLAIMED", 0], ["UNCLAIMED", 4], ["UNCLAIMED", 63], ["UNCLAIMED", 64]]) {
+  test(`real signed transport/runtime: expired creation with ${keyStatus} key and ${historyCount} retained records is reconciled without replay`, async (t) => {
     const f = await setup(), calls = [];
     let clock = now, checkpoint = null, request = f.request, nonce = f.nonce;
     f.transport.now = () => clock;
@@ -228,24 +228,49 @@ for (const keyStatus of ["UNCLAIMED", "CLAIMED"]) {
     const store = { read: async () => structuredClone(checkpoint), write: async (value) => { checkpoint = structuredClone(value); } };
     const runtime = await new PairingRuntime({ transport: f.transport, store, checkPermission: async () => undefined, now: () => clock }).initialise();
     await runtime.start(); clock += 120001;
+    if (historyCount) {
+      const { history, ...record } = checkpoint; assert.deepEqual(history, []);
+      await runtime.save({ history: Array.from({ length: historyCount }, (_, index) => {
+        const pairing_id = uuid();
+        return { ...structuredClone(record), pairing_id, device_id: uuid(), local_operation_id: uuid(),
+          review_url: `${f.configuration.websiteOrigin}/browser-companion?pairing=${pairing_id}`, updated_at_ms: clock - index - 1 };
+      }) });
+    }
     const original = structuredClone(checkpoint);
+    const originalHistoryBytes = JSON.stringify(original.history);
     if (keyStatus === "CLAIMED") {
       await assert.rejects(runtime.inspectUnknown(), /claimed/);
       await assert.rejects(runtime.archiveUnknown(), /Inspect/); await assert.rejects(runtime.start(), /blocked/);
       assert.deepEqual(checkpoint, original);
       assert.deepEqual(calls, ["prepare", "create", "status", "inspect-key"]);
+    } else if (historyCount === 64) {
+      await runtime.inspectUnknown();
+      await assert.rejects(runtime.archiveUnknown(), /history is full/);
+      assert.deepEqual(checkpoint, original); assert.equal(JSON.stringify(checkpoint.history), originalHistoryBytes);
+      assert.deepEqual(calls, ["prepare", "create", "status", "inspect-key"]);
+      await assert.rejects(runtime.start(), /blocked/);
+      const restarted = await new PairingRuntime({ transport: f.transport, store, checkPermission: async () => undefined, now: () => clock }).initialise();
+      assert.deepEqual(checkpoint, original); assert.equal(restarted.status().can_archive_restart, false);
     } else {
       await runtime.inspectUnknown(); assert.deepEqual(checkpoint, original);
       await runtime.archiveUnknown(); assert.equal(checkpoint.phase, "idle");
       assert.deepEqual(calls, ["prepare", "create", "status", "inspect-key", "status", "inspect-key"]);
-      const { reconciliation, ...old } = checkpoint.history[0], { history, ...record } = original;
-      assert.deepEqual(history, []); assert.deepEqual(old, record);
+      const { reconciliation, ...old } = checkpoint.history.at(-1), { history, ...record } = original;
+      assert.equal(checkpoint.history.length, historyCount + 1);
+      assert.ok(new TextEncoder().encode(JSON.stringify(checkpoint)).byteLength <= 256 * 1024);
+      if (historyCount === 63) assert.ok(JSON.stringify(checkpoint).length > 12288);
+      assert.deepEqual(checkpoint.history.slice(0, -1), history); assert.deepEqual(old, record);
+      assert.equal(JSON.stringify(checkpoint.history.slice(0, -1)), originalHistoryBytes);
       assert.equal(reconciliation.request_sha256, sha("request", request));
+      assert.equal(reconciliation.inspected_at_ms, clock); assert.equal(reconciliation.rechecked_at_ms, clock);
+      const restarted = await new PairingRuntime({ transport: f.transport, store, checkPermission: async () => undefined, now: () => clock }).initialise();
+      assert.equal(restarted.status().phase, "idle"); assert.deepEqual(checkpoint.history.slice(0, -1), history);
+      assert.deepEqual(calls, ["prepare", "create", "status", "inspect-key", "status", "inspect-key"]);
       const oldPairing = request.pairing_id;
       nonce = uuid(); request = { ...request, operation_id: uuid(), pairing_id: uuid(), device_id: uuid(),
         challenge_id: uuid(), nonce_sha256: sha("nonce", { nonce }), issued_at_ms: clock, expires_at_ms: clock + 120000 };
-      await runtime.start(); assert.notEqual(checkpoint.pairing_id, oldPairing);
-      assert.equal(checkpoint.key_sha256, original.key_sha256); assert.equal(checkpoint.history[0].pairing_id, oldPairing);
+      await restarted.start(); assert.notEqual(checkpoint.pairing_id, oldPairing);
+      assert.equal(checkpoint.key_sha256, original.key_sha256); assert.equal(checkpoint.history.at(-1).pairing_id, oldPairing);
       assert.deepEqual(calls, ["prepare", "create", "status", "inspect-key", "status", "inspect-key", "prepare", "create"]);
     }
     assert.equal(f.transport.claim, null);
