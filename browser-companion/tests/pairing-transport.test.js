@@ -4,6 +4,7 @@ import test from "node:test";
 import { PairingTransport } from "../extension/pairing-transport.js";
 import { PairingRuntime } from "../extension/pairing-runtime.js";
 import { base64url, canonical } from "../extension/protocol.js";
+import { fakeRequestDeadlines } from "./request-deadlines.js";
 
 const now = 1800000000000, extensionId = "a".repeat(32);
 const bytes = (kind, data) => new TextEncoder().encode(`hirewiz.pairing.${kind}.v2\n${canonical(data)}`);
@@ -65,6 +66,81 @@ test("an unknown commit never causes an automatic repeat POST", async (t) => {
   const f = await setup(); let calls = 0;
   t.mock.method(globalThis, "fetch", async () => { calls++; return Response.json({ status: "UNKNOWN", operation_id: uuid(), retry_allowed: false }); });
   await assert.rejects(f.transport.prepare({ onPrepared: async () => undefined, beforeCreate: async () => undefined }), /retrying.*disabled/);
+  assert.equal(calls, 1);
+});
+
+test("an abort-aware 13.025-second native response settles without the old twelve-second cutoff", async (t) => {
+  const f = await setup(), deadlines = fakeRequestDeadlines(t);
+  let calls = 0, started, signal, outcome = "pending";
+  const dispatched = new Promise((resolve) => { started = resolve; });
+  t.mock.method(globalThis, "fetch", (_url, options) => new Promise((resolve, reject) => {
+    calls++; signal = options.signal;
+    signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+    setTimeout(() => resolve(Response.json({ status: "EXPIRED" })), 13025);
+    started();
+  }));
+  const result = f.transport.post("status", {}).then((value) => { outcome = "resolved"; return value; },
+    (error) => { outcome = "rejected"; throw error; });
+  // Observe a possible old-deadline rejection without an unhandled promise.
+  result.catch(() => undefined);
+  await dispatched;
+  t.mock.timers.tick(12000);
+  await Promise.resolve();
+  assert.equal(outcome, "pending");
+  assert.equal(signal.aborted, false);
+  t.mock.timers.tick(1025);
+  assert.deepEqual(await result, { status: "EXPIRED" });
+  assert.deepEqual(deadlines, [40000]);
+  assert.equal(calls, 1);
+  assert.equal(f.transport.claim, null);
+});
+
+test("a forty-second request timeout retains uncertainty and never repeats the POST", async (t) => {
+  const f = await setup(), deadlines = fakeRequestDeadlines(t);
+  let checkpoint = null, calls = 0, started, signal;
+  const dispatched = new Promise((resolve) => { started = resolve; });
+  const runtime = await new PairingRuntime({ transport: f.transport,
+    store: { read: async () => structuredClone(checkpoint), write: async (value) => { checkpoint = structuredClone(value); } },
+    checkPermission: async () => undefined, now: () => now }).initialise();
+  t.mock.method(globalThis, "fetch", (_url, options) => new Promise((_resolve, reject) => {
+    calls++; signal = options.signal;
+    signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+    started();
+  }));
+  const failed = assert.rejects(runtime.start(), /outcome needs inspection/);
+  await dispatched;
+  t.mock.timers.tick(39999);
+  assert.equal(signal.aborted, false);
+  t.mock.timers.tick(1);
+  await failed;
+  assert.equal(signal.aborted, true);
+  assert.equal(checkpoint.phase, "unknown");
+  assert.equal(checkpoint.send_kind, "prepare");
+  assert.equal(checkpoint.pairing_id, null);
+  await assert.rejects(runtime.start(), /starting another request is blocked/);
+  t.mock.timers.tick(100000);
+  assert.deepEqual(deadlines, [40000]);
+  assert.equal(calls, 1);
+  assert.equal(f.transport.claim, null);
+});
+
+test("explicit pause still aborts a request before its longer transport deadline", async (t) => {
+  const f = await setup(), deadlines = fakeRequestDeadlines(t), pause = new AbortController();
+  f.transport.signal = pause.signal;
+  let calls = 0, started, signal;
+  const dispatched = new Promise((resolve) => { started = resolve; });
+  t.mock.method(globalThis, "fetch", (_url, options) => new Promise((_resolve, reject) => {
+    calls++; signal = options.signal;
+    signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+    started();
+  }));
+  const failed = assert.rejects(f.transport.post("status", {}), /Explicit pause/);
+  await dispatched;
+  t.mock.timers.tick(1000);
+  pause.abort(new Error("Explicit pause"));
+  await failed;
+  assert.equal(signal.aborted, true);
+  assert.deepEqual(deadlines, [40000]);
   assert.equal(calls, 1);
 });
 

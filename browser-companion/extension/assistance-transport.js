@@ -1,6 +1,8 @@
 import { base64url, canonical, decode64, digest } from "./protocol.js";
 
 const encode = new TextEncoder();
+// Network waiting never extends the separately verified action lease.
+const REQUEST_TIMEOUT_MS = 40000;
 const domain = (kind, value) => encode.encode(`hirewiz.browser-assistance.${kind}.v1\n${canonical(value)}`);
 const publicKey = (jwk) => ({ kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y });
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
@@ -25,7 +27,7 @@ export class AssistanceTransport {
     const bytes = JSON.stringify({ ...unsigned, signature });
     if (encode.encode(bytes).byteLength > 65536) throw new Error("The inspected form exceeds the supported assistance size.");
     return this.fetcher(`${this.configuration.websiteOrigin}/api/browser-assistance/device/${operation}`, {
-      method: "POST", credentials: "omit", redirect: "error", cache: "no-store", signal: AbortSignal.timeout(12000),
+      method: "POST", credentials: "omit", redirect: "error", cache: "no-store", signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       headers: { "Content-Type": "application/json" }, body: bytes,
     });
   }

@@ -3,6 +3,7 @@ import { getToken } from "next-auth/jwt";
 import { NextRequest, NextResponse } from "next/server";
 import { candidateAuthSecret, csrfMatches, websiteOrigin } from "./candidateAuthServer";
 import { boundedPairingBytes } from "./browserPairingGateway";
+import { BROWSER_BACKEND_TIMEOUT_MS } from "./browserTransportTimeouts";
 
 const CANDIDATE = new Set(["device", "confirm", "revoke", "review", "revise", "approve", "cancel"]);
 const DEVICE = new Set(["prepare", "status", "application", "inspect", "begin", "outcome", "cancel", "artifact", "reconcile"]);
@@ -60,7 +61,7 @@ export async function browserAssistanceGateway(request: NextRequest, operation: 
     const input: unknown = JSON.parse(new TextDecoder("utf8", { fatal: true }).decode(bytes));
     if (!input || typeof input !== "object" || Array.isArray(input)) return failure(422);
     const response = await fetch(`${base}/api/v1/browser-assistance/${device ? "device" : "candidate"}/${operation}`, {
-      method: "POST", credentials: "omit", cache: "no-store", redirect: "error", signal: AbortSignal.timeout(12000),
+      method: "POST", credentials: "omit", cache: "no-store", redirect: "error", signal: AbortSignal.timeout(BROWSER_BACKEND_TIMEOUT_MS),
       headers: { "Content-Type": "application/json", ...(device ? { Origin: origin } : { Authorization: `Bearer ${token!.accessToken}` }) },
       body: new Uint8Array(bytes),
     });

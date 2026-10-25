@@ -4,6 +4,8 @@ import { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { browserAssistanceGateway } from "./browserAssistanceGateway";
+import { maxDuration as candidateMaxDuration } from "../app/api/browser-assistance/candidate/[operation]/route";
+import { maxDuration as deviceMaxDuration } from "../app/api/browser-assistance/device/[operation]/route";
 
 vi.mock("next-auth/jwt", () => ({ getToken: vi.fn() }));
 const origin = "https://hirewiz.example";
@@ -13,6 +15,31 @@ const deviceOrigin = "chrome-extension://abcdefghijklmnopabcdefghijklmnop";
 const identity = "00000000-0000-4000-8000-000000000001";
 const backendBearer = "synthetic-private-hirewiz-bearer";
 const upstream = vi.fn();
+
+function fakeTransportClock() {
+  vi.useFakeTimers();
+  vi.spyOn(AbortSignal, "timeout").mockImplementation((milliseconds) => {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(new DOMException("synthetic-private-timeout", "TimeoutError")), milliseconds);
+    return controller.signal;
+  });
+}
+
+function delayedUpstream(milliseconds: number | null, reply: object, started: () => void) {
+  return (_input: unknown, options: RequestInit) => new Promise<Response>((resolve, reject) => {
+    started();
+    const signal = options.signal;
+    if (!signal) throw new Error("Expected a bounded assistance request");
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const abort = () => { clearTimeout(timer); reject(signal.reason); };
+    if (signal.aborted) { abort(); return; }
+    signal.addEventListener("abort", abort, { once: true });
+    if (milliseconds !== null) timer = setTimeout(() => {
+      signal.removeEventListener("abort", abort);
+      resolve(Response.json(reply));
+    }, milliseconds);
+  });
+}
 const artifactBytes = new TextEncoder().encode("%PDF-1.4\nOwned synthetic resume\n%%EOF");
 const artifactHash = createHash("sha256").update(artifactBytes).digest("hex");
 function artifactResponse(headers: Record<string, string> = {}, bytes: Uint8Array<ArrayBuffer> = artifactBytes, status = 200) {
@@ -45,9 +72,50 @@ beforeEach(() => {
   vi.mocked(getToken).mockResolvedValue({ accessToken: backendBearer, hirewizUserId: 12, googleAccessToken: "synthetic-google-provider-token", refreshToken: "synthetic-provider-refresh" });
   upstream.mockResolvedValue(Response.json(publicDevice)); vi.stubGlobal("fetch", upstream);
 });
-afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
+afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
 describe("browser assistance NextAuth and device transport boundaries", () => {
+  it.each(["approve", "review"])("preserves a valid slow %s response beyond the old twelve-second gateway deadline", async (operation) => {
+    fakeTransportClock();
+    const reply = { id: identity, state: operation === "approve" ? "approved" : "draft", review_digest: "b".repeat(64), filled_count: 0 };
+    let started!: () => void;
+    const backendStarted = new Promise<void>((resolve) => { started = resolve; });
+    upstream.mockImplementationOnce(delayedUpstream(13_025, reply, started));
+    const pending = candidate(operation);
+    await backendStarted;
+    await vi.advanceTimersByTimeAsync(13_024);
+    expect(upstream.mock.calls[0][1].signal.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    const response = await pending;
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(reply);
+    privateResponse(response);
+    expect(candidateMaxDuration).toBe(45);
+    expect(deviceMaxDuration).toBe(45);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(upstream).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([false, true])("bounds an unsettled assistance request at 35 seconds without replay (device=%s)", async (isDevice) => {
+    fakeTransportClock();
+    let started!: () => void;
+    const backendStarted = new Promise<void>((resolve) => { started = resolve; });
+    upstream.mockImplementationOnce(delayedUpstream(null, {}, started));
+    let settled = false;
+    const pending = (isDevice ? device("inspect") : candidate("approve"))
+      .then((response) => { settled = true; return response; });
+    await backendStarted;
+    await vi.advanceTimersByTimeAsync(34_999);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    const response = await pending;
+    expect(upstream.mock.calls[0][1].signal.aborted).toBe(true);
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ detail: "Reviewed browser assistance is unavailable. Check the original request status; no automatic retry will occur." });
+    privateResponse(response);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(upstream).toHaveBeenCalledTimes(1);
+  });
   it("forwards the current Google-linked HireWiz bearer only on the candidate route, with no cookies/provider tokens in its reply", async () => {
     const response = await candidate(); const clientReply = await response.json(); expect(response.status).toBe(200); expect(clientReply).toEqual(publicDevice); privateResponse(response);
     expect(getToken).toHaveBeenCalledTimes(1); expect(upstream).toHaveBeenCalledTimes(1);

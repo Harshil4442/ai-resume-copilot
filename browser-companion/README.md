@@ -1,11 +1,19 @@
 # HireWiz candidate-reviewed Chrome companion
 
-The 0.8.3 source package expands retained connection history to 64 records within
+The 0.8.4 source package allows up to 40 seconds for pairing and assistance transport responses,
+so a bounded native operation can settle before the outer request times out.
+Response bodies retain their separate three-second bounds: 16 KiB for pairing,
+64 KiB for assistance JSON and the exact reviewed size for binary delivery. Explicit
+Pause still aborts immediately, and lost acknowledgements require inspection
+without automatic POST retries. This transport deadline does not extend signed
+request freshness, connection/challenge expiry, device claims or employer actions.
+
+The package retains the 0.8.3 connection-history repair: up to 64 records within
 a 256 KiB checkpoint bound, preserving every existing record, native protocol 2
-and the admitted `companion_0_8_1` executor. This compatible retention/recovery
-patch preserves the same version-two checkpoint schema: employer execution, portal
+and the admitted `companion_0_8_1` executor. These compatible patches preserve
+the same version-two checkpoint schema: employer execution, portal
 adapters, signed wire formats, public KMS pins and optional permissions are
-unchanged. There is no new native `companion_0_8_3` admission. The existing
+unchanged. There is no new native `companion_0_8_4` admission. The existing
 separately reviewed Razorpay/Greenhouse answer, attachment and final-submit
 capabilities retain their independent controls and approvals. Public pins and an
 UNCLAIMED inspection grant no account, device or application authority. Packaging
@@ -45,7 +53,7 @@ users complete applications directly on the company portal.
 
 For an existing unpacked install, replace its source files and reload that same
 extension. Keep the browser profile and extension storage; do not remove/reinstall
-or clear its retained key to recover a connection. The 0.8.3 patch keeps the same
+or clear its retained key to recover a connection. The 0.8.4 patch keeps the same
 native executor pin, so existing version-two checkpoints and their binding remain
 valid without migrating or replacing the browser key or history.
 
@@ -95,7 +103,9 @@ in this artifact. See [the design decision](../docs/adr/007-reviewed-browser-ass
 for expiry, cancellation and database-restore limitations. Existing local synthetic
 and native experiment tests remain separate and do not constitute production proof.
 
-Configured 0.8.3 ZIP SHA-256: `8f5597efa2549fa0b6ecf76545ce4cbc9b78f9e1488f7ad8c1fd74ba6c051d45`.
+Configured 0.8.4 ZIP SHA-256: `a1324aeda3b168a519ed47ab7a2a13228c91d5e6aa5ab2bea9ab9ba0d09f8c40`.
+The earlier 0.8.3 archive remains unchanged at SHA-256
+`8f5597efa2549fa0b6ecf76545ce4cbc9b78f9e1488f7ad8c1fd74ba6c051d45`.
 The earlier 0.8.2 archive remains unchanged at SHA-256
 `c952be0f5cf7411a0a5a314b6624fa0264762b0c5668f7eb45805b257de53107`.
 The earlier 0.8.1 archive remains unchanged at SHA-256
@@ -106,7 +116,7 @@ ordinary package command and CI `--check` reproduce the configured native archiv
 For a separately reviewed key update, `python3 scripts/package-reviewed.py
 --native-config /absolute/path/to/reviewed-public-pins.json` accepts bounded JSON with
 exactly `executorRevision: "companion_0_8_1"` and `authorityKey`, the actual public
-P-256 claim JWK from the configured KMS version. Package version 0.8.3 does not
+P-256 claim JWK from the configured KMS version. Package version 0.8.4 does not
 authorize changing either native value. Use the same argument with
 `--check`. This replaces only public `config.js` bytes in the archive; it supplies
 no account, device or action grant. Commit the same reviewed public values into

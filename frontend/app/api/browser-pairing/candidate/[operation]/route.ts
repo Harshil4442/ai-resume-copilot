@@ -1,6 +1,7 @@
 import { getToken } from "next-auth/jwt";
 import { NextRequest, NextResponse } from "next/server";
 import { isTrustedRequestOrigin } from "../../../../../lib/requestOrigin";
+import { BROWSER_BACKEND_TIMEOUT_MS } from "../../../../../lib/browserTransportTimeouts";
 import { boundedPairingBytes, candidateGatewayHeaders, CANDIDATE_OPERATIONS, CSRF_COOKIE,
   gatewayConfiguration, issuePairingCsrf, MAX_PAIRING_BODY, MAX_PAIRING_RESPONSE, candidateReply,
   retainedBrowserSession, verifyPairingCsrf } from "../../../../../lib/browserPairingGateway";
@@ -34,7 +35,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ op
                           request.headers.get("x-hirewiz-csrf"))) return unavailable(403);
     const path = `/api/v1/browser-pairing/candidate/${operation}`;
     const backend = await fetch(`${configuration.backend}${path}`, { method: "POST",
-      credentials: "omit", redirect: "error", cache: "no-store", signal: AbortSignal.timeout(12000),
+      credentials: "omit", redirect: "error", cache: "no-store", signal: AbortSignal.timeout(BROWSER_BACKEND_TIMEOUT_MS),
       headers: candidateGatewayHeaders(configuration.key, configuration.origin, retained, path, raw), body: new Uint8Array(raw) });
     if (!backend.ok) {
       // Arbitrary cancellation acknowledgements cannot delay or remap this error.
@@ -51,3 +52,4 @@ export async function POST(request: NextRequest, context: { params: Promise<{ op
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+export const maxDuration = 45;

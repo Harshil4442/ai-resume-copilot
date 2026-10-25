@@ -4,7 +4,7 @@ import { createHash, createPublicKey } from "node:crypto";
 import { CONFIG } from "../extension/config.js";
 const manifest = JSON.parse(await readFile(new URL("../extension/manifest.json", import.meta.url)));
 assert.equal(manifest.manifest_version, 3);
-assert.equal(manifest.version, "0.8.3");
+assert.equal(manifest.version, "0.8.4");
 assert.deepEqual(manifest.host_permissions, []);
 assert.deepEqual(manifest.optional_host_permissions, ["https://www.hirewizhq.com/*", "https://job-boards.greenhouse.io/*", "https://boards.greenhouse.io/*", "https://*.amazonaws.com/*"]);
 assert.deepEqual(manifest.permissions.sort(), ["scripting", "storage"]);
