@@ -9,18 +9,21 @@ acceptance below. Deployment alone does not complete that acceptance.
 
 | Component | Accepted release | Verification |
 |---|---|---|
-| API | Generation **335**, revision `ai-resume-parser-id25-23658ba44cb3`; source `436585cdd92a9c1e09c0d630eb73e9c61e9b1a78`; image `sha256:2440572bc905d228f0f3e215d8d22b98e54a6d46942ac4382d88f3452bcef029` | Stage, promotion and independent readback passed; previous generation 333 revision retained for rollback. Normally merged [PR51](https://github.com/Harshil4442/ai-resume-copilot/pull/51). |
+| API | Generation **338**, revision `ai-resume-parser-d-a1fc222a7ed3-open`; source `436585cdd92a9c1e09c0d630eb73e9c61e9b1a78`; image `sha256:2440572bc905d228f0f3e215d8d22b98e54a6d46942ac4382d88f3452bcef029` | The original generation 335 repair passed stage, promotion and independent readback. Natural document maintenance subsequently updated the document pin and serving revision; the API image, source and pairing/account configuration are unchanged. Normally merged [PR51](https://github.com/Harshil4442/ai-resume-copilot/pull/51). |
 | Frontend | `dpl_BPxz9EA5kySSLWhfAK1sQsTKPH8b`, source `204c295221d84c43785a0a3c326b4146e7458a5c` | Production/READY; both canonical aliases verified at **03:02:28 UTC**. Apex-to-www 308 routing and disabled automatic domain assignment remain intact. Previous 3D4 deployment retained for rollback. Normally merged [PR52](https://github.com/Harshil4442/ai-resume-copilot/pull/52). |
-| Companion | **0.8.3**, **67,235 bytes**, SHA-256 `8f5597efa2549fa0b6ecf76545ce4cbc9b78f9e1488f7ad8c1fd74ba6c051d45` | Anonymous canonical download returned 200 and matched the reviewed ZIP. The public setup page linked to 0.8.3 at **03:12:10 UTC**. All 18 source files in the existing installation match; actual reload and native canary remain pending. |
+| Companion | **0.8.3**, **67,235 bytes**, SHA-256 `8f5597efa2549fa0b6ecf76545ce4cbc9b78f9e1488f7ad8c1fd74ba6c051d45` | Anonymous canonical download returned 200 and matched the reviewed ZIP. The public setup page linked to 0.8.3 at **03:12:10 UTC**. All 18 source files in the same installation match. Actual signed reconciliation and archival crossed the former four-record limit, functionally verifying the reloaded retention repair while preserving the key and history. Native pairing and application acceptance remain pending. |
 
-A fresh five-service observation at **03:08:30 UTC** found API 335, analysis 63,
-employer 31, coordinator 22 and inspector 14 Ready at their expected revisions.
+A five-service observation reconciled at **14:14:57 UTC** found API 338, analysis 66,
+employer 31, coordinator 25 and inspector 15 Ready at their expected revisions.
 Schema remains **`20261023_0021`**. The worker/coordinator application release
-retains source `7a00839d` / image `c1ce5b32`; the accepted inspector image is `9e402666`,
-with definitions valid until **27 October, 06:26:10 UTC** at its accepted observation.
-The API-only release preserved the other services, native configuration, IAM,
-queues and schedules. Three worker queues remain enabled; the employer-application
-queue and sales/checkout/employer-write controls remain held.
+retains source `7a00839d` / image `c1ce5b32`; the accepted inspector image is now
+`b5d97436`, with definitions valid until **28 October, 06:24:12 UTC**. The scheduled
+[document refresh run 40169964119](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/40169964119)
+completed its build, actual native V2 ten-case proof, exact pin transition,
+admission restoration and cleanup. Its updated caller revisions retain their
+application images. Pairing/account configuration is unchanged. Three worker
+queues remain enabled; the employer-application queue and
+sales/checkout/employer-write controls remain held.
 
 Required exact-source release checks passed for
 [API source 436](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/40148931093)
@@ -34,10 +37,10 @@ application release remains immutable when this status documentation changes.
 |---|---|---|
 | Official job search, ranking and user-selected job counts | **COMPLETE — free pilot** | Twenty reviewed employer origins; an actual requested three-job Software Engineer search returned **3/3 engineering roles**, quoted 1 credit per new job, charged 3, released 0 and left no hold. Deterministic fit is explained without treating it as hiring probability. The earlier wrong-role search and later replacement-job QA are separate records. Worldwide coverage and greater-than-95% recall are unverified follow-on work. |
 | Resume tailoring preserving PDF, DOCX and LaTeX formatting | **COMPLETE — free pilot** | Real PDF Version 3 retained four safe edits, one page, nine links and 147 unedited positions; an unsafe proposal was omitted. Actual native V2 edited-DOCX cases prove fit-preserving editing and unsafe link/reflow refusal. Owner DOCX/TeX/ZIP uploads and exact source snapshots, plus sealed TeX/ZIP preview/download equality, are separately verified. Snapshots do not prove new tailoring. Supported-layout limits and conservative original/custom-file fallbacks remain; universal format, ATS or selection guarantees are not claimed. |
-| Candidate-reviewed direct company applications | **OPEN** | Sign-in, email reset, native enrollment and original-file/first-name-only application preparation passed. The retained connection now has actual signed EXPIRED/same-key-UNCLAIMED evidence. Its attempted archive refused the old four-record capacity; 0.8.3 fixes that bound without dropping records. Still required: reload the same installation, fresh signed reconciliation/archive, one separate native pairing, exact Razorpay portal inspection, exact original-file/answer review, approval and cancellation **before Fill**, native device revocation and the exact-ID zero-effects/zero-application-charge readback. No identity seed or employer-submission smoke test is permitted. |
+| Candidate-reviewed direct company applications | **OPEN** | Sign-in, email reset, native enrollment and original-file/first-name-only application preparation passed. Reload and retained-request recovery now pass the former four-record archive limit without dropping the key or history. Subsequent connection attempts failed or expired and were reconciled and archived through the native controls; the last observed state is Idle. Manual completion of a fresh connection has been requested. Still required: actual native pairing, exact Razorpay portal inspection, exact original-file/answer review, approval and cancellation **before Fill**, native device revocation and the exact-ID zero-effects/zero-application-charge readback. No identity seed or employer-submission smoke test is permitted. |
 | Paid search/application credits, profitable finite packs and payment recovery | **COMPLETE — free pilot** | Three finite packs, separate service/AI balances, separate search/application quotes, reservations, idempotent settlement and recovery controls are implemented. Actual engineering-search settlement proves 3 reserved/charged, 0 held/released. Expense policy 3 and model policy 2 retain accepted authority. Sales, real capture/refund acceptance and measured profitability remain held follow-on work; unresolved provider expense must not become zero cost. |
 | Fast responsive pages and SEO | **OPEN** | Prior public and authenticated viewport, keyboard/navigation, metadata and reset-token privacy observations remain accepted. Deployed companion-route navigation suppresses unrelated profile/features and cached-balance requests. Remaining authenticated connection/review, expiry/error and privacy behavior must pass in the same live journey. Complete accessibility and field p75 LCP/INP/CLS remain unmeasured. |
-| GCP/Vercel deployment, preserved-data migration and monitoring | **OPEN** | Schema 21 migration, reopened worker services, API 335 and frontend BPx deployment/readback are accepted. All five services are Ready; rollback revisions and application holds are preserved. Final signoff still requires the same live native journey, exact accounting/effect observation and final held-control reconciliation. Configured alerts and scheduler transport are distinguished from actual condition-specific delivery and downstream completion. |
+| GCP/Vercel deployment, preserved-data migration and monitoring | **OPEN** | Schema 21 migration, reopened worker services, API 338 and frontend BPx deployment/readback are accepted. All five services are Ready; application images and holds are preserved through the observed natural document refresh. Final signoff still requires the same live native journey, exact accounting/effect observation and final held-control reconciliation. Configured alerts and scheduler transport are distinguished from actual condition-specific delivery and downstream completion. One completed natural refresh does not establish stable daily cadence. |
 
 ## Capacity, retention and scope
 
@@ -54,6 +57,18 @@ and revocation 71→20 metadata calls. These are synthetic production-path count
 not measured whole-HTTP production budgets. The shared **60/minute** project
 quota still limits concurrent capacity; no quota increase is claimed.
 
+Live connection attempts on 25 October encountered a preparation **503** with
+observed metadata quota exhaustion, a confirmation **503** whose internal failure
+was not exposed, and a later confirmation
+**403** whose precise rejection reason is unproven. Expiry is plausible for the
+403 but is not established as its cause. The latest review expired before
+confirmation. These attempts were reconciled and archived through the native
+controls; none reached device completion, Fill, upload or submission. The final
+application-fee and effects ledger observation remains pending. Manual connection
+is pending because the automated UI journey has not
+finished within the short review windows. These failures do not complete the
+remaining three outcomes.
+
 Companion 0.8.3 preserves native protocol 2, executor `companion_0_8_1`, extension
 identity, optional permissions and version-two checkpoints. It retains up to
 **64 prior records / 256 KiB**, refuses archival beyond that history bound and
@@ -69,10 +84,12 @@ remain follow-on work. Mobile users retain the website and manual company-portal
 path; the companion requires Chrome desktop.
 
 Manual document maintenance run 40109020215 passed local/native acceptance and
-restored admission. Natural expiry-monitor runs, including 40151669591, succeeded
-without executing definition-refresh steps. Scheduler transport success does not
-establish downstream completion or stable unattended daily definition refresh;
-that cadence remains unproven.
+restored admission. Earlier natural expiry-monitor runs, including 40151669591,
+succeeded without executing definition-refresh steps. The later scheduled run
+40169964119 completed an actual refresh and restored admission; its downstream
+result and current pins were independently reconciled. This is one observed
+natural refresh. Stable unattended daily cadence and every condition-specific
+alert delivery remain unproven.
 
 Reliable original estimates and aggregate actual durations for the six outcomes
 were not retained. No expected-versus-actual totals or dependable completion ETA
