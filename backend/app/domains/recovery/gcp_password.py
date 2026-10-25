@@ -5,6 +5,7 @@ from .contracts import canonical
 from .gcp_pairing import GcpPairingCoordinator
 from .gcp_password_contracts import PasswordSigningMarker
 from .gcp_scoped_authority import ScopedBeginAck, ScopedCandidateAuthority
+from .native_identity_observation import quarantine_on_failure
 from .pairing_contracts import CandidateAssertion
 from .password_reauth import (
     CandidateAssertionSigner,
@@ -59,7 +60,12 @@ class GcpPasswordCandidateBoundary:
                     raise GuardUnavailable("Protected device denial composition is unavailable")
                 _, payload, _ = self.coordinator.read_password_candidate(context, proof)
                 self.paired_devices.deny_before(ack, marker, payload)
-            self._begins[assertion.assertion_id] = ack, marker
+            owned = ack, marker
+            self._begins[assertion.assertion_id] = owned
+            def quarantine_begin() -> None:
+                if self._begins.get(assertion.assertion_id) is owned:
+                    self._begins.pop(assertion.assertion_id)
+            quarantine_on_failure(quarantine_begin)
         self.coordinator.admit_password_candidate(context, proof, assertion,
             protected_begin=begin if self.scoped is not None else None)
         if self.scoped is not None:

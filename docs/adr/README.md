@@ -8,3 +8,4 @@
 - [ADR-006: Data and artifact ownership](006-data-and-artifact-ownership.md)
 - [ADR-007: Candidate-reviewed browser assistance](007-reviewed-browser-assistance.md)
 - [ADR-008: Private transport clock synchronization](008-private-ingress-clock-synchronization.md)
+- [ADR-010: Bounded browser identity observations](010-bounded-browser-identity-observations.md)

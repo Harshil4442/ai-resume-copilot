@@ -18,6 +18,7 @@ from .gcp_partitioned_contracts import (
 )
 from .gcp_scoped_authority import ScopedBeginAck, ScopedCandidateAuthority, current_session
 from .gcp_submit_contracts import PairedSubmitDeviceRegistration, SubmitContext, SubmitDeviceGrant
+from .native_identity_observation import identity_barrier
 from .pairing_contracts import digest
 from .store import GuardDenied, GuardUnavailable
 
@@ -153,11 +154,17 @@ class ProtectedPairingDevices:
                 "subject_uuid":str(subject.subject_uuid), "registration_operation":str(intent.operation_id)}, immutable=True)
             tx.put("v3_pairing_completions", str(evidence.intent.operation_id), {"operation_id":str(intent.operation_id),
                 "evidence_sha256":evidence.digest}, immutable=True)
+        # Positive device authority and SQL projections require a fresh check
+        # of every dependency, rather than an interior identity observation.
+        identity_barrier()
         if scoped._execute(intent, activate) is None:
             raise GuardUnavailable("Protected pairing activation outcome unknown; no claim export or adoption")
+        identity_barrier()
         scoped.resolve(evidence.context)
         if self.activated is not None:
+            identity_barrier()
             self.activated(grant, device, native["extension_id"])
+            identity_barrier()
 
     def deny_before(self, ack: ScopedBeginAck, marker, challenge: dict) -> None:
         scoped = self.scoped
@@ -180,7 +187,9 @@ class ProtectedPairingDevices:
                 raise GuardDenied("Candidate cannot deny another protected device")
         scoped._run(validate_owner)
         if self.deny_sql is not None:
+            identity_barrier()
             self.deny_sql(marker.context, device_id)
+            identity_barrier()
         def deny(tx: BufferedTransaction, fixed: ScopedJournalIntent) -> None:
             if current_session(tx, marker.context, scoped._now()) != (command.subject, command.session):
                 raise GuardDenied("Protected candidate revocation owner changed")
@@ -286,6 +295,7 @@ class ProtectedPairingDevices:
         c.registry.run(execution, before_attempt=lambda:c.fence.check(c.pin))
         c.fence.check(c.pin)
         self.scoped._run(protected)
+        identity_barrier()
         return SubmitContext.model_validate(captured[0][0].model_dump(exclude={"enrollment_operation"}))
 
     def check_claim(self, claim: dict) -> None:

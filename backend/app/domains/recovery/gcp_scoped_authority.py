@@ -37,6 +37,7 @@ from .gcp_password_lifetime_contracts import (
     LifetimeGrantEvidence,
     verified_session_matches,
 )
+from .native_identity_observation import quarantine_on_failure
 from .password_reauth import CandidateWebSession, PasswordAccountBinding, RetainedWebSession
 from .store import GuardDenied, GuardUnavailable
 
@@ -490,6 +491,11 @@ class ScopedCandidateAuthority:
         ack = ScopedBeginAck(raw, self._issuer)
         with self._lock:
             self._begins[intent.operation_id] = ack
+        def quarantine_begin() -> None:
+            with self._lock:
+                if self._begins.get(intent.operation_id) is ack:
+                    self._begins.pop(intent.operation_id)
+        quarantine_on_failure(quarantine_begin)
         return ack
 
     def verify_begin(self, ack: ScopedBeginAck, action: PasswordSigningMarker) -> ScopedJournalIntent:

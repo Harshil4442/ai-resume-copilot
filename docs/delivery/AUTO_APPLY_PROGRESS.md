@@ -1,16 +1,19 @@
 # HireWiz development and deployment progress
 
-Updated **25 October 2026 (IST)** after the compatible 0.8.2 frontend/package
-release and accepted manual document-maintenance recovery. Original outcomes
+Updated **25 October 2026 (IST)** after the accepted API shared-pool repair,
+compatible 0.8.2 expired-request recovery, actual replacement-job preparation and
+local bounded-identity capacity work. The capacity work is **not deployed**. Original outcomes
 **1, 2 and 4 are COMPLETE within the approved free twenty-origin pilot**; the other
 three remain **OPEN**. Global
 coverage, sales, real payments and commercial profitability remain follow-on
 work. The goal remains unfinished until the other pilot outcomes are accepted.
 
 Schema **`20261023_0021`** is committed. The canonical API serves accepted
-request-capacity source **`0abc7d53`**, immutable image **`358c9db6`**, at generation
-**331** after the scanner-pin transition. The application image and source are
-unchanged. Analysis generation **63**, employer generation **31** and coordinator
+shared-pool repair source **`c4b7d78d5ff4ace00fa7de275258861dba026560`**, immutable
+image **`sha256:41af169c49688ba7046b1fb37e91c2f65dcf2c5ac55fa916d3884c8d3044e5cb`**,
+at generation **333**, normally merged through **PR50**. Independent serving
+verification passed. This API-only repair preserves the earlier request-capacity
+and scanner-pin changes. Analysis generation **63**, employer generation **31** and coordinator
 generation **22** retain accepted source **`7a00839d`** and image **`c1ce5b32`**.
 Inspector generation **14** serves immutable image **`9e402666`**, with definitions
 expiring **27 October 2026, 06:26:10 UTC**. Manual maintenance run **40109020215**
@@ -61,7 +64,14 @@ approved the bounded persistent-device/Greenhouse-host test scope. One separate
 fresh Start created a known request with the same key and new request fingerprint.
 One candidate challenge returned upstream **503** before an approval form appeared;
 no confirmation, device/host grant, paired device or employer action followed.
-The existing request must be reconciled before any further connection ceremony.
+After the accepted API repair, fresh signed reconciliation of that exact known
+request returned **EXPIRED** and same-key **UNCLAIMED**. Explicit archival passed
+in the actual 0.8.2 popup, preserving key, profile and history. That accepted cb3 archival is historical. A later fresh request **577e…** obtained
+a candidate challenge with HTTP200; its one confirmation returned HTTP503, with
+actual GetDatabase **ResourceExhausted** evidence. Signed status inspection was
+unavailable. The current request is **paused and unreplayed**; no grant, completed
+pairing, host permission or employer action is accepted. Do not resend confirmation,
+clear uncertainty or start a replacement ceremony without original reconciliation.
 Deployment and expired-request recovery do not close an original outcome.
 
 Sanitized GCP HTTP 500 traces on resume listing, employer catalog and features
@@ -74,9 +84,10 @@ missed the pairing projection's exact-type guard; a real composition regression
 reproduced that refusal before staging. The projection now admits exactly the
 stock SQLAlchemy Engine or OptionEngine with redaction, while custom subclasses
 and unredacted views remain refused. **104 focused pairing-production, factory
-and private-view tests passed**, but **the API repair is not deployed yet**.
-This demonstrated defect is separate from the earlier Firestore quota
-observations below.
+and private-view tests passed**. The API-only repair is **deployed and independently
+verified** at generation333, sourcec4b7d78d/image41af169c through normally merged
+PR50. This demonstrated defect is separate from the earlier Firestore quota
+observations below; completed deployment does not prove the remaining live pairing.
 
 The request-capacity repair is **deployed**. Earlier actual provider
 metrics show HTTP 429 / gRPC status 8 for Firestore Admin `GetDatabase`, and the
@@ -90,8 +101,9 @@ single stock CLI metadata read succeeded. The earlier failed internal answer sav
 was preserved. A later explicit partial save succeeded, and the saved-answer UI
 confirmed a nonempty `first_name`; the other answers remain blank. The exact
 original file and preview remain intact, with **0 reserved / 0 charged** for the
-internal application. The public Razorpay form remains blank with no employer
-write. These observations do not prove completed pairing or form execution.
+internal application. At that observation, the public Razorpay form was blank
+with no employer write. That original opening is now closed; the replacement is
+recorded below. These observations do not prove completed pairing or form execution.
 
 SDK-intercepted production-path tests expose a separate demand defect: one
 candidate confirmation previously used **68 metadata calls**, while normal session
@@ -107,6 +119,31 @@ hidden-page pause and explicit status recovery. Real pairing must still pass
 before outcomes 3, 5 or 6 can
 close. The approved Google support inquiry returned a form-submission error;
 no case number or quota approval is claimed.
+
+The new **local, undeployed** capacity implementation uses an explicit maximum
+**30-second**, operation-local observation of exactly two pinned Firestore RPC
+identities. Native authorization, witness, closure, session and revocation reads
+remain fresh. Entry/exit and KMS pre/post, protected-grant, SQL denial/activation,
+own-acknowledgment and capability/output boundaries retain fresh identity
+barriers. Exact Context token, thread/task, pin, deadline and sticky-failure checks
+prevent cross-operation reuse; a failed scope quarantines its retained outputs.
+The tradeoff is explicit: internal Firestore/GCS ledger writes may precede
+UID-replacement detection. They must remain untrusted/quarantined; no authorization
+result may be exported after a barrier failure. This is weaker private-write timing,
+not the previous no-private-write guarantee. See [ADR-010](../adr/010-bounded-browser-identity-observations.md).
+
+Local intercepted full-journey observations reduced confirmation **54→8**, device
+completion **36→22**, and revocation **71→20** metadata calls. Ordinary native
+validation outside the scope remains **4**. The shared **60/minute** quota still
+limits aggregate concurrency; these counts are neither a production measurement
+nor a whole-HTTP-journey budget. The companion route's local Nav change omits
+unrelated profile/features requests, credit-event invalidation and cached balances,
+while preserving session/navigation, cached feature filtering and normal routes.
+Its **11 focused frontend cases passed**. The backend affected suite passed
+**142 cases before the final lifecycle cleanup**; the dedicated helper suite now
+passes **26**. These local results do not establish production pairing or close an
+outcome. Normal exact-source operator review and rollout remain pending; existing
+development/deployment authorization is retained, with no added human approval flow.
 
 ## Scope and owner controls
 
@@ -127,10 +164,10 @@ unfinished free-pilot journeys within the same six outcomes.
 |---|---|---|---|
 | Official job search, ranking and user-selected job counts | COMPLETE (free pilot) | Twenty reviewed origins were enabled and refreshed; the retained aggregate recorded 1,366 open postings at that observation. The earlier wrong-role search and its separate audited quality adjustment remain preserved. After reopening, a genuine three-result Software Engineer search returned **3 of 3** appropriate engineering roles. Its quote was **1 credit per job**; it charged **3**, released **0**, left **0 held** and **0 available**, while AI stayed **7**. | Approved free-pilot search acceptance is complete. Worldwide expansion and the independent greater-than-95-percent coverage target remain follow-on work. Preserve exact completed search and settlement history; no additional testing campaign is implied. |
 | Resume tailoring preserving PDF, DOCX and LaTeX formatting | COMPLETE (free pilot) | Real PDF Version 3 retained four safe edits and omitted one unsafe proposal; its download preserves one page, nine links, fonts and 147 unedited positions. Native DOCX, TeX and TeX ZIP original downloads match their source hashes. The unchanged DOCX snapshot is byte-identical. TeX and ZIP sealed PDFs were visually checked and matched to their previews; both retain two links. The exact three database records pass source, ClamAV, native-compilation and recorded cleanup-generation checks. After reconciling the failed POST as uncommitted, one fresh canonical ZIP upload parsed successfully and its original download matched all 917 bytes. | Approved free-pilot resume acceptance is complete. An independent release-user GCS marker read remains permission-unavailable and is not claimed as PASS; no IAM expansion is required by SD03. Unsupported layouts still receive conservative refusal or original/custom options. Unchanged snapshots remain labeled unchanged and do not prove new tailoring. |
-| Candidate-reviewed direct company applications | OPEN | Ordinary Google sign-in passed; the human reports foreground sign-in within five seconds. The human completed password reset; the password-changed email reached INBOX at **23 October 2026, 22:28:41 UTC**. Native enrollment and a fresh native password sign-in both reached the Dashboard. The first reset email also reached INBOX with SPF, DKIM and DMARC passing. The earlier reloaded 0.8.1 runtime passed signed **UNCLAIMED** inspection and explicit archival before one new Start with matching fingerprints; that creation later passed its deadline without a persistent grant. All eighteen installed 0.8.2 source files match the reviewed ZIP. The human reloaded the same extension; actual exact-request **EXPIRED** and same-key **UNCLAIMED** inspection preceded successful explicit archival, preserving key, permissions, profile and history. The earlier archive refusal after lost ephemeral inspection remains recorded. Human approval for the bounded persistent-device/Greenhouse-host test scope is received. One separate fresh Start created a known request with the same key and a new fingerprint; its single candidate challenge returned **503** before an approval form. No confirmation, grant, pairing or employer action is accepted. Actual GCP 500 traces exposed the shared-pool listener defect; its private-view/projection compatibility repair passes 104 focused tests and is prepared but not deployed. A genuine one-credit search returned Razorpay's Lead Software Development Engineer role in Bengaluru. The exact-original internal application now has one successfully saved ordinary `first_name` answer and a loaded preview; other answers remain blank, with **0 reserved / 0 charged**. The active public form remains blank and no employer write occurred. | Deploy the reviewed API repair, reconcile the existing known request without replay, then verify actual candidate confirmation/pairing, native portal inspection, exact-file/answer review, cancellation before Fill and native device revocation. Retain the separate native inspection/revocation responses and bounded zero-execution/accounting readback. Do not seed an identity/device or bypass proof; employer attachment, upload and final submission are not smoke tests. |
+| Candidate-reviewed direct company applications | OPEN | Google sign-in, password reset/email delivery, native enrollment and native password sign-in passed. Installed companion0.8.2 matches its reviewed ZIP. The retained expired requests passed signed UNCLAIMED inspection/archival with key/profile/history preserved; the earlier ephemeral-inspection refusal and cb3 challenge503 remain recorded. API333/sourcec4/image41af is deployed and independently verified. The later request577e obtained challenge200, then its single confirm503 exposed actual GetDatabase ResourceExhausted; signed status remained unavailable. It is paused and unreplayed, with no grant, complete, host permission or employer action accepted. The replacement one-credit allowance was approved/committed and spent on one delivered Razorpay4744101005 result. Actual internal app e23… uses original28/exact hash and only first_name=Harshil; application reserved0/charged0, preview passed, public form blank. Old closed case/history are preserved. Bounded identity observations and header-request suppression are implemented locally, not deployed. | Review/deploy the exact capacity change, reconcile the existing577e operation without replay, then accept actual native pairing, exact-portal inspection, original28/SHA054559… and first-name-only review, approval/cancellation before Fill, device revocation and exact-ID observer readback. Retain actual native inspection/revocation responses and zero field/upload/submit effects/application charges. No identity seed, proof bypass or employer-submission smoke test. |
 | Paid search/application credits, profitable finite packs and payment recovery | COMPLETE (free pilot) | Three finite packs, separate service/AI balances, exact quotes, reservations, idempotent settlement and recovery controls are implemented. The promoted billing page displayed the actual **3** service credits. The quote of **1 per job** delivered **3 of 3** Software Engineer roles, charged **3**, released **0**, and left **0 held / 0 available**; AI remained **7**. Expense-policy **3** and model-policy **2** retain their reviewed authority. | Approved free-pilot credit, quote and settlement acceptance is complete. Paid checkout, real payment/refund receipts, commercial activation and actual-cost profitability remain explicitly unaccepted follow-on work. Unknown provider liabilities must not become zero cost. |
-| Fast responsive pages and SEO | OPEN | Public views were observed at 390, 768 and 1,440 pixels without horizontal overflow; signed-in search/billing views were also observed at 390 pixels. Fresh signed-in workspace and resume review observations at 320 and 1,024 pixels show no horizontal page overflow. Keyboard focus, mobile navigation and horizontally scrolling section access passed. Exact-source preview and canonical pricing/auth metadata corrections were accepted. The reset form passed desktop/mobile layout, fragment-removal and normal-session stability checks. Both domains serve the request-deduplication and bounded-polling correction, retaining the billing/upload fixes. The canonical upload passed. The deployed 0.8.2 website source adds visible review deadlines, expired-control clearing and explicit review renewal; the companion source adds bounded expired-create recovery. The same installed runtime was reloaded and passed live expired-request inspection and explicit archival. The first archival refusal correctly preserved state after its ephemeral inspection was lost. The approved fresh connection reached a known request, but a single challenge returned **503** before the review form. The demonstrated SQL pool-listener repair is prepared, not deployed; remaining authenticated review/renewal behavior is unaccepted. | Verify the repaired authenticated connection/review pending states and actionable errors within the existing pilot journey. Preserve noindex/no-referrer and reset-token privacy. Complete accessibility, device/connection-segmented field p75 LCP, INP and CLS, and mobile field performance remain unmeasured; these observations do not establish them. |
-| GCP/Vercel deployment, preserved-data migration and monitoring | OPEN | Schema21 migration and reopening are accepted. API generation **331** retains source0abc/image358c9; analysis generation **63** and coordinator generation **22** retain source7a/imagec1ce after the scanner-pin transition. Employer generation **31** is unchanged. Manual maintenance run **40109020215** passed **25 local / 10 native cases** and restored admission; independent native serving/pin and admission-restoration readbacks passed at **16:10:27 / 16:11:46 UTC**. Inspector generation **14**, image9e402666, has definitions valid until **27 October, 06:26:10 UTC**. The historical five-file journal is preserved byte-for-byte; its candidate was neither adopted nor replayed. Three worker queues are running and the retained three natural schedule HTTP 200 observations precede this pin transition; the application queue remains paused. FrontendHZ2, source5e2e957 / PR49, is promoted on both canonical aliases at **24 October, 18:40:35 UTC**. The canonical 0.8.2 archive and all eighteen installed source files match the reviewed digest. Actual same-extension reload and expired-request archival passed; the approved fresh Start created a known request, but its candidate challenge returned **503** before any confirmation or grant. The API pool-listener and stock-view projection repair passes all 104 focused pairing/factory/private-view tests and is not yet deployed. Stable unattended document-maintenance cadence remains unproven. | Deploy and verify the reviewed API repair, accept the remaining live companion journey, then update the final delivery record using actual serving versions and held controls. Retain honest natural-versus-manual monitoring evidence and its observation times. Preserve alert handles and distinguish configured routes from actual condition-specific incident/inbox delivery. No deployment-only completion claim. |
+| Fast responsive pages and SEO | OPEN | Public views were observed at 390, 768 and 1,440 pixels without horizontal overflow; signed-in search/billing views were also observed at 390 pixels. Fresh signed-in workspace and resume review observations at 320 and 1,024 pixels show no horizontal page overflow. Keyboard focus, mobile navigation and horizontally scrolling section access passed. Exact-source preview and canonical pricing/auth metadata corrections were accepted. The reset form passed desktop/mobile layout, fragment-removal and normal-session stability checks. Both domains serve the request-deduplication and bounded-polling correction, retaining the billing/upload fixes. The canonical upload passed. The deployed 0.8.2 website source adds visible review deadlines, expired-control clearing and explicit review renewal; the companion source adds bounded expired-create recovery. The same installed runtime was reloaded and passed live expired-request inspection and explicit archival. The first archival refusal correctly preserved state after its ephemeral inspection was lost. The approved fresh connection reached a known request, but a single challenge returned **503** before the review form. The SQL pool-listener repair is deployed and independently verified at API333/sourcec4/image41af. The known cb3 request was reconciled/archived, but later577e challenge200/confirm503 with GetDatabase ResourceExhausted and unavailable signed status leave the journey paused. The local companion-route Nav suppression passes11 focused cases; it is not deployed. Remaining authenticated pairing/review behavior is unaccepted. | Verify the repaired authenticated connection/review pending states and actionable errors within the existing pilot journey. Preserve noindex/no-referrer and reset-token privacy. Complete accessibility, device/connection-segmented field p75 LCP, INP and CLS, and mobile field performance remain unmeasured; these observations do not establish them. |
+| GCP/Vercel deployment, preserved-data migration and monitoring | OPEN | Schema21 migration and reopening are accepted. API generation **333** serves independently verified sourcec4/image41af through normally merged PR50; analysis generation **63** and coordinator generation **22** retain source7a/imagec1ce after the scanner-pin transition. Employer generation **31** is unchanged. Manual maintenance run **40109020215** passed **25 local / 10 native cases** and restored admission; independent native serving/pin and admission-restoration readbacks passed at **16:10:27 / 16:11:46 UTC**. Inspector generation **14**, image9e402666, has definitions valid until **27 October, 06:26:10 UTC**. The historical five-file journal is preserved byte-for-byte; its candidate was neither adopted nor replayed. Three worker queues are running. Post-maintenance natural scheduler transport metadata observed at **24 October, 21:15:10 UTC** records cleanup **21:10:07**, scan **21:14:05** and maintenance **21:10:17**, each with result code0; the application queue remains paused. These transport observations do not prove downstream task completion or stable unattended daily document-definition refresh cadence. FrontendHZ2, source5e2e957 / PR49, is promoted on both canonical aliases at **24 October, 18:40:35 UTC**. The canonical 0.8.2 archive and all eighteen installed source files match the reviewed digest. Actual same-extension reload and expired-request archival passed; the approved fresh Start created a known request, but its candidate challenge returned **503** before any confirmation or grant. The API pool-listener and stock-view projection repair passed 104 focused cases, was deployed and independently verified. The known cb3 request was reconciled/archived; later577e challenge200/confirm503 has actual GetDatabase ResourceExhausted and unavailable signed status. It is paused/unreplayed. The operation-local identity and companion Nav capacity changes are local and undeployed; API333/c4 and frontendHZ2 remain canonical. Actual native pairing and assistance acceptance remain open. Stable unattended document-maintenance cadence remains unproven. | Review and roll out the exact local capacity change, reconcile577e without replay, accept the remaining live native pairing, exact-file/first-name-only review, cancellation before Fill, device revocation and bounded observer journey, then reconcile the final delivery record using actual serving versions and held controls. Retain honest natural-versus-manual monitoring evidence and its observation times. Preserve alert handles and distinguish configured routes from actual condition-specific incident/inbox delivery. No deployment-only completion claim. |
 
 ## Current rollout state and preserved authority
 
@@ -142,17 +179,22 @@ services retain immutable image **`sha256:c1ce5b32…`**. The later diagnostics-
 API release used source **`65d743a9b63f32e5509da381279b376804bdb606`** and image
 **`sha256:2077e476…`**. Its accepted 0.8.1 successor used source
 **`47169c10c970a87a48bd5d26ece9b146996cd400`** and image **`sha256:bf23b42b…`**.
-The current request-capacity successor uses source
+The preceding request-capacity successor used source
 **`0abc7d530dcd0115a9f2af0c2961f89c55c41077`** and image
 **`sha256:358c9db69074aa7fa383a1562f64742261837d91ebcf8d9593c0a4a97fb8f894`**.
 That API-only promotion left the other three services, queues and schedules
 unchanged. The later document-maintenance transition repinned the inspector and
-three callers as recorded below. Each canonical service has one untagged
-100-percent route.
+three callers as recorded below. The accepted API-only pool repair now serves
+source **`c4b7d78d5ff4ace00fa7de275258861dba026560`**, image
+**`sha256:41af169c49688ba7046b1fb37e91c2f65dcf2c5ac55fa916d3884c8d3044e5cb`**,
+at generation **333** and revision **`ai-resume-parser-pool25-491fa27ba5bc`**.
+PR50 is merged and independent serving verification passed. The remaining
+services and held employer-write controls retain their accepted configuration.
+Each canonical service has one untagged 100-percent route.
 
 | Service | Generation | Accepted canonical revision |
 |---|---|---|
-| API | 331 | `ai-resume-parser-d-4d2e81c43b97-open` |
+| API | 333 | `ai-resume-parser-pool25-491fa27ba5bc` |
 | Analysis worker | 63 | `hirewiz-analysis-worker-d-4d2e81c43b97-open` |
 | Employer worker | 31 | `hirewiz-employer-worker-activate-f5d5e2474f5c` |
 | Resume coordinator | 22 | `hirewiz-resume-coordinator-d-4d2e81c43b97-open` |
@@ -162,8 +204,8 @@ The request-capacity API was originally staged at generation **327** and promote
 at generation **328**; its independent canonical verification passed in
 **37.26 seconds**. That is the duration of this earlier check, not page-load
 performance or total development time. The later accepted document-maintenance
-transition produced the current revisions above without rebuilding application
-images. Its API health readback matched source0abc and the new revision at
+transition produced the then-current revisions without rebuilding application
+images. Its historical API health readback matched source0abc and the new revision at
 **24 October, 16:10:27 UTC**. Its earlier frontend
 **`dpl_875XxYMHwUJ3F9pPmVzWY4Sc1fGm`** was promoted and both aliases verified at
 **03:16:06.122378 UTC** and again at **15:36 UTC**. The compatible 0.8.2 frontend
@@ -180,7 +222,12 @@ on their then-serving revisions: scan at
 23 October. The analysis, employer-ingestion and employer-search queues are
 RUNNING. The cleanup, scan and maintenance schedules are ENABLED. The
 employer-application queue remains PAUSED. No forced scheduled invocation or
-employer submission was used to obtain these results.
+employer submission was used to obtain these results. Later accepted natural
+scheduler metadata, observed at **24 October, 21:15:10 UTC** after the maintenance
+pin transition, records cleanup at **21:10:07**, scan at **21:14:05** and
+maintenance at **21:10:17 UTC**, all with result code **0**. This is transport
+acceptance only; downstream task completion and stable unattended daily
+document-definition refresh cadence remain unproven.
 
 The additive migration preserves prior data and the single revision chain,
 including the native upload-format change. Original intents, actual operation
@@ -295,19 +342,34 @@ evidence and original history. The update and archival themselves created no
 request or device/host grant. The human subsequently approved the bounded test
 scope, and one separate fresh Start created a known request with the same key and
 a new request fingerprint. Its single candidate challenge returned **503** before
-the approval form appeared; no candidate confirmation or grant occurred.
+the approval form appeared; no candidate confirmation or grant occurred. After
+the API repair, that exact known request passed signed **EXPIRED** and same-key
+**UNCLAIMED** reconciliation plus explicit archival in the actual popup. The
+same key, profile and original history remain intact. A later fresh request577e
+obtained challenge200; its one confirmation returned503 with actual GetDatabase
+ResourceExhausted. Signed status was unavailable, so this request is paused and
+unreplayed, with no grant, completion, host permission or employer action accepted.
 A local deadline alone cannot authorize archival. Archival of a live
 candidate-confirmed request or of completion/refresh uncertainty remains blocked.
 
 The human's bundled persistent-device and Greenhouse-host test authorization is
 **RECEIVED**; this authorizes the bounded test, not a claim that native access was
-actually granted. The API pool-listener repair remains undeployed. After its
-reviewed deployment, reconcile the existing known request before any new ceremony,
-then verify actual candidate confirmation/pairing, native portal inspection,
-exact-file/ordinary-answer review, cancellation before Fill, native revocation
-and bounded zero-execution/accounting readback within original
-outcomes **3, 5 and 6**, which stay **OPEN**. No employer fill, upload or final
-submission is required as a smoke test.
+actually granted. The API pool-listener repair is deployed and independently
+verified; the cb3 expiry/archive is historical. The new577e request must retain
+its original uncertainty and pass reconciliation before a separate action. The
+local capacity fix is not deployed. After normal reviewed rollout, the remaining
+sequence is actual native pairing, native inspection of the
+exact replacement portal/application, review of original resume **28**, SHA-256
+**`054559b40df2511d7ba6561b04e7e50b208a70fb4cca45d2382191a102a8dc58`**, and
+exactly **`first_name=Harshil`** with all other answers blank, followed by approval,
+cancellation **before Fill**, native device revocation and the bounded read-only
+observer. The actual new application ID, device UUID and review UUID must anchor
+that observer; no identifier is invented and the old application is preserved.
+Retain the native inspection and revocation acknowledgments separately from SQL
+readback, proving zero begin/field/upload/submit effects and zero application
+charges. Original outcomes **3, 5 and 6** stay **OPEN** until that journey and final
+reconciliation are accepted. No employer fill, upload or final submission is a
+smoke test.
 
 The accepted three-result search followed a displayed three-credit balance and an exact
 three-result quote at **one credit per job**. Three of three Software Engineer
@@ -326,9 +388,20 @@ settlement and is not a payment or revenue receipt. The candidate then created
 an internal application bound to the exact original resume. A later partial
 `first_name` save succeeded and the saved-answer UI confirmed it; other answers
 remain blank. The original source hash is unchanged, its preview loaded, and the
-internal application retains **0 reserved / 0 charged**. The selected public
-posting was active and its form remained blank. No employer write, completed
-assistance or submission is claimed.
+internal application retains **0 reserved / 0 charged**. At that observation the
+selected public posting was active and its form was blank. That original
+Razorpay opening **4746961005** is now closed; its application and settlement
+history remain unchanged. The official replacement, **Lead Database Administrator,
+Bengaluru**, opening **4744101005** on board **`razorpaysoftwareprivatelimited`**,
+was observed live with blank fields. Its distinct **one-credit unpaid replacement
+allowance was approved and committed**, then a normal quoted search delivered
+exactly that one opening, charged **1**, returned **0** and left service balance
+**0**. The actual new internal application **e23…** uses original resume28 and the
+exact source hash above. A first answer-save503 was reconciled as uncommitted; a
+separate fresh save succeeded with exactly **first_name=Harshil** and other answers
+blank. The artifact preview passed, with application **0 reserved / 0 charged**.
+The original closed application and all credit history remain unchanged. No
+employer fill, upload, completed assistance or submission is claimed.
 
 Finite offers remain Starter **₹649 / 100 service credits + 2 AI units**, Growth
 **₹1,099 / 300 + 6**, and Scale **₹2,199 / 700 + 15**. Prices remain one service
