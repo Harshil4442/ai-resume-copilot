@@ -1,10 +1,21 @@
 # Browser companion: disabled MV3 safety foundation
 
-Historical foundation: the early limits below describe the older 8 October checkpoint. See [current pilot progress](AUTO_APPLY_PROGRESS.md) and the [package guide](../../browser-companion/README.md) for the deployed compatible0.8.2 release. The reviewed ZIP, all eighteen installed files, same-extension reload and expired-request inspection/archival are accepted. The cb3 archival and its earlier503 remain historical evidence. API333/sourcec4/image41af is accepted through merged PR50; frontendHZ2 is still canonical.
+Historical foundation: the early limits below describe the older 8 October checkpoint. See [current pilot progress](AUTO_APPLY_PROGRESS.md) and the [package guide](../../browser-companion/README.md) for the published compatible 0.8.3 release. The API repair (generation 335, source `436585cd`, image `2440572b`) and frontend BPx from source `204c2952` are deployed and verified. The new ZIP and all 18 installed source files match; actual same-extension reload and the remaining native review/cancel/revoke canary are pending. Earlier 0.8.2 archival observations remain historical evidence. Native protocol 2 and executor `companion_0_8_1` are unchanged; no employer-write or payment hold is lifted by publication.
 
-The later request577e obtained challenge200 and one confirm503 with actual GetDatabase ResourceExhausted. Signed status remained unavailable; it is paused and unreplayed. No grant, completed pairing, host permission or employer action is accepted. The separately approved replacement credit was committed and spent on one normal Razorpay4744101005 result. Its actual internal application e23… retains original28/hash054559… and only first_name=Harshil, with application reserve0/charge0 and a successful preview; the public form is blank and the old closed case is preserved.
+## Historical pre-capacity observations
 
-The [bounded identity observation change](../adr/010-bounded-browser-identity-observations.md) and exact companion-route Nav suppression are **implemented locally, not deployed**. Fresh native authorization/witness/closure reads and privileged barriers remain; internal ledger writes may precede UID-replacement detection and must remain quarantined, so this weakens private-write timing. Local metadata counts are confirm8/complete22/revoke20, formerly54/36/71; normal outside-scope validation remains4. The shared60/minute quota still limits concurrency. Eleven focused frontend cases passed; these are not live acceptance. Normal operator review/rollout and the existing pair→inspect→original-file/first-name-only review→approve/cancel before Fill→revoke→observer journey remain within original outcomes3/5/6, all OPEN. No additional human approval flow is added. The [0.8.0 hosted handoff](BROWSER_HOSTED_NETWORK_ACCEPTANCE_2026-10-15.md) remains historical component evidence.
+Before the accepted API repair, a retained request obtained challenge200 and one
+confirm503 with actual GetDatabase ResourceExhausted. Signed status was unavailable
+at that observation; no completed pairing or employer action was accepted. The
+current signed EXPIRED/UNCLAIMED reconciliation and published retention fix are
+recorded on the [current progress board](AUTO_APPLY_PROGRESS.md).
+
+At that earlier point, the [bounded identity and navigation changes](../adr/010-bounded-browser-identity-observations.md)
+were local and undeployed. They are now deployed; their synthetic call counts do
+not prove the remaining live canary. The [0.8.0 hosted handoff](BROWSER_HOSTED_NETWORK_ACCEPTANCE_2026-10-15.md)
+remains historical component evidence.
+
+## 8 October foundation
 
 Date: 2026-10-08. Scope: local synthetic, fill-only development evidence for
 EX02 and parts of EX05–08 / G04A–D in

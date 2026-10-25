@@ -62,9 +62,9 @@ use this archival path.
 
 A failed prepare or strictly bound legacy 0.8.0 ID-less unknown retains its separate
 UNCLAIMED inspection requirement. Archiving preserves the prior checkpoint; a new
-Start requires another explicit click and fresh candidate review. The 64-record
-retained history and 256 KiB checkpoint bound refuse further writes when full;
-history is never silently truncated or discarded. Contact support at the bound. Nonces
+Start requires another explicit click and fresh candidate review. Archiving beyond 64 retained records or writing a checkpoint larger than 256 KiB
+is refused. Ordinary updates within those bounds remain allowed; history is never
+silently truncated or discarded. Contact support at the bound. Nonces
 and private keys are never copied into the connection checkpoint or archive.
 
 Creation requests still expire after two minutes, candidate confirmation challenges
