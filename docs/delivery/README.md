@@ -1,97 +1,42 @@
-# Delivery evidence
+# Delivery records
 
-Start with the [current pilot progress board](AUTO_APPLY_PROGRESS.md) and the
-[full product requirements](../requirements/JOB_SEARCH_AND_APPLICATION.md).
-The board preserves the six original outcomes: **1, 2 and 4 are complete within
-the approved free twenty-origin pilot; 3, 5 and 6 remain open**. Worldwide
-coverage, paid sales, real payment acceptance and commercial profitability remain
-follow-on work. A component report closes only the behavior it verifies.
+Start with the [current six-outcome progress board](AUTO_APPLY_PROGRESS.md),
+[requirements](../requirements/JOB_SEARCH_AND_APPLICATION.md) and
+[companion package guide](../../browser-companion/README.md).
 
 ## Current production and rollout
 
-Schema **`20261023_0021`** is accepted. The canonical API serves shared-pool repair
-source **`c4b7d78d5ff4ace00fa7de275258861dba026560`** / image **`41af169c`**
-at generation **333**, revision **`ai-resume-parser-pool25-491fa27ba5bc`**. PR50
-is merged and independent serving verification passed; earlier request-capacity
-and document-maintenance pin changes are retained. Analysis generation **63**, employer
-generation **31** and coordinator generation **22** retain source `7a00839d` /
-image `c1ce5b32`; the employer service is unchanged. Inspector generation **14**
-serves image `9e402666`, with definitions expiring **27 October, 06:26:10 UTC**.
-Manual maintenance run **40109020215** passed **25 local / 10 native cases**;
-independent serving/caller-pin and admission-restoration readbacks passed at
-**24 October, 16:10:27 / 16:11:46 UTC**. The older five-file journal remains
-byte-identical, and its candidate was neither adopted nor replayed. The earlier
-API stage/promotion evidence remains recorded on the progress board. Both canonical
-aliases target frontend **`dpl_HZ2Dg7ns252WaHbcQPU14Da5uJxh`**, source
-**`5e2e957d11e3d99b7d7871d59afbf07af443ad6c`**, verified at
-**24 October 2026, 18:40:35 UTC** after normal PR49 merge **`aa3e6768`**. The
-compatible 0.8.2 archive is **67,162 bytes**, SHA-256
-**`c952be0f5cf7411a0a5a314b6624fa0264762b0c5668f7eb45805b257de53107`**.
-Its canonical download and all eighteen installed source files were verified at
-**18:44:53 UTC**. Native protocol **2**, executor **`companion_0_8_1`**, key and
-permissions remain unchanged. The human reloaded the same extension; its enabled
-status-inspection control and actual expired-request recovery established the new
-runtime. This does not establish a paired device or close the live journey.
+The bounded-identity API repair is deployed at generation **335**, source `436585cd`,
+image `2440572b` and revision `ai-resume-parser-id25-23658ba44cb3`. Companion 0.8.3 and
+the frontend source `204c2952` are published through production deployment
+`dpl_BPxz9EA5kySSLWhfAK1sQsTKPH8b`. Both aliases and the anonymous 67,235-byte
+ZIP download match the accepted release. The public setup page links to 0.8.3.
+Schema 21 and the other four service revisions are preserved; all five services
+were Ready in the 03:08:30 UTC observation on 25 October 2026.
 
-The earlier reloaded 0.8.1 runtime passed signed **UNCLAIMED** inspection and
-explicit archival before one new Start with matching fingerprints. That creation
-passed its deadline without a persistent grant. The new runtime obtained exact
-**EXPIRED** and same-key **UNCLAIMED** status. After an initial refusal when its
-ephemeral inspection was lost, fresh inspection and immediate explicit archival
-succeeded, preserving the key and history. The human approved the bounded
-persistent-device/Greenhouse-host test scope. One separate fresh Start created a
-known request; its single candidate challenge returned **503** before an approval
-form. No confirmation, grant or employer action followed. GCP 500 traces exposed
-a SQLAlchemy shared-pool listener mutation, reproduced by a deterministic test.
-The private-view and matching projection repair passed **104 focused tests**,
-including the complete pairing-production cases, and is now deployed and
-independently verified at API333/sourcec4/image41af. Only stock Engine/OptionEngine
-types with redaction are admitted; custom subclasses and unredacted views remain
-refused. The exact known expired request subsequently passed signed
-**EXPIRED**/same-key **UNCLAIMED** reconciliation and explicit archival. The same
-runtime preserved that historical cb3 archive. A later request577e obtained
-challenge200, then one confirm503 with actual GetDatabase ResourceExhausted.
-Signed status was unavailable; it is paused and unreplayed. No grant, completion,
-host permission or employer action is accepted. The local bounded-identity and
-companion-header capacity changes are not deployed; API333/c4 and frontendHZ2
-remain canonical. After normal exact-source review/rollout and original577e
-reconciliation, remaining acceptance is actual native pairing, exact-portal inspection, review of
-original resume28/hash054559… and only first_name=Harshil, approval then cancellation
-before Fill, native device revocation and the exact bounded observer. Native
-inspection/revocation acknowledgments remain separate from SQL zero-effects and
-zero-application-charge readback. Use the progress board for the same remaining
-outcomes and timestamped monitoring observations. The accepted manual refresh
-does not establish stable unattended cadence or new condition-specific alert
-delivery.
+The source `204c2952` release checks passed before publication. This record is a
+status-only update; it changes no application code or active deployment. API generation 333 and
+frontend 3D4 remain available as rollback releases. Native protocol 2, the admitted
+`companion_0_8_1` executor and all held employer/payment controls are unchanged.
 
-The genuine search, resume-preservation, password-reset, enrollment and finite
-credit evidence is recorded on that board. The old Razorpay opening4746961005
-is now closed; its zero-charge internal preparation, partial first_name answer,
-original file and settlement history remain preserved. Replacement opening
-**4744101005**, Lead Database Administrator in Bengaluru, was observed live with
-blank fields. Its distinct **one-credit unpaid allowance was approved, committed
-and spent** on one normal delivered result, charged1/returned0/service balance0.
-Actual new internal application e23… retains original28/exact hash and only
-first_name=Harshil, with application reserve0/charge0 and a successful preview.
-The first save503 was reconciled as uncommitted before a separate fresh successful
-save. No employer write or receipt is claimed. Sales, checkout and employer writes remain held, with the
-employer-application queue paused. Responsive observations do not establish complete
-accessibility, field Core Web Vitals or mobile field performance. Outcomes **3, 5
-and 6 remain open** until their remaining live acceptance is complete.
+Original outcomes **1/2/4 are complete within the approved free pilot**.
+**3/5/6 remain open**: the existing installed 0.8.3 source matches its reviewed
+bundle, but actual reload, retained-request recovery, native pairing, exact-file
+review/cancel-before-Fill, revocation and zero-effects/accounting acceptance remain
+pending. Publication is not a substitute for this journey.
 
-[ADR-010](../adr/010-bounded-browser-identity-observations.md) records the local
-30-second, exact two-RPC/pin identity scope. All native authorization, witness,
-closure and revocation reads remain fresh, with entry/exit and KMS pre/post,
-protected-grant, SQL activation/denial, own-ACK and export barriers. Private ledger
-writes may precede UID-replacement detection and must remain quarantined; no
-output is authorized after a barrier failure. This is a weaker private-write
-timing guarantee, not the previous guarantee. Local counts are confirm54→8,
-complete36→22 and revoke71→20; ordinary outside-scope validation remains4. The
-shared60/minute quota still limits aggregate concurrency. Eleven focused frontend
-cases passed; the backend affected suite passed142 before final lifecycle cleanup,
-and the helper suite now passes26. These local results do not establish deployment
-or full HTTP/live acceptance. Existing development/deployment authorization remains;
-normal reviewed rollout adds no new human approval flow.
+The [capacity decision](../adr/010-bounded-browser-identity-observations.md)
+documents the 30-second observation scope, fresh authorization barriers and
+private-write timing tradeoff. The shared 60/minute metadata quota remains a
+concurrency limit. The compatible 0.8.3 retention fix preserves all existing
+records within a 64-record / 256 KiB bound; it does not clear uncertainty or authorize
+retries. The [progress board](AUTO_APPLY_PROGRESS.md) separates actual PDF
+modifications, edited-DOCX native proof and unchanged source snapshots.
+
+Sales, real payments, real employer writes and worldwide coverage expansion
+remain held. Natural expiry monitors and successful scheduler delivery do not
+prove completed daily definition renewal or every alert delivery condition.
+Reliable whole-outcome timing estimates are unavailable.
 
 ## Historical implementation and evidence
 
