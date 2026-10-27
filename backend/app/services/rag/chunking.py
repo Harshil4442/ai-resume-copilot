@@ -36,7 +36,7 @@ def _add(chunks: list[EvidenceChunk], source: str, title: str, text: Any, priori
         id=f"{source}-{len(chunks) + 1}",
         source=source,
         title=title,
-        text=clean[:5000],
+        text=clean,
         priority=priority,
     ))
 

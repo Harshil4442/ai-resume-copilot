@@ -1,11 +1,10 @@
-import json
 import logging
 
 import httpx
 
 from ...schemas import RagAskResponse, RagMessage
 from ..llm_client import chat_json
-from .chunking import EvidenceChunk, build_match_chunks
+from .chunking import build_match_chunks
 from .direct_answers import direct_match_answer, unsupported_direct_answer
 from .prompts import build_ask_ai_messages
 from .retrieval import rank_chunks
@@ -13,31 +12,31 @@ from .retrieval import rank_chunks
 log = logging.getLogger(__name__)
 
 
-def _fallback_response(question: str, chunks: list[EvidenceChunk]) -> RagAskResponse:
-    if not chunks:
-        return RagAskResponse(
-            answer="I could not find enough match context to answer that reliably.",
-            confidence="low",
-            mode="unavailable", provenance="local_guidance",
-            suggested_followups=[
-                "Which skills am I missing?",
-                "Why is my match score low?",
-                "What should I improve first?",
-            ],
-        )
-    titles = ", ".join(chunk.title for chunk in chunks[:3])
+class EnhancedAnswerUnavailable(ValueError):
+    """Generation returned no valid deliverable; billing must release the charge."""
+
+    retryable = False
+
+    def __init__(self):
+        # A stable message is safe for the failure ledger. Provider text and
+        # supplied citations must never be copied to logs or financial records.
+        super().__init__("Enhanced Q&A did not produce a valid grounded answer.")
+
+
+def unavailable_enhanced_answer() -> RagAskResponse:
+    """Free guidance returned only after failed generation has left billing."""
     return RagAskResponse(
         answer=(
-            "I could not get a structured LLM answer, but the most relevant context for your question "
-            f"appears to be: {titles}. Try asking a more specific question about missing skills, score, "
-            "resume evidence, or interview preparation."
+            "Enhanced generation did not produce a reliable answer. No credits were charged for "
+            "this request. You can still ask to see your recorded match score, missing resume "
+            "evidence, approved facts or curated interview questions."
         ),
         confidence="low",
         mode="unavailable", provenance="local_guidance",
         suggested_followups=[
-            "Which skills are true gaps?",
-            "Which resume evidence supports this job?",
-            "What should I improve first?",
+            "Which skills lack resume evidence?",
+            "What is my recorded match score?",
+            "Show my approved evidence.",
         ],
     )
 
@@ -55,14 +54,19 @@ def ask_match_ai(*, resume, match, question: str, recent_messages: list[RagMessa
         intent=intent,
         chunks=top_chunks,
         recent_messages=[
-            {"role": msg.role, "content": msg.content[:1200]}
-            for msg in recent_messages[-6:]
+            {"role": msg.role, "content": msg.content}
+            for msg in recent_messages
         ],
     )
 
     try:
         data = chat_json(messages)
-        answer = str(data.get("answer", "")).strip()
+        if not isinstance(data, dict):
+            raise ValueError("Generated answer must be an object")
+        answer = data.get("answer")
+        if not isinstance(answer, str) or not answer.strip():
+            raise ValueError("Generated answer must be non-empty text")
+        answer = answer.strip()
         confidence = str(data.get("confidence", "medium")).strip().lower()
         followups = data.get("suggested_followups", [])
         citations = data.get("sources", [])
@@ -74,8 +78,6 @@ def ask_match_ai(*, resume, match, question: str, recent_messages: list[RagMessa
         if not isinstance(followups, list):
             followups = []
         followups = [str(item).strip() for item in followups if str(item).strip()][:4]
-        if not answer:
-            raise ValueError("LLM returned an empty answer")
         if not citations and confidence != "low":
             raise ValueError("Generated answer must cite retrieved context")
         return RagAskResponse(
@@ -85,11 +87,12 @@ def ask_match_ai(*, resume, match, question: str, recent_messages: list[RagMessa
             mode="enhanced", provenance="generated",
             sources=list(dict.fromkeys(citations)),
         )
-    except (json.JSONDecodeError, ValueError, KeyError, TypeError) as exc:
-        # JSON-shape problems → use the deterministic fallback so the UX
-        # stays useful. Transport/provider errors (below) are surfaced.
-        log.warning("RAG fallback (parse error): %s", exc)
-        return _fallback_response(question, top_chunks)
+    except (ValueError, KeyError, TypeError) as exc:
+        # Returning guidance here would make billable_operation commit a
+        # failed paid answer. Let its durable failure path release the credits;
+        # the router may then return explicitly free guidance.
+        log.warning("Enhanced Q&A output rejected (%s)", type(exc).__name__)
+        raise EnhancedAnswerUnavailable() from None
     except httpx.HTTPError as exc:
         # Network / 429 / 5xx errors should be visible to the user instead
         # of silently degraded.

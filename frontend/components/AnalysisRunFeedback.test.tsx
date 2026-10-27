@@ -6,7 +6,7 @@ import { AnalysisRunFeedback } from "./AnalysisRunFeedback";
 
 const base: AnalysisRun = {
   id: "synthetic_failed_run", opportunity_id: "synthetic_opportunity", operation: "resume_tailor",
-  status: "failed", estimated_units: 2, committed_units: 0, usage_state: "released",
+  status: "failed", billing_currency: "legacy_ai_units", estimated_units: 2, committed_units: 0, usage_state: "released",
   provider: null, model: null, prompt_version: null, error_code: "TailoringOutputError",
   attempt_count: 1, generation_attempt_limit: 3, generation_attempt_count: 2,
   cancel_requested: false, created_at: "2026-10-11T00:00:00Z", updated_at: "2026-10-11T00:00:01Z",
@@ -21,7 +21,7 @@ it("shows the actual format refusal with useful alternatives and only explicit s
   render(<AnalysisRunFeedback run={{ ...base, failure_guidance: { reason_code: "replacement_does_not_fit", next_action: "shorten_wording" } }} onSaveSourceSnapshot={snapshot} />);
   expect(screen.getByRole("alert")).toHaveTextContent("The proposed wording does not fit the original layout.");
   expect(screen.getByRole("alert")).toHaveTextContent("Use shorter wording in an editable source");
-  expect(screen.getByRole("alert")).toHaveTextContent("Any reserved units were released.");
+  expect(screen.getByRole("alert")).toHaveTextContent("Any reserved analysis units were released.");
   expect(screen.getByRole("alert")).toHaveTextContent("Your original resume is unchanged.");
   expect(screen.queryByText(/please try again/i)).toBeNull();
   expect(screen.getByRole("link", { name: "Choose original or custom resume" })).toHaveAttribute("href", "/resume");
@@ -97,4 +97,13 @@ it("keeps succeeded, cancelled and pending operations out of the failure actions
   view.rerender(<AnalysisRunFeedback run={{ ...base, status: "cancelled" }} onSaveSourceSnapshot={snapshot} />);
   expect(screen.getByText(/Analysis cancelled/)).toBeVisible(); expect(screen.queryByRole("button")).toBeNull();
   expect(snapshot).not.toHaveBeenCalled();
+});
+
+
+it("uses the durable credit denomination and does not relabel it as AI units", () => {
+  const view = render(<AnalysisRunFeedback run={{ ...base, billing_currency: "credits" }} />);
+  expect(screen.getByRole("alert")).toHaveTextContent("Any reserved credits were released.");
+  expect(screen.getByRole("alert")).not.toHaveTextContent("analysis units");
+  view.rerender(<AnalysisRunFeedback run={{ ...base, billing_currency: "none", usage_state: "waived" }} />);
+  expect(screen.getByRole("alert")).toHaveTextContent("No credits were charged.");
 });

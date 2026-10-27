@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
 from fastapi import HTTPException
-from sqlalchemy import and_, func, literal_column, or_, select, text, true
+from sqlalchemy import LargeBinary, Text, and_, cast, func, literal_column, or_, select, text, true
 from sqlalchemy.orm import Session, aliased, load_only
 
 from ... import models as core
@@ -308,6 +308,10 @@ def create_search(db: Session, user_id: int, payload: schemas.SearchCreate):
         if accepted.input_fingerprint != payload_fingerprint(_search_input(payload)):
             raise HTTPException(409, "This request key was already used with different search settings")
         return accepted
+    from ..credits.runtime import requires_unified_billing
+    if requires_unified_billing(db, user_id):
+        raise HTTPException(409, {"code": "unified_discovery_review_required",
+            "message": "Review the one-credit discovery batch before starting a new search."})
     if config.catalogue_search_enabled():
         from . import catalogue_search
         return catalogue_search.accept(db, user_id, payload)
@@ -338,7 +342,15 @@ def _claim_bounded_search(db, user_id, identity):
     return row, token
 
 
-def _prepare_bounded_search(db, row, payload):
+def _utf8_bytes(db, expression):
+    # A PostgreSQL text::bytea cast parses backslash escapes. convert_to instead
+    # measures the real UTF-8 text, including literal Windows paths and regexes.
+    if db.get_bind().dialect.name == "postgresql":
+        return func.octet_length(func.convert_to(expression, "UTF8"))
+    return func.length(cast(expression, LargeBinary))
+
+
+def _prepare_bounded_search(db, row, payload, *, only_new=False, maximum_candidate_bytes=None):
     from . import delivery_history
     history_mode = row.scope["paid_history_mode"]
     if history_mode == "indexed":
@@ -394,7 +406,16 @@ def _prepare_bounded_search(db, row, payload):
     posting_revision = select(models.EmployerCataloguePostingRevision.valid_from).where(
         models.EmployerCataloguePostingRevision.posting_id == models.EmployerPosting.id,
         models.EmployerCataloguePostingRevision.valid_to.is_(None)).scalar_subquery()
-    rows = query.add_columns(source_revision, posting_revision).order_by(models.EmployerPosting.last_checked_at.desc(), models.EmployerPosting.id).limit(1001).all()
+    ordered = query.order_by(models.EmployerPosting.last_checked_at.desc(), models.EmployerPosting.id).limit(1001)
+    if maximum_candidate_bytes is not None:
+        encoded_size = _utf8_bytes(db, func.coalesce(models.EmployerPosting.description, "") + func.coalesce(
+            cast(models.EmployerPosting.preference_metadata, Text), ""))
+        bounded = ordered.with_entities(encoded_size.label("bytes")).subquery()
+        observed = db.query(func.coalesce(func.sum(bounded.c.bytes), 0)).scalar()
+        if observed > maximum_candidate_bytes:
+            raise HTTPException(409, {"code": "candidate_scope_changed",
+                "message": "The indexed content exceeds this reviewed batch's processing limit."})
+    rows = ordered.add_columns(source_revision, posting_revision).all()
     # Copy complete public records once outside financial locks. ORM entities
     # must not become dirty just because canonical identity is calculated.
     candidates = [(SimpleNamespace(**{name: getattr(posting, name) for name in _BOUNDED_POSTING_BODY}),
@@ -439,10 +460,16 @@ def _prepare_bounded_search(db, row, payload):
                 legacy_identity_unavailable = True
             else:
                 previous.add(saved_key)
+        from ..credits.discovery import membership as batch_membership
+        batch_keys, batch_postings = batch_membership(db, user_id, list(unique), [item[0].id for item in unique.values()])
+        previous.update(batch_keys)
+        legacy.update(batch_postings)
     # Deliver unseen openings first; stable sorting retains deterministic fit
     # order within new and free saved matches from the same bounded index pool.
     selected = sorted(unique.values(), key=lambda item:
         item[0].opening_key in previous or item[0].id in legacy)[:payload.desired_count]
+    if only_new:
+        selected = [item for item in selected if item[0].opening_key not in previous and item[0].id not in legacy]
     new_count = sum(posting.opening_key not in previous and posting.id not in legacy for posting, _, _ in selected)
     if new_count and legacy_identity_unavailable:
         pending = history_mode == "indexed" and history_state in {"pending", "backfilling"}
@@ -543,6 +570,11 @@ def _finish_bounded_search(db, user_id, identity, token, prepared):
             models.EmployerJobDelivery.opening_key.in_([posting.opening_key for posting, _, _ in prepared.selected])).all()}
         physical = {record[0] for record in db.query(models.EmployerJobDelivery.posting_id).filter_by(user_id=user_id).filter(
             models.EmployerJobDelivery.posting_id.in_([posting.id for posting, _, _ in prepared.selected])).all()}
+        from ..credits.discovery import membership as batch_membership
+        batch_keys, batch_postings = batch_membership(db, user_id,
+            [posting.opening_key for posting, _, _ in prepared.selected], [posting.id for posting, _, _ in prepared.selected])
+        previous.update(batch_keys)
+        physical.update(batch_postings)
         state = None
     # The history clock covers native insertion/source changes. This bounded
     # reread also protects independent-session physical/canonical paid replays.
@@ -618,6 +650,8 @@ def bounded_search_maintenance(db):
     db.commit()
     if row is not None:
         cancel_bounded_search(db, row.user_id, row.id, reason="abandoned_without_completion")
+    from ..credits import discovery
+    discovery.maintenance(db)
 
 
 def search_preparation_status(db, user_id, identity):
@@ -679,7 +713,8 @@ def search_response(row):
         "id", "status", "desired_count", "delivered_count", "reserved_credits", "charged_credits", "refunded_credits", "created_at", "query", "scope",
     )}
     result["items"] = row.items if row.status == "completed" else []
-    return result
+    from ..credits.discovery import public_summary
+    return public_summary(result)
 
 
 def finish_catalogue_preparation(db, identity, token):
@@ -817,6 +852,9 @@ def create_application(db: Session, user_id: int, payload: schemas.ApplicationCr
         return existing
     posting = _posting(db, payload.posting_id)
     source = _source(db, posting.source_id)
+    from ..credits.runtime import requires_unified_billing
+    if requires_unified_billing(db, user_id) and _source_mode(source) == "api":
+        raise HTTPException(409, "Verified unified-credit submission is not enabled. Use reviewed browser assistance or the employer portal.")
     if not posting.is_open or not source.enabled:
         raise HTTPException(409, "This employer job is no longer available")
     source_snapshot = connectors.source_contract(source)
@@ -993,6 +1031,9 @@ def request_execution(db, user_id, identity, payload: schemas.ExecuteCreate, *, 
         if commit:
             db.commit()
         return application
+    from ..credits.runtime import requires_unified_billing
+    if requires_unified_billing(db, user_id):
+        raise HTTPException(409, "Verified unified-credit submission is not enabled. Existing submitted applications remain recoverable.")
     posting, source = _posting(db, application.posting_id), None
     source = _source(db, posting.source_id)
     if _source_mode(source, application.form) != "api":

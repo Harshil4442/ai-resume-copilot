@@ -45,11 +45,18 @@ export default function DigitalDeliveryPage() {
           <div>
             <h3 className="text-lg font-bold text-foreground mb-3">1. What you receive</h3>
             <ul className="list-disc pl-6 space-y-2 text-muted-foreground">
-              <li><strong>Finite prepaid packs:</strong> the displayed job service credits and separate AI analysis units are added together after verified captured payment. Employer search and optional AI have separately displayed costs. Filling supported answers, resume upload and manual handoff do not charge application credits. Where final submission assistance is offered, a separate review shows the exact employer destination, file, answers and fee before approval. The fee is reserved before the approved action and charged only after verified complete employer acceptance. Unknown outcomes remain reserved until reconciled.</li>
-              <li><strong>Accepted older orders:</strong> existing paid entitlements retain their purchased terms. No new unlimited-access product is offered.</li>
-              <li><strong>Free accounts:</strong> 50 finite complimentary analysis units are provided at account creation. Optional AI depends on the available promotional funding pool.</li>
+              <li><strong>New credit passes:</strong> when available, the displayed credits are added to one wallet after verified captured payment. Passes last at least 30 full days and do not automatically renew. The purchase review shows the total INR payable, included credits and minimum expiry; billing shows the final expiry. Each paid service has a separate review of its charge, selected inputs, deliverable and supported limits.</li>
+              <li><strong>Accepted older orders:</strong> existing entitlements keep their purchased conditions, including original no-expiry promises. Legacy balances remain separately identified until a reviewed migration protects those rights. No new unlimited-access product is offered.</li>
+              <li><strong>Free and promotional access:</strong> deterministic tools and any explicitly offered promotional allowances remain subject to their displayed availability. Optional AI needs a funded, reviewed service route; no unlimited AI allowance is promised.</li>
+              <li><strong>Application assistance:</strong> an uploaded resume or filled form is not a completed application. A supported final submission requires a separate review of its employer destination, exact file, answers and actions; its charge requires verified complete employer acceptance. Unknown outcomes remain reserved until reconciled.</li>
             </ul>
           </div>
+
+          <div><h3 className="text-lg font-bold text-foreground mb-3">Completed and reused results</h3>
+            <p>Failed or incomplete paid delivery restores credits usable for at least seven days after restoration,
+              including after pass expiry, or receives an appropriate monetary remedy under the Refund Policy.
+              An unchanged source snapshot is not billed as successful tailoring. Viewing, downloading and unchanged
+              reuse of a saved result do not incur another generation charge.</p></div>
 
           <div>
             <h3 className="text-lg font-bold text-foreground mb-3">2. When access is delivered</h3>

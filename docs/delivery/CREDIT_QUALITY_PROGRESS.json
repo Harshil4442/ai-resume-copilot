@@ -1,0 +1,682 @@
+{
+  "schema_version": 1,
+  "requirement_version": "1.1",
+  "source_sha256": "ac56be4838c8309fa9b1da3a717d53fab2bad85cfe0482d6aeedc4374a38fb4f",
+  "baseline_commit": "f0f973c9c6d989553b8f58b275fc06fd5685497a",
+  "updated_at": "2026-10-27T19:09:27.941864+00:00",
+  "authorization": "Owner authorized implementation, testing, deployment and payment activation subject to requirements gates on 2026-10-27.",
+  "stages": [
+    {
+      "number": 1,
+      "name": "Baseline and measurable contracts",
+      "status": "in_progress",
+      "started_at": "2026-10-27T17:41:49.326536+00:00",
+      "completed_at": null,
+      "estimated_effort": null,
+      "actual_effort": null,
+      "evidence": [
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
+      ]
+    },
+    {
+      "number": 2,
+      "name": "Cost and billing foundations",
+      "status": "in_progress",
+      "started_at": "2026-10-27T17:41:49.326539+00:00",
+      "completed_at": null,
+      "estimated_effort": null,
+      "actual_effort": null,
+      "evidence": [
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
+      ],
+      "local_result": "Wallet, quotes, capture/refund, shared funding admission and current-service purchase gates implemented and locally verified; production financial reconciliation pending."
+    },
+    {
+      "number": 3,
+      "name": "Deterministic processing and reuse",
+      "status": "in_progress",
+      "started_at": null,
+      "completed_at": null,
+      "estimated_effort": null,
+      "actual_effort": null,
+      "evidence": [
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
+      ],
+      "status_observed_at": "2026-10-27T18:14:22.788032+00:00",
+      "local_result": "Free/basic paths, owned saved-result reuse and one-credit employer-origin batches integrated; actual deployed journey verification pending."
+    },
+    {
+      "number": 4,
+      "name": "Qualified AI and document routes",
+      "status": "in_progress",
+      "started_at": null,
+      "completed_at": null,
+      "estimated_effort": null,
+      "actual_effort": null,
+      "evidence": [
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
+      ],
+      "status_observed_at": "2026-10-27T18:14:22.788032+00:00",
+      "local_result": "Async and synchronous paid adapters plus200-case offline packet implemented; native materials, real funded output and independent human/statistical qualification pending."
+    },
+    {
+      "number": 5,
+      "name": "Capacity privacy and responsive experience",
+      "status": "in_progress",
+      "started_at": null,
+      "completed_at": null,
+      "estimated_effort": null,
+      "actual_effort": null,
+      "evidence": [
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
+      ],
+      "status_observed_at": "2026-10-27T18:14:22.788032+00:00",
+      "local_result": "Responsive reviews and explicit account export/erasure verified locally; representative load and production performance pending."
+    },
+    {
+      "number": 6,
+      "name": "Shadow accounting and migration preparation",
+      "status": "in_progress",
+      "started_at": null,
+      "completed_at": null,
+      "estimated_effort": null,
+      "actual_effort": null,
+      "evidence": [
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
+      ],
+      "status_observed_at": "2026-10-27T18:49:08.700943+00:00",
+      "local_result": "Read-only accounting report and schema21to25 add-only rehearsal pass locally; native operator/source-image/journal integration and seven-day representative observation pending."
+    },
+    {
+      "number": 7,
+      "name": "Controlled deployment and commercial decision",
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "estimated_effort": null,
+      "actual_effort": null,
+      "evidence": []
+    },
+    {
+      "number": 8,
+      "name": "Ongoing quality and economics",
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "estimated_effort": null,
+      "actual_effort": null,
+      "evidence": []
+    }
+  ],
+  "requirements": [
+    {
+      "id": "S01",
+      "requirement": "Review boundary. This document does not authorize code changes, migrations, wallet conversion, changed prices, provider purchases, deployments, checkout activation or employer submissions. All implementation checklist items start pending. Older development authorizations do not automatically authorize this new pricing and quality program.",
+      "status": "superseded_by_owner_authorization",
+      "evidence": [
+        "Active owner goal authorizes implementation, testing, deployment and payment activation subject to remaining gates."
+      ]
+    },
+    {
+      "id": "S02",
+      "requirement": "Existing product boundary. Retain GCP, Vercel, PostgreSQL on Neon and Upstash. The documented release context is the bounded employer-origin pilot with 20 reviewed origins and Razorpay or Greenhouse browser assistance. Recheck deployed capabilities in Stage 1; historical documents are not fresh production evidence.",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "S03",
+      "requirement": "Deferred services. Worldwide expansion, any greater-than-95% coverage claim, arbitrary portal automation and final automatic submission require separate scope, permission and acceptance work. The future submission tariff in this document is not a statement that submission is enabled.",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "S04",
+      "requirement": "Candidate control. Each opportunity permits the original resume, an approved tailored resume or a custom upload. Approval binds the exact destination, file hash, answers, form schema and intended action. Changed inputs require fresh approval. A development approval never substitutes for a candidate application approval.",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "S05",
+      "requirement": "Quality priority. No optimization may silently change the promised question count, factuality, resume layout, supported language, accessibility or review controls. Product scope and pricing may change only prospectively and transparently, with existing obligations preserved.",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "B01",
+      "requirement": "One wallet. Use one customer credit denomination for eligible paid actions. Preserve separate internal monetary accounting for tax, delivery obligations, refunds, incidents and overhead; those are not extra customer currencies.",
+      "status": "in_progress",
+      "evidence": [
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
+      ]
+    },
+    {
+      "id": "B02",
+      "requirement": "Validity and renewal. For new purchases, propose 30-day prepaid service passes with no automatic renewal. Show the exact expiry timestamp, included credits, supported services and refund terms before payment. Use the earliest-expiring eligible purchased balance first. Existing balances retain their original promises.",
+      "status": "in_progress",
+      "evidence": [
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
+      ]
+    },
+    {
+      "id": "B03",
+      "requirement": "Expiry safeguards. Expiry does not delete original files or invalidate an already funded and accepted operation. A documented retention and export policy applies separately. The economics assume full redemption, not profit from expiration. Legal and product review of validity and refund terms is required before sale.",
+      "status": "in_progress",
+      "evidence": [
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
+      ]
+    },
+    {
+      "id": "B04",
+      "requirement": "Transparent quotes. Before execution, show the service, credit charge, selected file and job, expected deliverable, supported limits and any additional quote. Reserve the accepted charge and do not increase it mid-operation. A materially changed input needs a new quote and confirmation.",
+      "status": "in_progress",
+      "evidence": [
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
+      ]
+    },
+    {
+      "id": "B05",
+      "requirement": "Reuse and failure. Viewing, downloading and unchanged result reuse do not incur another generation charge. A deliberate new variation is quoted separately. Failed or incomplete deliveries restore credits; provider spending remains recorded. Restored credits must remain usable for at least seven days after restoration, including post-expiry failures, or receive an appropriate monetary refund under the approved policy. Prevent repeated failure loops.",
+      "status": "in_progress",
+      "evidence": [
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
+      ]
+    },
+    {
+      "id": "B06",
+      "requirement": "Payments and migration. Verify gateway signatures, use idempotent payment processing and maintain an auditable ledger. Define an owner-approved conversion for any legacy wallets before migration; do not infer equivalence between old analysis units and new credits. Reconcile every account and retain rollback evidence.",
+      "status": "in_progress",
+      "evidence": [
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
+      ]
+    },
+    {
+      "id": "P01",
+      "requirement": "Authentic reference price. Keep evidence of the same pack being genuinely offered at the standard price, its dates, market, terms and actual transactions where available. Finance and local-market review must approve comparison eligibility. Never invent a former price or label a planned future price as a past price. [9][10]",
+      "status": "in_progress",
+      "evidence": [
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
+      ]
+    },
+    {
+      "id": "P02",
+      "requirement": "First launch display. Until P01 is met, show Introductory price \u20b959 with 40 credits, and the real offer end date; optionally state Planned standard price \u20b979 from the disclosed date. Apply the same wording to the other packs. Omit strikethrough, was pricing and savings claims until substantiated.",
+      "status": "in_progress",
+      "evidence": [
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
+      ]
+    },
+    {
+      "id": "P03",
+      "requirement": "Real deadline. Store one campaign ID, start, end, timezone, eligibility and status on the server. No resetting countdown, fake stock, fabricated buyer count or perpetual extension. At expiry remove the badge and restore the approved standard price, or disable new checkout if activation is not ready. [10]",
+      "status": "in_progress",
+      "evidence": [
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
+      ]
+    },
+    {
+      "id": "P04",
+      "requirement": "Complete purchase terms. Show total INR payable, credits, pass expiry, supported services and no automatic renewal beside the purchase action. Use Buy credits or Buy 30 day pass. Do not imply recurring subscription billing; recurring plans need separate consent and cancellation design.",
+      "status": "in_progress",
+      "evidence": [
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
+      ]
+    },
+    {
+      "id": "P05",
+      "requirement": "One price authority. Version prices and campaign eligibility on the server. Quotes, purchase page, gateway order, invoice and ledger must agree. Honor a valid price quote for a proposed 15 minutes even across campaign expiry; then require a new quote. Validate again when creating the payment order.",
+      "status": "in_progress",
+      "evidence": [
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
+      ]
+    },
+    {
+      "id": "P06",
+      "requirement": "Fund and test promotions. Do not stack extra coupons or free credits into these forecasts. A new discount needs its own funded margin check. Test campaign start and end, timezone, stale tabs, duplicate payments, refunds, accessibility and historical invoice preservation before release.",
+      "status": "in_progress",
+      "evidence": [
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
+      ]
+    },
+    {
+      "id": "T01",
+      "requirement": "Defined deliverables. An interview purchase means eight distinct questions with guidance. A standard tailoring purchase means one validated edited version within a published format and edit envelope. Bullet and Q and A operation limits must be displayed and benchmarked; they cannot imply unlimited conversation.",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "T02",
+      "requirement": "Expensive work. Fifteen credits is a quoted example, not a universal price for all complex documents. If a qualified route exceeds its allowance, quote a separately approved charge or decline without executing. Never apply a generic template to claim format preservation.",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "T03",
+      "requirement": "Discovery and submission accounting. Charge discovery only for a completed quoted batch containing at least one new verified result; show partial counts and do not count duplicates or closed jobs as new. Submission is billable only after authoritative confirmation. Pending or unknown outcomes require reconciliation, not a blind retry.",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "E01",
+      "requirement": "Extract once. Use native PDF, DOCX and supported LaTeX extraction with source spans, versioned parsers and candidate corrections. Apply dictionaries and contextual rules to known skills and dates. Ambiguous facts remain reviewable; absence of a keyword does not prove absence of a skill.",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "E02",
+      "requirement": "Shared official job ingestion. Use the verified employer registry, documented feeds or permitted adapters. Fetch once for many users using conditional requests and changes since the last successful scan. Deduplicate by source ID, requisition, canonical URL and content revision. Record freshness and coverage limits.",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "E03",
+      "requirement": "Basic matching and calculation. Use explicit eligibility rules, weighted skill coverage and database or lexical search. Keep date arithmetic, Skill ROI, market aggregation and profile CRUD deterministic. Label heuristic scores honestly; do not fabricate richer AI dimensions when the enhanced route was not used.",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "E04",
+      "requirement": "Optional generation. Preserve AI where it adds useful interpretation or writing: nuanced comparison, supported rewriting, role-specific questions and personalized plans. Do not replace a paid personalized output with generic text solely to save money.",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "E05",
+      "requirement": "Context selection. Send relevant approved evidence, the exact job revision and requested edits. Limit unrelated history and duplicate source text. Validate that evidence selection did not omit a fact needed to meet the promised deliverable before admitting the model call.",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "E06",
+      "requirement": "Correct reuse. Private cache keys include owner, source hash, approved evidence and correction versions, job revision, preferences, prompt, model, schema and validator versions. Share only public job data. Invalidate meaningful changes and coalesce identical active work. Cached results never bypass fresh authorization or job-availability checks.",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "E07",
+      "requirement": "Qualified model routing. Evaluate Flash-Lite for simpler work and keep a qualified stronger route for demanding tailoring. The cheapest route is not automatically the default. Every route must pass Section 8. Use explicit bounded reasoning and output settings, with all provider attempts counted. [1]",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "E08",
+      "requirement": "Controlled background work. Use queues for suitable noninteractive work, adaptive polling and targeted refreshes. Deferred or batch generation is allowed only when its delivery timing was disclosed and accepted; never make an interactive flow slower without a product decision.",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "Q01",
+      "requirement": "Approved reference baseline. Freeze approved reference outputs, evaluation data, prompts, model versions, rubrics and validators before optimizing. Existing broken behavior cannot serve as an acceptable baseline. Define the supported format, language, layout and edit envelope before sale.",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "Q02",
+      "requirement": "Evidence and factual accuracy. Every changed personal claim must reference candidate-approved evidence. Preserve the meaning of names, employers, dates, education, qualifications and numeric achievements. No invented metrics, experience or skills are allowed. Zero unsupported or fabricated claims in release evaluation; any critical failure blocks the route.",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "Q03",
+      "requirement": "Immutable original. Retain the original upload with a checksum and ownership record. Never overwrite it. A preview, conversion or editing failure must preserve the original. An unchanged source snapshot must not be reported or billed as successful tailoring.",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "Q04",
+      "requirement": "Layout preservation. For supported formats, preserve section order, font treatment, margins, links, page geometry and unaffected content. Permit reflow only inside approved edit regions. No clipping, overlap, missing sections, accidental blank pages or broken links. Pagination or structural layout changes require explicit review rather than silent template substitution.",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "Q05",
+      "requirement": "Native and rendered validation. Validate both the document structure and rendered pages. Re-extract text, compare approved changes, verify reading order and inspect layouts. The final downloaded artifact must have the same hash as the reviewed artifact. A model cannot certify that a PDF or DOCX layout is safe.",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "Q06",
+      "requirement": "Machine readability. Keep contact details, headings and content extractable and correctly ordered. Prohibit image-only substitutions and hidden keyword stuffing. Describe checks as ATS compatibility checks; do not promise selection, a universal ATS score or compatibility with every ATS.",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "Q07",
+      "requirement": "Unsupported inputs. Detect encrypted, scanned, corrupted, unusually complex or unsupported-language inputs before generation where possible. Request a suitable source, offer a clearly described alternative or decline without charging. Do not truncate relevant content silently to stay within budget.",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "Q08",
+      "requirement": "Interview completeness. A paid eight-question set must contain eight distinct, role-relevant questions with actionable preparation guidance. Limited personal evidence may produce job-based questions marked as needing evidence, but must never produce invented personal answers or a one-question deliverable billed as eight.",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "Q09",
+      "requirement": "Matching accuracy. Hard eligibility rules must pass reviewed fixtures. Explanations must connect actual job requirements to actual resume evidence and distinguish missing evidence from lack of capability. Ranking quality and relevance must meet the approved baseline within every supported cohort. Scores are not hiring probabilities.",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "Q10",
+      "requirement": "Answers and learning plans. Ground personal answers in approved facts and identify uncertainty. Learning plans must address the selected gap with actionable steps and verified or freshness-checked resource references. Dead or invented links and generic plans that ignore the selected goal fail acceptance.",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "Q11",
+      "requirement": "Job relevance and freshness. Verify employer origin, preserve source dates and label the last successful refresh. Exclude confirmed closed roles from new deliveries. Immediately before an application action, recheck the posting and destination. Report the supported source population instead of implying worldwide completeness.",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "Q12",
+      "requirement": "Application fidelity. Use the candidate-selected file and reviewed answers. Unknown fields, changed form schemas, ambiguous declarations, expired jobs or missing authorization stop the affected action. Do not send data to another destination or claim completion without a verifiable receipt. Final submission remains separately disabled until authorized and accepted.",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "Q13",
+      "requirement": "No silent downgrade. When the qualified route cannot fit its budget, retain a funded qualified route, present a revised quote or decline without charge. Do not quietly omit facts, shorten the purchased deliverable, reduce document fidelity, switch to an unqualified model or replace personalized guidance with a generic fallback.",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "Q14",
+      "requirement": "Funded recovery. Reserve any permitted recovery before accepting the quote. A stronger-model retry needs both quality qualification and remaining funding. Failed or incomplete deliveries restore credits; the internal expense remains recorded. Repeated failures open a circuit breaker.",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "Q15",
+      "requirement": "Privacy security and usability. Retain scanning, ownership checks, encryption, account and device protection, audit retention and backups. Prevent cross-user cache access and prompt-injection instructions from source text. Review and payment flows must remain usable on mobile and desktop, with keyboard navigation and readable text.",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "V01",
+      "requirement": "Representative evaluation. Create at least 200 consented or synthetic resume and job pairs covering supported formats, layouts, roles and seniority levels. Include long documents, numeric claims, unusual fonts, tables, multiple columns and incomplete evidence. Use at least 30 examples per important risk cohort where feasible; cohorts can overlap. Keep development and held-out evaluation sets separate.",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "V02",
+      "requirement": "Human judgment. Use two blinded reviewers and an adjudicator for disagreements on relevance, completeness, clarity and usefulness. AI graders may triage but cannot be the sole release authority. Freeze rubrics before comparing routes, and fund reviewer and evaluation costs explicitly.",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "V03",
+      "requirement": "No tolerated quality reduction. Require candidate outputs to meet the approved reference in every supported cohort. For scored comparisons, use an appropriately powered paired evaluation with zero tolerated degradation and a one-sided 95% confidence criterion. If the result is inconclusive, gather more evidence or retain the reference route; do not call it equivalent.",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "V04",
+      "requirement": "Release and ongoing review. Progress through offline evaluation, shadow accounting, an opted-in canary and wider rollout. A confirmed critical factual, privacy or document-corruption defect disables the affected optimized route immediately. Baseline fallback is allowed only when funded. Keep customer corrections and refunds visible by route and cohort.",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "C01",
+      "requirement": "Estimate the complete path. Before execution, compute a conservative expense envelope from bounded input tokens, maximum output including thinking, provider rates, FX, unrecoverable taxes, worker duration, file size, parsing or conversion and permitted retries. Do not rely on average tokens or an optimistic cache hit.",
+      "status": "in_progress",
+      "evidence": [
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
+      ]
+    },
+    {
+      "id": "C02",
+      "requirement": "Atomic reservation. Reserve customer credits and internal money in one durable transaction before dispatch. Check per-operation, account, route and global remaining budgets. Account for all concurrent reservations so parallel requests cannot each spend the same funds.",
+      "status": "in_progress",
+      "evidence": [
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
+      ]
+    },
+    {
+      "id": "C03",
+      "requirement": "Bound every attempt. Count SDK retries, validation repairs, worker retries and provider fallbacks under one persisted operation budget. One provider attempt is the default. Cancellation or a client timeout must not release money while the provider may still bill it. Stop worker processes where required; an HTTP timeout alone is not a process-kill guarantee.",
+      "status": "in_progress",
+      "evidence": [
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
+      ]
+    },
+    {
+      "id": "C04",
+      "requirement": "Unknown costs and outcomes. Retain a conservative reservation until usage or status is reconciled. Persist provider request IDs, attempt count and estimated versus reported usage. Unknown application outcomes must not be retried as new submissions. Unknown invoices must not be treated as zero cost.",
+      "status": "in_progress",
+      "evidence": [
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
+      ]
+    },
+    {
+      "id": "C05",
+      "requirement": "Circuit breakers. Disable the affected paid route after a confirmed critical quality error, repeated failures or insufficient funded headroom. Initial operational thresholds proposed for review are three consecutive execution failures or more than 10% failures in the last 20 attempts. Monetary admission applies even below those thresholds.",
+      "status": "in_progress",
+      "evidence": [
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
+      ]
+    },
+    {
+      "id": "C06",
+      "requirement": "Refund expense separation. Restoring a customer balance does not erase Gemini or worker expense. Charge failed attempts to the funded incident allowance, rate-limit abusive repetitions and keep customer-facing explanations accurate. Refund and chargeback obligations take priority over withdrawing profit.",
+      "status": "in_progress",
+      "evidence": [
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
+      ]
+    },
+    {
+      "id": "C07",
+      "requirement": "Price and budget freshness. Version the price policy with valid-from and expiry dates. Reconcile supplier prices, FX and invoices regularly and before known increases. An expired or unknown policy blocks new paid execution; it cannot trigger a cheaper unqualified route.",
+      "status": "in_progress",
+      "evidence": [
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
+      ]
+    },
+    {
+      "id": "C08",
+      "requirement": "Provider protection. Use eligible provider spend controls and service quotas as a second layer. Leave headroom for in-flight work and fixed resources. Google documents delayed spend-cap enforcement and ongoing persistent-resource charges. Never use a billing shutdown as the only application control. [7]",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "A01",
+      "requirement": "Durable transitions. Use a quote and operation state machine: quoted, reserved, running, validated, delivered and settled; or failed, reconciliation required and released or refunded. Delivery and credit capture occur exactly once logically despite at-least-once queue delivery.",
+      "status": "in_progress",
+      "evidence": [
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
+      ]
+    },
+    {
+      "id": "A02",
+      "requirement": "Transaction and outbox. PostgreSQL owns monetary state. Use atomic ledger updates, unique idempotency constraints and an outbox for dispatch. Redis may accelerate reads but must not own the authoritative balance. Test concurrent spending, worker crashes, duplicate webhooks and retries.",
+      "status": "in_progress",
+      "evidence": [
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
+      ]
+    },
+    {
+      "id": "A03",
+      "requirement": "APIs and versioning. Define authenticated quote, execute, status, result, wallet and history contracts. Validate ownership on every access. Return explicit unsupported, requote, exhausted-budget and reconciliation states. Synchronize generated frontend contracts and preserve compatible legacy reads during migration.",
+      "status": "in_progress",
+      "evidence": [
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
+      ]
+    },
+    {
+      "id": "A04",
+      "requirement": "Tooling. Use repository CI, typed API contracts, database migrations, unit and integration tests, browser tests, PDF or DOCX render comparisons, provider usage telemetry and invoice reconciliation. Existing GitHub, GCP and Vercel tools are sufficient for deployment work; document tooling creates review artifacts. No paid plugin is assumed mandatory.",
+      "status": "in_progress",
+      "evidence": [
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
+      ]
+    },
+    {
+      "id": "I01",
+      "requirement": "No double counting. Exclude Gemini and incremental paid-worker execution here because they are already funded by execution allowances. Allocate actual provider bills once, using service and operation labels. Shared database and API costs must have an explicit allocation rule.",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "I02",
+      "requirement": "Load assumptions. Benchmark roughly one million authenticated API requests per month plus separately tested peaks; 0.5 to 0.75 average active database compute units; 2 to 4 million Redis commands; and 20 to 50 GB active document storage. These are workload assumptions, not unrestricted entitlements. [2][3][5]",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "I03",
+      "requirement": "Expense completeness. Founder compensation, hired staff, paid acquisition, one-time quality evaluation and development-agent subscriptions beyond the tools allowance are additional costs. Add them before claiming fully loaded business profit. Domain renewal and actual supplier invoices replace allowances when available.",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "F01",
+      "requirement": "Bounded free core. Provide basic upload and extraction, basic matching, evidence management, tracking, curated guidance and saved-result reuse within published limits. Initial limits proposed for review are one new parsed resume and ten basic comparisons per free account per 30 days. Supported file-size, page, storage and retention limits require benchmarking and publication before release.",
+      "status": "in_progress",
+      "evidence": [
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
+      ]
+    },
+    {
+      "id": "F02",
+      "requirement": "Funded acquisition allowance. Free server processing and promotional credits require a fixed funded allowance inside the approved shared or acquisition budget. A per-user quota alone is insufficient; enforce global admission as well. When exhausted, stop new optional free processing with an honest message or waitlist. Do not remove existing data or skip security checks.",
+      "status": "in_progress",
+      "evidence": [
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
+      ]
+    },
+    {
+      "id": "F03",
+      "requirement": "Fair paid experience. Existing saved results remain readable under the disclosed retention policy. New paid work must have sufficient reserved capacity before acceptance. Never silently degrade quality, throttle beyond the promised delivery window or delete files to make a spreadsheet budget fit.",
+      "status": "in_progress",
+      "evidence": [
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
+      ]
+    },
+    {
+      "id": "F04",
+      "requirement": "Responsive performance. Keep common interactions usable on mobile and desktop. Proposed acceptance targets are p75 LCP at most 2.5 seconds, INP at most 200 ms and CLS at most 0.1 on the agreed test profile, and p95 common authenticated reads at most one second under the approved load excluding external identity-provider time. Record device, region, network and test conditions; do not assert these targets are already met.",
+      "status": "in_progress",
+      "evidence": [
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
+      ]
+    },
+    {
+      "id": "F05",
+      "requirement": "Efficient delivery. Cache eligible public pages and static assets, lazy-load secondary UI, paginate lists, reduce duplicate polling and serve signed authorized downloads directly. Reuse validated previews. A cache must not expose private resumes or bypass expired access rights.",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "F06",
+      "requirement": "Security and retention. Retain TLS, scoped secrets, scanning, authorization, account and device controls, durable audit requirements and backups. Preserve existing locked security-journal retention. Do not log resume bodies, passwords, tokens or full application answers in cost telemetry.",
+      "status": "in_progress",
+      "evidence": [
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
+      ]
+    },
+    {
+      "id": "F07",
+      "requirement": "Notifications. Prefer transactional account and security email plus opted-in bounded digests. Do not send unlimited per-job notifications to free users. Budget deliverability capacity rather than assuming daily free quotas will always suffice.",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "F08",
+      "requirement": "User communication. Explain basic, curated, reused and AI-generated modes accurately. Show freshness, source coverage, credit price, remaining balance and unsupported cases. Keep financial implementation details out of normal flows unless needed to explain a quote or limitation.",
+      "status": "in_progress",
+      "evidence": [
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
+      ]
+    },
+    {
+      "id": "M01",
+      "requirement": "Accounting meaning. Sales GST is set aside and is not revenue. Reserves are protected funding, not necessarily expenses already incurred. A positive surplus after reserves is before income tax and before any business cost omitted from H. Do not claim that prepaid cash is immediately earned profit.",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "M02",
+      "requirement": "Assumption integrity. The model assumes 20% to 25% purchase every month, not that they have ever purchased. It assumes full redemption and no savings from cache hits, expiry or temporary provider promotions. All buyers pay the offer rate; no revenue uplift from standard prices is assumed. Supplier taxes, input credits and gateway contracts require professional reconciliation. [8]",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "G01",
+      "requirement": "Fund capacity before commitment. Before committing a capacity tier, reserve all accepted delivery obligations, taxes, refundable balances, incident allowances and the committed operating period. Expansion must be funded by collected eligible revenue, not projected registrations. Outstanding customer balances are not available growth capital.",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "G02",
+      "requirement": "Margin gates. Use 20% monthly conversion, all-Starter offer purchases and \u20b935,000 overhead as the approved adverse scenario. It leaves \u20b914,370 after reserves. Require at least 15% of defined net receipts after all budgeted costs; seek 20% in normal operation. At 2,000 buyers, overhead must be at most \u20b935,141 for 15% and \u20b930,399 for 20%. Include omitted costs before testing either gate.",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "G03",
+      "requirement": "Acquisition discipline. Prioritize useful SEO content, product examples and product-led referrals. Fund referral credits only from an approved allowance after a qualifying paid purchase. At 20% conversion, surplus per monthly buyer is about \u20b912.18 with \u20b925,000 overhead and \u20b97.18 with \u20b935,000. The latter has only \u20b90.07 per buyer of headroom above the 15% gate. Fund acquisition from genuinely available headroom; do not assume repeat purchases or unproven lifetime value.",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "G04",
+      "requirement": "Additional expense scenarios. Add founder pay, hired staff, marketing, review labor and incremental agent subscriptions before calling the result business profit. An additional \u20b910,000 monthly expense reduces the adverse \u20b935,000-overhead and 20% case to \u20b94,370, below the minimum margin gate. One-time implementation and evaluation budgets require separate approval.",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "G05",
+      "requirement": "Protect customers when headroom falls. Stop new optional free work, unnecessary refreshes and uncommitted expansion first. Pause new paid admission before exhausting reserved obligations. Preserve already accepted work, access, export and security. Scaling down must respect persistent storage, retention and recovery commitments.",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "G06",
+      "requirement": "No reliance on exclusions. Do not remove security controls, hide paid-provider bills, call refunds zero cost, assume indefinitely free hosting or treat unused balances as profit to meet a target. If the measured design cannot satisfy quality and economics, revise scope or transparent quotes before launch.",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "R01",
+      "requirement": "Release order. After separate authorization: baseline measurements, offline quality gates, shadow accounting, migration rehearsal, opted-in canary, then bounded wider release. Freeze the tested model and policy versions. Do not combine an untested price change, model change and wallet migration into an unobservable cutover.",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "R02",
+      "requirement": "Shadow and canary. Propose at least seven days of representative shadow accounting and an initial opted-in cohort no larger than 5% of eligible traffic. Require at least 200 successful paid-equivalent operations across supported cohorts before widening; continue longer if coverage or statistical evidence is inadequate. Shadow calls and human review require a funded testing budget.",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "R03",
+      "requirement": "Rollback obligations. Preserve immutable sources, ledger history, active quotes and accepted work. Use additive schema changes and route flags. A rollback must not double charge, erase credits, revert customer-approved files or retry unknown applications. A prior expensive route can be restored only with sufficient funding.",
+      "status": "in_progress",
+      "evidence": [
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
+      ]
+    },
+    {
+      "id": "R04",
+      "requirement": "Stop conditions. Stop the affected optimized route for any confirmed fabrication, privacy leak, original-file corruption or unauthorized application action. Pause new optional execution on budget shortfall, stale supplier policy, sustained failure or a breached quality gate. Investigate before resuming.",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "id": "R05",
+      "requirement": "Evidence reporting. Report completion against the stages in Sections 16 and 17. Include outcome, expected versus actual effort where measured, evidence location and unresolved limits. Do not present repeated CI or regression passes as new major development milestones.",
+      "status": "pending",
+      "evidence": []
+    }
+  ],
+  "release_gates": {
+    "legacy_balance_mapping": "no_conversion_planned; original_balances_preserved; reconciliation_pending",
+    "provider_prices_and_invoices": "not_reconciled",
+    "model_quality_benchmark": "not_qualified",
+    "reference_discount_prices": "not_substantiated",
+    "commercial_hosting": "not_verified",
+    "seven_day_shadow": "not_started",
+    "checkout": "not_enabled"
+  }
+}

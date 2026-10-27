@@ -16,7 +16,7 @@ from backend.app.routers.recommendations import match_learning_strategy
 from backend.app.schemas import LearningStrategyRequest, RagAskRequest
 from backend.app.services import llm_client
 from backend.app.services.prompt_privacy import redact_structured
-from backend.app.services.rag.chat import ask_match_ai
+from backend.app.services.rag.chat import EnhancedAnswerUnavailable, ask_match_ai
 from backend.app.services.rag.chunking import build_match_chunks
 from backend.app.services.recommender import get_skill_gaps_and_courses
 from google import genai
@@ -132,7 +132,8 @@ def test_rag_route_quotes_only_owned_approved_resume_evidence(monkeypatch):
             assert response.sources == ['evidence:approved']
             assert 'Built Python services' in response.answer
             assert 'Invented experience' not in response.answer and 'Unrelated personal fact' not in response.answer
-            assert db.query(AnalysisRun).one().generation_attempt_count == 0
+            assert db.query(AnalysisRun).count() == 0
+            assert db.get(User, 1).ai_credits == 20
     finally:
         engine.dispose()
 
@@ -147,7 +148,8 @@ def test_curated_learning_default_has_no_generation_or_completed_project_claims(
             assert result['learning_priorities'][0]['skill'] == 'docker'
             assert all(project['resume_bullets'] == [] for project in result['project_recommendations'])
             assert result['warnings']
-            assert db.query(AnalysisRun).one().generation_attempt_count == 0
+            assert db.query(AnalysisRun).count() == 0
+            assert db.get(User, 1).ai_credits == 20
     finally:
         engine.dispose()
 
@@ -196,10 +198,8 @@ def test_enhanced_answer_cannot_claim_an_unknown_source(monkeypatch):
     from backend.app.services.rag import chat
     monkeypatch.setattr(chat, 'chat_json', lambda messages: {'answer': 'An unsupported confident claim.', 'confidence': 'high', 'suggested_followups': [], 'sources': ['other-candidate-private']})
     resume, match = _objects()
-    result = ask_match_ai(resume=resume, match=match, question='Compare different project approaches for this job.', recent_messages=[], mode='enhanced')
-    assert result.mode == 'unavailable' and result.confidence == 'low'
-    assert 'unsupported confident claim' not in result.answer
-    assert result.sources == []
+    with pytest.raises(EnhancedAnswerUnavailable, match='valid grounded answer'):
+        ask_match_ai(resume=resume, match=match, question='Compare different project approaches for this job.', recent_messages=[], mode='enhanced')
 
 
 def test_unstructured_legacy_rewrite_cannot_become_ready_bullets(monkeypatch):

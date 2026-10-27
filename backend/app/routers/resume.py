@@ -19,6 +19,23 @@ from ..services.parsing import enrich_resume_skills
 router = APIRouter(prefix="/resume", tags=["resume"])
 
 
+@router.post("/{resume_id}/enrich")
+def enrich_saved_resume(resume_id: int, payload: schemas.ResumeEnrichmentRequest,
+                        db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    from ..domains.credits import synchronous
+    from ..services.synchronous_contracts import SynchronousOutputUnavailable
+
+    if resume_id != payload.resume_id:
+        raise HTTPException(422, "The selected resume does not match this request")
+    try:
+        return synchronous.execute(db, user_id=current_user.id,
+            payload=synchronous.request("resume_enrichment", payload),
+            accepted_service_quote_id=payload.accepted_service_quote_id,
+            idempotency_key=payload.idempotency_key)
+    except SynchronousOutputUnavailable as exc:
+        raise HTTPException(422, detail={"code": "enrichment_unavailable", "message": str(exc), "credits_charged": 0}) from None
+
+
 @router.get("/list", response_model=schemas.ResumeListResponse)
 def list_resumes(
     db: Session = Depends(get_db),
@@ -230,6 +247,30 @@ async def parse_resume(
             status_code=413,
             detail=f"File is larger than {MAX_UPLOAD_BYTES // (1024 * 1024)}MB limit.",
         )
+    from ..domains.free_core import policy as free_policy
+    from ..domains.free_core import service as free_service
+
+    free_source_id = None
+    if free_policy.enabled():
+        from ..domains.common import payload_fingerprint, public_id
+        from ..domains.free_core.models import FreeCoreRequest
+
+        source_hash = hashlib.sha256(file_bytes).hexdigest()
+        request_key = request.headers.get("Idempotency-Key") or public_id("legacy_parse")
+        private_key = "parse:" + hashlib.sha256(request_key.encode()).hexdigest()
+        saved = db.query(FreeCoreRequest).filter_by(user_id=owner_id, idempotency_key=private_key).one_or_none()
+        free_source_id = saved.source_id if saved is not None else public_id("parse")
+        admitted, created = free_service.admit(db, user_id=owner_id, operation="resume_parse",
+            source_type="legacy_parse", source_id=free_source_id, key=private_key,
+            fingerprint=payload_fingerprint({"sha256": source_hash, "format": source_format, "enrich": enrich_skills}),
+            input_bytes=len(file_bytes), attempts=1)
+        if not created:
+            if admitted.state == "completed" and admitted.result_id:
+                return get_resume(int(admitted.result_id), db, current_user)
+            raise HTTPException(409, "This upload is already being processed. Check your saved resumes before trying again.")
+        # The funded complete parse/scan envelope is durable before contacting
+        # the private worker. A failed scan retains its real infrastructure hold.
+        db.commit()
     # PDF/DOCX inspection and extraction run only in the private scan worker.
     from ..services.resume_layout import ResumeLayoutError
     try:
@@ -253,6 +294,9 @@ async def parse_resume(
         contact_info=contact_info,
     )
     db.add(resume)
+    if free_source_id:
+        db.flush()
+        free_service.complete(db, user_id=owner_id, source_type="legacy_parse", source_id=free_source_id, result_id=str(resume.id))
     db.commit()
     db.refresh(resume)
     parsed_resume_id = resume.id
@@ -264,9 +308,13 @@ async def parse_resume(
     warnings: list[str] = []
     if not raw_text.strip():
         warnings.append("No readable text was found. A scanned or complex file may not support source-preserving tailoring. Keep the unchanged original/custom file, or upload an editable DOCX or TeX source; no ATS parsing guarantee is made.")
+    from ..domains.credits.runtime import requires_unified_billing
     from ..services.generation_gate import generation_enabled
 
-    if enrich_skills and not generation_enabled():
+    if enrich_skills and requires_unified_billing(db, owner_id):
+        enrichment_state = "requires_review"
+        warnings.append("Your original resume was parsed without AI. Review the optional enrichment quote for this saved resume before starting generation; no enrichment credits were charged.")
+    elif enrich_skills and not generation_enabled():
         enrichment_state = "unavailable"
         warnings.append("Optional AI enrichment is temporarily paused. Your original resume was parsed without AI and no enrichment units were charged.")
     elif enrich_skills:

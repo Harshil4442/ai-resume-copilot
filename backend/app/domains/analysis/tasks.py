@@ -145,9 +145,9 @@ def process_analysis_run(run_id: str) -> str:
             return run.status
 
         try:
-            from ...services.generation_budget import persistent_run_budget
+            from ..credits.analysis import analysis_budget
 
-            with persistent_run_budget(SessionLocal, run.id):
+            with analysis_budget(SessionLocal, run.id):
                 result = execute_operation(db, run)
             begin_result_commit(db, owner_id, run_id, allow_cancelled=True)
             db.flush()
@@ -214,7 +214,9 @@ def process_analysis_run(run_id: str) -> str:
                 release_run_usage(db, run, reason="Cancelled during execution")
                 db.commit()
                 return run.status
-            if _retryable(exc) and run.attempt_count < 3:
+            from ..credits.analysis import is_unified
+
+            if not is_unified(run) and _retryable(exc) and run.attempt_count < 3:
                 run.status = "queued"
                 db.commit()
                 raise RetryableRunError(str(exc)) from exc

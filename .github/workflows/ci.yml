@@ -97,6 +97,16 @@ jobs:
           tests/test_monetary_cutover_schema11_postgres.py
           tests/test_monetary_cutover_schema13_postgres.py
           app/billing/cost_policy.py tests/expense_policy_fixtures.py tests/test_expense_policy.py
+          app/routers/credits.py app/services/interview_contract.py app/services/synchronous_contracts.py
+          tests/test_unified_credit_finance.py tests/test_unified_credit_http.py tests/test_unified_credit_migrations.py
+          tests/test_unified_credit_migrations_postgres.py tests/test_unified_credit_payments.py
+          tests/test_unified_credits.py tests/test_unified_credits_postgres.py tests/test_unified_execution.py
+          tests/test_unified_analysis.py tests/test_unified_legacy_funding.py tests/test_free_core.py tests/test_free_core_postgres.py
+          tests/test_unified_synchronous.py tests/test_unified_synchronous_postgres.py tests/test_unified_shadow.py
+          tests/test_unified_discovery.py tests/test_unified_discovery_postgres.py
+          tests/test_unified_credit_privacy_postgres.py
+          tests/test_unified_quality_packet.py
+          tests/test_unified_schema25_source.py tests/test_unified_schema25_contract_postgres.py
           tests/test_expense_budget.py tests/test_expense_budget_postgres.py
           tests/test_migration_logging_postgres.py
           tests/test_fresh_user_no_ai_journey.py
@@ -137,6 +147,7 @@ jobs:
           app/services/generation_gate.py
           scripts/monetary_cutover_preflight.py scripts/native_tex_test_image.py
           app/billing/cost_policy.py
+          app/routers/credits.py app/services/interview_contract.py app/services/synchronous_contracts.py
           app/routers/candidate_accounts.py app/routers/sensitive_auth.py app/routers/candidate_ingress.py
           app/routers/password_reset.py
           ../infra/gcp/release_preflight.py ../infra/gcp/monetary_release.py scripts/monetary_schema_step.py
@@ -151,6 +162,9 @@ jobs:
           scripts/browser_schema19_contract.py scripts/browser_schema19_step.py
           scripts/neon_direct_identity.py ../infra/gcp/browser_schema19_release.py
           scripts/email_password_schema21_contract.py scripts/email_password_schema21_step.py
+          scripts/credit_shadow_report.py
+          scripts/unified_quality_packet.py
+          scripts/unified_credit_schema25_contract.py scripts/unified_credit_schema25_step.py
           ../infra/gcp/email_password_schema21_release.py
       - name: Compile backend
         run: backend/.venv/bin/python -m compileall -q backend/app

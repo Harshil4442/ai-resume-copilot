@@ -23,7 +23,7 @@ try:
 except Exception:
     pass
 
-from .routers import password_reset, candidate_accounts, auth, resume, jobs, recommendations, llm, analytics, rag, market, billing, public_endpoints  # noqa: E402
+from .routers import password_reset, candidate_accounts, auth, resume, jobs, recommendations, llm, analytics, rag, market, billing, credits, public_endpoints  # noqa: E402
 from .routers import resume_uploads  # noqa: E402
 from .routers.v1 import router as v1_router  # noqa: E402
 from .rate_limiter import limiter
@@ -159,6 +159,8 @@ app.include_router(rag.router, prefix="/api")
 app.include_router(market.router, prefix="/api")
 app.include_router(billing.router, prefix="/api")
 app.include_router(billing.public_router, prefix="/api")
+app.include_router(credits.router, prefix="/api")
+app.include_router(credits.public_router, prefix="/api")
 app.include_router(public_endpoints.router, prefix="/api")
 app.include_router(v1_router, prefix="/api")
 

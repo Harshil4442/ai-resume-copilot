@@ -150,7 +150,8 @@ def persistent_run_budget(factory, run_id: str):
             raise RuntimeError("Analysis run was not found")
         budget = GenerationBudget(limit=run.generation_attempt_limit, used=run.generation_attempt_count, run_id=run_id)
         user_id = run.user_id
-        prompt_version = {"job_match": "match-mega-v2", "interview_questions": "interview-evidence-v4", "resume_tailor": "resume-source-v5"}.get(run.operation, "legacy-v1")
+        from .interview_contract import PROMPT_VERSION as INTERVIEW_PROMPT_VERSION
+        prompt_version = {"job_match": "match-mega-v2", "interview_questions": INTERVIEW_PROMPT_VERSION, "resume_tailor": "resume-source-v5"}.get(run.operation, "legacy-v1")
 
     # Only this trusted in-flight callback retains the deleted telemetry ID's
     # link to its detached liability. There is no post-erasure lookup API.

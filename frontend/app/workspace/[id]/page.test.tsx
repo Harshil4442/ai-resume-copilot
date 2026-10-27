@@ -21,6 +21,7 @@ function opportunity() {
     resume_versions: [], notes: "", job_description: "Build reliable services.", created_at: stamp, updated_at: stamp };
 }
 function read(url: string) {
+  if (url === "/v1/credits/availability") return Promise.resolve({ catalog_enabled: false, execution_enabled: false, supported_operations: [] });
   if (url === "/public/billing/catalog") return Promise.resolve(quote);
   if (url === "/resume/list") return Promise.resolve({ resumes: [1, 2].map((id) => ({ id, filename: `synthetic-${id}.pdf`, source_available: true, source_format: "pdf" })) });
   if (url === `/v1/opportunities/${state.id}`) return Promise.resolve(opportunity());
@@ -134,4 +135,115 @@ it.each([429, 503])("reads an existing run explicitly after HTTP%s without resta
   fireEvent.click(statusCheck);
   await waitFor(() => expect(generate()).toBeEnabled());
   expect(statusReads).toBe(2); expect(requests()).toHaveLength(1);
+});
+
+const serviceQuote = { schema_version: "unified-service-quote-v1", quote_id: "csq_reviewed", operation: "resume_tailor", input_fingerprint: "b".repeat(64),
+  route_id: "qualified-tailor", route_version: "1", mode: "enhanced", tariff_version: "credit-services-v1", credits: 8,
+  deliverable: "A tailored resume that preserves its original layout.", supported_limits: { max_pages: 2, max_edits: 5 },
+  created_at: "2026-10-27T10:00:00Z", expires_at: "2026-10-27T10:15:00Z", server_time: "2026-10-27T10:00:00Z" };
+function enableCreditExecution(operations = ["resume_tailor", "resume_tailor_extended", "interview_questions", "enhanced_job_match"]) {
+  state.get.mockImplementation((url: string) => url === "/v1/credits/availability"
+    ? Promise.resolve({ catalog_enabled: true, execution_enabled: operations.length > 0, supported_operations: operations }) : read(url));
+  state.post.mockImplementation(async (url, body) => {
+    if (url === "/v1/credits/analysis-reuse") return { reused_run: null };
+    if (url === "/v1/credits/service-quotes") return { ...serviceQuote, operation: body.operation === "job_match" ? "enhanced_job_match" : body.operation === "resume_tailor" && body.input.tailoring_scope === "extended" ? "resume_tailor_extended" : body.operation,
+      credits: body.input.tailoring_scope === "extended" ? 15 : body.operation === "interview_questions" ? 5 : 8 };
+    return { id: "run-one", operation: body.operation, status: "queued", estimated_units: 8, billing_currency: "credits" };
+  });
+}
+async function reviewTailoring() {
+  await page(); const button = screen.getByRole("button", { name: "Generate tailored version" });
+  await waitFor(() => expect(button).toBeEnabled()); fireEvent.click(button);
+  return screen.findByRole("button", { name: "Approve 8 credits" });
+}
+it("reviews the source and exact unified quote before tailoring", async () => {
+  enableCreditExecution(); const approve = await reviewTailoring();
+  expect(screen.getByText("synthetic-1.pdf", { selector: "dd" })).toBeVisible(); expect(requests()).toHaveLength(0);
+  expect(state.get.mock.calls.some(([url]) => url === "/public/billing/catalog")).toBe(false);
+  fireEvent.click(approve); await waitFor(() => expect(requests()).toHaveLength(1));
+  expect(requests()[0][1]).toEqual({ operation: "resume_tailor", opportunity_id: state.id, input: { tailoring_scope: "standard" }, accepted_service_quote_id: "csq_reviewed" });
+});
+it("blocks a reviewed source after changing resumes and permits cancellation without a charge", async () => {
+  enableCreditExecution(); await reviewTailoring();
+  fireEvent.change(screen.getByRole("combobox", { name: "Resume" }), { target: { value: "2" } });
+  await waitFor(() => expect(screen.getByRole("button", { name: "Approve 8 credits" })).toBeDisabled());
+  expect(requests()).toHaveLength(0); fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(screen.queryByRole("button", { name: "Approve 8 credits" })).toBeNull();
+});
+it("makes extended tailoring an explicit separately quoted scope", async () => {
+  enableCreditExecution(); await page();
+  fireEvent.change(await screen.findByRole("combobox", { name: "Tailoring scope" }), { target: { value: "extended" } });
+  const button = screen.getByRole("button", { name: "Generate tailored version" }); await waitFor(() => expect(button).toBeEnabled()); fireEvent.click(button);
+  fireEvent.click(await screen.findByRole("button", { name: "Approve 15 credits" }));
+  await waitFor(() => expect(requests()).toHaveLength(1)); expect(requests()[0][1].input).toEqual({ tailoring_scope: "extended" });
+});
+it("retries a lost approved response with its original quote, payload and idempotency key", async () => {
+  enableCreditExecution(); const original = state.post.getMockImplementation()!;
+  state.post.mockImplementation((url, ...rest) => url === "/v1/analysis-runs" ? Promise.reject(new TypeError("Response lost")) : original(url, ...rest));
+  fireEvent.click(await reviewTailoring());
+  fireEvent.click(await screen.findByRole("button", { name: "Retry same approved request" }));
+  await waitFor(() => expect(requests()).toHaveLength(2)); expect(requests()[1]).toEqual(requests()[0]);
+  expect(state.post.mock.calls.filter(([url]) => url === "/v1/credits/service-quotes")).toHaveLength(1);
+});
+it.each(["queued", "running", "succeeded"])("reuses a verified %s run without requesting a quote or another run", async (status) => {
+  enableCreditExecution(); state.post.mockResolvedValue({ reused_run: { id: "run-one", operation: "resume_tailor", status } });
+  await page(); const button = screen.getByRole("button", { name: "Generate tailored version" }); await waitFor(() => expect(button).toBeEnabled()); fireEvent.click(button);
+  await waitFor(() => expect(state.get.mock.calls.some(([url]) => url === "/v1/analysis-runs/run-one")).toBe(true));
+  expect(state.post.mock.calls.map(([url]) => url)).toEqual(["/v1/credits/analysis-reuse"]);
+});
+it("requests exactly eight enhanced questions after credit approval", async () => {
+  state.tab = "interview"; enableCreditExecution(); await page();
+  fireEvent.change(screen.getByRole("combobox", { name: "Question mode" }), { target: { value: "enhanced" } });
+  fireEvent.click(screen.getByRole("button", { name: "Generate questions" }));
+  const approve = await screen.findByRole("button", { name: "Approve 5 credits" }); expect(requests()).toHaveLength(0); fireEvent.click(approve);
+  await waitFor(() => expect(requests()).toHaveLength(1)); expect(requests()[0][1].input).toEqual({ num_questions: 8, mode: "enhanced" });
+});
+it("keeps snapshots accessible when no paid route is qualified", async () => {
+  enableCreditExecution([]); await page(); expect(screen.getByRole("button", { name: "Generate tailored version" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Save source snapshot" })).toBeEnabled(); expect(state.post).not.toHaveBeenCalled();
+});
+
+
+it("allows a fresh review only after an explicit no-run quote rejection", async () => {
+  enableCreditExecution(); const original = state.post.getMockImplementation()!;
+  state.post.mockImplementation((url, ...rest) => url === "/v1/analysis-runs"
+    ? Promise.reject(new ApiError("Quote expired", 409, { detail: { code: "credit_service_quote_rejected", run_created: false } })) : original(url, ...rest));
+  fireEvent.click(await reviewTailoring());
+  await screen.findByText("Quote expired");
+  expect(screen.getByRole("button", { name: "Approve 8 credits" })).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: "Refresh service quote" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Approve 8 credits" })).toBeEnabled());
+  expect(requests()).toHaveLength(1);
+  expect(state.post.mock.calls.filter(([url]) => url === "/v1/credits/service-quotes")).toHaveLength(2);
+});
+
+
+it("recovers a quote already attached to a run by reading that run", async () => {
+  enableCreditExecution(); const original = state.post.getMockImplementation()!;
+  state.post.mockImplementation((url, ...rest) => url === "/v1/analysis-runs"
+    ? Promise.reject(new ApiError("Already accepted", 409, { detail: { code: "credit_service_quote_in_use", run_created: true, run_id: "run-one" } })) : original(url, ...rest));
+  fireEvent.click(await reviewTailoring());
+  await waitFor(() => expect(state.get.mock.calls.some(([url]) => url === "/v1/analysis-runs/run-one")).toBe(true));
+  expect(requests()).toHaveLength(1);
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Approve 8 credits" })).toBeNull());
+});
+
+
+it("labels basic comparison free only when the server supplies its funded allowance", async () => {
+  state.tab = "overview";
+  state.get.mockImplementation((url: string) => url === "/v1/credits/availability" ? Promise.resolve({ catalog_enabled: false,
+    execution_enabled: false, supported_operations: [], free_core_operations: ["basic_match"],
+    free_core_limits: { basic_match: { per_account_30_days: 10, max_input_bytes: 10000, max_source_records: 100 } } }) : read(url));
+  await page(); expect(screen.getByRole("combobox", { name: "Match mode · 0 credits" })).toBeVisible();
+  expect(screen.getByText(/Basic comparison allowance: up to 10 new requests in a rolling 30-day period/)).toBeVisible();
+  expect(state.post).not.toHaveBeenCalled();
+});
+
+
+it("routes the empty-state enhanced match action through the same credit review", async () => {
+  state.tab = "overview"; enableCreditExecution(); await page();
+  fireEvent.change(screen.getByRole("combobox", { name: "Match mode" }), { target: { value: "enhanced" } });
+  const buttons = screen.getAllByRole("button", { name: "Run match" }); fireEvent.click(buttons[buttons.length - 1]);
+  expect(await screen.findByRole("button", { name: "Approve 8 credits" })).toBeVisible();
+  expect(requests()).toHaveLength(0);
 });

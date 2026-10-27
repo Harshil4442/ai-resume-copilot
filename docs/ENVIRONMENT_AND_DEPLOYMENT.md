@@ -144,6 +144,36 @@ rotate the webhook secret with `RAZORPAY_WEBHOOK_SECRET_PREVIOUS` during overlap
 Optional market variables are `THEIRSTACK_API_KEY`, `ADZUNA_APP_ID`, `ADZUNA_APP_KEY`,
 `JOOBLE_API_KEY`, `REDIS_URL`, and `MARKET_CACHE_TTL_SECONDS`.
 
+## Unified credit rollout (schema 25; disabled until qualified)
+
+The following are server-only deployment configuration, not browser environment
+variables. Missing or invalid review artifacts must keep the new route closed.
+Do not populate production review fields with synthetic test hashes or estimates
+represented as measured invoice/quality evidence.
+
+| Variable | Initial value / purpose |
+| --- | --- |
+| `UNIFIED_CREDITS_ENABLED` | `false`; exposes the new catalog when deliberately enabled, without authorizing checkout by itself |
+| `UNIFIED_CREDIT_EXECUTION_ENABLED` | `false`; separately admits quoted paid work only with a current runtime review |
+| `UNIFIED_CREDIT_EXECUTION_AUDIENCE` | `canary`; `reviewed_public` needs the release review; never use it merely to bypass the owner allowlist |
+| `UNIFIED_CREDIT_CANARY_OWNER_IDS` | Empty initially; explicit opted-in candidate IDs for the bounded canary |
+| `UNIFIED_CREDIT_RUNTIME_REVIEW_JSON` | `RuntimeConfig`: current financial policy, funding budgets and independently qualified routes with exact limits and evidence |
+| `UNIFIED_CREDIT_RELEASE_REVIEW_JSON` | `ReleaseReview`: retained quality, rights, commercial hosting, invoice, security, shadow and delivery evidence; required for new purchases |
+| `FREE_CORE_ENABLED` | `false` until bounded free processing has a funded policy |
+| `FREE_CORE_POLICY_JSON` | Current per-account/global processing allowances and cost attribution; must agree with paid funding when both are active |
+| `LEARNING_RESOURCE_REVIEW_JSON` | Reviewed resource URLs, evidence digests and freshness dates for personalized learning guidance |
+
+Keep `RAZORPAY_CHECKOUT_ENABLED` false during initial migration and staging. Price
+campaigns and accepted purchase quotes live in PostgreSQL, not client build-time
+constants. Native and unknown provider expenses remain held until verified
+settlement. Existing wallets are not converted or expired by this release.
+
+See [the unified-credit runbook](delivery/UNIFIED_CREDIT_ROLLOUT.md) for the staged
+release, accounting observation, evidence requirements and rollback obligations.
+The existing schema21 migration ports do not authorize schema25 migration; use
+the separately reviewed additive contract once its native operator integration
+is qualified.
+
 ## Environments
 
 - Production: live Razorpay only, explicit HTTPS origins, PostgreSQL, private worker.

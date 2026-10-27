@@ -41,9 +41,10 @@ export default function RefundPolicyPage() {
           <section>
             <h3 className="text-lg font-bold text-foreground mb-4">1. Product covered</h3>
             <p>
-              HireWiz offers three finite prepaid packs with separate job service credits and AI analysis units.
-              No pack automatically renews. Accepted older orders retain their purchased terms.
-              Balances are delivered to the purchasing account after verified captured payment;
+              When available, HireWiz offers finite 30-day prepaid passes with one credit wallet for eligible services.
+              No pass automatically renews. New credit-pass terms apply only when shown and accepted at purchase;
+              accepted older orders retain their original terms, including no-expiry balance promises.
+              Credits are delivered to the purchasing account after verified captured payment;
               no physical goods are shipped.
             </p>
           </section>
@@ -51,7 +52,8 @@ export default function RefundPolicyPage() {
           <section>
             <h3 className="text-lg font-bold text-foreground mb-4">2. Cancellation and expiry</h3>
             <ul className="list-disc pl-6 space-y-2 text-muted-foreground">
-              <li>There is no recurring charge or renewal mandate to cancel. Balances are finite and do not refresh automatically. Accepted legacy access expires according to its original paid term.</li>
+              <li>There is no recurring charge or renewal mandate to cancel. New pass credits last at least 30 full days after verified captured payment; their exact expiry is shown in billing. They do not refresh automatically.</li>
+              <li>Accepted legacy access and balances retain their original duration and expiry conditions. A new 30-day pass does not shorten existing rights.</li>
               <li>You can end Premium access early through Profile or by contacting support. Ending access early does not by itself create a refund entitlement.</li>
               <li>Deleting your account ends access and removes active application data as described in the Privacy Policy; deletion does not automatically create a refund.</li>
             </ul>
@@ -62,29 +64,33 @@ export default function RefundPolicyPage() {
             <p>We will review a refund request where:</p>
             <ul className="list-disc pl-6 mt-4 space-y-2 text-muted-foreground">
               <li>the same order was charged more than once because of a technical or processing error;</li>
-              <li>payment was confirmed but Premium access or purchased service credits were not delivered, and support could not correct delivery;</li>
+              <li>payment was confirmed but purchased credits or legacy access were not delivered, and support could not correct delivery;</li>
               <li>a material HireWiz service failure substantially prevented use of the paid product and support could not provide a reasonable remedy;</li>
               <li>the payment was unauthorized, subject to reasonable identity, account, and payment-provider review; or</li>
               <li>a refund is required by applicable law or expressly offered in the final order terms.</li>
             </ul>
             <p className="mt-4">
-              Because access is digital and begins after payment confirmation, a change of mind, unused time, or
-              dissatisfaction with informational AI output is generally not refundable after access is delivered,
-              except where applicable law or the circumstances above require otherwise.
+              A change of mind or unused time does not automatically create a purchase-refund entitlement after
+              delivery. Failed or incomplete paid services receive the restoration or monetary remedy described
+              below. Applicable law and the circumstances above continue to apply.
             </p>
           </section>
 
           <section>
-            <h3 className="text-lg font-bold text-foreground mb-4">Service-credit reservations</h3>
+            <h3 className="text-lg font-bold text-foreground mb-4">Service reservations and failed delivery</h3>
             <p>
-              A search charges only for new qualifying jobs actually delivered. Unused reservations are returned
-              to your service-credit balance. Preparing a package or using a manual employer-portal handoff does
-              not incur an automatic-application charge. A supported application charge is committed only after
-              verified complete submission; uncertain outcomes keep credits reserved until reconciliation.
-              Returning a reservation restores service credits and is separate from refunding a purchase to your
-              payment method. An approved purchase refund removes the corresponding credits, including credits
-              already spent; this can leave a negative balance and pause new paid operations until resolved.
+              A service reserves its explicitly reviewed charge and commits it only for its promised completed
+              delivery. Unused search reservations are returned under the displayed search terms. Failed or
+              incomplete delivery restores credits usable for at least seven days after restoration, including
+              after the original pass expires, or receives an appropriate monetary remedy. Viewing, downloading
+              and unchanged reuse of an existing result do not incur another generation charge.
             </p>
+            <p className="mt-4">Preparing a package or using a manual employer-portal handoff does not incur a
+              completed-application charge. A supported submission charge requires verified complete employer
+              acceptance; uncertain outcomes keep credits reserved until reconciliation. Returning a reservation
+              is separate from refunding a purchase to your payment method. An approved purchase refund removes
+              the corresponding allowance; already-spent credits can create an adjustment that pauses new paid
+              operations until resolved. Older purchases keep their original refund and balance conditions.</p>
           </section>
 
           <section>

@@ -4,8 +4,10 @@ import { AlertCircle, ArrowRight, CheckCircle2, FileText, FileUp, ShieldCheck, T
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { ResumeSkillEnrichment } from "../../components/career/ResumeSkillEnrichment";
+import { creditAvailabilityOptions } from "../../lib/unifiedCreditClient";
 import { Button } from "../../components/ui/Button";
 import { ResumeUploadProgress } from "../../components/ResumeUploadProgress";
 import { LoadingBlock } from "../../components/ui/LoadingBlock";
@@ -33,6 +35,10 @@ function ResumeUploadContent() {
   const uploadController = useRef<AbortController | null>(null);
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; uploadController.current?.abort(); }; }, []);
+  const availability = useQuery(creditAvailabilityOptions());
+  const pricingKnown = availability.isSuccess && availability.data !== null;
+  const unifiedServices = Boolean(availability.data?.catalog_enabled || availability.data?.execution_enabled);
+  const parseAllowance = availability.data?.free_core_limits.resume_parse;
   const directFile = Boolean(file && usesDirectResumeUpload(file));
   function cancelUpload() {
     setUploadProgress((current) => current ? { ...current, phase: "cancelling" } : current);
@@ -80,7 +86,7 @@ function ResumeUploadContent() {
     setLoading(true);
     trackEvent("resume_upload_started", { file_type: file.type, size_bytes: file.size });
     try {
-      const parsed = await uploadResumeFile(file, { enrichSkills, signal: controller.signal,
+      const parsed = await uploadResumeFile(file, { enrichSkills: unifiedServices || !pricingKnown ? false : enrichSkills, signal: controller.signal,
         onProgress: (progress) => { if (mounted.current && uploadController.current === controller && !controller.signal.aborted) setUploadProgress(progress); } });
       if (!mounted.current || controller.signal.aborted || uploadController.current !== controller) return;
       setData(parsed);
@@ -153,7 +159,8 @@ function ResumeUploadContent() {
               <h2 className="font-display mt-5 max-w-full break-words text-lg font-normal text-foreground">{file ? file.name : "Choose a resume"}</h2>
               <p className="mt-2 text-sm text-muted-foreground">{file ? `${(file.size / 1024 / 1024).toFixed(2)} MB, ready to parse` : "Drop the file here or open your file browser"}</p>
             </label>
-            <label className="mt-4 flex items-start gap-3 text-sm leading-6"><input type="checkbox" className="mt-1 h-4 w-4 shrink-0 accent-primary" checked={enrichSkills} disabled={loading || connecting || directFile} onChange={(event) => setEnrichSkills(event.target.checked)} /><span>{directFile ? "AI skill enrichment is unavailable on secure direct uploads" : "Optional AI skill enrichment · 1 analysis unit"}<span className="mt-1 block text-xs leading-5 text-muted-foreground">{directFile ? "Resume safety checks and extraction run without generative AI. No enrichment units are charged." : <>Default parsing extracts text and catalog skills without generative AI. Enable this to send resume text for additional source-supported AI skill suggestions. One unit is charged only if useful additional skills are found; New AI requests also require available funding; existing paid access terms remain. Review the results before using them.</>}</span></span></label>
+            {unifiedServices ? <p className="mt-4 text-sm leading-6 text-muted-foreground">Parsing extracts text and catalog skills without generative AI. After the source is saved, you can separately review optional AI skill enrichment.</p> : <label className="mt-4 flex items-start gap-3 text-sm leading-6"><input type="checkbox" className="mt-1 h-4 w-4 shrink-0 accent-primary" checked={enrichSkills} disabled={!pricingKnown || loading || connecting || directFile} onChange={(event) => setEnrichSkills(event.target.checked)} /><span>{directFile ? "AI skill enrichment is unavailable on secure direct uploads" : "Optional AI skill enrichment · 1 analysis unit"}<span className="mt-1 block text-xs leading-5 text-muted-foreground">{directFile ? "Resume safety checks and extraction run without generative AI. No enrichment units are charged." : <>Default parsing extracts text and catalog skills without generative AI. Enable this to send resume text for additional source-supported AI skill suggestions. One unit is charged only if useful additional skills are found; New AI requests also require available funding; existing paid access terms remain. Review the results before using them.</>}</span></span></label>}
+            {parseAllowance ? <p className="mt-2 text-xs text-muted-foreground">0 credits within an allowance of {parseAllowance.per_account_30_days} new parsed resume per rolling 30 days, subject to available capacity.</p> : null}
             <Button type="submit" className="mt-4 w-full" disabled={!file || loading || connecting}>
               {loading ? "Extracting evidence..." : "Parse resume"} <ArrowRight size={16} />
             </Button>
@@ -177,10 +184,14 @@ function ResumeUploadContent() {
               <div>
                 <div className="flex items-center gap-2 text-sm font-bold text-primary"><CheckCircle2 size={17} /> Resume parsed</div>
                 <h2 className="font-display mt-3 text-2xl font-normal text-foreground">Review the extracted signals</h2>
-                {data.extraction_mode ? <p className="mt-2 text-xs font-semibold text-primary">{data.extraction_mode === "enriched" ? `AI-enriched skills · ${data.enrichment_units ?? 0} analysis units charged` : "Deterministic parsing · no generative AI"}</p> : null}
+                {data.extraction_mode ? <p className="mt-2 text-xs font-semibold text-primary">{data.extraction_mode === "enriched" ? unifiedServices ? "AI-enriched skills · reviewed credit delivery" : `AI-enriched skills · ${data.enrichment_units ?? 0} analysis units charged` : "Deterministic parsing · no generative AI"}</p> : null}
                 {data.warnings?.map((warning) => <p key={warning} className="mt-2 text-sm leading-6 text-muted-foreground" role="status">{warning}</p>)}
                 <p className="mt-2 text-sm text-muted-foreground">Estimated experience: {data.experience_years} years. These values remain editable source material, not verified claims.</p>
                 {data.source_available && data.source_format ? <p className="mt-3 text-sm font-semibold text-primary">Original {data.source_format.toUpperCase()} retained for preview and tailoring.</p> : <p className="mt-3 text-sm text-coral">The original file is unavailable. Upload your source again before tailoring.</p>}
+                {unifiedServices ? <ResumeSkillEnrichment resume={{ id: data.resume_id, filename: file?.name || `Resume ${data.resume_id}` }} availability={availability.data} onResult={(result) => {
+                  setData((current) => current?.resume_id === result.resume_id ? { ...current, skills: result.skills, extraction_mode: "enriched", enrichment_state: "completed" } : current);
+                  void queryClient.invalidateQueries({ queryKey: ["resumes"] });
+                }} /> : null}
                 <div className="mt-5 flex flex-wrap gap-2">
                   {data.skills.slice(0, 30).map((skill) => <span key={skill} className="rounded-md border border-border bg-surface px-2.5 py-1.5 text-xs font-semibold text-foreground">{skill}</span>)}
                   {!data.skills.length ? <span className="text-sm text-muted-foreground">No skills were confidently extracted.</span> : null}

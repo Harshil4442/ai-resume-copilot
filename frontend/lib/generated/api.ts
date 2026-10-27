@@ -696,6 +696,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/public/credits/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Public Catalog */
+        get: operations["public_catalog_api_public_credits_catalog_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/public/optimize_bullet": {
         parameters: {
             query?: never;
@@ -867,6 +884,23 @@ export interface paths {
         get: operations["get_resume_api_resume__resume_id__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/resume/{resume_id}/enrich": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enrich Saved Resume */
+        post: operations["enrich_saved_resume_api_resume__resume_id__enrich_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1210,6 +1244,281 @@ export interface paths {
         post?: never;
         /** Delete Contact */
         delete: operations["delete_contact_api_v1_contacts__contact_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/credits/analysis-reuse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Analysis Reuse
+         * @description No reservation, dispatch or provider call; unchanged owned work is free.
+         */
+        post: operations["analysis_reuse_api_v1_credits_analysis_reuse_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/credits/availability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Availability */
+        get: operations["availability_api_v1_credits_availability_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/credits/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Catalog */
+        get: operations["catalog_api_v1_credits_catalog_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/credits/discovery-batches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Discovery Batch */
+        post: operations["create_discovery_batch_api_v1_credits_discovery_batches_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/credits/discovery-batches/{search_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Discovery Batch Status */
+        get: operations["discovery_batch_status_api_v1_credits_discovery_batches__search_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/credits/discovery-batches/{search_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Discovery Batch */
+        post: operations["cancel_discovery_batch_api_v1_credits_discovery_batches__search_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/credits/discovery-quotes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Discovery Quote */
+        post: operations["discovery_quote_api_v1_credits_discovery_quotes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/credits/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** History */
+        get: operations["history_api_v1_credits_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/credits/orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Order */
+        post: operations["create_order_api_v1_credits_orders_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/credits/orders/{reference}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Order Status */
+        get: operations["order_status_api_v1_credits_orders__reference__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/credits/purchase-quotes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Purchase Quote */
+        post: operations["purchase_quote_api_v1_credits_purchase_quotes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/credits/recent-order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Recent Order */
+        get: operations["recent_order_api_v1_credits_recent_order_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/credits/service-quotes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Analysis Quote */
+        post: operations["analysis_quote_api_v1_credits_service_quotes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/credits/synchronous-reuse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Synchronous Reuse */
+        post: operations["synchronous_reuse_api_v1_credits_synchronous_reuse_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/credits/synchronous-service-quotes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Synchronous Quote */
+        post: operations["synchronous_quote_api_v1_credits_synchronous_service_quotes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/credits/wallet": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Wallet */
+        get: operations["wallet_api_v1_credits_wallet_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1967,6 +2276,10 @@ export interface components {
             /** Units */
             units: number;
         };
+        /** AnalysisReuseView */
+        AnalysisReuseView: {
+            reused_run: components["schemas"]["AnalysisRunResponse"] | null;
+        };
         /** AnalysisRunCancelResponse */
         AnalysisRunCancelResponse: {
             /** Cancel Requested */
@@ -1979,6 +2292,8 @@ export interface components {
         /** AnalysisRunCreate */
         AnalysisRunCreate: {
             accepted_quote?: components["schemas"]["AnalysisQuoteAcceptance"] | null;
+            /** Accepted Service Quote Id */
+            accepted_service_quote_id?: string | null;
             /** Idempotency Key */
             idempotency_key?: string | null;
             /** Input */
@@ -2002,6 +2317,12 @@ export interface components {
         AnalysisRunResponse: {
             /** Attempt Count */
             attempt_count: number;
+            /**
+             * Billing Currency
+             * @default legacy_ai_units
+             * @enum {string}
+             */
+            billing_currency: "legacy_ai_units" | "credits" | "none";
             /** Cancel Requested */
             cancel_requested: boolean;
             /** Cancelled At */
@@ -2259,6 +2580,34 @@ export interface components {
             /** File */
             file: string;
         };
+        /** CampaignView */
+        CampaignView: {
+            /**
+             * Ends At
+             * Format: date-time
+             */
+            ends_at: string;
+            /** Id */
+            id: string;
+            /** Reference Price Verified */
+            reference_price_verified: boolean;
+            /** Standard Amount Minor */
+            standard_amount_minor: number;
+            /**
+             * Starts At
+             * Format: date-time
+             */
+            starts_at: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "scheduled" | "active" | "ended";
+            /** Timezone */
+            timezone: string;
+            /** Version */
+            version: string;
+        };
         /** CandidateRequest */
         CandidateRequest: {
             /**
@@ -2423,6 +2772,20 @@ export interface components {
              */
             updated_at: string;
         };
+        /** CreateCreditOrder */
+        CreateCreditOrder: {
+            /**
+             * Billing Country
+             * @constant
+             */
+            billing_country: "IN";
+            /** Idempotency Key */
+            idempotency_key: string;
+            /** Order Reference */
+            order_reference?: string | null;
+            /** Quote Id */
+            quote_id: string;
+        };
         /** CreateOrderRequest */
         CreateOrderRequest: {
             /** @description Required before payable checkout, including recovery. Free status reads expose the original terms for review. */
@@ -2445,6 +2808,250 @@ export interface components {
             /** Sku */
             sku: string;
         };
+        /** CreditAvailabilityView */
+        CreditAvailabilityView: {
+            /** Catalog Enabled */
+            catalog_enabled: boolean;
+            /** Execution Enabled */
+            execution_enabled: boolean;
+            /** Free Core Limits */
+            free_core_limits?: {
+                [key: string]: components["schemas"]["FreeCoreLimitView"];
+            };
+            /** Free Core Operations */
+            free_core_operations?: string[];
+            /** Supported Operations */
+            supported_operations: string[];
+        };
+        /** CreditCatalogView */
+        CreditCatalogView: {
+            /** Catalog Version */
+            catalog_version: string;
+            /** Checkout Enabled */
+            checkout_enabled: boolean;
+            /**
+             * Currency
+             * @default INR
+             * @constant
+             */
+            currency: "INR";
+            /** Eligible Services */
+            eligible_services?: components["schemas"]["CreditServiceOfferView"][];
+            /**
+             * Market
+             * @default IN
+             * @constant
+             */
+            market: "IN";
+            /** Products */
+            products: components["schemas"]["CreditProductView"][];
+            /**
+             * Schema Version
+             * @default unified-credits-v1
+             * @constant
+             */
+            schema_version: "unified-credits-v1";
+            /**
+             * Server Time
+             * Format: date-time
+             */
+            server_time: string;
+        };
+        /** CreditCheckoutView */
+        CreditCheckoutView: {
+            accepted_quote: components["schemas"]["PurchaseQuoteView"];
+            /** Amount Minor */
+            amount_minor: number;
+            /**
+             * Currency
+             * @default INR
+             * @constant
+             */
+            currency: "INR";
+            /** Description */
+            description: string;
+            /** Key Id */
+            key_id: string;
+            /** Name */
+            name: string;
+            /** Order Id */
+            order_id: string;
+            /** Prefill */
+            prefill: {
+                [key: string]: string;
+            };
+            /**
+             * Provider
+             * @default razorpay
+             * @constant
+             */
+            provider: "razorpay";
+            /** Provider Order Id */
+            provider_order_id: string;
+            /**
+             * Schema Version
+             * @default unified-credits-v1
+             * @constant
+             */
+            schema_version: "unified-credits-v1";
+        };
+        /** CreditHistoryItem */
+        CreditHistoryItem: {
+            /** Amount */
+            amount: number;
+            /** Balance After */
+            balance_after: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Details */
+            details: {
+                [key: string]: unknown;
+            };
+            /** Event Type */
+            event_type: string;
+            /** Id */
+            id: string;
+        };
+        /** CreditHistoryView */
+        CreditHistoryView: {
+            /** Items */
+            items: components["schemas"]["CreditHistoryItem"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+            /**
+             * Schema Version
+             * @default unified-credits-v1
+             * @constant
+             */
+            schema_version: "unified-credits-v1";
+        };
+        /** CreditLotView */
+        CreditLotView: {
+            /** Expires At */
+            expires_at: string | null;
+            /** Funding Kind */
+            funding_kind: string;
+            /** Grant Id */
+            grant_id: string;
+            /** Remaining Credits */
+            remaining_credits: number;
+        };
+        /** CreditOrderStatusView */
+        CreditOrderStatusView: {
+            accepted_quote: components["schemas"]["PurchaseQuoteView"];
+            /** Amount Minor */
+            amount_minor: number;
+            /** Checkout Available */
+            checkout_available: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Currency
+             * @default INR
+             * @constant
+             */
+            currency: "INR";
+            /** Fulfilled */
+            fulfilled: boolean;
+            /** Order Id */
+            order_id: string;
+            /** Paid At */
+            paid_at: string | null;
+            /** Pass Expires At */
+            pass_expires_at: string | null;
+            /** Payment Status */
+            payment_status: string;
+            /** Provider Order Id */
+            provider_order_id: string | null;
+            /** Refunded Amount Minor */
+            refunded_amount_minor: number;
+            /**
+             * Schema Version
+             * @default unified-credits-v1
+             * @constant
+             */
+            schema_version: "unified-credits-v1";
+            /** Sku */
+            sku: string;
+            /** Status */
+            status: string;
+        };
+        /** CreditProductView */
+        CreditProductView: {
+            /** Amount Minor */
+            amount_minor: number;
+            /**
+             * Auto Renews
+             * @default false
+             * @constant
+             */
+            auto_renews: false;
+            campaign?: components["schemas"]["CampaignView"] | null;
+            /** Credits */
+            credits: number;
+            /**
+             * Duration Days
+             * @default 30
+             * @constant
+             */
+            duration_days: 30;
+            /** Name */
+            name: string;
+            /** Purchase Enabled */
+            purchase_enabled: boolean;
+            /**
+             * Sku
+             * @enum {string}
+             */
+            sku: "starter_pass" | "growth_pass" | "scale_pass";
+            /** Terms Version */
+            terms_version: string;
+        };
+        /** CreditServiceOfferView */
+        CreditServiceOfferView: {
+            /** Credits */
+            credits: number;
+            /** Deliverable */
+            deliverable: string;
+            /** Operation */
+            operation: string;
+            /** Route Version */
+            route_version: string;
+            /** Source Formats */
+            source_formats: string[];
+            /** Supported Limits */
+            supported_limits: {
+                [key: string]: number;
+            };
+        };
+        /** CreditWalletView */
+        CreditWalletView: {
+            /** Available Credits */
+            available_credits: number;
+            /** Debt Credits */
+            debt_credits: number;
+            /** Lots */
+            lots: components["schemas"]["CreditLotView"][];
+            /** Reserved Credits */
+            reserved_credits: number;
+            /**
+             * Schema Version
+             * @default unified-credits-v1
+             * @constant
+             */
+            schema_version: "unified-credits-v1";
+            /**
+             * Server Time
+             * Format: date-time
+             */
+            server_time: string;
+        };
         /** DimensionScore */
         DimensionScore: {
             /** Feedback */
@@ -2453,6 +3060,103 @@ export interface components {
             name: string;
             /** Score */
             score: number;
+        };
+        /** DiscoveryBatchView */
+        DiscoveryBatchView: {
+            /**
+             * Billing Currency
+             * @default credits
+             * @constant
+             */
+            billing_currency: "credits";
+            /** Charged Credits */
+            charged_credits: number;
+            /** Delivered Count */
+            delivered_count: number;
+            /** Desired Count */
+            desired_count: number;
+            /** Id */
+            id: string;
+            /** Items */
+            items: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Maximum Batch Size
+             * @default 5
+             * @constant
+             */
+            maximum_batch_size: 5;
+            /** Partial Batch */
+            partial_batch: boolean;
+            /** Refunded Credits */
+            refunded_credits: number;
+            /** Reserved Credits */
+            reserved_credits: number;
+            /** Scope */
+            scope: {
+                [key: string]: unknown;
+            };
+            /** Status */
+            status: string;
+        };
+        /** DiscoveryCreate */
+        DiscoveryCreate: {
+            /** Accepted Service Quote Id */
+            accepted_service_quote_id: string;
+            /**
+             * Desired Count
+             * @default 5
+             */
+            desired_count: number;
+            /** Excluded Employers */
+            excluded_employers?: string[];
+            /** Idempotency Key */
+            idempotency_key: string;
+            /**
+             * Location
+             * @default
+             */
+            location: string;
+            preferences?: components["schemas"]["SearchPreferencesV1"] | null;
+            /** Published Within Days */
+            published_within_days?: number | null;
+            /**
+             * Remote Only
+             * @default false
+             */
+            remote_only: boolean;
+            /** Resume Id */
+            resume_id: number;
+            /** Role */
+            role: string;
+        };
+        /** DiscoveryRequest */
+        DiscoveryRequest: {
+            /**
+             * Desired Count
+             * @default 5
+             */
+            desired_count: number;
+            /** Excluded Employers */
+            excluded_employers?: string[];
+            /**
+             * Location
+             * @default
+             */
+            location: string;
+            preferences?: components["schemas"]["SearchPreferencesV1"] | null;
+            /** Published Within Days */
+            published_within_days?: number | null;
+            /**
+             * Remote Only
+             * @default false
+             */
+            remote_only: boolean;
+            /** Resume Id */
+            resume_id: number;
+            /** Role */
+            role: string;
         };
         /** EmployerAdmissionPolicy */
         EmployerAdmissionPolicy: {
@@ -2561,6 +3265,15 @@ export interface components {
         ExecuteCreate: {
             /** Package Digest */
             package_digest: string;
+        };
+        /** FreeCoreLimitView */
+        FreeCoreLimitView: {
+            /** Max Input Bytes */
+            max_input_bytes: number;
+            /** Max Source Records */
+            max_source_records: number;
+            /** Per Account 30 Days */
+            per_account_30_days: number;
         };
         /** GoogleEnrollment */
         GoogleEnrollment: {
@@ -2751,6 +3464,10 @@ export interface components {
         };
         /** LearningStrategyRequest */
         LearningStrategyRequest: {
+            /** Accepted Service Quote Id */
+            accepted_service_quote_id?: string | null;
+            /** Idempotency Key */
+            idempotency_key?: string | null;
             /** Match Id */
             match_id: number;
             /**
@@ -2764,6 +3481,10 @@ export interface components {
         LearningStrategyResponse: {
             /** Company */
             company: string;
+            /** Credit Execution */
+            credit_execution?: {
+                [key: string]: unknown;
+            } | null;
             /** Current Score */
             current_score: number;
             /**
@@ -3405,8 +4126,89 @@ export interface components {
             /** Job Service Credits */
             job_service_credits: number;
         };
+        /** PurchaseQuoteRequest */
+        PurchaseQuoteRequest: {
+            /** Idempotency Key */
+            idempotency_key: string;
+            /**
+             * Sku
+             * @enum {string}
+             */
+            sku: "starter_pass" | "growth_pass" | "scale_pass";
+        };
+        /** PurchaseQuoteView */
+        PurchaseQuoteView: {
+            /** Amount Minor */
+            amount_minor: number;
+            /**
+             * Auto Renews
+             * @default false
+             * @constant
+             */
+            auto_renews: false;
+            campaign?: components["schemas"]["CampaignView"] | null;
+            /** Catalog Version */
+            catalog_version: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Credits */
+            credits: number;
+            /**
+             * Currency
+             * @default INR
+             * @constant
+             */
+            currency: "INR";
+            /**
+             * Duration Days
+             * @default 30
+             * @constant
+             */
+            duration_days: 30;
+            /** Eligible Services */
+            eligible_services?: components["schemas"]["CreditServiceOfferView"][];
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Name */
+            name: string;
+            /**
+             * Pass Expires At
+             * Format: date-time
+             */
+            pass_expires_at: string;
+            /** Quote Id */
+            quote_id: string;
+            /**
+             * Schema Version
+             * @default unified-credits-v1
+             * @constant
+             */
+            schema_version: "unified-credits-v1";
+            /**
+             * Server Time
+             * Format: date-time
+             */
+            server_time: string;
+            /**
+             * Sku
+             * @enum {string}
+             */
+            sku: "starter_pass" | "growth_pass" | "scale_pass";
+            /** Terms Version */
+            terms_version: string;
+        };
         /** RagAskRequest */
         RagAskRequest: {
+            /** Accepted Service Quote Id */
+            accepted_service_quote_id?: string | null;
+            /** Idempotency Key */
+            idempotency_key?: string | null;
             /** Job Match Id */
             job_match_id: number;
             /**
@@ -3432,6 +4234,10 @@ export interface components {
              * @enum {string}
              */
             confidence: "high" | "medium" | "low";
+            /** Credit Execution */
+            credit_execution?: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Mode
              * @default direct
@@ -3622,6 +4428,15 @@ export interface components {
              */
             status: "RESET_LINK_REQUESTED";
         };
+        /** ResumeEnrichmentRequest */
+        ResumeEnrichmentRequest: {
+            /** Accepted Service Quote Id */
+            accepted_service_quote_id?: string | null;
+            /** Idempotency Key */
+            idempotency_key?: string | null;
+            /** Resume Id */
+            resume_id: number;
+        };
         /** ResumeListItem */
         ResumeListItem: {
             /**
@@ -3763,6 +4578,10 @@ export interface components {
         };
         /** RewriteBulletsRequest */
         RewriteBulletsRequest: {
+            /** Accepted Service Quote Id */
+            accepted_service_quote_id?: string | null;
+            /** Idempotency Key */
+            idempotency_key?: string | null;
             /** Job Description */
             job_description: string;
             /** Resume Id */
@@ -3775,6 +4594,14 @@ export interface components {
         };
         /** RewriteBulletsResponse */
         RewriteBulletsResponse: {
+            /** Credit Execution */
+            credit_execution?: {
+                [key: string]: unknown;
+            } | null;
+            /** Evidence Links */
+            evidence_links?: {
+                [key: string]: unknown;
+            }[];
             /** Rewritten Bullets */
             rewritten_bullets: string[];
             /** Summary */
@@ -3899,6 +4726,8 @@ export interface components {
          * @description Saved search metadata, including the original query and complete quote.
          */
         SearchSummary: {
+            /** Billing Currency */
+            billing_currency?: "credits" | null;
             /** Charged Credits */
             charged_credits: number;
             /**
@@ -4003,6 +4832,55 @@ export interface components {
             /** Unit Price */
             unit_price: number;
         };
+        /** ServiceQuoteView */
+        ServiceQuoteView: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Credits */
+            credits: number;
+            /** Deliverable */
+            deliverable: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Input Fingerprint */
+            input_fingerprint: string;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "enhanced" | "native";
+            /** Operation */
+            operation: string;
+            /** Quote Id */
+            quote_id: string;
+            /** Route Id */
+            route_id: string;
+            /** Route Version */
+            route_version: string;
+            /**
+             * Schema Version
+             * @default unified-service-quote-v1
+             * @constant
+             */
+            schema_version: "unified-service-quote-v1";
+            /**
+             * Server Time
+             * Format: date-time
+             */
+            server_time: string;
+            /** Supported Limits */
+            supported_limits: {
+                [key: string]: number;
+            };
+            /** Tariff Version */
+            tariff_version: string;
+        };
         /** SkillRoiItem */
         SkillRoiItem: {
             /** Demand Ratio */
@@ -4100,6 +4978,26 @@ export interface components {
             enabled: boolean;
             /** Reason */
             reason: string;
+        };
+        /** SynchronousReuseView */
+        SynchronousReuseView: {
+            /** Result */
+            result: {
+                [key: string]: unknown;
+            } | null;
+            reused_run: components["schemas"]["AnalysisRunResponse"] | null;
+        };
+        /** SynchronousServiceRequest */
+        SynchronousServiceRequest: {
+            /** Input */
+            input?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Operation
+             * @enum {string}
+             */
+            operation: "resume_enrichment" | "bullet_rewrite" | "enhanced_qa" | "learning_strategy";
         };
         /** TailoringFailureGuidance */
         TailoringFailureGuidance: {
@@ -6725,6 +7623,26 @@ export interface operations {
             };
         };
     };
+    public_catalog_api_public_credits_catalog_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreditCatalogView"];
+                };
+            };
+        };
+    };
     optimize_bullet_api_public_optimize_bullet_post: {
         parameters: {
             query?: never;
@@ -7058,6 +7976,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ResumeParseResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    enrich_saved_resume_api_resume__resume_id__enrich_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                resume_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResumeEnrichmentRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -7894,6 +8847,483 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    analysis_reuse_api_v1_credits_analysis_reuse_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnalysisRunCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnalysisReuseView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    availability_api_v1_credits_availability_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreditAvailabilityView"];
+                };
+            };
+        };
+    };
+    catalog_api_v1_credits_catalog_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreditCatalogView"];
+                };
+            };
+        };
+    };
+    create_discovery_batch_api_v1_credits_discovery_batches_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DiscoveryCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscoveryBatchView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    discovery_batch_status_api_v1_credits_discovery_batches__search_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                search_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscoveryBatchView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_discovery_batch_api_v1_credits_discovery_batches__search_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                search_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscoveryBatchView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    discovery_quote_api_v1_credits_discovery_quotes_post: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DiscoveryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceQuoteView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    history_api_v1_credits_history_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreditHistoryView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_order_api_v1_credits_orders_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateCreditOrder"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreditCheckoutView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    order_status_api_v1_credits_orders__reference__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                reference: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreditOrderStatusView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    purchase_quote_api_v1_credits_purchase_quotes_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PurchaseQuoteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseQuoteView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    recent_order_api_v1_credits_recent_order_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreditOrderStatusView"] | null;
+                };
+            };
+        };
+    };
+    analysis_quote_api_v1_credits_service_quotes_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnalysisRunCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceQuoteView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    synchronous_reuse_api_v1_credits_synchronous_reuse_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SynchronousServiceRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SynchronousReuseView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    synchronous_quote_api_v1_credits_synchronous_service_quotes_post: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SynchronousServiceRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceQuoteView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    wallet_api_v1_credits_wallet_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreditWalletView"];
                 };
             };
         };

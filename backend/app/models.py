@@ -698,5 +698,8 @@ class AdminAuditEvent(Base):
 # Register private admission aliases after the core run model is defined.
 from .domains.analysis import models as _analysis_models  # noqa: E402,F401
 from .domains.browser_assistance import models as _browser_assistance_models  # noqa: E402,F401
+from .domains.credits import models as _credit_models  # noqa: E402,F401
+from .domains.credits import discovery_models as _credit_discovery_models  # noqa: E402,F401
+from .domains.free_core import models as _free_core_models  # noqa: E402,F401
 from .domains.dispatch import models as _dispatch_models  # noqa: E402,F401
 from .domains.employer import models as _employer_models  # noqa: E402,F401

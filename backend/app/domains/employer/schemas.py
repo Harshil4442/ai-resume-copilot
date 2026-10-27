@@ -45,6 +45,7 @@ class SearchSummary(BaseModel):
     created_at: datetime
     query: dict[str, Any]
     scope: dict[str, Any]
+    billing_currency: Literal["credits"] | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class SearchSummaryPage(BaseModel):

@@ -158,6 +158,37 @@ async def match_learning_strategy(
     improvement_tips = _as_list(match.improvement_tips)
     dimension_scores = _as_list(match.dimension_scores)
 
+    from ..domains.credits import runtime, synchronous
+
+    if payload.mode == "enhanced" and (runtime.requires_unified_billing(db, current_user.id) or payload.accepted_service_quote_id):
+        return synchronous.execute(db, user_id=current_user.id,
+            payload=synchronous.request("learning_strategy", payload),
+            accepted_service_quote_id=payload.accepted_service_quote_id,
+            idempotency_key=payload.idempotency_key)
+    if payload.mode == "curated":
+        from ..domains.free_core.synchronous import curated_learning
+
+        def build_curated():
+            strategy = build_fallback_learning_strategy(
+                job_title=match.job_title, company=match.company,
+                match_score=float(match.match_score or 0.0), true_gaps=true_gaps,
+                partial_matches=partial_matches, improvement_tips=improvement_tips)
+            for project in _as_list(strategy.get("project_recommendations")):
+                if isinstance(project, dict):
+                    project["resume_bullets"] = []
+            hint = strategy.pop("_resource_skills", None) or [*true_gaps, *required_skills]
+            strategy = _attach_resources(_normalize_strategy(strategy), hint)
+            return schemas.LearningStrategyResponse.model_validate(strategy | {
+                "match_id": match.id, "job_title": match.job_title, "company": match.company or "",
+                "current_score": float(match.match_score or 0.0), "generated_by": "curated", "provenance": "curated",
+                "warnings": ["Suggested projects are future work. Add claims only after completing the work and approving its evidence."],
+            }).model_dump()
+
+        return curated_learning(db, user_id=current_user.id, context={
+            "match": synchronous._snapshot(match, ("id", "job_title", "company", "job_description", "match_score", "true_gaps", "partial_matches", "improvement_tips", "required_skills")),
+            "resume_skills": resume_skills, "experience_years": experience_years,
+        }, create=build_curated)
+
     warnings = ["Suggested projects are future work. Add resume claims only after completing the work and approving its evidence."]
     generated_by = "curated"
     try:

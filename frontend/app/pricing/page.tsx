@@ -1,15 +1,16 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowLeft, CheckCircle2, Shield } from "lucide-react";
+import { ArrowLeft, Shield } from "lucide-react";
 import PageHeader from "../../components/ui/PageHeader";
 import GlassCard from "../../components/ui/GlassCard";
 import FadeIn from "../../components/ui/FadeIn";
 import TrackEventOnView from "../../components/TrackEventOnView";
-import { getPublicBillingCatalog } from "../../lib/billingCatalog";
+import { getPublicUnifiedCreditCatalog } from "../../lib/unifiedCreditCatalog";
+import PublicUnifiedCreditPacks from "../../components/billing/PublicUnifiedCreditPacks";
 import { SITE } from "../../lib/site";
 
 export const dynamic = "force-dynamic";
-const description = "Finite HireWiz prepaid packs for the 20-employer discovery pilot, candidate-reviewed Razorpay/Greenhouse applications and optional resume AI. Clear INR prices.";
+const description = "One HireWiz credit balance for eligible career services. Finite 30-day prepaid passes with clear INR prices, reviewed service charges and no automatic renewal.";
 export const metadata: Metadata = {
   title: "Pricing",
   description,
@@ -25,24 +26,19 @@ export const metadata: Metadata = {
 };
 
 export default async function PricingPage() {
-  const catalog = await getPublicBillingCatalog();
-  const products = catalog?.products.filter(p => p.catalog_visible && p.entitlement_kind === "credit_bundle") ?? [];
+  const catalog = await getPublicUnifiedCreditCatalog();
   return <main className="mx-auto w-full max-w-[72rem] space-y-10 px-4 py-12 sm:px-6 md:px-8">
     <TrackEventOnView eventName="pricing_viewed" />
     <Link href="/" className="inline-flex items-center text-sm font-semibold text-muted-foreground hover:text-primary"><ArrowLeft size={16} className="mr-2" /> Back to Home</Link>
-    <PageHeader badge="Public pricing" title="A clear plan for your next move." subtitle="Three finite prepaid packs. Separate job-service and AI balances. One-time INR payments for customers in India, with no automatic renewal." />
+    <PageHeader badge="Public pricing" title="A clear plan for your next move." subtitle="One credit balance. Three finite 30-day passes. One-time INR payments for customers in India, with no automatic renewal." />
     <p className="text-sm leading-7 text-muted-foreground"><strong className="text-foreground">Pilot coverage:</strong> discovery is limited to 20 reviewed employer origins, with source availability shown in Employer Jobs. Candidate-reviewed browser assistance supports Razorpay’s Greenhouse portal; other employers use a manual handoff. Review current availability and the exact supported action before spending credits.</p>
-    <FadeIn><div className="grid gap-5 md:grid-cols-3">{products.length ? products.map(p => <GlassCard key={p.sku} className="flex flex-col p-6 sm:p-8" hoverEffect={false}>
-      <h2 className="font-display text-2xl">{p.name}</h2><p className="mt-4 text-4xl font-semibold">{p.amount_display}</p><p className="mt-2 text-xs text-muted-foreground">INR total · one-time purchase</p>
-      <ul className="my-6 space-y-3 text-sm">{[`${p.entitlement_quantity} job service credits`, `${p.analysis_units} AI analysis units`, "Full tailored-resume draft: 2 analysis units", "Review every AI quote before generation", "No subscription or automatic renewal"].map(f => <li key={f} className="flex items-start gap-2"><CheckCircle2 size={16} className="mt-0.5 shrink-0 text-primary" />{f}</li>)}</ul>
-      <Link href={`/billing?sku=${p.sku}`} className="mt-auto inline-flex min-h-11 items-center justify-center rounded-full bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground">{catalog?.checkout_enabled && p.enabled_for_purchase ? "Review pack" : "Review availability"}</Link>
-    </GlassCard>) : <GlassCard className="p-6 md:col-span-3" hoverEffect={false}><h2 className="font-display text-xl">Pricing is temporarily unavailable</h2><p className="mt-2 text-sm text-muted-foreground">Please try again later or contact support. No checkout can start without the server-owned catalog.</p></GlassCard>}</div></FadeIn>
-    {catalog?.availability_message ? <p role="status" className="rounded-xl border border-border p-4 text-sm text-muted-foreground">{catalog.availability_message}</p> : null}
-    <GlassCard className="space-y-4 p-6 sm:p-8" hoverEffect={false}><h2 className="font-display text-2xl">Use each balance with confidence</h2>
-      <p className="text-sm leading-7">Job service credits pay for newly delivered verified employer jobs. {catalog?.service_prices ? `Search uses ${catalog.service_prices.search_credits_per_job} credit per new job.` : "The current search price is shown before use."} Unused search reservations are returned. Filling supported answers and uploading a resume do not charge application credits. Where browser-assisted final submission is offered, you separately review the employer destination, exact file, answers and displayed fee before approving one submission.</p>
-      <p className="text-sm leading-7">Optional AI has a separate analysis-unit quote: comparison and interview preparation use 1 unit, market analysis 5, and a full tailored-resume draft 2. Skill ROI uses no analysis units. New free accounts start with 50 finite complimentary units. Free and existing legacy-access AI work depend on a limited funded pool; service availability can pause when funding is exhausted.</p>
-      <p className="text-sm leading-7">Balances do not refresh automatically. They are non-transferable software allowances with no cash value. Accepted older orders retain their purchased terms. Coverage is limited to verified employer sources. Supported application submission reserves its separately reviewed fee and charges only after verified complete employer acceptance. Manual handoff, filled answers and resume upload do not establish a completed application. Unknown submission outcomes retain their separate reservation until reconciled.</p>
+    <FadeIn>{catalog ? <PublicUnifiedCreditPacks catalog={catalog} /> : <GlassCard className="p-6" hoverEffect={false}><h2 className="font-display text-xl">Pricing is temporarily unavailable</h2><p className="mt-2 text-sm text-muted-foreground">Please try again later or contact support. No checkout can start without verified current prices.</p></GlassCard>}</FadeIn>
+    <GlassCard className="space-y-4 p-6 sm:p-8" hoverEffect={false}><h2 className="font-display text-2xl">Choose only the services you need</h2>
+      <p className="text-sm leading-7">Use eligible credits for employer discovery, enhanced resume matching, interview preparation and resume tailoring when those services are available. Each service shows its exact credit charge, selected resume and job, deliverable and limits before you approve it. Original-resume applications do not require an AI purchase.</p>
+      <p className="text-sm leading-7">Viewing, downloading and unchanged reuse of an existing result do not incur another generation charge. Failed or incomplete services restore credits usable for at least seven days after restoration, or receive the applicable monetary remedy. A costly request may need a separately reviewed quote; we do not reduce document quality to fit its price.</p>
+      <p className="text-sm leading-7">Application capabilities are shown separately from credit availability. Candidate-reviewed assistance binds the exact employer destination, resume and answers. Filling or uploading is not a completed application. Where final submission is offered, its charge requires verified complete employer acceptance; an unknown outcome stays reserved until reconciled.</p>
+      <p className="text-sm leading-7">New pass credits expire after their disclosed validity period and do not renew automatically. They are non-transferable software allowances with no cash value. Older purchases keep their original terms and appear separately in billing until an approved migration is complete.</p>
     </GlassCard>
-    <GlassCard className="space-y-4 p-6 sm:p-8" hoverEffect={false}><h2 className="font-display text-2xl">Payment and delivery</h2><p className="flex items-start gap-2 text-sm leading-7"><Shield size={18} className="mt-1 shrink-0 text-primary" />Seller: HireWiz, operated by {SITE.operatorName}. The displayed INR total is locked in the order summary before hosted checkout. Payment credentials are entered only with the processor. Both balances are delivered after verified captured payment.</p><div className="flex flex-wrap gap-4 text-sm font-semibold text-primary">{[["/terms","Terms"],["/privacy","Privacy"],["/refund","Refunds"],["/digital-delivery","Digital delivery"],["/contact","Support"]].map(([href,label]) => <Link key={href} href={href}>{label}</Link>)}</div></GlassCard>
+    <GlassCard className="space-y-4 p-6 sm:p-8" hoverEffect={false}><h2 className="font-display text-2xl">Payment and delivery</h2><p className="flex items-start gap-2 text-sm leading-7"><Shield size={18} className="mt-1 shrink-0 text-primary" />Seller: HireWiz, operated by {SITE.operatorName}. Review the total INR payable, credit quantity and minimum expiry before hosted checkout. A server quote holds the price for up to 15 minutes. Payment credentials are entered only with the processor, and credits are delivered after verified captured payment.</p><div className="flex flex-wrap gap-4 text-sm font-semibold text-primary">{[["/terms","Terms"],["/privacy","Privacy"],["/refund","Refunds"],["/digital-delivery","Digital delivery"],["/contact","Support"]].map(([href,label]) => <Link key={href} href={href}>{label}</Link>)}</div></GlassCard>
   </main>;
 }

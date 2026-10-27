@@ -1,0 +1,134 @@
+{
+  "schema_version": 1,
+  "observed_at": "2026-10-27T19:09:27.941864+00:00",
+  "scope": "Local integrated implementation and synthetic/native local PostgreSQL validation; not a production rollout or real charge",
+  "baseline_commit": "f0f973c9c6d989553b8f58b275fc06fd5685497a",
+  "implemented": [
+    "Additive lot wallet, fixed campaigns, immutable purchase and service quotes",
+    "Unified capture/refund fulfillment without converting historical wallets",
+    "Complete execution envelope reservations and existing model-liability reuse",
+    "Owned billing API and responsive purchase review; no unverified price comparisons",
+    "Enhanced Q&A invalid-output refund with retained provider expenses",
+    "Exact-eight enhanced interview contract, complete context and stale dependency detection",
+    "Financial history detachment on account erasure and customer export projection",
+    "Typed async and synchronous quote/reuse APIs; qualified service disclosure frozen in purchase quotes",
+    "Whole-operation and free-processing expenses also block overspending through legacy paid routes",
+    "Persistent billing contract prevents paused unified rollout from silently charging the old wallet",
+    "Read-only shadow observation reports aggregate hypothetical tariffs, protected liabilities and unresolved evidence without changing charges",
+    "Actual enhanced analysis and synchronous enrichment, bullet, Q&A and learning routes integrated with reviewed credits",
+    "Additive migrations rehearsed against PostgreSQL; populated downgrade refused atomically",
+    "Reviewed one-credit discovery batches with up to five new results, explicit partial/empty accounting and independent delivery proofs",
+    "Shared service-availability filtering prevents selling paused routes and rejects stale purchased-service lists before gateway calls",
+    "Schema25 exact add-only source/catalog contract and retained-history transaction core; native operator integration remains pending",
+    "Offline synthetic quality packet with200 cases, blinded-review templates and incomplete-evidence refusal; no quality qualification inferred"
+  ],
+  "root_verified": [
+    {
+      "command": "pytest tests/test_unified_credit_payments.py tests/test_razorpay_billing.py",
+      "result": "57 passed; local synthetic payment transport"
+    },
+    {
+      "command": "pytest tests/test_razorpay_billing.py tests/test_billing_reconciliation_isolated.py tests/test_payment_migrations.py tests/test_alembic_schema.py tests/test_unified_credit_finance.py",
+      "result": "72 passed; 5 subtests passed"
+    },
+    {
+      "command": "pytest tests/test_alembic_schema.py tests/test_unified_credit_migrations.py tests/test_unified_credit_payments.py",
+      "result": "14 passed"
+    },
+    {
+      "command": "scripts/export_openapi.py",
+      "result": "OpenAPI schema exported successfully"
+    },
+    {
+      "command": "Scoped Ruff and Mypy for new payment, release, privacy and credit HTTP files",
+      "result": "passed"
+    },
+    {
+      "command": "pytest tests/test_unified_credit_http.py tests/test_unified_credit_payments.py tests/test_unified_credits.py tests/test_unified_legacy_funding.py",
+      "result": "41 passed before final adverse-case test; final payment suite13passed; HTTP4passed"
+    },
+    {
+      "command": "pytest tests/test_unified_credit_migrations_postgres.py using dedicated disposable local PostgreSQL",
+      "result": "2passed; additive upgrade/empty rollback preserves17legacyAIunits and13servicecredits; populated rollback rejected transactionally"
+    },
+    {
+      "command": "pytest tests/test_unified_shadow.py",
+      "result": "5passed; no source content exported and no debit or release qualification inferred"
+    },
+    {
+      "command": "pytest tests/test_unified*.py tests/test_free_core*.py tests/test_interview_quality_contract.py tests/test_paid_qa_quality.py with isolated local PostgreSQL",
+      "result": "244 passed in19.82seconds; includes native PostgreSQL money/discovery concurrency, account-erasure foreign keys and schema25 rehearsal"
+    },
+    {
+      "command": "Configured CI Ruff and Mypy list (Linux target for Linux-only native APIs), generated OpenAPI/client types, frontend TypeScript",
+      "result": "Ruff passed; Mypy219sourcefiles passed; frontend TypeScript passed after final generated contract"
+    }
+  ],
+  "agent_reported_verification": [
+    {
+      "area": "wallet concurrency",
+      "result": "29 wallet tests, including seven PostgreSQL races passed before local Docker failure"
+    },
+    {
+      "area": "billing frontend",
+      "result": "115 Vitest tests; TypeScript and ESLint; 20 Playwright checks over five viewport widths passed"
+    },
+    {
+      "area": "interview/Q&A",
+      "result": "254 related regressions and final affected 66 tests passed; semantic human review not completed"
+    },
+    {
+      "area": "complete execution accounting",
+      "result": "nine SQLite transaction, unknown-cost and erasure tests passed; new PostgreSQL budget race pending"
+    },
+    {
+      "area": "bounded free core",
+      "result": "14 SQLite/HTTP tests passed; six PostgreSQL cases pending engine recovery"
+    },
+    {
+      "area": "PostgreSQL recovered verification",
+      "result": "8wallet/money races,6free-core concurrency/upload tests and1inline once-only race passed on isolated local port55434"
+    },
+    {
+      "area": "frontend integration before final synchronous panels",
+      "result": "full lint,TypeScript,1213Vitesttests and production build passed; tested responsive review at320,390,768,1024,1440"
+    },
+    {
+      "area": "synchronous delivery",
+      "result": "97focused/regression tests passed; output quality qualification remains pending"
+    },
+    {
+      "area": "broad backend audit",
+      "result": "Interrupted after13m33s with3028passed,97failed,118setuperrors,194skipped; repeated missing local emulators/native Linux engine dependencies. Full suite remains incomplete. Stale direct-QA assertion corrected separately."
+    },
+    {
+      "area": "final frontend",
+      "result": "Full lint,TypeScript,1252tests and47pageproductionbuild passed; finalexplicit-resume-selection regression then32focusedtests passed; discovery Axe/overflow5widths passed"
+    },
+    {
+      "area": "independent review",
+      "result": "Identified and fixed paused-service purchase eligibility and PostgreSQL backslash byte-measurement bugs; final six payment regressions independently passed"
+    }
+  ],
+  "limitations": [
+    "No full delivery stage marked complete; native deployment operator, real quality/cost/load qualification and commercial release gates remain pending",
+    "Native Linux document engine proof remains unavailable locally; Docker API failed and macOS lacks required os.waitid launcher primitive; real CI evidence pending",
+    "Full backend suite requires its authorized emulator/native runtime; focused local passes are not a substitute for release qualification",
+    "Actual provider invoice allocation, commercial plan verification, human comparison, representative load and seven-day shadow are pending",
+    "Legacy balances remain separate on original terms; no conversion, production migration, price change, payment activation or deployment performed"
+  ],
+  "operational_recovery": {
+    "action": "uv cache prune without force",
+    "result": "Removed29993 dangling cache files,1.3GiB; latest observed hostfree5.5GiB",
+    "unrelated_docker_images_removed": false,
+    "postgres": "Separate temporary PostgreSQL16cluster bound only to127.0.0.1:55434; no system autostart service; existing Docker projects untouched"
+  },
+  "finance_observation": {
+    "observed_at": "2026-10-27T18:50:47.270425+00:00",
+    "gcp_project": "ai-resume-parser-482412",
+    "billing_enabled": true,
+    "bigquery_dataset_inventory": "No visible datasets returned for this project; no billing-export dataset located. This does not establish zero expenses.",
+    "vercel_access": "Connector team access restored; current billing plan not established by connector projection.",
+    "production_billing_changes": false
+  }
+}

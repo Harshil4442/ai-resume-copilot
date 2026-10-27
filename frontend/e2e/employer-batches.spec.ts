@@ -35,6 +35,7 @@ function fixture() {
       if (owner === "b" && (path.includes("/applications/") || path.includes("/application-batches/"))) { status = 404; value = { detail: "Not found" }; }
       else if (path === "/auth/profile") value = { email: "fixture@example.com", tier: "free", ai_credits: 40, job_service_credits: catalog.balance, full_name: "Taylor Fixture" };
       else if (path === "/v1/features") value = { features: { career_workspace: { enabled: true } } };
+      else if (path === "/v1/credits/availability") value = { catalog_enabled: false, execution_enabled: false, supported_operations: [] };
       else if (path === "/resume/list") value = { resumes: [] };
       else if (path === `${base}/catalog`) value = catalog;
       else if (path === `${base}/search-summaries` && method === "GET") value = { items: [], next_cursor: null } satisfies EmployerSearchSummaryPage;

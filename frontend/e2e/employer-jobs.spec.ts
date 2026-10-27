@@ -1,3 +1,4 @@
+const eligibleServices = [{ operation: "resume_tailor", credits: 8, deliverable: "Tailored resume with preserved source layout.", supported_limits: { max_pages: 2 }, source_formats: ["pdf", "docx"], route_version: "reviewed-v1" }];
 import { mkdir } from "node:fs/promises";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
@@ -58,6 +59,18 @@ function fixture() {
   function paidBillingOrder() {
     return { order_id: "order_fixture", sku: "growth_bundle", status: "paid", fulfilled: true, amount_minor: 109900, currency: "INR", created_at: now, paid_at: now, refunded_at: null, accepted_quote: billingQuote("growth_bundle") };
   }
+  const unifiedProducts = [
+    { sku: "starter_pass", name: "Starter", amount_minor: 5900, credits: 40, standard: 7900 },
+    { sku: "growth_pass", name: "Growth", amount_minor: 17900, credits: 130, standard: 22900 },
+    { sku: "scale_pass", name: "Scale", amount_minor: 44900, credits: 360, standard: 59900 },
+  ].map(({ standard, ...product }) => ({ ...product, duration_days: 30, auto_renews: false, purchase_enabled: true, terms_version: "fixture-pass-terms",
+    campaign: { id: "fixture-launch", version: "1", starts_at: "2026-10-01T00:00:00Z", ends_at: "2026-10-31T00:00:00Z", timezone: "Asia/Kolkata", status: "active", standard_amount_minor: standard, reference_price_verified: false } }));
+  function unifiedQuote(sku: string) {
+    const product = unifiedProducts.find((item) => item.sku === sku);
+    if (!product) throw new Error(`Unexpected unified fixture SKU: ${sku}`);
+    return { ...product, schema_version: "unified-credits-v1", quote_id: `${sku}_quote_fixture`, eligible_services: eligibleServices, catalog_version: "unified-fixture-v1", currency: "INR", created_at: now,
+      server_time: now, expires_at: "2026-10-08T10:15:00Z", pass_expires_at: "2026-11-07T10:00:00Z" };
+  }
 
   async function install(context: BrowserContext, baseURL: string) {
     const token = await encode({ secret: process.env.PLAYWRIGHT_AUTH_SECRET || "playwright-secret-at-least-thirty-two-characters", token: { sub: "424242", email: "fixture@example.com", name: "Taylor Example", hirewizUserId: 424242, accessToken: "local-fixture-token" }, maxAge: 3600 });
@@ -74,6 +87,7 @@ function fixture() {
       if (path === "/auth/profile") value = { email: "fixture@example.com", tier: state.premium ? "premium" : "free", ai_credits: 40, profile_completeness: 80, full_name: "Taylor Example", skills: ["Python"], missing_fields: [], premium_until: "2026-11-08T10:00:00Z" } satisfies components["schemas"]["UserProfileResponse"];
       else if (path === "/auth/me") value = { id: 424242, email: "fixture@example.com", tier: state.premium ? "premium" : "free", ai_credits: 40, job_service_credits: catalog.balance } satisfies components["schemas"]["UserMeResponse"];
       else if (path === "/v1/features") value = { features: { career_workspace: { enabled: true } } };
+      else if (path === "/v1/credits/availability") value = { catalog_enabled: false, execution_enabled: false, supported_operations: [] };
       else if (path === "/analytics/summary") value = { profile_completeness: 80, average_match_score: 0, resume_count: 1, applications_count: 0, match_history: [] };
       else if (path === "/v1/reminders") value = [];
       else if (path === "/v1/opportunities" && method === "GET") value = { items: [opportunity], total: 1 };
@@ -115,6 +129,12 @@ function fixture() {
       else if (path === "/resume/parse") value = { resume_id: 2, skills: ["Python"], experience_years: 3, sections: {}, extraction_mode: "deterministic", enrichment_state: "not_requested", enrichment_units: 0, warnings: [], source_available: true, source_format: "docx", parsed_json: {} };
       else if (path === "/v1/opportunities" && method === "POST") value = { id: "opp_job_fixture", ...body };
       else if (path === "/public/billing/catalog") value = { catalog_version: "fixture-v1", market: "IN", checkout_enabled: true, provider: "razorpay", products };
+      else if (path === "/v1/credits/catalog") value = { schema_version: "unified-credits-v1", eligible_services: eligibleServices, catalog_version: "unified-fixture-v1", server_time: now, market: "IN", currency: "INR", checkout_enabled: true, products: unifiedProducts };
+      else if (path === "/v1/credits/wallet") value = { schema_version: "unified-credits-v1", server_time: now, available_credits: 7, reserved_credits: 0, debt_credits: 0, lots: [] };
+      else if (path === "/v1/credits/history") value = { schema_version: "unified-credits-v1", items: [], next_cursor: null };
+      else if (path === "/v1/credits/recent-order") value = null;
+      else if (path === "/v1/credits/purchase-quotes" && method === "POST") { expect(body.idempotency_key).toEqual(expect.any(String)); value = unifiedQuote(String(body.sku)); }
+      else if (path === "/v1/credits/orders" && method === "POST") { expect(body.idempotency_key).toEqual(expect.any(String)); status = 503; value = { detail: { code: "credit_release_unavailable", order_created: false, message: "Fixture checkout disabled. No provider loaded." } }; }
       else if (path === "/v1/usage-events") value = { balance: 40, items: [] };
       else if (path === "/billing/recent-order") value = state.recentPaidPack ? paidBillingOrder() : null;
       else if (path === "/billing/orders/order_fixture" && method === "GET" && state.recentPaidPack) value = paidBillingOrder();
@@ -225,6 +245,7 @@ test("account switching clears the previous search, resume cache, and reviewed a
     else if (path === `${base}/searches` || path === `${base}/applications`) value = { items: [] };
     else if (path === `${base}/search-summaries`) value = { items: [], next_cursor: null };
     else if (path === "/v1/features") value = { features: { career_workspace: { enabled: false } } };
+    else if (path === "/v1/credits/availability") value = { catalog_enabled: false, execution_enabled: false, supported_operations: [] };
     else if (path === "/auth/profile") value = { email: "b@fixture.example", tier: "free", ai_credits: 9, job_service_credits: 37 };
     else { await route.abort(); return; }
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(value) });
@@ -313,70 +334,68 @@ test("unavailable service or insufficient balance cannot start a paid search", a
   const f = fixture(); f.catalog.balance = 0; await f.install(context, baseURL!); await page.goto("/employer-jobs"); await page.getByRole("combobox", { name: "Resume", exact: true }).selectOption("1"); await page.getByLabel("Target role").fill("Backend Engineer"); await expect(page.getByRole("button", { name: "Find jobs", exact: true })).toBeDisabled(); await expect(page.getByText("You need 20 service credits for this search.", { exact: false })).toBeVisible(); f.catalog.balance = 100; f.catalog.enabled = false; await page.reload(); await expect(page.getByText(/Employer search is not enabled yet/)).toBeVisible(); await expect(page.getByRole("button", { name: "Find jobs", exact: true })).toBeDisabled(); expect(f.requests.some((r) => r.method === "POST")).toBe(false); expect(f.unexpected).toEqual([]);
 });
 
-test("Legacy access can purchase finite bundles and only server fulfillment confirms payment", async ({ page, context, baseURL }) => {
-  const f = fixture(); f.state.premium = true; await f.install(context, baseURL!); await page.goto("/billing"); const pack = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Growth" }) }); await pack.getByRole("button", { name: "Review purchase" }).click(); await page.getByRole("checkbox", { name: /I confirm my billing country/ }).check(); await page.getByRole("button", { name: /Pay with Razorpay/ }).click(); await expect(page.getByRole("alert").filter({ hasText: "Fixture checkout disabled" })).toContainText("Fixture checkout disabled"); expect(f.requests.find((r) => r.path === "/billing/orders")?.body).toEqual({ sku: "growth_bundle", billing_country: "IN", accepted_quote: f.billingQuote("growth_bundle"), idempotency_key: expect.any(String) }); await expect(page.getByRole("heading", { name: "Payment confirmed" })).toHaveCount(0);
-  f.state.recentPaidPack = true; await page.reload(); await expect(page.getByRole("heading", { name: "Payment confirmed" })).toBeVisible(); await expect(page.getByText(/delivered your purchased entitlements/)).toBeVisible(); await page.getByRole("button", { name: "Review another purchase" }).click(); await expect(pack.getByRole("button", { name: "Review purchase" })).toBeEnabled(); await checkLayout(page); expect(f.unexpected).toEqual([]);
+test("legacy access keeps purchased terms while new passes require reviewed quotes", async ({ page, context, baseURL }) => {
+  const f = fixture(); f.state.premium = true; await f.install(context, baseURL!); await page.goto("/billing");
+  await page.getByRole("button", { name: "Review Growth pass", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Review your Growth pass" })).toBeVisible();
+  await page.getByRole("checkbox", { name: /I confirm my billing country/ }).check();
+  await page.getByRole("button", { name: "Continue with ₹179 payment" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "Fixture checkout disabled" })).toBeVisible();
+  expect(f.requests.find((r) => r.path === "/v1/credits/orders")?.body).toEqual({ quote_id: "growth_pass_quote_fixture", billing_country: "IN", idempotency_key: expect.any(String) });
+  await expect(page.getByRole("heading", { name: "Credit payment confirmed" })).toHaveCount(0);
+  f.state.recentPaidPack = true; await page.reload();
+  await expect(page.getByRole("heading", { name: "Payment confirmed", exact: true })).toBeVisible();
+  await expect(page.getByText("Payment confirmed. Your original purchased entitlements were delivered.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Review Growth pass" })).toBeEnabled();
+  await checkLayout(page); expect(f.unexpected).toEqual([]);
 });
 
-test("service credit checkout links select the requested pack without starting a purchase", async ({ page, context, baseURL }) => {
-  const f = fixture();
-  await f.install(context, baseURL!);
-  await page.goto("/employer-jobs");
+test("service credit checkout links preserve explicit pass review before purchase", async ({ page, context, baseURL }) => {
+  const f = fixture(); await f.install(context, baseURL!); await page.goto("/employer-jobs");
   const buy = page.getByRole("link", { name: "Buy credits", exact: true });
-  await expect(buy).toHaveAttribute("href", "/billing");
-  await buy.click();
-  await expect(page).toHaveURL(/\/billing$/);
-  const pack = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Starter" }) });
-  const premium = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Growth" }) });
-  await expect(pack.getByRole("button", { name: "Selected", exact: true })).toBeEnabled();
-  await expect(premium.getByRole("button", { name: "Review purchase", exact: true })).toBeEnabled();
-  expect(f.requests.some((r) => r.path === "/billing/orders")).toBe(false);
+  await expect(buy).toHaveAttribute("href", "/billing"); await buy.click(); await expect(page).toHaveURL(/\/billing$/);
+  await expect(page.getByRole("button", { name: "Review Starter pass" })).toBeEnabled();
+  expect(f.requests.some((r) => r.path === "/v1/credits/orders" || r.path === "/v1/credits/purchase-quotes")).toBe(false);
+  await page.getByRole("button", { name: "Review Starter pass" }).click();
+  await expect(page.getByRole("button", { name: "Continue with ₹59 payment" })).toBeDisabled();
   await page.getByRole("checkbox", { name: /I confirm my billing country/ }).check();
-  await page.getByRole("button", { name: /Pay with Razorpay/ }).click();
+  await page.getByRole("button", { name: "Continue with ₹59 payment" }).click();
   await expect(page.getByRole("alert").filter({ hasText: "Fixture checkout disabled" })).toBeVisible();
-  expect(f.requests.find((r) => r.path === "/billing/orders")?.body).toEqual({ sku: "starter_bundle", billing_country: "IN", accepted_quote: f.billingQuote("starter_bundle"), idempotency_key: expect.any(String) });
-  await checkLayout(page);
-  expect(f.unexpected).toEqual([]);
+  expect(f.requests.find((r) => r.path === "/v1/credits/orders")?.body).toEqual({ quote_id: "starter_pass_quote_fixture", billing_country: "IN", idempotency_key: expect.any(String) });
+  expect(f.requests.some((r) => r.path === "/billing/orders")).toBe(false);
+  await checkLayout(page); expect(f.unexpected).toEqual([]);
 });
 
 test("billing links keep manual choice and ignore an unsupported product", async ({ page, context, baseURL }) => {
-  const f = fixture();
-  await f.install(context, baseURL!);
-  await page.goto("/billing");
-  const pack = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Starter" }) });
-  const premium = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Growth" }) });
-  await expect(pack.getByRole("button", { name: "Selected", exact: true })).toBeEnabled();
-  await premium.getByRole("button", { name: "Review purchase", exact: true }).click();
-  await expect(premium.getByRole("button", { name: "Selected", exact: true })).toBeEnabled();
-  await expect(pack.getByRole("button", { name: "Review purchase", exact: true })).toBeEnabled();
+  const f = fixture(); await f.install(context, baseURL!); await page.goto("/billing?sku=growth_pass");
+  await expect(page.getByText("Review your selected Growth pass above to get its current quote.")).toBeVisible();
+  expect(f.requests.some((r) => r.method === "POST")).toBe(false);
+  await page.getByRole("button", { name: "Review Starter pass" }).click();
+  await expect(page.getByRole("heading", { name: "Review your Starter pass" })).toBeVisible();
   await page.goto("/billing?sku=unsupported_product");
-  await expect(pack.getByRole("button", { name: "Selected", exact: true })).toBeEnabled();
-  await expect(page.getByRole("button", { name: /Pay with Razorpay/ })).toBeDisabled();
-  expect(f.requests.some((r) => r.path === "/billing/orders")).toBe(false);
-  await checkLayout(page);
-  expect(f.unexpected).toEqual([]);
+  await expect(page.getByRole("button", { name: "Review Starter pass" })).toBeEnabled();
+  await expect(page.getByRole("heading", { name: "Review your Starter pass" })).toHaveCount(0);
+  expect(f.requests.some((r) => r.path === "/v1/credits/orders" || r.path === "/billing/orders")).toBe(false);
+  await checkLayout(page); expect(f.unexpected).toEqual([]);
 });
 
-
-test("exactly three finite packs disclose both balances and permit Scale review without payment", async ({ page, context, baseURL }) => {
+test("exactly three finite passes disclose one balance without invented reference prices", async ({ page, context, baseURL }) => {
   const f = fixture(); f.catalog.balance = 3; await f.install(context, baseURL!); await page.goto("/billing");
-  const currentCredits = page.getByRole("region", { name: "Current entitlement" }).getByText("Job service credits", { exact: true }).locator("..");
-  await expect(currentCredits.getByText("3", { exact: true })).toBeVisible();
-  await expect(page.getByRole("region", { name: "Service history" }).getByText("Available balance", { exact: true }).locator("..")).toContainText(/3\s+credits/);
-  expect(f.requests.some((request) => request.path === "/auth/me")).toBe(true);
-  await expect(page.getByRole("article")).toHaveCount(3);
-  for (const [name, credits, units, total] of [["Starter",100,2,"₹649"],["Growth",300,6,"₹1,099"],["Scale",700,15,"₹2,199"]] as const) {
+  const legacyCredits = page.getByRole("region", { name: "Current entitlement" }).getByText("Job service credits", { exact: true }).locator("..");
+  await expect(legacyCredits.getByText("3", { exact: true })).toBeVisible();
+  await expect(page.getByText("Available credits", { exact: true }).locator("..")).toContainText("7");
+  await expect(page.getByRole("article")).toHaveCount(3); await expect(page.locator("s")).toHaveCount(0);
+  for (const [name, credits, total] of [["Starter",40,"₹59"],["Growth",130,"₹179"],["Scale",360,"₹449"]] as const) {
     const pack = page.getByRole("article").filter({ has: page.getByRole("heading", { name, exact: true }) });
-    await expect(pack.getByText(`${credits} job service credits`, { exact: true })).toBeVisible();
-    await expect(pack.getByText(`${units} AI analysis units · full tailoring uses 2 units`, { exact: true })).toBeVisible();
+    await expect(pack.getByText(`${credits} credits`, { exact: true })).toBeVisible();
     await expect(pack.getByText(total, { exact: true })).toBeVisible();
+    await expect(pack.getByText("Valid for 30 days from verified payment")).toBeVisible();
   }
-  const scale = page.getByRole("article").filter({ has: page.getByRole("heading", { name:"Scale", exact:true }) });
-  await scale.getByRole("button", { name:"Review purchase", exact:true }).click();
-  await expect(scale.getByRole("button", { name:"Selected", exact:true })).toBeEnabled();
-  await expect(page.getByText("700 service credits + 15 analysis units after verified payment", { exact:true })).toBeVisible();
-  await expect(page.getByRole("button", { name:/Pay with Razorpay/ })).toBeDisabled();
-  expect(f.requests.some(r => r.path === "/billing/orders")).toBe(false);
+  await page.getByRole("button", { name: "Review Scale pass" }).click();
+  await expect(page.getByRole("heading", { name: "Review your Scale pass" })).toBeVisible();
+  await expect(page.getByText("360 credits · 30 days · no automatic renewal")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Continue with ₹449 payment" })).toBeDisabled();
+  expect(f.requests.some((r) => r.path === "/v1/credits/orders" || r.path === "/billing/orders")).toBe(false);
   await checkLayout(page); expect(f.unexpected).toEqual([]);
 });
 
@@ -407,7 +426,7 @@ test("existing dashboard, workspace, resume and billing remain usable at every w
     new PerformanceObserver((entries) => { for (const entry of entries.getEntries()) { const shift = entry as PerformanceEntry & { value: number; hadRecentInput: boolean; sources: { node?: Element; previousRect: DOMRectReadOnly; currentRect: DOMRectReadOnly }[] }; if (!shift.hadRecentInput) { metrics.cls += shift.value; metrics.shifts.push({ value: shift.value, nodes: shift.sources?.map((source) => ({ tag: source.node?.nodeName, className: source.node instanceof Element ? source.node.getAttribute("class") : null, from: source.previousRect.toJSON(), to: source.currentRect.toJSON() })) }); } } }).observe({ type: "layout-shift", buffered: true });
   });
   const lab: Record<string, unknown>[] = [];
-  for (const [path, heading] of [["/employer-jobs", "Find your next role. Apply with control."], ["/dashboard", "Good to see you, Taylor."], ["/workspace", "Your opportunities"], ["/workspace/opp_existing_fixture", "Backend Engineer"], ["/resume", "Add your source resume"], ["/billing", "Your prepaid balances"]]) {
+  for (const [path, heading] of [["/employer-jobs", "Find your next role. Apply with control."], ["/dashboard", "Good to see you, Taylor."], ["/workspace", "Your opportunities"], ["/workspace/opp_existing_fixture", "Backend Engineer"], ["/resume", "Add your source resume"], ["/billing", "Credits for your next move"]]) {
     await page.goto(path); await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible(); await expect(page.locator(".animate-pulse")).toHaveCount(0); await page.evaluate(() => document.fonts.ready); await checkLayout(page);
     if (process.env.PLAYWRIGHT_LAB_DIR) lab.push({ path, ...await page.evaluate(async () => {
       await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
@@ -431,4 +450,37 @@ test("existing dashboard, workspace, resume and billing remain usable at every w
 
 test("cancelling queued work locks edits and prevents another execute", async ({ page, context, baseURL }) => {
   const f = fixture(); f.state.applicationsVisible = true; f.application.status = "queued"; f.application.missing_fields = []; await f.install(context, baseURL!); await page.goto("/employer-jobs"); await page.getByRole("button", { name: /Backend Engineer Example Studio/ }).click(); const dialog = page.getByRole("dialog"); await expect(dialog.getByRole("combobox", { name: "Resume choice", exact: true })).toBeDisabled(); await dialog.getByRole("button", { name: "Cancel remaining work" }).click(); await expect(dialog.getByText("Cancelled", { exact: true })).toBeVisible(); await expect(dialog.getByRole("button", { name: "Approve and submit" })).toHaveCount(0); expect(f.requests.filter((r) => r.path.endsWith("/cancel"))).toHaveLength(1); expect(f.requests.some((r) => r.path.endsWith("/execute"))).toBe(false); expect(f.unexpected).toEqual([]);
+});
+
+test("reviewed discovery purchases one bounded batch and preserves legacy history", async ({ page, context, baseURL }) => {
+  const f = fixture(); seedSavedSearch(f); await f.install(context, baseURL!);
+  const discoveryRequests: { path: string; method: string; body: Record<string, unknown> }[] = [];
+  const item = { posting: f.application.posting, fit: { score: 67, matched_skills: ["Python"], missing_evidence: ["PostgreSQL"], reasons: ["Documented skill overlap"], scoring_version: "native-v1" }, charged_credits: 0, included_in_batch: true, billing_currency: "credits" };
+  const batch = { id: "search_unified", status: "completed", billing_currency: "credits", desired_count: 5, delivered_count: 2, charged_credits: 1, reserved_credits: 0, refunded_credits: 0, partial_batch: true, maximum_batch_size: 5, scope: {}, items: [item, { ...item, posting: { ...item.posting, id: "job_second", title: "Platform Engineer" } }] };
+  await context.route((url) => url.pathname === "/api/backend/v1/credits/availability" || url.pathname.startsWith("/api/backend/v1/credits/discovery-"), async (route) => {
+    const request = route.request(), path = new URL(request.url()).pathname;
+    const body = request.method() === "POST" ? request.postDataJSON() : {};
+    discoveryRequests.push({ path, method: request.method(), body });
+    const value = path.endsWith("/availability") ? { catalog_enabled: true, execution_enabled: true, supported_operations: ["job_discovery_batch"] }
+      : path.endsWith("/discovery-quotes") ? { schema_version: "unified-service-quote-v1", quote_id: "csq_discovery", operation: "job_discovery_batch", input_fingerprint: digest, route_id: "native-discovery", route_version: "1", mode: "native", tariff_version: "v1", credits: 1, deliverable: "Up to 5 new verified employer jobs.", supported_limits: { maximum_results: 5, candidate_limit: 1000 }, created_at: now, server_time: now, expires_at: "2026-10-08T10:15:00Z" } : batch;
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(value) });
+  });
+  await page.goto("/employer-jobs");
+  await page.getByRole("combobox", { name: "Resume", exact: true }).selectOption("1");
+  await page.getByLabel("Target role").fill("Backend Engineer");
+  await expect(page.getByLabel("Jobs to find", { exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Review one-credit search" }).click();
+  await expect(page.getByText(/A completed batch with 1–4 new verified jobs still costs one credit/)).toBeVisible();
+  expect(discoveryRequests.filter((request) => request.path.endsWith("/discovery-batches"))).toHaveLength(0);
+  await checkLayout(page);
+  await page.getByRole("button", { name: "Approve 1 credit", exact: true }).click();
+  await expect(page.getByText("1 credit charged · 0 held · 0 restored", { exact: true })).toBeVisible();
+  await expect(page.getByText("Partial batch: 2 of 5 requested jobs. The reviewed one-credit batch charge applies.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("article")).toHaveCount(2); await checkLayout(page);
+  await page.getByRole("button", { name: /Saved Backend Engineer/ }).click();
+  await expect(page.getByText("54 service credits charged · 0 returned", { exact: true })).toBeVisible();
+  expect(discoveryRequests.filter((request) => request.path.endsWith("/discovery-batches") && request.method === "POST")).toHaveLength(1);
+  expect(f.requests.some((request) => request.path === `${base}/searches` && request.method === "POST")).toBe(false);
+  expect(f.requests.some((request) => request.path === `${base}/applications` && request.method === "POST")).toBe(false);
+  expect(f.unexpected).toEqual([]);
 });

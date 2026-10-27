@@ -129,6 +129,12 @@ def process(factory, identifier: str, store: ObjectStore) -> bool:
             current.result_resume_id, current.clean_generation, current.scan_receipt = resume.id, generation, inspected.receipt()
             current.state, current.completed_at, current.last_error_code = "released", utcnow(), None
             current.lease_token = current.lease_until = None
+            from ..free_core.policy import enabled as free_core_enabled
+
+            if free_core_enabled():
+                from ..free_core.service import complete
+
+                complete(db, user_id=target.user_id, source_type="resume_upload", source_id=identifier, result_id=str(resume.id))
             ensure_cleanup(db, current)
             db.commit()
         return True

@@ -69,6 +69,7 @@ OUTPUT_SCHEMAS: dict[str, dict[str, Any]] = {
     "interview_questions": {
         "type": "object",
         "required": ["opportunity_id", "questions"],
+        "properties": {"questions": {"type": "array", "minItems": 8, "maxItems": 8}},
     },
     "resume_tailor": {
         "type": "object",
@@ -136,6 +137,17 @@ def _ensure_prompt_version(
             raise RuntimeError(
                 f"Prompt template changed without a version bump: {operation}:{version}"
             )
+        if prompt.evaluation_result == {"contract_gate": "golden-v1", "passed": True}:
+            # Earlier runtime registration wrote this exact value without
+            # running an evaluation. Preserve its origin, but do not let it
+            # stand as qualification evidence for a model or prompt route.
+            prompt.evaluation_result = {
+                "status": "not_evaluated",
+                "provenance": "runtime_registration",
+                "superseded_automatic_metadata": {"contract_gate": "golden-v1", "passed": True},
+            }
+            if prompt.release_status == "active":
+                prompt.release_status = "observed"
         return prompt
     prompt = models.PromptVersion(
         id=public_id("prm"),
@@ -144,10 +156,10 @@ def _ensure_prompt_version(
         template_checksum=checksum,
         output_schema=OUTPUT_SCHEMAS.get(operation, {"type": "object"}),
         model_config={"model": os.getenv("LLM_MODEL", "unconfigured")},
-        evaluation_result={"contract_gate": "golden-v1", "passed": True},
-        release_status="active",
+        evaluation_result={"status": "not_evaluated", "provenance": "runtime_registration"},
+        release_status="observed",
         created_at=utcnow(),
-        activated_at=utcnow(),
+        activated_at=None,
     )
     db.add(prompt)
     db.flush()
@@ -412,30 +424,21 @@ def execute_interview_questions(
     payload: dict[str, Any],
     run: models.AnalysisRun,
 ) -> dict[str, Any]:
+    from ...services.interview_contract import (
+        PROMPT_VERSION,
+        QUESTION_COUNT,
+        contract_versions,
+        load_approved_evidence,
+    )
+    from .service import ensure_interview_inputs_current
+
+    ensure_interview_inputs_current(db, run, payload)
     opportunity = get_opportunity(
         db, user_id, run.opportunity_id or str(payload.get("opportunity_id", ""))
     )
     from ...services.llm_client import generate_interview_questions
 
-    evidence_query = db.query(models.EvidenceItem).filter(
-        models.EvidenceItem.user_id == user_id,
-        models.EvidenceItem.approval_state == "approved",
-    )
-    if opportunity.resume_id:
-        evidence_query = evidence_query.filter(
-            models.EvidenceItem.resume_id == opportunity.resume_id
-        )
-    evidence = evidence_query.order_by(models.EvidenceItem.created_at.asc()).limit(40).all()
-    evidence_payload = [
-        {
-            "id": item.id,
-            "title": item.title,
-            "text": item.evidence_text,
-            "metrics": item.metrics or {},
-            "skills": item.skills or [],
-        }
-        for item in evidence
-    ]
+    evidence_payload = load_approved_evidence(db, user_id, opportunity.resume_id)
 
     if payload.get("mode", "curated") == "curated":
         from ...services.interview_catalog import CATALOG_VERSION, curated_interview_questions
@@ -453,7 +456,7 @@ def execute_interview_questions(
     _ensure_prompt_version(
         db,
         operation="interview_questions",
-        version="interview-evidence-v4",
+        version=PROMPT_VERSION,
         callable_object=generate_interview_questions,
     )
     db.commit()
@@ -462,7 +465,7 @@ def execute_interview_questions(
         questions = generate_interview_questions(
             opportunity.title,
             opportunity.job_description,
-            num_questions=max(3, min(int(payload.get("num_questions", 8)), 12)),
+            num_questions=QUESTION_COUNT,
             approved_evidence=evidence_payload,
         )
     except Exception as exc:
@@ -470,7 +473,7 @@ def execute_interview_questions(
         _record_model_call(
             db,
             run=run,
-            prompt_version="interview-evidence-v4",
+            prompt_version=PROMPT_VERSION,
             input_payload=payload,
             output_payload={},
             latency_ms=int((time.perf_counter() - started) * 1000),
@@ -479,10 +482,11 @@ def execute_interview_questions(
         )
         raise
     begin_result_commit(db, user_id, run.id)
+    ensure_interview_inputs_current(db, run, payload)
     _record_model_call(
         db,
         run=run,
-        prompt_version="interview-evidence-v4",
+        prompt_version=PROMPT_VERSION,
         input_payload=payload,
         output_payload=questions,
         latency_ms=int((time.perf_counter() - started) * 1000),
@@ -492,6 +496,7 @@ def execute_interview_questions(
         "opportunity_id": opportunity.id,
         "questions": [{**item, "provenance": "generated"} for item in questions],
         "mode": "enhanced", "provenance": "generated", "catalog_version": None,
+        "contract_versions": contract_versions(),
     }
 
 

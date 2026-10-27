@@ -56,6 +56,7 @@ describe("connection-page header request budget", () => {
     const client = createClient();
     client.setQueryData(["profile"], account);
     client.setQueryData(["feature-decisions"], decisions);
+    client.setQueryData(["unified-credits", "availability"], { catalog_enabled: false, execution_enabled: false, supported_operations: [] });
     client.setQueryData(["employer-jobs", "catalog"], { balance: 3 });
     const view = render(tree(client));
     expect(screen.getByTitle("7 analysis units remaining")).toBeInTheDocument();
@@ -80,7 +81,7 @@ describe("connection-page header request budget", () => {
     state.pathname = "/employer-jobs";
     view.rerender(tree(client));
     await screen.findByTitle("7 analysis units remaining");
-    expect(state.get.mock.calls.map(([path]) => path).sort()).toEqual(["/auth/profile", "/v1/features"]);
+    expect(state.get.mock.calls.map(([path]) => path).sort()).toEqual(["/auth/profile", "/v1/credits/availability", "/v1/features"]);
     expect(screen.getByTitle("3 job service credits")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Workspace" })).not.toBeInTheDocument();
   });
@@ -90,7 +91,7 @@ describe("connection-page header request budget", () => {
     const client = createClient();
     render(tree(client));
     await screen.findByTitle("7 analysis units remaining");
-    await waitFor(() => expect(state.get).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(state.get).toHaveBeenCalledTimes(3));
     expect(screen.getByTitle("3 job service credits")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Workspace" })).not.toBeInTheDocument();
     await act(async () => { window.dispatchEvent(new Event("refresh_analysis_units")); });
@@ -106,5 +107,29 @@ describe("connection-page header request budget", () => {
     expect(state.get).not.toHaveBeenCalled();
     expect(screen.getByRole("link", { name: "Log in" })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Log out" })).not.toBeInTheDocument();
+  });
+
+  it("shows only the authoritative unified balance after rollout and refreshes it separately", async () => {
+    let credits = 11;
+    state.get.mockImplementation((path: string) => Promise.resolve(path === "/v1/credits/availability"
+      ? { catalog_enabled: true, execution_enabled: false, supported_operations: [] }
+      : path === "/v1/credits/wallet" ? { schema_version: "unified-credits-v1", server_time: "2026-10-27T00:00:00Z", available_credits: credits, reserved_credits: 0, debt_credits: 0, lots: [] }
+        : path === "/auth/profile" ? account : decisions));
+    const client = createClient(); const view = render(tree(client));
+    await screen.findByTitle("11 credits available");
+    expect(screen.queryByTitle(/analysis units remaining/)).not.toBeInTheDocument();
+    expect(screen.queryByTitle(/job service credits/)).not.toBeInTheDocument();
+    credits = 9; act(() => { window.dispatchEvent(new Event("refresh_unified_credits")); });
+    await screen.findByTitle("9 credits available");
+    expect(state.get.mock.calls.filter(([path]) => path === "/auth/profile")).toHaveLength(1);
+    state.pathname = "/browser-companion"; view.rerender(tree(client));
+    expect(screen.queryByTitle(/credits available/)).not.toBeInTheDocument();
+  });
+
+  it("does not infer rollout from a wallet, a missing flag or a truthy string", async () => {
+    state.get.mockImplementation((path: string) => Promise.resolve(path === "/v1/credits/availability"
+      ? { catalog_enabled: "true", execution_enabled: true } : path === "/auth/profile" ? account : decisions));
+    render(tree(createClient())); await screen.findByTitle("7 analysis units remaining");
+    expect(state.get.mock.calls.some(([path]) => path === "/v1/credits/wallet")).toBe(false);
   });
 });

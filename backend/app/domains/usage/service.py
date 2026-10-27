@@ -210,6 +210,10 @@ def funding_for_run(db, *, user_id, run, units):
 
 
 def commit_run_usage(db: Session, run: models.AnalysisRun) -> None:
+    from ..credits.analysis import settle_analysis
+
+    if settle_analysis(db, run, delivered=True):
+        return
     if run.usage_state in {"committed", "waived"}:
         if run.usage_state == "waived":
             run.committed_units = 0
@@ -245,6 +249,10 @@ def commit_run_usage(db: Session, run: models.AnalysisRun) -> None:
 
 
 def release_run_usage(db: Session, run: models.AnalysisRun, *, reason: str) -> None:
+    from ..credits.analysis import settle_analysis
+
+    if settle_analysis(db, run, delivered=False):
+        return
     if run.model_cost_group_id and run.usage_state not in {"committed", "released"}:
         # Detached financial evidence carries no owner identifiers. A restored
         # product allowance cannot make the failed provider work disappear.

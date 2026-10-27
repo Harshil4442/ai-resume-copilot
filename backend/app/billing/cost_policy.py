@@ -355,7 +355,7 @@ def assert_model_funding(
     Unsettled liabilities from ANY date consume the current budgets; deletion
     of telemetry or a month boundary cannot erase a provider liability.
     """
-    from sqlalchemy import case, func, or_, text
+    from sqlalchemy import case, func, or_
 
     from ..models import ModelCostLiability
 
@@ -365,8 +365,15 @@ def assert_model_funding(
         raise CostPolicyUnavailable(
             "This AI operation exceeds the reviewed product funding ceiling."
         )
-    if db.get_bind().dialect.name == "postgresql":
-        db.execute(text("SELECT pg_advisory_xact_lock(7349186502109)"))
+    from ..domains.credits.admission import lock_money
+    from ..domains.credits.finance import FundingUnavailable
+    from ..domains.credits.legacy_funding import assert_legacy_headroom
+    lock_money(db)
+    try:
+        assert_legacy_headroom(db, provider_micros=reservation,
+                              native_minor=policy.provider_attempt_overhead_minor)
+    except FundingUnavailable as exc:
+        raise CostPolicyUnavailable(str(exc)) from None
     now = datetime.now(UTC)
     unresolved = ModelCostLiability.cost_state.notin_(["settled", "overrun"])
     held = func.coalesce(ModelCostLiability.reserved_cost_micros, 0)
@@ -508,7 +515,7 @@ def service_expense_holds(
     does not erase that month's potential preparation/failure expense. Old
     unsettled holds continue across month boundaries until reconciled.
     """
-    from sqlalchemy import BigInteger, Integer, and_, case, cast, func, or_, text
+    from sqlalchemy import BigInteger, Integer, and_, case, cast, func, or_
 
     from ..domains.employer.models import ServiceCreditReservation
 
@@ -526,8 +533,8 @@ def service_expense_holds(
     paid = min(required, current_service_funding(db, user_id)) if user_id is not None else 0
     legacy_count = count if unit_price < floor else ceil(Fraction(required - paid, unit_price))
     paid_count = count - legacy_count
-    if db.get_bind().dialect.name == "postgresql":
-        db.execute(text("SELECT pg_advisory_xact_lock(7349186502110)"))
+    from ..domains.credits.admission import lock_money
+    lock_money(db)
     per_job = (
         policy.search_cost_minor if operation == "job_search" else policy.application_cost_minor
     )
@@ -637,6 +644,14 @@ def service_expense_holds(
         raise CostPolicyUnavailable(
             "New service work is paused while its finite legacy and unsuccessful-work funding is reviewed."
         )
+    from ..domains.credits.finance import FundingUnavailable
+    from ..domains.credits.legacy_funding import assert_legacy_headroom
+    full_delivery_hold = ceil(Fraction(count * per_job * (10_000 + policy.contingency_bps), 10_000))
+    try:
+        assert_legacy_headroom(db, native_minor=max(full_delivery_hold, hold + failed_hold),
+                              exclude_service_reservation_id=exclude_reservation_id)
+    except FundingUnavailable as exc:
+        raise CostPolicyUnavailable(str(exc)) from None
     return {
         "legacy_service_hold_minor": hold,
         "failed_service_hold_minor": failed_hold,

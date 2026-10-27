@@ -42,6 +42,17 @@ class OriginalOrder:
 
     @classmethod
     def from_order(cls, order: Any) -> OriginalOrder:
+        if order.entitlement_kind == "credit_pass":
+            from fastapi import HTTPException
+
+            from ..domains.credits.payments import order_quote as unified_order_quote
+            from ..domains.credits.pricing import CreditContractError
+            try:
+                snapshot = unified_order_quote(order).model_dump_json(exclude={"server_time"})
+            except CreditContractError:
+                raise HTTPException(409, "The original payment terms require reconciliation.") from None
+            return cls(order.public_id, order.user_id, order.provider_mode,
+                       order.provider_key_id, order.sku, order.billing_country, snapshot)
         return cls(order.public_id, order.user_id, order.provider_mode,
                    order.provider_key_id, order.sku, order.billing_country,
                    order_quote(order).model_dump_json())

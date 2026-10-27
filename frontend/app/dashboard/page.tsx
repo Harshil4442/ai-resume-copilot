@@ -22,17 +22,12 @@ import { StatusBadge } from "../../components/ui/StatusBadge";
 import { apiGet } from "../../lib/api";
 import { ownerProfileQueryOptions } from "../../lib/ownerProfile";
 import { trackEvent } from "../../lib/analytics";
-import { finiteCreditBundles } from "../../lib/billingProducts";
+import { creditAvailabilityOptions, creditWalletOptions, unifiedCatalogOptions } from "../../lib/unifiedCreditClient";
 import type { OpportunityList, Reminder } from "../../lib/career";
 import { stageLabels, stageTone } from "../../lib/career";
 import type { AnalyticsSummary, UserProfile } from "../../lib/types";
 
 type FeatureResponse = { features: Record<string, { enabled: boolean }> };
-type BillingCatalog = {
-  checkout_enabled: boolean;
-  provider: "razorpay" | null;
-  products: unknown;
-};
 
 function firstName(profile: UserProfile | undefined) {
   return profile?.full_name?.trim().split(/\s+/)[0] || "there";
@@ -50,8 +45,11 @@ export default function DashboardPage() {
   const workspaceEnabled = features.data?.features.career_workspace?.enabled !== false;
   const opportunities = useQuery({ queryKey: ["opportunities"], queryFn: () => apiGet<OpportunityList>("/v1/opportunities?limit=8"), enabled: features.isSuccess && workspaceEnabled });
   const reminders = useQuery({ queryKey: ["reminders", "scheduled"], queryFn: () => apiGet<Reminder[]>("/v1/reminders?status=scheduled"), enabled: features.isSuccess && workspaceEnabled });
-  const shouldOfferUpgrade = profile.data?.tier === "free" && (profile.data?.ai_credits ?? 50) <= 10;
-  const billingCatalog = useQuery({ queryKey: ["billing-catalog"], queryFn: () => apiGet<BillingCatalog>("/public/billing/catalog"), enabled: shouldOfferUpgrade });
+  const creditAvailability = useQuery(creditAvailabilityOptions());
+  const unifiedWalletEnabled = creditAvailability.isSuccess && creditAvailability.data?.catalog_enabled === true;
+  const wallet = useQuery({ ...creditWalletOptions(), enabled: unifiedWalletEnabled });
+  const shouldOfferUpgrade = unifiedWalletEnabled && wallet.isSuccess && wallet.data !== null && wallet.data.available_credits <= 10;
+  const billingCatalog = useQuery({ ...unifiedCatalogOptions(), enabled: shouldOfferUpgrade });
 
   const loading = profile.isLoading || analytics.isLoading || features.isLoading || (workspaceEnabled && opportunities.isLoading);
   const active = (opportunities.data?.items || []).filter((item) => !["rejected", "withdrawn", "archived"].includes(item.stage));
@@ -66,14 +64,14 @@ export default function DashboardPage() {
   ];
   const activated = activation.filter((item) => item.complete).length;
   const nextActivation = activation.find((item) => !item.complete);
-  const upgradeProduct = billingCatalog.data?.checkout_enabled === true && billingCatalog.data.provider === "razorpay"
-    ? finiteCreditBundles(billingCatalog.data.products).find((product) => product.catalog_visible && product.enabled_for_purchase)
+  const upgradeProduct = shouldOfferUpgrade && billingCatalog.data?.checkout_enabled === true
+    ? billingCatalog.data.products.find((product) => product.purchase_enabled)
     : undefined;
 
   useEffect(() => {
     if (!upgradeProduct || upgradeTracked.current) return;
     upgradeTracked.current = true;
-    trackEvent("upgrade_prompt_viewed", { surface: "dashboard_low_units", reason: "low_units", sku: upgradeProduct.sku });
+    trackEvent("upgrade_prompt_viewed", { surface: "dashboard_low_credits", reason: "low_credits", sku: upgradeProduct.sku });
   }, [upgradeProduct]);
 
   return (
@@ -100,7 +98,7 @@ export default function DashboardPage() {
                 { label: "Active roles", value: active.length, icon: BriefcaseBusiness, tone: "text-primary" },
                 { label: "Interviews", value: interviews, icon: Target, tone: "text-primary" },
                 { label: "Average match", value: analytics.data?.applications_count ? Math.round(analytics.data.average_match_score) : "-", icon: Gauge, tone: "text-foreground" },
-                { label: "Analysis units", value: profile.data?.ai_credits ?? 0, icon: Circle, tone: "text-coral" },
+                { label: unifiedWalletEnabled ? "Available credits" : "Analysis units", value: unifiedWalletEnabled ? wallet.isSuccess && wallet.data ? wallet.data.available_credits : "Unavailable" : profile.data?.ai_credits ?? "Unavailable", icon: Circle, tone: "text-coral" },
               ].map((metric) => (
                 <div key={metric.label} className="border-t border-border py-6 sm:border-r sm:px-6 sm:first:pl-0 xl:border-t-0 last:border-r-0">
                   <div className="flex items-center justify-between"><p className="data-label">{metric.label}</p><metric.icon size={16} className={metric.tone} /></div>
@@ -160,12 +158,12 @@ export default function DashboardPage() {
 
                 {upgradeProduct ? (
                   <section className="border-l-2 border-primary/30 pl-5">
-                    <p className="data-label">Low analysis units</p>
+                    <p className="data-label">Low credit balance</p>
                     <h2 className="font-display mt-2 text-lg font-normal text-foreground">{upgradeProduct.name}</h2>
                     <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                      {new Intl.NumberFormat("en-IN", { style: "currency", currency: upgradeProduct.currency, maximumFractionDigits: 0 }).format(upgradeProduct.amount_minor / 100)} for {upgradeProduct.entitlement_quantity} job service credits and {upgradeProduct.analysis_units} AI analysis units. Finite prepaid balances, with no automatic renewal.
+                      Review current pass prices, credit quantities and expiry before purchasing. New passes last 30 days and do not renew automatically. Older purchases keep their original terms.
                     </p>
-                    <Button asChild className="mt-4" size="sm"><Link href="/billing" onClick={() => trackEvent("upgrade_prompt_clicked", { surface: "dashboard_low_units", reason: "low_units", sku: upgradeProduct.sku })}>Review credit packs <ArrowRight size={14} /></Link></Button>
+                    <Button asChild className="mt-4" size="sm"><Link href="/billing" onClick={() => trackEvent("upgrade_prompt_clicked", { surface: "dashboard_low_credits", reason: "low_credits", sku: upgradeProduct.sku })}>Review credit passes <ArrowRight size={14} /></Link></Button>
                   </section>
                 ) : null}
 

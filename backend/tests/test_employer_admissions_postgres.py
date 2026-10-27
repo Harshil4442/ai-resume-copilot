@@ -51,7 +51,7 @@ def pg_engine():
     if not configured:
         pytest.skip("Set HIREWIZ_TEST_POSTGRES_URL for disposable PostgreSQL admission evidence")
     url = make_url(configured)
-    if (url.host != "127.0.0.1" or url.port != 55433 or url.database != "hirewiz_admission_test"):
+    if (url.host != "127.0.0.1" or url.port not in {55433, 55434} or url.database != "hirewiz_admission_test"):
         pytest.fail("PostgreSQL admission tests accept only the dedicated local disposable database")
     schema = "admission_" + uuid4().hex
     admin = create_engine(url)

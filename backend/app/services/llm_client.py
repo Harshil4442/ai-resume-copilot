@@ -256,7 +256,7 @@ def rewrite_bullets(resume_text: str, jd_text: str, tone: str) -> dict:
     except (json.JSONDecodeError, ValueError, TypeError, KeyError) as exc:
         raise TailoringOutputError("The rewrite could not be validated. Keep the original wording and use evidence-backed resume editing.") from exc
 
-def _parse_interview_questions(content: str, num_questions: int) -> list[dict]:
+def _parse_interview_questions(content: str, num_questions: int, allowed_ids: set[str]) -> list[dict]:
     """Accept JSON arrays and questions objects, including Markdown-wrapped responses."""
     decoder = json.JSONDecoder()
     data = None
@@ -274,12 +274,14 @@ def _parse_interview_questions(content: str, num_questions: int) -> list[dict]:
             break
     if data is None:
         raise InterviewOutputError("The response did not contain a JSON question list.")
+    if len(data) != num_questions:
+        raise InterviewOutputError(f"Expected exactly {num_questions} questions.")
 
     questions = []
     seen = set()
     for item in data:
         if not isinstance(item, dict):
-            continue
+            raise InterviewOutputError("Every question must have the required fields.")
         question = item.get("question")
         coaching_angle = item.get("coaching_angle")
         evidence_ids = item.get("evidence_ids")
@@ -291,21 +293,19 @@ def _parse_interview_questions(content: str, num_questions: int) -> list[dict]:
             or not isinstance(evidence_ids, list)
             or any(not isinstance(value, str) for value in evidence_ids)
         ):
-            continue
-        identity = " ".join(question.casefold().split()).rstrip(".?!").strip()
+            raise InterviewOutputError("Every question needs text, preparation guidance and evidence references.")
+        if any(value not in allowed_ids for value in evidence_ids):
+            raise InterviewOutputError("A question cited evidence that was not supplied.")
+        identity = " ".join(re.findall(r"\w+", question.casefold()))
         if identity in seen:
-            continue
+            raise InterviewOutputError("Every question must be distinct.")
         seen.add(identity)
         questions.append({
             "question": question.strip(),
             "coaching_angle": coaching_angle.strip(),
             "evidence_ids": evidence_ids,
         })
-    if len(questions) < num_questions:
-        raise InterviewOutputError(
-            f"Expected {num_questions} distinct questions, received {len(questions)} usable questions."
-        )
-    return questions[:num_questions]
+    return questions
 
 
 def generate_interview_questions(
@@ -314,39 +314,29 @@ def generate_interview_questions(
     num_questions: int = 8,
     approved_evidence: list[dict] | None = None,
 ) -> list[dict[str, object]]:
+    from .interview_contract import (
+        QUESTION_COUNT,
+        build_interview_messages,
+        require_complete_context,
+    )
+
+    if type(num_questions) is not int or num_questions != QUESTION_COUNT:
+        raise InterviewOutputError("An enhanced interview set contains exactly eight questions.")
     evidence = approved_evidence or []
     allowed_ids = {str(item.get("id")) for item in evidence if item.get("id")}
-    system_prompt = (
-        "You are an evidence-grounded interview coach. Generate thoughtful interview questions "
-        "for the job description and a concise coaching angle for each. Never write a fictional "
-        "first-person model answer or invent candidate history, metrics, skills, or outcomes. "
-        "Reference only evidence IDs supplied by the user. If no evidence supports a question, use "
-        "an empty evidence_ids list. Missing evidence must not reduce the number of questions. "
-        "Return exactly the requested number of distinct, role-specific questions. "
-        "Output only a JSON list; every item must have a non-empty question string, a non-empty "
-        "coaching_angle string, and an evidence_ids list of strings."
-    )
-    evidence_context = json.dumps(evidence, default=str)[:6000]
-    user_content = (
-        f"JOB TITLE: {job_title}\n\nJOB DESCRIPTION:\n{jd_text}\n\n"
-        f"APPROVED EVIDENCE:\n{evidence_context}\n\nNumber of Qs: {num_questions}"
-    )
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_content},
-    ]
+    messages = build_interview_messages(job_title, jd_text, evidence)
     data = None
     for attempt in range(2):
+        require_complete_context(messages)
         content = _chat(messages)
         if not isinstance(content, str):
             content = ""
         try:
-            data = _parse_interview_questions(content, num_questions)
+            data = _parse_interview_questions(content, num_questions, allowed_ids)
             break
         except InterviewOutputError as exc:
             if attempt == 0:
                 messages.extend([
-                    {"role": "assistant", "content": content or "No usable response was returned."},
                     {
                         "role": "user",
                         "content": (
@@ -367,14 +357,12 @@ def generate_interview_questions(
     for raw_item in data:
         question = raw_item["question"]
         coaching_angle = raw_item["coaching_angle"]
-        evidence_ids = list(dict.fromkeys(
-            item for item in raw_item["evidence_ids"] if item in allowed_ids
-        ))
+        evidence_ids = list(dict.fromkeys(raw_item["evidence_ids"]))
         cited = [evidence_by_id[item] for item in evidence_ids]
         if cited:
             facts = "; ".join(
                 f"{item.get('title', 'Evidence')}: {item.get('text', '')}" for item in cited
-            )[:1800]
+            )
             answer = f"Approved facts to use: {facts}\n\nCoaching focus: {coaching_angle}"
             answer_state = "evidence_backed"
         else:
@@ -858,10 +846,10 @@ def extract_skills_llm(resume_text: str) -> list[str]:
         "Example: [\"Python\", \"FastAPI\", \"Docker\", \"Machine Learning\"]. "
         "Do not include soft skills like 'communication' or 'teamwork'."
     )
-    # Limit text to keep token usage low (first 3000 chars covers skills section)
+    # The complete source is required; the durable budget refuses an unsupported scope.
     content = _chat([
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": resume_text[:3000]},
+        {"role": "user", "content": resume_text},
     ])
     parsed = json.loads(content)
     if isinstance(parsed, list) and all(isinstance(skill, str) and skill.strip() for skill in parsed):
@@ -1167,14 +1155,14 @@ def generate_learning_strategy_llm(
         f"COMPANY: {company or 'Unknown'}\n"
         f"MATCH SCORE: {match_score:.1f}/100\n"
         f"EXPERIENCE YEARS: {experience_years:.1f}\n\n"
-        f"JOB DESCRIPTION EXCERPT:\n{jd_text[:2500]}\n\n"
-        f"RESUME SKILLS:\n{', '.join(resume_skills[:60])}\n\n"
-        f"JD REQUIRED SKILLS:\n{', '.join(required_skills[:60])}\n\n"
-        f"TRUE GAPS:\n{', '.join(true_gaps[:30])}\n\n"
-        f"PARTIAL MATCHES:\n{json.dumps(partial_matches[:20])}\n\n"
-        f"FIT SUMMARY:\n{fit_summary[:1200]}\n\n"
-        f"DIMENSION SCORES:\n{json.dumps(dimension_scores[:12])}\n\n"
-        f"EXISTING IMPROVEMENT TIPS:\n{json.dumps(improvement_tips[:8])}"
+        f"COMPLETE JOB DESCRIPTION:\n{jd_text}\n\n"
+        f"RESUME SKILLS:\n{', '.join(resume_skills)}\n\n"
+        f"JD REQUIRED SKILLS:\n{', '.join(required_skills)}\n\n"
+        f"TRUE GAPS:\n{', '.join(true_gaps)}\n\n"
+        f"PARTIAL MATCHES:\n{json.dumps(partial_matches)}\n\n"
+        f"FIT SUMMARY:\n{fit_summary}\n\n"
+        f"DIMENSION SCORES:\n{json.dumps(dimension_scores)}\n\n"
+        f"EXISTING IMPROVEMENT TIPS:\n{json.dumps(improvement_tips)}"
     )
 
     raw = _chat([

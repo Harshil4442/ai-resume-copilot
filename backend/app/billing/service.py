@@ -308,7 +308,7 @@ def _grant_entitlement(db: Session, order: PaymentOrder, now: datetime) -> bool:
     entitlement_kind = order.entitlement_kind
     entitlement_quantity = order.entitlement_quantity
     if (
-        entitlement_kind not in {"premium_access", "analysis_units", "job_service_credits", "credit_bundle"}
+        entitlement_kind not in {"premium_access", "analysis_units", "job_service_credits", "credit_bundle", "credit_pass"}
         or type(entitlement_quantity) is not int
         or entitlement_quantity <= 0
     ):
@@ -325,7 +325,15 @@ def _grant_entitlement(db: Session, order: PaymentOrder, now: datetime) -> bool:
         return False
 
     expires_at = None
-    if entitlement_kind == "premium_access":
+    if entitlement_kind == "credit_pass":
+        from ..domains.credits.payments import fulfill_order
+        from ..domains.credits.pricing import CreditContractError
+        try:
+            grant = fulfill_order(db, order, now=now)
+        except CreditContractError as exc:
+            raise WebhookValidationError("invalid_unified_credit_snapshot") from exc
+        starts_at, expires_at = grant.issued_at, grant.expires_at
+    elif entitlement_kind == "premium_access":
         current_expiry = as_aware(user.premium_until)
         starts_at = current_expiry if current_expiry and current_expiry > now else now
         expires_at = starts_at + timedelta(days=entitlement_quantity)
@@ -413,7 +421,7 @@ def _revoke_entitlement(db: Session, order: PaymentOrder, now: datetime) -> None
     if entitlement.entitlement_kind == "analysis_units":
         user.ai_credits = max(0, int(user.ai_credits or 0) - entitlement.quantity)
         return
-    if entitlement.entitlement_kind in {"job_service_credits", "credit_bundle"}:
+    if entitlement.entitlement_kind in {"job_service_credits", "credit_bundle", "credit_pass"}:
         _adjust_service_credit_refund(db, order, now)
         return
 
@@ -438,7 +446,17 @@ def _revoke_entitlement(db: Session, order: PaymentOrder, now: datetime) -> None
 
 def _adjust_service_credit_refund(db: Session, order: PaymentOrder, now: datetime) -> None:
     """Revoke the proportional grant; spent credits become debt, never free use."""
-    if order.entitlement_kind not in {"job_service_credits", "credit_bundle"} or order.user_id is None:
+    if order.entitlement_kind not in {"job_service_credits", "credit_bundle", "credit_pass"} or order.user_id is None:
+        return
+    if order.entitlement_kind == "credit_pass":
+        if not db.query(EntitlementLedger).filter_by(source_order_id=order.id).first():
+            return
+        from ..domains.credits.payments import refund_order
+        from ..domains.credits.pricing import CreditContractError
+        try:
+            refund_order(db, order, now=now)
+        except CreditContractError as exc:
+            raise WebhookValidationError("invalid_unified_credit_refund") from exc
         return
     from sqlalchemy import func
 

@@ -20,6 +20,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 
 import { apiGet } from "../lib/api";
 import { ownerProfileQueryKey, ownerProfileQueryOptions } from "../lib/ownerProfile";
+import { creditAvailabilityOptions, creditWalletOptions, creditWalletKey } from "../lib/unifiedCreditClient";
 import Logo from "./ui/Logo";
 
 type FeatureResponse = {
@@ -72,6 +73,9 @@ export default function Nav() {
     enabled: authenticated && !companionPage,
     staleTime: 60_000,
   });
+  const creditAvailability = useQuery({ ...creditAvailabilityOptions(), enabled: authenticated && !companionPage });
+  const unifiedWalletEnabled = !companionPage && creditAvailability.isSuccess && creditAvailability.data?.catalog_enabled === true;
+  const creditWallet = useQuery({ ...creditWalletOptions(), enabled: authenticated && !companionPage && unifiedWalletEnabled });
 
   useEffect(() => {
     localStorage.removeItem("access_token");
@@ -83,8 +87,10 @@ export default function Nav() {
       void queryClient.invalidateQueries({ queryKey: ownerProfileQueryKey });
       void queryClient.invalidateQueries({ queryKey: ["employer-jobs", "catalog"] });
     }
+    function refreshUnifiedCredits() { void queryClient.invalidateQueries({ queryKey: creditWalletKey }); }
     window.addEventListener("refresh_analysis_units", refreshCredits);
-    return () => window.removeEventListener("refresh_analysis_units", refreshCredits);
+    window.addEventListener("refresh_unified_credits", refreshUnifiedCredits);
+    return () => { window.removeEventListener("refresh_analysis_units", refreshCredits); window.removeEventListener("refresh_unified_credits", refreshUnifiedCredits); };
   }, [queryClient, companionPage]);
 
   const links = authenticated
@@ -122,7 +128,11 @@ export default function Nav() {
         </nav>
 
         <div className="flex shrink-0 items-center gap-2">
-          {authenticated && typeof units === "number" ? (
+          {authenticated && unifiedWalletEnabled ? <Link href="/billing" className="hidden min-h-9 items-center gap-1.5 rounded-full border border-border px-3 text-xs sm:flex"
+            title={creditWallet.isSuccess && creditWallet.data ? `${creditWallet.data.available_credits} credits available` : "Credit balance unavailable"}>
+            <CreditCard size={14} aria-hidden="true" /><span>{creditWallet.isSuccess && creditWallet.data ? `${creditWallet.data.available_credits} credits` : "View credits"}</span>
+          </Link> : null}
+          {authenticated && !unifiedWalletEnabled && typeof units === "number" ? (
             <Link
               href="/billing"
               className="hidden min-h-9 items-center gap-2 rounded-full border border-border bg-surface px-3 text-xs font-medium text-foreground transition-colors hover:border-accent hover:bg-accent/10 sm:flex"
@@ -133,7 +143,7 @@ export default function Nav() {
             </Link>
           ) : null}
 
-          {authenticated && typeof serviceCredits === "number" ? <Link href="/billing" className="hidden min-h-9 items-center gap-1.5 rounded-full border border-border px-3 text-xs sm:flex" title={`${serviceCredits} job service credits`}><CreditCard size={14} aria-hidden="true" /><span>{serviceCredits} service</span></Link> : null}
+          {authenticated && !unifiedWalletEnabled && typeof serviceCredits === "number" ? <Link href="/billing" className="hidden min-h-9 items-center gap-1.5 rounded-full border border-border px-3 text-xs sm:flex" title={`${serviceCredits} job service credits`}><CreditCard size={14} aria-hidden="true" /><span>{serviceCredits} service</span></Link> : null}
 
           {authenticated ? (
             <Link href="/logout" className="icon-button hidden xl:inline-flex" aria-label="Log out" title="Log out">
