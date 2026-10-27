@@ -329,14 +329,14 @@ def write_templates(root: Path) -> None:
         "analysis_code": {"path": "", "sha256": ""}, "powered_design_review": {"path": "", "sha256": ""},
         "analyst_id": None, "cohort_results": []})
     with (root / "reviews.template.csv").open("w", newline="") as file:
-        writer = csv.DictWriter(file, fieldnames=REVIEW_FIELDS)
+        writer = csv.DictWriter(file, fieldnames=REVIEW_FIELDS, lineterminator="\n")
         writer.writeheader()
         for item in cases:
             for reviewer in ("reviewer_1", "reviewer_2"):
                 for label in ("A", "B"):
                     writer.writerow({"case_id": item["case_id"], "reviewer_id": reviewer, "label": label})
     with (root / "adjudications.template.csv").open("w", newline="") as file:
-        csv.DictWriter(file, fieldnames=ADJUDICATION_FIELDS).writeheader()
+        csv.DictWriter(file, fieldnames=ADJUDICATION_FIELDS, lineterminator="\n").writeheader()
 
 
 def _native_receipt(root, record, *, source_sha, target_sha, errors, label):
@@ -630,7 +630,7 @@ def make_blinded(packet_root: Path, evidence_root: Path, destination: Path) -> d
     shutil.copyfile(packet_root / "rubric.md", reviewer / "rubric.md")
     for role in ("reviewer_1", "reviewer_2"):
         with (reviewer / f"{role}.csv").open("w", newline="") as file:
-            writer = csv.DictWriter(file, fieldnames=REVIEW_FIELDS)
+            writer = csv.DictWriter(file, fieldnames=REVIEW_FIELDS, lineterminator="\n")
             writer.writeheader()
             for item in assignments:
                 for label in ("A", "B"):
