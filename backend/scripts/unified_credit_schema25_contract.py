@@ -133,7 +133,23 @@ def preserved_shape(connection, namespace_oid, namespace):
 
 
 def catalog_snapshot(connection, namespace_oid, namespace):
+    """Deparse with one fixed search path, then restore the caller's session state.
+
+    pg_get_constraintdef qualifies references according to visibility. A private
+    migration schema and the native observer's pg_catalog path must describe the
+    same resolved foreign keys identically. Rolling back this read-only savepoint
+    also restores the path if observation fails; it never commits caller work.
+    """
     namespace_name(namespace)
+    savepoint = connection.begin_nested()
+    try:
+        connection.exec_driver_sql("SET LOCAL search_path=pg_catalog")
+        return _catalog_snapshot(connection, namespace_oid, namespace)
+    finally:
+        savepoint.rollback()
+
+
+def _catalog_snapshot(connection, namespace_oid, namespace):
     params = {"ns": namespace_oid, "tables": list(TABLES)}
     queries = {
         "relations": "SELECT c.relname,c.relkind,c.relpersistence,c.relispartition,c.relrowsecurity,c.relforcerowsecurity FROM pg_catalog.pg_class c WHERE c.relnamespace=:ns AND c.relname=ANY(CAST(:tables AS text[])) ORDER BY c.relname",
@@ -187,3 +203,14 @@ def verify_before_shape(connection, namespace_oid, namespace="public"):
         not catalog_snapshot(connection, namespace_oid, namespace)["relations"],
         "schema25_before_new_tables_present",
     )
+
+
+def verify_empty_new_tables(connection, namespace="public"):
+    """Initial flags-off release cannot adopt previously activated financial work."""
+    namespace_name(namespace)
+    for table in TABLES:
+        need(
+            connection.execute(text(f'SELECT 1 FROM "{namespace}"."{table}" LIMIT 1')).first()
+            is None,
+            "schema25_new_financial_activity_refused",
+        )

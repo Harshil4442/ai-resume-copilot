@@ -54,16 +54,23 @@ The future application-submission tariff does not enable final submission.
 | 1. Baseline and measurable contracts | Versioned requirements, tariffs, explicit limits and current release observations | Representative baseline workload, current vendor allocation and supported-cohort qualification |
 | 2. Cost and billing foundations | Wallet, immutable quotes, capture/refund replay, protected cost reservations and concurrent admission | Final integrated review and reconciled production finance evidence |
 | 3. Deterministic processing and reuse | Basic/curated paths, owned saved-result reuse and employer-origin batch discovery | Complete application journeys with real supported sources; no unsupported coverage claim |
-| 4. Qualified AI and document routes | Paid operation adapters, complete-input checks, factuality/count contracts, offline evaluation packet | Actual funded model outputs, native format/render receipts, blinded human comparison and statistical evidence |
+| 4. Qualified AI and document routes | Paid operation adapters, complete-input checks, factuality/count contracts and 200 materialized synthetic native inputs | Actual funded model outputs, complete native runtime/render receipts, blinded human comparison and statistical evidence |
 | 5. Capacity privacy and responsive experience | Account export/erasure, funded free limits, responsive review screens | Representative load/performance measurements and integrated privacy/security review |
-| 6. Shadow accounting and migration preparation | Read-only accounting report, additive migration rehearsal, legacy balances preserved | Production-compatible release ports, retained migration/rollback proof and representative shadow observation |
-| 7. Controlled deployment and commercial decision | Release gates fail closed; payment activation remains separate | Tested immutable build, guarded migration, opted-in canary, commercial hosting and all payment gates |
+| 6. Shadow accounting and migration preparation | Read-only accounting report, native schema25 operator and PostgreSQL17 migration/previous-app rollback rehearsal; legacy balances preserved | Exact production source/image capture, retained migration proof and representative shadow observation |
+| 7. Controlled deployment and commercial decision | Draft PR57 and protected Vercel preview; release gates fail closed | Complete candidate CI, tested immutable backend build, guarded migration, opted-in canary, commercial hosting and all payment gates |
 | 8. Ongoing quality and economics | Stop conditions and accounting signals defined | Operational alert ownership, regular invoice/quality review and measured ongoing evidence |
 
 Machine-readable status and evidence are in `CREDIT_QUALITY_PROGRESS.json` and
 `evidence/2026-10-27-unified-credit-local-integration.json`. Test runs are evidence
 for these stages, not separate development checkpoints. Expected versus actual
 effort is recorded only where measured; missing timing is not a zero-hour claim.
+
+The follow-on evidence in `evidence/2026-10-28-unified-credit-release-preparation.json`
+separates the locally connected legacy-order recovery journey from the new
+single-credit purchase/discovery journey. Their external payment and employer
+feeds are finite synthetic fixtures. Neither is a live commercial transaction or
+an employer application. The preview serves the new frontend but is not proof of
+the new production API contract.
 
 ## Safe release sequence
 
@@ -102,6 +109,47 @@ effort is recorded only where measured; missing timing is not a zero-hour claim.
 10. Activate the reviewed campaign and checkout only after those gates pass.
     Capture the first approved purchase/refund checks and monitor delivery cost,
     failure/unknown outcomes, refund rates and cash reserved for obligations.
+
+## Native schema25 operator
+
+`infra/gcp/unified_credit_schema25_release.py` provides explicit `capture`,
+`observe`, `upgrade`, `migration-reconcile`, `advance`, `reconcile` and `rollback`
+phases. Read its `--help` before constructing a plan. Plans and journals must be
+owned private files; later phases require the exact plan digest. Capture requires
+the commit, immutable image digest, successful build and CI identities, service
+revision/source pins and exact secret-version metadata. It is not a general
+database migration or arbitrary Cloud Run command wrapper.
+
+The upload coordinator has a separate fixed-scope pause plan and journal. Use
+`coordinator-capture` to record its exact source, image, configuration and serving
+revisions, then `coordinator-pause` once. `coordinator-reconcile` observes an
+uncertain result without repeating the write. The pause preserves the image and
+closes the master scan/cleanup admission flag on every active or tagged route.
+This does not prove existing invocations have finished: retain the independent
+SQL lease and queue-drain checks. Global observation and the immediate pre-DDL
+check both require fresh evidence that coordinator admission is closed.
+
+Capture the initial migration plan against schema21 and verify fresh disabled flags and
+drained work. `upgrade` preserves all old rows and permissions while adding the
+14 credit/free-processing tables through the four reviewed migrations. A lost
+acknowledgement requires `migration-reconcile` using the original journal, never
+another DDL attempt. A fresh schema25 plan and separate deployment journal are
+required before rolling out the new services. After a successful base rollout or
+a safe abort, `coordinator-restore` uses its original plan and journal to restore
+the prior flag and physical traffic allocations. Concurrent configuration changes
+cause refusal; they are not overwritten. The API/analysis/employer rolling plan
+still covers exactly those three services.
+
+The rollback rehearsal runs the previous API snapshot from commit
+`f0f973c9c6d989553b8f58b275fc06fd5685497a` against schema25. Its app files match
+the observed production API source `436585cdd92a9c1e09c0d630eb73e9c61e9b1a78`.
+The actual worker/coordinator source
+`7a00839dc90a93caebb0b3b5f2e9e03c51e941e9` is rehearsed separately. The production
+operator must still verify each observed prior image and build/CI provenance.
+Rollback is traffic-only, keeps schema25 and is allowed only while every new
+table is empty. Once the new wallet has activity, preserve its records and use a
+separately verified compatible release; this pre-activation rollback cannot be
+reused to discard obligations. Revision names alone do not prove source identity.
 
 ## Shadow report
 

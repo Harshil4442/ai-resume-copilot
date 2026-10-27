@@ -237,13 +237,19 @@ def test_legacy_release_still_refuses_the_current_extended_chain(tmp_path):
     typed = 'backend/alembic/versions/20261015_0019_browser_typed_controls.py'
     native = 'backend/alembic/versions/20261023_0020_native_resume_quarantine.py'
     reset = 'backend/alembic/versions/20261023_0021_email_password_reset.py'
-    assert {catalogue, browser, pacing, typed, native, reset} <= tracked
+    unified = {
+        'backend/alembic/versions/20261027_0022_unified_credit_wallet.py',
+        'backend/alembic/versions/20261027_0023_unified_execution_reservations.py',
+        'backend/alembic/versions/20261027_0024_funded_free_core.py',
+        'backend/alembic/versions/20261028_0025_unified_discovery_batches.py',
+    }
+    assert {catalogue, browser, pacing, typed, native, reset} | unified <= tracked
     # Preserve the historical chain check in a finite copy before the catalogue
     # migration, whose module-level SQL constants fail the legacy parser closed.
     prefix = tmp_path / 'pre_catalogue'
     (prefix / 'backend/alembic/versions').mkdir(parents=True)
     (prefix / 'backend/alembic.ini').write_bytes((ROOT / 'backend/alembic.ini').read_bytes())
-    prefix_tracked = tracked - {catalogue, browser, pacing, typed, native, reset}
+    prefix_tracked = tracked - {catalogue, browser, pacing, typed, native, reset} - unified
     for path in sorted(prefix_tracked):
         (prefix / path).write_bytes((ROOT / path).read_bytes())
     chain = release.source_guard.migration_chain(prefix, prefix_tracked)
@@ -253,7 +259,10 @@ def test_legacy_release_still_refuses_the_current_extended_chain(tmp_path):
     for operation in (release.source_guard.migration_chain, release.source_guard.migration_head):
         with pytest.raises(release.source_guard.PreflightDenied, match="Unsupported module-level migration assignment"):
             operation(ROOT, tracked)
-    assert release.source_guard.migration_chain(ROOT, tracked, allow_literal_sql=True) == (*release.CHAIN, "20261015_0019", "20261023_0020", "20261023_0021")
+    assert release.source_guard.migration_chain(ROOT, tracked, allow_literal_sql=True) == (
+        *release.CHAIN, "20261015_0019", "20261023_0020", "20261023_0021",
+        "20261027_0022", "20261027_0023", "20261027_0024", "20261028_0025",
+    )
 
 
 def native_identity(plan, monkeypatch, *, policy_update=None, ci_update=None, build_update=None):

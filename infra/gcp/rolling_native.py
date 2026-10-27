@@ -35,6 +35,8 @@ FINANCIAL_TABLES = ("payment_orders", "payment_transactions", "payment_refunds",
 
 class NativeRun:
     """Stock normal-manager auth; one physical PATCH send per explicitly armed call."""
+    SERVICES = release.SERVICES
+
     def __init__(self):
         self.stock = native.SDKGoogleReads(host_auth.SDK, host_auth.ACCOUNT)._http()
         from apitools.base.py import encoding
@@ -59,7 +61,7 @@ class NativeRun:
                 rolling.need(request.method == "POST" and path == "/token" and not query)
             else:
                 rolling.need(target.hostname == "run.googleapis.com" and query.get("alt", ["json"]) == ["json"])
-                resources = {"/v2/" + rolling.PARENT + "/services/" + service for service in release.SERVICES}
+                resources = {"/v2/" + rolling.PARENT + "/services/" + service for service in self.SERVICES}
                 if request.method == "PATCH":
                     rolling.need(self.armed is not None)
                     assert self.armed is not None
@@ -96,13 +98,13 @@ class NativeRun:
         return result
 
     def service(self, service):
-        rolling.need(service in release.SERVICES)
+        rolling.need(service in self.SERVICES)
         return self.decode(self.client.projects_locations_services.Get(
             self.messages.RunProjectsLocationsServicesGetRequest(name=rolling.PARENT + "/services/" + service)))
 
     def revision(self, service, name):
         from apitools.base.py.exceptions import HttpNotFoundError
-        rolling.need(service in release.SERVICES)
+        rolling.need(service in self.SERVICES)
         name = rolling.short_revision(name, service)
         try:
             return self.decode(self.client.projects_locations_services_revisions.Get(
@@ -112,7 +114,7 @@ class NativeRun:
             return None
 
     def patch(self, service, body, mask):
-        rolling.need(service in release.SERVICES and mask in {"template,traffic", "traffic"}
+        rolling.need(service in self.SERVICES and mask in {"template,traffic", "traffic"}
                      and self.armed is None and type(body) is dict
                      and body.get("name") == rolling.PARENT + "/services/" + service
                      and set(body) == ({"name", "etag", "traffic", "template"}

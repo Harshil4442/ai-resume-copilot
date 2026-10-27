@@ -112,3 +112,32 @@ def test_catalog_refuses_modified_financial_constraint(pg_engine):
         db.execute(text("ALTER TABLE credit_accounts DROP CONSTRAINT ck_credit_account_debt"))
         with pytest.raises(contract.Schema25Denied, match="shape_mismatch"):
             contract.verify_shape(db, oid, name)
+
+
+def test_catalog_fingerprint_is_identical_in_native_readonly_observer_path(pg_engine):
+    _migrate(pg_engine, contract.SCHEMA)
+    with pg_engine.connect() as db, db.begin():
+        name, oid = identity(db)
+        own_path = db.scalar(text("SELECT current_setting('search_path')"))
+        expected = contract.catalog_digest(db, oid, name)
+        assert db.scalar(text("SELECT current_setting('search_path')")) == own_path
+    with pg_engine.connect() as db, db.begin():
+        db.exec_driver_sql("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+        db.exec_driver_sql("SET LOCAL search_path=pg_catalog")
+        assert contract.catalog_digest(db, oid, name) == expected
+        contract.verify_shape(db, oid, name)
+        assert db.scalar(text("SELECT current_setting('search_path')")) == "pg_catalog"
+        assert db.in_transaction()
+
+
+def test_initial_native_release_refuses_new_credit_activity(pg_engine):
+    _migrate(pg_engine, contract.SCHEMA)
+    with pg_engine.begin() as db:
+        name, _oid = identity(db)
+        contract.verify_empty_new_tables(db, name)
+        db.execute(text("INSERT INTO users(id,email) VALUES(42,'schema25-activity@example.test')"))
+        db.execute(
+            text("INSERT INTO credit_accounts(user_id, debt_credits,created_at) VALUES(42,0,now())")
+        )
+        with pytest.raises(contract.Schema25Denied, match="financial_activity"):
+            contract.verify_empty_new_tables(db, name)

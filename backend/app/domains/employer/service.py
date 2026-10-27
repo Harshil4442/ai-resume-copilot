@@ -852,9 +852,10 @@ def create_application(db: Session, user_id: int, payload: schemas.ApplicationCr
         return existing
     posting = _posting(db, payload.posting_id)
     source = _source(db, posting.source_id)
-    from ..credits.runtime import requires_unified_billing
-    if requires_unified_billing(db, user_id) and _source_mode(source) == "api":
-        raise HTTPException(409, "Verified unified-credit submission is not enabled. Use reviewed browser assistance or the employer portal.")
+    if _source_mode(source) == "api":
+        from ..credits.runtime import requires_unified_billing
+        if requires_unified_billing(db, user_id):
+            raise HTTPException(409, "Verified unified-credit submission is not enabled. Use reviewed browser assistance or the employer portal.")
     if not posting.is_open or not source.enabled:
         raise HTTPException(409, "This employer job is no longer available")
     source_snapshot = connectors.source_contract(source)

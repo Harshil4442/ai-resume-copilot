@@ -115,6 +115,24 @@ def _execute(client, application):
     return result.json()
 
 
+def test_unified_owner_cannot_prepare_api_submission_or_spend_legacy_balance(context, monkeypatch):
+    factory, client, _ = context
+    monkeypatch.setenv("UNIFIED_CREDIT_EXECUTION_ENABLED", "true")
+    monkeypatch.setenv("UNIFIED_CREDIT_EXECUTION_AUDIENCE", "canary")
+    monkeypatch.setenv("UNIFIED_CREDIT_CANARY_OWNER_IDS", "1")
+    monkeypatch.setattr(connectors, "load_form", lambda *_args, **_kwargs: pytest.fail("No employer call before unsupported submission refusal"))
+    response = client.post("/api/v1/employer-jobs/applications", json={
+        "posting_id": "job_1", "resume_id": 10, "resume_choice": "original",
+        "idempotency_key": "unified-api-submission-refused",
+    })
+    assert response.status_code == 409
+    assert "submission is not enabled" in response.json()["detail"]
+    with factory() as db:
+        assert db.query(models.EmployerApplication).count() == 0
+        assert db.query(models.ServiceCreditReservation).count() == 0
+        assert db.get(core.User, 1).job_service_credits == 50
+
+
 def _search_quote(client, count=10):
     # This service fixture overrides the ORM user dependency, not catalogue JWT
     # decoding. Use the actual configured price for these paid-service requests.

@@ -1,0 +1,203 @@
+{
+  "schema_version": 1,
+  "observed_at": "2026-10-27T19:28:02.123963+00:00",
+  "scope": "Local connected/browser and native PostgreSQL17 rehearsal, remote preview and completed first CI observations; not production or commercial qualification",
+  "pull_request": "https://github.com/Harshil4442/ai-resume-copilot/pull/57",
+  "remote_candidate_commit": "07c438af206d9cec6cf6d2c1654b7ca1abd14e61",
+  "follow_on_changes": "Reviewed operator, coordinator pause/restore, browser harness, reviewer kit and materializer preparation; follow-on remote CI pending",
+  "preview": {
+    "deployment_id": "dpl_E96NCJcYi27fyNuGgk9WnRbu6SzB",
+    "state": "READY",
+    "pricing_authenticated_fetch_status": 200,
+    "checkout": "unavailable",
+    "production_changed": false
+  },
+  "ci": {
+    "run_id": 40566783678,
+    "frontend": "success:1253 unit tests and255 responsive cases",
+    "browser_companion": "success",
+    "security_and_container": "success",
+    "backend": "completed failure:7149 passed,3 failed,13 skipped,243subtests in1604.47s; three failures traced to manual-source wallet import and two stale migration-chain test expectations, corrected locally",
+    "cold_browser": "failed stale legacy-pack expectation; repaired locally; remote rerun pending"
+  },
+  "local_native_release": {
+    "database_major": 17,
+    "prior_app_source": "f0f973c9c6d989553b8f58b275fc06fd5685497a",
+    "actual_old_api_worker_imported": true,
+    "legacy_rows_and_acl_preserved": true,
+    "production_migration": false,
+    "rollback": "traffic-only before new table activity; exact prior source/image evidence required",
+    "prior_worker_source": "7a00839dc90a93caebb0b3b5f2e9e03c51e941e9",
+    "current_gap": "Coordinator pause/restore implementation and local review complete; live pause, drain, capture, migration and rollout remain outstanding.",
+    "earlier_baseline_tests_passed": 463,
+    "final_operator_regression_tests_passed": 286,
+    "test_session_timezone": "PGTZ=UTC",
+    "coordinator_operator": {
+      "source": "infra/gcp/schema25_coordinator_pause.py",
+      "separate_plan_and_journal": true,
+      "pre_ddl_fresh_check": true,
+      "unknown_write_replay": false,
+      "provider_writes": false
+    },
+    "operator_preparation_metadata": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261028/unified-credit-preparation/schema25-operator-preparation.json",
+      "sha256": "59f12f97e6337b6b8caee3af02f9b8b8aa1883b19163516ff4870a836e02bedf"
+    }
+  },
+  "local_connected_journeys": {
+    "legacy": {
+      "summary": "/Users/harshil/.codex/hirewiz-evidence/20261028/unified-credit-preparation/legacy-cold-browser-summary.json",
+      "sha256": "9da466308b7ea6efbc8f98b315c17b8346f988445c751d6a72141ada87e00537",
+      "scope": "Local production Next + Chromium + actual FastAPI/auth/SQL; legacy-order recovery and no-AI manual handoff; finite synthetic external providers only",
+      "production_proof": false,
+      "sql": {
+        "model_calls": 0,
+        "analysis_runs": 0,
+        "analysis_units_after_purchase": 52,
+        "bundle_analysis_units_granted": 2,
+        "analysis_unit_operation_debits": 0,
+        "posting_index": 4,
+        "owned_docx_sources": 2,
+        "service_credit_grants": 1,
+        "service_balance": 96,
+        "search_reserved": 6,
+        "search_charged": 4,
+        "search_released": 2,
+        "application_fee": 0,
+        "application_attempts": 0,
+        "employer_apply_outbox": 0,
+        "approval_records": 2,
+        "revoked_approvals": 1,
+        "final_submit_grants": 0,
+        "current_exact_custom_artifact": true,
+        "employer_receipt": null,
+        "migration": "20261028_0025"
+      },
+      "cleanup": {
+        "owned_processes_stopped": true,
+        "group_verification": [
+          {
+            "group_id": 48860,
+            "verified_stopped": true,
+            "verification": "unreaped owned leader; no live group members"
+          },
+          {
+            "group_id": 48859,
+            "verified_stopped": true,
+            "verification": "unreaped owned leader; no live group members"
+          }
+        ],
+        "errors": [],
+        "own_schema_removed": true,
+        "owned_tls_private_key_removed": true
+      }
+    },
+    "unified": {
+      "summary": "/Users/harshil/.codex/hirewiz-evidence/20261028/unified-credit-preparation/unified-cold-browser-summary.json",
+      "sha256": "6da32eb75c62be59f4f1c47bdc6fc0a97e3199be43936f499a7bd9b3ad7c630c",
+      "scope": "Local production Next + Chromium + actual FastAPI/auth/SQL; unified credit journey; finite synthetic external providers only",
+      "production_proof": false,
+      "sql": {
+        "model_calls": 0,
+        "analysis_runs": 0,
+        "payment_orders": 1,
+        "purchased_credits": 40,
+        "remaining_credits": 39,
+        "discovery_batches": 2,
+        "new_jobs": 2,
+        "credits_reserved": 2,
+        "credits_charged": 1,
+        "credits_released": 1,
+        "free_resume_parse": 1,
+        "legacy_service_credits": 0,
+        "legacy_analysis_units": 50,
+        "external_applications": 0,
+        "unreconciled_native_holds_preserved": 2,
+        "migration": "20261028_0025"
+      },
+      "cleanup": {
+        "owned_processes_stopped": true,
+        "group_verification": [
+          {
+            "group_id": 51316,
+            "verified_stopped": true,
+            "verification": "unreaped owned leader; no live group members"
+          },
+          {
+            "group_id": 51315,
+            "verified_stopped": true,
+            "verification": "unreaped owned leader; no live group members"
+          }
+        ],
+        "errors": [],
+        "own_schema_removed": true,
+        "owned_tls_private_key_removed": true
+      }
+    }
+  },
+  "quality_sources": {
+    "count": 200,
+    "formats": {
+      "docx": 50,
+      "pdf": 50,
+      "tex": 50,
+      "texzip": 50
+    },
+    "complete_text_checked": true,
+    "pdf_pages": 90,
+    "packet_manifest_sha256": "b6c3d15cda3a0b10899712919be4c11a9b05441eafa055d4b7228fc2499cdddd",
+    "materialization_manifest_sha256": "e33412b2d08d5e4a3a85a21603f092211830182add74fd63dc23fd224ec435fe",
+    "retained_directory": "/Users/harshil/.codex/hirewiz-evidence/20261028/unified-credit-preparation/quality-native-v3",
+    "native_runtime_validation_complete": false,
+    "independent_human_review": false,
+    "provider_evaluation": false,
+    "authorizes_release": false,
+    "execution_compatibility_gap": "FrozenTeX/TeXZIP sources requireXeLaTeX/fontspec, while deployed native route supports onlypdfLaTeX; exactDOCX fonts also need native availability review. No modelspend orqualitypass inferred. Separate supported calibration/reference plan required."
+  },
+  "root_integration_checks": [
+    "121 focused source/harness/quality tests passed in10.00s; materializer/packet final26tests also reported by agent",
+    "New files Ruff passed; scoped Mypy7sourcefiles passed",
+    "CI YAML preserves exact five required provenance jobs; legacy and unified journeys run as separate steps and summaries, with actual prior Git source available",
+    "39 browser/manual/discovery/credit HTTP regressions plus new API-submission refusal passed after avoiding unnecessary wallet lookup for manual sources",
+    "156 migration-chain/legacy-release/CI-contract regressions passed after fixing exact schema25 ancestry expectations; old deployment contracts remain frozen",
+    "Coordinator operator final review found no concrete defect; 286 focused operator/schema/PG17 regressions, Ruff and scoped Mypy passed; no provider writes"
+  ],
+  "production_mutations": false,
+  "full_stage_completed": false,
+  "remaining": [
+    "Complete follow-on remote CI and exact immutable backend build",
+    "Capture and verify actual production source/image/flags before guarded migration",
+    "Real funded quality outputs, full native runtime validation and independent human/statistical review",
+    "Representative load, financial reconciliation and commercial hosting",
+    "At least seven days representative shadow and200 successful paid-equivalent operations before widening; checkout remains disabled"
+  ],
+  "production_source_audit": {
+    "path": "/Users/harshil/.codex/hirewiz-evidence/20261028/unified-credit-preparation/production-source-readonly-audit.json",
+    "sha256": "45da1846c51168682d8e45676a71498278de16e0f061e319a27284b867196531",
+    "read_only": true,
+    "revision_names_are_not_source_proof": true
+  },
+  "implemented_follow_on": "Manual/browser preparation now avoids the unified wallet import/query; API-source submission still fails closed for unified owners before any employer call or legacy debit.",
+  "reviewer_kit": {
+    "guide": "docs/delivery/HUMAN_REVIEW_GUIDE.md",
+    "artifact": "output/review/HireWiz_Reviewer_Starter_Kit.zip",
+    "inputs": 10,
+    "output_scores": 0,
+    "reviewers_assigned": false,
+    "output_generation_pending": true
+  },
+  "model_billing_observation": {
+    "observed_at": "2026-10-27T19:47:47.429934+00:00",
+    "source": "Signed-in Google AI Studio project Spend UI",
+    "project": "ai-resume-parser-482412",
+    "displayed_period": "October1\u201328,2026",
+    "displayed_gemini_cost_inr": 8.51,
+    "displayed_project_monthly_cap_inr": 9598.87,
+    "reporting_delay": "UI warns costs can take over24hours",
+    "other_cloud_products_included": false,
+    "prepaid_balance_verified": false,
+    "invoice_reconciled": false,
+    "provider_changes": false
+  },
+  "updated_at": "2026-10-27T19:51:23.936145+00:00"
+}

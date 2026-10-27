@@ -30,7 +30,10 @@ observer = load("hirewiz_current_chain_observer", "backend/scripts/monetary_cuto
 
 def test_typed_and_native_source_extend_frozen_schema18_release_without_expanding_its_forward_steps():
     tracked = {p.relative_to(ROOT).as_posix() for p in (ROOT / "backend/alembic/versions").glob("*.py")}
-    assert release.source_guard.migration_chain(ROOT, tracked, allow_literal_sql=True) == (*release.CHAIN, "20261015_0019", "20261023_0020", "20261023_0021")
+    assert release.source_guard.migration_chain(ROOT, tracked, allow_literal_sql=True) == (
+        *release.CHAIN, "20261015_0019", "20261023_0020", "20261023_0021",
+        "20261027_0022", "20261027_0023", "20261027_0024", "20261028_0025",
+    )
     assert release.CUTOVER_CHAIN == step.CHAIN == observer.SCHEMA_ORDER
     assert step.CHAIN[0] == "20261008_0009" and step.CHAIN[-1] == "20261015_0018"
     assert len(step.CHAIN) == 10

@@ -3,7 +3,7 @@
   "requirement_version": "1.1",
   "source_sha256": "ac56be4838c8309fa9b1da3a717d53fab2bad85cfe0482d6aeedc4374a38fb4f",
   "baseline_commit": "f0f973c9c6d989553b8f58b275fc06fd5685497a",
-  "updated_at": "2026-10-27T19:09:27.941864+00:00",
+  "updated_at": "2026-10-27T19:51:23.936145+00:00",
   "authorization": "Owner authorized implementation, testing, deployment and payment activation subject to requirements gates on 2026-10-27.",
   "stages": [
     {
@@ -40,10 +40,11 @@
       "estimated_effort": null,
       "actual_effort": null,
       "evidence": [
-        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json",
+        "docs/delivery/evidence/2026-10-28-unified-credit-release-preparation.json"
       ],
-      "status_observed_at": "2026-10-27T18:14:22.788032+00:00",
-      "local_result": "Free/basic paths, owned saved-result reuse and one-credit employer-origin batches integrated; actual deployed journey verification pending."
+      "status_observed_at": "2026-10-27T19:28:02.123963+00:00",
+      "local_result": "Legacy recovery and new40-credit purchase plus one-credit partial/empty discovery browser journeys pass locally with finite synthetic external providers; real deployed journeys pending."
     },
     {
       "number": 4,
@@ -54,10 +55,11 @@
       "estimated_effort": null,
       "actual_effort": null,
       "evidence": [
-        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json",
+        "docs/delivery/evidence/2026-10-28-unified-credit-release-preparation.json"
       ],
-      "status_observed_at": "2026-10-27T18:14:22.788032+00:00",
-      "local_result": "Async and synchronous paid adapters plus200-case offline packet implemented; native materials, real funded output and independent human/statistical qualification pending."
+      "status_observed_at": "2026-10-27T19:28:02.123963+00:00",
+      "local_result": "200/200 synthetic native sources materialized across PDF,DOCX,TeX,TeXZIP; complete-content checks and representative renders pass. Full native runtime, actual funded model outputs and independent human/statistical review pending."
     },
     {
       "number": 5,
@@ -68,10 +70,11 @@
       "estimated_effort": null,
       "actual_effort": null,
       "evidence": [
-        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json",
+        "docs/delivery/evidence/2026-10-28-unified-credit-release-preparation.json"
       ],
-      "status_observed_at": "2026-10-27T18:14:22.788032+00:00",
-      "local_result": "Responsive reviews and explicit account export/erasure verified locally; representative load and production performance pending."
+      "status_observed_at": "2026-10-27T19:28:02.123963+00:00",
+      "local_result": "Remote frontend1253unit/255responsive checks passed; local unified journey Axe390/1440clean. Representative load and production measurements pending."
     },
     {
       "number": 6,
@@ -82,20 +85,25 @@
       "estimated_effort": null,
       "actual_effort": null,
       "evidence": [
-        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json",
+        "docs/delivery/evidence/2026-10-28-unified-credit-release-preparation.json"
       ],
-      "status_observed_at": "2026-10-27T18:49:08.700943+00:00",
-      "local_result": "Read-only accounting report and schema21to25 add-only rehearsal pass locally; native operator/source-image/journal integration and seven-day representative observation pending."
+      "status_observed_at": "2026-10-27T19:51:23.936145+00:00",
+      "local_result": "Schema25 migration and prior API/worker compatibility rehearsed on PostgreSQL17; separate same-image coordinator pause/restore and immediate pre-DDL gate implemented and reviewed. 463 earlier baseline checks and 286 final focused operator checks passed (overlapping sets, not additive). Live capture, drain, migration and seven-day representative shadow pending."
     },
     {
       "number": 7,
       "name": "Controlled deployment and commercial decision",
-      "status": "pending",
+      "status": "in_progress",
       "started_at": null,
       "completed_at": null,
       "estimated_effort": null,
       "actual_effort": null,
-      "evidence": []
+      "evidence": [
+        "docs/delivery/evidence/2026-10-28-unified-credit-release-preparation.json"
+      ],
+      "local_result": "Draft PR57 and protected Vercel preview deployed; checkout unavailable. First CI exposed three backend regressions and a stale browser expectation, repaired locally. Follow-on candidate CI, guarded GCP rollout and commercial gates pending.",
+      "status_observed_at": "2026-10-27T19:51:23.936145+00:00"
     },
     {
       "number": 8,
