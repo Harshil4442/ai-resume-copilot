@@ -413,7 +413,9 @@ class OwnedTests(unittest.TestCase):
         self.assertEqual(policy["structure"]["docx"]["max_entries"], 500)
         self.assertEqual(policy["structure"]["docx"]["max_expanded_bytes"], 20971520)
         self.assertEqual(policy["structure"]["pdf"]["max_pages"], 20)
-        self.assertEqual(len(policy["source_sha256"]), 13)
+        from infra.gcp.document_candidate import SOURCES
+
+        self.assertEqual(set(policy["source_sha256"]), SOURCES)
         self.assertIn("backend/app/services/native_project.py", policy["source_sha256"])
         self.assertEqual(policy["scanner"]["result_contracts"]["inspect"], "unchanged_clamscan_exact_exit_and_summary")
 

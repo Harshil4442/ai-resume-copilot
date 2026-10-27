@@ -59,8 +59,7 @@ export function useQuotedAnalysis({ request, selectionKey, context, availability
     retry: false,
   });
   const lookup = useMutation({
-    mutationFn: async () => {
-      if (!available) throw new Error("This service is not available for credit execution yet.");
+    mutationFn: async (prepareQuote: boolean) => {
       const selectedRequest = structuredClone(request), selectedContext = structuredClone(context), selectedKey = selectionKey;
       const reusable = await apiPostJson<{ reused_run: AnalysisRun | null }>("/v1/credits/analysis-reuse", selectedRequest);
       if (!reusable || !("reused_run" in reusable)) throw new Error("Could not verify whether an existing result can be reused.");
@@ -69,24 +68,31 @@ export function useQuotedAnalysis({ request, selectionKey, context, availability
         if (typeof run.id !== "string" || !run.id || run.operation !== selectedRequest.operation || !["queued", "running", "succeeded"].includes(run.status)) throw new Error("The existing result could not be verified.");
         return { run, selectionKey: selectedKey };
       }
+      if (!prepareQuote) return { missing: true };
+      if (!available) throw new Error("This service is not available for credit execution yet.");
       const quote = parseUnifiedServiceQuote(await apiPostJson<unknown>("/v1/credits/service-quotes", {
         ...selectedRequest, idempotency_key: crypto.randomUUID(),
       }));
       if (!quote || quote.operation !== operation) throw new Error("The service quote could not be verified. No work was started.");
       return { review: { quote, request: selectedRequest, context: { ...selectedContext, operation, inputFingerprint: quote.input_fingerprint }, selectionKey: selectedKey, executionKey: crypto.randomUUID() } satisfies Review };
     },
-    onSuccess: (result) => { if (result.run) { if (result.selectionKey === selectionKey) onRun(result.run); else setPreviousResult("An existing result was found for the previous inputs. Return to those inputs to view it."); } else { execution.reset(); setReview(result.review); } },
+    onSuccess: (result) => { if (result.run) {
+      if (result.selectionKey === selectionKey) { onRun(result.run); setPreviousResult("Your existing request was loaded. No new credits were charged."); }
+      else setPreviousResult("An existing result was found for the previous inputs. Return to those inputs to view it.");
+    } else if (result.review) { execution.reset(); setReview(result.review); }
+    else setPreviousResult("No saved result matches these inputs. No work was started or credits charged."); },
     retry: false,
   });
   const changed = review !== null && review.selectionKey !== selectionKey;
   const rejected = definitelyRejected(execution.error);
   const attempted = (execution.isError && !rejected) || execution.isPending;
   return {
-    available, review, changed, attempted, rejected, previousResult,
+    operation, available, review, changed, attempted, rejected, previousResult,
     pending: lookup.isPending || execution.isPending,
     error: lookup.error || execution.error,
     executionFailed: execution.isError && !rejected,
-    requestQuote: () => { if (!attempted) { setReview(null); setPreviousResult(null); execution.reset(); lookup.mutate(); } },
+    requestQuote: () => { if (!attempted && !lookup.isPending) { setReview(null); setPreviousResult(null); execution.reset(); lookup.mutate(true); } },
+    loadSaved: () => { if (!attempted && !lookup.isPending) { setReview(null); setPreviousResult(null); execution.reset(); lookup.mutate(false); } },
     approve: (quoteId: string) => { if (review && review.quote.quote_id === quoteId && !changed && available && !execution.isPending && !rejected) execution.mutate(review); },
     retry: () => { if (review && execution.isError) execution.mutate(review); },
     cancel: () => { if (!attempted) { setReview(null); lookup.reset(); execution.reset(); } },

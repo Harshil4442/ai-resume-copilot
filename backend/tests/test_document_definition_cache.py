@@ -71,6 +71,8 @@ def test_nonce_is_consumed_only_in_separate_definition_acquisition_stage():
     # Runtime build steps record installed renderer/font and antivirus bytes.
     # Neither refreshes definitions nor passes a caller nonce/secret onward.
     assert [argument for command, argument in runtime if command == "RUN"] == [
+        "fc-cache --force /usr/share/fonts/truetype/hirewiz-courier-prime "
+        "&& /usr/local/bin/python3 -I /opt/document/courier_prime_fonts.py",
         "/usr/local/bin/python3 -I /opt/document/docx_renderer.py --write-font-manifest",
         '/usr/local/bin/python3 -I -c \'import sys; sys.path.insert(0, "/opt/document"); '
         "import processor; processor.write_clamd_native_manifest()'",

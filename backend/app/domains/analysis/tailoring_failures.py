@@ -65,6 +65,7 @@ _MESSAGES: dict[str, str] = {
     "The original PDF font cannot safely encode this character.": "font_unsupported",
     "The original PDF font is missing a required glyph.": "font_unsupported",
     "The PDF text style cannot be verified.": "font_unsupported",
+    "The DOCX font or its selection cannot be reproduced exactly by the private renderer. Your original file is preserved; use the original/custom resume or provide a source using an available licensed font.": "font_unsupported",
     "Use only characters available in the source font": "font_unsupported",
     "The compiled TeX PDF contains glyphs without readable font mappings. Use a Unicode-mapped font such as Latin Modern or a readable original/custom PDF.": "font_unsupported",
     "The replacement does not fit its original PDF text slot.": "replacement_does_not_fit",

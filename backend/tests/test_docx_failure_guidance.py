@@ -20,7 +20,7 @@ def _definitions(path: str, names: set[str], namespace: dict) -> None:
     tree = ast.parse((ROOT / path).read_bytes())
     nodes = [node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.name in names]
     assert {node.name for node in nodes} == names
-    exec(compile(ast.Module(body=nodes, type_ignores=[]), path, "exec"), namespace)
+    exec(compile(ast.Module(body=[node for node in nodes], type_ignores=[]), path, "exec"), namespace)
 
 
 def _constants(path: str, names: set[str], namespace: dict) -> None:
@@ -30,7 +30,7 @@ def _constants(path: str, names: set[str], namespace: dict) -> None:
         for target in (node.targets if isinstance(node, ast.Assign) else [node.target]))]
     found = {target.id for node in nodes for target in (node.targets if isinstance(node, ast.Assign) else [node.target]) if isinstance(target, ast.Name)}
     assert names <= found
-    exec(compile(ast.Module(body=nodes, type_ignores=[]), path, "exec"), namespace)
+    exec(compile(ast.Module(body=[node for node in nodes], type_ignores=[]), path, "exec"), namespace)
 
 
 @pytest.fixture
@@ -49,15 +49,15 @@ def controls(monkeypatch):
     costs = types.ModuleType(prefix + ".services.model_cost_policy")
     _definitions("backend/app/services/model_cost_policy.py", {"ModelCostUnavailable"}, costs.__dict__)
     ingestion = types.ModuleType(prefix + ".services.document_ingestion")
-    ingestion._tls_context = lambda: ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    ingestion.__dict__["_tls_context"] = lambda: ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     for module in (resume, llm, ingestion, costs):
         monkeypatch.setitem(sys.modules, module.__name__, module)
     artifact = types.ModuleType(prefix + ".services.docx_artifact")
     artifact.__package__ = prefix + ".services"
     artifact.__dict__.update(asyncio=asyncio, json=json, httpx=httpx, ResumeLayoutError=resume.ResumeLayoutError)
     _constants("backend/app/services/docx_layout_validation.py", {"LAYOUT_REASONS"}, artifact.__dict__)
-    _constants("backend/app/services/docx_artifact.py", {"MAX_RESPONSE", "_REFUSED", "_LAYOUT_REFUSED", "_LINK_REFUSED"}, artifact.__dict__)
-    _definitions("backend/app/services/docx_artifact.py", {"_worker_http", "_check_binding", "_pairs"}, artifact.__dict__)
+    _constants("backend/app/services/docx_artifact.py", {"MAX_RESPONSE", "_REFUSED", "_LAYOUT_REFUSED", "_LINK_REFUSED", "_FONT_REFUSED"}, artifact.__dict__)
+    _definitions("backend/app/services/docx_artifact.py", {"_worker_http", "_check_binding", "_pairs", "DocxFontUnsupported"}, artifact.__dict__)
     failures = types.ModuleType(prefix + ".domains.analysis.tailoring_failures")
     failures.__package__ = prefix + ".domains.analysis"
     # This module contains only finite declarations; its provider imports are
@@ -112,6 +112,7 @@ def _receive(artifact, config, expected, edits, body, monkeypatch):
     ("line_wrap_changed", "source_layout_changed", "keep_original_layout"),
     ("outside_region_pixels", "source_layout_changed", "keep_original_layout"),
     ("document_safety", "validation_failed", "use_original_or_custom"),
+    ("unsupported_source_font", "font_unsupported", "use_supported_font"),
 ])
 def test_only_bound_native_refusals_reach_fixed_public_guidance(controls, monkeypatch, native_reason, public_reason, action):
     artifact, failures, llm = controls
@@ -125,6 +126,8 @@ def test_only_bound_native_refusals_reach_fixed_public_guidance(controls, monkey
     assert guidance == {"reason_code": public_reason, "next_action": action}
     assert PRIVATE_MARKER not in str(refused.value) + marker + json.dumps(guidance)
     assert refused.value.unit_id == PRIVATE_MARKER  # Internal repair attribution is retained.
+    if native_reason == "unsupported_source_font":
+        assert refused.value.content_repair_allowed is False
 
 
 @pytest.mark.parametrize("change", [

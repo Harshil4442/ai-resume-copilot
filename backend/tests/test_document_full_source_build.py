@@ -12,6 +12,7 @@ from types import SimpleNamespace
 
 import pytest
 import test_document_refresh_probe as native
+from infra.gcp import document_candidate as candidate
 from infra.gcp import document_refresh_probe as probe
 
 from scripts import document_refresh as refresh
@@ -54,10 +55,10 @@ def rows():
         return [(copy.deepcopy(row), source.extractfile(row).read()) for row in source]
 
 
-def test_exact_source_archive_has_thirteen_sources_and_bound_policy_without_extracting(monkeypatch):
+def test_exact_source_archive_has_candidate_inventory_and_bound_policy_without_extracting(monkeypatch):
     contents, hashes, policy = refresh.full_source_snapshot()
     raw = refresh.full_source_archive()
-    assert len(hashes) == 13 and len(contents) == 14
+    assert set(hashes) == candidate.SOURCES and len(hashes) == 21 and len(contents) == 22
     assert json.loads(contents[refresh.FULL_SOURCE_POLICY])["source_sha256"] == hashes
     assert policy == hashlib.sha256(contents[refresh.FULL_SOURCE_POLICY]).hexdigest()
     assert "backend/app/services/native_project.py" in hashes
@@ -119,7 +120,8 @@ def test_local_source_drift_refuses_before_publish(tmp_path, monkeypatch):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(content)
     monkeypatch.setattr(refresh, "ROOT", tmp_path)
-    monkeypatch.setattr(refresh, "accepted", lambda: SimpleNamespace(POLICY_SHA256=policy))
+    original_infra = refresh.infra
+    monkeypatch.setattr(refresh, "infra", lambda name: candidate if name == "document_candidate" else original_infra(name))
     source = tmp_path / "backend/app/services/native_project.py"
     source.write_bytes(source.read_bytes() + b"# drift\n")
     monkeypatch.setattr(refresh, "native_http", lambda: pytest.fail("No provider call"))
@@ -161,9 +163,10 @@ def test_full_source_is_distinct_from_refresh_and_never_historical_v1():
     result = identity()
     assert result["kind"] == refresh.FULL_SOURCE_KIND
     assert result["fixed_renderer_base"] is None
-    assert result["policy_sha256"] == refresh.accepted().POLICY_SHA256
+    assert result["policy_sha256"] == candidate.POLICY_SHA256
+    assert result["policy_sha256"] != refresh.accepted().POLICY_SHA256
     assert result["source_object"].startswith(refresh.FULL_SOURCE_PREFIX)
-    assert len(result["source_sha256"]) == 13
+    assert set(result["source_sha256"]) == candidate.SOURCES
     recipe = result["refresh_dockerfile_sha256"]
     with pytest.raises(refresh.RefreshDenied):
         refresh.build_contract(build(), NONCE, recipe)
@@ -210,19 +213,16 @@ def test_changed_remote_source_cannot_be_adopted_as_v2_build(monkeypatch):
         refresh.verify_native_build(expected)
 
 
-def test_exact_full_source_build_flows_through_existing_v2_successor_without_bypass(monkeypatch, tmp_path):
+def test_new_candidate_cannot_borrow_existing_v2_renderer_acceptance(monkeypatch, tmp_path):
     expected = identity()
     bind_readback(monkeypatch)
     fake = native.Fake()
     monkeypatch.setattr(probe, "Clients", lambda: fake)
     monkeypatch.setattr(probe, "build_module", lambda: refresh)
-    result = probe.run_successor(IMAGE, expected, tmp_path / "native")
-    assert result.image == IMAGE and result.contract_version == 2 and result.required_case_count == 10
-    assert result.policy_sha256 == expected["policy_sha256"]
-    assert result.source_sha256 == expected["source_sha256"]
-    assert fake.calls["create"] == fake.calls["start"] == 1
-    assert probe.verify_successor(IMAGE, expected, tmp_path / "native") == result
-    assert fake.calls["create"] == fake.calls["start"] == 1
+    with pytest.raises(probe.NativeProofDenied, match="candidate_renderer_review_required"):
+        probe.run_successor(IMAGE, expected, tmp_path / "native")
+    assert fake.calls["create"] == fake.calls["start"] == 0
+    assert not (tmp_path / "native").exists()
 
 
 def test_full_source_publication_requires_explicit_opt_in_before_auth(monkeypatch, tmp_path):
@@ -327,6 +327,7 @@ def test_local_symlink_is_refused_even_when_target_bytes_match(tmp_path, monkeyp
     source.unlink()
     source.symlink_to(target)
     monkeypatch.setattr(refresh, "ROOT", tmp_path)
-    monkeypatch.setattr(refresh, "accepted", lambda: SimpleNamespace(POLICY_SHA256=policy))
+    original_infra = refresh.infra
+    monkeypatch.setattr(refresh, "infra", lambda name: candidate if name == "document_candidate" else original_infra(name))
     with pytest.raises(refresh.RefreshDenied, match="path_invalid"):
         refresh.full_source_archive()

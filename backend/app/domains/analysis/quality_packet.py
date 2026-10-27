@@ -364,16 +364,74 @@ def _native_receipt(root, record, *, source_sha, target_sha, errors, label):
         errors.append(f"Every rendered page needs a bound visual-review record: {label}")
 
 
-def _runner_receipt(root, record, *, input_sha, output_sha, errors, label):
+def _runner_receipt(root, record, *, input_sha, output_sha, errors, label, allow_calibration=False):
     receipt = _json_artifact(root, record, errors, label)
     if not isinstance(receipt, dict):
         return
+    legacy = receipt.get("schema_version") == "legacy-model-liability-v1"
+    required = ("run_id", "provider", "model", "prompt_version", "usage_provenance")
     if (receipt.get("state") != "completed" or receipt.get("input_sha256") != input_sha
             or receipt.get("output_sha256") != output_sha
-            or any(not receipt.get(key) for key in ("run_id", "execution_hold_id", "provider", "model", "prompt_version", "usage_provenance"))):
+            or any(not receipt.get(key) for key in required)
+            or (not legacy and not receipt.get("execution_hold_id"))):
         errors.append(f"Funded durable runner receipt incomplete: {label}")
-    _artifact(root, receipt.get("funding_authorization", {}), errors, label + ":funding")
-    _artifact(root, receipt.get("expense_ledger_export", {}), errors, label + ":expense")
+    if legacy:
+        _legacy_calibration_receipt(root, receipt, errors, label)
+        if not allow_calibration:
+            errors.append(f"Internal calibration receipt cannot qualify a retail route: {label}")
+    else:
+        _artifact(root, receipt.get("funding_authorization", {}), errors, label + ":funding")
+        _artifact(root, receipt.get("expense_ledger_export", {}), errors, label + ":expense")
+
+
+def _legacy_calibration_receipt(root, receipt, errors, label):
+    """Import genuine pre-unified liabilities without fabricating an execution hold.
+
+    This supports development output review only. It cannot qualify retail routes:
+    it has no unified money hold or per-service unit-economics evidence.
+    """
+    from ...services.model_cost_policy import quoted_cost
+
+    auth = _json_artifact(root, receipt.get("funding_authorization", {}), errors, label + ":funding")
+    ledger = _json_artifact(root, receipt.get("expense_ledger_export", {}), errors, label + ":expense")
+    if not isinstance(auth, dict) or not isinstance(ledger, dict):
+        return
+    try:
+        event, = ledger["events"]
+        liability, = ledger["liabilities"]
+        route = auth["routes"][ledger["side"]]
+        for field in ("funding_evidence", "provider_balance_evidence"):
+            _artifact(root, auth[field], errors, label + ":" + field)
+        if (auth["state"] != "authorized" or auth["purpose"] != "internal_calibration_not_sales_qualification"
+                or receipt.get("calibration_only") is not True or receipt.get("execution_hold_id")
+                or ledger["schema_version"] != "legacy-model-liability-v1"
+                or ledger["authorization_sha256"] != digest(canonical(auth))
+                or ledger["input_sha256"] != receipt["input_sha256"]
+                or ledger["run_id"] != receipt["run_id"] or event["analysis_run_id"] != ledger["run_id"]
+                or not receipt["financial_group_id"] or ledger["financial_group_id"] != receipt["financial_group_id"]
+                or liability["financial_group_id"] != receipt["financial_group_id"]
+                or event["liability_id"] != liability["id"] or receipt["liability_ids"] != [liability["id"]]
+                or event["status"] != "succeeded" or event["tokens_estimated"] is not False
+                or event["prompt_version"] != receipt["prompt_version"] or route["prompt_version"] != receipt["prompt_version"]
+                or event["attempt_number"] != 1 or liability["attempt_number"] != 1
+                or liability["currency"] != "USD"
+                or any(event["pricing_quote"].get(key) != value for key, value in route["price"].items())
+                or any(liability["pricing_quote"].get(key) != event["pricing_quote"].get(key)
+                       for key in ("version", "input_rate_micros_per_million", "output_rate_micros_per_million",
+                                   "max_input_tokens", "max_output_tokens", "output_limit_parameter", "token_estimator"))):
+            raise ValueError("Expense provenance mismatch")
+        for field in ("provider", "model", "usage_provenance"):
+            if event[field] != receipt[field] or liability[field] != receipt[field]:
+                raise ValueError("Provider provenance mismatch")
+        for field in ("input_tokens", "output_tokens", "reserved_cost_micros", "settled_cost_micros"):
+            if type(event[field]) is not int or event[field] < 0 or event[field] != liability[field]:
+                raise ValueError("Actual usage required")
+        if (event["cost_state"] != "settled" or liability["cost_state"] != "settled"
+                or event["settled_cost_micros"] > event["reserved_cost_micros"]
+                or event["settled_cost_micros"] != quoted_cost(liability["pricing_quote"], event["input_tokens"], event["output_tokens"])):
+            raise ValueError("Unsettled or inconsistent provider cost")
+    except (KeyError, ValueError, TypeError):
+        errors.append(f"Legacy calibration liability receipt incomplete: {label}")
 
 
 def _reviews(root, bundle, blinding, approval, cases, errors):

@@ -58,6 +58,7 @@ jobs:
           tests/native_tex_ci_fixtures.py tests/native_docx_ci_fixtures.py tests/test_native_tex_ci.py tests/test_native_tex.py
           tests/test_native_tex_r2.py tests/test_native_tex_application.py
           tests/test_analysis_runs.py tests/test_career_workspace.py tests/test_alembic_schema.py
+          tests/test_development_runner.py tests/test_development_runner_postgres.py tests/test_interview_quality_contract.py
           tests/test_usage_guardrails.py tests/test_feature_flags.py tests/test_operations_platform.py
           tests/test_prompt_evaluations.py tests/test_resume_source.py tests/test_resume_source_migrations.py
           tests/test_resume_layout.py tests/test_pdf_streams.py tests/test_docx_parsing.py tests/test_llm_client.py
@@ -123,6 +124,13 @@ jobs:
           tests/test_model_key_revocation_observer.py tests/test_legacy_credential_inventory.py
           tests/test_ci_registry_cache.py
           app/services/document_ingestion.py ../infra/document-processing
+          app/services/docx_fonts.py app/services/docx_layout_validation.py app/services/docx_artifact.py
+          tests/test_docx_font_resolution.py tests/test_docx_failure_guidance.py tests/test_document_font_bundle.py
+          tests/test_document_candidate_contract.py tests/test_document_full_source_build.py
+          tests/test_document_renderer_profiles.py tests/test_document_candidate_resume.py tests/test_document_resume_history.py
+          tests/test_document_refresh.py tests/test_document_refresh_probe.py
+          tests/test_document_owned_clamd.py tests/test_document_synchronous_do.py
+          ../infra/gcp/document_candidate.py ../infra/gcp/document_refresh_probe.py ../infra/gcp/document_refresh_resume.py
           tests/test_document_ingestion.py tests/test_document_processor.py tests/test_document_definition_cache.py tests/test_monetary_release_transport.py
           app/routers/resume_uploads.py tests/test_resume_upload_quarantine.py tests/test_resume_source_access.py
           ../infra/gcp/document_worker.py tests/test_document_worker_deployment.py
@@ -160,7 +168,11 @@ jobs:
           scripts/model_key_revocation_observer.py scripts/legacy_credential_inventory.py
           scripts/ci_registry_cache.py
           app/services/document_ingestion.py scripts/document_test_image.py
+          app/services/docx_fonts.py app/services/docx_layout_validation.py app/services/docx_artifact.py
+          scripts/document_refresh.py ../infra/gcp/document_candidate.py
+          ../infra/gcp/document_refresh_probe.py ../infra/gcp/document_refresh_resume.py
           ../infra/document-processing/processor.py ../infra/document-processing/service.py
+          ../infra/document-processing/docx_renderer.py ../infra/document-processing/courier_prime_fonts.py
           app/routers/resume_uploads.py
           ../infra/gcp/document_worker.py
           app/resume_upload_worker.py app/services/resume_upload_coordinator.py

@@ -150,6 +150,31 @@ describe("unified purchase review and payment", () => {
     await confirmIndia(); fireEvent.click(resume); await waitFor(() => expect(openCheckout).toHaveBeenCalledOnce());
     expect(state.post.mock.calls.at(-1)).toEqual(["/v1/credits/orders", { quote_id: quote.quote_id, billing_country: "IN", idempotency_key: expect.any(String), order_reference: "order_unified" }]);
   });
+  it("discloses the original pass services and minimum expiry before resumed payment after the catalog changes", async () => {
+    const currentServices = [{ ...eligibleServices[0], operation: "interview_questions", credits: 5, deliverable: "Eight interview questions with guidance." }];
+    state.get.mockImplementation((url: string) => url === "/v1/credits/recent-order" ? Promise.resolve(order())
+      : url === "/v1/credits/catalog" ? Promise.resolve({ ...catalog, eligible_services: currentServices }) : read(url));
+    render(<BillingPage />);
+    const original = await screen.findByRole("region", { name: "Original credit pass terms" });
+    expect(within(original).getByText("Resume tailoring · 8 credits per approved operation")).toBeInTheDocument();
+    expect(within(original).queryByText(/Interview preparation/)).not.toBeInTheDocument();
+    expect(original.querySelector(`time[datetime="${quote.pass_expires_at}"]`)).toBeInTheDocument();
+    expect(original).toHaveTextContent("30-day pass");
+    expect(original).toHaveTextContent("at least seven days after restoration");
+    expect(within(original).getByRole("link", { name: "Review refund terms" })).toHaveAttribute("href", "/refund");
+    expect(screen.getByRole("button", { name: "Resume original checkout" })).toBeDisabled();
+    await confirmIndia(); fireEvent.click(screen.getByRole("button", { name: "Resume original checkout" }));
+    await waitFor(() => expect(openCheckout).toHaveBeenCalledOnce());
+    expect(state.post).toHaveBeenCalledExactlyOnceWith("/v1/credits/orders", { quote_id: quote.quote_id, billing_country: "IN", idempotency_key: expect.any(String), order_reference: "order_unified" });
+  });
+  it("keeps historical status readable but refuses to resume a pass whose original services are missing", async () => {
+    state.get.mockImplementation((url: string) => url === "/v1/credits/recent-order" ? Promise.resolve(order({ accepted_quote: { ...quote, eligible_services: [] } })) : read(url));
+    render(<BillingPage />); await screen.findByText(/The original supported services could not be verified/);
+    await confirmIndia(); const resume = screen.getByRole("button", { name: "Resume original checkout" });
+    expect(resume).toBeDisabled(); fireEvent.click(resume);
+    expect(screen.getByRole("button", { name: "Check payment status" })).toBeEnabled();
+    expect(state.post).not.toHaveBeenCalled(); noCheckout();
+  });
   it("keeps unresolved reconciliation held even if a status response includes a provider ID", async () => {
     state.get.mockImplementation((url: string) => url === "/v1/credits/recent-order" ? Promise.resolve(order()) : read(url));
     state.post.mockResolvedValue({ resolution: "unresolved", message: "Original payment unresolved" });

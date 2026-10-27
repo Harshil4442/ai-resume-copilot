@@ -91,6 +91,108 @@ def test_invalid_eight_question_contract_is_never_silently_reduced(monkeypatch, 
     assert len(calls) == 2
 
 
+@pytest.mark.parametrize("statement", [
+    "Since you have not used Playwright, explain a different framework.",
+    "Since you haven’t previously used Playwright, describe how you would learn it.",
+    "You've never worked with Kafka, so focus on adjacent skills.",
+    "Given your lack of hands-on experience with testing, prepare a study plan.",
+    "You have limited relevant experience with Terraform; emphasize transferable skills.",
+    "You're unfamiliar with this framework, so explain basic concepts.",
+    "The candidate has no prior experience with this tool.",
+    "The candidate's limited experience should be acknowledged.",
+    "I have never used Playwright, but I can learn quickly.",
+    "You do not have any experience with Playwright.",
+    "Because you lack familiarity with testing, practice a small example.",
+    "If you are asked about caching, you have not used Redis so discuss SQL.",
+    "If you have not used Playwright, explain your lack of experience with testing.",
+])
+@pytest.mark.parametrize("field", ["question", "coaching_angle"])
+def test_categorical_experience_negatives_refuse_even_with_valid_citation(statement, field):
+    data = _question_set()
+    data[0][field] = statement
+    data[0]["evidence_ids"] = ["approved-but-unrelated"]
+    with pytest.raises(llm_client.InterviewOutputError, match="missing evidence"):
+        llm_client._parse_interview_questions(json.dumps(data), 8, {"approved-but-unrelated"})
+
+
+@pytest.mark.parametrize("guidance", [
+    "If you have not used Playwright, explain how you would evaluate it.",
+    "If you have limited direct experience, outline a hypothetical approach.",
+    "Ask whether the candidate has not used the tool before choosing an example.",
+    "Missing evidence does not mean you lack experience with the tool.",
+    "Do not assume that you have no experience just because a fact is missing.",
+    "No approved evidence is linked to this topic; add a relevant fact if available.",
+    "Explain why the service has no state between requests.",
+    "How would you support a user with no experience of the product?",
+    "Explain an approach without claiming personal experience that is not documented.",
+])
+def test_conditionals_evidence_gaps_and_technical_negatives_remain_valid(guidance):
+    data = _question_set()
+    data[0]["coaching_angle"] = guidance
+    assert len(llm_client._parse_interview_questions(json.dumps(data), 8, set())) == 8
+
+
+def test_missing_experience_inference_uses_existing_bounded_repair(monkeypatch):
+    invalid = _question_set()
+    invalid[0]["coaching_angle"] = "Since you have not used private-output-only-tool, discuss another framework."
+    valid = _question_set()
+    valid[0]["coaching_angle"] = "Explain how you would evaluate a browser testing framework."
+    replies = iter([json.dumps(invalid), json.dumps(valid)])
+    calls = []
+
+    def chat(messages):
+        calls.append(list(messages))
+        return next(replies)
+
+    monkeypatch.setattr(llm_client, "_chat", chat)
+    result = llm_client.generate_interview_questions("Test engineer", "Use Playwright.")
+    assert len(result) == 8 and len(calls) == 2
+    assert all(row["answer_state"] == "evidence_needed" for row in result)
+    assert calls[0][1] == calls[1][1]
+    assert "lack of experience" in calls[1][-1]["content"]
+    assert all("private-output-only-tool" not in message["content"] for message in calls[1])
+
+
+def test_explicit_negative_source_fact_is_preserved_without_generated_assessment(monkeypatch):
+    evidence = {"id": "approved-negative", "title": "Candidate statement", "text": "I have not used Playwright."}
+    data = _question_set()
+    data[0]["evidence_ids"] = [evidence["id"]]
+    data[0]["coaching_angle"] = "Explain how you would evaluate Playwright for this role."
+    monkeypatch.setattr(llm_client, "_chat", lambda _: json.dumps(data))
+    result = llm_client.generate_interview_questions("Test engineer", "Use Playwright.", approved_evidence=[evidence])
+    assert evidence["text"] in result[0]["answer"]
+    assert result[0]["evidence_ids"] == [evidence["id"]]
+    assert "Since you" not in result[0]["answer"]
+
+
+def test_exhausted_negative_inference_releases_credit_but_retains_real_expense(database, monkeypatch):
+    calls = []
+
+    class Models:
+        def generate_content(self, **kwargs):
+            calls.append(kwargs)
+            questions = _question_set()
+            questions[0]["coaching_angle"] = "Since you have not used Playwright, discuss a different tool."
+            return SimpleNamespace(text=json.dumps(questions), usage_metadata=SimpleNamespace(
+                prompt_token_count=100, candidates_token_count=20, thoughts_token_count=0, total_token_count=120))
+
+    monkeypatch.setenv("LLM_API_KEY", "synthetic-test-only")
+    monkeypatch.setattr(llm_client, "LLM_MODEL", "gemini-3.6-flash")
+    monkeypatch.setattr(genai, "Client", lambda **kwargs: SimpleNamespace(models=Models(), close=lambda: None))
+    run_id, _ = _create(database)
+    assert tasks.process_analysis_run(run_id) == "failed"
+    assert len(calls) == 2
+    with database() as db:
+        run = db.get(AnalysisRun, run_id)
+        assert run.error_code == "InterviewOutputError" and run.usage_state == "released"
+        assert run.result_payload is None and db.get(User, 1).ai_credits == 100
+        liabilities = db.query(ModelCostLiability).all()
+        assert len(liabilities) == 2
+        assert all(row.cost_state == "settled" and row.settled_cost_micros == 120 for row in liabilities)
+        assert db.query(UsageEvent).filter_by(source_id=run_id, event_type="release").count() == 1
+    assert not tasks._retryable(llm_client.InterviewOutputError("Invalid coaching"))
+
+
 def test_complete_long_evidence_and_job_are_preserved_in_prompt_and_guidance(monkeypatch):
     fact = ("Measured search latency and verified the result. " * 150) + "Final metric: reduced latency by 22.75%."
     job = ("Design search systems and test ranking reliability. " * 160) + "Final requirement: disaster recovery."

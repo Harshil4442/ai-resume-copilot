@@ -11,7 +11,7 @@ import {
 } from "../../lib/unifiedCredits";
 import { Button } from "../ui/Button";
 import { LoadingBlock } from "../ui/LoadingBlock";
-import { UnifiedCreditPacks, UnifiedPurchaseQuoteReview } from "./UnifiedCreditPacks";
+import { EligibleCreditServices, UnifiedCreditPacks, UnifiedPurchaseQuoteReview } from "./UnifiedCreditPacks";
 import { loadHostedCheckout } from "./hostedCheckout";
 
 const messageOf = (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback;
@@ -114,7 +114,8 @@ export function UnifiedBillingPanel({ legacyPending, requestedSku }: { legacyPen
 
   async function startPayment(accepted: UnifiedPurchaseQuote, resumeOrder?: UnifiedCreditOrder) {
     if (actionPending.current || busy || legacyPending || recentRead !== "ready" || catalog?.checkout_enabled !== true
-      || !indiaConfirmed || (resumeOrder ? !resumeOrder.checkout_available || reconciliationHeld : unsettled(order))) return;
+      || !indiaConfirmed || accepted.eligible_services.length === 0
+      || (resumeOrder ? !resumeOrder.checkout_available || reconciliationHeld : unsettled(order))) return;
     actionPending.current = true; setBusy(true); setError(null);
     if (orderIntent.current?.quoteId !== accepted.quote_id) orderIntent.current = { quoteId: accepted.quote_id, key: crypto.randomUUID() };
     try {
@@ -201,7 +202,13 @@ export function UnifiedBillingPanel({ legacyPending, requestedSku }: { legacyPen
       <p className="text-sm">{order.accepted_quote.credits} credits for {formatCreditPrice(order.amount_minor)} · no automatic renewal</p><p className="break-all text-xs">Order reference: {order.order_id}</p>
       {order.pass_expires_at ? <p className="text-sm">Credits expire <time dateTime={order.pass_expires_at}>{formatCreditDate(order.pass_expires_at)}</time> (Asia/Kolkata).</p> : null}
       {order.refunded_amount_minor > 0 ? <p className="text-sm">Refunded: {formatCreditPrice(order.refunded_amount_minor)}</p> : null}
-      {unsettled(order) ? <><p className="text-sm leading-6">This original payment is not complete. Its accepted price and credit quantity remain unchanged. A browser callback does not confirm delivery.</p><div className="flex flex-wrap gap-3"><Button variant="secondary" disabled={busy} onClick={() => void checkStatus(order.order_id)}>Check payment status</Button><Button variant="secondary" disabled={busy} onClick={() => void reconcile()}>Reconcile original payment</Button><Button disabled={busy || reconciliationHeld || legacyPending || !indiaConfirmed || !order.checkout_available || catalog?.checkout_enabled !== true} onClick={() => void startPayment(order.accepted_quote, order)}>Resume original checkout</Button></div></> : null}
+      <section aria-label="Original credit pass terms" className="space-y-4 border-t border-border pt-4">
+        <p className="text-sm leading-6">This order keeps its original {order.accepted_quote.duration_days}-day pass and supported services below, even if today’s offers change. Its minimum guaranteed credit expiry is <time dateTime={order.accepted_quote.pass_expires_at}>{formatCreditDate(order.accepted_quote.pass_expires_at)}</time> (Asia/Kolkata). Verified payment provides at least 30 full days; a later confirmation can extend this minimum.</p>
+        <EligibleCreditServices services={order.accepted_quote.eligible_services} />
+        <p className="break-words text-xs leading-6 text-muted-foreground">Accepted terms version: {order.accepted_quote.terms_version}. Failed or incomplete services restore credits usable for at least seven days after restoration, or receive the applicable monetary remedy. <Link href="/refund" prefetch={false} className="underline">Review refund terms</Link>.</p>
+        {!order.accepted_quote.eligible_services.length && unsettled(order) ? <p role="status" className="text-sm">The original supported services could not be verified. Contact billing support before resuming this payment.</p> : null}
+      </section>
+      {unsettled(order) ? <><p className="text-sm leading-6">This original payment is not complete. Its accepted price and credit quantity remain unchanged. A browser callback does not confirm delivery.</p><div className="flex flex-wrap gap-3"><Button variant="secondary" disabled={busy} onClick={() => void checkStatus(order.order_id)}>Check payment status</Button><Button variant="secondary" disabled={busy} onClick={() => void reconcile()}>Reconcile original payment</Button><Button disabled={busy || reconciliationHeld || legacyPending || !indiaConfirmed || !order.checkout_available || order.accepted_quote.eligible_services.length === 0 || catalog?.checkout_enabled !== true} onClick={() => void startPayment(order.accepted_quote, order)}>Resume original checkout</Button></div></> : null}
     </section> : null}
     <section aria-labelledby="credit-history-heading"><h2 id="credit-history-heading" className="font-display text-2xl">Credit history</h2>
       {history ? history.items.length ? <ul className="mt-4 divide-y divide-border">{history.items.map((event) => <li key={event.id} className="grid gap-2 py-4 text-sm sm:grid-cols-[1fr_auto_auto]"><span>{event.event_type.replaceAll("_", " ")} · {formatCreditDate(event.created_at)}</span><span>{event.amount > 0 ? "+" : ""}{event.amount} credits</span><span>Balance {event.balance_after}</span></li>)}</ul> : <p className="mt-3 text-sm text-muted-foreground">No credit activity yet.</p> : <p className="mt-3 text-sm text-muted-foreground">{historyBusy ? "Loading credit history…" : "Credit history is unavailable."}</p>}

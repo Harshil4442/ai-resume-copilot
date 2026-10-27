@@ -36,7 +36,7 @@ function PackPrice({ pack, now }: { pack: UnifiedCreditPack; now: number }) {
   </div>;
 }
 
-function EligibleServices({ services }: { services: EligibleCreditService[] }) {
+export function EligibleCreditServices({ services }: { services: EligibleCreditService[] }) {
   return <div className="space-y-3"><h3 className="font-semibold">Services included in this offer</h3>
     {!services.length ? <p className="text-sm text-muted-foreground">No qualified paid service is currently listed. Purchasing is unavailable.</p> : <ul className="space-y-3">{services.map((service) => <li key={service.operation} className="rounded-lg border border-border p-4 text-sm">
       <p className="font-semibold">{isCreditOperation(service.operation) ? creditOperationLabel(service.operation) : service.operation.replaceAll("_", " ")} · {service.credits} {service.credits === 1 ? "credit" : "credits"} per approved operation</p>
@@ -76,7 +76,7 @@ export function UnifiedCreditPacks({ catalog, onReview, onRefresh, reviewingSku 
         </article>;
       })}
     </div>}
-    <EligibleServices services={catalog.eligible_services} />
+    <EligibleCreditServices services={catalog.eligible_services} />
     {stale ? <div role="status" className="text-sm leading-6"><p>The offer period changed. Refresh prices before reviewing a new purchase.</p>
       {onRefresh ? <Button type="button" variant="secondary" className="mt-3 min-h-11" disabled={disabled || reviewingSku !== null} onClick={onRefresh}>Refresh prices</Button> : null}</div> : null}
     {!catalog.checkout_enabled ? <p role="status" className="text-sm text-muted-foreground">Credit purchases are not available yet. No payment will start.</p> : null}
@@ -106,7 +106,7 @@ export function UnifiedPurchaseQuoteReview({ quote, onAccept, onRefresh, busy = 
       <div><dt className="text-muted-foreground">Minimum guaranteed credit expiry</dt><dd className="mt-1"><time dateTime={quote.pass_expires_at}>{formatCreditDate(quote.pass_expires_at)}</time> (Asia/Kolkata)</dd></div>
       <div><dt className="text-muted-foreground">Quoted price valid until</dt><dd className="mt-1"><time dateTime={quote.expires_at}>{formatCreditDate(quote.expires_at)}</time> (Asia/Kolkata)</dd></div>
     </dl>
-    <EligibleServices services={quote.eligible_services} />
+    <EligibleCreditServices services={quote.eligible_services} />
     <p className="text-xs leading-6 text-muted-foreground">This quote holds your price for up to 15 minutes, even if the offer ends. Credits last at least 30 full days after verified payment; a later confirmation can extend the displayed minimum expiry. Your receipt shows the final expiry.</p>
     <p className="text-xs leading-6 text-muted-foreground">Failed or incomplete services restore credits usable for at least seven days after restoration, or receive the applicable monetary remedy. Existing purchase rights remain protected. <Link href="/refund" prefetch={false} className="underline">Review refund terms</Link>.</p>
     {expired ? <p role="alert" className="text-sm text-coral">This quote expired. Get a fresh quote and review its price before paying.</p> : null}

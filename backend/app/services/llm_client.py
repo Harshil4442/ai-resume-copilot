@@ -258,6 +258,8 @@ def rewrite_bullets(resume_text: str, jd_text: str, tone: str) -> dict:
 
 def _parse_interview_questions(content: str, num_questions: int, allowed_ids: set[str]) -> list[dict]:
     """Accept JSON arrays and questions objects, including Markdown-wrapped responses."""
+    from .interview_contract import unsupported_experience_inference
+
     decoder = json.JSONDecoder()
     data = None
     for index, character in enumerate(content):
@@ -296,6 +298,11 @@ def _parse_interview_questions(content: str, num_questions: int, allowed_ids: se
             raise InterviewOutputError("Every question needs text, preparation guidance and evidence references.")
         if any(value not in allowed_ids for value in evidence_ids):
             raise InterviewOutputError("A question cited evidence that was not supplied.")
+        if any(unsupported_experience_inference(value) for value in (question, coaching_angle)):
+            raise InterviewOutputError(
+                "Do not turn missing evidence into a claim about the candidate's lack of experience. "
+                "Use a neutral question, preparation instruction or genuine conditional instead."
+            )
         identity = " ".join(re.findall(r"\w+", question.casefold()))
         if identity in seen:
             raise InterviewOutputError("Every question must be distinct.")

@@ -194,6 +194,8 @@ def proof_contract(proof: Any, contract: Any, source_hashes: dict[str, str], *, 
         need(source_hashes == json.loads(legacy_source("policy.json"))["source_sha256"],
              "document_refresh_historical_source_changed")
         policy = LEGACY_POLICY
+    need(build_identity is None or build_identity.get("policy_sha256", policy) == policy,
+         "document_refresh_candidate_renderer_review_required")
     need(type(proof) is dict and proof.get("platform") == "linux/amd64"
          and proof.get("scope") == "local_native_docker_only"
          and proof.get("cloud_run_isolation_proven") is False
@@ -271,11 +273,15 @@ FULL_SOURCE_MAX_BYTES = 4 * 1024 * 1024
 
 
 def full_source_snapshot() -> tuple[dict[str, bytes], dict[str, str], str]:
-    """Exactly the reviewed thirteen source files plus their bound policy."""
+    """Exactly the source-only candidate inventory and its separately pinned policy."""
     sys.path.insert(0, str(ROOT / "backend"))
     from scripts import document_test_image as engines
 
-    need(len(engines.SOURCES) == 13 and len(set(engines.SOURCES)) == 13,
+    candidate = infra("document_candidate")
+    need(set(engines.SOURCES) == candidate.SOURCES
+         and len(engines.SOURCES) == len(candidate.SOURCES)
+         and engines.RUNTIME == candidate.RUNTIME
+         and len(set(engines.RUNTIME.values())) == len(engines.RUNTIME),
          "document_source_manifest_invalid")
     contents = {}
     for name in (*engines.SOURCES, FULL_SOURCE_POLICY):
@@ -291,11 +297,24 @@ def full_source_snapshot() -> tuple[dict[str, bytes], dict[str, str], str]:
     policy = contents[FULL_SOURCE_POLICY]
     policy_value = decode(policy)
     need(type(policy_value) is dict and policy_value.get("source_sha256") == hashes
-         and hashlib.sha256(policy).hexdigest() == accepted().POLICY_SHA256,
+         and hashlib.sha256(policy).hexdigest() == candidate.POLICY_SHA256,
          "document_source_policy_changed")
     need(sum(map(len, contents.values())) <= FULL_SOURCE_MAX_BYTES,
          "document_source_archive_bound")
     return contents, hashes, hashlib.sha256(policy).hexdigest()
+
+
+def accepted_source_hashes() -> dict[str, str]:
+    """The frozen V2 inventory; current candidate source cannot rewrite it."""
+    profile = infra("document_renderer_profiles")
+    path = ROOT / "infra/gcp/document_accepted_v2/policy.json"
+    need(not path.is_symlink(), "document_refresh_accepted_policy_changed")
+    raw = path.read_bytes()
+    need(0 < len(raw) <= MAX_OUTPUT and hashlib.sha256(raw).hexdigest() == profile.BUILD["policy_sha256"],
+         "document_refresh_accepted_policy_changed")
+    value = decode(raw)
+    need(value.get("source_sha256") == profile.SOURCES, "document_refresh_accepted_policy_changed")
+    return dict(profile.SOURCES)
 
 
 def _full_source_tar() -> bytes:
@@ -339,10 +358,16 @@ def archive_full_source(raw: bytes) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
-def full_source_build_request(nonce: str, source: dict[str, str]) -> dict[str, Any]:
+def full_source_build_request(nonce: str, source: dict[str, str], *, historical_profile: bool = False) -> dict[str, Any]:
     need(type(nonce) is str and re.fullmatch(r"[a-f0-9]{32}", nonce),
          "document_refresh_build_nonce_invalid")
-    _, hashes, _ = full_source_snapshot()
+    need(type(historical_profile) is bool, "document_refresh_contract_version_invalid")
+    if historical_profile:
+        profile = infra("document_renderer_profiles")
+        need(nonce == profile.BUILD["nonce"], "document_refresh_renderer_build_profile_changed")
+        hashes = profile.SOURCES
+    else:
+        _, hashes, _ = full_source_snapshot()
     tag = REPOSITORY + ":source-" + nonce
     body = build_request(nonce, source)
     arguments = ["build", "--pull=false", "--platform=linux/amd64", "--build-arg",
@@ -355,7 +380,8 @@ def full_source_build_request(nonce: str, source: dict[str, str]) -> dict[str, A
     return body
 
 
-def build_contract(value: Any, nonce: str, recipe_sha: str, *, historical_v1: bool = False, full_source: bool = False) -> dict[str, Any]:
+def build_contract(value: Any, nonce: str, recipe_sha: str, *, historical_v1: bool = False,
+                   full_source: bool = False, historical_profile: bool = False) -> dict[str, Any]:
     """Check actual native Build fields; a caller-supplied summary is insufficient."""
     need(type(value) is dict and re.fullmatch(r"[a-f0-9]{32}", nonce), "document_refresh_native_build_invalid")
     build_id = value.get("id", "")
@@ -366,11 +392,14 @@ def build_contract(value: Any, nonce: str, recipe_sha: str, *, historical_v1: bo
              f"projects/{PROJECT}/serviceAccounts/{BUILDER}", f"projects/157225724590/serviceAccounts/{BUILDER}"},
          "document_refresh_native_build_identity_unverified")
     need(type(full_source) is bool and not (historical_v1 and full_source), "document_refresh_contract_version_invalid")
+    need(type(historical_profile) is bool and (not historical_profile or full_source),
+         "document_refresh_contract_version_invalid")
     tag = REPOSITORY + (":source-" if full_source else ":refresh-") + nonce
     expected = [["build", "--pull=false", "--platform=linux/amd64", "--build-arg",
         "DOCUMENT_DEFINITIONS_NONCE=" + nonce, "--tag", tag, "."], ["push", tag]]
     if full_source:
-        expected = [row["args"] for row in full_source_build_request(nonce, {})["steps"]]
+        expected = [row["args"] for row in full_source_build_request(
+            nonce, {}, historical_profile=historical_profile)["steps"]]
     steps = value.get("steps")
     need(type(steps) is list and len(steps) == 2 and all(
         row.get("name") == DOCKER_BUILDER and row.get("args") == args
@@ -407,12 +436,21 @@ def build_contract(value: Any, nonce: str, recipe_sha: str, *, historical_v1: bo
         "source_generation": str(source["generation"]), "refresh_dockerfile_sha256": recipe_sha,
         "fixed_renderer_base": renderer_base, "immutable_image": REPOSITORY + "@" + images[0]["digest"]}
     if full_source:
-        contents, _, policy = full_source_snapshot()
-        need(recipe_sha == hashlib.sha256(contents[FULL_SOURCE_DOCKERFILE]).hexdigest(),
-             "document_source_recipe_changed")
+        if historical_profile:
+            profile = infra("document_renderer_profiles")
+            policy = profile.BUILD["policy_sha256"]
+            need(recipe_sha == profile.BUILD["refresh_dockerfile_sha256"], "document_source_recipe_changed")
+        else:
+            contents, _, policy = full_source_snapshot()
+            need(recipe_sha == hashlib.sha256(contents[FULL_SOURCE_DOCKERFILE]).hexdigest(),
+                 "document_source_recipe_changed")
         # Existing acceptance receipts retain their historical recipe-key name.
         # Full-source builds do not claim to reuse the old renderer image.
         result.update(fixed_renderer_base=None, policy_sha256=policy)
+        if historical_profile:
+            need(result == {key: value for key, value in profile.BUILD.items()
+                            if key != "source_archive_sha256"},
+                 "document_refresh_renderer_build_profile_changed")
     return result
 
 
@@ -579,6 +617,11 @@ def _verify_current_build(build_id: str, nonce: str, image: str, *, release_read
          and type(image) is str and re.fullmatch(re.escape(REPOSITORY) + r"@sha256:[a-f0-9]{64}", image),
          "document_refresh_native_build_identity_unverified")
     need(type(historical_v1) is bool, "document_refresh_contract_version_invalid")
+    profile = infra("document_renderer_profiles")
+    historical_profile = image == profile.IMAGE
+    if historical_profile:
+        need(not historical_v1 and build_id == profile.BUILD["build_id"] and nonce == profile.BUILD["nonce"],
+             "document_refresh_renderer_build_profile_changed")
     if historical_v1:
         sys.path.insert(0, str(ROOT / "infra/gcp"))
         from document_refresh_probe import legacy_source
@@ -600,26 +643,31 @@ def _verify_current_build(build_id: str, nonce: str, image: str, *, release_read
         full_source = (type(images) is list and len(images) == 1 and type(images[0]) is dict
                        and images[0].get("name") == REPOSITORY + ":source-" + nonce)
         need(not (full_source and historical_v1), "document_source_historical_profile_refused")
+        need(not historical_profile or full_source, "document_refresh_renderer_build_profile_changed")
         if full_source:
-            recipe = (ROOT / FULL_SOURCE_DOCKERFILE).read_bytes()
-            recipe_sha = hashlib.sha256(recipe).hexdigest()
-            actual = build_contract(value, nonce, recipe_sha, full_source=True)
+            recipe_sha = (profile.BUILD["refresh_dockerfile_sha256"] if historical_profile else
+                          hashlib.sha256((ROOT / FULL_SOURCE_DOCKERFILE).read_bytes()).hexdigest())
+            actual = build_contract(value, nonce, recipe_sha, full_source=True, historical_profile=historical_profile)
         else:
             actual = build_contract(value, nonce, recipe_sha, historical_v1=historical_v1)
         need(actual["immutable_image"] == image, "document_refresh_native_build_readback_changed")
         stored_source = read_native_source(http, actual)
-        archive_sha = archive_full_source(stored_source) if full_source else archive_recipe(stored_source, recipe_sha)
+        if historical_profile:
+            need(type(stored_source) is bytes and 0 < len(stored_source) <= FULL_SOURCE_MAX_BYTES
+                 and hashlib.sha256(stored_source).hexdigest() == profile.BUILD["source_archive_sha256"],
+                 "document_source_archive_changed")
+            archive_sha = profile.BUILD["source_archive_sha256"]
+        else:
+            archive_sha = archive_full_source(stored_source) if full_source else archive_recipe(stored_source, recipe_sha)
     finally:
         http.close()
-    sys.path.insert(0, str(ROOT / "backend"))
-    from scripts import document_test_image as engines
-
     if historical_v1:
         source_hashes = json.loads(legacy_source("policy.json"))["source_sha256"]
+    elif historical_profile or not full_source:
+        source_hashes = accepted_source_hashes()
     else:
-        source_hashes = engines.source_hashes()
+        source_hashes = full_source_snapshot()[1]
     actual.update(source_archive_sha256=archive_sha, source_sha256=source_hashes)
-    profile = infra("document_renderer_profiles")
     need(image != profile.IMAGE or profile.matches_build(actual),
          "document_refresh_renderer_build_profile_changed")
     return actual
@@ -705,7 +753,7 @@ def full_source_candidate(directory: Path, *, publish: bool, now: datetime,
 
 def infra(name: str) -> Any:
     need(name in {"document_refresh_probe", "document_refresh_transition", "document_refresh_recovery",
-                  "document_renderer_profiles", "document_refresh_resume"},
+                  "document_renderer_profiles", "document_refresh_resume", "document_candidate"},
          "document_refresh_module_refused")
     spec = importlib.util.spec_from_file_location("hirewiz_" + name, ROOT / "infra/gcp" / (name + ".py"))
     need(spec is not None and spec.loader is not None, "document_refresh_module_unavailable")

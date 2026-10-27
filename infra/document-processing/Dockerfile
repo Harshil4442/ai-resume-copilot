@@ -27,9 +27,21 @@ COPY backend/app/services/parsing.py /opt/document/app/services/parsing.py
 COPY backend/app/services/market/skill_extractor.py backend/app/services/market/skill_taxonomy.py \
      backend/app/services/market/security.py /opt/document/app/services/market/
 COPY backend/app/services/resume_layout.py backend/app/services/pdf_streams.py \
-     backend/app/services/docx_layout_validation.py backend/app/services/native_project.py /opt/document/app/services/
+     backend/app/services/docx_layout_validation.py backend/app/services/docx_fonts.py backend/app/services/native_project.py /opt/document/app/services/
 COPY infra/document-processing/processor.py infra/document-processing/service.py \
-     infra/document-processing/docx_renderer.py infra/document-processing/writer_owner.py /opt/document/
+     infra/document-processing/docx_renderer.py infra/document-processing/writer_owner.py \
+     infra/document-processing/courier_prime_fonts.py /opt/document/
+# Genuine upstream OFL font files, unchanged and source-pinned by the builder.
+# Do not substitute these names with metric-compatible fonts or desktop copies.
+COPY backend/evals/assets/courier_prime/CourierPrime-Regular.ttf \
+     backend/evals/assets/courier_prime/CourierPrime-Bold.ttf \
+     backend/evals/assets/courier_prime/CourierPrime-Italic.ttf \
+     backend/evals/assets/courier_prime/CourierPrime-BoldItalic.ttf \
+     /usr/share/fonts/truetype/hirewiz-courier-prime/
+COPY backend/evals/assets/courier_prime/OFL.txt backend/evals/assets/courier_prime/provenance.json \
+     /usr/share/doc/hirewiz-courier-prime/
+RUN fc-cache --force /usr/share/fonts/truetype/hirewiz-courier-prime \
+    && /usr/local/bin/python3 -I /opt/document/courier_prime_fonts.py
 # Generated from actual installed Linux files and version, verified again on
 # every render. Its hash/version must be observed and pinned by the API before
 # enabling DOCX preparation; a syntax-valid declaration alone proves no render.

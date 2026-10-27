@@ -104,6 +104,8 @@ def verify_renderer_build(build: dict[str, Any]) -> None:
     need((build.get("immutable_image") != profile.IMAGE or profile.matches_build(build))
          and (build.get("fixed_renderer_base") != profile.IMAGE or profile.uses_profile(build)),
          "document_native_renderer_build_profile_changed")
+    need(build.get("policy_sha256", POLICY) == POLICY,
+         "document_native_candidate_renderer_review_required")
 
 
 def legacy_source(name: str) -> bytes:
@@ -137,10 +139,18 @@ def historical_v1_for_serving(metadata: Any, image: str) -> bool:
 
 def runtime_hashes(*, historical_v1: bool = False) -> dict[str, str]:
     need(type(historical_v1) is bool, "document_native_contract_version_invalid")
-    raw = legacy_source("policy.json") if historical_v1 else (ROOT / "infra/document-processing/policy.json").read_bytes()
-    policy = json.loads(raw)
-    need(hashlib.sha256(raw).hexdigest() == (LEGACY_POLICY if historical_v1 else POLICY),
+    # Serving receipts retain their exact deployed source inventory even when
+    # the working tree contains a separately reviewed source-only candidate.
+    if historical_v1:
+        raw = legacy_source("policy.json")
+    else:
+        path = HERE / "document_accepted_v2/policy.json"
+        need(not path.is_symlink(), "document_native_policy_changed")
+        raw = path.read_bytes()
+    need(0 < len(raw) <= MAX_BYTES
+         and hashlib.sha256(raw).hexdigest() == (LEGACY_POLICY if historical_v1 else POLICY),
          "document_native_policy_changed")
+    policy = json.loads(raw)
     source = policy["source_sha256"]
     paths = {"infra/document-processing/processor.py": "/opt/document/processor.py",
              "infra/document-processing/service.py": "/opt/document/service.py",
@@ -151,12 +161,19 @@ def runtime_hashes(*, historical_v1: bool = False) -> dict[str, str]:
         if path == "infra/document-processing/Dockerfile":
             continue
         destination = paths.get(path, "/opt/document/" + path.removeprefix("backend/"))
-        need(type(digest) is str and re.fullmatch(r"[a-f0-9]{64}", digest)
-             and (historical_v1 or hashlib.sha256((ROOT / path).read_bytes()).hexdigest() == digest),
+        need(type(digest) is str and re.fullmatch(r"[a-f0-9]{64}", digest),
              "document_native_runtime_source_changed")
         result[destination] = digest
     need(len(result) == (11 if historical_v1 else 12), "document_native_runtime_inventory_changed")
     return result
+
+
+def candidate_runtime_hashes() -> dict[str, str]:
+    """Offline candidate inventory only; never select it for a native receipt."""
+    build = build_module()
+    candidate = build.infra("document_candidate")
+    _, hashes, _ = build.full_source_snapshot()
+    return {destination: hashes[source] for source, destination in candidate.RUNTIME.items()}
 
 
 def rendered_payload(image: str, *, historical_v1: bool = False) -> str:
@@ -761,6 +778,7 @@ def run_successor(image: str, build_identity: dict[str, Any], journal: Path) -> 
     try:
         build = json.loads(canonical(build_identity))
         need(build.get("immutable_image") == image, "document_native_build_image_changed")
+        verify_renderer_build(build)
         build_module().verify_native_build(build)
         owner = Journal(journal, image, build, create=True)
         clients = Clients()

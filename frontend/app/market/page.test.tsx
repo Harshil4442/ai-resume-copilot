@@ -40,3 +40,25 @@ it("requires a fresh review if the market query changes", async () => {
   expect(screen.getByRole("button", { name: "Approve 1 credit" })).toBeDisabled();
   expect(state.post.mock.calls.some(([path]) => path === "/v1/analysis-runs")).toBe(false);
 });
+
+it("finds unchanged saved reports while new paid reports are unavailable without requesting a quote", async () => {
+  state.get.mockImplementation(async (path) => path === "/resume/list" ? { resumes: [{ id: 1, filename: "selected.pdf" }] }
+    : path === "/v1/credits/availability" ? { catalog_enabled: true, execution_enabled: false, supported_operations: [] }
+    : { id: "saved-market", operation: "market_analysis", status: "cancelled", billing_currency: "credits", committed_units: 0, usage_state: "released" });
+  state.post.mockResolvedValue({ reused_run: { id: "saved-market", operation: "market_analysis", status: "succeeded" } });
+  render(<QueryClientProvider client={client}><MarketPage /></QueryClientProvider>);
+  await screen.findByText("Market reports are not currently available for credit execution.");
+  expect(screen.getByRole("button", { name: "Review market report charge" })).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: "Find saved result for Market report · no charge" }));
+  await screen.findByText("Your existing request was loaded. No new credits were charged.");
+  expect(state.post.mock.calls.map(([path]) => path)).toEqual(["/v1/credits/analysis-reuse"]);
+  await waitFor(() => expect(state.get).toHaveBeenCalledWith("/v1/analysis-runs/saved-market", expect.any(AbortSignal)));
+});
+
+it("a saved-result lookup never starts new work when no report exists", async () => {
+  render(<QueryClientProvider client={client}><MarketPage /></QueryClientProvider>);
+  fireEvent.click(await screen.findByRole("button", { name: "Find saved result for Market report · no charge" }));
+  await screen.findByText("No saved result matches these inputs. No work was started or credits charged.");
+  expect(state.post.mock.calls.map(([path]) => path)).toEqual(["/v1/credits/analysis-reuse"]);
+  expect(screen.queryByRole("button", { name: "Approve 1 credit" })).not.toBeInTheDocument();
+});

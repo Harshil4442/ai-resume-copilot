@@ -27,10 +27,17 @@ _UNAVAILABLE = "The private DOCX renderer is unavailable or could not verify thi
 _REFUSED = "This DOCX edit could not retain its original rendered layout. Shorten the wording, choose another passage or use the original/custom resume."
 _LAYOUT_REFUSED = "Could not verify preservation of the original layout for this DOCX edit. Shorten the wording, choose another passage or use the original/custom resume."
 _LINK_REFUSED = "This DOCX edit would change an existing resume link or its placement. Keep linked text and the destination unchanged, shorten surrounding wording, or use the original/custom resume."
+_FONT_REFUSED = "The DOCX font or its selection cannot be reproduced exactly by the private renderer. Your original file is preserved; use the original/custom resume or provide a source using an available licensed font."
 
 
 class DocxRendererUnavailable(ResumeLayoutError):
     """Private renderer/configuration could not be verified; wording is not a repair."""
+
+    content_repair_allowed = False
+
+
+class DocxFontUnsupported(ResumeLayoutError):
+    """Rewriting text cannot install a missing font or resolve font ambiguity."""
 
     content_repair_allowed = False
 
@@ -114,6 +121,8 @@ async def _worker_http(config, payload: bytes, token: str, expected: dict, edits
                                 and edit.get("unit_id") == data["unit_id"] for edit in edits))):
                         raise ValueError
                     _check_binding(data, expected)
+                    if data["reason"] == "unsupported_source_font":
+                        raise DocxFontUnsupported(_FONT_REFUSED, unit_id=data["unit_id"], repair_hint=_FONT_REFUSED)
                     if data["reason"] == "hyperlink_changed":
                         message = _LINK_REFUSED
                     elif data["reason"] in LAYOUT_REASONS:

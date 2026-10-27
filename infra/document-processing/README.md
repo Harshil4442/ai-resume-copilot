@@ -545,3 +545,36 @@ candidate again. A candidate/local-proof result is not native acceptance or a
 serving-release claim. A later normal refresh can account for this one original
 partial only after the separate completed resume, its immutable claim and fresh
 actual current V2 acceptance/caller join have been verified.
+# Candidate Courier Prime font bundle
+
+The candidate resolves every used DOCX run's font through document defaults,
+paragraph/character/table style inheritance and the document theme. The pinned
+Fontconfig binary must select the exact installed family, real weight/slant and
+required glyphs. Both rendered PDFs must use the resolved PostScript face on the
+corresponding text; equal fallback before and after is insufficient. Unsupported
+or ambiguous font selection returns `unsupported_source_font`, preserves the
+original download, and does not spend another model attempt rewriting words.
+Generated fields/list labels, unsupported script selection and conditional table
+font rules currently refuse rather than infer fonts. This is explicit bounded
+support, not a claim of arbitrary Word equivalence.
+
+All 50 frozen v1 DOCX files resolve their declarations without changing/excluding
+any source: 20 Courier Prime and 30 Times New Roman. That is a source-inspection
+result only. Candidate native CI retains the original Cambria fixture as an
+unsupported-font negative and uses an actual Courier Prime default/theme and
+regular/bold/italic runs for the positive and reflow checks. The historical
+accepted Cambria fixture and observations remain historical, not new acceptance.
+
+The full source image includes the four unmodified Courier Prime styles from
+the pinned `backend/evals/assets/courier_prime` bundle. Its original SIL Open Font
+License and provenance are installed under `/usr/share/doc/hirewiz-courier-prime`.
+Build verification checks the actual bytes and requires Fontconfig to resolve
+each style to its exact installed file. The image builder attests the font,
+license and verifier bytes; the existing runtime font manifest also binds the
+installed fonts and Fontconfig files.
+
+This is a candidate image change. The accepted image, renderer manifest and daily
+refresh base are unchanged. A fresh native image/renderer receipt and reviewed
+promotion are required before deployment. Native rendering was not executed
+locally for this change. Times New Roman is not installed or substituted, and
+this addition does not enable XeLaTeX or change the frozen quality corpus.

@@ -1,6 +1,6 @@
 # HireWiz reviewer instructions
 
-Prepared 28 October 2026. This guide is ready to share with reviewers. The scoring sheets are blank; the generated A/B outputs are not ready for scoring yet.
+Prepared 28 October 2026. This guide is ready to share with reviewers. The first exploratory interview package now contains 10 synthetic cases, 20 actual A/B outputs and two blank scoring sheets. These outputs are not an approved reference or a release qualification; keep them separate from any later corrected batch.
 
 ## Purpose
 
@@ -76,12 +76,12 @@ The adjudicator reviews every disagreement against the original material and bot
 
 We will start with **10 development cases that pass native PDF preflight**, for interview questions first. That means 20 outputs per reviewer, 40 independent review rows in total. The proposed cases are fixed in advance; a failed case remains visible in the report. This small batch helps find problems and is not a final quality certification.
 
-The coordinator will send the actual outputs and pair IDs before scoring begins. Each reviewer fills only their own CSV and returns it privately to the coordinator, identifying any incomplete cases. Keep the supplied column names and A/B labels. Do not exchange sheets with the other reviewer.
+The coordinator supplies the actual outputs and pair IDs with each versioned package. Each reviewer fills only their own CSV and returns it privately to the coordinator, identifying any incomplete cases. Keep the supplied column names and A/B labels. Do not exchange sheets with the other reviewer or mix scores from different output versions.
 
 Later, we will use a separate held-out set that was not used to improve the system. A qualified analyst checks the planned statistical comparison. Human scores alone, or this first batch, do not automatically authorize paid launch.
 
 ## Work available now
 
-Reviewers can first examine the synthetic source résumés, job descriptions and approved-fact lists for consistency. Record **acceptable**, **needs correction** or **unsupported**, with reasons. Keep this input review separate from output scoring.
+Reviewers can examine the synthetic source résumés, job descriptions and approved-fact lists for consistency, then score the supplied exploratory interview outputs. Record input findings as **acceptable**, **needs correction** or **unsupported**, with reasons. Keep this input review separate from output scoring.
 
 Some existing test sources require an unsupported LaTeX engine or fonts not verified in the deployed renderer. Their local previews must not be mistaken for supported production output. Those cases remain explicitly recorded while we prepare a supported, versioned calibration set.

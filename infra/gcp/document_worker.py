@@ -28,6 +28,7 @@ MAINTENANCE_SERVICES = frozenset({SERVICE, "ai-resume-parser", "hirewiz-analysis
                                  "hirewiz-resume-coordinator"})
 RESOURCE = f"projects/{PROJECT}/locations/{REGION}/services/{SERVICE}"
 POLICY_SHA256 = "d3baf46026934f48b8def219b48d348d7b03bc3b4d0cb713a6f222c7299df7f2"
+CANDIDATE_POLICY_SHA256 = "8ed5f38142d88d88883129681953e939e79157e8b92e3efc516920d2e4409c9f"
 LEGACY_V1_POLICY_SHA256 = "dbd15ce3120bb6211bb6c1d7b166aaddbd8b80e00a72d564e6274ef10db3aaf1"
 ACCEPTED_IMAGE = (
     f"{REGION}-docker.pkg.dev/{PROJECT}/cloud-run-source-deploy/{SERVICE}"
@@ -86,7 +87,7 @@ def _proposal() -> dict[str, Any]:
         if source.is_symlink() or draft.is_symlink():
             _deny()
         raw = source.read_bytes()
-        if len(raw) > MAX_INPUT_BYTES or hashlib.sha256(raw).hexdigest() != POLICY_SHA256:
+        if len(raw) > MAX_INPUT_BYTES or hashlib.sha256(raw).hexdigest() != CANDIDATE_POLICY_SHA256:
             _deny()
         policy = decode(raw)
         if policy.get("version") != 3 or policy.get("deployment_proven") is not False:
@@ -95,7 +96,7 @@ def _proposal() -> dict[str, Any]:
         if not _same(proposal, {
                         "version": 1, "project": PROJECT, "region": REGION, "service": SERVICE,
                         "service_account": SERVICE_ACCOUNT, "api_invoker": API_INVOKER,
-                        "policy_sha256": POLICY_SHA256, "image": None,
+                        "policy_sha256": CANDIDATE_POLICY_SHA256, "image": None,
                         "api_wiring_enabled": False, "deployment_proven": False}):
             _deny()
         return proposal

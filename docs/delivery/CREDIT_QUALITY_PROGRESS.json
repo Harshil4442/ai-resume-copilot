@@ -3,7 +3,7 @@
   "requirement_version": "1.1",
   "source_sha256": "ac56be4838c8309fa9b1da3a717d53fab2bad85cfe0482d6aeedc4374a38fb4f",
   "baseline_commit": "f0f973c9c6d989553b8f58b275fc06fd5685497a",
-  "updated_at": "2026-10-27T19:51:23.936145+00:00",
+  "updated_at": "2026-10-27T20:30:23.906061+00:00",
   "authorization": "Owner authorized implementation, testing, deployment and payment activation subject to requirements gates on 2026-10-27.",
   "stages": [
     {
@@ -27,9 +27,11 @@
       "estimated_effort": null,
       "actual_effort": null,
       "evidence": [
-        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json",
+        "docs/delivery/evidence/2026-10-28-calibration-and-format-corrections.json"
       ],
-      "local_result": "Wallet, quotes, capture/refund, shared funding admission and current-service purchase gates implemented and locally verified; production financial reconciliation pending."
+      "local_result": "Resumed checkout now presents the original accepted service eligibility and terms; missing historical eligibility refuses new payment. Financial reconciliation and production activation remain pending.",
+      "status_observed_at": "2026-10-27T20:26:15.481922+00:00"
     },
     {
       "number": 3,
@@ -41,10 +43,11 @@
       "actual_effort": null,
       "evidence": [
         "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json",
-        "docs/delivery/evidence/2026-10-28-unified-credit-release-preparation.json"
+        "docs/delivery/evidence/2026-10-28-unified-credit-release-preparation.json",
+        "docs/delivery/evidence/2026-10-28-calibration-and-format-corrections.json"
       ],
-      "status_observed_at": "2026-10-27T19:28:02.123963+00:00",
-      "local_result": "Legacy recovery and new40-credit purchase plus one-credit partial/empty discovery browser journeys pass locally with finite synthetic external providers; real deployed journeys pending."
+      "status_observed_at": "2026-10-27T20:26:15.481922+00:00",
+      "local_result": "Saved analysis lookup works independently of paid generation availability and never creates a quote on a read-only miss. Deployed verification remains pending."
     },
     {
       "number": 4,
@@ -56,10 +59,11 @@
       "actual_effort": null,
       "evidence": [
         "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json",
-        "docs/delivery/evidence/2026-10-28-unified-credit-release-preparation.json"
+        "docs/delivery/evidence/2026-10-28-unified-credit-release-preparation.json",
+        "docs/delivery/evidence/2026-10-28-calibration-and-format-corrections.json"
       ],
-      "status_observed_at": "2026-10-27T19:28:02.123963+00:00",
-      "local_result": "200/200 synthetic native sources materialized across PDF,DOCX,TeX,TeXZIP; complete-content checks and representative renders pass. Full native runtime, actual funded model outputs and independent human/statistical review pending."
+      "status_observed_at": "2026-10-27T20:26:15.481922+00:00",
+      "local_result": "Completed20 actual v5 one-attempt interview generations across10 frozen PDF development cases and validated all usage receipts. Native PDF input checks covered16 pages. Observed unsupported negative-experience inference; implemented and locally tested promptv6/validatorv2 fix. Historical outputs preserved, independent human and v6 live review pending. DOCX exact-font guard and licensed Courier candidate implemented, reviewed and locally checked; new native image and deployment pending."
     },
     {
       "number": 5,
@@ -100,10 +104,11 @@
       "estimated_effort": null,
       "actual_effort": null,
       "evidence": [
-        "docs/delivery/evidence/2026-10-28-unified-credit-release-preparation.json"
+        "docs/delivery/evidence/2026-10-28-unified-credit-release-preparation.json",
+        "docs/delivery/evidence/2026-10-28-calibration-and-format-corrections.json"
       ],
-      "local_result": "Draft PR57 and protected Vercel preview deployed; checkout unavailable. First CI exposed three backend regressions and a stale browser expectation, repaired locally. Follow-on candidate CI, guarded GCP rollout and commercial gates pending.",
-      "status_observed_at": "2026-10-27T19:51:23.936145+00:00"
+      "local_result": "CI358 passed allfive jobs for fb4cd1c; subsequent formatting, billing and evaluation fixes need their own final verification. GCP migration/rollout, commercial gates and payment activation remain pending.",
+      "status_observed_at": "2026-10-27T20:26:15.481922+00:00"
     },
     {
       "number": 8,
