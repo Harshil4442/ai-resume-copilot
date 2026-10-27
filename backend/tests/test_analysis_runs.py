@@ -42,8 +42,20 @@ PDF_OVERFLOW_REPLACEMENT = "Made stable Python interfaces for customers."
 
 
 def _native_source():
+    from docx.opc.constants import RELATIONSHIP_TYPE
+    from lxml import etree
+
     document = DocxDocument()
-    document.styles["Normal"].font.name = "Times New Roman"
+    # Positive native-render controls use a licensed family actually bundled in
+    # the renderer; unsupported fonts have their own explicit refusal control.
+    document.styles["Normal"].font.name = "Courier Prime"
+    theme_part = next(rel.target_part for rel in document.part.rels.values()
+                      if rel.reltype == RELATIONSHIP_TYPE.THEME)
+    theme = etree.fromstring(theme_part.blob)
+    drawing = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
+    for kind in ("majorFont", "minorFont"):
+        theme.find(".//" + drawing + kind + "/" + drawing + "latin").set("typeface", "Courier Prime")
+    theme_part._blob = etree.tostring(theme)
     document.add_heading("Experience", level=2)
     document.add_paragraph(SOURCE_EXPERIENCE)
     output = BytesIO()
