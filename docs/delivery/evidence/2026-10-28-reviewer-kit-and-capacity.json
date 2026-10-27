@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "observed_at": "2026-10-27T20:58:25.696983+00:00",
+  "scope": "Development and reviewer preparation; no production promotion or paid qualification",
+  "source_base_commit": "140d469cb3918078749c4e812696f98fa3a3854d",
+  "review_package": {
+    "file": "output/review/HireWiz_Interview_Calibration_Review_v6_20261028.zip",
+    "sha256": "1087900aacfca25db0968ca8f4283d783ac0a61d31d4f3effc254192bc7f5295",
+    "synthetic_cases": 10,
+    "delivered_outputs": 19,
+    "failed_outputs_retained": 1,
+    "blank_rows_per_reviewer": 20,
+    "reviewers": 2,
+    "human_reviews_completed": 0,
+    "old_package_unchanged": true,
+    "release_qualification": false
+  },
+  "calibration": {
+    "prompt": "interview-evidence-v6",
+    "validator": "interview-complete-v2",
+    "settled_provider_attempts": 20,
+    "settled_provider_cost_usd_micros": 95022,
+    "failed_attempt_cost_usd_micros": 1036,
+    "estimate_processing_fx_tax_inr": "21.212596",
+    "invoice_reconciled": false,
+    "unsettled_evaluation_liabilities": 0,
+    "source_triage": "AI-only review found unsupported coaching assumptions in both candidate and reference outputs; neither route is qualified.",
+    "failure_diagnostic": "One successful provider response produced no delivered output; the original validation reason was not retained. No retry or replacement.",
+    "export_manifest_sha256": "53ae90d9e451e903493d2c5fcb6b2ee7895784693d7258b300d949347bd6aa8d"
+  },
+  "capacity": {
+    "environment": "Owned local PostgreSQL17, macOS; application service/SQL/serialization only",
+    "synthetic_users": 10000,
+    "opportunities": 100490,
+    "heavy_account_opportunities": 500,
+    "sql_reads_before": 502,
+    "sql_reads_after": 3,
+    "p95_concurrency10_before_ms": 2470.16,
+    "p95_concurrency10_after_ms": 175.56,
+    "p95_concurrency25_before_ms": 2199.56,
+    "p95_concurrency25_after_ms": 167.91,
+    "full_output_equivalence_accounts": 4,
+    "errors": 0,
+    "tests_passed": 5,
+    "production_slo_proven": false,
+    "limitations": "Excludes HTTP/auth, cloud network and cold starts, browser and external providers; finite samples not statistically powered."
+  },
+  "commercial_observations": {
+    "gcp_project": "ai-resume-parser-482412",
+    "period": "2026-10-01 through 2026-10-27",
+    "accrued_gcp_net_inr": 675.37,
+    "savings_inr": 634.78,
+    "tax_not_displayed": true,
+    "final_invoice": false,
+    "vercel": "Hobby active; UI shows no payment methods or invoices",
+    "ten_thousand_user_cost_projection": false,
+    "other_providers_reconciled": false
+  },
+  "ci": {
+    "run_id": 40580407822,
+    "source_commit": "140d469cb3918078749c4e812696f98fa3a3854d",
+    "backend": "failed: native tailoring positive fixture refused layout change",
+    "other_four_jobs": "passed",
+    "does_not_qualify_deployment": true,
+    "corrective_changes": "Positive Courier fixture now preserves word widths; existing SDK test restores its import path. No native format or accepted evidence guards weakened."
+  },
+  "native_candidate": {
+    "build_id": "53c0db04-2ddf-4221-9702-b7c566c5598c",
+    "build_status": "SUCCESS",
+    "immutable_digest": "sha256:bbfad0c7faa2acf0ef93d13df300a9ac34cb16a792fee04d873aa994ec3afb94",
+    "inventory_job": "hirewiz-doc-six-9018d2794508",
+    "execution": "hirewiz-doc-six-9018d2794508-wsjgx",
+    "state": "Inventory completed and exact native receipt verified; 11-case corpus pending",
+    "corpus_qualified": false,
+    "production_promoted": false,
+    "inventory_receipt_sha256": "35c58d60ac087ccb80655783cdc46ebab744c85d4da11e0a8717436f630112cd",
+    "renderer_version": "LibreOffice 25.2.3.2 520(Build:2)",
+    "font_manifest_sha256": "87b2c806de6d5e3f528e393f3ad6b2a223f89e21f72f811bc96d8d21cc2cc526"
+  },
+  "production_changes": false,
+  "payment_activation": false,
+  "major_stage_completed": null,
+  "effort": {
+    "expected": null,
+    "actual": null,
+    "note": "No checkpoint completed and no trustworthy per-stage effort measurement; no invented timing."
+  },
+  "validation": {
+    "combined_candidate_and_legacy_tests": 200,
+    "analysis_tests_without_native_docker": 17,
+    "skill_roi_tests": 5,
+    "native_analysis_integration": "pending next exact-source CI",
+    "independent_candidate_operator_review": "no material blockers",
+    "counts_are_separate_overlapping_suites_not_additive": true
+  }
+}

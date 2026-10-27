@@ -36,7 +36,10 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 SOURCE_EXPERIENCE = "Developed reliable Python services for customers and improved system performance."
-TAILORED_EXPERIENCE = "Built reliable Python services for customers and improved system performance."
+# Keep this positive control's word widths unchanged in the bundled monospace
+# font. Shortening "Developed" to "Built" moves the retained word "system" onto
+# the first line, which the genuine native format-preservation guard refuses.
+TAILORED_EXPERIENCE = "Developed reliable Python services for customers and enhanced system performance."
 PDF_OVERFLOW_ORIGINAL = "Built stable Python interfaces for customers."
 PDF_OVERFLOW_REPLACEMENT = "Made stable Python interfaces for customers."
 
@@ -484,8 +487,8 @@ def test_evidence_tailoring_creates_a_traceable_version_and_commits_once(monkeyp
     try:
         run_id = _create_tailoring_run(factory)
 
-        assert tasks.process_analysis_run(run_id) == "succeeded"
-        assert tasks.process_analysis_run(run_id) == "succeeded"
+        assert tasks.process_analysis_run(run_id) == "succeeded", native_calls
+        assert tasks.process_analysis_run(run_id) == "succeeded", native_calls
         assert len(calls) == 1
         with factory() as db:
             run = db.get(AnalysisRun, run_id)

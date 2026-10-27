@@ -1,6 +1,6 @@
 # HireWiz reviewer instructions
 
-Prepared 28 October 2026. This guide is ready to share with reviewers. The first exploratory interview package now contains 10 synthetic cases, 20 actual A/B outputs and two blank scoring sheets. These outputs are not an approved reference or a release qualification; keep them separate from any later corrected batch.
+Updated 28 October 2026. The current **v6 exploratory interview package** contains 10 fixed synthetic cases, **19 delivered outputs and one explicitly unavailable output**, with two blank scoring sheets. Each case keeps both A/B slots; the failed generation has not been replaced or removed. The earlier v5 package remains separate and unchanged. Neither batch is an approved reference or a release qualification.
 
 ## Purpose
 
@@ -16,21 +16,35 @@ Use your actual name or an assigned private reviewer ID. Do not use an AI system
 
 ## What you will receive
 
-For each case: the original résumé, the job description, a list of facts approved for use, the exact service requested, and two outputs labelled **A** and **B**. For résumé tailoring, you also receive the original and changed document files and page previews.
+For each case: the original résumé, the job description, a list of facts approved for use, the exact service requested, and two slots labelled **A** and **B**. A delivered slot contains the actual interview output. The one failed slot contains an **Unavailable — generation failed** notice instead of generated content. `output-status.csv` lists all 20 slots and their availability.
+
+This package evaluates interview questions only. The other service checks below are guidance for later packages. A future résumé-tailoring package must also include the original and changed document files and page previews.
 
 You will not receive the model names, service prices, which output is cheaper, or the other reviewer’s scores. A/B are anonymous labels; do not assume A is the old version or B is the new one.
 
-If a source, page or output is missing, unreadable or reveals the hidden identity, stop that case and tell the coordinator. Leave its scores blank and explain why. Missing material is not an acceptable result.
+If a source, page or expected delivered output is missing, unreadable or reveals a hidden identity, stop that case and tell the coordinator. Leave its scores blank and explain why. For the explicitly unavailable slot, leave all four scores and all critical-problem flags blank and note that no deliverable was produced. Continue reviewing the available counterpart. Do not invent scores, enter zero, mark it as a successful refusal, replace it with an older output or remove its row. Failure remains part of the overall delivery report.
 
 ## Review one case
 
 1. Read the original résumé, job and approved facts before reading the outputs.
 2. Review A on its own. Check the facts and the specific service requirements below.
-3. Give A four scores and a concrete reason. Record any critical problem separately.
+3. If A was delivered, give it four scores and a concrete reason. Record any critical problem separately. If it is explicitly unavailable, record that fact and leave scores and defect flags blank.
 4. Repeat for B using exactly the same standard.
 5. Save your own sheet. Do not compare scores with the other reviewer before submitting it.
 
 Do not edit an output to repair it. Record what needs fixing. Do not copy actual customer information into a public AI tool or public document.
+
+## Check the guidance as well as the questions
+
+An exact quote from the résumé does not make the surrounding advice factual. Look for guidance that quietly assumes a particular achievement, tool, responsibility or outcome that the approved facts do not establish.
+
+These are illustrative examples, not findings about any A/B label:
+
+- Evidence: “Used a spreadsheet tool on a reporting project.” Unsupported guidance: “Explain how your automation reduced costs by 20%.” The source establishes neither automation nor that result.
+- Evidence: “Worked with a reporting system.” Unsupported guidance: “Describe the system you built.” Using a system does not establish that the person built it.
+- A tool is absent from the supplied facts. “You have no experience with that tool” is an unsupported personal claim. “If you have relevant experience, describe a verified example; otherwise explain your approach” is conditional guidance.
+
+Ordinary questions such as “How would you approach this problem?” do not assert that the person has already done the work. Distinguish such questions and genuine conditionals from statements that present unverified experience or achievements as facts. Record the exact wording and missing support; do not assume the candidate is either capable or incapable based only on omitted information.
 
 ## What to check
 
@@ -72,9 +86,9 @@ A clear refusal of an unsupported file is a separate outcome. Do not score it as
 
 The adjudicator reviews every disagreement against the original material and both explanations, then records a resolved score and reason. They must not choose the score that makes a release pass. Conflicting critical-problem flags also require investigation before release.
 
-## First review batch and return instructions
+## Current review batch and return instructions
 
-We will start with **10 development cases that pass native PDF preflight**, for interview questions first. That means 20 outputs per reviewer, 40 independent review rows in total. The proposed cases are fixed in advance; a failed case remains visible in the report. This small batch helps find problems and is not a final quality certification.
+The v6 package contains **10 fixed development cases with preflight-checked native PDFs**. Each reviewer receives 20 rows: **19 delivered outputs to assess and one unavailable slot to record without scores**. There are 40 independent review rows across both sheets, not 40 delivered outputs. The failed generation remains visible in the package and reporting. This small batch helps find problems and is not a final quality certification.
 
 The coordinator supplies the actual outputs and pair IDs with each versioned package. Each reviewer fills only their own CSV and returns it privately to the coordinator, identifying any incomplete cases. Keep the supplied column names and A/B labels. Do not exchange sheets with the other reviewer or mix scores from different output versions.
 
@@ -82,6 +96,6 @@ Later, we will use a separate held-out set that was not used to improve the syst
 
 ## Work available now
 
-Reviewers can examine the synthetic source résumés, job descriptions and approved-fact lists for consistency, then score the supplied exploratory interview outputs. Record input findings as **acceptable**, **needs correction** or **unsupported**, with reasons. Keep this input review separate from output scoring.
+Reviewers can examine the synthetic source résumés, job descriptions and approved-fact lists for consistency, then assess the 19 delivered exploratory interview outputs. Record input findings as **acceptable**, **needs correction** or **unsupported**, with reasons. Keep input review separate from output scoring and keep the unavailable slot in the returned sheet.
 
 Some existing test sources require an unsupported LaTeX engine or fonts not verified in the deployed renderer. Their local previews must not be mistaken for supported production output. Those cases remain explicitly recorded while we prepare a supported, versioned calibration set.

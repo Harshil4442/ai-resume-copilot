@@ -3,7 +3,7 @@
   "requirement_version": "1.1",
   "source_sha256": "ac56be4838c8309fa9b1da3a717d53fab2bad85cfe0482d6aeedc4374a38fb4f",
   "baseline_commit": "f0f973c9c6d989553b8f58b275fc06fd5685497a",
-  "updated_at": "2026-10-27T20:30:23.906061+00:00",
+  "updated_at": "2026-10-27T20:58:25.696983+00:00",
   "authorization": "Owner authorized implementation, testing, deployment and payment activation subject to requirements gates on 2026-10-27.",
   "stages": [
     {
@@ -15,8 +15,11 @@
       "estimated_effort": null,
       "actual_effort": null,
       "evidence": [
-        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
-      ]
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json",
+        "docs/delivery/evidence/2026-10-28-reviewer-kit-and-capacity.json"
+      ],
+      "local_result": "Measured local 10,000-user baseline and read current project accrued GCP costs. Production load, other vendors and final financial reconciliation remain pending.",
+      "status_observed_at": "2026-10-27T20:58:25.696983+00:00"
     },
     {
       "number": 2,
@@ -28,10 +31,11 @@
       "actual_effort": null,
       "evidence": [
         "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json",
-        "docs/delivery/evidence/2026-10-28-calibration-and-format-corrections.json"
+        "docs/delivery/evidence/2026-10-28-calibration-and-format-corrections.json",
+        "docs/delivery/evidence/2026-10-28-reviewer-kit-and-capacity.json"
       ],
-      "local_result": "Resumed checkout now presents the original accepted service eligibility and terms; missing historical eligibility refuses new payment. Financial reconciliation and production activation remain pending.",
-      "status_observed_at": "2026-10-27T20:26:15.481922+00:00"
+      "local_result": "Current GCP accrued usage observed; no invoice reconciliation or payment activation. Existing billing and financial gates remain.",
+      "status_observed_at": "2026-10-27T20:58:25.696983+00:00"
     },
     {
       "number": 3,
@@ -60,10 +64,11 @@
       "evidence": [
         "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json",
         "docs/delivery/evidence/2026-10-28-unified-credit-release-preparation.json",
-        "docs/delivery/evidence/2026-10-28-calibration-and-format-corrections.json"
+        "docs/delivery/evidence/2026-10-28-calibration-and-format-corrections.json",
+        "docs/delivery/evidence/2026-10-28-reviewer-kit-and-capacity.json"
       ],
-      "status_observed_at": "2026-10-27T20:26:15.481922+00:00",
-      "local_result": "Completed20 actual v5 one-attempt interview generations across10 frozen PDF development cases and validated all usage receipts. Native PDF input checks covered16 pages. Observed unsupported negative-experience inference; implemented and locally tested promptv6/validatorv2 fix. Historical outputs preserved, independent human and v6 live review pending. DOCX exact-font guard and licensed Courier candidate implemented, reviewed and locally checked; new native image and deployment pending."
+      "status_observed_at": "2026-10-27T20:58:25.696983+00:00",
+      "local_result": "v6 calibration settled 20 attempts: 19 delivered outputs and one preserved failure. The reviewer kit has two blank 20-row sheets. AI-only triage found unsupported coaching assumptions, so neither route is qualified. The DOCX image built and its actual Cloud Run inventory passed; the 11-case corpus and production promotion remain pending."
     },
     {
       "number": 5,
@@ -75,10 +80,11 @@
       "actual_effort": null,
       "evidence": [
         "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json",
-        "docs/delivery/evidence/2026-10-28-unified-credit-release-preparation.json"
+        "docs/delivery/evidence/2026-10-28-unified-credit-release-preparation.json",
+        "docs/delivery/evidence/2026-10-28-reviewer-kit-and-capacity.json"
       ],
-      "status_observed_at": "2026-10-27T19:28:02.123963+00:00",
-      "local_result": "Remote frontend1253unit/255responsive checks passed; local unified journey Axe390/1440clean. Representative load and production measurements pending."
+      "status_observed_at": "2026-10-27T20:58:25.696983+00:00",
+      "local_result": "Skill ROI reduced 502 SQL queries to 3 with identical results. On the local 500-opportunity account, p95 at concurrency 10 improved from 2470 to 176 ms, and at concurrency 25 from 2200 to 168 ms. Cloud, browser and privacy qualification remain pending."
     },
     {
       "number": 6,
@@ -105,10 +111,11 @@
       "actual_effort": null,
       "evidence": [
         "docs/delivery/evidence/2026-10-28-unified-credit-release-preparation.json",
-        "docs/delivery/evidence/2026-10-28-calibration-and-format-corrections.json"
+        "docs/delivery/evidence/2026-10-28-calibration-and-format-corrections.json",
+        "docs/delivery/evidence/2026-10-28-reviewer-kit-and-capacity.json"
       ],
-      "local_result": "CI358 passed allfive jobs for fb4cd1c; subsequent formatting, billing and evaluation fixes need their own final verification. GCP migration/rollout, commercial gates and payment activation remain pending.",
-      "status_observed_at": "2026-10-27T20:26:15.481922+00:00"
+      "local_result": "Current backend candidate CI failed a native positive fixture that changed line wrapping. The fixture and an existing SDK test-isolation defect are corrected locally; next exact-source CI remains required. No API migration, production promotion or checkout activation. The separate document inventory passed; corpus acceptance remains pending.",
+      "status_observed_at": "2026-10-27T20:58:25.696983+00:00"
     },
     {
       "number": 8,

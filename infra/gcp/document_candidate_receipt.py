@@ -1,0 +1,193 @@
+"""Pure finite parser for the separate candidate V3 native cases. No execution or SDK."""
+import hashlib
+import math
+import re
+
+NAMES = ('clean_pdf', 'clean_docx', 'eicar_exact_file', 'clean_tex', 'clean_texzip',
+         'eicar_tex_source', 'eicar_texzip_member', 'eicar_direct_detection',
+         'styled_multipage_fit', 'rendered_reflow_refusal', 'unsupported_source_font_refusal')
+ACTIVATION = {'api_wiring_enabled', 'candidate_submission_enabled', 'checkout_enabled',
+              'customer_processing_enabled', 'deployment_proven', 'checkpoint_complete'}
+TOP = {'event', 'version', 'execution_name', 'worker_image', 'policy_sha256', 'outer_runtime_user_verified',
+       'activation_flags', 'identity_preflight', 'cases', 'all_required_passed', 'failure_stage', 'elapsed_ms'}
+IDENTITY = {'passed', 'cleanup_passed', 'diagnostic', 'runtime_hashes', 'architecture', 'runtime_uid', 'runtime_gid',
+            'readonly_font_manifest', 'font_manifest_process_writable', 'renderer_version', 'font_manifest_sha256', 'courier_bundle_verified'}
+DIAG = {'launcher', 'cleanup', 'processor', 'validation', 'failure_phase', 'launcher_code', 'cleanup_code',
+        'launcher_elapsed_ms', 'cleanup_elapsed_ms'}
+ROW = {'case', 'passed', 'attempted', 'binding', 'binding_match', 'diagnostic', 'cleanup_passed', 'scan',
+       'python_skill_present', 'worker_refused', 'exact_file_unchanged', 'coherent_eicar_detection', 'layout',
+       'renderer_binding_match', 'candidate_scan_equal', 'reason', 'matching_unit_or_none', 'native_source_empty'}
+LAYOUT = {'validator', 'pages', 'unchanged_links', 'outside_changed_regions_pixel_delta', 'before_pdf_sha256',
+          'after_pdf_sha256', 'rendered_fonts_sha256', 'changed_paragraphs', 'protected_glyphs',
+          'unchanged_graphics', 'max_protected_geometry_delta_points'}
+REFLOW = {'line_wrap_changed', 'page_geometry_changed', 'paragraph_page_changed', 'paragraph_overflow', 'hyperlink_changed'}
+HASH = re.compile(r'[a-f0-9]{64}\Z')
+VERSION = re.compile(r'LibreOffice [0-9]+\.[0-9]+\.[0-9]+(?:\.[0-9]+)*(?: [ -~]+)?\Z')
+EICAR_SHA = hashlib.sha256(b'X5O!P%@AP[4' + bytes([92]) + b'PZX54(P^)7CC)7}$'
+    + b'EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*').hexdigest()
+
+
+def require(value):
+    if value is not True:
+        raise ValueError('finite_probe_unverified')
+
+
+def integer(value, low, high):
+    return type(value) is int and low <= value <= high
+
+
+def hashed(value):
+    return type(value) is str and HASH.fullmatch(value) is not None
+
+
+def diagnostic(value):
+    require(type(value) is dict and set(value) == DIAG)
+    outcomes = {'pending', 'returned', 'failed', 'deadline', 'unexpected_exit', 'reap_failed', 'not_started'}
+    require(value['launcher'] in outcomes and value['cleanup'] in outcomes | {'not_required'})
+    require(value['processor'] in {'not_validated', 'clean', 'refused', 'unavailable'})
+    require(value['validation'] in {'not_started', 'decode', 'binding', 'outcome', 'complete'})
+    require(value['failure_phase'] is None or value['failure_phase'] in {'admission','launcher','validation','processor','cleanup','response'})
+    for key in ('launcher_code', 'cleanup_code'):
+        require(value[key] is None or integer(value[key], -255, 255))
+    for key in ('launcher_elapsed_ms', 'cleanup_elapsed_ms'):
+        require(value[key] is None or integer(value[key], 0, 120000))
+    return value['cleanup'] == 'returned' and value['cleanup_code'] == 0
+
+
+def scan(value):
+    require(type(value) is dict and set(value) == {'engine','version','definitions'} and value['engine'] == 'ClamAV')
+    for key in ('version','definitions'):
+        require(type(value[key]) is str and 0 < len(value[key]) <= 128 and all(32 <= ord(c) <= 126 for c in value[key]))
+
+
+def validate(payload, image, policy, runtime_hashes):
+    require(type(payload) is dict and set(payload) <= TOP)
+    require(payload.get('event') == 'hirewiz_document_candidate_required_v3' and type(payload.get('version')) is int and payload['version'] == 3)
+    require(payload.get('activation_flags') == {key: False for key in ACTIVATION})
+    require(all(payload['activation_flags'][key] is False for key in ACTIVATION))
+    require(type(payload.get('all_required_passed')) is bool)
+    stage = payload.get('failure_stage')
+    require(stage is None or stage in {'configuration','identity_preflight','corpus','report_size'} | set(NAMES))
+    if 'elapsed_ms' in payload:
+        require(integer(payload['elapsed_ms'], 0, 600000))
+    if 'execution_name' in payload:
+        require(type(payload['execution_name']) is str and len(payload['execution_name']) <= 63
+                and re.fullmatch(r'hirewiz-doc-six-[a-f0-9]{12}-[a-z0-9]{1,20}', payload['execution_name']) is not None)
+    for key, expected in [('worker_image',image), ('policy_sha256',policy)]:
+        if key in payload:
+            require(payload[key] == expected)
+    if 'outer_runtime_user_verified' in payload:
+        require(type(payload['outer_runtime_user_verified']) is bool)
+    identity = payload.get('identity_preflight', {'passed': False})
+    require(type(identity) is dict and set(identity) <= IDENTITY and type(identity.get('passed')) is bool)
+    if 'diagnostic' in identity:
+        cleaned = diagnostic(identity['diagnostic'])
+        require(identity.get('cleanup_passed') is cleaned)
+    if 'runtime_hashes' in identity:
+        require(identity['runtime_hashes'] == runtime_hashes)
+    if 'architecture' in identity:
+        require(identity['architecture'] == 'x86_64')
+    for key in ('runtime_uid','runtime_gid'):
+        if key in identity:
+            require(integer(identity[key], 0, 4294967295))
+    for key in ('readonly_font_manifest','font_manifest_process_writable','courier_bundle_verified'):
+        if key in identity:
+            require(type(identity[key]) is bool)
+    if 'renderer_version' in identity:
+        require(type(identity['renderer_version']) is str and len(identity['renderer_version']) <= 200
+                and VERSION.fullmatch(identity['renderer_version']) is not None)
+    if 'font_manifest_sha256' in identity:
+        require(hashed(identity['font_manifest_sha256']))
+    if identity['passed']:
+        require(set(identity) == IDENTITY and identity['cleanup_passed'] is True
+                and identity['diagnostic']['launcher'] == 'returned'
+                and identity['diagnostic']['launcher_code'] == 0
+                and identity['readonly_font_manifest'] is True and identity['font_manifest_process_writable'] is False
+                and identity['courier_bundle_verified'] is True and payload.get('outer_runtime_user_verified') is True)
+    rows = payload.get('cases', [])
+    require(type(rows) is list and (len(rows) == len(NAMES) or (len(rows) == 0 and payload['failure_stage'] == 'report_size')))
+    reconstructed = []
+    for row, expected_name in zip(rows, NAMES, strict=False):
+        require(type(row) is dict and set(row) <= ROW and row.get('case') == expected_name)
+        require(type(row.get('passed')) is bool and type(row.get('attempted')) is bool)
+        if not row['attempted']:
+            require(set(row) == {'case','passed','attempted'} and row['passed'] is False)
+            reconstructed.append(False)
+            continue
+        if 'diagnostic' in row:
+            cleaned = diagnostic(row['diagnostic'])
+            require(row.get('cleanup_passed') is cleaned)
+        binding = row.get('binding')
+        ordinary = {'version','sha256','size_bytes','source_format'}
+        expected_keys = {'sha256','size_bytes'} if expected_name == 'eicar_direct_detection' else ordinary
+        if expected_name in NAMES[-3:]:
+            expected_keys = ordinary | {'operation','candidate_sha256','candidate_size_bytes','edits_sha256'}
+        require(type(binding) is dict and set(binding) == expected_keys and hashed(binding['sha256'])
+                and integer(binding['size_bytes'], 1, 5242880))
+        if expected_name != 'eicar_direct_detection':
+            formats = {'clean_tex': 'tex', 'clean_texzip': 'texzip',
+                       'eicar_tex_source': 'tex', 'eicar_texzip_member': 'texzip'}
+            require(type(binding['version']) is int and binding['version'] == 1
+                    and binding['source_format'] == formats.get(expected_name,
+                        'docx' if expected_name in ('clean_docx',*NAMES[-3:]) else 'pdf'))
+        if expected_name in NAMES[-3:]:
+            require(binding['operation'] == 'docx_layout' and integer(binding['candidate_size_bytes'],1,5242880)
+                    and hashed(binding['candidate_sha256']) and hashed(binding['edits_sha256']))
+        if expected_name in ('eicar_exact_file','eicar_tex_source','eicar_direct_detection'):
+            require(binding['sha256'] == EICAR_SHA and binding['size_bytes'] == 68)
+        for key in ROW - {'case','binding','diagnostic','scan','layout','reason'}:
+            if key in row:
+                require(type(row[key]) is bool)
+        if 'scan' in row:
+            scan(row['scan'])
+        if 'reason' in row:
+            require(row['reason'] is None or row['reason'] in REFLOW | {'unsupported_source_font'})
+        if 'layout' in row:
+            layout = row['layout']
+            require(type(layout) is dict and set(layout) == LAYOUT and layout['validator'] == 'hirewiz-docx-layout-v1')
+            for key in ('before_pdf_sha256','after_pdf_sha256','rendered_fonts_sha256'):
+                require(hashed(layout[key]))
+            for key, maximum in [('pages',20),('unchanged_links',20000),('outside_changed_regions_pixel_delta',0),
+                    ('changed_paragraphs',100),('protected_glyphs',200000),('unchanged_graphics',20020)]:
+                require(integer(layout[key], 0, maximum))
+            delta = layout['max_protected_geometry_delta_points']
+            require(type(delta) in (int,float) and math.isfinite(delta) and 0 <= delta <= .2)
+        diag = row.get('diagnostic', {})
+        ok = row.get('binding_match') is True and row.get('cleanup_passed') is True and diag.get('launcher') == 'returned'
+        if expected_name in ('clean_pdf','clean_docx'):
+            ok = ok and 'scan' in row and row.get('python_skill_present') is True and diag.get('processor') == 'clean' and diag.get('launcher_code') == 0 and diag.get('validation') == 'complete'
+        elif expected_name in ('clean_tex','clean_texzip'):
+            ok = ok and 'scan' in row and row.get('native_source_empty') is True and diag.get('processor') == 'clean' and diag.get('launcher_code') == 0 and diag.get('validation') == 'complete'
+        elif expected_name in ('eicar_exact_file','eicar_tex_source','eicar_texzip_member'):
+            ok = ok and row.get('worker_refused') is True and diag.get('processor') == 'refused' and diag.get('launcher_code') == 1 and diag.get('validation') == 'complete'
+        elif expected_name == 'eicar_direct_detection':
+            ok = ok and row.get('exact_file_unchanged') is True and row.get('coherent_eicar_detection') is True and diag.get('launcher_code') == 0
+        elif expected_name == 'styled_multipage_fit':
+            layout = row.get('layout', {})
+            ok = ok and 'scan' in row and row.get('renderer_binding_match') is True and row.get('candidate_scan_equal') is True and diag.get('processor') == 'clean' and diag.get('launcher_code') == 0 and diag.get('validation') == 'complete' and layout.get('pages') == 2 and layout.get('unchanged_links') == 1 and layout.get('outside_changed_regions_pixel_delta') == 0
+        elif expected_name == 'unsupported_source_font_refusal':
+            ok = ok and row.get('matching_unit_or_none') is True and row.get('reason') == 'unsupported_source_font' and diag.get('processor') == 'refused' and diag.get('launcher_code') == 1 and diag.get('validation') == 'complete'
+        else:
+            ok = ok and row.get('matching_unit_or_none') is True and row.get('reason') in REFLOW and diag.get('processor') == 'refused' and diag.get('launcher_code') == 1 and diag.get('validation') == 'complete'
+        if row['passed']:
+            require(ok)
+            extras = {
+                'clean_pdf': {'scan','python_skill_present'},
+                'clean_docx': {'scan','python_skill_present'},
+                'clean_tex': {'scan','native_source_empty'},
+                'clean_texzip': {'scan','native_source_empty'},
+                'eicar_exact_file': {'worker_refused'},
+                'eicar_tex_source': {'worker_refused'},
+                'eicar_texzip_member': {'worker_refused'},
+                'eicar_direct_detection': {'exact_file_unchanged','coherent_eicar_detection'},
+                'styled_multipage_fit': {'layout','renderer_binding_match','scan','candidate_scan_equal'},
+                'rendered_reflow_refusal': {'reason','matching_unit_or_none'},
+                'unsupported_source_font_refusal': {'reason','matching_unit_or_none'},
+            }
+            require(set(row) == {'case','passed','attempted','binding','binding_match','diagnostic','cleanup_passed'} | extras[expected_name])
+        reconstructed.append(row['passed'] and ok)
+    passed = identity['passed'] and len(reconstructed) == len(NAMES) and all(reconstructed)
+    require(payload['all_required_passed'] is passed)
+    if passed:
+        require(set(payload) == TOP and stage is None)
+    return passed
