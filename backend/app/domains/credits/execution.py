@@ -391,6 +391,15 @@ def persistent_execution_budget(
                     "overrun", "outcome_unknown", "settled",
                 }:
                     raise finance.FundingUnavailable("This operation cannot dispatch another model request")
+                if (
+                    not isinstance(hold.snapshot, dict)
+                    or hold.snapshot.get("route") != route.model_dump(mode="json")
+                    or hold.snapshot.get("policy") != policy.model_dump(mode="json")
+                ):
+                    raise finance.FundingUnavailable("The funded route authorization changed")
+                # CountTokens receives the user's prompt. Recheck the accepted
+                # route and provider price before sending even that free request.
+                require_route(route, policy, now=service._stamp(None))
                 attempts = db.query(CreditExecutionAttempt).filter_by(hold_id=hold_id).order_by(
                     CreditExecutionAttempt.ordinal
                 ).all()

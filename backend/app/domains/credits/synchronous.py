@@ -312,7 +312,9 @@ def execute(db: Session, *, user_id: int, payload: SynchronousServiceRequest,
                 "run_created": True, "credits_charged": 0, "message": str(exc)}) from None
         from ...services.llm_client import LLMProviderError
 
-        if isinstance(exc, LLMProviderError) and exc.budget_exhausted:
+        if isinstance(exc, finance.FundingUnavailable) or (
+            isinstance(exc, LLMProviderError) and exc.budget_exhausted
+        ):
             raise HTTPException(503, {
                 "code": "model_preflight_unavailable", "run_id": identity,
                 "run_created": True, "credits_charged": 0,

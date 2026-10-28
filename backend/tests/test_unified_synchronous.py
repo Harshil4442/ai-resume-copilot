@@ -430,6 +430,41 @@ def test_count_preflight_failure_refunds_unified_service_without_provider_attemp
         assert db.query(CreditExecutionHold).one().delivery_state == "failed"
 
 
+def test_expired_route_preflight_sends_no_prompt_or_provider_request(setup):
+    from backend.app.domains.credits import execution
+    from google import genai
+
+    factory, monkeypatch = setup
+    config = configure(monkeypatch, "enhanced_qa")
+    chosen = config.routes[0].model_copy(update={
+        "model_quotes": (
+            config.routes[0].model_quotes[0].model_copy(update={"model": "gemini-3.6-flash"}),
+        ),
+    })
+    monkeypatch.setenv("UNIFIED_CREDIT_RUNTIME_REVIEW_JSON", config.model_copy(
+        update={"routes": (chosen,)}
+    ).model_dump_json())
+    monkeypatch.setenv("LLM_API_KEY", "synthetic-local-test-only")
+    monkeypatch.setattr(llm_client, "LLM_MODEL", "gemini-3.6-flash")
+    original_require_route = execution.require_route
+
+    def now_expired(selected, policy, *, now):
+        return original_require_route(selected, policy, now=selected.qualified_until)
+
+    monkeypatch.setattr(execution, "require_route", now_expired)
+    monkeypatch.setattr(llm_client, "count_gemini_input", lambda *_: pytest.fail("No prompt may leave an expired route"))
+    monkeypatch.setattr(genai, "Client", lambda **_: pytest.fail("No provider generation after route expiry"))
+    with factory() as db:
+        request = payload("enhanced_qa")
+        with pytest.raises(HTTPException) as caught:
+            invoke(db, request, quote(db, request))
+        assert caught.value.status_code == 503
+        assert caught.value.detail["credits_charged"] == 0
+        assert service.wallet(db, user_id=1).available_credits == 40
+        assert db.query(models.ModelCallEvent).count() == 0
+        assert db.query(CreditExecutionHold).one().delivery_state == "failed"
+
+
 def test_unified_upload_preserves_original_without_unquoted_enrichment(setup, synthetic_document_inspector):
     import io
 
