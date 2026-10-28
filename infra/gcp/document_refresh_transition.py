@@ -399,23 +399,52 @@ class Controller:
                 break
             need(time.monotonic() < step_deadline, "document_transition_deadline_reconcile_only")
             time.sleep(min(2, max(0, step_deadline - time.monotonic())))
-        current = self.service(service)
-        self.ready(service, current, uid=before["uid"])
-        normalized = copy.deepcopy(current["template"])
-        if "revision" in normalized:
-            normalized["revision"] = normalized["revision"].rsplit("/", 1)[-1]
-        need(int(current["generation"]) == int(before["generation"]) + 1
-             and normalized == template
-             and current.get("labels", {}) == body.get("labels", before.get("labels", {})),
-             "document_transition_readback_changed")
-        # Service-level identity, ingress, IAM setting and every unrelated field
-        # remain exact. Native output/status fields legitimately change.
+        # An LRO can report done before the service GET reports its newly
+        # serving revision. Poll only the same resource; never repeat PATCH.
+        # Any different template or unrelated configuration fails immediately.
+        readback_deadline = min(self.deadline, time.monotonic() + 180)
+        expected_generation = int(before["generation"]) + 1
+        expected_revision = PARENT + "/services/" + service + "/revisions/" + template["revision"]
+        expected_labels = body.get("labels", before.get("labels", {}))
         ignored = {"template", "traffic", "labels", "etag", "generation", "observedGeneration", "updateTime",
                    "lastModifier", "reconciling", "terminalCondition", "conditions", "latestReadyRevision",
                    "latestCreatedRevision", "trafficStatuses", "urls"}
-        need({k: v for k, v in current.items() if k not in ignored}
-             == {k: v for k, v in before.items() if k not in ignored},
-             "document_transition_unrelated_configuration_changed")
+        static = {k: v for k, v in before.items() if k not in ignored}
+        while True:
+            current = self.service(service)
+            need({k: v for k, v in current.items() if k not in ignored} == static,
+                 "document_transition_unrelated_configuration_changed")
+            generation = int(current["generation"])
+            need(generation in {expected_generation - 1, expected_generation},
+                 "document_transition_readback_changed")
+            normalized = copy.deepcopy(current["template"])
+            if "revision" in normalized:
+                normalized["revision"] = normalized["revision"].rsplit("/", 1)[-1]
+            if generation == expected_generation - 1:
+                need(normalized == {**before["template"],
+                                    "revision": before["template"]["revision"].rsplit("/", 1)[-1]}
+                     and current.get("labels", {}) == before.get("labels", {})
+                     and current.get("etag") == before.get("etag")
+                     and current.get("traffic") == before.get("traffic"),
+                     "document_transition_readback_changed")
+            else:
+                need(normalized == template and current.get("labels", {}) == expected_labels
+                     and current.get("traffic") == body["traffic"]
+                     and current["latestCreatedRevision"] == expected_revision,
+                     "document_transition_readback_changed")
+                statuses = current.get("trafficStatuses", [])
+                serving = (type(statuses) is list and len(statuses) == 1
+                           and statuses[0].get("revision") == expected_revision
+                           and statuses[0].get("percent") == 100)
+                if (current.get("latestReadyRevision") == expected_revision
+                        and str(current.get("observedGeneration")) == str(expected_generation)
+                        and current.get("terminalCondition", {}).get("state") == "CONDITION_SUCCEEDED"
+                        and serving):
+                    self.ready(service, current, uid=before["uid"])
+                    break
+            need(time.monotonic() < readback_deadline,
+                 "document_transition_readback_deadline_reconcile_only")
+            time.sleep(min(2, max(0, readback_deadline - time.monotonic())))
         self.observed[service] = current
         self.owner.write(marker + ".verified.json", {**expected, "operation": name,
             "revision": current["latestReadyRevision"], "generation": str(current["generation"])})

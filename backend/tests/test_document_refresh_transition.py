@@ -21,6 +21,7 @@ def load(name):
     return module
 transition = load('document_refresh_transition')
 partial = load('document_refresh_partial')
+final = load('document_refresh_final')
 probe = load('document_refresh_probe')
 profile = load('document_renderer_profiles')
 NONCE = 'a' * 32
@@ -63,7 +64,7 @@ class Http:
         assert redirections == 0
         target = urlsplit(uri)
         if target.hostname == 'storage.googleapis.com':
-            names = {transition.RESCUE_CLAIM_OBJECT, partial.CLAIM_OBJECT}
+            names = {transition.RESCUE_CLAIM_OBJECT, partial.CLAIM_OBJECT, final.CLAIM_OBJECT}
             if method == 'POST':
                 name = parse_qs(target.query)['name'][0]
             else:
@@ -308,7 +309,7 @@ def test_resume_claim_consumes_worker_send_across_repeated_dispatch_after_unknow
     # A timeout may occur before the service changes. A second workflow run
     # must still never send the worker PATCH a second time.
     http.services[transition.WORKER] = before_worker
-    with pytest.raises(transition.TransitionDenied, match='claim_exists_or_unknown'):
+    with pytest.raises(transition.TransitionDenied, match='serving_phase_changed|claim_exists_or_unknown'):
         continue_rescue(http, second, tmp_path)
     assert http.claim_posts == 1 and len(http.writes) == 4
     assert not (second / 'worker.hirewiz-document-inspector.started.json').exists()
@@ -458,6 +459,173 @@ def test_partial_rescue_rechecks_api_after_claim_before_any_patch(monkeypatch, t
         continue_partial(http, source, tmp_path)
     assert http.claim_posts == 2 and len(http.writes) == 9
     assert not (tmp_path / 'partial-continuation/open.hirewiz-analysis-worker.started.json').exists()
+
+
+def failed_partial_after_analysis_ack(monkeypatch, tmp_path):
+    """Exact one-send history: two claims, analysis ACK, no coordinator send."""
+    http, source = partially_restored_with_api_maintenance_close(monkeypatch, tmp_path)
+    coordinator = transition.CALLERS[2]
+    pins = copy.deepcopy(http.services[coordinator])
+    continue_partial(http, source, tmp_path)
+    previous = tmp_path / 'partial-continuation'
+    assert len(http.writes) == 11
+    http.services[coordinator] = pins
+    http.revisions.pop(transition.PARENT + '/services/' + coordinator + '/revisions/'
+                       + coordinator + '-d-' + NONCE[:12] + '-open')
+    http.operations.pop(transition.PARENT + '/operations/owned-11')
+    http.writes.pop()
+    for file in previous.glob('open.*.json'):
+        if file.name != 'open.hirewiz-analysis-worker.started.json' and file.name != 'open.hirewiz-analysis-worker.acknowledged.json':
+            file.unlink()
+    (previous / 'complete.json').unlink()
+    (previous / 'owner.lock').unlink()
+    monkeypatch.setattr(final.partial, 'MAINTENANCE_CLOSE_GENERATION', partial.MAINTENANCE_CLOSE_GENERATION)
+    monkeypatch.setattr(final.partial, 'MAINTENANCE_CLOSE_OPERATION', partial.MAINTENANCE_CLOSE_OPERATION)
+    return http, source, previous
+
+
+def continue_final(http, source, previous, tmp_path):
+    return final.resume(NEW, {'build_id': transition.RESCUE_BUILD_ID, 'nonce': transition.RESCUE_NONCE},
+        tmp_path / 'native', source, previous, tmp_path / 'final-continuation',
+        source_tree_sha256=final.JOURNAL_TREE_SHA256, http=http, probe=probe, t=transition)
+
+
+def test_final_rescue_reconciles_analysis_and_only_opens_coordinator(monkeypatch, tmp_path):
+    http, source, previous = failed_partial_after_analysis_ack(monkeypatch, tmp_path)
+    api = copy.deepcopy(http.services[transition.CALLERS[0]])
+    analysis = copy.deepcopy(http.services[transition.CALLERS[1]])
+    result = continue_final(http, source, previous, tmp_path)
+    assert result['status'] == 'document_refresh_final_caller_restoration_observed'
+    assert result['api_maintenance_restore_required'] is True
+    assert [name for name, _ in http.writes[10:]] == [transition.CALLERS[2]]
+    assert http.services[transition.CALLERS[0]] == api
+    assert http.services[transition.CALLERS[1]] == analysis
+    assert http.claim_posts == 3
+    journal = tmp_path / 'final-continuation'
+    assert (journal / 'final-claim.verified.json').is_file()
+    assert (journal / 'open.hirewiz-resume-coordinator.verified.json').is_file()
+    assert not (journal / 'open.hirewiz-analysis-worker.started.json').exists()
+    assert (journal / 'complete.json').is_file()
+
+
+@pytest.mark.parametrize('drift', ['analysis_template', 'analysis_operation', 'api_flag', 'coordinator_flag', 'second_claim'])
+def test_final_rescue_refuses_drift_before_third_claim(monkeypatch, tmp_path, drift):
+    http, source, previous = failed_partial_after_analysis_ack(monkeypatch, tmp_path)
+    if drift == 'analysis_template':
+        http.services[transition.CALLERS[1]]['template']['timeout'] = '17s'
+    elif drift == 'analysis_operation':
+        (previous / 'open.hirewiz-analysis-worker.acknowledged.json').write_text('{}')
+    elif drift == 'api_flag':
+        env = transition.environment(http.services[transition.CALLERS[0]]['template'])
+        env['RESUME_DIRECT_UPLOAD_ENABLED']['value'] = 'true'
+        http.services[transition.CALLERS[0]]['template']['containers'][0]['env'] = list(env.values())
+    elif drift == 'coordinator_flag':
+        env = transition.environment(http.services[transition.CALLERS[2]]['template'])
+        env['RESUME_UPLOAD_COORDINATOR_SCAN_ENABLED']['value'] = 'true'
+        http.services[transition.CALLERS[2]]['template']['containers'][0]['env'] = list(env.values())
+    else:
+        raw, generation = http.claim_objects[partial.CLAIM_OBJECT]
+        http.claim_objects[partial.CLAIM_OBJECT] = (raw + b' ', generation)
+    with pytest.raises((transition.TransitionDenied, probe.NativeProofDenied)):
+        continue_final(http, source, previous, tmp_path)
+    assert http.claim_posts == 2 and len(http.writes) == 10
+    assert not (tmp_path / 'final-continuation/final-claim.started.json').exists()
+
+
+@pytest.mark.parametrize('outcome', ['unknown_ack', 'raced_412'])
+def test_final_claim_unknown_or_raced_never_opens_coordinator(monkeypatch, tmp_path, outcome):
+    http, source, previous = failed_partial_after_analysis_ack(monkeypatch, tmp_path)
+    http.claim_unknown = outcome == 'unknown_ack'
+    http.claim_race = outcome == 'raced_412'
+    with pytest.raises(transition.TransitionDenied):
+        continue_final(http, source, previous, tmp_path)
+    assert http.claim_posts == 3 and len(http.writes) == 10
+    assert (tmp_path / 'final-continuation/final-claim.started.json').is_file()
+    assert not (tmp_path / 'final-continuation/open.hirewiz-resume-coordinator.started.json').exists()
+
+
+def test_final_rescue_unknown_coordinator_ack_cannot_replay(monkeypatch, tmp_path):
+    http, source, previous = failed_partial_after_analysis_ack(monkeypatch, tmp_path)
+    http.lost_at = 11
+    with pytest.raises(transition.TransitionDenied):
+        continue_final(http, source, previous, tmp_path)
+    assert http.claim_posts == 3 and len(http.writes) == 11
+    assert (tmp_path / 'final-continuation/open.hirewiz-resume-coordinator.started.json').is_file()
+    with pytest.raises(transition.TransitionDenied, match='serving_phase_changed|claim_exists_or_unknown'):
+        final.resume(NEW, {'build_id': transition.RESCUE_BUILD_ID, 'nonce': transition.RESCUE_NONCE},
+            tmp_path / 'native', source, previous, tmp_path / 'second-final-continuation',
+            source_tree_sha256=final.JOURNAL_TREE_SHA256, http=http, probe=probe, t=transition)
+    assert len(http.writes) == 11
+
+
+def test_done_before_ready_service_get_polls_without_another_patch(monkeypatch, tmp_path):
+    http, source, previous = failed_partial_after_analysis_ack(monkeypatch, tmp_path)
+    coordinator = transition.CALLERS[2]
+    request = http.request
+    state = {'before': None, 'done': False, 'stale': 2}
+    def delayed(uri, *, method, body=None, headers=None, redirections):
+        if method == 'PATCH' and urlsplit(uri).path.endswith('/services/' + coordinator):
+            state['before'] = copy.deepcopy(http.services[coordinator])
+        response, raw = request(uri, method=method, body=body, headers=headers, redirections=redirections)
+        if method == 'GET' and '/operations/' in uri and state['before'] is not None:
+            state['done'] = True
+        if (method == 'GET' and uri.endswith('/services/' + coordinator)
+                and state['done'] and state['stale']):
+            state['stale'] -= 1
+            return response, json.dumps(state['before']).encode()
+        return response, raw
+    monkeypatch.setattr(http, 'request', delayed)
+    monkeypatch.setattr(transition.time, 'sleep', lambda _: None)
+    result = continue_final(http, source, previous, tmp_path)
+    assert result['status'] == 'document_refresh_final_caller_restoration_observed'
+    assert state['stale'] == 0
+    assert [name for name, _ in http.writes[10:]] == [coordinator]
+
+
+def test_post_lro_permanent_template_mismatch_fails_without_replay(monkeypatch, tmp_path):
+    http, source, previous = failed_partial_after_analysis_ack(monkeypatch, tmp_path)
+    coordinator = transition.CALLERS[2]
+    request = http.request
+    state = {'done': False}
+    def mismatched(uri, *, method, body=None, headers=None, redirections):
+        response, raw = request(uri, method=method, body=body, headers=headers, redirections=redirections)
+        if method == 'GET' and '/operations/' in uri and uri.endswith('owned-11'):
+            state['done'] = True
+        if method == 'GET' and uri.endswith('/services/' + coordinator) and state['done']:
+            current = copy.deepcopy(http.services[coordinator])
+            current['template']['timeout'] = '17s'
+            return response, json.dumps(current).encode()
+        return response, raw
+    monkeypatch.setattr(http, 'request', mismatched)
+    with pytest.raises(transition.TransitionDenied, match='readback_changed'):
+        continue_final(http, source, previous, tmp_path)
+    assert [name for name, _ in http.writes[10:]] == [coordinator]
+    assert (tmp_path / 'final-continuation/open.hirewiz-resume-coordinator.acknowledged.json').is_file()
+    assert not (tmp_path / 'final-continuation/open.hirewiz-resume-coordinator.verified.json').exists()
+
+
+def test_post_lro_readback_deadline_is_bounded_without_replay(monkeypatch, tmp_path):
+    http, source, previous = failed_partial_after_analysis_ack(monkeypatch, tmp_path)
+    coordinator = transition.CALLERS[2]
+    request = http.request
+    state = {'before': None, 'done': False, 'now': 100.0}
+    def never_ready(uri, *, method, body=None, headers=None, redirections):
+        if method == 'PATCH' and urlsplit(uri).path.endswith('/services/' + coordinator):
+            state['before'] = copy.deepcopy(http.services[coordinator])
+        response, raw = request(uri, method=method, body=body, headers=headers, redirections=redirections)
+        if method == 'GET' and '/operations/' in uri and uri.endswith('owned-11'):
+            state['done'] = True
+        if method == 'GET' and uri.endswith('/services/' + coordinator) and state['done']:
+            return response, json.dumps(state['before']).encode()
+        return response, raw
+    def advance(seconds):
+        state['now'] += max(2, seconds)
+    monkeypatch.setattr(http, 'request', never_ready)
+    monkeypatch.setattr(transition, 'time', SimpleNamespace(monotonic=lambda: state['now'], sleep=advance))
+    with pytest.raises(transition.TransitionDenied, match='readback_deadline_reconcile_only'):
+        continue_final(http, source, previous, tmp_path)
+    assert [name for name, _ in http.writes[10:]] == [coordinator]
+    assert not (tmp_path / 'final-continuation/open.hirewiz-resume-coordinator.verified.json').exists()
 
 
 @pytest.mark.parametrize('drift', ['image', 'source', 'flag', 'traffic'])
