@@ -3,7 +3,7 @@
   "requirement_version": "1.1",
   "source_sha256": "ac56be4838c8309fa9b1da3a717d53fab2bad85cfe0482d6aeedc4374a38fb4f",
   "baseline_commit": "f0f973c9c6d989553b8f58b275fc06fd5685497a",
-  "updated_at": "2026-10-28T17:28:27.234955+00:00",
+  "updated_at": "2026-10-28T18:02:00+00:00",
   "authorization": "Owner authorized implementation, testing, deployment and payment activation subject to requirements gates on 2026-10-27.",
   "stages": [
     {
@@ -67,10 +67,11 @@
         "docs/delivery/evidence/2026-10-28-calibration-and-format-corrections.json",
         "docs/delivery/evidence/2026-10-28-reviewer-kit-and-capacity.json",
         "docs/delivery/evidence/2026-10-28-native-corpus-and-release-readiness.json",
-        "docs/delivery/evidence/2026-10-28-interview-v7-exploratory.json"
+        "docs/delivery/evidence/2026-10-28-interview-v7-exploratory.json",
+        "docs/delivery/evidence/2026-10-28-interview-v8-exploratory.json"
       ],
-      "status_observed_at": "2026-10-28T17:28:27.234955+00:00",
-      "local_result": "The V3 Courier DOCX image passed a historical native 11-case corpus, but its scanner definitions expired before promotion; later successors failed before corpus cases and no document route is qualified. A separate bounded v7 synthetic interview calibration made 20 one-shot Gemini attempts: 18 delivered, two failed on personal-claim safety checks, with zero human scores. Reviewer 1 is the owner; Reviewer 2 and adjudicator remain unassigned. No AI route or major stage is qualified."
+      "status_observed_at": "2026-10-28T18:02:00+00:00",
+      "local_result": "The V3 Courier DOCX historical native 11-case corpus passed, but scanner freshness expired before promotion and the document route remains unqualified. The v7 synthetic interview round attempted 20 and delivered 18, with two safety-validator failures. Prompt v8 was separately exercised under an INR30 hard modeled cap: 18 one-shot Gemini attempts, 16 delivered, two personal-claim validator failures and two reference slots never started by the cost guard. Neither batch has human scores. Reviewer 1 is the owner; Reviewer 2 and adjudicator remain unassigned. No AI route or major stage is qualified."
     },
     {
       "number": 5,
@@ -223,7 +224,7 @@
     },
     {
       "id": "P02",
-      "requirement": "First launch display. Until P01 is met, show Introductory price \u20b959 with 40 credits, and the real offer end date; optionally state Planned standard price \u20b979 from the disclosed date. Apply the same wording to the other packs. Omit strikethrough, was pricing and savings claims until substantiated.",
+      "requirement": "First launch display. Until P01 is met, show Introductory price ₹59 with 40 credits, and the real offer end date; optionally state Planned standard price ₹79 from the disclosed date. Apply the same wording to the other packs. Omit strikethrough, was pricing and savings claims until substantiated.",
       "status": "in_progress",
       "evidence": [
         "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
@@ -633,19 +634,19 @@
     },
     {
       "id": "G02",
-      "requirement": "Margin gates. Use 20% monthly conversion, all-Starter offer purchases and \u20b935,000 overhead as the approved adverse scenario. It leaves \u20b914,370 after reserves. Require at least 15% of defined net receipts after all budgeted costs; seek 20% in normal operation. At 2,000 buyers, overhead must be at most \u20b935,141 for 15% and \u20b930,399 for 20%. Include omitted costs before testing either gate.",
+      "requirement": "Margin gates. Use 20% monthly conversion, all-Starter offer purchases and ₹35,000 overhead as the approved adverse scenario. It leaves ₹14,370 after reserves. Require at least 15% of defined net receipts after all budgeted costs; seek 20% in normal operation. At 2,000 buyers, overhead must be at most ₹35,141 for 15% and ₹30,399 for 20%. Include omitted costs before testing either gate.",
       "status": "pending",
       "evidence": []
     },
     {
       "id": "G03",
-      "requirement": "Acquisition discipline. Prioritize useful SEO content, product examples and product-led referrals. Fund referral credits only from an approved allowance after a qualifying paid purchase. At 20% conversion, surplus per monthly buyer is about \u20b912.18 with \u20b925,000 overhead and \u20b97.18 with \u20b935,000. The latter has only \u20b90.07 per buyer of headroom above the 15% gate. Fund acquisition from genuinely available headroom; do not assume repeat purchases or unproven lifetime value.",
+      "requirement": "Acquisition discipline. Prioritize useful SEO content, product examples and product-led referrals. Fund referral credits only from an approved allowance after a qualifying paid purchase. At 20% conversion, surplus per monthly buyer is about ₹12.18 with ₹25,000 overhead and ₹7.18 with ₹35,000. The latter has only ₹0.07 per buyer of headroom above the 15% gate. Fund acquisition from genuinely available headroom; do not assume repeat purchases or unproven lifetime value.",
       "status": "pending",
       "evidence": []
     },
     {
       "id": "G04",
-      "requirement": "Additional expense scenarios. Add founder pay, hired staff, marketing, review labor and incremental agent subscriptions before calling the result business profit. An additional \u20b910,000 monthly expense reduces the adverse \u20b935,000-overhead and 20% case to \u20b94,370, below the minimum margin gate. One-time implementation and evaluation budgets require separate approval.",
+      "requirement": "Additional expense scenarios. Add founder pay, hired staff, marketing, review labor and incremental agent subscriptions before calling the result business profit. An additional ₹10,000 monthly expense reduces the adverse ₹35,000-overhead and 20% case to ₹4,370, below the minimum margin gate. One-time implementation and evaluation budgets require separate approval.",
       "status": "pending",
       "evidence": []
     },

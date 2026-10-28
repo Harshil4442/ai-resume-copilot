@@ -1,6 +1,6 @@
 # HireWiz reviewer instructions
 
-Updated 28 October 2026. The current **v7 exploratory interview package** contains 10 fixed synthetic cases, **18 delivered outputs and two explicitly unavailable outputs**, with two blank scoring sheets. Each case keeps both A/B slots; failed generations have not been retried, replaced or removed. The v5 and v6 packages remain separate historical batches. None is an approved reference or a release qualification.
+Updated 28 October 2026. The current **v8 exploratory interview package** contains 10 fixed synthetic cases, **16 delivered outputs, two failed generations and two never-started budget-guard slots**, with two blank scoring sheets. Each case keeps both A/B slots. The v5, v6 and v7 packages remain separate historical batches. None is an approved reference or a release qualification.
 
 ## Purpose
 
@@ -16,19 +16,19 @@ The project owner has volunteered as **Reviewer 1**; no scores have been submitt
 
 ## What you will receive
 
-For each case: the original résumé, the job description, a list of facts approved for use, the exact service requested, and two slots labelled **A** and **B**. A delivered slot contains the actual interview output. Each of the two failed slots contains an **Unavailable — generation failed** notice instead of generated content. `output-status.csv` lists all 20 slots and their availability.
+For each case: the original résumé, the job description, a list of facts approved for use, the exact service requested, and two slots labelled **A** and **B**. A delivered slot contains the actual interview output. Two failed slots contain an **Unavailable — generation failed** notice, and two unstarted slots contain a **Not run — cost guard** notice. `output-status.csv` lists all 20 slots and their availability.
 
 This package evaluates interview questions only. The other service checks below are guidance for later packages. A future résumé-tailoring package must also include the original and changed document files and page previews.
 
 You will not receive the model names, service prices, which output is cheaper, or the other reviewer’s scores. A/B are anonymous labels; do not assume A is the old version or B is the new one.
 
-If a source, page or expected delivered output is missing, unreadable or reveals a hidden identity, stop that case and tell the coordinator. Leave its scores blank and explain why. For each explicitly unavailable slot, leave all four scores and all critical-problem flags blank and note that no deliverable was produced. Continue reviewing the available counterpart. Do not invent scores, enter zero, mark it as a successful refusal, replace it with an older output or remove its row. Failure remains part of the overall delivery report.
+If a source, page or expected delivered output is missing, unreadable or reveals a hidden identity, stop that case and tell the coordinator. Leave its scores blank and explain why. For each failed or not-run slot, leave all four scores and all critical-problem flags blank and note that no deliverable was produced. Continue reviewing the available counterpart. Do not invent scores, enter zero, mark it as a successful refusal, replace it with an older output or remove its row. Failures and budget-limited non-execution remain distinct parts of the delivery report.
 
 ## Review one case
 
 1. Read the original résumé, job and approved facts before reading the outputs.
 2. Review A on its own. Check the facts and the specific service requirements below.
-3. If A was delivered, give it four scores and a concrete reason. Record any critical problem separately. If it is explicitly unavailable, record that fact and leave scores and defect flags blank.
+3. If A was delivered, give it four scores and a concrete reason. Record any critical problem separately. If it failed or was not run, record that fact and leave scores and defect flags blank.
 4. Repeat for B using exactly the same standard.
 5. Save your own sheet. Do not compare scores with the other reviewer before submitting it.
 
@@ -88,7 +88,7 @@ The adjudicator reviews every disagreement against the original material and bot
 
 ## Current review batch and return instructions
 
-The v7 package contains **10 fixed development cases with preflight-checked native PDFs**. Each reviewer receives 20 rows: **18 delivered outputs to assess and two unavailable slots to record without scores**. There are 40 independent review rows across both sheets, not 40 delivered outputs. Both failed generations remain visible in the package and reporting. This small batch helps find problems and is not a final quality certification.
+The v8 package contains **10 fixed development cases with preflight-checked native PDFs**. Each reviewer receives 20 rows: **16 delivered outputs to assess, two failed slots and two unstarted slots to record without scores**. There are 40 independent review rows across both sheets, not 40 delivered outputs. The failures and budget stop remain visible separately. This partial batch helps find problems and is not a final quality certification.
 
 The coordinator supplies the actual outputs and pair IDs with each versioned package. Each reviewer fills only their own CSV and returns it privately to the coordinator, identifying any incomplete cases. Keep the supplied column names and A/B labels. Do not exchange sheets with the other reviewer or mix scores from different output versions.
 
@@ -96,10 +96,12 @@ Later, we will use a separate held-out set that was not used to improve the syst
 
 ## Work available now
 
-Reviewers can examine the synthetic source résumés, job descriptions and approved-fact lists for consistency, then assess the 18 delivered exploratory interview outputs. Record input findings as **acceptable**, **needs correction** or **unsupported**, with reasons. Keep input review separate from output scoring and keep both unavailable slots in the returned sheet.
+Reviewers can examine the synthetic source résumés, job descriptions and approved-fact lists for consistency, then assess the 16 delivered exploratory interview outputs. Record input findings as **acceptable**, **needs correction** or **unsupported**, with reasons. Keep input review separate from output scoring and keep all four unavailable slots in the returned sheet.
 
 Some existing test sources require an unsupported LaTeX engine or fonts not verified in the deployed renderer. Their local previews must not be mistaken for supported production output. Those cases remain explicitly recorded while we prepare a supported, versioned calibration set.
 
 ## Earlier exploratory batches
+
+The v7 package remains unchanged: it had 10 synthetic cases, 18 delivered outputs, two failed outputs, 20 provider attempts and no human scores. Its [versioned evidence](evidence/2026-10-28-interview-v7-exploratory.json) is retained. The v8 partial batch cannot be used as a like-for-like delivery-rate comparison because its cost guard left two reference slots unstarted.
 
 The v6 package remains unchanged: it had 10 synthetic cases, 19 delivered outputs, one unavailable output, 20 provider attempts and no human scores. Its source-triage and costs are recorded separately in `docs/delivery/evidence/2026-10-28-reviewer-kit-and-capacity.json`. Do not transfer scores or model labels between versions. The v5 package is also retained independently.
