@@ -54,20 +54,29 @@ def stopped(tmp_path, monkeypatch, request):
     for name, row in entries.items():
         refresh.write_new(original / name, row)
     state = SimpleNamespace(history=history, original=original, identity=identity, value=value,
-                            archive=source, http_calls=[], native_calls=[], job_status=404, proof_calls=[])
+                            archive=source, historical=historical, http_calls=[], native_calls=[],
+                            job_status=404, proof_calls=[], builds={identity["build_id"]: value},
+                            sources={(origin["bucket"], origin["object"], origin["generation"]): source},
+                            nonces={NONCE})
 
     class BuildHttp:
         def request(self, uri, *, method, redirections, **kwargs):
             assert method == "GET" and redirections == 0  # No upload, Build, Job, claim or PATCH.
             state.http_calls.append((method, uri))
-            if uri == (f"https://cloudbuild.googleapis.com/v1/projects/{refresh.PROJECT}/locations/"
-                       f"{refresh.REGION}/builds/{identity['build_id']}"):
-                return SimpleNamespace(status=200), json.dumps(state.value).encode()
+            build_prefix = (f"https://cloudbuild.googleapis.com/v1/projects/{refresh.PROJECT}/locations/"
+                            f"{refresh.REGION}/builds/")
+            if uri.startswith(build_prefix):
+                return SimpleNamespace(status=200), json.dumps(state.builds[uri.removeprefix(build_prefix)]).encode()
             parsed = urlsplit(uri)
             assert parsed.hostname == "storage.googleapis.com"
-            assert unquote(parsed.path) == ("/download/storage/v1/b/" + origin["bucket"] + "/o/" + origin["object"])
-            assert parse_qs(parsed.query) == {"alt": ["media"], "generation": [origin["generation"]]}
-            return SimpleNamespace(status=200), state.archive
+            prefix = "/download/storage/v1/b/" + refresh.PROJECT + "_cloudbuild/o/"
+            assert unquote(parsed.path).startswith(prefix)
+            source_object = unquote(parsed.path).removeprefix(prefix)
+            query = parse_qs(parsed.query)
+            assert query.get("alt") == ["media"] and len(query.get("generation", [])) == 1
+            key = (refresh.PROJECT + "_cloudbuild", source_object, query["generation"][0])
+            return SimpleNamespace(status=200), state.archive if key == (
+                origin["bucket"], origin["object"], origin["generation"]) else state.sources[key]
 
         def close(self):
             pass
@@ -79,7 +88,7 @@ def stopped(tmp_path, monkeypatch, request):
         http = native_http
 
         def job(self, name):
-            assert name == probe.PARENT + "/jobs/hirewiz-doc-six-" + NONCE[:12]
+            assert name in {probe.PARENT + "/jobs/hirewiz-doc-six-" + nonce[:12] for nonce in state.nonces}
             state.native_calls.append(("GET", name))
             if state.job_status == "unknown":
                 raise RuntimeError("synthetic observation unavailable")
@@ -174,6 +183,52 @@ def assert_no_native_writes(stopped):
     assert stopped.native_http.writes == []
 
 
+def second_abandoned(stopped, nonce=NEXT_NONCE):
+    """A distinct terminal native Build, with its own source and absent Job."""
+    value = local.build()
+    build_id = "fedcba98-7654-3210-fedc-ba9876543210"
+    tag = refresh.REPOSITORY + ":refresh-" + nonce
+    value["id"] = build_id
+    value["name"] = f"projects/{refresh.PROJECT}/locations/{refresh.REGION}/builds/{build_id}"
+    value["steps"][0]["args"][4] = "DOCUMENT_DEFINITIONS_NONCE=" + nonce
+    value["steps"][0]["args"][6] = tag
+    value["steps"][1]["args"][1] = tag
+    value["results"]["images"][0] = {"name": tag, "digest": "sha256:" + "c" * 64}
+    source = value["source"]["storageSource"]
+    source["object"] = "hirewiz-document-refresh-source/" + nonce + "/source.tar.gz"
+    source["generation"] = "5678"
+    value["sourceProvenance"]["resolvedStorageSource"] = copy.deepcopy(source)
+    identity = refresh.build_contract(value, nonce, stopped.identity["refresh_dockerfile_sha256"],
+                                      historical_v1=stopped.historical)
+    identity["source_archive_sha256"] = recovery.sha(stopped.archive)
+    root = stopped.history / "second-abandoned-build"
+    root.mkdir(mode=0o700)
+    encoded = base64.urlsafe_b64encode(build_id.encode()).decode().rstrip("=")
+    entries = {"native-build-identity.json": identity,
+        "source-upload-acknowledged.json": source,
+        "build-started.json": {"nonce": nonce, "recipe_sha256": identity["refresh_dockerfile_sha256"],
+            "source_archive_sha256": identity["source_archive_sha256"], "automatic_replay": False,
+            "unknown_outcome": "reconcile_exact_native_object_and_build_only"},
+        "build-create-started.json": {"nonce": nonce, "automatic_replay": False,
+            "request_sha256": recovery.sha(recovery.canonical(refresh.build_request(nonce, source)))},
+        "build-acknowledged.json": {"nonce": nonce, "build_id": build_id,
+            "operation_name": "operations/build/" + refresh.PROJECT + "/" + encoded, "automatic_replay": False}}
+    for name, row in entries.items():
+        refresh.write_new(root / name, row)
+    stopped.builds[build_id] = value
+    stopped.sources[(source["bucket"], source["object"], source["generation"])] = stopped.archive
+    stopped.nonces.add(nonce)
+    return root
+
+
+def chained_history(stopped):
+    first = output(stopped, "first-disposition")
+    assert recovery.prepare(first, stopped.history, None, refresh_module=refresh) == NEXT_NONCE
+    successor = second_abandoned(stopped)
+    shutil.copytree(first / "pre-native-reconciliations", successor / "pre-native-reconciliations")
+    return successor
+
+
 def test_terminal_build_and_absent_job_allow_new_nonce_without_adopting_old_candidate(stopped):
     before = recovery.pre_native_snapshot(stopped.original, refresh)
     target = output(stopped)
@@ -192,6 +247,78 @@ def test_terminal_build_and_absent_job_allow_new_nonce_without_adopting_old_cand
     assert not (retained / "original/native-proof").exists()
     assert len(stopped.http_calls) == 2 and stopped.proof_calls
     assert all(path.stat().st_mode & 0o777 == 0o600 for path in target.rglob("*.json"))
+    assert_no_native_writes(stopped)
+
+
+def test_chained_pre_native_history_consumes_prior_once_and_reconciles_only_successor(stopped, monkeypatch):
+    successor = chained_history(stopped)
+    prior_journal = completed_serving_history(stopped)
+    monkeypatch.setattr(serving.transition, "verify_rescue_caller_pins",
+                        lambda clients, contract, image: contract.verify_caller_pins(clients, image))
+    monkeypatch.setattr(probe, "verify_expired_current_v2_for_retirement", lambda *_: None)
+    third_nonce = "e" * 32
+    monkeypatch.setattr(recovery.uuid, "uuid4", lambda: SimpleNamespace(hex=third_nonce))
+    target = output(stopped, "third-disposition")
+    assert recovery.prepare(target, stopped.history, None, refresh_module=refresh,
+                            rescue_expired_v2=True, rescue_prior_journal=prior_journal) == third_nonce
+    assert {path.name for path in (target / "pre-native-reconciliations").iterdir()} == {NEXT_NONCE}
+    receipt = json.loads((target / "pre-native-reconciliations" / NEXT_NONCE / "reconciliation.json").read_bytes())
+    assert receipt["successor_nonce"] == third_nonce and receipt["native_acceptance"] is False
+    assert recovery.pre_native_snapshot(successor, refresh, history_root=True) == recovery.pre_native_snapshot(
+        target / "pre-native-reconciliations" / NEXT_NONCE / "original", refresh)
+    assert_no_native_writes(stopped)
+
+
+@pytest.mark.parametrize("change", ["receipt", "original_bytes", "extra_entry", "replayed_build",
+                                    "reused_prior_nonce", "reused_successor_nonce"])
+def test_chained_history_rejects_tamper_or_replay_without_new_candidate(stopped, monkeypatch, change):
+    successor = chained_history(stopped)
+    record = successor / "pre-native-reconciliations" / NONCE
+    if change == "receipt":
+        path = record / "reconciliation.json"
+        row = json.loads(path.read_bytes())
+        row["native_acceptance"] = True
+        path.write_bytes(recovery.canonical(row))
+    elif change == "original_bytes":
+        path = record / "original/build-started.json"
+        row = json.loads(path.read_bytes())
+        row["automatic_replay"] = True
+        path.write_bytes(recovery.canonical(row))
+    elif change == "extra_entry":
+        refresh.write_new(record / "unknown.json", {"unexpected": True})
+    elif change == "replayed_build":
+        stopped.builds["fedcba98-7654-3210-fedc-ba9876543210"]["status"] = "WORKING"
+    elif change == "reused_prior_nonce":
+        monkeypatch.setattr(recovery.uuid, "uuid4", lambda: SimpleNamespace(hex=NONCE))
+    else:
+        monkeypatch.setattr(recovery.uuid, "uuid4", lambda: SimpleNamespace(hex=NEXT_NONCE))
+    target = output(stopped, "refused-chain")
+    with pytest.raises(refresh.RefreshDenied):
+        recovery.prepare(target, stopped.history, None, refresh_module=refresh)
+    assert not list(target.iterdir())
+    assert_no_native_writes(stopped)
+
+
+def test_chained_receipt_verifies_retained_original_after_older_root_ages_out(stopped, monkeypatch):
+    chained_history(stopped)
+    shutil.rmtree(stopped.original)
+    third_nonce = "e" * 32
+    monkeypatch.setattr(recovery.uuid, "uuid4", lambda: SimpleNamespace(hex=third_nonce))
+    target = output(stopped, "after-prior-retention")
+    assert recovery.prepare(target, stopped.history, None, refresh_module=refresh) == third_nonce
+    assert {path.name for path in (target / "pre-native-reconciliations").iterdir()} == {NEXT_NONCE}
+    assert_no_native_writes(stopped)
+
+
+def test_completed_successor_receipt_does_not_reopen_consumed_build(stopped, monkeypatch):
+    monkeypatch.setattr(recovery.uuid, "uuid4", lambda: SimpleNamespace(hex="1" * 32))
+    first = output(stopped, "completed-disposition")
+    assert recovery.prepare(first, stopped.history, None, refresh_module=refresh) == "1" * 32
+    completed = completed_serving_history(stopped).parent
+    shutil.copytree(first / "pre-native-reconciliations", completed / "pre-native-reconciliations")
+    target = output(stopped, "after-completion")
+    assert recovery.prepare(target, stopped.history, None, refresh_module=refresh) is None
+    assert not list(target.iterdir())
     assert_no_native_writes(stopped)
 
 
