@@ -185,6 +185,16 @@ def test_native_build_joins_exact_nonce_source_generation_builder_and_image():
     assert result["fixed_renderer_base"] == refresh.RENDERER_BASE
 
 
+def test_v3_definition_build_requires_qualified_parent_and_exact_recipe():
+    from infra.gcp import document_candidate as courier
+
+    result = refresh.build_contract(build(), "a" * 32, courier.REFRESH_SHA256, candidate_v3=True)
+    assert result["fixed_renderer_base"] == courier.IMAGE
+    assert result["policy_sha256"] == courier.POLICY_SHA256
+    with pytest.raises(refresh.RefreshDenied, match="source_recipe_changed"):
+        refresh.build_contract(build(), "a" * 32, "c" * 64, candidate_v3=True)
+
+
 @pytest.mark.parametrize("change", ["nonce", "builder", "source_generation", "step_env", "extra_image", "unfinished"])
 def test_native_build_drift_cannot_be_adopted_by_a_receipt(change):
     value = build()

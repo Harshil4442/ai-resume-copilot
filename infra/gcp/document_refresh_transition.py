@@ -261,8 +261,9 @@ class Controller:
 
 
 def transition(image: str, build: dict[str, Any], native_journal: Path, journal: Path,
-               *, http: Any, probe: Any) -> dict[str, Any]:
+               *, http: Any, probe: Any, retire_expired_v2: bool = False) -> dict[str, Any]:
     """Trusted controller entry: actual fresh native acceptance, never a boolean receipt."""
+    need(type(retire_expired_v2) is bool, "document_transition_recovery_mode_invalid")
     owner = Journal(journal)
     try:
         acceptance = probe.verify_successor(image, build, native_journal)
@@ -272,6 +273,7 @@ def transition(image: str, build: dict[str, Any], native_journal: Path, journal:
         captured = {}
         prior_image = None
         prior_policy = None
+        prior_expired = False
         for name in SERVICES:
             value = run.service(name)
             run.ready(name, value, uid=probe.SERVICE_UID if name == WORKER else None)
@@ -279,9 +281,16 @@ def transition(image: str, build: dict[str, Any], native_journal: Path, journal:
             env = environment(value["template"])
             if name == WORKER:
                 prior_image = value["template"]["containers"][0]["image"]
-                if prior_image != probe.BASE_IMAGE:
-                    probe.verify_current_successor(prior_image, value)
                 prior_policy = probe.policy_for_serving(value, prior_image)
+                if prior_image != probe.BASE_IMAGE:
+                    try:
+                        probe.verify_current_successor(prior_image, value)
+                    except probe.NativeProofDenied as error:
+                        need(retire_expired_v2 and str(error) == "document_native_definitions_expired"
+                             and prior_policy == "d3baf46026934f48b8def219b48d348d7b03bc3b4d0cb713a6f222c7299df7f2"
+                             and probe.POLICY == "8ed5f38142d88d88883129681953e939e79157e8b92e3efc516920d2e4409c9f",
+                             "document_transition_expired_predecessor_refused")
+                        prior_expired = True
             else:
                 need(env.get("DOCUMENT_WORKER_IMAGE_DIGEST") == {"name": "DOCUMENT_WORKER_IMAGE_DIGEST", "value": prior_image},
                      "document_transition_existing_mixed_pins_reconcile_only")
@@ -289,12 +298,25 @@ def transition(image: str, build: dict[str, Any], native_journal: Path, journal:
                 need(all(row is None or set(row) == {"name", "value"} and row["value"] in {"true", "false"}
                          for row in captured[name].values()), "document_transition_admission_flag_unverified")
         need(prior_image != image, "document_transition_already_current_reconcile_only")
+        need(not retire_expired_v2 or prior_expired, "document_transition_recovery_requires_expired_v2")
         probe.verify_caller_pins(run, prior_image, policy_sha256=prior_policy)
         owner.write("captured-flags.json", captured)
         # No claim of quiescence: old in-flight callers can finish or safely503.
         for name in CALLERS:
             template = mutate_template(run.observed[name], name, "close", build["nonce"], image, {}, captured[name])
             run.patch(name, "close", template, acceptance=acceptance)
+        if prior_expired:
+            need(all(run.service(name) == run.observed[name]
+                     and all(environment(run.observed[name]["template"])[key] == {"name": key, "value": "false"}
+                             for key in PAUSE[name]) for name in CALLERS),
+                 "document_transition_expired_predecessor_admission_open")
+            need(run.service(WORKER) == run.observed[WORKER],
+                 "document_transition_expired_predecessor_worker_changed")
+            probe.verify_expired_current_v2_for_retirement(prior_image, run.observed[WORKER])
+            probe.verify_caller_pins(run, prior_image, policy_sha256=prior_policy)
+            owner.write("expired-v2-retirement-only.json", {"image": prior_image,
+                "candidate_image": image, "all_three_callers_closed": True,
+                "serving_authority": False, "automatic_replay": False})
         acceptance = probe.verify_successor(image, build, native_journal)
         require_current_acceptance(acceptance, image, probe)
         labels = dict(zip(LABELS, (build["build_id"], build["nonce"], acceptance.job_name.rsplit("/", 1)[-1]), strict=True))

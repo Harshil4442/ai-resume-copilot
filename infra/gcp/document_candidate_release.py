@@ -28,6 +28,7 @@ from infra.gcp import document_candidate_probe as candidate  # noqa: E402
 from infra.gcp import document_refresh_probe as prior  # noqa: E402
 from infra.gcp import document_refresh_transition as transition  # noqa: E402
 
+NativeProofDenied = prior.NativeProofDenied
 POLICY = profile.POLICY_SHA256
 BASE_IMAGE = prior.BASE_IMAGE
 SERVICE_UID = prior.SERVICE_UID
@@ -287,17 +288,31 @@ def run_successor(build: dict[str, Any], journal: Path) -> prior.NativeAcceptanc
         clients.close()
 
 
-def refresh(directory: Path, *, publish: bool, now: datetime, nonce: str | None = None) -> dict[str, Any]:
-    """Scheduled V3 path: fixed parent, new definitions, native proof, same transition."""
-    need(publish is True and now.tzinfo is not None, "explicit_refresh_required")
+def refresh(directory: Path, *, publish: bool, now: datetime, nonce: str | None = None,
+            retire_expired_v2: bool = False) -> dict[str, Any]:
+    """Fresh V3 path; expired V2 retirement requires an explicit dispatch."""
+    need(publish is True and now.tzinfo is not None and type(retire_expired_v2) is bool,
+         "explicit_refresh_required")
     source_contract()
     clients = prior.Clients()
     try:
         service = clients.preflight()["service"]
         current = service["template"]["containers"][0]["image"]
-        need(policy_for_serving(service, current) == POLICY, "serving_profile_changed")
-        verify_current_successor(current, service)
-        verify_caller_pins(clients, current, policy_sha256=POLICY)
+        current_policy = policy_for_serving(service, current)
+        if retire_expired_v2:
+            need(current_policy == prior.POLICY and current != prior.BASE_IMAGE,
+                 "expired_v2_predecessor_required")
+            try:
+                prior.verify_current_successor(current, service)
+            except prior.NativeProofDenied as error:
+                need(str(error) == "document_native_definitions_expired",
+                     "expired_v2_predecessor_unverified")
+            else:
+                need(False, "expired_v2_predecessor_not_expired")
+        else:
+            need(current_policy == POLICY, "serving_profile_changed")
+            verify_current_successor(current, service)
+        verify_caller_pins(clients, current, policy_sha256=current_policy)
     finally:
         clients.close()
     builder = prior.build_module()
@@ -309,7 +324,8 @@ def refresh(directory: Path, *, publish: bool, now: datetime, nonce: str | None 
     http = builder.native_http()
     try:
         result = transition.transition(image, build, directory / "native-proof", directory / "transition",
-                                       http=http, probe=sys.modules[__name__])
+                                       http=http, probe=sys.modules[__name__],
+                                       retire_expired_v2=retire_expired_v2)
     finally:
         http.close()
     result.update(definition_expires_at=accepted.definition_expires_at, renderer_contract_version=3,
@@ -321,6 +337,7 @@ def refresh(directory: Path, *, publish: bool, now: datetime, nonce: str | None 
 class ReleaseProbe:
     """Normal-manager read-only proof route; mutations still use maintenance IAM."""
     POLICY, BASE_IMAGE, SERVICE_UID = POLICY, BASE_IMAGE, SERVICE_UID
+    NativeProofDenied = prior.NativeProofDenied
     validate_serving = staticmethod(validate_serving)
     policy_for_serving = staticmethod(policy_for_serving)
     verify_caller_pins = staticmethod(verify_caller_pins)
@@ -335,23 +352,47 @@ class ReleaseProbe:
             return verify_current_successor_for_release(image, metadata)
         return prior.verify_current_successor_for_release(image, metadata)
 
+    @staticmethod
+    def verify_expired_current_v2_for_retirement(image, metadata):
+        return prior.verify_expired_current_v2_for_retirement(image, metadata)
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=("verify", "promote"))
     parser.add_argument("--corpus-journal", type=Path, required=True)
     parser.add_argument("--transition-journal", type=Path)
+    parser.add_argument("--retire-expired-v2", action="store_true",
+                        help="Use the separate retirement-only proof after closing all callers")
     args = parser.parse_args()
-    build = build_identity(read_only_release=True)
+    need(not args.retire_expired_v2 or args.command == "promote", "recovery_mode_requires_promotion")
+    binding_path = args.corpus_journal / "binding.json"
+    if binding_path.exists():
+        need(not binding_path.is_symlink() and binding_path.stat().st_size <= 65536,
+             "candidate_binding_invalid")
+        binding = json.loads(binding_path.read_bytes())
+        need(type(binding) is dict and set(binding) == {"version", "image", "build_identity"}
+             and binding["version"] == 3 and type(binding["image"]) is str
+             and type(binding["build_identity"]) is dict,
+             "candidate_binding_invalid")
+        image = binding["image"]
+        recorded = binding["build_identity"]
+        build = build_identity(read_only_release=True, build_id=recorded.get("build_id"),
+                               nonce=recorded.get("nonce"), image=image)
+        need(build == recorded, "candidate_binding_changed")
+    else:
+        image = profile.IMAGE
+        build = build_identity(read_only_release=True)
     if args.command == "verify":
         from dataclasses import asdict
-        print(json.dumps(asdict(verify_successor(profile.IMAGE, build, args.corpus_journal, read_only_release=True)), sort_keys=True))
+        print(json.dumps(asdict(verify_successor(image, build, args.corpus_journal, read_only_release=True)), sort_keys=True))
         return
     need(args.transition_journal is not None, "transition_journal_required")
     http = prior.build_module().native_http()
     try:
-        print(json.dumps(transition.transition(profile.IMAGE, build, args.corpus_journal,
-            args.transition_journal, http=http, probe=ReleaseProbe()), sort_keys=True))
+        print(json.dumps(transition.transition(image, build, args.corpus_journal,
+            args.transition_journal, http=http, probe=ReleaseProbe(),
+            retire_expired_v2=args.retire_expired_v2), sort_keys=True))
     finally:
         http.close()
 

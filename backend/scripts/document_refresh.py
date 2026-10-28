@@ -795,10 +795,13 @@ def infra(name: str) -> Any:
 
 def refresh(directory: Path, *, publish: bool, now: datetime, prior_journal: Path | None = None,
             history: Path | None = None, recover_failed_native_job: str | None = None,
-            full_source: bool = False) -> dict[str, Any]:
+            full_source: bool = False, retire_expired_v2: bool = False) -> dict[str, Any]:
     """Full controlled pipeline. No serialized acceptance result grants authority."""
     need(recover_failed_native_job is None or publish is True, "document_refresh_recovery_requires_explicit_refresh")
-    need(type(full_source) is bool, "document_refresh_contract_version_invalid")
+    need(type(full_source) is bool and type(retire_expired_v2) is bool,
+         "document_refresh_contract_version_invalid")
+    need(not retire_expired_v2 or (publish and not full_source and recover_failed_native_job is None),
+         "document_refresh_expired_v2_requires_explicit_v3_refresh")
     nonce = infra("document_refresh_recovery").prepare(
         directory, history, recover_failed_native_job, refresh_module=sys.modules[__name__])
     probe = infra("document_refresh_probe")
@@ -807,7 +810,14 @@ def refresh(directory: Path, *, publish: bool, now: datetime, prior_journal: Pat
         serving = preflight.preflight()["service"]
     finally:
         preflight.close()
-    if probe.policy_for_serving(serving, serving["template"]["containers"][0]["image"]) == infra("document_candidate").POLICY_SHA256:
+    current_image = serving["template"]["containers"][0]["image"]
+    current_policy = probe.policy_for_serving(serving, current_image)
+    if retire_expired_v2:
+        need(current_policy == probe.POLICY and current_image != probe.BASE_IMAGE,
+             "document_refresh_expired_v2_predecessor_required")
+        return infra("document_candidate_release").refresh(directory, publish=publish,
+            now=now, nonce=nonce, retire_expired_v2=True)
+    if current_policy == infra("document_candidate").POLICY_SHA256:
         need(not full_source, "document_refresh_candidate_full_source_review_required")
         return infra("document_candidate_release").refresh(directory, publish=publish, now=now, nonce=nonce)
     selected = full_source_candidate if full_source else candidate
@@ -931,6 +941,7 @@ def main() -> None:
     parser.add_argument("--transition-journal", type=Path)
     parser.add_argument("--prior-history-directory", type=Path)
     parser.add_argument("--recover-failed-native-job")
+    parser.add_argument("--retire-expired-v2", action="store_true")
     parser.add_argument("--resume-candidate-directory", type=Path)
     parser.add_argument("--resume-manifest-sha256")
     args = parser.parse_args()
@@ -938,6 +949,9 @@ def main() -> None:
          and args.resume_manifest_sha256 is None, "document_resume_arguments_mode_required")
     need(args.recover_failed_native_job is None or args.mode in {"refresh", "full-source-refresh"} and args.publish_candidate,
          "document_refresh_recovery_requires_explicit_refresh")
+    need(not args.retire_expired_v2 or (args.mode == "refresh" and args.publish_candidate
+         and (os.getenv("GITHUB_ACTIONS") != "true" or os.getenv("GITHUB_EVENT_NAME") == "workflow_dispatch")),
+         "document_refresh_expired_v2_requires_dispatch")
     need(args.output_directory.is_absolute() and not args.output_directory.exists(),
          "document_refresh_fresh_output_directory_required")
     args.output_directory.mkdir(mode=0o700)
@@ -957,6 +971,8 @@ def main() -> None:
                      "recover_failed_native_job": args.recover_failed_native_job}
         if args.mode == "full-source-refresh":
             arguments["full_source"] = True
+        if args.retire_expired_v2:
+            arguments["retire_expired_v2"] = True
         result = refresh(args.output_directory, **arguments)
         emit_status(result)
     elif args.mode == "full-source-candidate":

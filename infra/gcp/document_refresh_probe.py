@@ -767,7 +767,8 @@ class NativeAcceptance:
 
 
 def acceptance(clients: Clients, image: str, build: dict[str, Any], job: dict[str, Any],
-               execution: dict[str, Any], *, historical_v1: bool = False) -> NativeAcceptance:
+               execution: dict[str, Any], *, historical_v1: bool = False,
+               require_fresh: bool = True) -> NativeAcceptance:
     nonce = build["nonce"]
     verify_renderer_build(build)
     renderer, fonts = renderer_identity(image, historical_v1=historical_v1, build_identity=build)
@@ -775,7 +776,7 @@ def acceptance(clients: Clients, image: str, build: dict[str, Any], job: dict[st
     validate_execution(execution, job, image, nonce, historical_v1=historical_v1)
     payload = native_payload(clients, job, execution, historical_v1=historical_v1)
     facts = validate_payload(payload, image, execution["name"], datetime.now(UTC),
-                             historical_v1=historical_v1, build_identity=build)
+                             require_fresh=require_fresh, historical_v1=historical_v1, build_identity=build)
     return NativeAcceptance(image, build["build_id"], build["build_resource"], build["source_archive_sha256"],
         build["refresh_dockerfile_sha256"], build["source_sha256"], job["name"], job["uid"],
         execution["name"], execution["uid"], hashlib.sha256(rendered_payload(image, historical_v1=historical_v1).encode()).hexdigest(),
@@ -856,7 +857,9 @@ def verify_current_successor(image: str, service_metadata: dict[str, Any]) -> Na
     if policy_for_serving(service_metadata, image) == candidate.POLICY_SHA256:
         adapter = load_source("hirewiz_document_candidate_release", HERE / "document_candidate_release.py")
         return adapter.verify_current_successor(image, service_metadata)
-    return _verify_current_successor(image, service_metadata, read_only_release=False)
+    result = _verify_current_successor(image, service_metadata, read_only_release=False)
+    assert isinstance(result, NativeAcceptance)
+    return result
 
 
 def verify_current_successor_for_release(image: str, service_metadata: dict[str, Any]) -> NativeAcceptance:
@@ -865,15 +868,21 @@ def verify_current_successor_for_release(image: str, service_metadata: dict[str,
     if policy_for_serving(service_metadata, image) == candidate.POLICY_SHA256:
         adapter = load_source("hirewiz_document_candidate_release", HERE / "document_candidate_release.py")
         return adapter.verify_current_successor_for_release(image, service_metadata)
-    return _verify_current_successor(image, service_metadata, read_only_release=True)
+    result = _verify_current_successor(image, service_metadata, read_only_release=True)
+    assert isinstance(result, NativeAcceptance)
+    return result
 
 
-def _verify_current_successor(image: str, service_metadata: dict[str, Any], *, read_only_release: bool) -> NativeAcceptance:
+def _verify_current_successor(image: str, service_metadata: dict[str, Any], *, read_only_release: bool,
+                              retirement_only: bool = False) -> NativeAcceptance | None:
     """Both fixed native identity routes execute the identical proof checks."""
     clients = None
     try:
         metadata = json.loads(canonical(service_metadata))
         historical_v1 = historical_v1_for_serving(metadata, image)
+        if retirement_only:
+            need(not historical_v1 and policy_for_serving(metadata, image) == POLICY,
+                 "document_native_retirement_requires_v2")
         labels = metadata.get("labels", metadata.get("metadata", {}).get("labels", {}))
         build_id, nonce, job_id = (labels.get(key) for key in (
             "hirewiz-refresh-build", "hirewiz-refresh-nonce", "hirewiz-refresh-job"))
@@ -903,7 +912,16 @@ def _verify_current_successor(image: str, service_metadata: dict[str, Any], *, r
         validate_job(job, image, nonce, historical_v1=historical_v1)
         latest = job.get("latestCreatedExecution", {}).get("name")
         execution = clients.execution(execution_reference(job, latest))
-        return acceptance(clients, image, build, job, execution, historical_v1=historical_v1)
+        result = acceptance(clients, image, build, job, execution, historical_v1=historical_v1,
+                            require_fresh=not retirement_only)
+        if retirement_only:
+            # Only proof that this exact expired image can be retired escapes.
+            # A stale NativeAcceptance is never returned to the transition.
+            expiry = datetime.fromisoformat(result.definition_expires_at)
+            need(expiry.tzinfo is not None and expiry <= datetime.now(UTC),
+                 "document_native_retirement_requires_expired_v2")
+            return None
+        return result
     except NativeProofDenied:
         raise
     except Exception:  # noqa: BLE001 - vendor errors may contain credential-bearing request details.
@@ -911,6 +929,13 @@ def _verify_current_successor(image: str, service_metadata: dict[str, Any], *, r
     finally:
         if clients is not None:
             clients.close()
+
+
+def verify_expired_current_v2_for_retirement(image: str, service_metadata: dict[str, Any]) -> None:
+    """Read-only exact current V2 proof; expired definitions authorize retirement only."""
+    need(_verify_current_successor(image, service_metadata, read_only_release=True,
+                                   retirement_only=True) is None,
+         "document_native_retirement_proof_unavailable")
 
 
 def cleanup_successor(image: str, build_identity: dict[str, Any], journal: Path) -> dict[str, Any]:

@@ -1,5 +1,6 @@
 import hashlib
 import io
+import os
 import zipfile
 from pathlib import Path
 from urllib.parse import quote
@@ -228,6 +229,12 @@ async def parse_resume(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
+    # The same admission flag closed by document-worker maintenance must cover
+    # this legacy synchronous route as well as durable direct uploads.
+    # The legacy endpoint predates the durable-upload flag; an absent flag keeps
+    # its existing behavior. The transition writes and verifies explicit false.
+    if os.getenv("RESUME_DIRECT_UPLOAD_ENABLED", "true") != "true":
+        raise HTTPException(status_code=503, detail="Resume upload is temporarily unavailable. Please try again shortly.")
     owner_id = current_user.id
     filename = file.filename or ""
     content_type = file.content_type or ""

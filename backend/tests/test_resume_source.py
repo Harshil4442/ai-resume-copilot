@@ -83,6 +83,7 @@ def _client():
 
 @pytest.mark.parametrize("source_format", ["pdf", "docx"])
 def test_upload_retains_exact_source_and_exposes_private_metadata(monkeypatch, source_format):
+    monkeypatch.setenv("RESUME_DIRECT_UPLOAD_ENABLED", "true")
     original = _source_bytes(source_format)
     media_type = (
         "application/pdf"
