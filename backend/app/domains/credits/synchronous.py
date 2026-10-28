@@ -310,4 +310,12 @@ def execute(db: Session, *, user_id: int, payload: SynchronousServiceRequest,
         if isinstance(exc, contracts.SynchronousOutputUnavailable):
             raise HTTPException(422, {"code": "synchronous_delivery_unavailable", "run_id": identity,
                 "run_created": True, "credits_charged": 0, "message": str(exc)}) from None
+        from ...services.llm_client import LLMProviderError
+
+        if isinstance(exc, LLMProviderError) and exc.budget_exhausted:
+            raise HTTPException(503, {
+                "code": "model_preflight_unavailable", "run_id": identity,
+                "run_created": True, "credits_charged": 0,
+                "message": "The model request could not pass its cost and input checks. No credits were charged.",
+            }) from None
         raise

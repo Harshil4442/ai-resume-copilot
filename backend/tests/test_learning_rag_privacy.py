@@ -25,6 +25,11 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 
+@pytest.fixture(autouse=True)
+def _no_live_gemini_count(monkeypatch):
+    monkeypatch.setattr(llm_client, "count_gemini_input", lambda *_: 10)
+
+
 def _objects():
     resume = SimpleNamespace(id=1, skills=['Python'], sections={'experience': 'Built Python services.', 'projects': 'Automated tests.'}, contact_info={'email': 'private@example.com', 'phone': '+91 9999999999'})
     match = SimpleNamespace(id=2, job_title='Software Engineer', job_description='Build Python and Docker services.', company='Example', match_score=50, true_gaps=['Docker'], partial_matches=[], required_skills=['Python', 'Docker'], full_matches=['Python'], skill_verification_rate=0, dimension_scores=[], fit_summary='Recorded Python overlap; Docker evidence is missing.', improvement_tips=['Review missing evidence.'])

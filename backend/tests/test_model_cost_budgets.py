@@ -35,6 +35,12 @@ MESSAGES = [{"role": "user", "content": "Synthetic Python role"}]
 GOOGLE = "https://generativelanguage.googleapis.com"
 
 
+@pytest.fixture(autouse=True)
+def _no_live_gemini_count(monkeypatch):
+    # Synthetic policy tests must not make live countTokens requests.
+    monkeypatch.setattr(llm_client, "count_gemini_input", lambda *_: 10)
+
+
 def new_run(factory, *, ceiling=10_000_000, attempts=3, frozen=True, operation="job_match", run_id="run_cost"):
     with factory() as db:
         run = models.AnalysisRun(

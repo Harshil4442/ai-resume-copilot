@@ -7,6 +7,12 @@ from backend.app.services import llm_client
 from google import genai
 
 
+@pytest.fixture(autouse=True)
+def _no_live_gemini_count(monkeypatch):
+    # Transport tests use synthetic keys and must never call the provider.
+    monkeypatch.setattr(llm_client, "count_gemini_input", lambda *_: 10)
+
+
 def _tailoring_input():
     original = "Developed Python services and reduced response time by 20%."
     return {

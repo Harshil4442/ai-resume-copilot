@@ -18,6 +18,11 @@ from fastapi import HTTPException
 assert factory
 
 
+@pytest.fixture(autouse=True)
+def _no_live_gemini_count(monkeypatch):
+    monkeypatch.setattr(llm_client, "count_gemini_input", lambda *_: 10)
+
+
 @pytest.fixture
 def setup(factory, monkeypatch):
     monkeypatch.setenv("UNIFIED_CREDIT_EXECUTION_ENABLED", "true")
@@ -389,6 +394,40 @@ def test_actual_provider_client_uses_inline_budget_and_usage(setup):
         liability = db.query(models.ModelCostLiability).one()
         assert liability.cost_state == "settled" and liability.settled_cost_micros > 0
         assert liability.provider == "google"
+
+
+def test_count_preflight_failure_refunds_unified_service_without_provider_attempt(setup):
+    from backend.app.services.model_cost_policy import ModelCostUnavailable
+    from google import genai
+
+    factory, monkeypatch = setup
+    config = configure(monkeypatch, "enhanced_qa")
+    chosen = config.routes[0].model_copy(update={
+        "model_quotes": (
+            config.routes[0].model_quotes[0].model_copy(update={"model": "gemini-3.6-flash"}),
+        ),
+    })
+    monkeypatch.setenv("UNIFIED_CREDIT_RUNTIME_REVIEW_JSON", config.model_copy(
+        update={"routes": (chosen,)}
+    ).model_dump_json())
+    monkeypatch.setenv("LLM_API_KEY", "synthetic-local-test-only")
+    monkeypatch.setattr(llm_client, "LLM_MODEL", "gemini-3.6-flash")
+
+    def unavailable(*_):
+        raise ModelCostUnavailable("Gemini token preflight is unavailable")
+
+    monkeypatch.setattr(llm_client, "count_gemini_input", unavailable)
+    monkeypatch.setattr(genai, "Client", lambda **_: pytest.fail("Preflight must prevent generation"))
+    with factory() as db:
+        request = payload("enhanced_qa")
+        with pytest.raises(HTTPException) as caught:
+            invoke(db, request, quote(db, request))
+        assert caught.value.status_code == 503
+        assert caught.value.detail["credits_charged"] == 0
+        assert service.wallet(db, user_id=1).available_credits == 40
+        assert db.query(models.ModelCallEvent).count() == 0
+        assert db.query(models.ModelCostLiability).one().settled_cost_micros == 0
+        assert db.query(CreditExecutionHold).one().delivery_state == "failed"
 
 
 def test_unified_upload_preserves_original_without_unquoted_enrichment(setup, synthetic_document_inspector):

@@ -29,6 +29,11 @@ from fastapi import HTTPException
 from google import genai
 
 
+@pytest.fixture(autouse=True)
+def _no_live_gemini_count(monkeypatch):
+    monkeypatch.setattr(llm_client, "count_gemini_input", lambda *_: 10)
+
+
 @pytest.fixture
 def database(monkeypatch):
     engine, factory = _database()

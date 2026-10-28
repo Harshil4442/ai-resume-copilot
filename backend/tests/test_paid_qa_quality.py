@@ -28,6 +28,11 @@ from backend.tests.test_learning_rag_privacy import _database
 from google import genai
 
 
+@pytest.fixture(autouse=True)
+def _no_live_gemini_count(monkeypatch):
+    monkeypatch.setattr(llm_client, "count_gemini_input", lambda *_: 10)
+
+
 @pytest.fixture
 def database():
     engine, factory = _database()

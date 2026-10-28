@@ -12,6 +12,8 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from .gemini_token_count import count_gemini_input, gemini_input
+
 logger = logging.getLogger(__name__)
 
 GEMINI_FALLBACK_MODELS = (
@@ -168,7 +170,9 @@ def _chat(messages: list[dict]) -> str:
 
 
 def _chat_with_budget(messages: list[dict], budget) -> str:
+    from .generation_budget import GenerationBudgetExhausted
     from .generation_gate import require_generation
+    from .model_cost_policy import input_token_estimate
 
     require_generation()
     if LLM_MODEL.startswith("gemini"):
@@ -177,15 +181,32 @@ def _chat_with_budget(messages: list[dict], budget) -> str:
             from google.genai import types
         except ImportError as exc:
             raise RuntimeError("google-genai package is not installed.") from exc
-        system_text = "\n\n".join(m["content"] for m in messages if m["role"] == "system")
-        contents = [
-            {"role": "model" if m["role"] == "assistant" else "user", "parts": [{"text": m["content"]}]}
-            for m in messages if m["role"] != "system"
-        ]
+        # This input builder is parity-tested against the pinned SDK's wire
+        # serializer. A dependency upgrade must review that parity first.
+        if getattr(genai, "__version__", None) != "2.16.0":
+            from .model_cost_policy import ModelCostUnavailable
+            raise ModelCostUnavailable("Gemini request serializer needs a reviewed SDK version")
+        contents, system_text, request_input = gemini_input(messages)
         saw_transient = False
         for model in _gemini_models(LLM_MODEL.strip("\"' \r\n")):
             require_generation()
-            record = budget.admit("google", model, messages, api_base="https://generativelanguage.googleapis.com")
+            if budget.preflight is None or budget.before is None or budget.after is None:
+                raise GenerationBudgetExhausted("Optional AI generation requires a persisted operation budget.")
+            api_base = "https://generativelanguage.googleapis.com"
+            input_cap = budget.preflight("google", model, messages, api_base)
+            if input_token_estimate(messages) > input_cap:
+                raise GenerationBudgetExhausted("The prompt exceeds the operation's authorized input estimate.")
+            counted = count_gemini_input(model, request_input, _api_key().strip("\"' \r\n"))
+            # The public countTokens example itself differs from generation
+            # prompt usage. Preserve framing headroom as well as the older
+            # conservative UTF-8 bound for settlement liability.
+            counted_with_headroom = counted + max(32, (counted + 49) // 50)
+            if counted_with_headroom > input_cap:
+                raise GenerationBudgetExhausted("The complete Gemini prompt exceeds its authorized input bound.")
+            record = budget.admit(
+                "google", model, messages, api_base=api_base,
+                counted_input_tokens=counted_with_headroom,
+            )
             started = time.perf_counter()
             client = None
             try:

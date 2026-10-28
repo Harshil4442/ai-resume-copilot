@@ -59,6 +59,7 @@ def claim_attempt(
     model: str,
     api_base: str,
     messages: list[dict],
+    counted_input_tokens: int | None = None,
     route: QualifiedRoute,
     policy: finance.FinancialPolicy,
     now: datetime | None = None,
@@ -96,7 +97,7 @@ def claim_attempt(
     price = route.model_quotes[attempt.ordinal - 1]
     if (provider, model, api_base.rstrip("/")) != (price.provider, price.model, price.api_base):
         raise finance.FundingUnavailable("This model endpoint is not the next qualified attempt")
-    estimated = input_token_estimate(messages)
+    estimated = max(input_token_estimate(messages), counted_input_tokens or 0)
     if estimated > price.max_input_tokens:
         raise finance.FundingUnavailable("The prompt exceeds the accepted input bound")
     liability = (
@@ -383,7 +384,29 @@ def persistent_execution_budget(
         budget = GenerationBudget(limit=len(route.model_quotes), used=used, run_id=identity)
         bindings: dict[str, CompletionBinding] = {}
 
-        def before(provider, model, messages, api_base):
+        def preflight(provider, model, messages, api_base):
+            with factory() as db:
+                hold = db.query(CreditExecutionHold).filter_by(id=hold_id, user_id=user_id).one_or_none()
+                if hold is None or hold.delivery_state != "pending" or hold.state in {
+                    "overrun", "outcome_unknown", "settled",
+                }:
+                    raise finance.FundingUnavailable("This operation cannot dispatch another model request")
+                attempts = db.query(CreditExecutionAttempt).filter_by(hold_id=hold_id).order_by(
+                    CreditExecutionAttempt.ordinal
+                ).all()
+                if any(a.state in {"started", "outcome_unknown", "usage_unavailable", "overrun"} for a in attempts):
+                    raise finance.FundingUnavailable("A previous provider attempt needs reconciliation")
+                next_attempt = next((a for a in attempts if a.state == "planned"), None)
+            if next_attempt is None or budget.used >= budget.limit:
+                raise finance.FundingUnavailable("The complete operation attempt allowance is exhausted")
+            price = route.model_quotes[next_attempt.ordinal - 1]
+            if (provider, model, api_base.rstrip("/")) != (
+                price.provider, price.model, price.api_base
+            ):
+                raise finance.FundingUnavailable("This model endpoint is not the next qualified attempt")
+            return price.max_input_tokens
+
+        def before(provider, model, messages, api_base, counted_input_tokens=None):
             with factory() as db:
                 binding, record = claim_attempt(
                     db,
@@ -393,6 +416,7 @@ def persistent_execution_budget(
                     provider=provider,
                     model=model,
                     messages=messages,
+                    counted_input_tokens=counted_input_tokens,
                     api_base=api_base,
                     route=route,
                     policy=policy,
@@ -420,7 +444,7 @@ def persistent_execution_budget(
                 )
                 db.commit()
 
-        budget.before, budget.after = before, after
+        budget.before, budget.after, budget.preflight = before, after, preflight
         with generation_budget(budget):
             yield budget
 

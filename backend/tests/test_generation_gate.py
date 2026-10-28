@@ -29,6 +29,11 @@ from starlette.datastructures import Headers
 from starlette.requests import Request
 
 
+@pytest.fixture(autouse=True)
+def _no_live_gemini_count(monkeypatch):
+    monkeypatch.setattr(llm_client, "count_gemini_input", lambda *_: 10)
+
+
 def forbidden(*args, **kwargs):
     pytest.fail("Quiesced generation must not construct a client, admit an attempt, or send a request")
 
