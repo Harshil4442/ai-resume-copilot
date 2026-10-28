@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import multiprocessing
 import os
+import socket
 import subprocess
 import time
 import uuid
@@ -543,13 +544,28 @@ def test_actual_redis_restart_and_deleted_state_invalidate_owner(redis_gate):
 
 def test_actual_redis_connection_failure_has_no_local_fallback(redis_gate):
     _, gate = redis_gate
-    failed = host_pacing.RedisCoordinator(redis.Redis(host="127.0.0.1", port=56378,
-        socket_connect_timeout=.05, socket_timeout=.05, retry=host_pacing.Retry(host_pacing.NoBackoff(), 0)))
-    started = time.monotonic()
-    with pytest.raises(host_pacing.PacingError, match="unavailable"):
-        failed.acquire(HOST, started + 1)
-    assert time.monotonic() - started < .5
-    failed.close()
+    # Reserve an unserved TCP port. A fixed adjacent port can be occupied by an
+    # unrelated test process and produce a malformed Redis reply instead.
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as unserved:
+        unserved.bind(("127.0.0.1", 0))
+        failed = host_pacing.RedisCoordinator(redis.Redis(host="127.0.0.1",
+            port=unserved.getsockname()[1], socket_connect_timeout=.05,
+            socket_timeout=.05, retry=host_pacing.Retry(host_pacing.NoBackoff(), 0)))
+        started = time.monotonic()
+        with pytest.raises(host_pacing.PacingError, match="unavailable"):
+            failed.acquire(HOST, started + 1)
+        assert time.monotonic() - started < .5
+        failed.close()
+
+
+def test_malformed_redis_handshake_has_no_local_fallback():
+    class MalformedRedis:
+        def eval(self, *_args):
+            raise AttributeError("malformed RESP3 handshake")
+
+    gate = host_pacing.RedisCoordinator(MalformedRedis())
+    with pytest.raises(host_pacing.PacingError, match="host_pacing_unavailable"):
+        gate.acquire(HOST, time.monotonic() + 1)
 
 
 def test_actual_redis_coordination_timeout_rejects_ambiguous_acquisition(redis_gate):
