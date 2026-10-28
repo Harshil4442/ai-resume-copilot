@@ -137,9 +137,9 @@ def test_conditionals_evidence_gaps_and_technical_negatives_remain_valid(guidanc
 
 def test_missing_experience_inference_uses_existing_bounded_repair(monkeypatch):
     invalid = _question_set()
-    invalid[0]["preparation_steps"][0] = "Since you have not used private-output-only-tool, discuss another framework."
+    invalid[3]["preparation_steps"][1] = "Since you have not used private-output-only-tool, discuss another framework."
     valid = _question_set()
-    valid[0]["preparation_steps"][0] = "Explain how you would evaluate a browser testing framework."
+    valid[3]["preparation_steps"][1] = "Explain how you would evaluate a browser testing framework."
     replies = iter([json.dumps(invalid), json.dumps(valid)])
     calls = []
 
@@ -153,7 +153,62 @@ def test_missing_experience_inference_uses_existing_bounded_repair(monkeypatch):
     assert all(row["answer_state"] == "evidence_needed" for row in result)
     assert calls[0][1] == calls[1][1]
     assert "lack of experience" in calls[1][-1]["content"]
+    assert "Question 4, preparation step 2, needs replacement." in calls[1][-1]["content"]
     assert all("private-output-only-tool" not in message["content"] for message in calls[1])
+
+
+@pytest.mark.parametrize("field,question_index,step_index,statement", [
+    ("question", 2, None, "Since you have not used private-claim-tool, what would you do?"),
+    ("preparation_step", 5, 1, "Explain how your Java code improved private-claim-coverage."),
+])
+def test_personal_claim_error_exposes_only_typed_location(field, question_index, step_index, statement):
+    data = _question_set()
+    if field == "question":
+        data[question_index]["question"] = statement
+    else:
+        data[question_index]["preparation_steps"][step_index] = statement
+    with pytest.raises(llm_client.InterviewPersonalClaimError) as error:
+        llm_client._parse_interview_questions(json.dumps(data), 8, set())
+    assert error.value.question_index == question_index
+    assert error.value.field == field
+    assert error.value.step_index == step_index
+    assert statement not in str(error.value)
+    assert "private-claim" not in repr(vars(error.value))
+
+
+def test_second_claim_failure_stops_after_two_calls_without_partial_result(monkeypatch):
+    first = _question_set()
+    first[3]["preparation_steps"][1] = "Since you have not used private-first-tool, discuss another framework."
+    second = _question_set()
+    second[5]["question"] = "Explain how your Java code improved private-second-coverage."
+    calls = []
+    replies = iter([json.dumps(first), json.dumps(second)])
+
+    def chat(messages):
+        calls.append(list(messages))
+        return next(replies)
+
+    monkeypatch.setattr(llm_client, "_chat", chat)
+    with pytest.raises(llm_client.InterviewPersonalClaimError) as error:
+        llm_client.generate_interview_questions("Test engineer", "Verify test quality.")
+    assert len(calls) == 2
+    assert error.value.reason_code == "unsupported_personal_claim"
+    assert (error.value.question_index, error.value.field, error.value.step_index) == (5, "question", None)
+    assert "private-first-tool" not in calls[1][-1]["content"]
+    assert "private-second-coverage" not in str(error.value)
+    assert error.value.__cause__ is None and error.value.__context__ is None
+
+
+def test_repair_must_still_deliver_all_eight_questions(monkeypatch):
+    first = _question_set()
+    first[0]["preparation_steps"][0] = "Since you have not used private-output-tool, discuss another framework."
+    replies = iter([json.dumps(first), json.dumps(_question_set()[:7])])
+    calls = []
+    monkeypatch.setattr(llm_client, "_chat", lambda messages: calls.append(list(messages)) or next(replies))
+    with pytest.raises(llm_client.InterviewCountError) as error:
+        llm_client.generate_interview_questions("Test engineer", "Verify test quality.")
+    assert len(calls) == 2
+    assert error.value.reason_code == "invalid_question_count"
 
 
 def test_explicit_negative_source_fact_is_preserved_without_generated_assessment(monkeypatch):
@@ -308,6 +363,8 @@ def test_budget_refusal_keeps_prior_validation_category_without_provider_content
         llm_client.generate_interview_questions("Test engineer", "Verify test quality.")
     assert len(calls) == 2
     assert error.value.reason_code == "unsupported_personal_claim" and error.value.repair_blocked
+    assert (error.value.question_index, error.value.field, error.value.step_index) == (0, "preparation_step", 0)
+    assert "Question 1, preparation step 1" in calls[1][-1]["content"]
     assert error.value.__cause__ is None and error.value.__context__ is None
     assert "private-provider-output" not in str(error.value) and "503" not in str(error.value)
     assert not tasks._retryable(error.value)

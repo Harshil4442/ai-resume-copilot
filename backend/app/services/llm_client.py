@@ -6,6 +6,7 @@ import re
 import time
 from collections import Counter
 from functools import lru_cache
+from typing import Literal
 from urllib.parse import urlsplit
 
 import httpx
@@ -50,6 +51,21 @@ class InterviewEvidenceReferenceError(InterviewOutputError):
 
 class InterviewPersonalClaimError(InterviewOutputError):
     reason_code = "unsupported_personal_claim"
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        question_index: int | None = None,
+        field: Literal["question", "preparation_step"] | None = None,
+        step_index: int | None = None,
+    ):
+        super().__init__(message)
+        # Only the position is retained; rejected provider prose is never
+        # copied into the repair request or persisted as an error detail.
+        self.question_index = question_index
+        self.field = field
+        self.step_index = step_index
 
 
 class InterviewDuplicateQuestionError(InterviewOutputError):
@@ -314,7 +330,7 @@ def _parse_interview_questions(content: str, num_questions: int, allowed_ids: se
 
     questions = []
     seen = set()
-    for item in data:
+    for question_index, item in enumerate(data):
         if not isinstance(item, dict) or set(item) != {"question", "preparation_steps", "evidence_ids"}:
             raise InterviewStructureError("Every question needs exactly question, preparation_steps and evidence_ids.")
         question = item.get("question")
@@ -332,16 +348,23 @@ def _parse_interview_questions(content: str, num_questions: int, allowed_ids: se
             raise InterviewStructureError("Every question needs text, two to four preparation steps and evidence references.")
         if any(value not in allowed_ids for value in evidence_ids):
             raise InterviewEvidenceReferenceError("A question cited evidence that was not supplied.")
-        if any(unsupported_experience_inference(value) for value in (question, *preparation_steps)):
-            raise InterviewPersonalClaimError(
-                "Do not turn missing evidence into a claim about the candidate's lack of experience. "
-                "Use a neutral question, preparation instruction or genuine conditional instead."
-            )
-        if any(unsupported_positive_history(value) for value in (question, *preparation_steps)):
-            raise InterviewPersonalClaimError(
-                "Do not assert personal history, ownership or results in generated guidance. "
-                "Provide technical or future-oriented preparation actions; the application quotes approved facts separately."
-            )
+        fields = [("question", None, question)] + [
+            ("preparation_step", index, step) for index, step in enumerate(preparation_steps)
+        ]
+        for field, step_index, value in fields:
+            if unsupported_experience_inference(value):
+                raise InterviewPersonalClaimError(
+                    "Do not turn missing evidence into a claim about the candidate's lack of experience. "
+                    "Use a neutral question, preparation instruction or genuine conditional instead.",
+                    question_index=question_index, field=field, step_index=step_index,
+                )
+        for field, step_index, value in fields:
+            if unsupported_positive_history(value):
+                raise InterviewPersonalClaimError(
+                    "Do not assert personal history, ownership or results in generated guidance. "
+                    "Provide technical or future-oriented preparation actions; the application quotes approved facts separately.",
+                    question_index=question_index, field=field, step_index=step_index,
+                )
         identity = " ".join(re.findall(r"\w+", question.casefold()))
         if identity in seen:
             raise InterviewDuplicateQuestionError("Every question must be distinct.")
@@ -395,11 +418,20 @@ def generate_interview_questions(
         except InterviewOutputError as exc:
             last_validation_error = exc
             if attempt == 0:
+                location = ""
+                if isinstance(exc, InterviewPersonalClaimError) and exc.question_index is not None:
+                    if exc.field == "question":
+                        location = f" Question {exc.question_index + 1}, question field, needs replacement."
+                    elif exc.field == "preparation_step" and exc.step_index is not None:
+                        location = (
+                            f" Question {exc.question_index + 1}, preparation step "
+                            f"{exc.step_index + 1}, needs replacement."
+                        )
                 messages.extend([
                     {
                         "role": "user",
                         "content": (
-                            f"The response could not be used: {exc} Return a replacement JSON list "
+                            f"The response could not be used: {exc}{location} Return a replacement JSON list "
                             f"with exactly {num_questions} distinct questions and all required fields. "
                             "Keep using the original job description and approved evidence. "
                             "Each item has only question, preparation_steps (two to four neutral, "
@@ -411,9 +443,17 @@ def generate_interview_questions(
     if data is None:
         failure_type = type(last_validation_error) if last_validation_error is not None else InterviewOutputError
         reason = last_validation_error.reason_code if last_validation_error is not None else InterviewOutputError.reason_code
+        location = {}
+        if isinstance(last_validation_error, InterviewPersonalClaimError):
+            location = {
+                "question_index": last_validation_error.question_index,
+                "field": last_validation_error.field,
+                "step_index": last_validation_error.step_index,
+            }
         failure = failure_type(
             f"Could not generate a complete set of {num_questions} interview questions. "
-            f"Validation category: {reason}."
+            f"Validation category: {reason}.",
+            **location,
         )
         failure.repair_blocked = repair_blocked
         # Deliberately outside the exception handler: no unsafe response or
