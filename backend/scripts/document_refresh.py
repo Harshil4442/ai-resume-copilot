@@ -782,7 +782,8 @@ def full_source_candidate(directory: Path, *, publish: bool, now: datetime,
 
 def infra(name: str) -> Any:
     need(name in {"document_refresh_probe", "document_refresh_transition", "document_refresh_recovery", "document_candidate_release",
-                  "document_renderer_profiles", "document_refresh_resume", "document_candidate"},
+                  "document_renderer_profiles", "document_refresh_resume", "document_candidate",
+                  "document_refresh_partial"},
          "document_refresh_module_refused")
     spec = importlib.util.spec_from_file_location("hirewiz_" + name, ROOT / "infra/gcp" / (name + ".py"))
     need(spec is not None and spec.loader is not None, "document_refresh_module_unavailable")
@@ -944,6 +945,42 @@ def resume_expired_v2_transition(directory: Path, original: Path) -> dict[str, A
     return result
 
 
+def resume_partial_v2_transition(directory: Path, original: Path) -> dict[str, Any]:
+    """Reconcile the exact partial rescue; leave the emergency API close intact."""
+    controller = infra("document_refresh_transition")
+    partial = infra("document_refresh_partial")
+    need(original.is_absolute() and original.resolve() == original and not original.is_symlink()
+         and original.is_dir() and original.stat().st_uid == os.getuid()
+         and stat.S_IMODE(original.stat().st_mode) == 0o700,
+         "document_partial_original_artifact_private_required")
+    native = retain_prior_journal(original / "native-proof", directory / "native-proof")
+    transition_journal = retain_prior_journal(original / "transition", directory / "source-transition")
+    tree = hashlib.sha256()
+    members = sorted((*native.glob("*.json"), *transition_journal.glob("*.json")),
+                     key=lambda path: path.relative_to(directory).as_posix())
+    need(len(members) == 35, "document_partial_source_tree_changed")
+    for member in members:
+        name = member.relative_to(directory).as_posix().replace("source-transition/", "transition/")
+        tree.update(name.encode() + b"\0" + member.read_bytes() + b"\0")
+    need(tree.hexdigest() == partial.JOURNAL_TREE_SHA256,
+         "document_partial_source_tree_changed")
+    binding = decode((native / "binding.json").read_bytes())
+    need(type(binding) is dict and binding.get("image") == controller.RESCUE_IMAGE
+         and type(binding.get("build_identity")) is dict
+         and binding["build_identity"].get("build_id") == controller.RESCUE_BUILD_ID
+         and binding["build_identity"].get("nonce") == controller.RESCUE_NONCE,
+         "document_partial_exact_candidate_required")
+    http = native_http()
+    try:
+        return partial.resume_after_api_maintenance_close(
+            controller.RESCUE_IMAGE, binding["build_identity"], native,
+            transition_journal, directory / "partial-transition",
+            source_tree_sha256=tree.hexdigest(), http=http,
+            probe=infra("document_refresh_probe"), t=controller)
+    finally:
+        http.close()
+
+
 def finish_refresh(directory: Path, value: dict[str, Any], *, prior_journal: Path | None = None,
                    history: Path | None = None, rescue_expired_v2: bool = False) -> dict[str, Any]:
     """Shared native one-send, transition and actual-prior retirement ordering."""
@@ -1043,7 +1080,7 @@ def emit_status(result: dict[str, Any]) -> None:
 def main() -> None:
     os.umask(0o077)
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=("monitor", "candidate", "full-source-candidate", "refresh", "full-source-refresh", "resume-full-source-refresh", "resume-expired-v2-transition", "reconcile"), required=True)
+    parser.add_argument("--mode", choices=("monitor", "candidate", "full-source-candidate", "refresh", "full-source-refresh", "resume-full-source-refresh", "resume-expired-v2-transition", "resume-partial-v2-transition", "reconcile"), required=True)
     parser.add_argument("--output-directory", type=Path, required=True)
     parser.add_argument("--publish-candidate", action="store_true")
     parser.add_argument("--prior-native-journal", type=Path)
@@ -1059,7 +1096,8 @@ def main() -> None:
     args = parser.parse_args()
     need(args.mode == "resume-full-source-refresh" or args.resume_candidate_directory is None
          and args.resume_manifest_sha256 is None, "document_resume_arguments_mode_required")
-    need(args.mode == "resume-expired-v2-transition" or args.resume_transition_directory is None,
+    need(args.mode in {"resume-expired-v2-transition", "resume-partial-v2-transition"}
+         or args.resume_transition_directory is None,
          "document_rescue_transition_arguments_mode_required")
     need(args.recover_failed_native_job is None or args.mode in {"refresh", "full-source-refresh"} and args.publish_candidate,
          "document_refresh_recovery_requires_explicit_refresh")
@@ -1097,6 +1135,13 @@ def main() -> None:
              "document_rescue_exact_transition_mode_required")
         result = resume_expired_v2_transition(args.output_directory, args.resume_transition_directory)
         emit_status(result)
+    elif args.mode == "resume-partial-v2-transition":
+        need(args.resume_transition_directory is not None and not args.publish_candidate
+             and args.prior_native_journal is None and args.prior_history_directory is None
+             and args.transition_journal is None and args.recover_failed_native_job is None
+             and not args.rescue_expired_v2,
+             "document_partial_exact_transition_mode_required")
+        result = resume_partial_v2_transition(args.output_directory, args.resume_transition_directory)
     elif args.mode in {"refresh", "full-source-refresh"}:
         arguments = {"publish": args.publish_candidate, "now": datetime.now(UTC),
                      "prior_journal": args.prior_native_journal, "history": args.prior_history_directory,
