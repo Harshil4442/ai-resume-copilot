@@ -24,6 +24,7 @@ probe = load('document_refresh_probe')
 profile = load('document_renderer_profiles')
 NONCE = 'a' * 32
 NEW = probe.REPOSITORY + '@sha256:' + 'b' * 64
+OLD_V2 = probe.REPOSITORY + '@sha256:' + 'e' * 64
 APP = 'us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz@sha256:' + 'c' * 64
 
 def service(name):
@@ -93,7 +94,7 @@ def fixture_probe(monkeypatch, *, contract_version=2, required_case_count=10, po
     calls = []
     monkeypatch.setattr(probe, 'verify_current_successor', lambda image, actual: calls.append((image, actual['uid'])))
     def current_build(build_id, nonce, image):
-        assert build_id == '01234567-0123-0123-0123-012345678901' and nonce == NONCE and image == NEW
+        assert build_id == '01234567-0123-0123-0123-012345678901' and nonce == NONCE and image in {NEW, OLD_V2}
         return {'kind': 'native_cloud_build', 'immutable_image': image,
                 'fixed_renderer_base': profile.IMAGE, 'source_sha256': copy.deepcopy(profile.SOURCES)}
     monkeypatch.setattr(probe, 'build_module', lambda: SimpleNamespace(
@@ -103,6 +104,92 @@ def fixture_probe(monkeypatch, *, contract_version=2, required_case_count=10, po
 def run(tmp_path, http):
     return transition.transition(NEW, {'nonce': NONCE, 'build_id': '01234567-0123-0123-0123-012345678901'},
         tmp_path / 'native', tmp_path / 'rollout', http=http, probe=probe)
+
+
+def guarded_old_v2(http):
+    for name, actual in http.services.items():
+        for entry in actual['template']['containers'][0]['env']:
+            if entry['name'] == 'DOCUMENT_WORKER_IMAGE_DIGEST':
+                entry['value'] = OLD_V2
+        if name == transition.WORKER:
+            actual['template']['containers'][0]['image'] = OLD_V2
+            actual['labels'].update({'hirewiz-refresh-build': '01234567-0123-0123-0123-012345678901',
+                                     'hirewiz-refresh-nonce': NONCE, 'hirewiz-refresh-job': 'hirewiz-doc-six-' + NONCE[:12]})
+        elif name == transition.CALLERS[0]:
+            next(row for row in actual['template']['containers'][0]['env']
+                 if row['name'] == 'RESUME_DIRECT_UPLOAD_ENABLED')['value'] = 'false'
+            actual['template']['containers'][0]['env'].append(
+                {'name': 'APP_RELEASE', 'value': transition.GUARDED_API_RELEASE})
+            actual['template']['labels'] = {'hirewiz-source': transition.GUARDED_API_RELEASE}
+            actual['trafficStatuses'] = [{'type': 'TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION',
+                                          'revision': actual['latestReadyRevision'], 'percent': 100,
+                                          'tag': 'api-hotfix-candidate',
+                                          'uri': 'https://api-hotfix-candidate.example.run.app'}]
+    return http
+
+
+def run_rescue(tmp_path, http):
+    return transition.transition(NEW, {'nonce': NONCE, 'build_id': '01234567-0123-0123-0123-012345678901'},
+        tmp_path / 'native', tmp_path / 'rollout', http=http, probe=probe, rescue_expired_v2=True)
+
+
+@pytest.mark.parametrize('missing', ['image', 'revision', 'tag'])
+def test_rescue_requires_pinned_guarded_api_before_patch(monkeypatch, tmp_path, missing):
+    fixture_probe(monkeypatch)
+    monkeypatch.setattr(transition, 'GUARDED_API_IMAGE', APP)
+    monkeypatch.setattr(transition, 'GUARDED_API_REVISION', 'ai-resume-parser-00001-owned')
+    monkeypatch.setattr(transition, 'GUARDED_API_TAG', 'api-hotfix-candidate')
+    monkeypatch.setattr(transition, {'image': 'GUARDED_API_IMAGE', 'revision': 'GUARDED_API_REVISION',
+                                    'tag': 'GUARDED_API_TAG'}[missing], '')
+    http = guarded_old_v2(Http())
+    with pytest.raises(transition.TransitionDenied, match='guarded_api_.*_unpinned'):
+        run_rescue(tmp_path, http)
+    assert http.writes == []
+
+
+def test_rescue_retires_exact_v2_and_reopens_guarded_api_only_after_new_pins(monkeypatch, tmp_path):
+    fixture_probe(monkeypatch)
+    monkeypatch.setattr(transition, 'GUARDED_API_IMAGE', APP)
+    monkeypatch.setattr(transition, 'GUARDED_API_REVISION', 'ai-resume-parser-00001-owned')
+    monkeypatch.setattr(transition, 'GUARDED_API_TAG', 'api-hotfix-candidate')
+    retired = []
+    monkeypatch.setattr(probe, 'verify_expired_current_v2_for_retirement',
+                        lambda image, metadata: retired.append((image, metadata['uid'])))
+    http = guarded_old_v2(Http())
+    reader = transition.Controller(http, probe, None)
+    with pytest.raises(probe.NativeProofDenied, match='serving_traffic_changed'):
+        probe.verify_caller_pins(reader, OLD_V2)
+    transition.verify_rescue_caller_pins(reader, probe, OLD_V2)
+    result = run_rescue(tmp_path, http)
+    assert retired == [(OLD_V2, probe.SERVICE_UID)]
+    assert [name for name, _ in http.writes] == [*transition.CALLERS, transition.WORKER,
+                                                 *transition.CALLERS, *transition.CALLERS]
+    assert transition.environment(http.writes[0][1]['template'])['RESUME_DIRECT_UPLOAD_ENABLED']['value'] == 'false'
+    assert transition.environment(http.writes[-3][1]['template'])['RESUME_DIRECT_UPLOAD_ENABLED']['value'] == 'true'
+    assert result['expired_v2_rescued'] is True and result['prior_image'] == OLD_V2
+    assert json.loads((tmp_path / 'rollout/rescue-admission-intent.json').read_text())['automatic_replay'] is False
+
+
+@pytest.mark.parametrize('drift', ['image', 'source', 'flag', 'traffic'])
+def test_rescue_refuses_changed_guarded_api_without_any_patch(monkeypatch, tmp_path, drift):
+    fixture_probe(monkeypatch)
+    monkeypatch.setattr(transition, 'GUARDED_API_IMAGE', APP)
+    monkeypatch.setattr(transition, 'GUARDED_API_REVISION', 'ai-resume-parser-00001-owned')
+    monkeypatch.setattr(transition, 'GUARDED_API_TAG', 'api-hotfix-candidate')
+    http = guarded_old_v2(Http())
+    api = http.services[transition.CALLERS[0]]
+    if drift == 'image':
+        api['template']['containers'][0]['image'] = NEW
+    elif drift == 'source':
+        api['template']['labels']['hirewiz-source'] = 'f' * 40
+    elif drift == 'flag':
+        next(row for row in api['template']['containers'][0]['env']
+             if row['name'] == 'RESUME_DIRECT_UPLOAD_ENABLED')['value'] = 'true'
+    else:
+        api['trafficStatuses'][0]['percent'] = 99
+    with pytest.raises((transition.TransitionDenied, probe.NativeProofDenied)):
+        run_rescue(tmp_path, http)
+    assert http.writes == []
 
 def test_actual_caller_verifier_full_resource_interface(monkeypatch, tmp_path):
     fixture_probe(monkeypatch)

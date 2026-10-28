@@ -5,6 +5,7 @@ import base64
 import copy
 import json
 import shutil
+from dataclasses import asdict
 from types import SimpleNamespace
 from urllib.parse import parse_qs, unquote, urlsplit
 
@@ -126,6 +127,48 @@ def change_entry(stopped, name, update):
     path.write_bytes(recovery.canonical(row))
 
 
+def completed_serving_history(stopped):
+    """Sanitized Oct25-shaped completed artifact beside the abandoned Build."""
+    root = stopped.history / "completed-serving"
+    native, transition, prior = (root / name for name in
+                                 ("native-proof", "transition", "prior-native-retirement"))
+    for path in (root, native, transition, prior):
+        path.mkdir(mode=0o700)
+    image = stopped.native_http.services["hirewiz-document-inspector"]["template"]["containers"][0]["image"]
+    nonce, build_id = "1" * 32, "11111111-1111-1111-1111-111111111111"
+    identity = {"version": 1, "kind": "native_cloud_build", "nonce": nonce,
+        "build_id": build_id, "build_resource": probe.PARENT + "/builds/" + build_id,
+        "builder_service_account": refresh.BUILDER, "source_bucket": refresh.PROJECT + "_cloudbuild",
+        "source_object": "hirewiz-document-refresh-source/synthetic.tar.gz", "source_generation": "1",
+        "source_archive_sha256": "a" * 64, "refresh_dockerfile_sha256": "b" * 64,
+        "fixed_renderer_base": refresh.RENDERER_BASE, "immutable_image": image,
+        "source_sha256": serving.profile.SOURCES, "local_native_proof_sha256": "c" * 64}
+    accepted = asdict(probe.NativeAcceptance(image, build_id, identity["build_resource"], "a" * 64,
+        "b" * 64, serving.profile.SOURCES, probe.PARENT + "/jobs/hirewiz-doc-six-" + nonce[:12],
+        "22222222-2222-2222-2222-222222222222", "synthetic-execution",
+        "33333333-3333-3333-3333-333333333333", "d" * 64, "e" * 64,
+        probe.POLICY, serving.profile.FONT, serving.profile.RENDERER,
+        "2026-10-01T00:00:00+00:00", 2, 10))
+    digest = recovery.sha(recovery.canonical(accepted))
+    complete = {"status": "document_refresh_serving", "image": image,
+        "prior_image": probe.REPOSITORY + "@sha256:" + "f" * 64,
+        "native_acceptance_sha256": digest, "all_three_caller_pins_verified": True,
+        "admission_restored": True, "synchronous_callers_drained": False,
+        "current_native_proof_retained": True, "automatic_replay": False}
+    cleanup = {"owned_resources_absent": True}
+    files = {native / "binding.json": {"image": image, "build_identity": identity,
+                                       "probe_sha256": accepted["probe_sha256"]},
+        native / "acceptance.json": accepted,
+        transition / "native-acceptance.json": accepted,
+        transition / "complete.json": complete,
+        prior / "cleanup.json": cleanup,
+        root / "result.json": {**complete, "definition_expires_at": accepted["definition_expires_at"],
+                               "prior_cleanup": cleanup}}
+    for path, row in files.items():
+        refresh.write_new(path, row)
+    return native
+
+
 def assert_no_native_writes(stopped):
     assert all(method == "GET" for method, _ in stopped.http_calls + stopped.native_calls)
     assert stopped.native_http.writes == []
@@ -149,6 +192,108 @@ def test_terminal_build_and_absent_job_allow_new_nonce_without_adopting_old_cand
     assert not (retained / "original/native-proof").exists()
     assert len(stopped.http_calls) == 2 and stopped.proof_calls
     assert all(path.stat().st_mode & 0o777 == 0o600 for path in target.rglob("*.json"))
+    assert_no_native_writes(stopped)
+
+
+def test_expired_v2_history_is_historical_only_for_explicit_rescue(stopped, monkeypatch):
+    strict, retired = [], []
+    old_journal = completed_serving_history(stopped)
+    monkeypatch.setattr(serving.transition, "verify_rescue_caller_pins",
+                        lambda clients, contract, image: contract.verify_caller_pins(clients, image))
+
+    def fresh_only(image, metadata):
+        strict.append((image, metadata["uid"]))
+        raise probe.NativeProofDenied("document_native_definitions_expired")
+
+    def old_identity_only(image, metadata):
+        assert image == stopped.native_http.services["hirewiz-document-inspector"]["template"]["containers"][0]["image"]
+        retired.append(image)
+        return None
+
+    monkeypatch.setattr(probe, "verify_current_successor", fresh_only)
+    monkeypatch.setattr(probe, "verify_expired_current_v2_for_retirement", old_identity_only)
+    default = output(stopped, "default")
+    with pytest.raises(probe.NativeProofDenied, match="definitions_expired"):
+        recovery.prepare(default, stopped.history, None, refresh_module=refresh)
+    assert strict and not retired and not list(default.iterdir())
+    manual = output(stopped, "manual")
+    assert recovery.prepare(manual, stopped.history, None, refresh_module=refresh,
+                            rescue_expired_v2=True, rescue_prior_journal=old_journal) == NEXT_NONCE
+    assert len(retired) == 1 and not (manual / "native-proof").exists()
+    assert json.loads((manual / "pre-native-reconciliations" / NONCE / "reconciliation.json").read_bytes())[
+        "native_acceptance"] is False
+    assert_no_native_writes(stopped)
+
+
+def test_expired_rescue_rejects_ambiguous_mode_and_changed_caller_pin(stopped, monkeypatch):
+    old_journal = completed_serving_history(stopped)
+    monkeypatch.setattr(serving.transition, "verify_rescue_caller_pins",
+                        lambda clients, contract, image: contract.verify_caller_pins(clients, image))
+    destination = output(stopped, "refused")
+    with pytest.raises(refresh.RefreshDenied, match="recovery_mode_invalid"):
+        recovery.prepare(destination, stopped.history, "hirewiz-doc-six-" + NONCE[:12],
+                         refresh_module=refresh, rescue_expired_v2=True, rescue_prior_journal=old_journal)
+    assert not list(destination.iterdir())
+    monkeypatch.setattr(probe, "verify_expired_current_v2_for_retirement", lambda *_: None)
+    caller = stopped.native_http.services["ai-resume-parser"]["template"]["containers"][0]["env"]
+    next(row for row in caller if row["name"] == "DOCUMENT_WORKER_IMAGE_DIGEST")["value"] = "unreviewed"
+    with pytest.raises(probe.NativeProofDenied):
+        recovery.prepare(destination, stopped.history, None, refresh_module=refresh,
+                         rescue_expired_v2=True, rescue_prior_journal=old_journal)
+    assert not list(destination.iterdir()) and stopped.native_http.writes == []
+
+
+@pytest.mark.parametrize("changed", ["receipt", "completion", "journal"])
+def test_rescue_rejects_changed_completed_serving_artifact_before_provider(stopped, changed):
+    old_journal = completed_serving_history(stopped)
+    root = old_journal.parent
+    if changed == "receipt":
+        path = old_journal / "acceptance.json"
+        row = json.loads(path.read_bytes())
+        row["receipt_sha256"] = "0" * 64
+        path.write_bytes(recovery.canonical(row))
+    elif changed == "completion":
+        path = root / "transition/complete.json"
+        row = json.loads(path.read_bytes())
+        row["native_acceptance_sha256"] = "0" * 64
+        path.write_bytes(recovery.canonical(row))
+    else:
+        old_journal = stopped.history / "wrong-artifact/native-proof"
+    target = output(stopped, "refused-completed")
+    with pytest.raises(refresh.RefreshDenied, match="completed_(receipt|journal)_changed"):
+        recovery.prepare(target, stopped.history, None, refresh_module=refresh,
+                         rescue_expired_v2=True, rescue_prior_journal=old_journal)
+    assert not stopped.http_calls and not stopped.native_calls and not list(target.iterdir())
+
+
+def test_rescue_classifies_two_abandoned_builds_and_one_completed_serving_artifact(stopped, monkeypatch):
+    old_journal = completed_serving_history(stopped)
+    second = stopped.history / "second-abandoned-build"
+    shutil.copytree(stopped.original, second)
+    second_identity = second / "native-build-identity.json"
+    row = json.loads(second_identity.read_bytes())
+    row["nonce"] = "b" * 32
+    second_identity.write_bytes(recovery.canonical(row))
+    observed = []
+
+    def verify_pre_native(files, clients, contract, build):
+        nonce = json.loads(files["native-build-identity.json"])["nonce"]
+        observed.append(nonce)
+        return {"nonce": nonce, "image": "synthetic-unaccepted-" + nonce,
+                "absent_native_job": probe.PARENT + "/jobs/hirewiz-doc-six-" + nonce[:12]}
+
+    monkeypatch.setattr(recovery, "verify_pre_native", verify_pre_native)
+    monkeypatch.setattr(recovery, "joined", lambda *args, **kwargs:
+                        observed.append((kwargs["rescue_expired_v2"], args[3])))
+    target = output(stopped, "three-artifacts")
+    assert recovery.prepare(target, stopped.history, None, refresh_module=refresh,
+                            rescue_expired_v2=True, rescue_prior_journal=old_journal) == NEXT_NONCE
+    assert set(observed[:2]) == {NONCE, "b" * 32}
+    assert observed[2][0] is True
+    assert set((target / "pre-native-reconciliations").iterdir()) == {
+        target / "pre-native-reconciliations" / NONCE,
+        target / "pre-native-reconciliations" / ("b" * 32)}
+    assert not (target / "native-proof").exists() and not (target / "transition").exists()
     assert_no_native_writes(stopped)
 
 

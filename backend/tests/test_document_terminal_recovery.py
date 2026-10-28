@@ -404,7 +404,17 @@ def test_workflow_recovery_is_dispatch_only_and_passes_user_input_as_inert_data(
     payload = "$(touch SHOULD_NOT_EXIST) ; exact job data"
     result = subprocess.run(["/bin/bash", "-eu", "-c", step["run"]], cwd=tmp_path,
         env={**os.environ, "RECOVER_FAILED_NATIVE_JOB": payload, "HISTORY_DIRECTORY": "private history",
-             "OUTPUT_DIRECTORY": "private output", "CAPTURE_ARGS": str(capture)}, capture_output=True, timeout=5)
+             "OUTPUT_DIRECTORY": "private output", "RESCUE_EXPIRED_V2": "false",
+             "CAPTURE_ARGS": str(capture)}, capture_output=True, timeout=5)
     assert result.returncode == 0 and not (tmp_path / "SHOULD_NOT_EXIST").exists()
     arguments = json.loads(capture.read_bytes())
     assert arguments[-2:] == ["--recover-failed-native-job", payload]
+    assert "--rescue-expired-v2" not in arguments
+    result = subprocess.run(["/bin/bash", "-eu", "-c", step["run"]], cwd=tmp_path,
+        env={**os.environ, "RECOVER_FAILED_NATIVE_JOB": "", "HISTORY_DIRECTORY": "private history",
+             "OUTPUT_DIRECTORY": "private output", "RESCUE_EXPIRED_V2": "true",
+             "CAPTURE_ARGS": str(capture)}, capture_output=True, timeout=5)
+    assert result.returncode == 0
+    assert json.loads(capture.read_bytes())[-1] == "--rescue-expired-v2"
+    assert workflow["jobs"]["maintenance"]["env"]["RESCUE_EXPIRED_V2"] == (
+        "${{ github.event_name == 'workflow_dispatch' && inputs.rescue_expired_v2 || false }}")
