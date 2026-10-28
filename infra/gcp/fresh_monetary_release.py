@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -898,6 +899,7 @@ class FreshNativeBoundary(release.NativeBoundary):
 
     def _verify_document_workers(
         self, source: release.Plan, *, runtime_phase: bool,
+        successor_identity: Callable[[str, dict[str, Any]], None] | None = None,
     ) -> dict[str, Any]:
         """Read current native configuration/IAM; no invocation or isolation claim.
 
@@ -966,13 +968,21 @@ class FreshNativeBoundary(release.NativeBoundary):
                     "iam", "roles", "describe", documents.MAINTENANCE_ROLE.rsplit("/", 1)[-1])
             image = service.get("template", {}).get("containers", [{}])[0].get("image")
             if image != documents.ACCEPTED_IMAGE:
-                # Labels select a proof; only fresh native Build/GCS/Job/log and
-                # original full worker configuration checks admit that exact image.
-                from document_refresh_probe import verify_current_successor_for_release
+                # Normal release requires fresh Build/GCS/Job/log acceptance.
+                # The explicit maintenance callback proves historical identity
+                # only; the full snapshot, TeX and routing checks below remain.
+                if successor_identity is None:
+                    from document_refresh_probe import (
+                        verify_current_successor_for_release,
+                    )
 
-                accepted = verify_current_successor_for_release(image, service)
-                if accepted.image != image:
-                    raise release.ReleaseDenied("fresh_document_successor_identity_mismatch")
+                    accepted = verify_current_successor_for_release(image, service)
+                    if accepted.image != image:
+                        raise release.ReleaseDenied("fresh_document_successor_identity_mismatch")
+                elif successor_identity(image, service) is not None:
+                    # A maintenance-only historical identity callback must not
+                    # hand a stale NativeAcceptance to any serving path.
+                    raise release.ReleaseDenied("fresh_document_historical_serving_acceptance_refused")
             report = documents.check_snapshot(
                 snapshot, image, source.release, api_phase=runtime_phase,
                 coordinator_phase=coordinator_phase,

@@ -16,6 +16,7 @@ import re
 import stat
 import sys
 from dataclasses import asdict, dataclass, replace
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Literal
@@ -24,8 +25,8 @@ sys.path[:0] = [
     str(Path(__file__).resolve().parent),
     str(Path(__file__).resolve().parents[2] / "backend"),
 ]
-import email_password_schema21_release as schema21
-import rolling_release as rolling
+import email_password_schema21_release as schema21  # noqa: E402 - local operator import path
+import rolling_release as rolling  # noqa: E402 - local operator import path
 
 API = rolling.release.SERVICES[0]
 WORKERS = rolling.release.SERVICES[1:]
@@ -165,9 +166,180 @@ def _pin(boundary: NativeHotfixBoundary, service: str) -> tuple[rolling.ServiceP
     return pin, image
 
 
+def _caller_pin_values(probe: Any, image: str, build: dict[str, Any]) -> dict[str, str]:
+    renderer, fonts = probe.renderer_identity(
+        image, historical_v1=False, build_identity=build,
+    )
+    return {
+        "DOCUMENT_WORKER_URL": probe.WORKER_URL,
+        "DOCUMENT_WORKER_IMAGE_DIGEST": image,
+        "DOCUMENT_WORKER_POLICY_SHA256": probe.POLICY,
+        "DOCUMENT_WORKER_DOCX_RENDERER_VERSION": renderer,
+        "DOCUMENT_WORKER_DOCX_FONT_MANIFEST_SHA256": fonts,
+    }
+
+
+def _check_caller_pin_rows(probe: Any, row: dict[str, Any], pins: dict[str, str]) -> None:
+    containers = row.get("containers", [])
+    probe.need(type(containers) is list and len(containers) == 1,
+               "hotfix_caller_container_changed")
+    env = containers[0].get("env", [])
+    probe.need(type(env) is list, "hotfix_caller_pin_changed")
+    for key, value in pins.items():
+        matching = [item for item in env if item.get("name") == key]
+        probe.need(len(matching) == 1 and matching[0] == {"name": key, "value": value},
+                   "hotfix_caller_pin_changed")
+
+
+def _verify_staged_caller_pins(
+    probe: Any, clients: Any, image: str, build: dict[str, Any], plan: HotfixPlan,
+) -> None:
+    """Read real callers after API staging; tolerate only its reviewed traffic states."""
+    pins = _caller_pin_values(probe, image, build)
+    for name in (API, WORKERS[0], "hirewiz-resume-coordinator"):
+        actual = clients.service(probe.PARENT + "/services/" + name)
+        containers = actual.get("template", {}).get("containers", [])
+        probe.need(type(containers) is list and len(containers) == 1,
+                   "hotfix_caller_container_changed")
+        if name != API:
+            revision = probe.validate_serving(clients, actual, containers[0].get("image"), name)
+            for row in (actual["template"], revision):
+                _check_caller_pin_rows(probe, row, pins)
+            continue
+
+        pin = plan.pin(API)
+        probe.need(
+            actual.get("name") == probe.PARENT + "/services/" + API
+            and actual.get("uid") == pin.uid
+            and str(actual.get("generation")) == str(actual.get("observedGeneration"))
+            and actual.get("reconciling", False) is False
+            and actual.get("terminalCondition", {}).get("state") == "CONDITION_SUCCEEDED"
+            and rolling.template_sha(actual["template"], API) == plan.api_target_template_sha256
+            and containers[0].get("image") == plan.image,
+            "hotfix_caller_api_staged_changed",
+        )
+        candidate_name = probe.PARENT + "/services/" + API + "/revisions/" + plan.revision(API)
+        prior_name = probe.PARENT + "/services/" + API + "/revisions/" + pin.prior_revision
+        probe.need(
+            actual.get("latestReadyRevision") == candidate_name
+            and actual.get("latestCreatedRevision") == candidate_name
+            and rolling.pinned_traffic(API, actual) in (
+                _traffic(plan, "stage"), _traffic(plan, "promote"), _traffic(plan, "rollback")
+            ),
+            "hotfix_caller_api_traffic_changed",
+        )
+        candidate = clients.revision(candidate_name)
+        prior = clients.revision(prior_name)
+        for revision, expected_name, expected_image in (
+            (candidate, candidate_name, plan.image),
+            (prior, prior_name, plan.prior_images[0]),
+        ):
+            probe.need(
+                type(revision) is dict and revision.get("name") == expected_name
+                and revision.get("service") in (actual["name"], API)
+                and type(revision.get("uid")) is str and probe.UUID.fullmatch(revision["uid"])
+                and len([row for row in revision.get("conditions", [])
+                         if row.get("type") == "Ready"
+                         and row.get("state") == "CONDITION_SUCCEEDED"]) == 1
+                and revision.get("containers", [{}])[0].get("image") == expected_image,
+                "hotfix_caller_api_revision_changed",
+            )
+            _check_caller_pin_rows(probe, revision, pins)
+        _check_caller_pin_rows(probe, actual["template"], pins)
+
+
+def _historical_expired_v2_identity(
+    image: str, service: dict[str, Any], *,
+    plan: HotfixPlan | None = None, staged_api: bool = False,
+) -> None:
+    """Read exact expired V2 Build/Job/receipt/config; grant no serving acceptance."""
+    import document_refresh_probe as probe
+
+    clients = None
+    try:
+        metadata = json.loads(probe.canonical(service))
+        probe.need(
+            type(image) is str and probe.IMAGE.fullmatch(image)
+            and image != probe.BASE_IMAGE
+            and probe.policy_for_serving(metadata, image) == probe.POLICY,
+            "hotfix_exact_expired_v2_required",
+        )
+        labels = metadata.get("labels", metadata.get("metadata", {}).get("labels", {}))
+        build_id, nonce, job_id = (labels.get(name) for name in (
+            "hirewiz-refresh-build", "hirewiz-refresh-nonce", "hirewiz-refresh-job"
+        ))
+        probe.need(
+            type(build_id) is str and probe.UUID.fullmatch(build_id)
+            and type(nonce) is str and re.fullmatch(r"[a-f0-9]{32}", nonce)
+            and job_id == "hirewiz-doc-six-" + nonce[:12],
+            "hotfix_exact_expired_v2_labels_invalid",
+        )
+        build = probe.build_module().verify_current_build_release(build_id, nonce, image)
+        clients = probe.Clients(read_only_release=True)
+        snapshot = clients.preflight()
+        actual = clients.service(probe.PARENT + "/services/hirewiz-document-inspector")
+        actual_labels = actual.get("labels", {})
+        probe.need(
+            actual.get("uid") == probe.SERVICE_UID
+            and all(actual_labels.get(name) == labels[name] for name in (
+                "hirewiz-refresh-build", "hirewiz-refresh-nonce", "hirewiz-refresh-job"
+            ))
+            and actual.get("template", {}).get("containers", [{}])[0].get("image") == image,
+            "hotfix_exact_expired_v2_service_changed",
+        )
+        snapshot.update(service=actual)
+        probe.need(
+            probe.validate_worker_snapshot(clients, snapshot, historical_v1=False) == image,
+            "hotfix_exact_expired_v2_configuration_changed",
+        )
+        if staged_api:
+            probe.need(plan is not None, "hotfix_caller_plan_required")
+            assert plan is not None
+            _verify_staged_caller_pins(probe, clients, image, build, plan)
+        else:
+            probe.verify_caller_pins(clients, image, policy_sha256=probe.POLICY)
+        job = clients.job(probe.PARENT + "/jobs/" + job_id)
+        probe.validate_job(job, image, nonce, historical_v1=False)
+        execution = clients.execution(probe.execution_reference(
+            job, job.get("latestCreatedExecution", {}).get("name")
+        ))
+        probe.verify_renderer_build(build)
+        probe.validate_execution(execution, job, image, nonce, historical_v1=False)
+        facts = probe.validate_payload(
+            probe.native_payload(clients, job, execution, historical_v1=False),
+            image, execution["name"], datetime.now(UTC), require_fresh=False,
+            historical_v1=False, build_identity=build,
+        )
+        expires = datetime.fromisoformat(facts["definition_expires_at"])
+        probe.need(
+            expires.tzinfo is not None and expires <= datetime.now(UTC),
+            "hotfix_exact_expired_v2_not_expired",
+        )
+    except probe.NativeProofDenied:
+        raise
+    except Exception:  # noqa: BLE001 - SDK responses must not enter operator logs.
+        raise probe.NativeProofDenied("hotfix_exact_expired_v2_unavailable") from None
+    finally:
+        if clients is not None:
+            clients.close()
+
+
+class HotfixSourceBoundary(schema21.Source21Boundary):
+    def verify_document_hotfix_configuration(
+        self, source: Any, *, plan: HotfixPlan, staged_api: bool,
+    ) -> dict[str, Any]:
+        return self._verify_document_workers(
+            source, runtime_phase=True,
+            successor_identity=lambda image, service: _historical_expired_v2_identity(
+                image, service, plan=plan, staged_api=staged_api,
+            ),
+        )
+
+
 class NativeHotfixBoundary(schema21.NativeSchema21Boundary):
     def __init__(self, root: Path):
         super().__init__(root, SCHEMA)
+        self.observer = HotfixSourceBoundary(self.root)
 
     def capture_hotfix(
         self, *, release: str, image_digest: str, build_id: str, ci_run_id: int,
@@ -218,15 +390,32 @@ class NativeHotfixBoundary(schema21.NativeSchema21Boundary):
 
     def verify_global(self, plan: HotfixPlan) -> None:
         plan.validate()
+        api = self.service(API)
+        current_template = rolling.template_sha(api["template"], API)
+        staged_api = current_template != plan.pin(API).template_sha256
+        if not staged_api:
+            rolling.need(
+                rolling.template_sha(_candidate_template(plan, api), API)
+                == plan.api_target_template_sha256,
+                "hotfix_closed_target_changed",
+            )
+        else:
+            rolling.need(
+                current_template == plan.api_target_template_sha256
+                and rolling.environment(api["template"])
+                    ["RESUME_DIRECT_UPLOAD_ENABLED"].get("value") == "false",
+                "hotfix_closed_target_changed",
+            )
         self.observer.verify_source_image(
             release=plan.release, image_digest=plan.image_digest,
             build_id=plan.build_id, ci_run_id=plan.ci_run_id,
         )
         self.observer.verify_policy_configuration(plan.policies)
         self._identity(plan.runtime_uid)
-        self.observer.verify_document_configuration(SimpleNamespace(
-            release=plan.workers_release, runtime_service_account=rolling.RUNTIME
-        ))
+        self.observer.verify_document_hotfix_configuration(
+            SimpleNamespace(release=plan.workers_release, runtime_service_account=rolling.RUNTIME),
+            plan=plan, staged_api=staged_api,
+        )
         rolling.need(
             self._target(plan.runtime_secret, plan.observer_secret,
                          plan.retired_migration_secret) == plan.financial_sha256,
