@@ -42,8 +42,8 @@ OPERATION = re.compile(re.escape(PARENT + "/operations/") + r"[A-Za-z0-9._-]{1,2
 GUARDED_API_RELEASE = "d25811bf9aab85687d9786bdf6a92918826783d3"
 GUARDED_API_IMAGE = ("us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/"
                      "hirewiz@sha256:e8d5d437995820970bc68b2036ad7c09a524ec9d9268be4022370b04c6bc7d51")
-GUARDED_API_REVISION = ""
-GUARDED_API_TAG = ""
+GUARDED_API_REVISION = "ai-resume-parser-r-d25811bf9aab-84d9a588"
+GUARDED_API_TAG = "rolling-84d9a5889f2f"
 
 
 class TransitionDenied(RuntimeError):
