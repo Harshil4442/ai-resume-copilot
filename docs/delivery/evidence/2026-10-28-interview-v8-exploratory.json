@@ -31,6 +31,7 @@
     "reference_delivered": 8,
     "reference_failed": 0,
     "reference_never_started": 2,
+    "calibration_authorization_closed_after_cost_guard": true,
     "candidate_delivered": 8,
     "candidate_failed": 2,
     "candidate_never_started": 0,
