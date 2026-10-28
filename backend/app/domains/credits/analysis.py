@@ -49,7 +49,8 @@ def prepare_quote_context(db: Session, *, user_id: int, payload):
         payload=normalized,
     )
     dependencies = _dependency_snapshot(
-        db, user_id, payload.operation, payload.opportunity_id, normalized
+        db, user_id, payload.operation, payload.opportunity_id, normalized,
+        paid_context=True,
     )
     semantic = {
         "operation": payload.operation,
@@ -85,14 +86,12 @@ def prepare_quote_context(db: Session, *, user_id: int, payload):
         _require_analysis_prompt_capacity(
             db, user_id=user_id, operation=payload.operation,
             opportunity_id=payload.opportunity_id, route=route,
-            approved_evidence_count=observed["evidence_items"],
         )
     return normalized, fingerprint, config, route
 
 
 def _require_analysis_prompt_capacity(
     db: Session, *, user_id: int, operation: str, opportunity_id: str | None, route,
-    approved_evidence_count: int,
 ) -> None:
     """Reject oversized initial or bounded repair prompts before reserving credits."""
     from ...services.analysis_prompt_preflight import (
@@ -128,17 +127,11 @@ def _require_analysis_prompt_capacity(
         )
         if resume is None:
             raise finance.FundingUnavailable("The selected resume is unavailable")
-        evidence = tailoring_evidence_payload(db, user_id, resume.id)
+        evidence = tailoring_evidence_payload(
+            db, user_id, resume.id, complete_context=True
+        )
         if not evidence:
             raise finance.FundingUnavailable("Approve evidence before requesting tailoring")
-        if (
-            len(opportunity.job_description) > 7_000
-            or any(len(str(item.get("text") or "")) > 4_000 for item in evidence)
-            or approved_evidence_count > 100
-        ):
-            raise finance.FundingUnavailable(
-                "The complete job or approved evidence exceeds this tailoring prompt scope"
-            )
         try:
             units = tailoring_source_units(resume, require_complete=True)
             if not units:
@@ -148,6 +141,7 @@ def _require_analysis_prompt_capacity(
                 jd_text=opportunity.job_description,
                 approved_evidence=evidence,
                 source_units=units,
+                complete_context=True,
             )
         except (ResumeLayoutError, TailoringOutputError) as exc:
             raise finance.FundingUnavailable(

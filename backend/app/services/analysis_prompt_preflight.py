@@ -60,10 +60,12 @@ def interview_prompt_bound(job_title: str, jd_text: str, evidence: list[dict]) -
 
 def tailoring_prompt_bound(
     *, job_title: str, jd_text: str, approved_evidence: list[dict], source_units: list[dict],
+    complete_context: bool | None = None,
 ) -> int:
     initial = _estimate(build_tailoring_messages(
         job_title=job_title, jd_text=jd_text,
         approved_evidence=approved_evidence, source_units=source_units,
+        complete_context=complete_context,
     ))
     # Build the complete repair form, including every source unit and fixed
     # repair instruction. Four-byte code points cover the maximum UTF-8 size
@@ -72,6 +74,7 @@ def tailoring_prompt_bound(
         job_title=job_title, jd_text=jd_text,
         approved_evidence=approved_evidence, source_units=source_units,
         repair_note="\U0010ffff" * 3_000,
+        complete_context=complete_context,
     ))
     return max(repaired, initial + TAILORING_REPAIR_DELTA)
 

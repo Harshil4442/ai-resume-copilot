@@ -7,6 +7,7 @@ from backend.app.domains.analysis import service as analysis_service
 from backend.app.domains.credits import analysis, finance, runtime, service, service_quotes
 from backend.app.domains.credits.models import CreditExecutionHold, CreditReservation
 from backend.app.services.generation_budget import current_budget
+from backend.tests.test_analysis_runs import _native_source
 from backend.tests.test_unified_credits import factory, grant
 from backend.tests.test_unified_execution import budgets, financial_policy, response, route
 from fastapi import HTTPException
@@ -237,6 +238,85 @@ def test_changed_input_after_admission_does_not_start_worker(setup, monkeypatch)
     assert calls == []
     with factory() as db:
         assert service.wallet(db, user_id=1).available_credits == 40
+        assert all(
+            row.settled_cost_micros == 0 for row in db.query(models.ModelCostLiability).all()
+        )
+
+
+def test_tailoring_change_between_budget_check_and_generation_refunds(setup, monkeypatch):
+    factory, _ = setup
+    selected = route(attempts=1).model_copy(update={
+        "supported_source_formats": ("docx",),
+        "supported_limits": {
+            "context_bytes": 100_000,
+            "source_bytes": 100_000,
+            "evidence_items": 100,
+        },
+        "model_quotes": tuple(
+            price.model_copy(update={"max_input_tokens": 100_000})
+            for price in route(attempts=1).model_quotes
+        ),
+    })
+    config = runtime.RuntimeConfig(
+        policy=financial_policy(), budgets=budgets(), routes=(selected,),
+    )
+    monkeypatch.setenv("UNIFIED_CREDIT_RUNTIME_REVIEW_JSON", config.model_dump_json())
+    with factory() as db:
+        resume = db.get(models.Resume, 1)
+        resume.source_document = _native_source()
+        resume.source_format = "docx"
+        db.add_all([
+            models.Opportunity(
+                id="opp_tailor_worker_race", user_id=1, resume_id=1,
+                title="Platform Engineer", company="Example Co",
+                job_description="Build reliable Python services for global customers.",
+                job_snapshot={},
+            ),
+            models.EvidenceItem(
+                id="ev_tailor_worker_race", user_id=1, resume_id=1,
+                category="experience", title="Platform work",
+                evidence_text="Developed reliable Python services for customers.",
+                skills=["Python"], metrics={}, approval_state="approved",
+            ),
+        ])
+        db.commit()
+        payload = schemas.AnalysisRunCreate(
+            operation="resume_tailor", opportunity_id="opp_tailor_worker_race",
+            input={"tailoring_scope": "standard"},
+            idempotency_key="tailor-worker-race-001",
+        )
+        _, fingerprint, _, route_for_quote = analysis.prepare_quote_context(
+            db, user_id=1, payload=payload,
+        )
+        quote = service_quotes.issue_service_quote(
+            db, user_id=1, input_fingerprint=fingerprint,
+            idempotency_key="quote-tailor-worker-race", route=route_for_quote,
+            policy=config.policy,
+        )
+        db.commit()
+        run, created = analysis_service.create_run(
+            db, user_id=1,
+            payload=payload.model_copy(update={"accepted_service_quote_id": quote.id}),
+            header_idempotency_key=None,
+        )
+        assert created and run.estimated_units == 8
+        run_id = run.id
+        assert service.wallet(db, user_id=1).available_credits == 32
+
+    original = tasks.execute_operation
+
+    def change_after_budget(db, run):
+        db.get(models.Opportunity, "opp_tailor_worker_race").job_description += " Changed after budget check."
+        db.commit()
+        return original(db, run)
+
+    monkeypatch.setattr(tasks, "execute_operation", change_after_budget)
+    assert tasks.process_analysis_run(run_id) == "failed"
+    with factory() as db:
+        run = db.get(models.AnalysisRun, run_id)
+        assert run.committed_units == 0 and run.usage_state == "released"
+        assert service.wallet(db, user_id=1).available_credits == 40
+        assert db.query(models.ResumeVersion).count() == 0
         assert all(
             row.settled_cost_micros == 0 for row in db.query(models.ModelCostLiability).all()
         )

@@ -348,8 +348,9 @@ def synchronous_quote(payload: SynchronousServiceRequest, request: Request, resp
 @router.post("/analysis-reuse", response_model=AnalysisReuseView)
 @limiter.limit("30/minute")
 def analysis_reuse(payload: AnalysisRunCreate, request: Request, response: Response,
-                   db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """No reservation, dispatch or provider call; unchanged owned work is free."""
+                   db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+                   include_legacy: bool = False):
+    """Quote preflight reuses only the current contract; legacy load is explicit."""
     from ..domains.analysis.service import _dependency_snapshot, validate_analysis_input
     from ..domains.common import payload_fingerprint
     from ..models import AnalysisRun
@@ -360,12 +361,15 @@ def analysis_reuse(payload: AnalysisRunCreate, request: Request, response: Respo
     normalized = dict(payload.input)
     validate_analysis_input(db, user_id=current_user.id, operation=payload.operation,
                             opportunity_id=payload.opportunity_id, payload=normalized)
-    fingerprint = payload_fingerprint({"operation": payload.operation,
+    paid_tailoring = payload.operation == "resume_tailor"
+    contexts = ((True, False) if include_legacy else (True,)) if paid_tailoring else (False,)
+    identities = [payload_fingerprint({"operation": payload.operation,
         "opportunity_id": payload.opportunity_id, "input": normalized,
-        "dependencies": _dependency_snapshot(db, current_user.id, payload.operation, payload.opportunity_id, normalized)})
+        "dependencies": _dependency_snapshot(db, current_user.id, payload.operation, payload.opportunity_id, normalized,
+            paid_context=paid)}) for paid in contexts]
     run = db.query(AnalysisRun).filter(
         AnalysisRun.user_id == current_user.id, AnalysisRun.operation == payload.operation,
-        AnalysisRun.input_fingerprint == fingerprint,
+        AnalysisRun.input_fingerprint.in_(identities),
         AnalysisRun.status.in_(["queued", "running", "succeeded"]), AnalysisRun.cancel_requested.is_(False),
         AnalysisRun.input_purged_at.is_(None), AnalysisRun.result_purged_at.is_(None),
     ).order_by(AnalysisRun.created_at.desc()).first()

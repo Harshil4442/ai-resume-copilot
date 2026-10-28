@@ -5,6 +5,7 @@ import random
 import re
 import time
 from collections import Counter
+from contextvars import ContextVar
 from functools import lru_cache
 from typing import Literal
 from urllib.parse import urlsplit
@@ -19,6 +20,14 @@ GEMINI_FALLBACK_MODELS = (
     "gemini-3.1-flash-lite",
     "gemini-2.5-flash",
 )
+
+_FULL_TAILORING_CONTEXT: ContextVar[bool] = ContextVar(
+    "hirewiz_full_tailoring_context", default=False
+)
+
+
+def full_tailoring_context_enabled() -> bool:
+    return _FULL_TAILORING_CONTEXT.get()
 
 
 class LLMProviderError(RuntimeError):
@@ -737,10 +746,12 @@ def build_tailoring_messages(
     approved_evidence: list[dict],
     source_units: list[dict],
     repair_note: str = "",
+    complete_context: bool | None = None,
 ) -> list[dict]:
     """Build the full source-preserving prompt shared by quote and execution."""
     if not approved_evidence or not source_units:
         raise TailoringOutputError("Approved evidence and editable source text are required")
+    complete = full_tailoring_context_enabled() if complete_context is None else complete_context
     system_prompt = (
         "You are a careful resume editor. Improve the relevance, clarity, and action verbs of "
         "existing resume text for the target job, using only APPROVED EVIDENCE. The original "
@@ -784,7 +795,9 @@ def build_tailoring_messages(
         "Put unsupported job requirements in evidence_needed, never in the resume."
     )
     evidence_context = [
-        {**item, "text": str(item.get("text") or "")[:4000]} for item in approved_evidence
+        {**item, "text": str(item.get("text") or "") if complete
+         else str(item.get("text") or "")[:4000]}
+        for item in approved_evidence
     ]
     prompt_units = []
     for item in source_units:
@@ -795,7 +808,7 @@ def build_tailoring_messages(
             "target_body_chars": int(body_chars * 0.85) if item.get("kind") == "text_object" else body_chars,
         })
     user_content = (
-        f"TARGET JOB: {job_title}\n\nJOB DESCRIPTION:\n{jd_text[:7000]}\n\n"
+        f"TARGET JOB: {job_title}\n\nJOB DESCRIPTION:\n{jd_text if complete else jd_text[:7000]}\n\n"
         f"APPROVED EVIDENCE:\n{json.dumps(evidence_context, default=str)}\n\n"
         f"EDITABLE SOURCE UNITS:\n{json.dumps(prompt_units, default=str)}"
     )
@@ -914,6 +927,28 @@ def tailor_resume_from_evidence(
             for error in errors
         ],
     }
+
+
+def tailor_resume_from_evidence_full(
+    *,
+    job_title: str,
+    jd_text: str,
+    approved_evidence: list[dict],
+    source_units: list[dict],
+    repair_note: str = "",
+) -> dict:
+    """Paid v7 route: use the full owned job, evidence and editable source."""
+    token = _FULL_TAILORING_CONTEXT.set(True)
+    try:
+        return tailor_resume_from_evidence(
+            job_title=job_title,
+            jd_text=jd_text,
+            approved_evidence=approved_evidence,
+            source_units=source_units,
+            repair_note=repair_note,
+        )
+    finally:
+        _FULL_TAILORING_CONTEXT.reset(token)
 
 
 def extract_jd_skills_llm(jd_text: str) -> list[str]:

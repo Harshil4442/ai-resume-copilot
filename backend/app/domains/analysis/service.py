@@ -21,6 +21,7 @@ OPERATION_UNITS = pricing.ANALYSIS_OPERATION_UNITS
 
 def _dependency_snapshot(
     db: Session, user_id: int, operation: str, opportunity_id: str | None, payload: dict,
+    *, paid_context: bool = False,
 ) -> dict:
     """Private semantic reuse includes mutable facts and versioned behavior."""
     from ...services.basic_matching import SCORING_VERSION
@@ -84,7 +85,7 @@ def _dependency_snapshot(
         from ...services.prompt_privacy import PROMPT_PRIVACY_VERSION
 
         dependencies["generation"] = {
-            "prompt": {"job_match": "match-mega-v2", "interview_questions": contract_versions()["prompt"], "resume_tailor": "resume-source-v6"}.get(operation),
+            "prompt": {"job_match": "match-mega-v2", "interview_questions": contract_versions()["prompt"], "resume_tailor": "resume-source-v7" if paid_context else "resume-source-v6"}.get(operation),
             "model_policy": os.getenv("LLM_MODEL", "unconfigured"),
             "provider_base": os.getenv("LLM_API_BASE", ""),
             "fallback_policy": GEMINI_FALLBACK_MODELS,
@@ -94,6 +95,8 @@ def _dependency_snapshot(
             from ...services.llm_client import LLM_API_BASE, LLM_MODEL
 
             dependencies["generation"].update({"effective_model": LLM_MODEL, "effective_provider_base": LLM_API_BASE})
+        if operation == "resume_tailor" and paid_context:
+            dependencies["generation"]["context_selection"] = "full-editable-source-v1"
     return dependencies
 
 
@@ -114,6 +117,35 @@ def ensure_interview_inputs_current(db: Session, run: models.AnalysisRun, payloa
         raise InterviewInputsChanged(
             "The selected resume, approved evidence, job or interview contract changed. "
             "Review the current inputs and request a new question set; this attempt will not be charged."
+        )
+
+
+class TailoringInputsChanged(ValueError):
+    retryable = False
+
+
+def ensure_tailoring_inputs_current(
+    db: Session, run: models.AnalysisRun, payload: dict,
+) -> None:
+    """Refuse a paid tailoring result if any quoted source changed."""
+    db.expire_all()
+    semantic_input = {
+        key: value for key, value in payload.items()
+        if key != "_accepted_analysis_quote"
+    }
+    current = payload_fingerprint({
+        "operation": run.operation,
+        "opportunity_id": run.opportunity_id,
+        "input": semantic_input,
+        "dependencies": _dependency_snapshot(
+            db, run.user_id, run.operation, run.opportunity_id,
+            semantic_input, paid_context=True,
+        ),
+    })
+    if current != run.input_fingerprint:
+        raise TailoringInputsChanged(
+            "The selected job, resume, approved evidence or tailoring contract changed. "
+            "Review the current inputs and request a new quote."
         )
 
 
@@ -263,7 +295,10 @@ def create_run(
     # Serialize admission for one owner, including equivalent requests with
     # different client keys. This short lock ends before any worker/model call.
     db.query(models.User.id).filter(models.User.id == user_id).with_for_update().one()
-    dependencies = _dependency_snapshot(db, user_id, payload.operation, payload.opportunity_id, input_payload)
+    dependencies = _dependency_snapshot(
+        db, user_id, payload.operation, payload.opportunity_id, input_payload,
+        paid_context=bool(payload.accepted_service_quote_id),
+    )
     fingerprint = payload_fingerprint(
         {
             "operation": payload.operation,

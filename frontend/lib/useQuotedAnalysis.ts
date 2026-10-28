@@ -61,7 +61,10 @@ export function useQuotedAnalysis({ request, selectionKey, context, availability
   const lookup = useMutation({
     mutationFn: async (prepareQuote: boolean) => {
       const selectedRequest = structuredClone(request), selectedContext = structuredClone(context), selectedKey = selectionKey;
-      const reusable = await apiPostJson<{ reused_run: AnalysisRun | null }>("/v1/credits/analysis-reuse", selectedRequest);
+      const reusePath = !prepareQuote && selectedRequest.operation === "resume_tailor"
+        ? "/v1/credits/analysis-reuse?include_legacy=true"
+        : "/v1/credits/analysis-reuse";
+      const reusable = await apiPostJson<{ reused_run: AnalysisRun | null }>(reusePath, selectedRequest);
       if (!reusable || !("reused_run" in reusable)) throw new Error("Could not verify whether an existing result can be reused.");
       if (reusable.reused_run) {
         const run = reusable.reused_run;

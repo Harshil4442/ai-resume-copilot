@@ -13830,8 +13830,20 @@
     },
     "/api/v1/credits/analysis-reuse": {
       "post": {
-        "description": "No reservation, dispatch or provider call; unchanged owned work is free.",
+        "description": "Quote preflight reuses only the current contract; legacy load is explicit.",
         "operationId": "analysis_reuse_api_v1_credits_analysis_reuse_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "include_legacy",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Legacy",
+              "type": "boolean"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {

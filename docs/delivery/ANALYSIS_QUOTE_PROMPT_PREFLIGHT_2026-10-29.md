@@ -3,30 +3,38 @@
 This candidate adds a fail-closed prompt-size check to the unified-credit quote
 and accepted-quote paths for enhanced interview questions and source-preserving
 resume tailoring. It does not activate a paid route, alter a tariff, or qualify
-the new tailoring prompt for sale. Tailoring prompt version `resume-source-v6`
-requires its own blind human quality review before any commercial route can use
-it. The interview prompt stays `interview-evidence-v8`.
+the new tailoring prompt for sale. The original tailoring path remains `resume-source-v6`; the new unified
+paid full-context path is `resume-source-v7` and needs its own blind human
+quality review before sale. The interview prompt stays `interview-evidence-v8`.
 
 ## Admission contract
 
-- The quote reloads the same owned opportunity, approved evidence, source file,
-  and selected whole source units that execution will use. Its source hash and
-  evidence are already part of the input fingerprint. An accepted quote repeats
-  this check before creating an `AnalysisRun` or credit reservation.
-- The shared tailoring builder creates the exact initial prompt. A frozen
-  initial and repair fixture retains the pre-refactor serialized prompt bytes.
-  The interview builder is unchanged.
+- The quote reloads the same owned opportunity, all approved evidence, source
+  file, and all editable whole source units that unified paid execution will
+  use. Their source hash and evidence are part of the input fingerprint, along
+  with the full-context selection version. An accepted quote repeats this
+  check before creating an `AnalysisRun` or credit reservation.
+- The shared builder creates the exact initial prompt. A frozen initial and
+  repair fixture retains the legacy v6 serialized prompt bytes. The paid v7
+  path includes the full job description, every approved evidence item and
+  every editable source unit. The interview builder is unchanged.
 - Each initial prompt is redacted as it will be at provider dispatch, then
   measured with the versioned UTF-8 JSON/framing estimator. The preflight also
   counts a complete bounded repair form. Tailoring's runtime refuses a repair
   that grows beyond its quoted bound before calling a model. Every configured
   provider attempt, including fallback attempts, must hold this full bound.
-- No prompt is cut to fit the quote. A scope without capacity is refused before
-  credits are reserved. The existing tailoring limits of 100 whole source
-  units, 24,000 source characters, 7,000 job-description characters and 4,000
-  characters per evidence item remain in execution. The paid quote now refuses
-  an input that those limits would silently omit, so relevant source material
-  is not dropped to make the paid quote fit.
+- No paid prompt is cut to fit the quote. A fragmented PDF with more than 100
+  small units may pass if its complete prompt fits every qualified model
+  attempt. A truly oversized prompt is refused before reservation. The legacy
+  v6 path retains its earlier bounded selection and prompt bytes.
+- Paid tailoring revalidates the quote fingerprint immediately before model
+  work and after generation. The post-generation check includes the job and
+  uses short row locks before saving the new version; changed inputs fail
+  without delivering or charging an unreviewed result.
+- "Generate tailored version" reuses only an exact v7 result before it offers
+  a new quote. A previous bounded v6 version remains readable through an
+  explicit saved-result lookup or the existing resume-version history; it
+  cannot silently replace a requested full-context v7 review.
 
 ## Limits and remaining certification work
 
@@ -44,3 +52,7 @@ the current v8 parser. If that parser or its message text changes, re-evaluate
 the bound before qualifying the route. A very large or unexpectedly redaction-
 expanded tailoring repair note is refused before its provider call; the
 customer's original resume remains unchanged.
+
+If the source changes while a paid model call is in flight, that call may still
+incur provider expense. The post-generation check rejects its result and the
+failed-run path releases the customer's credit reservation.

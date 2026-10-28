@@ -1260,7 +1260,7 @@ export interface paths {
         put?: never;
         /**
          * Analysis Reuse
-         * @description No reservation, dispatch or provider call; unchanged owned work is free.
+         * @description Quote preflight reuses only the current contract; legacy load is explicit.
          */
         post: operations["analysis_reuse_api_v1_credits_analysis_reuse_post"];
         delete?: never;
@@ -8853,7 +8853,9 @@ export interface operations {
     };
     analysis_reuse_api_v1_credits_analysis_reuse_post: {
         parameters: {
-            query?: never;
+            query?: {
+                include_legacy?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
