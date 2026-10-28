@@ -504,6 +504,7 @@ def test_workflow_initializes_runner_paths_after_job_expression_validation(tmp_p
     assert result.returncode == 0, result.stderr.decode()
     assert env_file.read_text().splitlines() == [
         f"RESUME_DIRECTORY={runner_temp}/document-refresh-original-39901631586",
+        f"TRANSITION_DIRECTORY={runner_temp}/document-refresh-original-40771705772",
         f"HISTORY_DIRECTORY={runner_temp}/document-refresh-history",
         f"OUTPUT_DIRECTORY={runner_temp}/document-refresh-42-2",
     ]
@@ -518,7 +519,8 @@ def test_full_source_workflow_reuses_trusted_scope_and_retained_history_without_
     workflow = yaml.safe_load((refresh.ROOT / ".github/workflows/document-refresh.yml").read_text())
     trigger = workflow.get("on", workflow.get(True))
     assert trigger["workflow_dispatch"]["inputs"]["mode"]["options"] == [
-        "monitor", "refresh", "full-source-refresh", "resume-full-source-refresh"]
+        "monitor", "refresh", "full-source-refresh", "resume-full-source-refresh",
+        "resume-expired-v2-transition"]
     job = workflow["jobs"]["maintenance"]
     assert job["if"] == (
         "github.repository == 'Harshil4442/ai-resume-copilot' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)")
@@ -536,6 +538,16 @@ def test_full_source_workflow_reuses_trusted_scope_and_retained_history_without_
     assert history["if"] == "env.REFRESH_MODE == 'refresh' || env.REFRESH_MODE == 'full-source-refresh' || env.REFRESH_MODE == 'resume-full-source-refresh'"
     assert 'startswith("document-refresh-refresh-") or startswith("document-refresh-full-source-refresh-")' in history["run"]
     assert 'startswith("document-refresh-full-source-candidate-' not in history["run"]
+    retained = next(step for step in job["steps"] if step.get("name") ==
+                    "Retrieve the exact failed V2 transition journal")
+    assert retained["if"] == "env.REFRESH_MODE == 'resume-expired-v2-transition'"
+    assert "12852818465" in retained["run"] and "40771705772" in retained["run"]
+    assert "sha256:39f09c28b9a745041b3052c8604fb1a420622de291ff6b2275fa9b4abdefb144" in retained["run"]
+    continuation = next(step for step in job["steps"] if step.get("name") ==
+                        "Read back completed closes and continue the exact V2 rescue")
+    assert continuation["if"] == "env.REFRESH_MODE == 'resume-expired-v2-transition'"
+    assert "--mode resume-expired-v2-transition" in continuation["run"]
+    assert "--publish-candidate" not in continuation["run"]
     guard = next(step for step in job["steps"] if step.get("name") == "Require explicitly provisioned maintenance identity")
     assert 'test "$REFRESH_MODE" = refresh || test "$REFRESH_MODE" = full-source-refresh' in guard["run"]
     artifact = next(step for step in job["steps"] if step.get("name") == "Retain bounded maintenance evidence")
@@ -544,6 +556,22 @@ def test_full_source_workflow_reuses_trusted_scope_and_retained_history_without_
     assert artifact["with"]["retention-days"] == 14
     summary = next(step for step in job["steps"] if step.get("name") == "Surface required action")
     assert "six-case" not in summary["run"] and "native V2 ten-case acceptance" in summary["run"]
+
+
+def test_exact_transition_artifact_refuses_changed_journal_before_native_http(monkeypatch, tmp_path):
+    original = tmp_path / "original"
+    original.mkdir(mode=0o700)
+    for name in ("native-proof", "transition"):
+        directory = original / name
+        directory.mkdir(mode=0o700)
+        marker = directory / "binding.json"
+        marker.write_text("{}\n")
+        marker.chmod(0o600)
+    output = tmp_path / "output"
+    output.mkdir(mode=0o700)
+    monkeypatch.setattr(refresh, "native_http", lambda: pytest.fail("native HTTP before exact artifact proof"))
+    with pytest.raises(refresh.RefreshDenied, match="original_journal_changed"):
+        refresh.resume_expired_v2_transition(output, original)
 
 
 @pytest.mark.parametrize("recovery", ["", "$(touch SHOULD_NOT_EXIST) ; exact job data"])
