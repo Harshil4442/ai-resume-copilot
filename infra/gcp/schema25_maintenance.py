@@ -29,6 +29,15 @@ RESOURCE_NAMES = {"queue": QUEUES, "schedule": SCHEDULES}
 RESOURCE_PATHS = {"queue": ("https://cloudtasks.googleapis.com/v2/", "/queues/"),
                   "schedule": ("https://cloudscheduler.googleapis.com/v1/", "/jobs/")}
 RESOURCE_VOLATILE = {"state", "lastAttemptTime", "scheduleTime", "status", "userUpdateTime"}
+# A Cloud Run Revision's serving template is immutable, but its observed
+# status and etag can settle after the Service that names it becomes Ready.
+# The captured full Revision digest is the fast path. If only that digest has
+# drifted, accept a bounded live readback of the captured immutable template.
+REVISION_READ_OUTPUTS = frozenset({
+    "name", "service", "uid", "generation", "observedGeneration", "createTime",
+    "updateTime", "creator", "etag", "conditions", "scalingStatus",
+    "launchStage", "logUri",
+})
 
 
 def need(value, code):
@@ -147,12 +156,41 @@ def capture(run, controls, nonce):
     return plan
 
 
+def pinned_revision(pin, run, name, digest):
+    row = run.revision(pin.name, name)
+    need(row is not None, "prior_revision_changed")
+    if rolling.sha(row) != digest:
+        # Older captured plans retain a full Revision digest. Cloud Run may
+        # update observed status/etag without changing the revision's runtime
+        # configuration. In that case, use the independently captured serving
+        # template hash, source, image and identity; never accept an unknown
+        # configuration field or a different revision/service.
+        need(set(pin.template_keys) <= set(row)
+             and set(row) <= set(pin.template_keys) | REVISION_READ_OUTPUTS
+             and row.get("name") == rolling.PARENT + "/services/" + pin.name + "/revisions/" + name
+             and row.get("service") == pin.name
+             and type(row.get("uid")) is str
+             and re.fullmatch(r"[a-f0-9-]{36}", row["uid"])
+             and str(row.get("generation")) == str(row.get("observedGeneration"))
+             and type(row.get("conditions")) is list
+             and any(type(condition) is dict and condition.get("type") == "Ready"
+                     and condition.get("state") == "CONDITION_SUCCEEDED"
+                     for condition in row["conditions"])
+             and type(row.get("containers")) is list and len(row["containers"]) == 1
+             and type(row["containers"][0]) is dict
+             and row.get("serviceAccount") == rolling.RUNTIME
+             and row["containers"][0].get("image") == pin.image
+             and rolling.environment(row).get("APP_RELEASE", {}).get("value") == pin.source
+             and coordinator.template_hash({key: row[key] for key in pin.template_keys})
+                 == pin.template_sha256,
+             "prior_revision_changed")
+    return row
+
+
 def desired(plan, pin, run, phase):
     rows = {}
     for name, digest in pin.revisions:
-        row = run.revision(pin.name, name)
-        need(row is not None and rolling.sha(row) == digest, "prior_revision_changed")
-        rows[name] = row
+        rows[name] = pinned_revision(pin, run, name, digest)
     template = {key: copy.deepcopy(rows[pin.prior_revision].get(key)) for key in pin.template_keys}
     need(coordinator.template_hash(template) == pin.template_sha256, "prior_template_changed")
     if phase == "close":

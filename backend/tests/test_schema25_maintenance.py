@@ -51,6 +51,27 @@ def context(tmp_path):
     return run, controls, plan, journal, drains, drain
 
 
+def settling_revision_context(tmp_path):
+    """Capture a real-shaped Revision before provider-owned status settles."""
+    run, controls, _plan, _journal, drains, drain = context(tmp_path)
+    service = m.SERVICES[0]
+    original = run.plan.pin(service).prior_revision
+    revision = run.revisions[(service, original)]
+    revision.update({
+        "service": service,
+        "uid": "e1ad9c8d-4314-4d9d-a306-256d0c2fbadb",
+        "generation": "1",
+        "observedGeneration": "1",
+        "createTime": "2026-10-28T22:44:04Z",
+        "updateTime": "2026-10-28T22:44:04Z",
+        "etag": "early-status-etag",
+        "launchStage": "GA",
+    })
+    plan = m.capture(run, controls, "e" * 32)
+    journal = m.rolling.Journal(tmp_path, plan)
+    return (run, controls, plan, journal, drains, drain), revision
+
+
 def apply(ctx, phase, **kwargs):
     run, controls, plan, journal, _drains, drain = ctx
     return m.execute(plan, run, controls, journal, phase, drain, **kwargs)
@@ -176,6 +197,42 @@ def test_pending_same_operation_is_polled_without_new_patch(tmp_path):
     assert len(run.writes) == 1
     next(iter(run.operations.values()))["done"] = True
     assert apply(ctx, "close-api", reconcile=True)["status"] == "maintenance_phase_observed"
+
+
+def test_prior_revision_status_settles_after_capture_and_pending_close_reconciles(tmp_path):
+    ctx, revision = settling_revision_context(tmp_path)
+    run = ctx[0]
+    apply(ctx, "pause-schedules")
+    run.pause = True
+    assert apply(ctx, "close-api")["status"] == "maintenance_operation_pending"
+    revision["etag"] = "settled-status-etag"
+    revision["updateTime"] = "2026-10-28T22:45:01Z"
+    revision["scalingStatus"] = {"desiredMinInstanceCount": 0}
+    revision["conditions"].append({"type": "RoutesReady", "state": "CONDITION_SUCCEEDED"})
+    next(iter(run.operations.values()))["done"] = True
+    assert apply(ctx, "close-api", reconcile=True)["status"] == "maintenance_phase_observed"
+    assert len(run.writes) == 1
+    assert ctx[3].read("service." + m.SERVICES[0] + ".close.checked") is not None
+
+
+@pytest.mark.parametrize("drift", ["image", "source", "unknown_configuration"])
+def test_prior_revision_real_configuration_drift_still_refuses_reconcile(tmp_path, drift):
+    ctx, revision = settling_revision_context(tmp_path)
+    run = ctx[0]
+    apply(ctx, "pause-schedules")
+    run.pause = True
+    assert apply(ctx, "close-api")["status"] == "maintenance_operation_pending"
+    if drift == "image":
+        revision["containers"][0]["image"] = revision["containers"][0]["image"][:-64] + "a" * 64
+    elif drift == "source":
+        m.rolling.environment(revision)["APP_RELEASE"]["value"] = "a" * 40
+    else:
+        revision["encryptionKey"] = "other-key"
+    next(iter(run.operations.values()))["done"] = True
+    with pytest.raises(m.rolling.RollingDenied, match="prior_revision_changed"):
+        apply(ctx, "close-api", reconcile=True)
+    assert len(run.writes) == 1
+    assert ctx[3].read("service." + m.SERVICES[0] + ".close.checked") is None
 
 
 def test_restore_unknown_patch_reconciles_without_reverting_to_closed_state(tmp_path):
