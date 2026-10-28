@@ -63,6 +63,18 @@ def test_partial_rescue_claim_is_separate_exact_create_only_object():
     assert not auth.allowed("POST", endpoint + urlencode({**query, "name": name.replace("12858021573", "12858021574")}))
 
 
+def test_final_rescue_claim_is_third_exact_create_only_object():
+    bucket = auth.PROJECT + "_cloudbuild"
+    endpoint = "https://storage.googleapis.com/upload/storage/v1/b/" + bucket + "/o?"
+    name = ("hirewiz-document-refresh-source/5436da554bc5437cadccd296f3489bdd/"
+            "final-transition-40788512340-12860975525.json")
+    query = {"uploadType": "media", "name": name, "ifGenerationMatch": "0"}
+    assert auth.allowed("POST", endpoint + urlencode(query))
+    assert not auth.allowed("POST", endpoint + urlencode({**query, "ifGenerationMatch": "1"}))
+    assert not auth.allowed("POST", endpoint + urlencode({**query, "name": name + "-other"}))
+    assert not auth.allowed("POST", endpoint + urlencode({**query, "name": name.replace("12860975525", "12860975526")}))
+
+
 @pytest.mark.parametrize("email", ["human@example.test", "default", "other@project.iam.gserviceaccount.com", None])
 def test_adc_cannot_substitute_a_human_or_another_service_identity(monkeypatch, email):
     credential = SimpleNamespace(service_account_email=email, refresh=lambda request: None)

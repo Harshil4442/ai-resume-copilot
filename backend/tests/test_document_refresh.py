@@ -506,6 +506,7 @@ def test_workflow_initializes_runner_paths_after_job_expression_validation(tmp_p
         f"RESUME_DIRECTORY={runner_temp}/document-refresh-original-39901631586",
         f"TRANSITION_DIRECTORY={runner_temp}/document-refresh-original-40771705772",
         f"PARTIAL_DIRECTORY={runner_temp}/document-refresh-original-40781707554",
+        f"FINAL_DIRECTORY={runner_temp}/document-refresh-original-40788512340",
         f"HISTORY_DIRECTORY={runner_temp}/document-refresh-history",
         f"OUTPUT_DIRECTORY={runner_temp}/document-refresh-42-2",
     ]
@@ -521,7 +522,7 @@ def test_full_source_workflow_reuses_trusted_scope_and_retained_history_without_
     trigger = workflow.get("on", workflow.get(True))
     assert trigger["workflow_dispatch"]["inputs"]["mode"]["options"] == [
         "monitor", "refresh", "full-source-refresh", "resume-full-source-refresh",
-        "resume-expired-v2-transition", "resume-partial-v2-transition"]
+        "resume-expired-v2-transition", "resume-partial-v2-transition", "resume-final-v2-transition"]
     job = workflow["jobs"]["maintenance"]
     assert job["if"] == (
         "github.repository == 'Harshil4442/ai-resume-copilot' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)")
@@ -559,6 +560,16 @@ def test_full_source_workflow_reuses_trusted_scope_and_retained_history_without_
     assert partial_step["if"] == "env.REFRESH_MODE == 'resume-partial-v2-transition'"
     assert "--mode resume-partial-v2-transition" in partial_step["run"]
     assert "--publish-candidate" not in partial_step["run"]
+    final_artifact = next(step for step in job["steps"] if step.get("name") ==
+                          "Retrieve the exact failed second V2 continuation")
+    assert final_artifact["if"] == "env.REFRESH_MODE == 'resume-final-v2-transition'"
+    assert "12860975525" in final_artifact["run"] and "40788512340" in final_artifact["run"]
+    assert "sha256:ffe242705f3bc036de6f41e8cfa4a85f2b447804f40ad926d38edc046fafefe3" in final_artifact["run"]
+    final_step = next(step for step in job["steps"] if step.get("name") ==
+                      "Reconcile analysis open and continue only the coordinator")
+    assert final_step["if"] == "env.REFRESH_MODE == 'resume-final-v2-transition'"
+    assert "--mode resume-final-v2-transition" in final_step["run"]
+    assert "--publish-candidate" not in final_step["run"]
     guard = next(step for step in job["steps"] if step.get("name") == "Require explicitly provisioned maintenance identity")
     assert 'test "$REFRESH_MODE" = refresh || test "$REFRESH_MODE" = full-source-refresh' in guard["run"]
     artifact = next(step for step in job["steps"] if step.get("name") == "Retain bounded maintenance evidence")
@@ -599,6 +610,22 @@ def test_partial_transition_refuses_changed_artifact_before_native_http(monkeypa
     monkeypatch.setattr(refresh, "native_http", lambda: pytest.fail("native HTTP before exact artifact proof"))
     with pytest.raises(refresh.RefreshDenied, match="source_tree_changed"):
         refresh.resume_partial_v2_transition(output, original)
+
+
+def test_final_transition_refuses_changed_artifact_before_native_http(monkeypatch, tmp_path):
+    original = tmp_path / "original"
+    original.mkdir(mode=0o700)
+    for name in ("native-proof", "source-transition", "partial-transition"):
+        directory = original / name
+        directory.mkdir(mode=0o700)
+        marker = directory / "binding.json"
+        marker.write_text("{}\n")
+        marker.chmod(0o600)
+    output = tmp_path / "output"
+    output.mkdir(mode=0o700)
+    monkeypatch.setattr(refresh, "native_http", lambda: pytest.fail("native HTTP before exact artifact proof"))
+    with pytest.raises(refresh.RefreshDenied, match="source_tree_changed"):
+        refresh.resume_final_v2_transition(output, original)
 
 
 @pytest.mark.parametrize("recovery", ["", "$(touch SHOULD_NOT_EXIST) ; exact job data"])

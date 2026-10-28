@@ -352,11 +352,49 @@ class Controller:
         need(short in SERVICES and name in {short, prefix + short}, "document_transition_service_refused")
         return checked_json(self.http, "GET", prefix + short)
 
+    def service_retry(self, name: str, *, deadline: float, timeout_code: str) -> dict[str, Any]:
+        """Retry only a known transient GET of one fixed service, never a write."""
+        need(name in SERVICES, "document_transition_service_refused")
+        uri = "https://run.googleapis.com/v2/" + PARENT + "/services/" + name
+        return self._json_read_retry(uri, deadline=deadline, timeout_code=timeout_code)
+
+    def operation_retry(self, name: str, *, deadline: float, timeout_code: str) -> dict[str, Any]:
+        """Retry only a known transient GET of the one acknowledged LRO."""
+        need(type(name) is str and OPERATION.fullmatch(name), "document_transition_operation_refused")
+        return self._json_read_retry("https://run.googleapis.com/v2/" + name,
+                                     deadline=deadline, timeout_code=timeout_code)
+
+    def _json_read_retry(self, uri: str, *, deadline: float, timeout_code: str) -> dict[str, Any]:
+        while True:
+            try:
+                response, raw = self.http.request(uri, method="GET",
+                                                  headers={"Content-Type": "application/json"},
+                                                  redirections=0)
+            except Exception as error:
+                if (type(error).__name__ == "IdentityDenied"
+                        and str(error) == "document_refresh_transport_unavailable_reconcile_only"):
+                    response, raw = None, b""
+                else:
+                    raise
+            if response is None or response.status in {429, 502, 503, 504}:
+                need(time.monotonic() < deadline, timeout_code)
+                time.sleep(min(2, max(0, deadline - time.monotonic())))
+                continue
+            need(response.status == 200, "document_transition_native_outcome_unknown_reconcile_only")
+            try:
+                value = json.loads(raw)
+            except (ValueError, UnicodeError, RecursionError):
+                raise TransitionDenied("document_transition_native_metadata_invalid") from None
+            need(type(value) is dict, "document_transition_native_metadata_invalid")
+            return value
+
     def revision(self, name: str) -> dict[str, Any]:
         need(any(re.fullmatch(re.escape(PARENT + "/services/" + service + "/revisions/" + service + "-")
                              + r"[a-z0-9-]{1,36}", name) for service in SERVICES),
              "document_transition_revision_refused")
-        return checked_json(self.http, "GET", name)
+        return self._json_read_retry("https://run.googleapis.com/v2/" + name,
+                                     deadline=min(self.deadline, time.monotonic() + 45),
+                                     timeout_code="document_transition_revision_read_deadline_reconcile_only")
 
     def ready(self, service: str, value: dict[str, Any], *, uid: str | None = None) -> None:
         image = value.get("template", {}).get("containers", [{}])[0].get("image")
@@ -382,7 +420,10 @@ class Controller:
         require_current_acceptance(acceptance, self.candidate_image, self.probe)
         need(time.monotonic() < self.deadline, "document_transition_deadline_reconcile_only")
         before = self.observed[service]
-        need(self.service(service) == before, "document_transition_preimage_changed")
+        prewrite_deadline = min(self.deadline, time.monotonic() + 45)
+        need(self.service_retry(service, deadline=prewrite_deadline,
+                                timeout_code="document_transition_prewrite_read_deadline_reconcile_only") == before,
+             "document_transition_preimage_changed")
         self.ready(service, before)
         body = {"name": before["name"], "etag": before["etag"], "template": template,
                 "traffic": [{"type": "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST", "percent": 100}]}
@@ -404,30 +445,85 @@ class Controller:
         # A timeout still stops this one-send path and requires exact readback.
         step_deadline = min(self.deadline, time.monotonic() + 600)
         while True:
-            observed = checked_json(self.http, "GET", name)
+            observed = self.operation_retry(name, deadline=step_deadline,
+                                            timeout_code="document_transition_deadline_reconcile_only")
             need(observed.get("name") == name and "error" not in observed,
                  "document_transition_operation_failed_reconcile_only")
             if observed.get("done", False) is True:
                 break
             need(time.monotonic() < step_deadline, "document_transition_deadline_reconcile_only")
             time.sleep(min(2, max(0, step_deadline - time.monotonic())))
-        current = self.service(service)
-        self.ready(service, current, uid=before["uid"])
-        normalized = copy.deepcopy(current["template"])
-        if "revision" in normalized:
-            normalized["revision"] = normalized["revision"].rsplit("/", 1)[-1]
-        need(int(current["generation"]) == int(before["generation"]) + 1
-             and normalized == template
-             and current.get("labels", {}) == body.get("labels", before.get("labels", {})),
-             "document_transition_readback_changed")
-        # Service-level identity, ingress, IAM setting and every unrelated field
-        # remain exact. Native output/status fields legitimately change.
+        # An LRO can report done before the service GET reports its newly
+        # serving revision. Poll only the same resource; never repeat PATCH.
+        # Any different template or unrelated configuration fails immediately.
+        readback_deadline = min(self.deadline, time.monotonic() + 180)
+        expected_generation = int(before["generation"]) + 1
+        expected_revision = PARENT + "/services/" + service + "/revisions/" + template["revision"]
+        prior_created = before["latestCreatedRevision"]
+        prior_ready = before["latestReadyRevision"]
+        expected_labels = body.get("labels", before.get("labels", {}))
         ignored = {"template", "traffic", "labels", "etag", "generation", "observedGeneration", "updateTime",
                    "lastModifier", "reconciling", "terminalCondition", "conditions", "latestReadyRevision",
                    "latestCreatedRevision", "trafficStatuses", "urls"}
-        need({k: v for k, v in current.items() if k not in ignored}
-             == {k: v for k, v in before.items() if k not in ignored},
-             "document_transition_unrelated_configuration_changed")
+        static = {k: v for k, v in before.items() if k not in ignored}
+        while True:
+            current = self.service_retry(service, deadline=readback_deadline,
+                                         timeout_code="document_transition_readback_deadline_reconcile_only")
+            need({k: v for k, v in current.items() if k not in ignored} == static,
+                 "document_transition_unrelated_configuration_changed")
+            generation = int(current["generation"])
+            need(generation in {expected_generation - 1, expected_generation},
+                 "document_transition_readback_changed")
+            normalized = copy.deepcopy(current["template"])
+            if "revision" in normalized:
+                normalized["revision"] = normalized["revision"].rsplit("/", 1)[-1]
+            if generation == expected_generation - 1:
+                need(normalized == {**before["template"],
+                                    "revision": before["template"]["revision"].rsplit("/", 1)[-1]}
+                     and current.get("labels", {}) == before.get("labels", {})
+                     and current.get("etag") == before.get("etag")
+                     and current.get("traffic") == before.get("traffic"),
+                     "document_transition_readback_changed")
+            else:
+                reconciling = current.get("reconciling", False)
+                created = current.get("latestCreatedRevision")
+                ready = current.get("latestReadyRevision")
+                need(normalized == template
+                     and current.get("labels", {}) in (before.get("labels", {}), expected_labels)
+                     and current.get("traffic") in (before.get("traffic"), body["traffic"])
+                     and (created in {prior_created, expected_revision}
+                          or created is None and reconciling is True)
+                     and (ready in {prior_ready, expected_revision}
+                          or ready is None and reconciling is True),
+                     "document_transition_readback_changed")
+                statuses = current.get("trafficStatuses", [])
+                need(type(statuses) is list and len(statuses) <= 2
+                     and (statuses or reconciling is True)
+                     and all(type(row) is dict
+                             and row.get("revision") in {prior_ready, expected_revision}
+                             and type(row.get("percent")) is int
+                             and 0 <= row["percent"] <= 100 for row in statuses)
+                     and len({row["revision"] for row in statuses}) == len(statuses)
+                     and (not statuses or sum(row["percent"] for row in statuses) == 100)
+                     and (len(statuses) <= 1 or reconciling is True),
+                     "document_transition_readback_changed")
+                serving = (len(statuses) == 1 and statuses[0]["revision"] == expected_revision
+                           and statuses[0]["percent"] == 100 and not statuses[0].get("tag"))
+                need(ready != expected_revision or created == expected_revision
+                     or created is None and reconciling is True,
+                     "document_transition_readback_changed")
+                if (ready == expected_revision and created == expected_revision
+                        and current.get("labels", {}) == expected_labels
+                        and current.get("traffic") == body["traffic"]
+                        and str(current.get("observedGeneration")) == str(expected_generation)
+                        and reconciling is False
+                        and current.get("terminalCondition", {}).get("state") == "CONDITION_SUCCEEDED"
+                        and serving):
+                    self.ready(service, current, uid=before["uid"])
+                    break
+            need(time.monotonic() < readback_deadline,
+                 "document_transition_readback_deadline_reconcile_only")
+            time.sleep(min(2, max(0, readback_deadline - time.monotonic())))
         self.observed[service] = current
         self.owner.write(marker + ".verified.json", {**expected, "operation": name,
             "revision": current["latestReadyRevision"], "generation": str(current["generation"])})

@@ -9,7 +9,7 @@ on:
       mode:
         description: Audit expiry or execute reviewed definition/full-source maintenance
         type: choice
-        options: [monitor, refresh, full-source-refresh, resume-full-source-refresh, resume-expired-v2-transition, resume-partial-v2-transition]
+        options: [monitor, refresh, full-source-refresh, resume-full-source-refresh, resume-expired-v2-transition, resume-partial-v2-transition, resume-final-v2-transition]
         default: monitor
       recover_failed_native_job:
         description: Exact failed synthetic Job to reconcile once before a fresh full refresh
@@ -60,6 +60,7 @@ jobs:
           printf '%s\n' "RESUME_DIRECTORY=$RUNNER_TEMP/document-refresh-original-39901631586" >> "$GITHUB_ENV"
           printf '%s\n' "TRANSITION_DIRECTORY=$RUNNER_TEMP/document-refresh-original-40771705772" >> "$GITHUB_ENV"
           printf '%s\n' "PARTIAL_DIRECTORY=$RUNNER_TEMP/document-refresh-original-40781707554" >> "$GITHUB_ENV"
+          printf '%s\n' "FINAL_DIRECTORY=$RUNNER_TEMP/document-refresh-original-40788512340" >> "$GITHUB_ENV"
           printf '%s\n' "HISTORY_DIRECTORY=$RUNNER_TEMP/document-refresh-history" >> "$GITHUB_ENV"
           printf '%s\n' "OUTPUT_DIRECTORY=$RUNNER_TEMP/document-refresh-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -179,6 +180,27 @@ jobs:
             --name document-refresh-resume-expired-v2-transition-40781707554-1 --dir "$PARTIAL_DIRECTORY"
           find "$PARTIAL_DIRECTORY" -type d -exec chmod 700 {} +
           find "$PARTIAL_DIRECTORY" -type f -exec chmod 600 {} +
+      - name: Retrieve the exact failed second V2 continuation
+        if: env.REFRESH_MODE == 'resume-final-v2-transition'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          umask 077
+          IFS=$'\t' read -r id run artifact branch head digest expired < <(
+            gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/12860975525" \
+              --jq '[.id, .workflow_run.id, .name, .workflow_run.head_branch, .workflow_run.head_sha, .digest, .expired] | @tsv')
+          test "$id" = 12860975525
+          test "$run" = 40788512340
+          test "$artifact" = document-refresh-resume-partial-v2-transition-40788512340-1
+          test "$branch" = main
+          test "$head" = cbad4abb39017dcf744ede77ce6bfc2826395257
+          test "$digest" = sha256:ffe242705f3bc036de6f41e8cfa4a85f2b447804f40ad926d38edc046fafefe3
+          test "$expired" = false
+          mkdir -m 700 "$FINAL_DIRECTORY"
+          gh run download 40788512340 --repo "$GITHUB_REPOSITORY" \
+            --name document-refresh-resume-partial-v2-transition-40788512340-1 --dir "$FINAL_DIRECTORY"
+          find "$FINAL_DIRECTORY" -type d -exec chmod 700 {} +
+          find "$FINAL_DIRECTORY" -type f -exec chmod 600 {} +
       - name: Reverify the retained candidate and continue once without a new Build
         if: env.REFRESH_MODE == 'resume-full-source-refresh'
         run: |
@@ -196,6 +218,13 @@ jobs:
           backend/.venv/bin/python backend/scripts/document_refresh.py \
             --mode resume-partial-v2-transition \
             --resume-transition-directory "$PARTIAL_DIRECTORY" \
+            --output-directory "$OUTPUT_DIRECTORY"
+      - name: Reconcile analysis open and continue only the coordinator
+        if: env.REFRESH_MODE == 'resume-final-v2-transition'
+        run: |
+          backend/.venv/bin/python backend/scripts/document_refresh.py \
+            --mode resume-final-v2-transition \
+            --resume-transition-directory "$FINAL_DIRECTORY" \
             --output-directory "$OUTPUT_DIRECTORY"
       - name: Build, prove, transition exact pins and restore admission
         if: env.REFRESH_MODE == 'refresh'
@@ -234,7 +263,9 @@ jobs:
         if: always()
         run: |
           echo '### Document definition maintenance' >> "$GITHUB_STEP_SUMMARY"
-          if [[ "$REFRESH_MODE" = resume-partial-v2-transition ]]; then
+          if [[ "$REFRESH_MODE" = resume-final-v2-transition ]]; then
+            echo 'The exact failed second continuation, both consumed claims, completed analysis open and API maintenance close are reconciled. A third create-only claim permits only one coordinator open. The original maintenance journal owns API restoration; any unknown outcome requires read-only reconciliation, never replay.' >> "$GITHUB_STEP_SUMMARY"
+          elif [[ "$REFRESH_MODE" = resume-partial-v2-transition ]]; then
             echo 'The exact failed continuation and consumed first claim are read back. A second create-only claim permits only the analysis and coordinator opens once, after verifying the API emergency maintenance close. API restoration remains separately owned by the original schema25 maintenance journal. A failed or unknown step requires read-only reconciliation, never replay.' >> "$GITHUB_STEP_SUMMARY"
           elif [[ "$REFRESH_MODE" = resume-expired-v2-transition ]]; then
             echo 'Exact failed V2 rescue continuation reads the pinned immutable Build, original native Job and all three acknowledged close operations before any new write. It never repeats an old PATCH or starts a Build/Job. Inspect the retained result and live worker/caller pins; a failed step requires a new exact reconciliation, never replay.' >> "$GITHUB_STEP_SUMMARY"
