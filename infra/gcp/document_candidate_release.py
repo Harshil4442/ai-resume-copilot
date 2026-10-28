@@ -222,6 +222,11 @@ def verify_current_successor_for_release(image: str, metadata: dict[str, Any]) -
     return _verify_current(image, metadata, read_only_release=True)
 
 
+def verify_expired_current_v2_for_retirement(image: str, metadata: dict[str, Any]) -> None:
+    """Maintenance-identity retirement proof; never emits stale serving authority."""
+    prior.verify_expired_current_v2_for_retirement(image, metadata, read_only_release=False)
+
+
 def verify_caller_pins(clients: Any, image: str, *, policy_sha256: str | None = None) -> None:
     if policy_sha256 not in (None, POLICY):
         need(image != profile.IMAGE, "cross_profile_pins")
@@ -354,7 +359,7 @@ class ReleaseProbe:
 
     @staticmethod
     def verify_expired_current_v2_for_retirement(image, metadata):
-        return prior.verify_expired_current_v2_for_retirement(image, metadata)
+        return prior.verify_expired_current_v2_for_retirement(image, metadata, read_only_release=True)
 
 
 def main() -> None:

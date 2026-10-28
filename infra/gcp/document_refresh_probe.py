@@ -931,9 +931,11 @@ def _verify_current_successor(image: str, service_metadata: dict[str, Any], *, r
             clients.close()
 
 
-def verify_expired_current_v2_for_retirement(image: str, service_metadata: dict[str, Any]) -> None:
-    """Read-only exact current V2 proof; expired definitions authorize retirement only."""
-    need(_verify_current_successor(image, service_metadata, read_only_release=True,
+def verify_expired_current_v2_for_retirement(image: str, service_metadata: dict[str, Any], *,
+                                             read_only_release: bool = False) -> None:
+    """Exact current V2 proof; expired definitions authorize retirement only."""
+    need(type(read_only_release) is bool, "document_native_retirement_mode_invalid")
+    need(_verify_current_successor(image, service_metadata, read_only_release=read_only_release,
                                    retirement_only=True) is None,
          "document_native_retirement_proof_unavailable")
 

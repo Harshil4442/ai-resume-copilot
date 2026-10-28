@@ -121,6 +121,7 @@ def test_real_v2_retirement_verifier_accepts_only_expired_exact_current_identity
     fake.entries = lambda query, token: {"entries": [native_fixtures.event(fake.j, fake.ex, stale)]}
     monkeypatch.setattr(old_probe, "Clients", lambda **kwargs: fake)
     monkeypatch.setattr(old_probe, "build_module", lambda: SimpleNamespace(
+            verify_current_build=lambda *args, **kwargs: native_fixtures.build(),
         verify_current_build_release=lambda *args, **kwargs: native_fixtures.build()))
 
     with pytest.raises(old_probe.NativeProofDenied, match="definitions_expired"):
@@ -142,6 +143,53 @@ def test_real_v2_retirement_verifier_accepts_only_expired_exact_current_identity
     with pytest.raises(old_probe.NativeProofDenied, match="retirement_requires_v2"):
         old_probe.verify_expired_current_v2_for_retirement(native_fixtures.IMAGE, legacy)
     assert fake.calls["create"] == fake.calls["start"] == fake.calls["delete"] == 0
+
+
+def test_actual_candidate_module_probe_retires_only_after_all_callers_close(monkeypatch, tmp_path):
+    http = fixtures.Http()
+    accepted = old_probe.NativeAcceptance(
+        fixtures.NEW, "01234567-0123-0123-0123-012345678901", "build", "a" * 64,
+        "b" * 64, {}, "job", "job-uid", "execution", "execution-uid", "c" * 64,
+        "d" * 64, V3_POLICY, fixtures.profile.FONT, fixtures.profile.RENDERER,
+        "2099-01-01T00:00:00+00:00", 3, 11,
+    )
+    calls = []
+
+    def current(image, metadata):
+        if image != fixtures.NEW:
+            raise old_probe.NativeProofDenied("document_native_definitions_expired")
+        calls.append("new-current")
+        return accepted
+
+    def retirement(image, metadata, *, read_only_release):
+        assert image == fixtures.profile.IMAGE
+        assert metadata == http.services[fixtures.transition.WORKER]
+        assert read_only_release is False
+        assert len(http.writes) == 3
+        for name in fixtures.transition.CALLERS:
+            env = fixtures.transition.environment(http.services[name]["template"])
+            assert all(env[key]["value"] == "false" for key in fixtures.transition.PAUSE[name])
+        calls.append("maintenance-retirement")
+
+    monkeypatch.setattr(candidate_release, "verify_successor", lambda *args: accepted)
+    monkeypatch.setattr(candidate_release, "verify_current_successor", current)
+    monkeypatch.setattr(candidate_release, "verify_caller_pins", lambda *args, **kwargs: None)
+    monkeypatch.setattr(candidate_release.prior, "verify_expired_current_v2_for_retirement", retirement)
+    outcome = candidate_release.transition.transition(fixtures.NEW,
+        {"nonce": fixtures.NONCE, "build_id": "01234567-0123-0123-0123-012345678901"},
+        tmp_path / "native", tmp_path / "transition", http=http,
+        probe=candidate_release, retire_expired_v2=True)
+    assert outcome["admission_restored"] is True
+    assert calls == ["maintenance-retirement", "new-current", "new-current", "new-current"]
+
+
+def test_release_probe_retirement_uses_read_only_owner_route(monkeypatch):
+    observed = []
+    monkeypatch.setattr(candidate_release.prior, "verify_expired_current_v2_for_retirement",
+        lambda image, metadata, *, read_only_release: observed.append(read_only_release))
+    candidate_release.ReleaseProbe.verify_expired_current_v2_for_retirement(
+        fixtures.profile.IMAGE, {})
+    assert observed == [True]
 
 
 def test_legacy_parse_respects_closed_document_admission(monkeypatch):
