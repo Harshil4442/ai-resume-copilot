@@ -193,6 +193,56 @@ def test_generated_positive_history_refuses_even_when_a_citation_exists(statemen
     assert statement not in str(error.value)
 
 
+@pytest.mark.parametrize("job_title,job_description,unsafe,neutral", [
+    (
+        "Frontend Engineer",
+        "Work with TypeScript, React and Playwright; the candidate has not claimed Playwright.",
+        "Since you have not used Playwright, explain how you would learn it.",
+        "How would you plan browser tests with Playwright?",
+    ),
+    (
+        "Customer Operations Specialist",
+        "Work with CRM, Excel and Salesforce; the candidate has not claimed Salesforce.",
+        "Describe your past work implementing Salesforce.",
+        "How would you evaluate Salesforce for a customer support workflow?",
+    ),
+])
+def test_v8_prompt_separates_synthetic_job_claims_from_candidate_facts_and_keeps_guard(
+    monkeypatch, job_title, job_description, unsafe, neutral,
+):
+    # These are illustrative unsafe patterns in the observed v7 failure family.
+    # The two rejected model responses were not retained, so their wording is unknown.
+    assert interview_contract.PROMPT_VERSION == "interview-evidence-v8"
+    assert interview_contract.VALIDATOR_VERSION == "interview-complete-v3"
+    messages = interview_contract.build_interview_messages(job_title, job_description, [])
+    system = messages[0]["content"]
+    source = json.loads(messages[1]["content"].split("\n", 1)[1].split("\n\nNumber of Qs:", 1)[0])
+    assert source["job"] == {"title": job_title, "description": job_description}
+    assert source["approved_evidence"] == []
+    assert "neither statement is evidence of the candidate's history" in system
+    assert "Only the supplied approved facts can establish personal experience" in system
+    assert "approved facts do not cover" in system
+    assert "future-oriented question" in system
+    assert "Return exactly eight distinct" in system
+
+    rejected = _question_set()
+    rejected[0]["preparation_steps"][0] = unsafe
+    with pytest.raises(llm_client.InterviewPersonalClaimError):
+        llm_client._parse_interview_questions(json.dumps(rejected), 8, set())
+
+    safe = _question_set()
+    safe[0]["question"] = neutral
+    safe[0]["preparation_steps"] = [
+        "Compare relevant tools and their limits for this role.",
+        "Explain how you would validate the proposed approach.",
+    ]
+    calls = []
+    monkeypatch.setattr(llm_client, "_chat", lambda items: calls.append(items) or json.dumps(safe))
+    delivered = llm_client.generate_interview_questions(job_title, job_description)
+    assert len(delivered) == 8 and delivered[0]["question"] == neutral
+    assert len(calls) == 1 and calls[0] == messages
+
+
 @pytest.mark.parametrize("step", [
     "Compare query plans and explain when an index would improve performance.",
     "Explain how you would verify stability and coverage before and after a change.",

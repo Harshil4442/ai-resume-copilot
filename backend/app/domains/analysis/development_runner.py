@@ -43,7 +43,7 @@ class Artifact(Closed):
 class Route(Closed):
     # Retained authorizations are still readable after a prompt revision.
     # Execution separately requires the current prompt and implementation.
-    prompt_version: Literal["interview-evidence-v5", "interview-evidence-v6", "interview-evidence-v7"]
+    prompt_version: Literal["interview-evidence-v5", "interview-evidence-v6", "interview-evidence-v7", "interview-evidence-v8"]
     contract_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     price: model_cost_policy.ModelPriceQuote
 

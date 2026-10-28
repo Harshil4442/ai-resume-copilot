@@ -179,6 +179,7 @@ def test_changed_stored_case_is_refused_even_with_recomputed_fingerprint(prepare
 @pytest.mark.parametrize("historical_prompt,historical_validator", [
     ("interview-evidence-v5", "interview-complete-v1"),
     ("interview-evidence-v6", "interview-complete-v2"),
+    ("interview-evidence-v7", "interview-complete-v3"),
 ])
 def test_historical_export_survives_new_prompt_and_implementation(
     request, monkeypatch, tmp_path, historical_prompt, historical_validator,
@@ -207,7 +208,7 @@ def test_historical_export_survives_new_prompt_and_implementation(
             outcome = runner.execute(factory, **values, side="reference", maximum_operations=1)
             assert list(outcome["outcomes"].values()) == ["succeeded"] and len(calls) == 1
 
-        assert interview_contract.PROMPT_VERSION == "interview-evidence-v7"
+        assert interview_contract.PROMPT_VERSION == "interview-evidence-v8"
         assert interview_contract.VALIDATOR_VERSION == "interview-complete-v3"
         assert runner.contract_digest() != auth.routes["reference"].contract_sha256
         with factory() as db:
