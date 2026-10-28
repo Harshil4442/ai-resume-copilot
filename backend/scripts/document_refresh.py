@@ -817,7 +817,7 @@ def resume_expired_v2_transition(directory: Path, original: Path) -> dict[str, A
     for member in members:
         tree.update(member.relative_to(directory).as_posix().encode() + b"\0"
                     + member.read_bytes() + b"\0")
-    need(tree.hexdigest() == "8c2694f54a8b3bc9555372034ba66d69b16386fa268dfeb8bcd7284ccd78e677",
+    need(tree.hexdigest() == controller.RESCUE_JOURNAL_TREE_SHA256,
          "document_rescue_original_journal_changed")
     binding = decode((native / "binding.json").read_bytes())
     need(type(binding) is dict and binding.get("image") == controller.RESCUE_IMAGE
@@ -830,6 +830,7 @@ def resume_expired_v2_transition(directory: Path, original: Path) -> dict[str, A
     try:
         result = controller.resume_failed_rescue(controller.RESCUE_IMAGE, build, native,
                                                   transition_journal, http=http,
+                                                  source_journal_tree_sha256=tree.hexdigest(),
                                                   probe=infra("document_refresh_probe"))
     finally:
         http.close()

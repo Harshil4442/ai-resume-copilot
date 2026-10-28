@@ -5,6 +5,7 @@ import importlib.util
 import json
 from pathlib import Path
 from types import SimpleNamespace
+from urllib.parse import urlencode
 
 import pytest
 
@@ -36,6 +37,18 @@ def test_only_nonce_owned_probe_jobs_and_fixed_service_changes_are_routable():
     assert auth.allowed("DELETE", base + "/jobs/hirewiz-doc-six-0123456789ab")
     assert auth.allowed("PATCH", base + "/services/hirewiz-document-inspector")
     assert auth.allowed("GET", base + "/services/hirewiz-document-inspector:getIamPolicy")
+
+
+def test_failed_rescue_claim_create_is_one_exact_object_and_create_only():
+    bucket = auth.PROJECT + "_cloudbuild"
+    endpoint = "https://storage.googleapis.com/upload/storage/v1/b/" + bucket + "/o?"
+    name = ("hirewiz-document-refresh-source/5436da554bc5437cadccd296f3489bdd/"
+            "rescue-transition-40771705772-12852818465.json")
+    query = {"uploadType": "media", "name": name, "ifGenerationMatch": "0"}
+    assert auth.allowed("POST", endpoint + urlencode(query))
+    assert not auth.allowed("POST", endpoint + urlencode({**query, "ifGenerationMatch": "1"}))
+    assert not auth.allowed("POST", endpoint + urlencode({**query, "name": name + "-other"}))
+    assert not auth.allowed("POST", endpoint + urlencode({**query, "name": name.replace("12852818465", "12852818466")}))
 
 
 @pytest.mark.parametrize("email", ["human@example.test", "default", "other@project.iam.gserviceaccount.com", None])

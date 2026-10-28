@@ -18,7 +18,7 @@ import time
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 PROJECT, REGION = "ai-resume-parser-482412", "us-central1"
 PARENT = f"projects/{PROJECT}/locations/{REGION}"
@@ -47,10 +47,15 @@ GUARDED_API_TAG = "rolling-84d9a5889f2f"
 # One retained, failed manual rescue. Its Build and native Job are already
 # acknowledged; this continuation must never create either again.
 RESCUE_RUN_ID = 40771705772
+RESCUE_ARTIFACT_ID = 12852818465
+RESCUE_ARTIFACT_DIGEST = "39f09c28b9a745041b3052c8604fb1a420622de291ff6b2275fa9b4abdefb144"
+RESCUE_JOURNAL_TREE_SHA256 = "8c2694f54a8b3bc9555372034ba66d69b16386fa268dfeb8bcd7284ccd78e677"
 RESCUE_BUILD_ID = "f120c030-dd7d-48cc-ae08-398288bc3675"
 RESCUE_NONCE = "5436da554bc5437cadccd296f3489bdd"
 RESCUE_IMAGE = ("us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/"
                 "hirewiz-document-inspector@sha256:5811233d8dd35b1fadc73f4c1a43783c83edde47c5e90142a1e96c1428312db9")
+RESCUE_CLAIM_OBJECT = ("hirewiz-document-refresh-source/" + RESCUE_NONCE + "/"
+                       + f"rescue-transition-{RESCUE_RUN_ID}-{RESCUE_ARTIFACT_ID}.json")
 
 
 class TransitionDenied(RuntimeError):
@@ -68,6 +73,63 @@ def canonical(value: Any) -> bytes:
 
 def sha(value: Any) -> str:
     return hashlib.sha256(canonical(value)).hexdigest()
+
+
+def claim_failed_rescue(http: Any, owner: Journal, build: dict[str, Any], acceptance: Any,
+                        observed: dict[str, dict[str, Any]], worker_template: dict[str, Any]) -> dict[str, str]:
+    """One global create-only claim; an existing or uncertain claim never permits PATCH.
+
+    The failed artifact is immutable but a workflow can be dispatched again. A
+    fresh local journal alone cannot prevent that second runner from repeating
+    an unknown worker PATCH. This object is shared by every dispatch of the
+    exact original run and remains consumed even if the first run stops early.
+    """
+    bucket = PROJECT + "_cloudbuild"
+    name = RESCUE_CLAIM_OBJECT
+    root = Path(__file__).resolve().parents[2]
+    sources = ("backend/scripts/document_refresh.py", "infra/gcp/document_refresh_transition.py",
+               "infra/gcp/document_refresh_auth.py", "infra/gcp/document_refresh_probe.py")
+    source_hashes = {path: hashlib.sha256((root / path).read_bytes()).hexdigest() for path in sources}
+    preimages = {service: {"uid": value["uid"], "generation": str(value["generation"]),
+                           "etag_sha256": hashlib.sha256(value["etag"].encode()).hexdigest(),
+                           "template_sha256": sha(value["template"])}
+                 for service, value in observed.items()}
+    need(set(preimages) == set(SERVICES), "document_transition_rescue_claim_preimages_changed")
+    body = {"version": 1, "kind": "exact_failed_v2_scanner_transition_resume_v1",
+            "source_run_id": RESCUE_RUN_ID, "source_artifact_id": RESCUE_ARTIFACT_ID,
+            "source_artifact_digest": "sha256:" + RESCUE_ARTIFACT_DIGEST,
+            "source_journal_tree_sha256": RESCUE_JOURNAL_TREE_SHA256,
+            "build_id": build["build_id"], "nonce": build["nonce"], "immutable_image": RESCUE_IMAGE,
+            "native_acceptance_sha256": sha(asdict(acceptance)), "preimages": preimages,
+            "worker_template_sha256": sha(worker_template), "maintenance_source_sha256": source_hashes,
+            "automatic_replay": False}
+    metadata_uri = "https://storage.googleapis.com/storage/v1/b/" + bucket + "/o/" + quote(name, safe="")
+    response, _ = http.request(metadata_uri, method="GET", redirections=0)
+    need(response.status == 404, "document_transition_rescue_claim_exists_or_unknown_reconcile_only")
+    owner.write("rescue-claim.started.json", {"object": name, "body_sha256": sha(body),
+                                              "automatic_replay": False})
+    response, raw = http.request("https://storage.googleapis.com/upload/storage/v1/b/" + bucket + "/o?"
+        + urlencode({"uploadType": "media", "name": name, "ifGenerationMatch": "0"}),
+        method="POST", body=canonical(body), headers={"Content-Type": "application/json"}, redirections=0)
+    need(response.status in (200, 201), "document_transition_rescue_claim_unknown_reconcile_only")
+    try:
+        value = json.loads(raw)
+    except (ValueError, UnicodeError, RecursionError):
+        raise TransitionDenied("document_transition_rescue_claim_ack_changed") from None
+    need(type(value) is dict, "document_transition_rescue_claim_ack_changed")
+    acknowledgment = {key: value.get(key) for key in ("name", "bucket", "generation")}
+    need(acknowledgment["name"] == name and acknowledgment["bucket"] == bucket
+         and type(acknowledgment["generation"]) is str
+         and re.fullmatch(r"[1-9][0-9]{0,19}", acknowledgment["generation"]),
+         "document_transition_rescue_claim_ack_changed")
+    owner.write("rescue-claim.acknowledged.json", acknowledgment)
+    response, raw = http.request("https://storage.googleapis.com/download/storage/v1/b/" + bucket
+        + "/o/" + quote(name, safe="") + "?" + urlencode({"alt": "media", "generation": acknowledgment["generation"]}),
+        method="GET", redirections=0)
+    need(response.status == 200 and raw == canonical(body),
+         "document_transition_rescue_claim_readback_changed")
+    owner.write("rescue-claim.verified.json", {"body_sha256": sha(body), "acknowledgment": acknowledgment})
+    return acknowledgment
 
 
 def environment(template: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -450,7 +512,7 @@ def transition(image: str, build: dict[str, Any], native_journal: Path, journal:
 
 
 def resume_failed_rescue(image: str, build: dict[str, Any], native_journal: Path, journal: Path,
-                         *, http: Any, probe: Any) -> dict[str, Any]:
+                         *, source_journal_tree_sha256: str, http: Any, probe: Any) -> dict[str, Any]:
     """Continue only the exact failed rescue after reading back its three closes.
 
     The first run acknowledged the coordinator close but timed out before its
@@ -458,7 +520,8 @@ def resume_failed_rescue(image: str, build: dict[str, Any], native_journal: Path
     only journal this path accepts. No Build, Job, or prior PATCH is sent again.
     """
     need(image == RESCUE_IMAGE and build.get("build_id") == RESCUE_BUILD_ID
-         and build.get("nonce") == RESCUE_NONCE,
+         and build.get("nonce") == RESCUE_NONCE
+         and source_journal_tree_sha256 == RESCUE_JOURNAL_TREE_SHA256,
          "document_transition_rescue_candidate_changed")
     owner = Journal.resume_failed_rescue(journal)
     try:
@@ -547,6 +610,7 @@ def resume_failed_rescue(image: str, build: dict[str, Any], native_journal: Path
                                    acceptance.job_name.rsplit("/", 1)[-1]), strict=True))
         template = mutate_template(worker, WORKER, "worker", build["nonce"], image, {}, {},
                                    worker_policy_sha256=acceptance.policy_sha256)
+        claim_failed_rescue(http, owner, build, acceptance, run.observed, template)
         run.patch(WORKER, "worker", template, acceptance=acceptance, labels=labels)
         probe.verify_current_successor(image, run.observed[WORKER])
         pins = dict(zip(PINS, (image, acceptance.policy_sha256, acceptance.renderer_version,

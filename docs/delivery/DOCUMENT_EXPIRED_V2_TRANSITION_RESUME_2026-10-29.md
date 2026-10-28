@@ -18,8 +18,17 @@ No Build, source upload, native Job or old caller PATCH is repeated.
 The continuation requires the same expired V2 worker and the exact three
 closed callers at 100% Ready traffic. A completed LRO, generation, UID, revision,
 template hash or closed admission flag that differs from the original journal
-causes refusal before a new write. Only then can the dedicated maintenance
-identity send one etag-fenced worker update, three pin updates and three flag
+causes refusal before a new write. Before the worker update, the maintenance
+identity consumes one create-only GCS claim keyed to source run `40771705772`
+and artifact `12852818465`. The claim binds the original 16-file journal hash,
+native acceptance, live service preimages, intended worker template and
+maintenance source hashes. It must be absent, created with
+`ifGenerationMatch=0`, acknowledged and read back byte-for-byte. An existing
+claim, another runner winning the create race, or an uncertain acknowledgment
+is read-only reconciliation. The claim remains consumed even when a later
+worker or caller update fails; the same workflow mode cannot be dispatched to
+replay a mutation. Only then can the dedicated maintenance identity send one
+etag-fenced worker update, three pin updates and three flag
 restorations. Every action is journaled before send and checked afterward.
 The per-PATCH wait is now bounded at ten minutes. If any new action becomes
 unknown, retain the new artifact, inspect its exact operation and stop; neither
