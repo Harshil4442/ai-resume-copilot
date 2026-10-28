@@ -3,8 +3,11 @@
 The root layout uses supported `next/font/local` so a production build reads these
 reviewed assets directly. It retains DM Sans variable normal (100–1000), Crimson
 Text 400/600 normal and italic, and Roboto Mono normal 400/500. The existing CSS
-variables, `display: swap`, DM Sans/Crimson preload intent, and non-preloaded Mono
-remain. Next still emits self-hosted, content-versioned font URLs and automatic
+variables remain. DM Sans is preloaded; Crimson Text and Roboto Mono load only
+when used. All three families use `font-display: optional`: a cold connection can
+keep the metric-adjusted system fallback after the short font block period instead
+of repainting the largest text element several seconds after first paint. Next
+still emits self-hosted, content-versioned font URLs and automatic
 fallback metrics: Arial for DM Sans/Mono, Times New Roman for Crimson Text.
 
 This removes the generated Google font-file query/acquisition dependency. The
@@ -99,15 +102,15 @@ Full glyph data costs more than Google's Latin subsets. Actual WOFF2 bytes:
 | Roboto Mono variable | 111,036 |
 | Total | 402,300 |
 
-The five preloaded DM/Crimson files total 291,264 bytes, versus 140,244 in the
-fresh comparable Google Latin response: 151,020 additional first-load bytes.
-Mono remains lazy and is not preloaded. All six files total 229,260 more bytes
-than that response's 173,040 unique Latin bytes. These comparisons exclude
-HTTP headers/compression/caches and do not identify historical CI payloads.
-Both old and new Next loaders self-host; this change promises deterministic
-build acquisition, not faster first rendering. Production font responses use
-same-origin immutable caching. Any future subsetting or preload change needs
-separate glyph/layout/performance review.
+Before the mobile performance adjustment, five preloaded DM/Crimson files totaled
+291,264 bytes, versus 140,244 in the fresh comparable Google Latin response.
+Only DM Sans (91,708 bytes) is preloaded now. Crimson Text weights/styles and
+Roboto Mono are still available, but browsers request only faces needed by the
+page. Production font responses use same-origin immutable caching. A user on a
+slow cold connection may see Arial/Times metric-adjusted fallback on the first
+page; the preferred fonts can appear on subsequent cached visits. Full glyph data
+and the existing language fallback chain remain. Subsetting would need separate
+glyph, layout and performance review.
 
 See official [Next font documentation](https://nextjs.org/docs/app/api-reference/components/font)
 for loader configuration and [Next 16 engine guidance](https://nextjs.org/docs/app/guides/upgrading/version-16)

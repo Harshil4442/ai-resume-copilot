@@ -12,7 +12,8 @@ const dmSans = localFont({
   weight: '100 1000',
   style: 'normal',
   variable: '--font-dm-sans',
-  display: 'swap',
+  // Keep cold mobile text stable when a large font arrives after first paint.
+  display: 'optional',
   adjustFontFallback: 'Arial',
 });
 const crimsonText = localFont({
@@ -23,7 +24,9 @@ const crimsonText = localFont({
     { path: './fonts/CrimsonText-SemiBoldItalic.woff2', weight: '600', style: 'italic' },
   ],
   variable: '--font-crimson-text',
-  display: 'swap',
+  display: 'optional',
+  // Preloading all four faces delays the first useful text on slow connections.
+  preload: false,
   adjustFontFallback: 'Times New Roman',
 });
 const robotoMono = localFont({
@@ -31,7 +34,7 @@ const robotoMono = localFont({
   weight: '400 500',
   style: 'normal',
   variable: '--font-roboto-mono',
-  display: 'swap',
+  display: 'optional',
   preload: false,
   adjustFontFallback: 'Arial',
 });
