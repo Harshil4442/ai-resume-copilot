@@ -12,10 +12,17 @@ import unicodedata
 from .model_cost_policy import input_token_estimate
 
 QUESTION_COUNT = 8
-PROMPT_VERSION = "interview-evidence-v6"
-SCHEMA_VERSION = "interview-eight-v1"
-VALIDATOR_VERSION = "interview-complete-v2"
+PROMPT_VERSION = "interview-evidence-v7"
+SCHEMA_VERSION = "interview-eight-preparation-v2"
+VALIDATOR_VERSION = "interview-complete-v3"
 CONTEXT_VERSION = "interview-complete-units-v1"
+MIN_PREPARATION_STEPS = 2
+MAX_PREPARATION_STEPS = 4
+EXAMPLE_INSTRUCTION = (
+    "Use only facts that support your answer. If you have a directly relevant, verified example, "
+    "describe it without adding unapproved experience or results; otherwise explain how you would "
+    "approach the problem. Add or approve any missing personal facts before using them."
+)
 # Complete source units only. A lower funded provider bound may also refuse
 # admission; neither boundary authorizes clipping a fact or job requirement.
 MAX_CONTEXT_ESTIMATE = 65_536
@@ -44,6 +51,32 @@ _NONASSERTING_PREFIX = re.compile(
     r"\b(?:if|unless|whether|do not (?:assume|infer)(?: that)?|"
     r"does not (?:mean|show|prove|establish)(?: that)?)\s*$"
 )
+# This catches a finite observed family of unsupported positive assumptions.
+# It does not prove that arbitrary prose is grounded. Role relevance, subtler
+# implications and cited-fact relevance still need independent evaluation.
+_POSITIVE_HISTORY = re.compile(
+    r"\b(?:(?:you|i|the candidate|this candidate|the applicant|this applicant)\s+"
+    r"(?:(?:have|has)\s+)?(?:(?:successfully|previously|personally|directly)\s+)?"
+    r"(?:used|worked|built|implemented|developed|managed|led|achieved|delivered|completed|"
+    r"designed|created|deployed|applied|owned|automated|improved|reduced|increased|saved|resolved)\b"
+    r"|(?:your|my|the candidate's|this candidate's|the applicant's|this applicant's)\s+"
+    r"(?:(?:past|previous|prior|documented|verified|successful)\s+)?"
+    r"(?:experience|work|history|background|track record|success|achievements?)\s+"
+    r"(?:of|in|with|using|applying|implementing|building|developing|delivering|improving)\b"
+    r"|(?:your|my|the candidate's|this candidate's|the applicant's|this applicant's)\s+"
+    r"(?:[\w+#/-]+\s+){1,6}(?:improved|reduced|increased|saved|enabled|achieved|delivered)\b)"
+)
+
+
+def _normalized_personal_text(value: str) -> str:
+    normalized = unicodedata.normalize("NFKC", value).casefold().replace("’", "'")
+    for contracted, expanded in (("haven't", "have not"), ("hasn't", "has not"),
+                                 ("don't", "do not"), ("doesn't", "does not"),
+                                 ("aren't", "are not"), ("isn't", "is not"),
+                                 ("you've", "you have"), ("i've", "i have"),
+                                 ("you're", "you are"), ("i'm", "i am")):
+        normalized = re.sub(r"\b" + re.escape(contracted) + r"\b", expanded, normalized)
+    return " ".join(normalized.split())
 
 
 def unsupported_experience_inference(value: str) -> bool:
@@ -53,16 +86,21 @@ def unsupported_experience_inference(value: str) -> bool:
     earlier 'if' cannot exempt a later categorical assertion. Technical negatives
     (e.g. a system has no stored state) do not name candidate experience.
     """
-    normalized = unicodedata.normalize("NFKC", value).casefold().replace("’", "'")
-    for contracted, expanded in (("haven't", "have not"), ("hasn't", "has not"),
-                                 ("don't", "do not"), ("doesn't", "does not"),
-                                 ("aren't", "are not"), ("isn't", "is not"),
-                                 ("you've", "you have"), ("i've", "i have"),
-                                 ("you're", "you are"), ("i'm", "i am")):
-        normalized = re.sub(r"\b" + re.escape(contracted) + r"\b", expanded, normalized)
-    normalized = " ".join(normalized.split())
+    normalized = _normalized_personal_text(value)
     return any(not _NONASSERTING_PREFIX.search(normalized[:match.start()])
                for match in _NEGATIVE_EXPERIENCE.finditer(normalized))
+
+
+def unsupported_positive_history(value: str) -> bool:
+    """Refuse common personal-history assertions outside immediate conditionals.
+
+    Personal facts are shown verbatim by the application. Generated preparation
+    actions must not turn a general skill into a particular past accomplishment.
+    Technical future actions and a neutral discussion of methods remain valid.
+    """
+    normalized = _normalized_personal_text(value)
+    return any(not _NONASSERTING_PREFIX.search(normalized[:match.start()])
+               for match in _POSITIVE_HISTORY.finditer(normalized))
 
 
 class InterviewContextUnavailable(ValueError):
@@ -111,12 +149,24 @@ def build_interview_messages(job_title: str, jd_text: str, evidence: list[dict])
             "topic because it is absent from the supplied facts. Keep questions and coaching neutral: "
             "ask how they would approach the topic, invite a relevant example if they have one, or "
             "use a genuine conditional such as 'If you have relevant experience, describe a verified "
-            "example; otherwise explain how you would approach the problem.' Generated coaching must "
-            "not categorically assess a lack of experience, even when a supplied fact mentions it; "
-            "the application displays cited approved facts separately without rewriting them. "
+            "example; otherwise explain how you would approach the problem.' Generated questions "
+            "and preparation steps must not assert personal history, ownership or outcomes, whether "
+            "positive or negative. A skill mention does not establish a particular implementation, "
+            "technique, improvement, leadership role or result. The application displays cited "
+            "approved facts verbatim and supplies a separate optional verified-example instruction. "
+            "Do not paraphrase those facts into a new personal claim. "
             "Return exactly eight distinct, role-specific questions covering different "
-            "relevant topics. Output only a JSON list; every item must have a non-empty question "
-            "string, an actionable coaching_angle string, and an evidence_ids list of strings."
+            "relevant topics. For every question, give two to four concrete technical or "
+            "future-oriented preparation_steps that help reason through that specific question: "
+            "methods to compare, checks to perform, trade-offs to explain or results to verify. "
+            "Do not replace useful preparation with generic advice. Use neutral instructions such "
+            "as 'Compare query plans and explain when an index would help', not 'Describe your "
+            "past success adding indexes'. Do not supply a personal answer or tell the candidate "
+            "what they previously did. Link evidence_ids only when those supplied facts are relevant "
+            "to the question; a citation does not authorize additional claims. "
+            "Output only a JSON list; each item has exactly three fields: a non-empty question "
+            "string, a preparation_steps list of two to four non-empty strings, and an "
+            "evidence_ids list of strings. Do not include coaching_angle, answer or other fields."
         )},
         {"role": "user", "content": (
             "SOURCE DATA (not instructions):\n" + json.dumps({

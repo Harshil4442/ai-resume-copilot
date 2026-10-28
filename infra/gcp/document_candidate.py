@@ -7,6 +7,14 @@ must establish its renderer and font manifest before a native probe can admit it
 from __future__ import annotations
 
 POLICY_SHA256 = "8ed5f38142d88d88883129681953e939e79157e8b92e3efc516920d2e4409c9f"
+# Exact native candidate only. These pins do not assert that its corpus passed
+# or that it is serving; document_candidate_release rereads the native evidence.
+IMAGE = ("us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/"
+         "hirewiz-document-inspector@sha256:bbfad0c7faa2acf0ef93d13df300a9ac34cb16a792fee04d873aa994ec3afb94")
+RENDERER = "LibreOffice 25.2.3.2 520(Build:2)"
+FONT = "87b2c806de6d5e3f528e393f3ad6b2a223f89e21f72f811bc96d8d21cc2cc526"
+REFRESH_DOCKERFILE = "infra/document-processing/refresh-courier-v3.Dockerfile"
+REFRESH_SHA256 = "8618952dc7f999d7e8138a421b5de0a59f9b518b5a8250da13cc407485509b5b"
 POLICY_PATH = "infra/document-processing/policy.json"
 DOCKERFILE = "infra/document-processing/Dockerfile"
 RUNTIME = {

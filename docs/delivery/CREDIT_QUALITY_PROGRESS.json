@@ -3,7 +3,7 @@
   "requirement_version": "1.1",
   "source_sha256": "ac56be4838c8309fa9b1da3a717d53fab2bad85cfe0482d6aeedc4374a38fb4f",
   "baseline_commit": "f0f973c9c6d989553b8f58b275fc06fd5685497a",
-  "updated_at": "2026-10-27T20:58:25.696983+00:00",
+  "updated_at": "2026-10-28T16:16:29.964137+00:00",
   "authorization": "Owner authorized implementation, testing, deployment and payment activation subject to requirements gates on 2026-10-27.",
   "stages": [
     {
@@ -65,10 +65,11 @@
         "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json",
         "docs/delivery/evidence/2026-10-28-unified-credit-release-preparation.json",
         "docs/delivery/evidence/2026-10-28-calibration-and-format-corrections.json",
-        "docs/delivery/evidence/2026-10-28-reviewer-kit-and-capacity.json"
+        "docs/delivery/evidence/2026-10-28-reviewer-kit-and-capacity.json",
+        "docs/delivery/evidence/2026-10-28-native-corpus-and-release-readiness.json"
       ],
-      "status_observed_at": "2026-10-27T20:58:25.696983+00:00",
-      "local_result": "v6 calibration settled 20 attempts: 19 delivered outputs and one preserved failure. The reviewer kit has two blank 20-row sheets. AI-only triage found unsupported coaching assumptions, so neither route is qualified. The DOCX image built and its actual Cloud Run inventory passed; the 11-case corpus and production promotion remain pending."
+      "status_observed_at": "2026-10-28T16:16:29.964137+00:00",
+      "local_result": "The actual Courier DOCX image passed native inventory and all 11 corpus cases. Its scanner definitions have since exceeded the promotion freshness window; a fresh definitions-only successor and its own proof are required. Interview v7 passed focused local checks but has no real outputs or human scores. No AI route is qualified."
     },
     {
       "number": 5,
@@ -96,10 +97,11 @@
       "actual_effort": null,
       "evidence": [
         "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json",
-        "docs/delivery/evidence/2026-10-28-unified-credit-release-preparation.json"
+        "docs/delivery/evidence/2026-10-28-unified-credit-release-preparation.json",
+        "docs/delivery/evidence/2026-10-28-native-corpus-and-release-readiness.json"
       ],
-      "status_observed_at": "2026-10-27T19:51:23.936145+00:00",
-      "local_result": "Schema25 migration and prior API/worker compatibility rehearsed on PostgreSQL17; separate same-image coordinator pause/restore and immediate pre-DDL gate implemented and reviewed. 463 earlier baseline checks and 286 final focused operator checks passed (overlapping sets, not additive). Live capture, drain, migration and seven-day representative shadow pending."
+      "status_observed_at": "2026-10-28T16:16:29.964137+00:00",
+      "local_result": "A bounded schema25 maintenance operator passed focused local checks and performed one read-only live capture. Re-capture it and the coordinator plan after document promotion, then prove live drain, migration and seven-day shadow accounting."
     },
     {
       "number": 7,
@@ -112,10 +114,11 @@
       "evidence": [
         "docs/delivery/evidence/2026-10-28-unified-credit-release-preparation.json",
         "docs/delivery/evidence/2026-10-28-calibration-and-format-corrections.json",
-        "docs/delivery/evidence/2026-10-28-reviewer-kit-and-capacity.json"
+        "docs/delivery/evidence/2026-10-28-reviewer-kit-and-capacity.json",
+        "docs/delivery/evidence/2026-10-28-native-corpus-and-release-readiness.json"
       ],
-      "local_result": "Current backend candidate CI failed a native positive fixture that changed line wrapping. The fixture and an existing SDK test-isolation defect are corrected locally; next exact-source CI remains required. No API migration, production promotion or checkout activation. The separate document inventory passed; corpus acceptance remains pending.",
-      "status_observed_at": "2026-10-27T20:58:25.696983+00:00"
+      "local_result": "Production still serves V2 document worker with expired scanner definitions. Candidate V3 native corpus passed, but freshness expired before promotion. The latest candidate CI had one fixed locally test-fixture defect; next exact-source CI, fresh document proof, guarded migration and all commercial gates remain.",
+      "status_observed_at": "2026-10-28T16:16:29.964137+00:00"
     },
     {
       "number": 8,

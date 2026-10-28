@@ -12,7 +12,7 @@ Help us check whether HireWiz can lower its costs while keeping the quality of i
 - **Adjudicator:** a third person who resolves disagreements using the source information and the reviewers’ written reasons.
 - **Coordinator:** prepares the files, keeps the hidden A/B identities and collects the sheets. Someone who knows those identities should not score the outputs.
 
-Use your actual name or an assigned private reviewer ID. Do not use an AI system to fill in the scores. We have not assigned people or hired anyone through this guide.
+The project owner has volunteered as **Reviewer 1**; no scores have been submitted. Reviewer 2 and the adjudicator are not assigned. Use your actual name or an assigned private reviewer ID. Do not use an AI system to fill in the scores. The coordinator must keep the A/B mapping hidden from every scorer, including the owner.
 
 ## What you will receive
 

@@ -247,7 +247,8 @@ def test_repaired_interview_output_saves_eight_questions_and_charges_once(monkey
     questions = [
         {
             "question": f"How would you improve the reliability of platform service {index}?",
-            "coaching_angle": "Describe a concrete method and a verified result.",
+            "preparation_steps": ["Compare concrete reliability techniques.",
+                                  "Explain how to verify the chosen design."],
             "evidence_ids": [],
         }
         for index in range(1, 9)
@@ -378,7 +379,8 @@ def test_invalid_interview_output_fails_without_charging_or_saving_a_result(
             assert run.committed_units == 0
             assert run.result_payload is None
             assert run.completed_at is not None
-            assert run.error_code == "InterviewOutputError"
+            expected_error = "InterviewStructureError" if provider_response.startswith("I could") else "InterviewCountError"
+            assert run.error_code == expected_error
             assert run.attempt_count == 1
             assert db.get(User, 1).ai_credits == 50
             events = db.query(UsageEvent).order_by(UsageEvent.created_at).all()

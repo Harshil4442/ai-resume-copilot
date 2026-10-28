@@ -112,8 +112,8 @@ jobs:
           tests/test_quality_materialization.py
           tests/test_unified_schema25_source.py tests/test_unified_schema25_contract_postgres.py
           tests/test_unified_schema25_release.py tests/test_unified_schema25_step_postgres.py
-          tests/test_schema25_coordinator_pause.py
-          ../infra/gcp/unified_credit_schema25_release.py ../infra/gcp/schema25_coordinator_pause.py
+          tests/test_schema25_coordinator_pause.py tests/test_schema25_maintenance.py
+          ../infra/gcp/unified_credit_schema25_release.py ../infra/gcp/schema25_coordinator_pause.py ../infra/gcp/schema25_maintenance.py
           tests/test_expense_budget.py tests/test_expense_budget_postgres.py
           tests/test_migration_logging_postgres.py
           tests/test_fresh_user_no_ai_journey.py
@@ -128,9 +128,9 @@ jobs:
           tests/test_docx_font_resolution.py tests/test_docx_failure_guidance.py tests/test_document_font_bundle.py
           tests/test_document_candidate_contract.py tests/test_document_full_source_build.py
           tests/test_document_renderer_profiles.py tests/test_document_candidate_resume.py tests/test_document_resume_history.py
-          tests/test_document_refresh.py tests/test_document_refresh_probe.py
+          tests/test_document_refresh.py tests/test_document_refresh_probe.py tests/test_document_candidate_release.py
           tests/test_document_owned_clamd.py tests/test_document_synchronous_do.py
-          ../infra/gcp/document_candidate.py ../infra/gcp/document_refresh_probe.py ../infra/gcp/document_refresh_resume.py
+          ../infra/gcp/document_candidate.py ../infra/gcp/document_candidate_release.py ../infra/gcp/document_refresh_probe.py ../infra/gcp/document_refresh_resume.py
           tests/test_document_ingestion.py tests/test_document_processor.py tests/test_document_definition_cache.py tests/test_monetary_release_transport.py
           app/routers/resume_uploads.py tests/test_resume_upload_quarantine.py tests/test_resume_source_access.py
           ../infra/gcp/document_worker.py tests/test_document_worker_deployment.py
@@ -169,7 +169,7 @@ jobs:
           scripts/ci_registry_cache.py
           app/services/document_ingestion.py scripts/document_test_image.py
           app/services/docx_fonts.py app/services/docx_layout_validation.py app/services/docx_artifact.py
-          scripts/document_refresh.py ../infra/gcp/document_candidate.py
+          scripts/document_refresh.py ../infra/gcp/document_candidate.py ../infra/gcp/document_candidate_release.py
           ../infra/gcp/document_refresh_probe.py ../infra/gcp/document_refresh_resume.py
           ../infra/document-processing/processor.py ../infra/document-processing/service.py
           ../infra/document-processing/docx_renderer.py ../infra/document-processing/courier_prime_fonts.py
@@ -184,7 +184,7 @@ jobs:
           scripts/unified_quality_packet.py
           scripts/materialize_quality_sources.py
           scripts/unified_credit_schema25_contract.py scripts/unified_credit_schema25_step.py
-          ../infra/gcp/unified_credit_schema25_release.py ../infra/gcp/schema25_coordinator_pause.py
+          ../infra/gcp/unified_credit_schema25_release.py ../infra/gcp/schema25_coordinator_pause.py ../infra/gcp/schema25_maintenance.py
           ../infra/gcp/email_password_schema21_release.py
       - name: Compile backend
         run: backend/.venv/bin/python -m compileall -q backend/app

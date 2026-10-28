@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "observed_at": "2026-10-28T16:16:29.964137+00:00",
+  "scope": "Native document acceptance, local release preparation and current live status; no production promotion or payment activation",
+  "native_candidate": {
+    "build_id": "53c0db04-2ddf-4221-9702-b7c566c5598c",
+    "immutable_image": "sha256:bbfad0c7faa2acf0ef93d13df300a9ac34cb16a792fee04d873aa994ec3afb94",
+    "inventory_receipt_sha256": "35c58d60ac087ccb80655783cdc46ebab744c85d4da11e0a8717436f630112cd",
+    "corpus_job": "hirewiz-doc-six-5dcb811dac92",
+    "corpus_execution": "hirewiz-doc-six-5dcb811dac92-dthlf",
+    "corpus_receipt_sha256": "ff2ce851dd1986dcda472fb3b7e7c2702ed5ba6b94b353606f2a584e7d77cdb1",
+    "actual_required_cases_passed": 11,
+    "native_corpus_proven": true,
+    "verified_result_path": "/Users/harshil/.codex/hirewiz-evidence/20261028/document-courier-corpus-a45467d/verified-result.json",
+    "original_execution_rerun": false,
+    "definitions_issued_at": "2026-10-27T06:24:12+00:00",
+    "current_release_freshness": "expired; a fresh definitions-only successor and its own eleven-case proof are required",
+    "production_promoted": false
+  },
+  "live_worker": {
+    "policy_version": 2,
+    "immutable_image": "sha256:b5d974362e50be2136528d67353017f58bf23d73dc2cb8840c7c590d16f3aecc",
+    "live_current_acceptance": "document_native_definitions_expired"
+  },
+  "maintenance": {
+    "operator": "infra/gcp/schema25_maintenance.py",
+    "focused_tests_passed": 95,
+    "actual_read_only_capture_sha256": "5bc03d1e85a8c51e3f54ec49ef57bd8e65e955863911d7d903bf94fa010c8fd4",
+    "capture_stale_after_document_promotion": true,
+    "live_mutations": false
+  },
+  "interview": {
+    "candidate_contract": "interview-evidence-v7",
+    "local_focused_tests_passed": 268,
+    "actual_v7_model_outputs": 0,
+    "human_scores": 0,
+    "owner_reviewer_slot": "reviewer_1",
+    "second_reviewer_assigned": false,
+    "quality_qualified": false
+  },
+  "ci": {
+    "run_id": 40583037947,
+    "source_commit": "9d0df0fc1a112501e97c167305894a65d6c85f00",
+    "backend": "one test failure: uninitialized family in fixed observational DOCX fixture",
+    "other_four_jobs": "passed",
+    "targeted_fixture_fix": "passed locally; next exact-source CI required",
+    "full_ci_passed": false
+  },
+  "commercial": {
+    "checkout_enabled": false,
+    "commercial_release_qualified": false
+  },
+  "major_stage_completed": null,
+  "effort": {
+    "expected": null,
+    "actual": null,
+    "note": "No full stage completed; exact per-stage effort was not measured."
+  }
+}

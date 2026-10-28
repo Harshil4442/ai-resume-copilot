@@ -251,6 +251,7 @@ class FailureDiagnosticsTests(unittest.TestCase):
         native = ast.parse(m.DOCX_LINK_PROGRAM)
         selected = [n for n in native.body if isinstance(n, ast.FunctionDef) and n.name in {"xml", "styled_copy"}]
         namespace = {"io": io, "etree": etree, "ZipFile": ZipFile, "ZIP_DEFLATED": ZIP_DEFLATED,
+                     "family": "Cambria",
                      "W": "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}",
                      "R": "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"}
         exec(compile(ast.Module(body=selected, type_ignores=[]), "pure_style_copy", "exec"), namespace)

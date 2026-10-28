@@ -83,7 +83,7 @@ def test_invalid_eight_question_contract_is_never_silently_reduced(monkeypatch, 
     elif defect == "duplicate":
         data[1]["question"] = data[0]["question"].upper().replace(" ", "  ").replace("?", " !")
     else:
-        data[0]["coaching_angle"] = " "
+        data[0]["preparation_steps"][0] = " "
     calls = []
     monkeypatch.setattr(llm_client, "_chat", lambda messages: calls.append(messages) or json.dumps(data))
     with pytest.raises(llm_client.InterviewOutputError, match="complete set of 8"):
@@ -106,10 +106,13 @@ def test_invalid_eight_question_contract_is_never_silently_reduced(monkeypatch, 
     "If you are asked about caching, you have not used Redis so discuss SQL.",
     "If you have not used Playwright, explain your lack of experience with testing.",
 ])
-@pytest.mark.parametrize("field", ["question", "coaching_angle"])
+@pytest.mark.parametrize("field", ["question", "preparation_step"])
 def test_categorical_experience_negatives_refuse_even_with_valid_citation(statement, field):
     data = _question_set()
-    data[0][field] = statement
+    if field == "question":
+        data[0][field] = statement
+    else:
+        data[0]["preparation_steps"][0] = statement
     data[0]["evidence_ids"] = ["approved-but-unrelated"]
     with pytest.raises(llm_client.InterviewOutputError, match="missing evidence"):
         llm_client._parse_interview_questions(json.dumps(data), 8, {"approved-but-unrelated"})
@@ -128,15 +131,15 @@ def test_categorical_experience_negatives_refuse_even_with_valid_citation(statem
 ])
 def test_conditionals_evidence_gaps_and_technical_negatives_remain_valid(guidance):
     data = _question_set()
-    data[0]["coaching_angle"] = guidance
+    data[0]["preparation_steps"][0] = guidance
     assert len(llm_client._parse_interview_questions(json.dumps(data), 8, set())) == 8
 
 
 def test_missing_experience_inference_uses_existing_bounded_repair(monkeypatch):
     invalid = _question_set()
-    invalid[0]["coaching_angle"] = "Since you have not used private-output-only-tool, discuss another framework."
+    invalid[0]["preparation_steps"][0] = "Since you have not used private-output-only-tool, discuss another framework."
     valid = _question_set()
-    valid[0]["coaching_angle"] = "Explain how you would evaluate a browser testing framework."
+    valid[0]["preparation_steps"][0] = "Explain how you would evaluate a browser testing framework."
     replies = iter([json.dumps(invalid), json.dumps(valid)])
     calls = []
 
@@ -157,12 +160,141 @@ def test_explicit_negative_source_fact_is_preserved_without_generated_assessment
     evidence = {"id": "approved-negative", "title": "Candidate statement", "text": "I have not used Playwright."}
     data = _question_set()
     data[0]["evidence_ids"] = [evidence["id"]]
-    data[0]["coaching_angle"] = "Explain how you would evaluate Playwright for this role."
+    data[0]["preparation_steps"][0] = "Explain how you would evaluate Playwright for this role."
     monkeypatch.setattr(llm_client, "_chat", lambda _: json.dumps(data))
     result = llm_client.generate_interview_questions("Test engineer", "Use Playwright.", approved_evidence=[evidence])
     assert evidence["text"] in result[0]["answer"]
     assert result[0]["evidence_ids"] == [evidence["id"]]
     assert "Since you" not in result[0]["answer"]
+
+
+@pytest.mark.parametrize("statement", [
+    "Explain how your Java code improved test stability or coverage.",
+    "Focus on your experience applying indexes or query refactoring.",
+    "Highlight your past work implementing REST APIs.",
+    "Reference how you have applied these practices in past projects.",
+    "Emphasize your history of success with other CRM systems.",
+    "Describe your verified achievements in reducing infrastructure costs.",
+    "You've successfully implemented a migration; explain the outcome.",
+    "The candidate reduced latency by 25%, so describe the implementation.",
+    "If asked about databases, explain how your schema changes reduced costs.",
+])
+@pytest.mark.parametrize("field", ["question", "preparation_step"])
+def test_generated_positive_history_refuses_even_when_a_citation_exists(statement, field):
+    data = _question_set()
+    if field == "question":
+        data[0][field] = statement
+    else:
+        data[0]["preparation_steps"][0] = statement
+    data[0]["evidence_ids"] = ["general-skill-only"]
+    with pytest.raises(llm_client.InterviewPersonalClaimError) as error:
+        llm_client._parse_interview_questions(json.dumps(data), 8, {"general-skill-only"})
+    assert error.value.reason_code == "unsupported_personal_claim"
+    assert statement not in str(error.value)
+
+
+@pytest.mark.parametrize("step", [
+    "Compare query plans and explain when an index would improve performance.",
+    "Explain how you would verify stability and coverage before and after a change.",
+    "Outline a measurement plan for a hypothetical 25% latency target.",
+    "Discuss trade-offs between implementing, consuming and testing an API.",
+    "If you have implemented an API, describe a verified example without adding claims.",
+    "A tool mention does not prove you built the system.",
+    "Explain how the proposed Java code would improve test isolation.",
+])
+def test_technical_actions_and_genuine_conditionals_are_not_personal_history(step):
+    data = _question_set()
+    data[0]["preparation_steps"][0] = step
+    assert len(llm_client._parse_interview_questions(json.dumps(data), 8, set())) == 8
+
+
+@pytest.mark.parametrize("steps", [[], ["One action"], ["Action"] * 5, "A string", ["Action", None], ["Action", " "]])
+def test_preparation_steps_must_be_complete_and_structured(steps):
+    data = _question_set()
+    data[0]["preparation_steps"] = steps
+    with pytest.raises(llm_client.InterviewStructureError):
+        llm_client._parse_interview_questions(json.dumps(data), 8, set())
+
+
+@pytest.mark.parametrize("extra", ["coaching_angle", "answer", "personal_history"])
+def test_undeclared_personal_prose_cannot_bypass_preparation_contract(extra):
+    data = _question_set()
+    data[0][extra] = "You built an undocumented system."
+    with pytest.raises(llm_client.InterviewStructureError):
+        llm_client._parse_interview_questions(json.dumps(data), 8, set())
+
+
+def test_structured_guidance_keeps_facts_verbatim_and_adds_only_the_reviewed_example_instruction(monkeypatch):
+    evidence = {"id": "approved-1", "title": "Original statement", "text": "I built a Java API and reduced measured latency by 22.75%."}
+    data = _question_set()
+    data[0]["evidence_ids"] = [evidence["id"]]
+    data[0]["preparation_steps"] = ["Compare latency measurement methods.", "Explain how to verify an API change under representative load."]
+    monkeypatch.setattr(llm_client, "_chat", lambda _: json.dumps(data))
+    result = llm_client.generate_interview_questions("API engineer", "Measure API latency.", approved_evidence=[evidence])
+    assert len(result) == 8
+    assert evidence["text"] in result[0]["answer"]
+    assert "1. Compare latency measurement methods.\n2. Explain how to verify an API change" in result[0]["answer"]
+    assert result[0]["answer"].endswith(interview_contract.EXAMPLE_INSTRUCTION)
+    assert result[0]["evidence_ids"] == [evidence["id"]]
+    assert result[0]["question"] == data[0]["question"]
+    assert "coaching_angle" not in result[0]
+
+
+def test_budget_refusal_keeps_prior_validation_category_without_provider_content(monkeypatch):
+    data = _question_set()
+    data[0]["preparation_steps"][0] = "Your Java code improved private-provider-output coverage."
+    calls = []
+
+    def chat(messages):
+        calls.append(list(messages))
+        if len(calls) == 1:
+            return json.dumps(data)
+        error = llm_client.LLMProviderError("Private funding detail: 503 timeout")
+        error.budget_exhausted = True
+        raise error
+
+    monkeypatch.setattr(llm_client, "_chat", chat)
+    with pytest.raises(llm_client.InterviewPersonalClaimError) as error:
+        llm_client.generate_interview_questions("Test engineer", "Verify test quality.")
+    assert len(calls) == 2
+    assert error.value.reason_code == "unsupported_personal_claim" and error.value.repair_blocked
+    assert error.value.__cause__ is None and error.value.__context__ is None
+    assert "private-provider-output" not in str(error.value) and "503" not in str(error.value)
+    assert not tasks._retryable(error.value)
+
+
+def test_one_paid_attempt_retains_finite_validation_category_and_refunds_once(database, monkeypatch):
+    calls = []
+
+    class Models:
+        def generate_content(self, **kwargs):
+            calls.append(kwargs)
+            data = _question_set()
+            data[0]["preparation_steps"][0] = "Explain how your Java code improved private-result coverage."
+            return SimpleNamespace(text=json.dumps(data), usage_metadata=SimpleNamespace(
+                prompt_token_count=100, candidates_token_count=20, thoughts_token_count=0, total_token_count=120))
+
+    monkeypatch.setenv("LLM_API_KEY", "synthetic-test-only")
+    monkeypatch.setattr(llm_client, "LLM_MODEL", "gemini-3.6-flash")
+    monkeypatch.setattr(genai, "Client", lambda **kwargs: SimpleNamespace(models=Models(), close=lambda: None))
+    run_id, _ = _create(database, key="one-attempt-personal-claim-001")
+    with database() as db:
+        db.get(AnalysisRun, run_id).generation_attempt_limit = 1
+        db.commit()
+    assert tasks.process_analysis_run(run_id) == "failed"
+    assert tasks.process_analysis_run(run_id) == "failed"
+    assert len(calls) == 1
+    with database() as db:
+        run = db.get(AnalysisRun, run_id)
+        assert run.error_code == "InterviewPersonalClaimError"
+        assert "unsupported_personal_claim" in run.error_message
+        assert "private-result" not in run.error_message
+        assert run.result_payload is None and run.usage_state == "released"
+        assert db.get(User, 1).ai_credits == 100
+        assert db.query(ModelCallEvent).count() == 1
+        liability = db.query(ModelCostLiability).one()
+        assert liability.cost_state == "settled" and liability.settled_cost_micros == 120
+        assert db.query(UsageEvent).filter_by(source_id=run_id, event_type="release").count() == 1
 
 
 def test_exhausted_negative_inference_releases_credit_but_retains_real_expense(database, monkeypatch):
@@ -172,7 +304,7 @@ def test_exhausted_negative_inference_releases_credit_but_retains_real_expense(d
         def generate_content(self, **kwargs):
             calls.append(kwargs)
             questions = _question_set()
-            questions[0]["coaching_angle"] = "Since you have not used Playwright, discuss a different tool."
+            questions[0]["preparation_steps"][0] = "Since you have not used Playwright, discuss a different tool."
             return SimpleNamespace(text=json.dumps(questions), usage_metadata=SimpleNamespace(
                 prompt_token_count=100, candidates_token_count=20, thoughts_token_count=0, total_token_count=120))
 
@@ -184,7 +316,7 @@ def test_exhausted_negative_inference_releases_credit_but_retains_real_expense(d
     assert len(calls) == 2
     with database() as db:
         run = db.get(AnalysisRun, run_id)
-        assert run.error_code == "InterviewOutputError" and run.usage_state == "released"
+        assert run.error_code == "InterviewPersonalClaimError" and run.usage_state == "released"
         assert run.result_payload is None and db.get(User, 1).ai_credits == 100
         liabilities = db.query(ModelCostLiability).all()
         assert len(liabilities) == 2

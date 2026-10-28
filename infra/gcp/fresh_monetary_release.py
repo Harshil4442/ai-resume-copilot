@@ -976,6 +976,9 @@ class FreshNativeBoundary(release.NativeBoundary):
             report = documents.check_snapshot(
                 snapshot, image, source.release, api_phase=runtime_phase,
                 coordinator_phase=coordinator_phase,
+                candidate_v3=any(row.get("name") == "DOCUMENT_WORKER_POLICY_SHA256"
+                                 and row.get("value") == documents.CANDIDATE_POLICY_SHA256
+                                 for row in service.get("template", {}).get("containers", [{}])[0].get("env", [])),
             )
             tex = release.native_tex
             tex_origin = getattr(tex, "ACCEPTED_ORIGIN", "")

@@ -31,6 +31,30 @@ class LLMProviderError(RuntimeError):
 class InterviewOutputError(ValueError):
     """The provider did not produce a complete, usable interview question set."""
 
+    retryable = False
+    reason_code = "invalid_interview_output"
+    repair_blocked = False
+
+
+class InterviewStructureError(InterviewOutputError):
+    reason_code = "invalid_structure"
+
+
+class InterviewCountError(InterviewOutputError):
+    reason_code = "invalid_question_count"
+
+
+class InterviewEvidenceReferenceError(InterviewOutputError):
+    reason_code = "invalid_evidence_reference"
+
+
+class InterviewPersonalClaimError(InterviewOutputError):
+    reason_code = "unsupported_personal_claim"
+
+
+class InterviewDuplicateQuestionError(InterviewOutputError):
+    reason_code = "duplicate_question"
+
 
 class TailoringOutputError(ValueError):
     """The provider did not produce safe, source-linked resume replacements."""
@@ -257,8 +281,17 @@ def rewrite_bullets(resume_text: str, jd_text: str, tone: str) -> dict:
         raise TailoringOutputError("The rewrite could not be validated. Keep the original wording and use evidence-backed resume editing.") from exc
 
 def _parse_interview_questions(content: str, num_questions: int, allowed_ids: set[str]) -> list[dict]:
-    """Accept JSON arrays and questions objects, including Markdown-wrapped responses."""
-    from .interview_contract import unsupported_experience_inference
+    """Validate the current structured preparation contract without rewriting it.
+
+    The finite prose guards reject known unsafe patterns, not every possible
+    implication. Cited facts are rendered verbatim outside generated guidance.
+    """
+    from .interview_contract import (
+        MAX_PREPARATION_STEPS,
+        MIN_PREPARATION_STEPS,
+        unsupported_experience_inference,
+        unsupported_positive_history,
+    )
 
     decoder = json.JSONDecoder()
     data = None
@@ -275,41 +308,47 @@ def _parse_interview_questions(content: str, num_questions: int, allowed_ids: se
             data = candidate
             break
     if data is None:
-        raise InterviewOutputError("The response did not contain a JSON question list.")
+        raise InterviewStructureError("The response did not contain a JSON question list.")
     if len(data) != num_questions:
-        raise InterviewOutputError(f"Expected exactly {num_questions} questions.")
+        raise InterviewCountError(f"Expected exactly {num_questions} questions.")
 
     questions = []
     seen = set()
     for item in data:
-        if not isinstance(item, dict):
-            raise InterviewOutputError("Every question must have the required fields.")
+        if not isinstance(item, dict) or set(item) != {"question", "preparation_steps", "evidence_ids"}:
+            raise InterviewStructureError("Every question needs exactly question, preparation_steps and evidence_ids.")
         question = item.get("question")
-        coaching_angle = item.get("coaching_angle")
+        preparation_steps = item.get("preparation_steps")
         evidence_ids = item.get("evidence_ids")
         if (
             not isinstance(question, str)
             or not question.strip()
-            or not isinstance(coaching_angle, str)
-            or not coaching_angle.strip()
+            or not isinstance(preparation_steps, list)
+            or not MIN_PREPARATION_STEPS <= len(preparation_steps) <= MAX_PREPARATION_STEPS
+            or any(not isinstance(step, str) or not step.strip() for step in preparation_steps)
             or not isinstance(evidence_ids, list)
             or any(not isinstance(value, str) for value in evidence_ids)
         ):
-            raise InterviewOutputError("Every question needs text, preparation guidance and evidence references.")
+            raise InterviewStructureError("Every question needs text, two to four preparation steps and evidence references.")
         if any(value not in allowed_ids for value in evidence_ids):
-            raise InterviewOutputError("A question cited evidence that was not supplied.")
-        if any(unsupported_experience_inference(value) for value in (question, coaching_angle)):
-            raise InterviewOutputError(
+            raise InterviewEvidenceReferenceError("A question cited evidence that was not supplied.")
+        if any(unsupported_experience_inference(value) for value in (question, *preparation_steps)):
+            raise InterviewPersonalClaimError(
                 "Do not turn missing evidence into a claim about the candidate's lack of experience. "
                 "Use a neutral question, preparation instruction or genuine conditional instead."
             )
+        if any(unsupported_positive_history(value) for value in (question, *preparation_steps)):
+            raise InterviewPersonalClaimError(
+                "Do not assert personal history, ownership or results in generated guidance. "
+                "Provide technical or future-oriented preparation actions; the application quotes approved facts separately."
+            )
         identity = " ".join(re.findall(r"\w+", question.casefold()))
         if identity in seen:
-            raise InterviewOutputError("Every question must be distinct.")
+            raise InterviewDuplicateQuestionError("Every question must be distinct.")
         seen.add(identity)
         questions.append({
             "question": question.strip(),
-            "coaching_angle": coaching_angle.strip(),
+            "preparation_steps": [step.strip() for step in preparation_steps],
             "evidence_ids": evidence_ids,
         })
     return questions
@@ -322,6 +361,7 @@ def generate_interview_questions(
     approved_evidence: list[dict] | None = None,
 ) -> list[dict[str, object]]:
     from .interview_contract import (
+        EXAMPLE_INSTRUCTION,
         QUESTION_COUNT,
         build_interview_messages,
         require_complete_context,
@@ -333,15 +373,27 @@ def generate_interview_questions(
     allowed_ids = {str(item.get("id")) for item in evidence if item.get("id")}
     messages = build_interview_messages(job_title, jd_text, evidence)
     data = None
+    last_validation_error: InterviewOutputError | None = None
+    repair_blocked = False
     for attempt in range(2):
         require_complete_context(messages)
-        content = _chat(messages)
+        try:
+            content = _chat(messages)
+        except LLMProviderError as exc:
+            if last_validation_error is None or not exc.budget_exhausted:
+                raise
+            # A failed validation and its paid provider event remain a failure.
+            # Budget refusal of a repair must not erase the finite validation
+            # category or retain the provider response/error body as diagnostics.
+            repair_blocked = True
+            break
         if not isinstance(content, str):
             content = ""
         try:
             data = _parse_interview_questions(content, num_questions, allowed_ids)
             break
         except InterviewOutputError as exc:
+            last_validation_error = exc
             if attempt == 0:
                 messages.extend([
                     {
@@ -350,34 +402,44 @@ def generate_interview_questions(
                             f"The response could not be used: {exc} Return a replacement JSON list "
                             f"with exactly {num_questions} distinct questions and all required fields. "
                             "Keep using the original job description and approved evidence. "
+                            "Each item has only question, preparation_steps (two to four neutral, "
+                            "role-specific actions) and evidence_ids. Do not assert personal history or results. "
                             "Use empty evidence_ids when no approved fact supports a question."
                         ),
                     },
                 ])
     if data is None:
-        raise InterviewOutputError(
-            f"Could not generate a complete set of {num_questions} interview questions. Please try again."
+        failure_type = type(last_validation_error) if last_validation_error is not None else InterviewOutputError
+        reason = last_validation_error.reason_code if last_validation_error is not None else InterviewOutputError.reason_code
+        failure = failure_type(
+            f"Could not generate a complete set of {num_questions} interview questions. "
+            f"Validation category: {reason}."
         )
+        failure.repair_blocked = repair_blocked
+        # Deliberately outside the exception handler: no unsafe response or
+        # transient error context can make this validated failure retryable.
+        raise failure from None
 
     evidence_by_id = {str(item.get("id")): item for item in evidence if item.get("id")}
     questions: list[dict[str, object]] = []
     for raw_item in data:
         question = raw_item["question"]
-        coaching_angle = raw_item["coaching_angle"]
+        preparation = "\n".join(f"{index}. {step}" for index, step in enumerate(raw_item["preparation_steps"], 1))
         evidence_ids = list(dict.fromkeys(raw_item["evidence_ids"]))
         cited = [evidence_by_id[item] for item in evidence_ids]
         if cited:
             facts = "; ".join(
                 f"{item.get('title', 'Evidence')}: {item.get('text', '')}" for item in cited
             )
-            answer = f"Approved facts to use: {facts}\n\nCoaching focus: {coaching_angle}"
+            answer = f"Approved facts to use: {facts}"
             answer_state = "evidence_backed"
         else:
             answer = (
                 "No approved evidence is linked to this question yet. Add or approve a relevant "
-                f"fact before drafting a personal answer. Coaching focus: {coaching_angle}"
+                "fact before drafting a personal answer."
             )
             answer_state = "evidence_needed"
+        answer += f"\n\nPreparation steps:\n{preparation}\n\nOptional verified example: {EXAMPLE_INSTRUCTION}"
         questions.append(
             {
                 "question": question,

@@ -112,6 +112,70 @@ the new production API contract.
 
 ## Native schema25 operator
 
+### Maintenance before capture
+
+`infra/gcp/schema25_maintenance.py` closes the existing three-service admission
+flags without changing their images. It reuses the native one-send Cloud Run
+adapter and private journal; it cannot deploy a candidate or perform DDL. Its
+queue and scheduler controls are restricted to the four existing HireWiz queues
+and three schedules. Capture preserves original resource states, physical
+revision allocations, zero-percent tags, source/image and unrelated settings.
+Tagged revisions with different configurations require separate review; they
+are not silently consolidated into another configuration.
+
+Finish any accepted document-worker promotion before capturing maintenance.
+Document promotion changes API, analysis-worker and coordinator pins, so plans
+captured before it become stale. After successful candidate CI/build and
+policy/document/bootstrap preflight, freshly capture **both** the maintenance
+and coordinator plans. Use an owned private directory and a separate `0700`
+journal directory. Run:
+
+```sh
+python infra/gcp/schema25_maintenance.py capture \
+  --plan=/private/release/maintenance.json --nonce=<32-hex-nonce>
+python infra/gcp/schema25_maintenance.py pause-schedules \
+  --plan=/private/release/maintenance.json --plan-sha256=<captured-sha256> \
+  --journal=/private/release/maintenance-journal
+python infra/gcp/schema25_maintenance.py close-api \
+  --plan=/private/release/maintenance.json --plan-sha256=<captured-sha256> \
+  --journal=/private/release/maintenance-journal
+```
+
+Use the separate existing `coordinator-capture`/`coordinator-pause` procedure
+below, then invoke `close-workers` with the same maintenance plan/hash/journal.
+Workers remain available while accepted work finishes. Before either worker is
+closed, the native drain checks coordinator closure, actual queue contents,
+unfinished Cloud Run executions and existing native schema21 SQL lease/work
+invariants. An empty queue alone never proves drain. Do not purge accepted tasks
+or erase unresolved provider liabilities to pass this check. Once both workers
+are closed, `pause-queues` repeats drain and pauses the queues; an originally
+paused application queue stays paused.
+
+An uncertain action is reconciled by repeating its phase with `--reconcile`
+and the same plan/hash/journal. Reconciliation only observes already-started
+actions. If it returns `maintenance_phase_partial`, resume the ordinary phase
+only after reconciliation has succeeded; it may then start the remaining
+unattempted actions. A pending Cloud Run operation is polled under its original
+operation identity. No new plan/journal authorizes replay of an uncertain write.
+
+For a safe abort before a new deployment, run `restore-services`, then
+`restore-queues`, then `restore-schedules`, using the original maintenance plan
+and journal; restore the coordinator with its own original plan/journal. Only
+actions actually started by this maintenance are restored. Service restoration
+refuses after source/image/configuration drift, including a promoted new
+candidate, rather than overwrite it.
+
+After a successful schema25 deployment, **do not use `restore-services`**.
+The `restore-queues` and `restore-schedules` phases instead accept
+`--deployment-plan`, `--deployment-plan-sha256` and `--deployment-journal` from
+the exact completed schema25 release. The native proof rechecks successful
+promotions, actual serving configuration/traffic, health, source/build/CI,
+closed flags, financial state and schema. This resumes the captured resource
+states without changing the deployed image or opening paid routes. Restore the
+coordinator last. Enabling any legacy/new product admission remains a separate
+reviewed rollout decision; this maintenance tool never opens new credit or
+checkout flags.
+
 `infra/gcp/unified_credit_schema25_release.py` provides explicit `capture`,
 `observe`, `upgrade`, `migration-reconcile`, `advance`, `reconcile` and `rollback`
 phases. Read its `--help` before constructing a plan. Plans and journals must be

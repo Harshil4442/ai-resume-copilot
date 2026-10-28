@@ -137,7 +137,8 @@
         "prompt_version": {
           "enum": [
             "interview-evidence-v5",
-            "interview-evidence-v6"
+            "interview-evidence-v6",
+            "interview-evidence-v7"
           ],
           "title": "Prompt Version",
           "type": "string"

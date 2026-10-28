@@ -673,7 +673,8 @@ def _question_set():
     return [
         {
             "question": question,
-            "coaching_angle": "Explain the context, your action, and the verified result.",
+            "preparation_steps": ["Compare the available design choices and their trade-offs.",
+                                  "Explain how to verify the proposed behavior and measure its result."],
             "evidence_ids": [],
         }
         for question in questions

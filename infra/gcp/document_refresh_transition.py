@@ -1,6 +1,6 @@
 """Bounded fail-closed document maintenance; no credentials or actions at import.
 
-A fresh current V2 ten-case proof gates every transition. Exact-image refusal makes
+A fresh V2 ten-case or exact Courier V3 eleven-case proof gates every transition. Exact-image refusal makes
 old in-flight callers fail safely during this short maintenance window; this
 controller never claims those callers drained. Unknown PATCH outcomes stop the
 pipeline, retain the closed flags, and permit only same-operation readback.
@@ -153,10 +153,22 @@ def checked_json(http: Any, method: str, resource: str, body: Any = None, *, que
 
 
 def require_current_acceptance(acceptance: Any, image: str | None, probe: Any) -> None:
+    policy = getattr(acceptance, "policy_sha256", None)
+    # Two explicit contracts. A V3 receipt is never presented as V2 and neither
+    # a generic policy hash nor a caller-selected case count can authorize writes.
+    contracts = {
+        "d3baf46026934f48b8def219b48d348d7b03bc3b4d0cb713a6f222c7299df7f2": (2, 10),
+        "8ed5f38142d88d88883129681953e939e79157e8b92e3efc516920d2e4409c9f": (3, 11),
+    }
+    expected = contracts.get(policy) if type(policy) is str else None
+    courier = ("us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/"
+               "hirewiz-document-inspector@sha256:bbfad0c7faa2acf0ef93d13df300a9ac34cb16a792fee04d873aa994ec3afb94")
     need(type(image) is str and getattr(acceptance, "image", None) == image
-         and type(getattr(acceptance, "contract_version", None)) is int and acceptance.contract_version == 2
-         and type(getattr(acceptance, "required_case_count", None)) is int and acceptance.required_case_count == 10
-         and getattr(acceptance, "policy_sha256", None) == probe.POLICY,
+         and expected is not None
+         and (expected[0] == 3 or image != courier)
+         and type(getattr(acceptance, "contract_version", None)) is int and acceptance.contract_version == expected[0]
+         and type(getattr(acceptance, "required_case_count", None)) is int and acceptance.required_case_count == expected[1]
+         and policy == probe.POLICY,
          "document_transition_current_acceptance_required")
 
 

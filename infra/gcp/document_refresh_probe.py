@@ -128,8 +128,13 @@ def policy_for_serving(metadata: Any, image: str) -> str:
     env = containers[0].get("env", [])
     need(type(env) is list, "document_native_serving_policy_unverified")
     matches = [row for row in env if type(row) is dict and row.get("name") == "DOCUMENT_WORKER_POLICY_SHA256"]
-    need(len(matches) == 1 and set(matches[0]) == {"name", "value"} and type(matches[0]["value"]) is str
-         and matches[0]["value"] in {POLICY, LEGACY_POLICY}, "document_native_serving_policy_unverified")
+    candidate = load_source("hirewiz_document_candidate_profile", HERE / "document_candidate.py")
+    need(len(matches) == 1 and set(matches[0]) == {"name", "value"} and type(matches[0]["value"]) is str,
+         "document_native_serving_policy_unverified")
+    policy = matches[0]["value"]
+    need((policy == candidate.POLICY_SHA256 and type(image) is str and IMAGE.fullmatch(image))
+         or (image != candidate.IMAGE and policy in {POLICY, LEGACY_POLICY}),
+         "document_native_serving_policy_unverified")
     return matches[0]["value"]
 
 
@@ -403,8 +408,11 @@ def validate_worker_snapshot(clients: Any, snapshot: dict[str, Any], *, historic
     snapshot["revision"] = validate_serving(clients, service, image, "hirewiz-document-inspector", SERVICE_UID)
     configuration = load_source("hirewiz_document_refresh_worker_contract", HERE / "document_worker.py")
     try:
+        candidate = load_source("hirewiz_document_candidate_profile", HERE / "document_candidate.py")
+        candidate_v3 = policy_for_serving(service, image) == candidate.POLICY_SHA256
         configuration.check_snapshot(snapshot, image, service.get("template", {}).get("labels", {}).get("hirewiz-source"),
-                                     api_phase=True, coordinator_phase=True, historical_v1=historical_v1)
+                                     api_phase=True, coordinator_phase=True, historical_v1=historical_v1,
+                                     candidate_v3=candidate_v3)
     except configuration.ConfigurationDenied:
         raise NativeProofDenied("document_native_worker_configuration_changed") from None
     return image
@@ -412,6 +420,10 @@ def validate_worker_snapshot(clients: Any, snapshot: dict[str, Any], *, historic
 
 def verify_caller_pins(clients: Any, image: str, *, policy_sha256: str | None = None) -> None:
     """Old acceptance evidence is retained until both actual serving callers move."""
+    candidate = load_source("hirewiz_document_candidate_profile", HERE / "document_candidate.py")
+    if image == candidate.IMAGE or policy_sha256 == candidate.POLICY_SHA256:
+        adapter = load_source("hirewiz_document_candidate_release", HERE / "document_candidate_release.py")
+        return adapter.verify_caller_pins(clients, image, policy_sha256=policy_sha256)
     policy = POLICY if policy_sha256 is None else policy_sha256
     need(type(policy) is str and policy in {POLICY, LEGACY_POLICY}, "document_native_caller_policy_unverified")
     identity = None
@@ -840,11 +852,19 @@ def verify_successor(image: str, build_identity: dict[str, Any], journal: Path) 
 
 def verify_current_successor(image: str, service_metadata: dict[str, Any]) -> NativeAcceptance:
     """Maintenance uses only the dedicated unattended service-account identity."""
+    candidate = load_source("hirewiz_document_candidate_profile", HERE / "document_candidate.py")
+    if policy_for_serving(service_metadata, image) == candidate.POLICY_SHA256:
+        adapter = load_source("hirewiz_document_candidate_release", HERE / "document_candidate_release.py")
+        return adapter.verify_current_successor(image, service_metadata)
     return _verify_current_successor(image, service_metadata, read_only_release=False)
 
 
 def verify_current_successor_for_release(image: str, service_metadata: dict[str, Any]) -> NativeAcceptance:
     """Ordinary release uses only the original, read-only retained SDK identity."""
+    candidate = load_source("hirewiz_document_candidate_profile", HERE / "document_candidate.py")
+    if policy_for_serving(service_metadata, image) == candidate.POLICY_SHA256:
+        adapter = load_source("hirewiz_document_candidate_release", HERE / "document_candidate_release.py")
+        return adapter.verify_current_successor_for_release(image, service_metadata)
     return _verify_current_successor(image, service_metadata, read_only_release=True)
 
 

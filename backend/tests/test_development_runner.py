@@ -148,10 +148,13 @@ def test_generated_authorization_schema_preserves_historical_readability():
     schema = json.loads((ROOT / "development-authorization.schema.json").read_bytes())
     assert schema == runner.Authorization.model_json_schema()
     assert schema["$defs"]["Route"]["properties"]["prompt_version"]["enum"] == [
-        "interview-evidence-v5", "interview-evidence-v6"]
+        "interview-evidence-v5", "interview-evidence-v6", "interview-evidence-v7"]
 
 
-@pytest.mark.parametrize("prompt,source", [("interview-evidence-v5", "old"), ("interview-evidence-v5", "current"), ("current", "old")])
+@pytest.mark.parametrize("prompt,source", [
+    ("interview-evidence-v5", "old"), ("interview-evidence-v5", "current"),
+    ("interview-evidence-v6", "old"), ("interview-evidence-v6", "current"), ("current", "old"),
+])
 @pytest.mark.parametrize("operation", ["preflight", "prepare", "execute"])
 def test_historical_or_changed_contract_loads_but_cannot_start_work(calibration, monkeypatch, prompt, source, operation):
     data = calibration["authorization"].model_dump(mode="json")

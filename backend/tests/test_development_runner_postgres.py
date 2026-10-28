@@ -43,7 +43,8 @@ def provider(monkeypatch, *, unknown=False, invalid=False):
         if invalid:
             return "[]"
         return json.dumps([{"question": f"How would you approach distinct role topic {n}?",
-                            "coaching_angle": "Explain a verified example and distinguish missing evidence.",
+                            "preparation_steps": ["Compare approaches to this role topic.",
+                                                  "Explain how to test the chosen approach."],
                             "evidence_ids": []} for n in range(8)])
 
     monkeypatch.setattr(llm_client, "_chat_with_budget", transport)
@@ -78,6 +79,8 @@ def test_failed_or_unmeasured_attempt_never_retries_or_fakes_free_cost(prepared,
     assert runner.execute(factory, **values, side="reference", maximum_operations=10)["executed_run_ids"] == []
     with factory() as db:
         assert db.query(models.AnalysisRun).filter_by(status="failed").count() == 10
+        if invalid:
+            assert {run.error_code for run in db.query(models.AnalysisRun).filter_by(status="failed")} == {"InterviewCountError"}
         for liability in db.query(models.ModelCostLiability):
             if unknown:
                 assert liability.cost_state == "usage_unavailable"
@@ -173,15 +176,21 @@ def test_changed_stored_case_is_refused_even_with_recomputed_fingerprint(prepare
         assert db.query(models.ModelCostLiability).count() == 0
 
 
-def test_historical_v5_export_survives_new_prompt_and_implementation(request, monkeypatch, tmp_path):
+@pytest.mark.parametrize("historical_prompt,historical_validator", [
+    ("interview-evidence-v5", "interview-complete-v1"),
+    ("interview-evidence-v6", "interview-complete-v2"),
+])
+def test_historical_export_survives_new_prompt_and_implementation(
+    request, monkeypatch, tmp_path, historical_prompt, historical_validator,
+):
     url = os.getenv("HIREWIZ_TEST_POSTGRES_URL")
     if not url:
         pytest.skip("Set the dedicated disposable local PostgreSQL URL")
     historical = request.getfixturevalue("calibration")
     data = historical["authorization"].model_dump(mode="json")
     for route in data["routes"].values():
-        route.update(prompt_version="interview-evidence-v5", contract_sha256="a" * 64)
-    auth_path = historical["authorization_root"] / "original-v5-authorization.json"
+        route.update(prompt_version=historical_prompt, contract_sha256="a" * 64)
+    auth_path = historical["authorization_root"] / "original-authorization.json"
     auth_path.write_bytes(packet.canonical(data))
     auth = runner.load_authorization(auth_path)
     values = {**historical, "authorization": auth}
@@ -190,16 +199,16 @@ def test_historical_v5_export_survives_new_prompt_and_implementation(request, mo
         # Create isolated synthetic history under the earlier version identity.
         # No saved experiment or historical output artifact is rewritten.
         with monkeypatch.context() as old:
-            old.setattr(interview_contract, "PROMPT_VERSION", "interview-evidence-v5")
-            old.setattr(interview_contract, "VALIDATOR_VERSION", "interview-complete-v1")
+            old.setattr(interview_contract, "PROMPT_VERSION", historical_prompt)
+            old.setattr(interview_contract, "VALIDATOR_VERSION", historical_validator)
             old.setattr(runner, "contract_digest", lambda: "a" * 64)
             runner.prepare(factory, **values)
             calls = provider(old)
             outcome = runner.execute(factory, **values, side="reference", maximum_operations=1)
             assert list(outcome["outcomes"].values()) == ["succeeded"] and len(calls) == 1
 
-        assert interview_contract.PROMPT_VERSION == "interview-evidence-v6"
-        assert interview_contract.VALIDATOR_VERSION == "interview-complete-v2"
+        assert interview_contract.PROMPT_VERSION == "interview-evidence-v7"
+        assert interview_contract.VALIDATOR_VERSION == "interview-complete-v3"
         assert runner.contract_digest() != auth.routes["reference"].contract_sha256
         with factory() as db:
             saved = {run.id: packet.canonical({"input": run.input_payload, "output": run.result_payload,
@@ -220,9 +229,9 @@ def test_historical_v5_export_survives_new_prompt_and_implementation(request, mo
         completed = next(row for row in result["records"] if row["state"] == "succeeded")
         receipt = json.loads((destination / completed["runner_receipt"]["path"]).read_bytes())
         output = json.loads((destination / completed["output"]["path"]).read_bytes())
-        assert receipt["prompt_version"] == "interview-evidence-v5"
-        assert output["contract_versions"]["prompt"] == "interview-evidence-v5"
-        assert output["contract_versions"]["validator"] == "interview-complete-v1"
+        assert receipt["prompt_version"] == historical_prompt
+        assert output["contract_versions"]["prompt"] == historical_prompt
+        assert output["contract_versions"]["validator"] == historical_validator
         with factory() as db:
             assert saved == {run.id: packet.canonical({"input": run.input_payload, "output": run.result_payload,
                 "fingerprint": run.input_fingerprint, "status": run.status}) for run in db.query(models.AnalysisRun)}
