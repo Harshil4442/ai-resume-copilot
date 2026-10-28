@@ -152,6 +152,52 @@ def test_terminal_build_and_absent_job_allow_new_nonce_without_adopting_old_cand
     assert_no_native_writes(stopped)
 
 
+def test_expired_v2_history_is_historical_only_for_explicit_rescue(stopped, monkeypatch):
+    strict, retired = [], []
+    monkeypatch.setattr(serving.transition, "verify_rescue_caller_pins",
+                        lambda clients, contract, image: contract.verify_caller_pins(clients, image))
+
+    def fresh_only(image, metadata):
+        strict.append((image, metadata["uid"]))
+        raise probe.NativeProofDenied("document_native_definitions_expired")
+
+    def old_identity_only(image, metadata):
+        assert image == stopped.native_http.services["hirewiz-document-inspector"]["template"]["containers"][0]["image"]
+        retired.append(image)
+        return None
+
+    monkeypatch.setattr(probe, "verify_current_successor", fresh_only)
+    monkeypatch.setattr(probe, "verify_expired_current_v2_for_retirement", old_identity_only)
+    default = output(stopped, "default")
+    with pytest.raises(probe.NativeProofDenied, match="definitions_expired"):
+        recovery.prepare(default, stopped.history, None, refresh_module=refresh)
+    assert strict and not retired and not list(default.iterdir())
+    manual = output(stopped, "manual")
+    assert recovery.prepare(manual, stopped.history, None, refresh_module=refresh,
+                            rescue_expired_v2=True) == NEXT_NONCE
+    assert len(retired) == 1 and not (manual / "native-proof").exists()
+    assert json.loads((manual / "pre-native-reconciliations" / NONCE / "reconciliation.json").read_bytes())[
+        "native_acceptance"] is False
+    assert_no_native_writes(stopped)
+
+
+def test_expired_rescue_rejects_ambiguous_mode_and_changed_caller_pin(stopped, monkeypatch):
+    monkeypatch.setattr(serving.transition, "verify_rescue_caller_pins",
+                        lambda clients, contract, image: contract.verify_caller_pins(clients, image))
+    destination = output(stopped, "refused")
+    with pytest.raises(refresh.RefreshDenied, match="recovery_mode_invalid"):
+        recovery.prepare(destination, stopped.history, "hirewiz-doc-six-" + NONCE[:12],
+                         refresh_module=refresh, rescue_expired_v2=True)
+    assert not list(destination.iterdir())
+    monkeypatch.setattr(probe, "verify_expired_current_v2_for_retirement", lambda *_: None)
+    caller = stopped.native_http.services["ai-resume-parser"]["template"]["containers"][0]["env"]
+    next(row for row in caller if row["name"] == "DOCUMENT_WORKER_IMAGE_DIGEST")["value"] = "unreviewed"
+    with pytest.raises(probe.NativeProofDenied):
+        recovery.prepare(destination, stopped.history, None, refresh_module=refresh,
+                         rescue_expired_v2=True)
+    assert not list(destination.iterdir()) and stopped.native_http.writes == []
+
+
 @pytest.mark.parametrize("status", [200, 403, 503, "unknown"])
 def test_existing_or_uncertain_native_job_is_never_treated_as_absent(stopped, status):
     stopped.job_status = status

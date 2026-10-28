@@ -716,15 +716,59 @@ def infra(name: str) -> Any:
     return module
 
 
+def rescue_prior_journal(history: Path, service: dict[str, Any], clients: Any,
+                         probe: Any) -> Path:
+    """Find the actual old owned Job journal before any new Build or PATCH."""
+    need(history.is_absolute() and history.is_dir() and not history.is_symlink(),
+         "document_rescue_prior_history_required")
+    image = service["template"]["containers"][0]["image"]
+    labels = service.get("labels", {})
+    build = verify_current_build(labels.get("hirewiz-refresh-build"),
+                                 labels.get("hirewiz-refresh-nonce"), image)
+    paths = []
+    for binding in history.glob("*/native-proof/binding.json"):
+        need(not binding.is_symlink() and binding.stat().st_size <= MAX_OUTPUT,
+             "document_rescue_prior_journal_invalid")
+        if decode(binding.read_bytes()).get("image") == image:
+            paths.append(binding.parent)
+    need(len(paths) == 1, "document_rescue_prior_owned_journal_required")
+    path = paths[0]
+    owner = probe.Journal(path, image, build)
+    job = probe.owned_job(clients, owner, image, build["nonce"])
+    execution = probe.owned_execution(clients, owner, job, image, build["nonce"])
+    need(job["name"].rsplit("/", 1)[-1] == labels.get("hirewiz-refresh-job"),
+         "document_rescue_prior_job_changed")
+    probe.validate_payload(probe.native_payload(clients, job, execution), image,
+                           execution["name"], datetime.now(UTC), require_fresh=False,
+                           build_identity=build)
+    return path
+
+
 def refresh(directory: Path, *, publish: bool, now: datetime, prior_journal: Path | None = None,
             history: Path | None = None, recover_failed_native_job: str | None = None,
-            full_source: bool = False) -> dict[str, Any]:
+            full_source: bool = False, rescue_expired_v2: bool = False) -> dict[str, Any]:
     """Full controlled pipeline. No serialized acceptance result grants authority."""
     need(recover_failed_native_job is None or publish is True, "document_refresh_recovery_requires_explicit_refresh")
-    need(type(full_source) is bool, "document_refresh_contract_version_invalid")
-    nonce = infra("document_refresh_recovery").prepare(
-        directory, history, recover_failed_native_job, refresh_module=sys.modules[__name__])
+    need(type(full_source) is bool and type(rescue_expired_v2) is bool,
+         "document_refresh_contract_version_invalid")
+    need(not rescue_expired_v2 or (publish and not full_source
+         and recover_failed_native_job is None and prior_journal is None and history is not None),
+         "document_refresh_expired_v2_requires_explicit_refresh")
     probe = infra("document_refresh_probe")
+    if rescue_expired_v2:
+        clients = probe.Clients()
+        try:
+            service = clients.preflight()["service"]
+            image = service["template"]["containers"][0]["image"]
+            probe.verify_expired_current_v2_for_retirement(image, service)
+            infra("document_refresh_transition").verify_guarded_api(clients, probe)
+            assert history is not None
+            prior_journal = rescue_prior_journal(history, service, clients, probe)
+        finally:
+            clients.close()
+    nonce = infra("document_refresh_recovery").prepare(
+        directory, history, recover_failed_native_job, refresh_module=sys.modules[__name__],
+        rescue_expired_v2=rescue_expired_v2)
     preflight = probe.Clients()
     try:
         preflight.preflight()
@@ -733,7 +777,8 @@ def refresh(directory: Path, *, publish: bool, now: datetime, prior_journal: Pat
     selected = full_source_candidate if full_source else candidate
     value = (selected(directory, publish=publish, now=now) if nonce is None else
              selected(directory, publish=publish, now=now, nonce=nonce))
-    return finish_refresh(directory, value, prior_journal=prior_journal, history=history)
+    return finish_refresh(directory, value, prior_journal=prior_journal, history=history,
+                          rescue_expired_v2=rescue_expired_v2)
 
 
 def resume_refresh(directory: Path, original: Path, *, manifest_sha256: str, publish: bool,
@@ -750,7 +795,7 @@ def resume_refresh(directory: Path, original: Path, *, manifest_sha256: str, pub
 
 
 def finish_refresh(directory: Path, value: dict[str, Any], *, prior_journal: Path | None = None,
-                   history: Path | None = None) -> dict[str, Any]:
+                   history: Path | None = None, rescue_expired_v2: bool = False) -> dict[str, Any]:
     """Shared native one-send, transition and actual-prior retirement ordering."""
     probe = infra("document_refresh_probe")
     image, build = value["candidate_registry_digest"], value["build_identity"]
@@ -760,7 +805,11 @@ def finish_refresh(directory: Path, value: dict[str, Any], *, prior_journal: Pat
     controller = infra("document_refresh_transition")
     http = native_http()
     try:
-        result = controller.transition(image, build, native, directory / "transition", http=http, probe=probe)
+        if rescue_expired_v2:
+            result = controller.transition(image, build, native, directory / "transition", http=http,
+                                           probe=probe, rescue_expired_v2=True)
+        else:
+            result = controller.transition(image, build, native, directory / "transition", http=http, probe=probe)
     finally:
         http.close()
     result["definition_expires_at"] = acceptance.definition_expires_at
@@ -851,6 +900,7 @@ def main() -> None:
     parser.add_argument("--transition-journal", type=Path)
     parser.add_argument("--prior-history-directory", type=Path)
     parser.add_argument("--recover-failed-native-job")
+    parser.add_argument("--rescue-expired-v2", action="store_true")
     parser.add_argument("--resume-candidate-directory", type=Path)
     parser.add_argument("--resume-manifest-sha256")
     args = parser.parse_args()
@@ -858,6 +908,9 @@ def main() -> None:
          and args.resume_manifest_sha256 is None, "document_resume_arguments_mode_required")
     need(args.recover_failed_native_job is None or args.mode in {"refresh", "full-source-refresh"} and args.publish_candidate,
          "document_refresh_recovery_requires_explicit_refresh")
+    need(not args.rescue_expired_v2 or (args.mode == "refresh" and args.publish_candidate
+         and (os.getenv("GITHUB_ACTIONS") != "true" or os.getenv("GITHUB_EVENT_NAME") == "workflow_dispatch")),
+         "document_refresh_expired_v2_requires_dispatch")
     need(args.output_directory.is_absolute() and not args.output_directory.exists(),
          "document_refresh_fresh_output_directory_required")
     args.output_directory.mkdir(mode=0o700)
@@ -877,6 +930,8 @@ def main() -> None:
                      "recover_failed_native_job": args.recover_failed_native_job}
         if args.mode == "full-source-refresh":
             arguments["full_source"] = True
+        if args.rescue_expired_v2:
+            arguments["rescue_expired_v2"] = True
         result = refresh(args.output_directory, **arguments)
         emit_status(result)
     elif args.mode == "full-source-candidate":

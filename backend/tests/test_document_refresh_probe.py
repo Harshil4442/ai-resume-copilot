@@ -13,6 +13,8 @@ from infra.gcp import document_refresh_probe as p
 from infra.gcp import document_renderer_profiles as profile
 from infra.gcp import document_worker as worker
 
+from scripts import document_refresh as refresh
+
 parser = p.load_source("hirewiz_document_refresh_receipt_test", p.HERE / "document_refresh_receipt.txt")
 
 IMAGE = p.REPOSITORY + "@sha256:" + "a" * 64
@@ -506,6 +508,38 @@ def test_current_labels_cannot_adopt_different_actual_native_service(native):
         p.verify_current_successor(IMAGE, caller_metadata)
 
 
+def test_expired_v2_current_proof_is_retirement_only(native, monkeypatch):
+    native.created, native.ran = True, True
+    native.j, native.ex = completed()
+    s = service()
+    native.service = lambda _: copy.deepcopy(s)
+    native.revision = lambda _: revision(s)
+    old = payload(execution=native.ex["name"].rsplit("/", 1)[-1])
+    for row in old["cases"]:
+        if "scan" in row:
+            row["scan"]["definitions"] = "28155/" + (NOW - timedelta(days=4)).isoformat()
+    native.pages = {None: {"entries": [event(native.j, native.ex, old)]}}
+    with pytest.raises(p.NativeProofDenied, match="definitions_expired"):
+        p.verify_current_successor(IMAGE, s)
+    monkeypatch.setattr(p, "acceptance", lambda *args, **kwargs:
+                        pytest.fail("expired V2 must never construct serving acceptance"))
+    assert p.verify_expired_current_v2_for_retirement(IMAGE, s) is None
+    assert native.calls["create"] == native.calls["start"] == native.calls["delete"] == 0
+    s["labels"]["hirewiz-refresh-job"] = "hirewiz-doc-six-foreign"
+    with pytest.raises(p.NativeProofDenied):
+        p.verify_expired_current_v2_for_retirement(IMAGE, s)
+
+
+def test_retirement_only_refuses_fresh_v2(native):
+    native.created, native.ran = True, True
+    native.j, native.ex = completed()
+    s = service()
+    native.service = lambda _: copy.deepcopy(s)
+    native.revision = lambda _: revision(s)
+    with pytest.raises(p.NativeProofDenied, match="requires_expired_v2"):
+        p.verify_expired_current_v2_for_retirement(IMAGE, s)
+
+
 def test_readonly_current_v1_route_binds_frozen_job_receipt_and_build_profile(native, monkeypatch):
     native.created, native.ran = True, True
     old_job = job()
@@ -636,6 +670,23 @@ def test_expired_old_receipt_may_retire_only_after_newer_acceptance_and_serving_
     result = p.cleanup_successor(IMAGE, build(), target)
     assert result["owned_resources_absent"] is True and result["job_uid"] == JOB_UID
     assert verified == [NEXT] and native.calls["delete"] == 1
+
+
+def test_rescue_preflights_actual_owned_prior_journal_before_new_build(native, monkeypatch, tmp_path):
+    history = tmp_path / "history"
+    original = history / "retained-main-artifact" / "native-proof"
+    original.parent.mkdir(parents=True, mode=0o700)
+    p.run_successor(IMAGE, build(), original)
+    s = service()
+    monkeypatch.setattr(refresh, "verify_current_build", lambda build_id, nonce, image: (
+        build() if (build_id, nonce, image) == (BUILD_ID, NONCE, IMAGE) else None))
+    assert refresh.rescue_prior_journal(history, s, native, p) == original
+    assert native.calls["delete"] == 0
+    duplicate = history / "another-artifact" / "native-proof"
+    duplicate.mkdir(parents=True, mode=0o700)
+    (duplicate / "binding.json").write_bytes((original / "binding.json").read_bytes())
+    with pytest.raises(refresh.RefreshDenied, match="prior_owned_journal_required"):
+        refresh.rescue_prior_journal(history, s, native, p)
 
 
 def test_unknown_delete_is_once_only_without_touching_current_job(native, monkeypatch, tmp_path):

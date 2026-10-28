@@ -36,6 +36,14 @@ PINS = ("DOCUMENT_WORKER_IMAGE_DIGEST", "DOCUMENT_WORKER_POLICY_SHA256",
         "DOCUMENT_WORKER_DOCX_RENDERER_VERSION", "DOCUMENT_WORKER_DOCX_FONT_MANIFEST_SHA256")
 LABELS = ("hirewiz-refresh-build", "hirewiz-refresh-nonce", "hirewiz-refresh-job")
 OPERATION = re.compile(re.escape(PARENT + "/operations/") + r"[A-Za-z0-9._-]{1,200}\Z")
+# The reviewed schema21 API hotfix honors the upload admission flag on the
+# legacy /resume/parse route. The image is pinned to its native Build. Fill
+# revision and tag only from the actual production promotion readback.
+GUARDED_API_RELEASE = "d25811bf9aab85687d9786bdf6a92918826783d3"
+GUARDED_API_IMAGE = ("us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/"
+                     "hirewiz@sha256:e8d5d437995820970bc68b2036ad7c09a524ec9d9268be4022370b04c6bc7d51")
+GUARDED_API_REVISION = ""
+GUARDED_API_TAG = ""
 
 
 class TransitionDenied(RuntimeError):
@@ -160,11 +168,64 @@ def require_current_acceptance(acceptance: Any, image: str | None, probe: Any) -
          "document_transition_current_acceptance_required")
 
 
+def guarded_api_serving(clients: Any, value: Any, image: str, name: str, *, probe: Any) -> dict[str, Any]:
+    """Accept only the reviewed tagged hotfix revision during manual rescue."""
+    need(type(GUARDED_API_IMAGE) is str and re.fullmatch(
+        r"us-central1-docker\.pkg\.dev/ai-resume-parser-482412/"
+        r"cloud-run-source-deploy/hirewiz@sha256:[a-f0-9]{64}", GUARDED_API_IMAGE),
+        "document_rescue_guarded_api_image_unpinned")
+    need(type(GUARDED_API_REVISION) is str and re.fullmatch(r"ai-resume-parser-[a-z0-9-]{1,36}", GUARDED_API_REVISION)
+         and type(GUARDED_API_TAG) is str and re.fullmatch(r"[a-z][a-z0-9-]{0,62}", GUARDED_API_TAG),
+         "document_rescue_guarded_api_revision_unpinned")
+    expected = PARENT + "/services/ai-resume-parser/revisions/" + GUARDED_API_REVISION
+    statuses = value.get("trafficStatuses")
+    tagged = statuses[0] if type(statuses) is list and len(statuses) == 1 else {}
+    need(name == CALLERS[0] and image == GUARDED_API_IMAGE
+         and value.get("latestReadyRevision") == expected
+         and value.get("latestCreatedRevision") == expected
+         and type(tagged) is dict and tagged.get("revision") in {expected, GUARDED_API_REVISION}
+         and type(tagged.get("percent")) is int and tagged["percent"] == 100
+         and tagged.get("tag") == GUARDED_API_TAG
+         and tagged.get("type") in (None, "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION")
+         and set(tagged) <= {"revision", "percent", "tag", "type", "uri"},
+         "document_rescue_guarded_api_tagged_traffic_changed")
+    # Only normalize the already-exact tagged traffic to reuse the standard
+    # native revision/identity check; the original service object remains intact.
+    checked = copy.deepcopy(value)
+    checked["trafficStatuses"] = [{"revision": expected, "percent": 100}]
+    revision = probe.validate_serving(clients, checked, image, name)
+    for row in (value["template"], revision):
+        env = environment(row)
+        need(row["containers"][0]["image"] == GUARDED_API_IMAGE
+             and env.get("APP_RELEASE") == {"name": "APP_RELEASE", "value": GUARDED_API_RELEASE}
+             and env.get("RESUME_DIRECT_UPLOAD_ENABLED") == {
+                 "name": "RESUME_DIRECT_UPLOAD_ENABLED", "value": "false"},
+             "document_rescue_guarded_api_not_serving_closed")
+    need(value["template"].get("labels", {}).get("hirewiz-source") == GUARDED_API_RELEASE,
+         "document_rescue_guarded_api_source_changed")
+    return revision
+
+
+def verify_guarded_api(clients: Any, probe: Any) -> None:
+    """The serving API must be the exact closed-upload hotfix before rescue."""
+    value = clients.service(PARENT + "/services/ai-resume-parser")
+    guarded_api_serving(clients, value, value.get("template", {}).get("containers", [{}])[0].get("image"),
+                        CALLERS[0], probe=probe)
+
+
+def verify_rescue_caller_pins(clients: Any, probe: Any, image: str) -> None:
+    """Old V2 pins with only the exact tagged API exception."""
+    probe.verify_caller_pins(clients, image, policy_sha256=probe.POLICY,
+        api_serving_validator=lambda client, value, observed_image, name:
+            guarded_api_serving(client, value, observed_image, name, probe=probe))
+
+
 class Controller:
     def __init__(self, http: Any, probe: Any, owner: Journal, *, seconds: int = 1800,
-                 candidate_image: str | None = None):
+                 candidate_image: str | None = None, rescue_expired_v2: bool = False):
         self.http, self.probe, self.owner = http, probe, owner
         self.candidate_image = candidate_image
+        self.rescue_expired_v2 = rescue_expired_v2
         self.deadline = time.monotonic() + seconds
         self.observed: dict[str, dict[str, Any]] = {}
 
@@ -184,7 +245,12 @@ class Controller:
         image = value.get("template", {}).get("containers", [{}])[0].get("image")
         need(type(image) is str and re.fullmatch(r"[A-Za-z0-9._/:-]+@sha256:[a-f0-9]{64}", image),
              "document_transition_immutable_image_required")
-        revision = self.probe.validate_serving(self, value, image, service, uid)
+        statuses = value.get("trafficStatuses")
+        tagged = type(statuses) is list and len(statuses) == 1 and type(statuses[0]) is dict and statuses[0].get("tag")
+        if self.rescue_expired_v2 and service == CALLERS[0] and tagged:
+            revision = guarded_api_serving(self, value, image, service, probe=self.probe)
+        else:
+            revision = self.probe.validate_serving(self, value, image, service, uid)
         template = value["template"]
         need({key: revision.get(key) for key in template if key != "revision"}
              == {key: row for key, row in template.items() if key != "revision"},
@@ -249,14 +315,17 @@ class Controller:
 
 
 def transition(image: str, build: dict[str, Any], native_journal: Path, journal: Path,
-               *, http: Any, probe: Any) -> dict[str, Any]:
+               *, http: Any, probe: Any, rescue_expired_v2: bool = False) -> dict[str, Any]:
     """Trusted controller entry: actual fresh native acceptance, never a boolean receipt."""
+    need(type(rescue_expired_v2) is bool, "document_transition_rescue_mode_invalid")
     owner = Journal(journal)
     try:
         acceptance = probe.verify_successor(image, build, native_journal)
         require_current_acceptance(acceptance, image, probe)
         owner.write("native-acceptance.json", asdict(acceptance))
-        run = Controller(http, probe, owner, candidate_image=image)
+        run = Controller(http, probe, owner, candidate_image=image, rescue_expired_v2=rescue_expired_v2)
+        if rescue_expired_v2:
+            verify_guarded_api(run, probe)
         captured = {}
         prior_image = None
         prior_policy = None
@@ -268,7 +337,10 @@ def transition(image: str, build: dict[str, Any], native_journal: Path, journal:
             if name == WORKER:
                 prior_image = value["template"]["containers"][0]["image"]
                 if prior_image != probe.BASE_IMAGE:
-                    probe.verify_current_successor(prior_image, value)
+                    if rescue_expired_v2:
+                        probe.verify_expired_current_v2_for_retirement(prior_image, value)
+                    else:
+                        probe.verify_current_successor(prior_image, value)
                 prior_policy = probe.policy_for_serving(value, prior_image)
             else:
                 need(env.get("DOCUMENT_WORKER_IMAGE_DIGEST") == {"name": "DOCUMENT_WORKER_IMAGE_DIGEST", "value": prior_image},
@@ -277,7 +349,12 @@ def transition(image: str, build: dict[str, Any], native_journal: Path, journal:
                 need(all(row is None or set(row) == {"name", "value"} and row["value"] in {"true", "false"}
                          for row in captured[name].values()), "document_transition_admission_flag_unverified")
         need(prior_image != image, "document_transition_already_current_reconcile_only")
-        probe.verify_caller_pins(run, prior_image, policy_sha256=prior_policy)
+        need(not rescue_expired_v2 or prior_image != probe.BASE_IMAGE and prior_policy == probe.POLICY,
+             "document_transition_rescue_v2_predecessor_required")
+        if rescue_expired_v2:
+            verify_rescue_caller_pins(run, probe, prior_image)
+        else:
+            probe.verify_caller_pins(run, prior_image, policy_sha256=prior_policy)
         owner.write("captured-flags.json", captured)
         # No claim of quiescence: old in-flight callers can finish or safely503.
         for name in CALLERS:
@@ -296,6 +373,16 @@ def transition(image: str, build: dict[str, Any], native_journal: Path, journal:
             run.patch(name, "pins", template, acceptance=acceptance)
         probe.verify_caller_pins(run, image)
         probe.verify_current_successor(image, run.observed[WORKER])
+        if rescue_expired_v2:
+            # The old API was closed before this transition. Reopen its
+            # guarded route only after the new worker and all caller pins are
+            # natively proven. The captured original remains in the journal.
+            owner.write("rescue-admission-intent.json", {"api_release": GUARDED_API_RELEASE,
+                "worker_image": image, "native_acceptance_sha256": sha(asdict(acceptance)),
+                "resume_direct_upload_enabled": True, "automatic_replay": False})
+            captured = copy.deepcopy(captured)
+            captured[CALLERS[0]]["RESUME_DIRECT_UPLOAD_ENABLED"] = {
+                "name": "RESUME_DIRECT_UPLOAD_ENABLED", "value": "true"}
         for name in CALLERS:
             template = mutate_template(run.observed[name], name, "open", build["nonce"], image, {}, captured[name])
             run.patch(name, "open", template, acceptance=acceptance)
@@ -307,6 +394,8 @@ def transition(image: str, build: dict[str, Any], native_journal: Path, journal:
                   "native_acceptance_sha256": sha(asdict(acceptance)), "all_three_caller_pins_verified": True,
                   "admission_restored": True, "synchronous_callers_drained": False,
                   "current_native_proof_retained": True, "automatic_replay": False}
+        if rescue_expired_v2:
+            result["expired_v2_rescued"] = True
         owner.write("complete.json", result)
         return result
     finally:

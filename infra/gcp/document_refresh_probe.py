@@ -23,7 +23,7 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from importlib.machinery import SourceFileLoader
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 ROOT = Path(__file__).resolve().parents[2]
 HERE = Path(__file__).resolve().parent
@@ -393,7 +393,8 @@ def validate_worker_snapshot(clients: Any, snapshot: dict[str, Any], *, historic
     return image
 
 
-def verify_caller_pins(clients: Any, image: str, *, policy_sha256: str | None = None) -> None:
+def verify_caller_pins(clients: Any, image: str, *, policy_sha256: str | None = None,
+                       api_serving_validator: Callable[[Any, Any, str, str], dict[str, Any]] | None = None) -> None:
     """Old acceptance evidence is retained until both actual serving callers move."""
     policy = POLICY if policy_sha256 is None else policy_sha256
     need(type(policy) is str and policy in {POLICY, LEGACY_POLICY}, "document_native_caller_policy_unverified")
@@ -418,7 +419,9 @@ def verify_caller_pins(clients: Any, image: str, *, policy_sha256: str | None = 
         containers = service.get("template", {}).get("containers", [])
         need(type(containers) is list and len(containers) == 1,
              "document_native_caller_pin_unverified")
-        revision = validate_serving(clients, service, containers[0].get("image"), name)
+        revision = (api_serving_validator(clients, service, containers[0].get("image"), name)
+                    if name == "ai-resume-parser" and api_serving_validator is not None else
+                    validate_serving(clients, service, containers[0].get("image"), name))
         for row in (containers[0], revision["containers"][0]):
             env = row.get("env", [])
             need(type(env) is list, "document_native_caller_pin_unverified")
@@ -755,6 +758,20 @@ def acceptance(clients: Clients, image: str, build: dict[str, Any], job: dict[st
         facts["definition_expires_at"], 1 if historical_v1 else 2, 6 if historical_v1 else 10)
 
 
+def verify_expired_v2_identity(clients: Clients, image: str, build: dict[str, Any],
+                               job: dict[str, Any], execution: dict[str, Any]) -> None:
+    """Check the old native V2 record without constructing serving acceptance."""
+    verify_renderer_build(build)
+    renderer_identity(image, build_identity=build)
+    validate_job(job, image, build["nonce"])
+    validate_execution(execution, job, image, build["nonce"])
+    facts = validate_payload(native_payload(clients, job, execution), image, execution["name"],
+                             datetime.now(UTC), require_fresh=False, build_identity=build)
+    expiry = datetime.fromisoformat(facts["definition_expires_at"])
+    need(expiry.tzinfo is not None and expiry <= datetime.now(UTC),
+         "document_native_retirement_requires_expired_v2")
+
+
 def run_successor(image: str, build_identity: dict[str, Any], journal: Path) -> NativeAcceptance:
     """One new synthetic native Job; existing journal/unknown mutation cannot replay."""
     clients = None
@@ -822,20 +839,28 @@ def verify_successor(image: str, build_identity: dict[str, Any], journal: Path) 
 
 def verify_current_successor(image: str, service_metadata: dict[str, Any]) -> NativeAcceptance:
     """Maintenance uses only the dedicated unattended service-account identity."""
-    return _verify_current_successor(image, service_metadata, read_only_release=False)
+    result = _verify_current_successor(image, service_metadata, read_only_release=False)
+    assert isinstance(result, NativeAcceptance)
+    return result
 
 
 def verify_current_successor_for_release(image: str, service_metadata: dict[str, Any]) -> NativeAcceptance:
     """Ordinary release uses only the original, read-only retained SDK identity."""
-    return _verify_current_successor(image, service_metadata, read_only_release=True)
+    result = _verify_current_successor(image, service_metadata, read_only_release=True)
+    assert isinstance(result, NativeAcceptance)
+    return result
 
 
-def _verify_current_successor(image: str, service_metadata: dict[str, Any], *, read_only_release: bool) -> NativeAcceptance:
+def _verify_current_successor(image: str, service_metadata: dict[str, Any], *, read_only_release: bool,
+                              retirement_only: bool = False) -> NativeAcceptance | None:
     """Both fixed native identity routes execute the identical proof checks."""
     clients = None
     try:
         metadata = json.loads(canonical(service_metadata))
         historical_v1 = historical_v1_for_serving(metadata, image)
+        if retirement_only:
+            need(not historical_v1 and policy_for_serving(metadata, image) == POLICY,
+                 "document_native_retirement_requires_v2")
         labels = metadata.get("labels", metadata.get("metadata", {}).get("labels", {}))
         build_id, nonce, job_id = (labels.get(key) for key in (
             "hirewiz-refresh-build", "hirewiz-refresh-nonce", "hirewiz-refresh-job"))
@@ -865,6 +890,9 @@ def _verify_current_successor(image: str, service_metadata: dict[str, Any], *, r
         validate_job(job, image, nonce, historical_v1=historical_v1)
         latest = job.get("latestCreatedExecution", {}).get("name")
         execution = clients.execution(execution_reference(job, latest))
+        if retirement_only:
+            verify_expired_v2_identity(clients, image, build, job, execution)
+            return None
         return acceptance(clients, image, build, job, execution, historical_v1=historical_v1)
     except NativeProofDenied:
         raise
@@ -873,6 +901,15 @@ def _verify_current_successor(image: str, service_metadata: dict[str, Any], *, r
     finally:
         if clients is not None:
             clients.close()
+
+
+def verify_expired_current_v2_for_retirement(image: str, service_metadata: dict[str, Any], *,
+                                             read_only_release: bool = False) -> None:
+    """Exact currently serving V2 proof; stale definitions permit retirement only."""
+    need(type(read_only_release) is bool, "document_native_retirement_mode_invalid")
+    need(_verify_current_successor(image, service_metadata, read_only_release=read_only_release,
+                                   retirement_only=True) is None,
+         "document_native_retirement_proof_unavailable")
 
 
 def cleanup_successor(image: str, build_identity: dict[str, Any], journal: Path) -> dict[str, Any]:

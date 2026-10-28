@@ -16,6 +16,10 @@ on:
         type: string
         required: false
         default: ""
+      rescue_expired_v2:
+        description: Explicitly replace the exact expired V2 worker after the guarded API hotfix is serving
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -38,6 +42,7 @@ jobs:
       REFRESH_MODE: ${{ github.event.schedule == '37 1 * * *' && 'refresh' || inputs.mode || 'monitor' }}
       DOCUMENT_REFRESH_CONTROLLER_UID: ${{ vars.DOCUMENT_REFRESH_CONTROLLER_UID }}
       RECOVER_FAILED_NATIVE_JOB: ${{ github.event_name == 'workflow_dispatch' && inputs.recover_failed_native_job || '' }}
+      RESCUE_EXPIRED_V2: ${{ github.event_name == 'workflow_dispatch' && inputs.rescue_expired_v2 || false }}
     steps:
       - name: Initialize private maintenance paths
         run: |
@@ -54,6 +59,8 @@ jobs:
           test -n "$PROVIDER" && test "$ACCOUNT" = "hirewiz-document-refresh@ai-resume-parser-482412.iam.gserviceaccount.com"
           test -n "$DOCUMENT_REFRESH_CONTROLLER_UID"
           test -z "$RECOVER_FAILED_NATIVE_JOB" || test "$REFRESH_MODE" = refresh || test "$REFRESH_MODE" = full-source-refresh
+          test "$RESCUE_EXPIRED_V2" != true || test "$REFRESH_MODE" = refresh
+          test "$RESCUE_EXPIRED_V2" != true || test -z "$RECOVER_FAILED_NATIVE_JOB"
       - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
         with:
           workload_identity_provider: ${{ vars.DOCUMENT_REFRESH_WIF_PROVIDER }}
@@ -78,12 +85,31 @@ jobs:
         run: |
           umask 077
           mkdir -m 700 "$HISTORY_DIRECTORY"
-          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" --jq '.artifacts[] | select(.expired == false and (.name | (startswith("document-refresh-refresh-") or startswith("document-refresh-full-source-refresh-") or startswith("document-refresh-resume-full-source-refresh-")))) | [.workflow_run.id, .id, .name, .workflow_run.head_branch] | @tsv' > "$RUNNER_TEMP/document-refresh-artifacts.tsv"
-          python -c 'import os,pathlib; p=pathlib.Path(os.environ["RUNNER_TEMP"])/"document-refresh-artifacts.tsv"; rows=[r for r in p.read_text().splitlines() if r.split("\t")[-1]==os.environ["GITHUB_REF_NAME"]]; p.write_text("\n".join(rows[:3]) + "\n")'
-          while IFS=$'\t' read -r run artifact_id artifact branch; do
-            test -n "$run" || continue
-            gh run download "$run" --repo "$GITHUB_REPOSITORY" --name "$artifact" --dir "$HISTORY_DIRECTORY/$artifact_id"
-          done < "$RUNNER_TEMP/document-refresh-artifacts.tsv"
+          if [[ "$RESCUE_EXPIRED_V2" = true ]]; then
+            # These are exactly the two abandoned pre-native Builds and the
+            # currently serving predecessor's owned journal. Do not let later
+            # scheduled artifacts evict any of the three from the bounded set.
+            while read -r artifact_id run artifact; do
+              IFS=$'\t' read -r actual_id actual_run actual_artifact branch expired < <(
+                gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id" \
+                  --jq '[.id, .workflow_run.id, .name, .workflow_run.head_branch, .expired] | @tsv')
+              test "$actual_id" = "$artifact_id" && test "$actual_run" = "$run"
+              test "$actual_artifact" = "$artifact" && test "$branch" = "$GITHUB_REF_NAME"
+              test "$expired" = false
+              gh run download "$run" --repo "$GITHUB_REPOSITORY" --name "$artifact" --dir "$HISTORY_DIRECTORY/$artifact_id"
+            done <<'RESCUE_ARTIFACTS'
+          12716145282 40463057954 document-refresh-refresh-40463057954-1
+          12632278735 40282264539 document-refresh-refresh-40282264539-1
+          12590585230 40169964119 document-refresh-refresh-40169964119-1
+          RESCUE_ARTIFACTS
+          else
+            gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" --jq '.artifacts[] | select(.expired == false and (.name | (startswith("document-refresh-refresh-") or startswith("document-refresh-full-source-refresh-") or startswith("document-refresh-resume-full-source-refresh-")))) | [.workflow_run.id, .id, .name, .workflow_run.head_branch] | @tsv' > "$RUNNER_TEMP/document-refresh-artifacts.tsv"
+            python -c 'import os,pathlib; p=pathlib.Path(os.environ["RUNNER_TEMP"])/"document-refresh-artifacts.tsv"; rows=[r for r in p.read_text().splitlines() if r.split("\t")[-1]==os.environ["GITHUB_REF_NAME"]]; p.write_text("\n".join(rows[:3]) + "\n")'
+            while IFS=$'\t' read -r run artifact_id artifact branch; do
+              test -n "$run" || continue
+              gh run download "$run" --repo "$GITHUB_REPOSITORY" --name "$artifact" --dir "$HISTORY_DIRECTORY/$artifact_id"
+            done < "$RUNNER_TEMP/document-refresh-artifacts.tsv"
+          fi
           find "$HISTORY_DIRECTORY" -type d -exec chmod 700 {} +
           find "$HISTORY_DIRECTORY" -type f -exec chmod 600 {} +
       - name: Retrieve the exact retained already-built candidate
@@ -106,6 +132,9 @@ jobs:
           args=(--mode refresh --publish-candidate --prior-history-directory "$HISTORY_DIRECTORY" --output-directory "$OUTPUT_DIRECTORY")
           if [[ -n "$RECOVER_FAILED_NATIVE_JOB" ]]; then
             args+=(--recover-failed-native-job "$RECOVER_FAILED_NATIVE_JOB")
+          fi
+          if [[ "$RESCUE_EXPIRED_V2" = true ]]; then
+            args+=(--rescue-expired-v2)
           fi
           backend/.venv/bin/python backend/scripts/document_refresh.py "${args[@]}"
       - name: Build full-source inspector, prove native cases and transition exact pins
@@ -133,5 +162,5 @@ jobs:
           elif [[ "$REFRESH_MODE" = full-source-refresh ]]; then
             echo 'Full-source refresh publishes 13 source inputs plus the policy file and requires verification of 12 copied runtime files, 25 synthetic local cases and native V2 ten-case acceptance before the bounded worker/three-caller pin transition. Inspect the retained result and native journals for the actual outcome; this summary alone proves no completion. No new IAM, sales or employer submission is enabled. Unknown outcomes require read-only reconciliation, never another send.' >> "$GITHUB_STEP_SUMMARY"
           else
-            echo 'Refresh requires actual native V2 ten-case acceptance before the bounded fail-closed worker and three-caller pin transition. On failure retain this journal, inspect the same native operation, and keep admission closed; rerunning a failed POST/PATCH is not recovery. Monitor emits an expiry heartbeat for the configured Cloud Monitoring alert.' >> "$GITHUB_STEP_SUMMARY"
+            echo 'Refresh requires actual native V2 ten-case acceptance before the bounded fail-closed worker and three-caller pin transition. Manual expired-V2 rescue additionally checks the exact guarded API release with uploads closed, proves the old Build/Job/Execution/config/pins as retirement-only, and preflights the prior owned journal before a new Build. On failure retain this journal, inspect the same native operation, and keep admission closed; rerunning a failed POST/PATCH is not recovery. Monitor emits an expiry heartbeat for the configured Cloud Monitoring alert.' >> "$GITHUB_STEP_SUMMARY"
           fi
