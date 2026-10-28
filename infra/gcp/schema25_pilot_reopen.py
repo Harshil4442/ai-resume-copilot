@@ -129,6 +129,24 @@ def _original_flags(run, maintenance_plan, service):
     return rolling.environment(revision)
 
 
+def _verify_reopen_flags(plan, maintenance_plan, run):
+    """Recompute every requested value from the pinned pre-maintenance revision.
+
+    The private reopen plan is an instruction, not evidence that a route used to
+    be open. This check runs on every advance and reconcile before any PATCH.
+    """
+    need(rolling.sha(asdict(maintenance_plan)) == plan.maintenance_sha256,
+         "maintenance_plan_changed")
+    for pin in plan.services:
+        prior = _original_flags(run, maintenance_plan, pin.service)
+        need(all(prior.get(flag, {"name": flag, "value": "false"}).get("value")
+                 in {"true", "false"} for flag in plan.requested_flags),
+             "prior_flag_invalid")
+        expected = tuple(flag for flag in plan.requested_flags
+                         if prior.get(flag) == {"name": flag, "value": "true"})
+        need(pin.reopen_flags == expected, "reopen_flags_not_prior_true")
+
+
 def _restored(maintenance_plan, maintenance_journal, coordinator_plan, coordinator_journal,
               controls, coordinator_run):
     for pin in maintenance_plan.resources:
@@ -165,16 +183,137 @@ def _deployed(deployment_plan, deployment_journal, boundary):
     boundary.observer.verify_policy_configuration(deployment_plan.target_policies())
 
 
-def verify_document_pins():
-    """An upload route needs fresh native worker acceptance and exact caller pins."""
+def _schema25_caller(clients, name, uid, image, source, latest, traffic,
+                     template_sha, template_keys, pins, *, static_sha=None, coordinator_static=False,
+                     active_digest=None):
+    """Read-only caller proof for an exact tagged schema25 serving revision.
+
+    The scanner's generic no-tag validator remains unchanged. Schema25 leaves
+    a rollout tag on API/worker traffic, while coordinator restore can leave
+    its prior revision serving under a newer, identical restore template.
+    """
+    resource = document_probe.PARENT + "/services/" + name
+    current = clients.service(resource)
+    need(current.get("name") == resource and current.get("uid") == uid
+         and type(current.get("etag")) is str and bool(current["etag"])
+         and str(current.get("generation")) == str(current.get("observedGeneration"))
+         and current.get("reconciling", False) is False
+         and current.get("terminalCondition", {}).get("state") == "CONDITION_SUCCEEDED"
+         and current.get("latestReadyRevision") == resource + "/revisions/" + latest
+         and current.get("latestCreatedRevision") == current.get("latestReadyRevision")
+         and rolling.pinned_traffic(name, current) == traffic,
+         "document_caller_serving_changed")
+    if static_sha is not None:
+        observed_static = (coordinator.static_hash(current) if coordinator_static
+                           else rolling.static_sha(current))
+        need(observed_static == static_sha, "document_caller_static_changed")
+    template = current.get("template", {})
+    observed_template = (coordinator.template_hash(template) if coordinator_static
+                         else rolling.template_sha(template, name))
+    need(observed_template == template_sha, "document_caller_template_changed")
+    active = next(row["revision"] for row in traffic if row.get("percent") == 100)
+    for revision_name in sorted({latest, active}):
+        full = resource + "/revisions/" + revision_name
+        revision = clients.revision(full)
+        ready = revision.get("conditions", [])
+        need(revision.get("name") == full
+             and revision.get("service") in (resource, name)
+             and type(revision.get("uid")) is str
+             and document_probe.UUID.fullmatch(revision["uid"])
+             and type(ready) is list
+             and len([row for row in ready if row.get("type") == "Ready"
+                      and row.get("state") == "CONDITION_SUCCEEDED"]) == 1,
+             "document_caller_revision_changed")
+        if revision_name == latest:
+            revision_template = {key: revision.get(key) for key in template_keys}
+            revision_template["revision"] = revision_name
+            digest = (coordinator.template_hash(revision_template) if coordinator_static
+                      else rolling.template_sha(revision_template, name))
+            need(digest == template_sha, "document_caller_revision_changed")
+        else:
+            need(active_digest is not None and rolling.sha(revision) == active_digest,
+                 "document_caller_revision_changed")
+        for row in (revision, template if revision_name == latest else {}):
+            if not row:
+                continue
+            env = rolling.environment(row)
+            need(row["containers"][0].get("image") == image
+                 and env.get("APP_RELEASE", {}).get("value") == source
+                 and all(env.get(key) == {"name": key, "value": value}
+                         for key, value in pins.items()),
+                 "document_caller_pins_changed")
+    need(clients.service(resource) == current, "document_caller_serving_changed")
+
+
+def verify_document_pins(plan, pilot_journal, coordinator_plan):
+    """Require fresh native worker acceptance and exact schema25 caller pins."""
     clients = document_probe.Clients(read_only_release=True)
     try:
         worker = clients.service(document_probe.PARENT + "/services/hirewiz-document-inspector")
         image = worker.get("template", {}).get("containers", [{}])[0].get("image")
         need(type(image) is str and bool(document_probe.IMAGE.fullmatch(image)),
              "document_image_invalid")
-        document_probe.verify_current_successor_for_release(image, worker)
-        document_probe.verify_caller_pins(clients, image)
+        accepted = document_probe.verify_current_successor_for_release(image, worker)
+        need(accepted.image == image, "document_acceptance_image_changed")
+        pins = {"DOCUMENT_WORKER_URL": document_probe.WORKER_URL,
+                "DOCUMENT_WORKER_IMAGE_DIGEST": image,
+                "DOCUMENT_WORKER_POLICY_SHA256": accepted.policy_sha256,
+                "DOCUMENT_WORKER_DOCX_RENDERER_VERSION": accepted.renderer_version,
+                "DOCUMENT_WORKER_DOCX_FONT_MANIFEST_SHA256": accepted.font_manifest_sha256}
+        for name in SERVICES[:2]:
+            pin = next(item for item in plan.services if item.service == name)
+            resource = document_probe.PARENT + "/services/" + name
+            prior = clients.revision(resource + "/revisions/" + pin.active_revision)
+            need(prior.get("name") == resource + "/revisions/" + pin.active_revision
+                 and prior.get("service") in (resource, name)
+                 and type(prior.get("uid")) is str
+                 and document_probe.UUID.fullmatch(prior["uid"])
+                 and len([row for row in prior.get("conditions", [])
+                          if row.get("type") == "Ready"
+                          and row.get("state") == "CONDITION_SUCCEEDED"]) == 1,
+                 "document_candidate_revision_changed")
+            original = {key: prior.get(key) for key in pin.template_keys}
+            original["revision"] = pin.active_revision
+            need(rolling.template_sha(original, name) == pin.template_sha256,
+                 "document_candidate_revision_changed")
+            reopened, reopened_traffic = desired(plan, pin, {"template": original}) if pin.reopen_flags else (None, None)
+            candidate = (pin.active_revision, list(pin.traffic), pin.template_sha256)
+            marker = "pilot." + name
+            started = pilot_journal.read(marker + ".started")
+            checked = pilot_journal.read(marker + ".checked")
+            choices = [] if checked is not None else [candidate]
+            if started is not None and reopened is not None:
+                choices.append((plan.revision(name), reopened_traffic,
+                                rolling.template_sha(reopened, name)))
+            need(bool(choices), "document_caller_state_changed")
+            current = clients.service(resource)
+            observed = (rolling.short_revision(current.get("latestReadyRevision", ""), name),
+                        rolling.pinned_traffic(name, current))
+            matching = [choice for choice in choices if choice[:2] == observed]
+            need(len(matching) == 1, "document_caller_state_changed")
+            latest, traffic, template_sha = matching[0]
+            _schema25_caller(clients, name, pin.uid, plan.image, plan.source_release,
+                             latest, traffic, template_sha, pin.template_keys, pins,
+                             static_sha=pin.static_sha256)
+        name = coordinator.SERVICE
+        resource = document_probe.PARENT + "/services/" + name
+        prior = clients.revision(resource + "/revisions/" + coordinator_plan.prior_revision)
+        need(rolling.sha(prior) == dict(coordinator_plan.prior_revisions)[coordinator_plan.prior_revision],
+             "document_coordinator_prior_changed")
+        original = {key: prior.get(key) for key in coordinator_plan.template_keys}
+        need(coordinator.template_hash(original) == coordinator_plan.template_sha256,
+             "document_coordinator_prior_changed")
+        active = next(row["revision"] for row in coordinator_plan.original_traffic
+                      if row.get("percent") == 100)
+        _schema25_caller(clients, name, coordinator_plan.uid, coordinator_plan.image,
+                         coordinator_plan.source_release,
+                         coordinator_plan.revision_name("restore"),
+                         list(coordinator_plan.original_traffic),
+                         coordinator_plan.template_sha256,
+                         coordinator_plan.template_keys, pins,
+                         static_sha=coordinator_plan.static_sha256,
+                         coordinator_static=True,
+                         active_digest=dict(coordinator_plan.prior_revisions)[active])
     finally:
         clients.close()
 
@@ -282,13 +421,14 @@ def _readback(plan, pin, run, started, health):
     return current
 
 
-def advance(plan, journal, run, health, gate, *, reconcile=False):
+def advance(plan, journal, run, health, gate, maintenance_plan, *, reconcile=False):
     """Workers before API; never resend a PATCH after an uncertain outcome."""
     plan.validate()
     need(journal.plan_hash == rolling.sha(asdict(plan)), "journal_mismatch")
     with journal.locked():
         gate(not any(journal.read("pilot." + service + ".started")
                      for service in SERVICES))
+        _verify_reopen_flags(plan, maintenance_plan, run)
         for service in (*SERVICES[1:], SERVICES[0]):
             pin = next(item for item in plan.services if item.service == service)
             if not pin.reopen_flags:
@@ -458,8 +598,8 @@ def main():
         if set(plan.requested_flags) & {
             "RESUME_DIRECT_UPLOAD_ENABLED", "BROWSER_ASSISTANCE_NATIVE_UPLOAD_ENABLED"
         }:
-            verify_document_pins()
-    print(json.dumps(advance(plan, journal, run, health, gate,
+            verify_document_pins(plan, journal, coordinator_plan)
+    print(json.dumps(advance(plan, journal, run, health, gate, maintenance_plan,
                              reconcile=args.phase == "reconcile")))
 
 

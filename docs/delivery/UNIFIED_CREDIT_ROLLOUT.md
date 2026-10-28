@@ -139,9 +139,12 @@ paid-route qualification.
 
 The capture reads the prior true flags from the exact fresh pre-maintenance
 revisions and verifies the current schema25 image, source, health and completed
-deployment journals. `advance` rechecks the retained restoration evidence and
-current policy; upload-related flags also require the current native document
-acceptance and exact caller pins. It changes only requested flags that were
+deployment journals. Every `advance` and `reconcile` recomputes each selected
+flag from those hashed prior revisions; a valid-looking edited plan cannot add
+a flag that was previously closed. `advance` rechecks the retained restoration
+evidence and current policy; upload-related flags also require current native
+document acceptance and exact caller pins on the schema25 tagged serving
+revisions. It changes only requested flags that were
 previously true, retaining the same image, source, secrets and all other
 configuration. The native PATCH is journaled once per service, workers before
 API; a lost acknowledgement requires `reconcile` with the same plan and journal
@@ -150,6 +153,14 @@ revision, policy, scanner proof or resource state stops the operation. Confirm
 the new revision's health and the user's actual pilot journey before reporting
 it available. This operator cannot reopen optional AI, checkout, new credits,
 free-core processing or employer final submission.
+
+**User-facing limitation:** schema25 base promotion closes
+`OPTIONAL_AI_GENERATION_ENABLED`. If legacy AI generation is currently running,
+it will stop after the base deployment and this pilot operator will not restore
+it. Do not report the full existing service as restored while that route is
+closed. Reopening AI requires a separately reviewed release with funded model
+access, expense and quality gates, compatible schema25 behavior, and an exact
+native readback; no flag edit to this pilot plan is sufficient.
 
 The permitted finite flag set is direct resume upload, employer discovery,
 browser assistance, its typed controls, attachments, native upload/pairing and
