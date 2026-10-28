@@ -50,6 +50,7 @@ def service(name):
 class Http:
     def __init__(self, *, lost_at=None):
         self.services = {name: service(name) for name in transition.SERVICES}
+        self.operations = {}
         self.writes, self.lost_at = [], lost_at
     def request(self, uri, *, method, body, headers, redirections):
         assert redirections == 0
@@ -70,11 +71,15 @@ class Http:
             current['latestReadyRevision'] = current['latestCreatedRevision'] = revision
             current['trafficStatuses'] = [{'revision': revision, 'percent': 100}]
             self.services[name] = current
+            operation_name = transition.PARENT + '/operations/owned-' + str(len(self.writes))
+            self.operations[operation_name] = copy.deepcopy(current)
             if len(self.writes) == self.lost_at:
                 raise transition.TransitionDenied('document_transition_native_outcome_unknown_reconcile_only')
-            value = {'name': transition.PARENT + '/operations/owned-' + str(len(self.writes))}
+            value = {'name': operation_name}
         elif '/operations/' in path:
-            value = {'name': path, 'done': True}
+            if path not in self.operations:
+                return SimpleNamespace(status=404), b'{}'
+            value = {'name': path, 'done': True, 'response': copy.deepcopy(self.operations[path])}
         elif '/revisions/' in path:
             name = path.split('/services/')[1].split('/')[0]
             value = copy.deepcopy(self.services[name]['template'])
@@ -168,6 +173,72 @@ def test_rescue_retires_exact_v2_and_reopens_guarded_api_only_after_new_pins(mon
     assert transition.environment(http.writes[-3][1]['template'])['RESUME_DIRECT_UPLOAD_ENABLED']['value'] == 'true'
     assert result['expired_v2_rescued'] is True and result['prior_image'] == OLD_V2
     assert json.loads((tmp_path / 'rollout/rescue-admission-intent.json').read_text())['automatic_replay'] is False
+
+
+def failed_rescue_after_three_closes(monkeypatch, tmp_path):
+    """Use real transition markers, then retain only the failed-run prefix."""
+    fixture_probe(monkeypatch)
+    monkeypatch.setattr(transition, 'GUARDED_API_IMAGE', APP)
+    monkeypatch.setattr(transition, 'GUARDED_API_REVISION', 'ai-resume-parser-00001-owned')
+    monkeypatch.setattr(transition, 'GUARDED_API_TAG', 'api-hotfix-candidate')
+    monkeypatch.setattr(transition, 'RESCUE_IMAGE', NEW)
+    monkeypatch.setattr(transition, 'RESCUE_BUILD_ID', '01234567-0123-0123-0123-012345678901')
+    monkeypatch.setattr(transition, 'RESCUE_NONCE', NONCE)
+    monkeypatch.setattr(probe, 'verify_expired_current_v2_for_retirement', lambda *_: None)
+    original = guarded_old_v2(Http())
+    (tmp_path / 'original').mkdir()
+    run_rescue(tmp_path / 'original', original)
+    partial = guarded_old_v2(Http())
+    for _, body in original.writes[:3]:
+        partial.request('https://run.googleapis.com/v2/' + body['name'], method='PATCH',
+                        body=json.dumps(body).encode(), headers={}, redirections=0)
+    journal = tmp_path / 'retained'
+    journal.mkdir(mode=0o700)
+    for file in (tmp_path / 'original/rollout').glob('*.json'):
+        if file.name in {'native-acceptance.json', 'captured-flags.json'} or file.name.startswith('close.'):
+            if file.name == 'close.hirewiz-resume-coordinator.verified.json':
+                continue
+            saved = journal / file.name
+            saved.write_bytes(file.read_bytes())
+            saved.chmod(0o600)
+    return partial, journal
+
+
+def test_resume_failed_rescue_reconciles_ack_then_only_sends_unstarted_steps(monkeypatch, tmp_path):
+    http, journal = failed_rescue_after_three_closes(monkeypatch, tmp_path)
+    result = transition.resume_failed_rescue(NEW, {
+        'build_id': transition.RESCUE_BUILD_ID, 'nonce': transition.RESCUE_NONCE},
+        tmp_path / 'native', journal, http=http, probe=probe)
+    assert result['status'] == 'document_refresh_serving'
+    assert result['expired_v2_rescued'] is True
+    assert [name for name, _ in http.writes[3:]] == [transition.WORKER,
+        *transition.CALLERS, *transition.CALLERS]
+    assert (journal / 'close.hirewiz-resume-coordinator.verified.json').is_file()
+    assert (journal / 'complete.json').is_file()
+    assert transition.environment(http.services[transition.CALLERS[0]]['template'])[
+        'RESUME_DIRECT_UPLOAD_ENABLED']['value'] == 'true'
+
+
+@pytest.mark.parametrize('drift', ['operation', 'flag', 'template'])
+def test_resume_failed_rescue_refuses_changed_ack_or_live_close(monkeypatch, tmp_path, drift):
+    http, journal = failed_rescue_after_three_closes(monkeypatch, tmp_path)
+    name = transition.CALLERS[2]
+    if drift == 'operation':
+        ack = journal / ('close.' + name + '.acknowledged.json')
+        changed = json.loads(ack.read_text())
+        changed['operation'] = transition.PARENT + '/operations/unrelated'
+        ack.write_text(json.dumps(changed))
+    elif drift == 'flag':
+        next(row for row in http.services[name]['template']['containers'][0]['env']
+             if row['name'] == 'RESUME_DIRECT_UPLOAD_ENABLED')['value'] = 'true'
+    else:
+        http.services[name]['template']['timeout'] = '900s'
+    with pytest.raises(transition.TransitionDenied):
+        transition.resume_failed_rescue(NEW, {
+            'build_id': transition.RESCUE_BUILD_ID, 'nonce': transition.RESCUE_NONCE},
+            tmp_path / 'native', journal, http=http, probe=probe)
+    assert len(http.writes) == 3
+    assert not (journal / 'worker.hirewiz-document-inspector.started.json').exists()
 
 
 @pytest.mark.parametrize('drift', ['image', 'source', 'flag', 'traffic'])
