@@ -10,6 +10,7 @@ import copy
 import hashlib
 import importlib.util
 import json
+import time
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -229,7 +230,10 @@ def resume(image: str, build: dict[str, Any], native: Path, original: Path, prev
         t.need(all(run.service(name) == run.observed[name] for name in t.SERVICES),
                "document_final_preclaim_state_changed")
         claim(t, http, owner, acceptance, run.observed, first_sha, second_sha)
-        t.need(all(run.service(name) == run.observed[name] for name in t.SERVICES),
+        prewrite_deadline = min(run.deadline, time.monotonic() + 45)
+        t.need(all(run.service_retry(name, deadline=prewrite_deadline,
+                                     timeout_code="document_final_prewrite_read_deadline_reconcile_only")
+                   == run.observed[name] for name in t.SERVICES),
                "document_final_prewrite_state_changed")
         template = t.mutate_template(coordinator, t.CALLERS[2], "open", t.RESCUE_NONCE,
                                      image, {}, captured[t.CALLERS[2]])

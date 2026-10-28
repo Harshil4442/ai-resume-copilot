@@ -582,6 +582,96 @@ def test_done_before_ready_service_get_polls_without_another_patch(monkeypatch, 
     assert [name for name, _ in http.writes[10:]] == [coordinator]
 
 
+@pytest.mark.parametrize('pending_status', ['prior', 'empty_reconciling', 'split_reconciling'])
+def test_done_before_latest_created_status_polls_known_state(monkeypatch, tmp_path, pending_status):
+    http, source, previous = failed_partial_after_analysis_ack(monkeypatch, tmp_path)
+    coordinator = transition.CALLERS[2]
+    request = http.request
+    state = {'before': None, 'done': False, 'lagged': 2}
+    def lagged(uri, *, method, body=None, headers=None, redirections):
+        if method == 'PATCH' and urlsplit(uri).path.endswith('/services/' + coordinator):
+            state['before'] = copy.deepcopy(http.services[coordinator])
+        response, raw = request(uri, method=method, body=body, headers=headers, redirections=redirections)
+        if method == 'GET' and '/operations/' in uri and uri.endswith('owned-11'):
+            state['done'] = True
+        if method == 'GET' and uri.endswith('/services/' + coordinator) and state['done'] and state['lagged']:
+            state['lagged'] -= 1
+            pending = copy.deepcopy(http.services[coordinator])
+            pending['latestReadyRevision'] = state['before']['latestReadyRevision']
+            pending['reconciling'] = True
+            if pending_status == 'prior':
+                pending['latestCreatedRevision'] = state['before']['latestCreatedRevision']
+                pending['trafficStatuses'] = state['before']['trafficStatuses']
+            elif pending_status == 'empty_reconciling':
+                pending.pop('latestCreatedRevision')
+                pending['trafficStatuses'] = []
+            else:
+                pending['latestCreatedRevision'] = state['before']['latestCreatedRevision']
+                prior = state['before']['latestReadyRevision']
+                target = http.services[coordinator]['latestReadyRevision']
+                pending['trafficStatuses'] = [
+                    {'revision': prior, 'percent': 100}, {'revision': target, 'percent': 0}]
+            return response, json.dumps(pending).encode()
+        return response, raw
+    monkeypatch.setattr(http, 'request', lagged)
+    monkeypatch.setattr(transition.time, 'sleep', lambda _: None)
+    result = continue_final(http, source, previous, tmp_path)
+    assert result['status'] == 'document_refresh_final_caller_restoration_observed'
+    assert state['lagged'] == 0
+    assert [name for name, _ in http.writes[10:]] == [coordinator]
+
+
+@pytest.mark.parametrize('status', [429, 503])
+def test_transient_post_ack_service_get_retries_only_reads(monkeypatch, tmp_path, status):
+    http, source, previous = failed_partial_after_analysis_ack(monkeypatch, tmp_path)
+    coordinator = transition.CALLERS[2]
+    request = http.request
+    state = {'done': False, 'unavailable': 2}
+    def transient(uri, *, method, body=None, headers=None, redirections):
+        response, raw = request(uri, method=method, body=body, headers=headers, redirections=redirections)
+        if method == 'GET' and '/operations/' in uri and uri.endswith('owned-11'):
+            state['done'] = True
+        if method == 'GET' and uri.endswith('/services/' + coordinator) and state['done'] and state['unavailable']:
+            state['unavailable'] -= 1
+            return SimpleNamespace(status=status), b'{}'
+        return response, raw
+    monkeypatch.setattr(http, 'request', transient)
+    monkeypatch.setattr(transition.time, 'sleep', lambda _: None)
+    result = continue_final(http, source, previous, tmp_path)
+    assert result['status'] == 'document_refresh_final_caller_restoration_observed'
+    assert state['unavailable'] == 0
+    assert [name for name, _ in http.writes[10:]] == [coordinator]
+
+
+@pytest.mark.parametrize('phase', ['prewrite_service', 'prior_revision', 'operation'])
+def test_exact_transient_read_after_claim_or_ack_never_repeats_write(monkeypatch, tmp_path, phase):
+    http, source, previous = failed_partial_after_analysis_ack(monkeypatch, tmp_path)
+    coordinator = transition.CALLERS[2]
+    request = http.request
+    state = {'claimed': False, 'unavailable': 1}
+    def transient(uri, *, method, body=None, headers=None, redirections):
+        target = urlsplit(uri)
+        if (method == 'POST' and target.hostname == 'storage.googleapis.com'
+                and parse_qs(target.query).get('name') == [final.CLAIM_OBJECT]):
+            state['claimed'] = True
+        affected = (phase == 'prewrite_service' and method == 'GET'
+                    and target.path.endswith('/services/' + coordinator)
+                    or phase == 'prior_revision' and method == 'GET'
+                    and target.path.endswith('/revisions/' + coordinator + '-d-' + NONCE[:12] + '-pins')
+                    or phase == 'operation' and method == 'GET' and target.path.endswith('owned-11'))
+        if state['claimed'] and state['unavailable'] and affected:
+            state['unavailable'] -= 1
+            return SimpleNamespace(status=503), b'{}'
+        return request(uri, method=method, body=body, headers=headers, redirections=redirections)
+    monkeypatch.setattr(http, 'request', transient)
+    monkeypatch.setattr(transition.time, 'sleep', lambda _: None)
+    result = continue_final(http, source, previous, tmp_path)
+    assert result['status'] == 'document_refresh_final_caller_restoration_observed'
+    assert state['unavailable'] == 0
+    assert http.claim_posts == 3
+    assert [name for name, _ in http.writes[10:]] == [coordinator]
+
+
 def test_post_lro_permanent_template_mismatch_fails_without_replay(monkeypatch, tmp_path):
     http, source, previous = failed_partial_after_analysis_ack(monkeypatch, tmp_path)
     coordinator = transition.CALLERS[2]

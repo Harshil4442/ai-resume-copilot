@@ -45,9 +45,14 @@ hashes, maintenance close, native acceptance and all four live preimages. All
 four services must remain unchanged after the claim. It then sends exactly one
 etag-fenced `open` PATCH to the resume coordinator. The shared controller
 allows a bounded 180-second *read-only* service poll after the LRO is done when
-Cloud Run still reports the old or not-yet-serving expected revision. A
-different template, generation or unrelated configuration fails immediately.
-Neither an uncertain POST/PATCH nor a timed-out readback is retried.
+Cloud Run still reports the old or not-yet-serving expected revision. Only
+the prior or expected revision and traffic statuses may appear during this
+poll; an empty or split status is accepted only while reconciling. Exact
+prewrite service and revision GETs, and the acknowledged LRO GET, have narrow
+bounded retries for known transient transport failures or HTTP 429/502/503/504.
+A different template, generation, third revision or unrelated configuration
+fails immediately. Neither an uncertain POST/PATCH nor a timed-out readback
+is retried.
 
 Successful evidence must include `final-claim.started`, `acknowledged` and
 `verified`; the coordinator `open.started`, `acknowledged` and `verified`;
