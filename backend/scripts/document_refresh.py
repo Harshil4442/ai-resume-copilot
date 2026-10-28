@@ -723,16 +723,23 @@ def rescue_prior_journal(history: Path, service: dict[str, Any], clients: Any,
          "document_rescue_prior_history_required")
     image = service["template"]["containers"][0]["image"]
     labels = service.get("labels", {})
-    build = verify_current_build(labels.get("hirewiz-refresh-build"),
-                                 labels.get("hirewiz-refresh-nonce"), image)
     paths = []
     for binding in history.glob("*/native-proof/binding.json"):
         need(not binding.is_symlink() and binding.stat().st_size <= MAX_OUTPUT,
              "document_rescue_prior_journal_invalid")
-        if decode(binding.read_bytes()).get("image") == image:
-            paths.append(binding.parent)
+        saved = decode(binding.read_bytes())
+        need(type(saved) is dict, "document_rescue_prior_journal_invalid")
+        if saved.get("image") == image:
+            paths.append((binding.parent, saved))
     need(len(paths) == 1, "document_rescue_prior_owned_journal_required")
-    path = paths[0]
+    path, saved = paths[0]
+    build = saved.get("build_identity")
+    need(type(build) is dict and build.get("kind") == "native_cloud_build"
+         and build.get("immutable_image") == image
+         and build.get("build_id") == labels.get("hirewiz-refresh-build")
+         and build.get("nonce") == labels.get("hirewiz-refresh-nonce"),
+         "document_rescue_prior_build_changed")
+    verify_native_build(build)
     owner = probe.Journal(path, image, build)
     job = probe.owned_job(clients, owner, image, build["nonce"])
     execution = probe.owned_execution(clients, owner, job, image, build["nonce"])
@@ -768,7 +775,7 @@ def refresh(directory: Path, *, publish: bool, now: datetime, prior_journal: Pat
             clients.close()
     nonce = infra("document_refresh_recovery").prepare(
         directory, history, recover_failed_native_job, refresh_module=sys.modules[__name__],
-        rescue_expired_v2=rescue_expired_v2)
+        rescue_expired_v2=rescue_expired_v2, rescue_prior_journal=prior_journal if rescue_expired_v2 else None)
     preflight = probe.Clients()
     try:
         preflight.preflight()

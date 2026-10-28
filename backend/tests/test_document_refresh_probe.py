@@ -4,6 +4,7 @@ from __future__ import annotations
 import ast
 import copy
 import hashlib
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -676,12 +677,35 @@ def test_rescue_preflights_actual_owned_prior_journal_before_new_build(native, m
     history = tmp_path / "history"
     original = history / "retained-main-artifact" / "native-proof"
     original.parent.mkdir(parents=True, mode=0o700)
-    p.run_successor(IMAGE, build(), original)
+    full = {**build(), "builder_service_account": refresh.BUILDER,
+            "source_bucket": refresh.PROJECT + "_cloudbuild",
+            "source_object": "hirewiz-document-refresh-source/synthetic.tar.gz",
+            "source_generation": "1", "fixed_renderer_base": refresh.RENDERER_BASE,
+            "source_sha256": profile.SOURCES}
+    def profiled_entries(query, token):
+        data = payload(execution=native.ex["name"].rsplit("/", 1)[-1])
+        data["identity_preflight"]["font_manifest_sha256"] = profile.FONT
+        return {"entries": [event(native.j, native.ex, data)]}
+    native.entries = profiled_entries
+    p.run_successor(IMAGE, full, original)
     s = service()
-    monkeypatch.setattr(refresh, "verify_current_build", lambda build_id, nonce, image: (
-        build() if (build_id, nonce, image) == (BUILD_ID, NONCE, IMAGE) else None))
+    verified = []
+    def current_build(build_id, nonce, image):
+        assert (build_id, nonce, image) == (BUILD_ID, NONCE, IMAGE)
+        verified.append((build_id, nonce, image))
+        return {key: copy.deepcopy(value) for key, value in full.items()
+                if key != "local_native_proof_sha256"}
+    monkeypatch.setattr(refresh, "verify_current_build", current_build)
     assert refresh.rescue_prior_journal(history, s, native, p) == original
+    assert verified == [(BUILD_ID, NONCE, IMAGE)] and full["local_native_proof_sha256"] == "f" * 64
     assert native.calls["delete"] == 0
+    original_binding = (original / "binding.json").read_bytes()
+    changed = json.loads(original_binding)
+    del changed["build_identity"]["local_native_proof_sha256"]
+    (original / "binding.json").write_bytes(p.canonical(changed))
+    with pytest.raises(refresh.RefreshDenied, match="native_build_identity_unverified"):
+        refresh.rescue_prior_journal(history, s, native, p)
+    (original / "binding.json").write_bytes(original_binding)
     duplicate = history / "another-artifact" / "native-proof"
     duplicate.mkdir(parents=True, mode=0o700)
     (duplicate / "binding.json").write_bytes((original / "binding.json").read_bytes())
