@@ -831,17 +831,21 @@ def rescue_prior_journal(history: Path, service: dict[str, Any], clients: Any,
 def refresh(directory: Path, *, publish: bool, now: datetime, prior_journal: Path | None = None,
             history: Path | None = None, recover_failed_native_job: str | None = None,
             full_source: bool = False, retire_expired_v2: bool = False,
-            rescue_expired_v2: bool = False) -> dict[str, Any]:
+            rescue_expired_v2: bool = False,
+            upgrade_current_v2_to_v3: bool = False) -> dict[str, Any]:
     """Full controlled pipeline. No serialized acceptance result grants authority."""
     need(recover_failed_native_job is None or publish is True, "document_refresh_recovery_requires_explicit_refresh")
     need(type(full_source) is bool and type(retire_expired_v2) is bool
-         and type(rescue_expired_v2) is bool and not (retire_expired_v2 and rescue_expired_v2),
+         and type(rescue_expired_v2) is bool and type(upgrade_current_v2_to_v3) is bool
+         and sum((retire_expired_v2, rescue_expired_v2, upgrade_current_v2_to_v3)) <= 1,
          "document_refresh_contract_version_invalid")
     need(not retire_expired_v2 or (publish and not full_source and recover_failed_native_job is None),
          "document_refresh_expired_v2_requires_explicit_v3_refresh")
     need(not rescue_expired_v2 or (publish and not full_source
          and recover_failed_native_job is None and prior_journal is None and history is not None),
          "document_refresh_expired_v2_requires_explicit_refresh")
+    need(not upgrade_current_v2_to_v3 or (publish and not full_source and recover_failed_native_job is None),
+         "document_refresh_fresh_v2_upgrade_requires_explicit_refresh")
     probe = infra("document_refresh_probe")
     if rescue_expired_v2:
         clients = probe.Clients()
@@ -868,6 +872,11 @@ def refresh(directory: Path, *, publish: bool, now: datetime, prior_journal: Pat
     if rescue_expired_v2:
         need(current_policy == probe.POLICY and current_image != probe.BASE_IMAGE,
              "document_refresh_rescue_v2_predecessor_changed")
+    if upgrade_current_v2_to_v3:
+        need(current_policy == probe.POLICY and current_image != probe.BASE_IMAGE,
+             "document_refresh_fresh_v2_upgrade_requires_v2")
+        return infra("document_candidate_release").refresh(directory, publish=publish,
+            now=now, nonce=nonce, upgrade_current_v2_to_v3=True)
     if retire_expired_v2:
         need(current_policy == probe.POLICY and current_image != probe.BASE_IMAGE,
              "document_refresh_expired_v2_predecessor_required")
@@ -1004,6 +1013,7 @@ def main() -> None:
     parser.add_argument("--recover-failed-native-job")
     parser.add_argument("--retire-expired-v2", action="store_true")
     parser.add_argument("--rescue-expired-v2", action="store_true")
+    parser.add_argument("--upgrade-current-v2-to-v3", action="store_true")
     parser.add_argument("--resume-candidate-directory", type=Path)
     parser.add_argument("--resume-manifest-sha256")
     args = parser.parse_args()
@@ -1019,6 +1029,11 @@ def main() -> None:
          and not args.retire_expired_v2 and args.recover_failed_native_job is None
          and (os.getenv("GITHUB_ACTIONS") != "true" or os.getenv("GITHUB_EVENT_NAME") == "workflow_dispatch")),
          "document_refresh_expired_v2_requires_dispatch")
+    need(not args.upgrade_current_v2_to_v3 or (args.mode == "refresh" and args.publish_candidate
+         and args.recover_failed_native_job is None and not args.retire_expired_v2
+         and not args.rescue_expired_v2
+         and (os.getenv("GITHUB_ACTIONS") != "true" or os.getenv("GITHUB_EVENT_NAME") == "workflow_dispatch")),
+         "document_refresh_fresh_v2_upgrade_requires_dispatch")
     need(args.output_directory.is_absolute() and not args.output_directory.exists(),
          "document_refresh_fresh_output_directory_required")
     args.output_directory.mkdir(mode=0o700)
@@ -1042,6 +1057,8 @@ def main() -> None:
             arguments["retire_expired_v2"] = True
         if args.rescue_expired_v2:
             arguments["rescue_expired_v2"] = True
+        if args.upgrade_current_v2_to_v3:
+            arguments["upgrade_current_v2_to_v3"] = True
         result = refresh(args.output_directory, **arguments)
         emit_status(result)
     elif args.mode == "full-source-candidate":

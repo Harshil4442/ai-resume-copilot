@@ -294,9 +294,11 @@ def run_successor(build: dict[str, Any], journal: Path) -> prior.NativeAcceptanc
 
 
 def refresh(directory: Path, *, publish: bool, now: datetime, nonce: str | None = None,
-            retire_expired_v2: bool = False) -> dict[str, Any]:
-    """Fresh V3 path; expired V2 retirement requires an explicit dispatch."""
-    need(publish is True and now.tzinfo is not None and type(retire_expired_v2) is bool,
+            retire_expired_v2: bool = False, upgrade_current_v2_to_v3: bool = False) -> dict[str, Any]:
+    """Fresh V3 path; a V2 predecessor needs an explicit, proof-bound dispatch."""
+    need(publish is True and now.tzinfo is not None and type(retire_expired_v2) is bool
+         and type(upgrade_current_v2_to_v3) is bool
+         and not (retire_expired_v2 and upgrade_current_v2_to_v3),
          "explicit_refresh_required")
     source_contract()
     clients = prior.Clients()
@@ -314,6 +316,12 @@ def refresh(directory: Path, *, publish: bool, now: datetime, nonce: str | None 
                      "expired_v2_predecessor_unverified")
             else:
                 need(False, "expired_v2_predecessor_not_expired")
+        elif upgrade_current_v2_to_v3:
+            need(current_policy == prior.POLICY and current != prior.BASE_IMAGE,
+                 "fresh_v2_predecessor_required")
+            # This is a serving acceptance, not the retirement-only path. It
+            # must pass again inside transition before any caller is closed.
+            prior.verify_current_successor(current, service)
         else:
             need(current_policy == POLICY, "serving_profile_changed")
             verify_current_successor(current, service)
@@ -335,7 +343,8 @@ def refresh(directory: Path, *, publish: bool, now: datetime, nonce: str | None 
         http.close()
     result.update(definition_expires_at=accepted.definition_expires_at, renderer_contract_version=3,
                   required_case_count=11, renderer_parent=profile.IMAGE,
-                  prior_evidence_retained=True)
+                  prior_evidence_retained=True,
+                  fresh_v2_upgraded=upgrade_current_v2_to_v3)
     return result
 
 

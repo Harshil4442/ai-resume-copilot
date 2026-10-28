@@ -78,6 +78,23 @@ that original unknown run must be reconciled explicitly.
 A root-reviewed remaining-only recovery is required; deleting the journal is not
 recovery. A completed native acceptance Job is retained while its image serves.
 
+## Explicit fresh V2 to V3 document upgrade
+
+After a fresh V2 worker and all three caller pins have been independently
+verified, an operator may select `mode=refresh` and
+`upgrade_current_v2_to_v3=true` in a manual workflow dispatch. This option
+cannot be combined with failed-Job recovery, expired-V2 rescue or retirement. Scheduled
+refreshes continue the serving policy and never select the upgrade.
+
+The upgrade rechecks the genuine V2 serving acceptance and exact caller pins
+before building. Its V3 definitions-only child uses the fixed Courier renderer
+parent and requires a fresh native inventory Job plus the full eleven-case V3
+corpus Job. The ordinary transition then rechecks both the V3 proof and fresh V2
+predecessor, closes admission, promotes the worker and all three caller pins, and
+restores only the captured flags. The expired-V2 retirement-only proof does not
+authorize this fresh-predecessor path. An unknown Build, Job or service update
+requires read-only reconciliation; it never authorizes a rerun.
+
 ## Explicit recovery after a definite pre-transition failure
 
 Scheduled runs never replay failed mutations. For the supported case—one

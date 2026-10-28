@@ -14,6 +14,7 @@ from scripts import document_refresh as refresh
 
 from backend.tests import test_document_refresh as local
 from backend.tests import test_document_refresh_transition as serving
+from infra.gcp import document_candidate_release as v3
 from infra.gcp import document_refresh_probe as probe
 from infra.gcp import document_refresh_recovery as recovery
 
@@ -175,6 +176,43 @@ def completed_serving_history(stopped):
                                "prior_cleanup": cleanup}}
     for path, row in files.items():
         refresh.write_new(path, row)
+    return native
+
+
+def completed_v3_history(stopped):
+    """A completed V3 refresh can retain a consumed Build-only predecessor."""
+    native = completed_serving_history(stopped)
+    root = native.parent
+    shutil.rmtree(root / "prior-native-retirement")
+    old_binding = json.loads((native / "binding.json").read_bytes())
+    identity = old_binding["build_identity"]
+    identity.pop("local_native_proof_sha256")
+    identity["fixed_renderer_base"] = v3.profile.IMAGE
+    identity["refresh_dockerfile_sha256"] = v3.profile.REFRESH_SHA256
+    identity["policy_sha256"] = v3.POLICY
+    identity["source_sha256"] = refresh.full_source_snapshot()[1]
+    identity["source_object"] = "hirewiz-document-refresh-source/" + identity["nonce"] + "/source.tar.gz"
+    image = v3.prior.REPOSITORY + "@sha256:" + "9" * 64
+    identity["immutable_image"] = image
+    accepted = json.loads((native / "acceptance.json").read_bytes())
+    accepted.update(image=image, refresh_dockerfile_sha256=v3.profile.REFRESH_SHA256,
+                    source_sha256=refresh.full_source_snapshot()[1],
+                    probe_sha256=recovery.sha(v3.candidate.rendered_payload(image).encode()),
+                    policy_sha256=v3.POLICY, font_manifest_sha256=v3.profile.FONT,
+                    renderer_version=v3.profile.RENDERER, contract_version=3, required_case_count=11)
+    complete = json.loads((root / "transition/complete.json").read_bytes())
+    complete["image"] = image
+    complete["native_acceptance_sha256"] = recovery.sha(recovery.canonical(accepted))
+    result = {**complete, "definition_expires_at": accepted["definition_expires_at"],
+              "renderer_contract_version": 3, "required_case_count": 11,
+              "renderer_parent": v3.profile.IMAGE, "prior_evidence_retained": True,
+              "fresh_v2_upgraded": True}
+    for path, row in {native / "binding.json": {"version": 3, "image": image, "build_identity": identity},
+                      native / "acceptance.json": accepted,
+                      root / "transition/native-acceptance.json": accepted,
+                      root / "transition/complete.json": complete,
+                      root / "result.json": result}.items():
+        path.write_bytes(recovery.canonical(row))
     return native
 
 
@@ -379,6 +417,53 @@ def test_completed_successor_receipt_does_not_reopen_consumed_build(stopped, mon
     target = output(stopped, "after-completion")
     assert recovery.prepare(target, stopped.history, None, refresh_module=refresh) is None
     assert not list(target.iterdir())
+    assert_no_native_writes(stopped)
+
+
+def test_completed_v3_successor_receipt_consumes_build_without_reopening_it(stopped, monkeypatch):
+    monkeypatch.setattr(recovery.uuid, "uuid4", lambda: SimpleNamespace(hex="1" * 32))
+    first = output(stopped, "v3-completed-disposition")
+    assert recovery.prepare(first, stopped.history, None, refresh_module=refresh) == "1" * 32
+    completed = completed_v3_history(stopped).parent
+    shutil.copytree(first / "pre-native-reconciliations", completed / "pre-native-reconciliations")
+    target = output(stopped, "after-v3-completion")
+    assert recovery.prepare(target, stopped.history, None, refresh_module=refresh) is None
+    assert not list(target.iterdir())
+    assert_no_native_writes(stopped)
+
+
+@pytest.mark.parametrize("change", ["case_count", "policy", "result_link", "transition_acceptance", "extra_cleanup"])
+def test_completed_v3_history_rejects_tampering_before_provider(stopped, change):
+    native = completed_v3_history(stopped)
+    root = native.parent
+    if change == "extra_cleanup":
+        (root / "prior-native-retirement").mkdir(mode=0o700)
+    else:
+        path = {"case_count": native / "acceptance.json", "policy": native / "acceptance.json",
+                "result_link": root / "result.json",
+                "transition_acceptance": root / "transition/native-acceptance.json"}[change]
+        row = json.loads(path.read_bytes())
+        if change == "case_count":
+            row["required_case_count"] = 10
+        elif change == "policy":
+            row["policy_sha256"] = probe.POLICY
+        elif change == "transition_acceptance":
+            row["receipt_sha256"] = "0" * 64
+        else:
+            row["native_acceptance_sha256"] = "0" * 64
+        path.write_bytes(recovery.canonical(row))
+    with pytest.raises(refresh.RefreshDenied, match="completed_v3_receipt_changed"):
+        recovery.completed_serving(root, json.loads((root / "result.json").read_bytes()), native,
+                                   refresh, probe, allow_v3=True)
+    assert_no_native_writes(stopped)
+
+
+def test_completed_v3_history_never_authorizes_exact_v2_rescue(stopped):
+    native = completed_v3_history(stopped)
+    root = native.parent
+    with pytest.raises(refresh.RefreshDenied, match="completed_v3_receipt_changed"):
+        recovery.completed_serving(root, json.loads((root / "result.json").read_bytes()), native,
+                                   refresh, probe)
     assert_no_native_writes(stopped)
 
 

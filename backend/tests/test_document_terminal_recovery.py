@@ -406,7 +406,7 @@ def test_workflow_recovery_is_dispatch_only_and_passes_user_input_as_inert_data(
     result = subprocess.run(["/bin/bash", "-eu", "-c", step["run"]], cwd=tmp_path,
         env={**os.environ, "RECOVER_FAILED_NATIVE_JOB": payload, "HISTORY_DIRECTORY": "private history",
              "OUTPUT_DIRECTORY": "private output", "RETIRE_EXPIRED_V2": "false",
-             "RESCUE_EXPIRED_V2": "false",
+             "RESCUE_EXPIRED_V2": "false", "UPGRADE_CURRENT_V2_TO_V3": "false",
              "CAPTURE_ARGS": str(capture)}, capture_output=True, timeout=5)
     assert result.returncode == 0 and not (tmp_path / "SHOULD_NOT_EXIST").exists()
     arguments = json.loads(capture.read_bytes())
@@ -415,7 +415,7 @@ def test_workflow_recovery_is_dispatch_only_and_passes_user_input_as_inert_data(
     result = subprocess.run(["/bin/bash", "-eu", "-c", step["run"]], cwd=tmp_path,
         env={**os.environ, "RECOVER_FAILED_NATIVE_JOB": "", "HISTORY_DIRECTORY": "private history",
              "OUTPUT_DIRECTORY": "private output", "RETIRE_EXPIRED_V2": "false",
-             "RESCUE_EXPIRED_V2": "true",
+             "RESCUE_EXPIRED_V2": "true", "UPGRADE_CURRENT_V2_TO_V3": "false",
              "CAPTURE_ARGS": str(capture)}, capture_output=True, timeout=5)
     assert result.returncode == 0
     assert json.loads(capture.read_bytes())[-1] == "--rescue-expired-v2"
