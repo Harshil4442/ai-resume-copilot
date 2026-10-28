@@ -3,7 +3,7 @@
   "requirement_version": "1.1",
   "source_sha256": "ac56be4838c8309fa9b1da3a717d53fab2bad85cfe0482d6aeedc4374a38fb4f",
   "baseline_commit": "f0f973c9c6d989553b8f58b275fc06fd5685497a",
-  "updated_at": "2026-10-28T16:16:29.964137+00:00",
+  "updated_at": "2026-10-28T17:28:27.234955+00:00",
   "authorization": "Owner authorized implementation, testing, deployment and payment activation subject to requirements gates on 2026-10-27.",
   "stages": [
     {
@@ -66,10 +66,11 @@
         "docs/delivery/evidence/2026-10-28-unified-credit-release-preparation.json",
         "docs/delivery/evidence/2026-10-28-calibration-and-format-corrections.json",
         "docs/delivery/evidence/2026-10-28-reviewer-kit-and-capacity.json",
-        "docs/delivery/evidence/2026-10-28-native-corpus-and-release-readiness.json"
+        "docs/delivery/evidence/2026-10-28-native-corpus-and-release-readiness.json",
+        "docs/delivery/evidence/2026-10-28-interview-v7-exploratory.json"
       ],
-      "status_observed_at": "2026-10-28T16:16:29.964137+00:00",
-      "local_result": "The actual Courier DOCX image passed native inventory and all 11 corpus cases. Its scanner definitions have since exceeded the promotion freshness window; a fresh definitions-only successor and its own proof are required. Interview v7 passed focused local checks but has no real outputs or human scores. No AI route is qualified."
+      "status_observed_at": "2026-10-28T17:28:27.234955+00:00",
+      "local_result": "The V3 Courier DOCX image passed a historical native 11-case corpus, but its scanner definitions expired before promotion; later successors failed before corpus cases and no document route is qualified. A separate bounded v7 synthetic interview calibration made 20 one-shot Gemini attempts: 18 delivered, two failed on personal-claim safety checks, with zero human scores. Reviewer 1 is the owner; Reviewer 2 and adjudicator remain unassigned. No AI route or major stage is qualified."
     },
     {
       "number": 5,
