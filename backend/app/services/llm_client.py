@@ -348,9 +348,10 @@ def _parse_interview_questions(content: str, num_questions: int, allowed_ids: se
             raise InterviewStructureError("Every question needs text, two to four preparation steps and evidence references.")
         if any(value not in allowed_ids for value in evidence_ids):
             raise InterviewEvidenceReferenceError("A question cited evidence that was not supplied.")
-        fields = [("question", None, question)] + [
-            ("preparation_step", index, step) for index, step in enumerate(preparation_steps)
+        fields: list[tuple[Literal["question", "preparation_step"], int | None, str]] = [
+            ("question", None, question),
         ]
+        fields.extend(("preparation_step", index, step) for index, step in enumerate(preparation_steps))
         for field, step_index, value in fields:
             if unsupported_experience_inference(value):
                 raise InterviewPersonalClaimError(
@@ -441,20 +442,21 @@ def generate_interview_questions(
                     },
                 ])
     if data is None:
-        failure_type = type(last_validation_error) if last_validation_error is not None else InterviewOutputError
         reason = last_validation_error.reason_code if last_validation_error is not None else InterviewOutputError.reason_code
-        location = {}
         if isinstance(last_validation_error, InterviewPersonalClaimError):
-            location = {
-                "question_index": last_validation_error.question_index,
-                "field": last_validation_error.field,
-                "step_index": last_validation_error.step_index,
-            }
-        failure = failure_type(
-            f"Could not generate a complete set of {num_questions} interview questions. "
-            f"Validation category: {reason}.",
-            **location,
-        )
+            failure: InterviewOutputError = InterviewPersonalClaimError(
+                f"Could not generate a complete set of {num_questions} interview questions. "
+                f"Validation category: {reason}.",
+                question_index=last_validation_error.question_index,
+                field=last_validation_error.field,
+                step_index=last_validation_error.step_index,
+            )
+        else:
+            failure_type = type(last_validation_error) if last_validation_error is not None else InterviewOutputError
+            failure = failure_type(
+                f"Could not generate a complete set of {num_questions} interview questions. "
+                f"Validation category: {reason}.",
+            )
         failure.repair_blocked = repair_blocked
         # Deliberately outside the exception handler: no unsafe response or
         # transient error context can make this validated failure retryable.
