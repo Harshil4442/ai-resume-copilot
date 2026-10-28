@@ -20,6 +20,7 @@ def load(name):
     spec.loader.exec_module(module)
     return module
 transition = load('document_refresh_transition')
+partial = load('document_refresh_partial')
 probe = load('document_refresh_probe')
 profile = load('document_renderer_profiles')
 NONCE = 'a' * 32
@@ -50,6 +51,9 @@ def service(name):
 class Http:
     def __init__(self, *, lost_at=None, claim_unknown=False, claim_race=False):
         self.services = {name: service(name) for name in transition.SERVICES}
+        self.revisions = {row['latestReadyRevision']: copy.deepcopy(row['template'])
+                          for row in self.services.values()}
+        self.historical_revisions = False
         self.operations = {}
         self.writes, self.lost_at = [], lost_at
         self.claim_objects = {}
@@ -59,9 +63,12 @@ class Http:
         assert redirections == 0
         target = urlsplit(uri)
         if target.hostname == 'storage.googleapis.com':
-            assert transition.RESCUE_CLAIM_OBJECT in unquote(target.path) or (
-                method == 'POST' and parse_qs(target.query)['name'] == [transition.RESCUE_CLAIM_OBJECT])
-            name = transition.RESCUE_CLAIM_OBJECT
+            names = {transition.RESCUE_CLAIM_OBJECT, partial.CLAIM_OBJECT}
+            if method == 'POST':
+                name = parse_qs(target.query)['name'][0]
+            else:
+                name = next((item for item in names if item in unquote(target.path)), None)
+            assert name in names
             if method == 'GET' and target.path.startswith('/storage/v1/'):
                 return SimpleNamespace(status=200 if name in self.claim_objects else 404), b'{}'
             if method == 'POST':
@@ -98,6 +105,7 @@ class Http:
             current['latestReadyRevision'] = current['latestCreatedRevision'] = revision
             current['trafficStatuses'] = [{'revision': revision, 'percent': 100}]
             self.services[name] = current
+            self.revisions[revision] = copy.deepcopy(current['template'])
             operation_name = transition.PARENT + '/operations/owned-' + str(len(self.writes))
             self.operations[operation_name] = copy.deepcopy(current)
             if len(self.writes) == self.lost_at:
@@ -109,7 +117,10 @@ class Http:
             value = {'name': path, 'done': True, 'response': copy.deepcopy(self.operations[path])}
         elif '/revisions/' in path:
             name = path.split('/services/')[1].split('/')[0]
-            value = copy.deepcopy(self.services[name]['template'])
+            if self.historical_revisions and path not in self.revisions:
+                return SimpleNamespace(status=404), b'{}'
+            value = copy.deepcopy(self.revisions[path] if self.historical_revisions
+                                  else self.services[name]['template'])
             value.update(name=path, uid='01234567-0123-0123-0123-012345678901', service=name,
                          conditions=[{'type': 'Ready', 'state': 'CONDITION_SUCCEEDED'}])
         else:
@@ -157,6 +168,7 @@ def guarded_old_v2(http):
                                           'revision': actual['latestReadyRevision'], 'percent': 100,
                                           'tag': 'api-hotfix-candidate',
                                           'uri': 'https://api-hotfix-candidate.example.run.app'}]
+        http.revisions[actual['latestReadyRevision']] = copy.deepcopy(actual['template'])
     return http
 
 
@@ -324,6 +336,128 @@ def test_resume_changed_original_tree_refused_before_claim(monkeypatch, tmp_path
         continue_rescue(http, journal, tmp_path, source_hash='0' * 64)
     assert http.claim_posts == 0 and len(http.writes) == 3
     assert not (journal / 'owner.lock').exists()
+
+
+def partially_restored_with_api_maintenance_close(monkeypatch, tmp_path):
+    """Synthetic old artifact plus exact ready emergency API close."""
+    http, source = failed_rescue_after_three_closes(monkeypatch, tmp_path)
+    continue_rescue(http, source, tmp_path)
+    http.historical_revisions = True
+    assert len(http.writes) == 10
+    for service, index in ((transition.CALLERS[1], 6), (transition.CALLERS[2], 7)):
+        http.services[service] = copy.deepcopy(
+            http.operations[transition.PARENT + '/operations/owned-' + str(index)])
+        http.revisions.pop(transition.PARENT + '/services/' + service + '/revisions/'
+                           + service + '-d-' + NONCE[:12] + '-open')
+    for number in (9, 10):
+        http.operations.pop(transition.PARENT + '/operations/owned-' + str(number))
+    http.writes = http.writes[:8]
+    for file in source.glob('open.*.json'):
+        if file.name not in {'open.ai-resume-parser.started.json',
+                             'open.ai-resume-parser.acknowledged.json'}:
+            file.unlink()
+    (source / 'complete.json').unlink()
+    (source / 'owner.lock').unlink()
+    api = transition.CALLERS[0]
+    before = http.services[api]
+    closed = copy.deepcopy(before['template'])
+    env = transition.environment(closed)
+    for flag in partial.MAINTENANCE_OFF:
+        env[flag] = {'name': flag, 'value': 'false'}
+    closed['containers'][0]['env'] = list(env.values())
+    closed['revision'] = partial.MAINTENANCE_CLOSE_REVISION
+    body = {'name': before['name'], 'etag': before['etag'], 'template': closed,
+            'traffic': [{'type': 'TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST', 'percent': 100}]}
+    http.request('https://run.googleapis.com/v2/' + before['name'], method='PATCH',
+                 body=json.dumps(body).encode(), headers={}, redirections=0)
+    monkeypatch.setattr(partial, 'MAINTENANCE_CLOSE_GENERATION', int(http.services[api]['generation']))
+    monkeypatch.setattr(partial, 'MAINTENANCE_CLOSE_OPERATION', transition.PARENT + '/operations/owned-9')
+    return http, source
+
+
+def continue_partial(http, source, tmp_path):
+    return partial.resume_after_api_maintenance_close(NEW,
+        {'build_id': transition.RESCUE_BUILD_ID, 'nonce': transition.RESCUE_NONCE},
+        tmp_path / 'native', source, tmp_path / 'partial-continuation',
+        source_tree_sha256=partial.JOURNAL_TREE_SHA256, http=http, probe=probe, t=transition)
+
+
+def test_partial_rescue_reconciles_api_and_only_opens_two_callers(monkeypatch, tmp_path):
+    http, source = partially_restored_with_api_maintenance_close(monkeypatch, tmp_path)
+    api = copy.deepcopy(http.services[transition.CALLERS[0]])
+    result = continue_partial(http, source, tmp_path)
+    assert result['status'] == 'document_refresh_partial_restoration_observed'
+    assert result['api_maintenance_restore_required'] is True
+    assert [name for name, _ in http.writes[9:]] == list(transition.CALLERS[1:])
+    assert http.services[transition.CALLERS[0]] == api
+    assert http.claim_posts == 2
+    journal = tmp_path / 'partial-continuation'
+    assert (journal / 'partial-claim.verified.json').is_file()
+    assert not (journal / 'open.ai-resume-parser.started.json').exists()
+    assert (journal / 'complete.json').is_file()
+
+
+@pytest.mark.parametrize('drift', ['api_flag', 'api_revision', 'api_operation', 'caller_flag'])
+def test_partial_rescue_refuses_drift_before_new_claim(monkeypatch, tmp_path, drift):
+    http, source = partially_restored_with_api_maintenance_close(monkeypatch, tmp_path)
+    if drift == 'api_flag':
+        env = transition.environment(http.services[transition.CALLERS[0]]['template'])
+        env['RESUME_DIRECT_UPLOAD_ENABLED']['value'] = 'true'
+        http.services[transition.CALLERS[0]]['template']['containers'][0]['env'] = list(env.values())
+    elif drift == 'api_revision':
+        http.services[transition.CALLERS[0]]['latestReadyRevision'] += '-changed'
+    elif drift == 'api_operation':
+        (source / 'open.ai-resume-parser.acknowledged.json').write_text('{}')
+    else:
+        env = transition.environment(http.services[transition.CALLERS[1]]['template'])
+        env['OPTIONAL_AI_GENERATION_ENABLED']['value'] = 'true'
+        http.services[transition.CALLERS[1]]['template']['containers'][0]['env'] = list(env.values())
+    with pytest.raises((transition.TransitionDenied, probe.NativeProofDenied)):
+        continue_partial(http, source, tmp_path)
+    assert http.claim_posts == 1
+    assert len(http.writes) == 9
+    assert not (tmp_path / 'partial-continuation/partial-claim.started.json').exists()
+
+
+def test_partial_claim_consumes_new_sends_after_unknown_ack(monkeypatch, tmp_path):
+    http, source = partially_restored_with_api_maintenance_close(monkeypatch, tmp_path)
+    http.lost_at = 10
+    with pytest.raises(transition.TransitionDenied):
+        continue_partial(http, source, tmp_path)
+    assert http.claim_posts == 2 and len(http.writes) == 10
+    assert (tmp_path / 'partial-continuation/partial-claim.verified.json').is_file()
+    assert (tmp_path / 'partial-continuation/open.hirewiz-analysis-worker.started.json').is_file()
+    with pytest.raises(transition.TransitionDenied, match='serving_phase_changed|claim_exists_or_unknown'):
+        partial.resume_after_api_maintenance_close(NEW,
+            {'build_id': transition.RESCUE_BUILD_ID, 'nonce': transition.RESCUE_NONCE},
+            tmp_path / 'native', source, tmp_path / 'second-continuation',
+            source_tree_sha256=partial.JOURNAL_TREE_SHA256, http=http, probe=probe, t=transition)
+    assert http.claim_posts == 2
+
+
+@pytest.mark.parametrize('outcome', ['unknown_ack', 'raced_412'])
+def test_partial_claim_unknown_or_race_never_opens_caller(monkeypatch, tmp_path, outcome):
+    http, source = partially_restored_with_api_maintenance_close(monkeypatch, tmp_path)
+    http.claim_unknown = outcome == 'unknown_ack'
+    http.claim_race = outcome == 'raced_412'
+    with pytest.raises(transition.TransitionDenied):
+        continue_partial(http, source, tmp_path)
+    assert http.claim_posts == 2 and len(http.writes) == 9
+    assert (tmp_path / 'partial-continuation/partial-claim.started.json').is_file()
+    assert not (tmp_path / 'partial-continuation/open.hirewiz-analysis-worker.started.json').exists()
+
+
+def test_partial_rescue_rechecks_api_after_claim_before_any_patch(monkeypatch, tmp_path):
+    http, source = partially_restored_with_api_maintenance_close(monkeypatch, tmp_path)
+    original = partial.claim
+    def claim_then_drift(*args, **kwargs):
+        original(*args, **kwargs)
+        http.services[transition.CALLERS[0]]['etag'] = 'concurrent-change'
+    monkeypatch.setattr(partial, 'claim', claim_then_drift)
+    with pytest.raises(transition.TransitionDenied, match='prewrite_state_changed'):
+        continue_partial(http, source, tmp_path)
+    assert http.claim_posts == 2 and len(http.writes) == 9
+    assert not (tmp_path / 'partial-continuation/open.hirewiz-analysis-worker.started.json').exists()
 
 
 @pytest.mark.parametrize('drift', ['image', 'source', 'flag', 'traffic'])
