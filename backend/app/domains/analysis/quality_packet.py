@@ -21,6 +21,7 @@ from typing import Any
 from zipfile import BadZipFile, ZipFile
 
 VERSION = "unified-quality-packet-v1"
+SUPPORTED_VERSION = "unified-quality-packet-v2-pdftex"
 METRICS = ("relevance", "completeness", "clarity", "usefulness")
 CRITICAL = ("factual_error", "privacy_error", "document_corruption")
 FORMATS = ("pdf", "docx", "tex", "texzip")
@@ -183,6 +184,9 @@ def validate_packet(root: Path) -> dict:
     errors = []
     try:
         manifest, protocol, cases = load_packet(root)
+        schema_version = manifest.get("schema_version")
+        if schema_version not in {VERSION, SUPPORTED_VERSION} or protocol.get("schema_version") != schema_version:
+            errors.append("Packet and protocol versions do not match a supported frozen schema")
         if file_digest(root / "cases.jsonl") != manifest["corpus_sha256"]:
             errors.append("Corpus digest changed")
         if file_digest(root / "protocol.json") != manifest["protocol_sha256"]:
@@ -209,7 +213,7 @@ def validate_packet(root: Path) -> dict:
                 errors.append(f"Draft provenance changed: {item['case_id']}")
             if item["source_recipe"]["native_artifact_state"] != "not_materialized":
                 errors.append("A recipe cannot attest that native validation happened")
-        return {"schema_version": VERSION, "draft_inputs_valid": not errors,
+        return {"schema_version": schema_version, "draft_inputs_valid": not errors,
                 "case_count": len(cases), "development_pairs": sum(item["split"] == "development" for item in cases),
                 "held_out_pairs": sum(item["split"] == "held_out" for item in cases), "coverage": actual,
                 "quality_status": "not_evaluated", "approved_reference_count": 0,
@@ -311,7 +315,7 @@ def write_templates(root: Path) -> None:
         "statistical_method": None,
         "reviewers": {"reviewer_1": None, "reviewer_2": None, "adjudicator": None},
         "statistical_design": {"path": "", "sha256": ""}})
-    _write_json(root / "bundle.template.json", {"schema_version": VERSION, "operation": None,
+    _write_json(root / "bundle.template.json", {"schema_version": manifest["schema_version"], "operation": None,
         "manifest_sha256": file_digest(root / "manifest.json"), "protocol_sha256": manifest["protocol_sha256"],
         "approval": {"path": "", "sha256": ""}, "reference_registry": {"path": "", "sha256": ""},
         "reviews": {"path": "", "sha256": ""}, "adjudications": {"path": "", "sha256": ""},
@@ -544,6 +548,12 @@ def evaluate_evidence(packet_root: Path, evidence_root: Path) -> dict:
     errors = list(report.get("errors", []))
     if not report["draft_inputs_valid"]:
         return report | {"evidence_complete": False}
+    if report["schema_version"] == SUPPORTED_VERSION:
+        from .quality_supported_v2 import verify_lineage
+
+        if not verify_lineage(packet_root.parent / "unified_credit_v1", packet_root)["source_lineage_valid"]:
+            return report | {"evidence_complete": False, "authorizes_release": False,
+                             "errors": ["Supported packet differs from its frozen v1 source lineage"]}
     manifest, protocol, cases = load_packet(packet_root)
     try:
         bundle = json.loads((evidence_root / "bundle.json").read_bytes())

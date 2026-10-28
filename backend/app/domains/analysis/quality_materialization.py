@@ -36,6 +36,13 @@ def _check(case: dict) -> None:
     actual = "\n\n".join(s["heading"] + "\n" + s["text"] for s in case["resume"]["sections"])
     if actual != case["resume"]["raw_text"]:
         raise UnsupportedRecipe("Section content differs from the frozen complete resume text")
+    engine = recipe.get("engine")
+    if engine is not None and (
+        case["source_format"] not in {"tex", "texzip"}
+        or engine != "pdftex-no-shell-escape-v1"
+        or recipe["font"] not in {"Latin Modern Roman", "Latin Modern Mono"}
+    ):
+        raise UnsupportedRecipe("TeX engine or font is outside the supported native policy")
 
 
 def _zip(members: dict[str, bytes]) -> bytes:
@@ -130,10 +137,20 @@ def _tex_escape(text: str) -> str:
 
 def _tex(case: dict) -> bytes:
     recipe, resume = case["source_recipe"], case["resume"]
-    lines = [r"\documentclass[10pt,letterpaper]{article}", r"\usepackage{fontspec}",
+    engine = recipe.get("engine")
+    if engine == "pdftex-no-shell-escape-v1":
+        if recipe["font"] not in {"Latin Modern Roman", "Latin Modern Mono"}:
+            raise UnsupportedRecipe("The selected pdfLaTeX font is unsupported")
+        font_setup = [r"\usepackage[T1]{fontenc}", r"\usepackage{lmodern}"]
+        if recipe["font"] == "Latin Modern Mono":
+            font_setup.append(r"\renewcommand{\familydefault}{\ttdefault}")
+    elif engine is None:
+        font_setup = [r"\usepackage{fontspec}", r"\setmainfont{" + _tex_escape(recipe["font"]) + "}"]
+    else:
+        raise UnsupportedRecipe("The selected TeX engine is unsupported")
+    lines = [r"\documentclass[10pt,letterpaper]{article}", *font_setup,
              r"\usepackage[margin=" + str(recipe["margin_inches"]) + r"in]{geometry}",
              r"\usepackage{multicol,tabularx,hyperref}", r"\hypersetup{hidelinks}",
-             r"\setmainfont{" + _tex_escape(recipe["font"]) + "}",
              r"\setlength{\parindent}{0pt}", r"\setlength{\parskip}{6pt}", r"\setlength{\columnsep}{0.25in}",
              r"\pagestyle{empty}", r"\begin{document}",
              r"{\Large " + _tex_escape(resume["name"]) + r"}\par", _tex_escape(resume["email"]) + r"\par"]
@@ -240,7 +257,13 @@ def materialize(root: Path, destination: Path, *, fonts: dict[str, Path] | None 
     validation = packet.validate_packet(root)
     if not validation.get("draft_inputs_valid"):
         raise ValueError("The frozen packet must validate before materialization")
-    _, _, cases = packet.load_packet(root)
+    manifest, _, cases = packet.load_packet(root)
+    supported_v2 = manifest["schema_version"] == packet.SUPPORTED_VERSION
+    if supported_v2:
+        from .quality_supported_v2 import verify_lineage
+
+        if not verify_lineage(root.parent / "unified_credit_v1", root)["source_lineage_valid"]:
+            raise ValueError("The supported packet must match its frozen v1 lineage")
     if case_ids is not None:
         if not case_ids or len(set(case_ids)) != len(case_ids) or set(case_ids) - {c["case_id"] for c in cases}:
             raise ValueError("Select distinct existing frozen case IDs")
@@ -257,22 +280,29 @@ def materialize(root: Path, destination: Path, *, fonts: dict[str, Path] | None 
         (folder / "case.json").write_bytes(packet.canonical(case))
         (folder / "resume.txt").write_text(case["resume"]["raw_text"], encoding="utf-8")
         source_format = case["source_format"]
-        # Editable TeX exists even when a requested PDF cannot be rendered.
-        (folder / "source.tex").write_bytes(_tex(case))
+        # The v1 sidecar remains unchanged; v2 has only its selected source.
+        if not supported_v2 or source_format in {"tex", "texzip"}:
+            (folder / "source.tex").write_bytes(_tex(case))
         row = {"case_id": case["case_id"], "input_sha256": packet.digest(packet.canonical(case)),
                "resume_content_sha256": packet.digest(packet.canonical(case["resume"])),
                "source_format": source_format, "source_recipe": case["source_recipe"],
                "input_artifact": None, "materialization_state": "source_created",
                "rendered_proof": "pending", "visual_review": "pending", "qualification": "not_evaluated",
-               "compiler": "available_not_executed" if shutil.which("xelatex") else "unavailable",
+               "compiler": ("not_applicable" if supported_v2 and source_format in {"pdf", "docx"}
+                            else "available_not_executed" if shutil.which("pdflatex" if supported_v2 else "xelatex")
+                            else "unavailable"),
                "font": {"family": case["source_recipe"]["font"], "state": "unavailable"},
                "issues": []}
-        try:
-            _, _, selected = _font(case["source_recipe"], fonts)
-            row["font"] = {"family": case["source_recipe"]["font"], "state": "exact_file_verified",
-                           "sha256": packet.file_digest(selected)}
-        except (UnsupportedRecipe, OSError, ValueError) as exc:
-            row["issues"].append(str(exc))
+        if supported_v2 and source_format in {"tex", "texzip"}:
+            row["font"] = {"family": case["source_recipe"]["font"],
+                           "state": "policy_declared_native_unverified"}
+        else:
+            try:
+                _, _, selected = _font(case["source_recipe"], fonts)
+                row["font"] = {"family": case["source_recipe"]["font"], "state": "exact_file_verified",
+                               "sha256": packet.file_digest(selected)}
+            except (UnsupportedRecipe, OSError, ValueError) as exc:
+                row["issues"].append(str(exc))
         try:
             if source_format == "pdf":
                 (folder / "source.pdf").write_bytes(_pdf(case, fonts))
@@ -288,7 +318,8 @@ def materialize(root: Path, destination: Path, *, fonts: dict[str, Path] | None 
         row["files"] = [{"path": str(path.relative_to(destination)), "sha256": packet.file_digest(path)}
                         for path in sorted(folder.iterdir())]
         rows.append(row)
-    result = {"schema_version": VERSION, "state": "synthetic_native_sources_not_reviewed",
+    result = {"schema_version": "unified-quality-materialization-v2" if supported_v2 else VERSION,
+              "state": "synthetic_native_sources_not_reviewed",
               "packet_manifest_sha256": packet.file_digest(root / "manifest.json"),
               "corpus_sha256": packet.file_digest(root / "cases.jsonl"),
               "tool_sha256": packet.file_digest(Path(__file__)),
