@@ -730,23 +730,17 @@ def _validate_tailoring_edit(item: object, units: dict, allowed: dict, repeated:
     }
 
 
-def tailor_resume_from_evidence(
+def build_tailoring_messages(
     *,
     job_title: str,
     jd_text: str,
     approved_evidence: list[dict],
     source_units: list[dict],
     repair_note: str = "",
-) -> dict:
-    """Suggest evidence-cited replacements at existing source-document locations."""
+) -> list[dict]:
+    """Build the full source-preserving prompt shared by quote and execution."""
     if not approved_evidence or not source_units:
         raise TailoringOutputError("Approved evidence and editable source text are required")
-    allowed = {
-        str(item["id"]): item
-        for item in approved_evidence
-        if item.get("id") and str(item.get("text") or "").strip()
-    }
-    units = {item["unit_id"]: item for item in source_units}
     system_prompt = (
         "You are a careful resume editor. Improve the relevance, clarity, and action verbs of "
         "existing resume text for the target job, using only APPROVED EVIDENCE. The original "
@@ -812,12 +806,46 @@ def tailor_resume_from_evidence(
             "an unchanged or cramped fragment cannot improve safely. Return actual changed text; "
             "do not repeat unchanged proposals. Preserve every source, evidence and format constraint."
         )
-    raw_content = _chat(
-        [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_content},
-        ]
+    return [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_content},
+    ]
+
+
+def tailor_resume_from_evidence(
+    *,
+    job_title: str,
+    jd_text: str,
+    approved_evidence: list[dict],
+    source_units: list[dict],
+    repair_note: str = "",
+) -> dict:
+    """Suggest evidence-cited replacements at existing source-document locations."""
+    messages = build_tailoring_messages(
+        job_title=job_title,
+        jd_text=jd_text,
+        approved_evidence=approved_evidence,
+        source_units=source_units,
+        repair_note=repair_note,
     )
+    if repair_note:
+        from .analysis_prompt_preflight import require_tailoring_repair_bound
+
+        require_tailoring_repair_bound(
+            job_title=job_title,
+            jd_text=jd_text,
+            approved_evidence=approved_evidence,
+            source_units=source_units,
+            repair_note=repair_note,
+            messages=messages,
+        )
+    allowed = {
+        str(item["id"]): item
+        for item in approved_evidence
+        if item.get("id") and str(item.get("text") or "").strip()
+    }
+    units = {item["unit_id"]: item for item in source_units}
+    raw_content = _chat(messages)
     data = None
     try:
         candidate = _extract_json_object(raw_content)

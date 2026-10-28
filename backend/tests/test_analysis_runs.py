@@ -500,7 +500,7 @@ def test_evidence_tailoring_creates_a_traceable_version_and_commits_once(monkeyp
             assert run.usage_state == "committed"
             assert run.committed_units == 2
             assert run.attempt_count == 1
-            assert run.prompt_version == "resume-source-v5"
+            assert run.prompt_version == "resume-source-v6"
             assert db.get(User, 1).ai_credits == 48
             assert version.generation_run_id == run_id
             assert version.evidence_ids == ["evd_approved"]
@@ -644,7 +644,7 @@ def test_mixed_pdf_tailoring_saves_only_the_proven_safe_edits_and_charges_once(m
             version = db.query(ResumeVersion).one()
             assert run.status == "succeeded" and run.attempt_count == 1
             assert run.usage_state == "committed" and run.committed_units == 2
-            assert run.prompt_version == "resume-source-v5"
+            assert run.prompt_version == "resume-source-v6"
             assert db.get(User, 1).ai_credits == 48
             assert version.generation_run_id == run_id
             assert version.structured_content["source_edits"] == [safe]

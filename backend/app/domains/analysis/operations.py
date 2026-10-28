@@ -532,6 +532,54 @@ def execute_market_analysis(
     )
 
 
+def tailoring_evidence_payload(db: Session, user_id: int, resume_id: int) -> list[dict]:
+    """Select the exact approved facts used for a tailoring generation."""
+    evidence = (
+        db.query(models.EvidenceItem)
+        .filter(
+            models.EvidenceItem.user_id == user_id,
+            models.EvidenceItem.resume_id == resume_id,
+            models.EvidenceItem.approval_state == "approved",
+        )
+        .order_by(models.EvidenceItem.created_at.asc())
+        .limit(100)
+        .all()
+    )
+    return [
+        {
+            "id": item.id,
+            "title": item.title,
+            "text": item.evidence_text,
+            "metrics": item.metrics or {},
+            "skills": item.skills or [],
+        }
+        for item in evidence
+    ]
+
+
+def tailoring_source_units(resume: models.Resume, *, require_complete: bool = False) -> list[dict]:
+    """Select the same whole editable units at quote and execution time."""
+    from ...services.resume_layout import extract_source_units
+
+    units = extract_source_units(resume.source_document, resume.source_format)
+    source_units: list[dict[str, Any]] = []
+    context_length = 0
+    omitted = False
+    for unit in sorted(units, key=lambda item: item.get("generation_priority", 5)):
+        if len(source_units) >= 100 or context_length + len(unit["text"]) > 24_000:
+            omitted = True
+            continue
+        source_units.append(unit)
+        context_length += len(unit["text"])
+    if require_complete and omitted:
+        from ...services.resume_layout import ResumeLayoutError
+
+        raise ResumeLayoutError(
+            "Editable source units exceed the complete tailoring prompt scope"
+        )
+    return source_units
+
+
 def execute_resume_tailor(
     db: Session,
     *,
@@ -554,55 +602,25 @@ def execute_resume_tailor(
         )
         .one()
     )
-    evidence = (
-        db.query(models.EvidenceItem)
-        .filter(
-            models.EvidenceItem.user_id == user_id,
-            models.EvidenceItem.resume_id == resume.id,
-            models.EvidenceItem.approval_state == "approved",
-        )
-        .order_by(models.EvidenceItem.created_at.asc())
-        .limit(100)
-        .all()
-    )
-    if not evidence:
+    evidence_payload = tailoring_evidence_payload(db, user_id, resume.id)
+    if not evidence_payload:
         raise HTTPException(
             status_code=422,
             detail="Approve at least one evidence item before tailoring",
         )
-    evidence_payload = [
-        {
-            "id": item.id,
-            "title": item.title,
-            "text": item.evidence_text,
-            "metrics": item.metrics or {},
-            "skills": item.skills or [],
-        }
-        for item in evidence
-    ]
-
     from ...services.llm_client import TailoringOutputError, tailor_resume_from_evidence
     from ...services.resume_layout import (
         ResumeLayoutError,
         apply_source_edits,
-        extract_source_units,
     )
 
     if not resume.source_document or resume.source_format not in {"pdf", "docx", "tex", "texzip"}:
         raise TailoringOutputError("Upload the original resume before tailoring")
-    units = extract_source_units(resume.source_document, resume.source_format)
-    # Limit model context by whole units, never by truncating JSON or a source passage.
-    source_units: list[dict[str, Any]] = []
-    context_length = 0
-    for unit in sorted(units, key=lambda item: item.get("generation_priority", 5)):
-        if len(source_units) >= 100 or context_length + len(unit["text"]) > 24_000:
-            continue
-        source_units.append(unit)
-        context_length += len(unit["text"])
+    source_units = tailoring_source_units(resume)
     if not source_units:
         raise ResumeLayoutError("No source text can be edited while preserving this layout. Keep the original/custom resume or upload editable DOCX/TeX source; protected fonts, macros or image-only text need manual editing.")
 
-    prompt_version = "resume-source-v5"
+    prompt_version = "resume-source-v6"
     _ensure_prompt_version(
         db,
         operation="resume_tailor",

@@ -81,7 +81,85 @@ def prepare_quote_context(db: Session, *, user_id: int, payload):
         raise finance.FundingUnavailable(
             "The selected route is not qualified for this source format"
         )
+    if payload.operation in {"interview_questions", "resume_tailor"}:
+        _require_analysis_prompt_capacity(
+            db, user_id=user_id, operation=payload.operation,
+            opportunity_id=payload.opportunity_id, route=route,
+            approved_evidence_count=observed["evidence_items"],
+        )
     return normalized, fingerprint, config, route
+
+
+def _require_analysis_prompt_capacity(
+    db: Session, *, user_id: int, operation: str, opportunity_id: str | None, route,
+    approved_evidence_count: int,
+) -> None:
+    """Reject oversized initial or bounded repair prompts before reserving credits."""
+    from ...services.analysis_prompt_preflight import (
+        interview_prompt_bound,
+        tailoring_prompt_bound,
+    )
+    from ...services.interview_contract import InterviewContextUnavailable, load_approved_evidence
+    from ...services.llm_client import TailoringOutputError
+    from ...services.resume_layout import ResumeLayoutError
+    from ..analysis.operations import tailoring_evidence_payload, tailoring_source_units
+    from ..career.service import get_opportunity
+
+    if opportunity_id is None:
+        raise finance.FundingUnavailable("Select an opportunity before requesting this quote")
+    opportunity = get_opportunity(db, user_id, opportunity_id)
+    if operation == "interview_questions":
+        evidence = load_approved_evidence(db, user_id, opportunity.resume_id)
+        try:
+            estimate = interview_prompt_bound(
+                opportunity.title, opportunity.job_description, evidence
+            )
+        except InterviewContextUnavailable as exc:
+            raise finance.FundingUnavailable(
+                "The complete interview and repair prompt exceed its context scope"
+            ) from exc
+    else:
+        if not opportunity.resume_id:
+            raise finance.FundingUnavailable("Connect a resume before requesting tailoring")
+        resume = (
+            db.query(models.Resume)
+            .filter_by(id=opportunity.resume_id, user_id=user_id)
+            .one_or_none()
+        )
+        if resume is None:
+            raise finance.FundingUnavailable("The selected resume is unavailable")
+        evidence = tailoring_evidence_payload(db, user_id, resume.id)
+        if not evidence:
+            raise finance.FundingUnavailable("Approve evidence before requesting tailoring")
+        if (
+            len(opportunity.job_description) > 7_000
+            or any(len(str(item.get("text") or "")) > 4_000 for item in evidence)
+            or approved_evidence_count > 100
+        ):
+            raise finance.FundingUnavailable(
+                "The complete job or approved evidence exceeds this tailoring prompt scope"
+            )
+        try:
+            units = tailoring_source_units(resume, require_complete=True)
+            if not units:
+                raise ResumeLayoutError("No editable source text is available")
+            estimate = tailoring_prompt_bound(
+                job_title=opportunity.title,
+                jd_text=opportunity.job_description,
+                approved_evidence=evidence,
+                source_units=units,
+            )
+        except (ResumeLayoutError, TailoringOutputError) as exc:
+            raise finance.FundingUnavailable(
+                "The original resume cannot be safely prepared for this delivery route"
+            ) from exc
+    if not route.model_quotes or any(
+        estimate > model.max_input_tokens for model in route.model_quotes
+    ):
+        raise finance.FundingUnavailable(
+            "The complete prompt and bounded repair do not fit every qualified provider "
+            "attempt. No content was shortened or credits reserved."
+        )
 
 
 def _client_intent_fingerprint(payload) -> str:

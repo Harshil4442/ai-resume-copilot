@@ -84,7 +84,7 @@ def _dependency_snapshot(
         from ...services.prompt_privacy import PROMPT_PRIVACY_VERSION
 
         dependencies["generation"] = {
-            "prompt": {"job_match": "match-mega-v2", "interview_questions": contract_versions()["prompt"], "resume_tailor": "resume-source-v5"}.get(operation),
+            "prompt": {"job_match": "match-mega-v2", "interview_questions": contract_versions()["prompt"], "resume_tailor": "resume-source-v6"}.get(operation),
             "model_policy": os.getenv("LLM_MODEL", "unconfigured"),
             "provider_base": os.getenv("LLM_API_BASE", ""),
             "fallback_policy": GEMINI_FALLBACK_MODELS,
