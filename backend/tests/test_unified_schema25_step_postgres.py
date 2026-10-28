@@ -313,6 +313,11 @@ def test_native25_wrong_identity_and_outer_rollback_never_commit(owned25):
             reviewed.ROLLBACK_WORKER_SOURCE_RELEASE,
             reviewed.ROLLBACK_WORKER_APP_SHA256,
         ),
+        pytest.param(
+            reviewed.ROLLBACK_API_HOTFIX_SOURCE_RELEASE,
+            reviewed.ROLLBACK_API_HOTFIX_APP_SHA256,
+            id="api-admission-hotfix",
+        ),
     ],
 )
 def test_rehearsed_prior_app_and_worker_still_serve_old_accounts_on25(
