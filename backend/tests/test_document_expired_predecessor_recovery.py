@@ -209,7 +209,8 @@ def test_explicit_refresh_dispatch_routes_expired_v2_to_v3_without_old_builder(m
             "template": {"containers": [{"image": old}]}}}, close=lambda: calls.append("closed")),
         policy_for_serving=lambda *_: V2_POLICY)
     modules = {
-        "document_refresh_recovery": SimpleNamespace(prepare=lambda *args, **kwargs: "a" * 32),
+        "document_refresh_recovery": SimpleNamespace(prepare=lambda *args, **kwargs:
+            calls.append(("prepare", kwargs["retire_expired_v2"])) or "a" * 32),
         "document_refresh_probe": probe,
         "document_candidate_release": SimpleNamespace(refresh=lambda *args, **kwargs:
             calls.append((args, kwargs)) or {"status": "v3"}),
@@ -220,7 +221,7 @@ def test_explicit_refresh_dispatch_routes_expired_v2_to_v3_without_old_builder(m
     result = orchestrator.refresh(tmp_path, publish=True, now=native_fixtures.NOW,
                                   retire_expired_v2=True)
     assert result == {"status": "v3"}
-    assert calls == ["closed", ((tmp_path,), {"publish": True, "now": native_fixtures.NOW,
+    assert calls == [("prepare", True), "closed", ((tmp_path,), {"publish": True, "now": native_fixtures.NOW,
                                          "nonce": "a" * 32, "retire_expired_v2": True})]
 
 

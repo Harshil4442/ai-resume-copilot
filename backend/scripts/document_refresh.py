@@ -803,7 +803,8 @@ def refresh(directory: Path, *, publish: bool, now: datetime, prior_journal: Pat
     need(not retire_expired_v2 or (publish and not full_source and recover_failed_native_job is None),
          "document_refresh_expired_v2_requires_explicit_v3_refresh")
     nonce = infra("document_refresh_recovery").prepare(
-        directory, history, recover_failed_native_job, refresh_module=sys.modules[__name__])
+        directory, history, recover_failed_native_job, refresh_module=sys.modules[__name__],
+        retire_expired_v2=retire_expired_v2)
     probe = infra("document_refresh_probe")
     preflight = probe.Clients()
     try:

@@ -251,7 +251,8 @@ def verify_failed(path: Path, files: dict[str, bytes], clients: Any, probe: Any,
 
 
 def joined(clients: Any, probe: Any, build: Any, failed_jobs: set[str],
-           unaccepted_images: set[str] | None = None) -> None:
+           unaccepted_images: set[str] | None = None, *, retire_expired_v2: bool = False) -> None:
+    build.need(type(retire_expired_v2) is bool, "document_refresh_recovery_mode_invalid")
     snapshot = clients.preflight()
     service = snapshot["service"]
     image = service["template"]["containers"][0]["image"]
@@ -260,9 +261,14 @@ def joined(clients: Any, probe: Any, build: Any, failed_jobs: set[str],
     build.need(service.get("labels", {}).get("hirewiz-refresh-job") not in failed_jobs,
                "document_refresh_recovery_failed_job_serving")
     if image != probe.BASE_IMAGE:
-        # Another fresh, genuinely accepted Job may prove the same image bytes.
-        # A failed Job's receipt can never establish that serving authority.
-        probe.verify_current_successor(image, service)
+        if retire_expired_v2:
+            # The expired predecessor is historical identity for this explicit
+            # retirement only. Its old proof never authorizes a new serving image.
+            probe.verify_expired_current_v2_for_retirement(image, service)
+        else:
+            # Another fresh, genuinely accepted Job may prove the same image bytes.
+            # A failed Job's receipt can never establish that serving authority.
+            probe.verify_current_successor(image, service)
     controller = build.infra("document_refresh_transition").Controller(clients.http, probe, None)
     for name in ("hirewiz-document-inspector", "ai-resume-parser", "hirewiz-analysis-worker", "hirewiz-resume-coordinator"):
         value = clients.service(probe.PARENT + "/services/" + name)
@@ -290,8 +296,11 @@ def verify_claim(body: dict[str, Any], acknowledgment: dict[str, Any], build: An
 
 
 def prepare(directory: Path, history: Path | None, selected: str | None, *, refresh_module: Any,
-            resuming_original: Path | None = None) -> str | None:
+            resuming_original: Path | None = None, retire_expired_v2: bool = False) -> str | None:
     build = refresh_module
+    build.need(type(retire_expired_v2) is bool and
+               (not retire_expired_v2 or selected is None and resuming_original is None),
+               "document_refresh_recovery_mode_invalid")
     build.need(selected is None or type(selected) is str and JOB.fullmatch(selected), "document_refresh_recovery_exact_job_required")
     if history is None:
         build.need(selected is None, "document_refresh_recovery_history_required")
@@ -407,9 +416,16 @@ def prepare(directory: Path, history: Path | None, selected: str | None, *, refr
             failed_jobs.add(selected)
         if abandoned:
             failed_jobs.update(fact["absent_native_job"].rsplit("/", 1)[-1] for fact in abandoned)
-            joined(clients, probe, build, failed_jobs, {fact["image"] for fact in abandoned})
+            if retire_expired_v2:
+                joined(clients, probe, build, failed_jobs, {fact["image"] for fact in abandoned},
+                       retire_expired_v2=True)
+            else:
+                joined(clients, probe, build, failed_jobs, {fact["image"] for fact in abandoned})
         else:
-            joined(clients, probe, build, failed_jobs)
+            if retire_expired_v2:
+                joined(clients, probe, build, failed_jobs, retire_expired_v2=True)
+            else:
+                joined(clients, probe, build, failed_jobs)
         nonce = uuid.uuid4().hex if chosen is not None or abandoned else None
         build.need(nonce is None or nonce not in abandoned_nonces,
                    "document_refresh_pre_native_successor_nonce_reused")

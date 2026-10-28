@@ -152,6 +152,66 @@ def test_terminal_build_and_absent_job_allow_new_nonce_without_adopting_old_cand
     assert_no_native_writes(stopped)
 
 
+def test_expired_v2_pre_native_history_needs_explicit_retirement_and_exact_old_identity(stopped, monkeypatch):
+    expected = stopped.native_http.services["hirewiz-document-inspector"]
+    strict = []
+    retired = []
+
+    def fresh_only(image, metadata):
+        strict.append((image, metadata["uid"]))
+        raise probe.NativeProofDenied("document_native_definitions_expired")
+
+    def expired_identity_only(image, metadata):
+        assert image == expected["template"]["containers"][0]["image"]
+        assert metadata["uid"] == probe.SERVICE_UID
+        assert metadata["labels"] == expected["labels"]
+        retired.append(image)
+        return None  # An expired image cannot produce serving acceptance.
+
+    monkeypatch.setattr(probe, "verify_current_successor", fresh_only)
+    monkeypatch.setattr(probe, "verify_expired_current_v2_for_retirement", expired_identity_only)
+    scheduled = output(stopped, "scheduled")
+    with pytest.raises(probe.NativeProofDenied, match="definitions_expired"):
+        recovery.prepare(scheduled, stopped.history, None, refresh_module=refresh)
+    assert not list(scheduled.iterdir()) and strict and not retired
+
+    manual = output(stopped, "manual")
+    assert recovery.prepare(manual, stopped.history, None, refresh_module=refresh,
+                            retire_expired_v2=True) == NEXT_NONCE
+    assert retired == [expected["template"]["containers"][0]["image"]]
+    assert json.loads((manual / "pre-native-reconciliations" / NONCE / "reconciliation.json").read_bytes())[
+        "native_acceptance"] is False
+    assert not (manual / "native-proof").exists() and not (manual / "transition").exists()
+    assert_no_native_writes(stopped)
+
+
+def test_expired_v2_retirement_cannot_abandon_history_with_changed_identity_or_pins(stopped, monkeypatch):
+    original = copy.deepcopy(stopped.native_http.services["hirewiz-document-inspector"])
+
+    def expired_identity_only(image, metadata):
+        if metadata["labels"] != original["labels"]:
+            raise probe.NativeProofDenied("document_native_current_labels_invalid")
+
+    monkeypatch.setattr(probe, "verify_expired_current_v2_for_retirement", expired_identity_only)
+    worker = stopped.native_http.services["hirewiz-document-inspector"]
+    worker["labels"]["hirewiz-refresh-nonce"] = "f" * 32
+    changed = output(stopped, "changed-label")
+    with pytest.raises(probe.NativeProofDenied, match="current_labels_invalid"):
+        recovery.prepare(changed, stopped.history, None, refresh_module=refresh,
+                         retire_expired_v2=True)
+    assert not list(changed.iterdir())
+
+    worker["labels"] = copy.deepcopy(original["labels"])
+    caller = stopped.native_http.services["ai-resume-parser"]["template"]["containers"][0]["env"]
+    next(row for row in caller if row["name"] == "DOCUMENT_WORKER_IMAGE_DIGEST")["value"] = "unverified"
+    changed_pins = output(stopped, "changed-pins")
+    with pytest.raises(probe.NativeProofDenied):
+        recovery.prepare(changed_pins, stopped.history, None, refresh_module=refresh,
+                         retire_expired_v2=True)
+    assert not list(changed_pins.iterdir())
+    assert_no_native_writes(stopped)
+
+
 @pytest.mark.parametrize("status", [200, 403, 503, "unknown"])
 def test_existing_or_uncertain_native_job_is_never_treated_as_absent(stopped, status):
     stopped.job_status = status
