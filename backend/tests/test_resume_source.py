@@ -150,6 +150,39 @@ def test_upload_retains_exact_source_and_exposes_private_metadata(monkeypatch, s
         engine.dispose()
 
 
+@pytest.mark.parametrize("flag", ["false", "0", "False", ""])
+def test_legacy_parse_closes_before_read_scan_save_or_charge(monkeypatch, flag):
+    from starlette.datastructures import UploadFile as StarletteUploadFile
+
+    monkeypatch.setenv("RESUME_DIRECT_UPLOAD_ENABLED", flag)
+
+    async def unexpected_read(_self, *_args, **_kwargs):
+        raise AssertionError("closed admission must not read the upload")
+
+    def unexpected_inspection(*_args, **_kwargs):
+        raise AssertionError("closed admission must not call the document worker")
+
+    monkeypatch.setattr(StarletteUploadFile, "read", unexpected_read)
+    monkeypatch.setattr(resume_router, "inspect_resume_document", unexpected_inspection)
+    engine, factory, client = _client()
+    try:
+        with factory() as db:
+            before = (db.query(Resume).count(), db.query(UsageEvent).count(), db.get(User, 1).ai_credits)
+        response = client.post(
+            "/api/resume/parse",
+            files={"file": ("resume.pdf", _source_bytes("pdf"), "application/pdf")},
+            data={"enrich_skills": "true"},
+        )
+        assert response.status_code == 503
+        assert "temporarily unavailable" in response.json()["detail"]
+        with factory() as db:
+            after = (db.query(Resume).count(), db.query(UsageEvent).count(), db.get(User, 1).ai_credits)
+        assert after == before
+    finally:
+        client.close()
+        engine.dispose()
+
+
 def test_source_download_handles_legacy_ownership_and_authentication():
     engine, _, client = _client()
     try:

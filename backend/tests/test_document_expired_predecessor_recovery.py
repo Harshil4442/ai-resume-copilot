@@ -7,13 +7,13 @@ from datetime import timedelta
 from types import SimpleNamespace
 
 import pytest
+from fastapi import HTTPException
+from scripts import document_refresh as orchestrator
+
 from backend.tests import test_document_refresh_probe as native_fixtures
 from backend.tests import test_document_refresh_transition as fixtures
-from fastapi import HTTPException
 from infra.gcp import document_candidate_release as candidate_release
 from infra.gcp import document_refresh_probe as old_probe
-
-from scripts import document_refresh as orchestrator
 
 V2_POLICY = "d3baf46026934f48b8def219b48d348d7b03bc3b4d0cb713a6f222c7299df7f2"
 V3_POLICY = "8ed5f38142d88d88883129681953e939e79157e8b92e3efc516920d2e4409c9f"
@@ -233,6 +233,13 @@ def test_expired_v2_route_refuses_mode_combinations_before_cloud_or_build(monkey
         arguments = {"publish": True, "now": native_fixtures.NOW, "retire_expired_v2": True}
         arguments.update(changes)
         orchestrator.refresh(tmp_path, **arguments)
+
+
+def test_rescue_and_retirement_modes_cannot_combine_before_cloud_or_build(monkeypatch, tmp_path):
+    monkeypatch.setattr(orchestrator, "infra", lambda _: pytest.fail("No module or provider call"))
+    with pytest.raises(orchestrator.RefreshDenied, match="contract_version_invalid"):
+        orchestrator.refresh(tmp_path, publish=True, now=native_fixtures.NOW,
+                             retire_expired_v2=True, rescue_expired_v2=True)
 
 
 def test_scheduled_event_cannot_request_retirement_mode(monkeypatch, tmp_path):

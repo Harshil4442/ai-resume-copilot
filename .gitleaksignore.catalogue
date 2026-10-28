@@ -5,6 +5,7 @@
 # Chrome's DER RSA public key fixes the extension ID; parsed as RSAPublicKey,
 # not a credential/private key. Scope this historical false positive exactly.
 144841bece774f74a3a432da4638159599755745:browser-companion/extension/manifest.json:generic-api-key:6
-# The deployment image digest is a public SHA-256 checksum, not an API key.
-# Scope this historical false positive to its exact commit, path, rule and line.
+# Public native image digest in the scanner rescue's guarded API pin.
+249432d9c7bb15fd4d7d7b7ba19f16b74ecc91d2:infra/gcp/document_refresh_transition.py:generic-api-key:46
+# Public application source digest qualified by the schema25 rollback rehearsal.
 fda08df9dce4b24fabaa59234101468b084e9d9e:infra/gcp/unified_credit_schema25_release.py:generic-api-key:53

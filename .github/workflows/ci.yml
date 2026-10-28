@@ -149,6 +149,7 @@ jobs:
           tests/test_browser_schema19_step_postgres.py tests/test_neon_schema19_release_transport.py
           ../infra/gcp/email_password_schema21_release.py
           tests/test_email_password_schema21_release.py tests/test_email_password_schema21_postgres.py
+          ../infra/gcp/document_api_admission_hotfix.py tests/test_document_api_admission_hotfix.py
       - name: Check modified legacy authentication imports
         working-directory: backend
         run: .venv/bin/ruff check --select I,F app/routers/auth.py app/security.py app/schemas.py

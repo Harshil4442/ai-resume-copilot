@@ -83,12 +83,127 @@ def retain(files: dict[str, bytes], target: Path) -> None:
             os.fsync(stream.fileno())
 
 
-def pre_native_snapshot(path: Path, build: Any) -> dict[str, bytes]:
+def pre_native_snapshot(path: Path, build: Any, *, history_root: bool = False) -> dict[str, bytes]:
     """Only a fully acknowledged Build stopped before local/native proof."""
     private(path, build)
-    build.need({entry.name for entry in path.iterdir()} == set(PRE_NATIVE_FILES),
+    names = {entry.name for entry in path.iterdir()}
+    allowed = set(PRE_NATIVE_FILES)
+    build.need(names == allowed or history_root and names == allowed | {"pre-native-reconciliations"},
                "document_refresh_pre_native_shape_changed")
     return {name: read(path / name, build) for name in PRE_NATIVE_FILES}
+
+
+def pre_native_reconciliations(path: Path, build: Any) -> list[tuple[str, dict[str, bytes], dict[str, Any]]]:
+    """Read a successor's retained Build-only dispositions without trusting them."""
+    root = path / "pre-native-reconciliations"
+    if not os.path.lexists(root):
+        return []
+    private(root, build)
+    entries = list(root.iterdir())
+    build.need(0 < len(entries) <= 3, "document_refresh_pre_native_reconciliation_shape_changed")
+    found = []
+    for entry in entries:
+        build.need(re.fullmatch(r"[a-f0-9]{32}", entry.name) is not None,
+                   "document_refresh_pre_native_reconciliation_shape_changed")
+        private(entry, build)
+        build.need({child.name for child in entry.iterdir()} == {"original", "reconciliation.json"},
+                   "document_refresh_pre_native_reconciliation_shape_changed")
+        original = pre_native_snapshot(entry / "original", build)
+        receipt = build.decode(read(entry / "reconciliation.json", build))
+        build.need(type(receipt) is dict, "document_refresh_pre_native_reconciliation_changed")
+        found.append((entry.name, original, receipt))
+    return found
+
+
+def verify_pre_native_history(
+    rows: list[tuple[dict[str, bytes], Path]],
+    receipts: list[tuple[str, str, dict[str, bytes], dict[str, Any]]],
+    clients: Any, probe: Any, build: Any,
+) -> tuple[list[tuple[dict[str, Any], dict[str, bytes], Path]], list[dict[str, Any]], set[str]]:
+    """Prove each Build and receipt, then leave only unconsumed roots open."""
+    by_nonce: dict[str, tuple[dict[str, Any], dict[str, bytes], Path]] = {}
+    verified: list[dict[str, Any]] = []
+    for files, path in rows:
+        fact = verify_pre_native(files, clients, probe, build)
+        nonce = fact["nonce"]
+        build.need(nonce not in by_nonce, "document_refresh_pre_native_duplicate_history")
+        by_nonce[nonce] = (fact, files, path)
+        verified.append(fact)
+    consumed: dict[str, str] = {}
+    used_nonces = set(by_nonce)
+    for successor, prior, original, receipt in receipts:
+        build.need(type(successor) is str and re.fullmatch(r"[a-f0-9]{32}", successor)
+                   and prior != successor and prior not in consumed,
+                   "document_refresh_pre_native_reconciliation_changed")
+        if prior in by_nonce:
+            fact, saved, _ = by_nonce[prior]
+            build.need(original == saved, "document_refresh_pre_native_original_changed")
+        else:
+            # Older artifact may have aged out of the bounded history. Its
+            # retained original still needs the same native Build/Job proof.
+            fact = verify_pre_native(original, clients, probe, build)
+            verified.append(fact)
+        build.need(fact["nonce"] == prior and receipt == {**fact, "version": 1,
+            "status": "pre_native_candidate_abandoned_not_acceptance", "successor_nonce": successor,
+            "old_build_replayed": False, "native_acceptance": False, "promotion_performed": False},
+            "document_refresh_pre_native_reconciliation_changed")
+        consumed[prior] = successor
+        used_nonces.update((prior, successor))
+    for origin in consumed:
+        seen = set()
+        cursor = origin
+        while cursor in consumed:
+            build.need(cursor not in seen, "document_refresh_pre_native_reconciliation_cycle")
+            seen.add(cursor)
+            cursor = consumed[cursor]
+    open_rows = [row for nonce, row in by_nonce.items() if nonce not in consumed]
+    return open_rows, verified, used_nonces
+
+
+def completed_serving(run: Path, result: dict[str, Any], expected_journal: Path,
+                      build: Any, probe: Any) -> None:
+    """The retained serving artifact is identity evidence, never fresh acceptance."""
+    private(run, build)
+    native = run / "native-proof"
+    transition = run / "transition"
+    prior = run / "prior-native-retirement"
+    build.need(native == expected_journal and native.resolve() == native,
+               "document_rescue_prior_completed_journal_changed")
+    for directory in (native, transition, prior):
+        private(directory, build)
+    binding = build.decode(read(native / "binding.json", build))
+    accepted = build.decode(read(native / "acceptance.json", build))
+    transition_accepted = build.decode(read(transition / "native-acceptance.json", build))
+    complete = build.decode(read(transition / "complete.json", build))
+    cleanup = build.decode(read(prior / "cleanup.json", build))
+    identity = binding.get("build_identity") if type(binding) is dict else None
+    build.need(type(identity) is dict and set(binding) == {"image", "build_identity", "probe_sha256"}
+               and type(accepted) is dict and set(accepted) == set(probe.NativeAcceptance.__dataclass_fields__)
+               and transition_accepted == accepted and type(complete) is dict
+               and type(cleanup) is dict and type(result) is dict,
+               "document_rescue_prior_completed_receipt_changed")
+    nonce = identity.get("nonce")
+    build.need(type(nonce) is str and re.fullmatch(r"[a-f0-9]{32}", nonce)
+               and identity.get("kind") == "native_cloud_build"
+               and binding["image"] == accepted["image"] == complete.get("image") == result.get("image")
+               and binding["probe_sha256"] == accepted["probe_sha256"]
+               and identity.get("immutable_image") == binding["image"]
+               and identity.get("build_id") == accepted["build_id"]
+               and accepted["job_name"] == probe.PARENT + "/jobs/hirewiz-doc-six-" + nonce[:12]
+               and accepted["policy_sha256"] == probe.POLICY
+               and type(accepted["contract_version"]) is int and accepted["contract_version"] == 2
+               and type(accepted["required_case_count"]) is int and accepted["required_case_count"] == 10
+               and sha(canonical(accepted)) == result.get("native_acceptance_sha256") == complete.get("native_acceptance_sha256")
+               and result.get("definition_expires_at") == accepted["definition_expires_at"]
+               and result.get("prior_cleanup") == cleanup and cleanup.get("owned_resources_absent") is True
+               and set(result) == set(complete) | {"definition_expires_at", "prior_cleanup"}
+               and all(result[key] == value for key, value in complete.items())
+               and complete.get("status") == "document_refresh_serving"
+               and complete.get("admission_restored") is True
+               and complete.get("all_three_caller_pins_verified") is True
+               and complete.get("current_native_proof_retained") is True
+               and complete.get("automatic_replay") is False,
+               "document_rescue_prior_completed_receipt_changed")
 
 
 def verify_pre_native(files: dict[str, bytes], clients: Any, probe: Any, build: Any) -> dict[str, Any]:
@@ -251,8 +366,11 @@ def verify_failed(path: Path, files: dict[str, bytes], clients: Any, probe: Any,
 
 
 def joined(clients: Any, probe: Any, build: Any, failed_jobs: set[str],
-           unaccepted_images: set[str] | None = None, *, retire_expired_v2: bool = False) -> None:
-    build.need(type(retire_expired_v2) is bool, "document_refresh_recovery_mode_invalid")
+           unaccepted_images: set[str] | None = None, *, retire_expired_v2: bool = False,
+           rescue_expired_v2: bool = False) -> None:
+    build.need(type(retire_expired_v2) is bool and type(rescue_expired_v2) is bool
+               and not (retire_expired_v2 and rescue_expired_v2),
+               "document_refresh_recovery_mode_invalid")
     snapshot = clients.preflight()
     service = snapshot["service"]
     image = service["template"]["containers"][0]["image"]
@@ -261,19 +379,23 @@ def joined(clients: Any, probe: Any, build: Any, failed_jobs: set[str],
     build.need(service.get("labels", {}).get("hirewiz-refresh-job") not in failed_jobs,
                "document_refresh_recovery_failed_job_serving")
     if image != probe.BASE_IMAGE:
-        if retire_expired_v2:
-            # The expired predecessor is historical identity for this explicit
-            # retirement only. Its old proof never authorizes a new serving image.
+        if retire_expired_v2 or rescue_expired_v2:
+            # Both explicit paths use the expired predecessor only as historical
+            # identity. Its old proof never authorizes a new serving image.
             probe.verify_expired_current_v2_for_retirement(image, service)
         else:
             # Another fresh, genuinely accepted Job may prove the same image bytes.
             # A failed Job's receipt can never establish that serving authority.
             probe.verify_current_successor(image, service)
-    controller = build.infra("document_refresh_transition").Controller(clients.http, probe, None)
+    transition = build.infra("document_refresh_transition")
+    controller = transition.Controller(clients.http, probe, None, rescue_expired_v2=rescue_expired_v2)
     for name in ("hirewiz-document-inspector", "ai-resume-parser", "hirewiz-analysis-worker", "hirewiz-resume-coordinator"):
         value = clients.service(probe.PARENT + "/services/" + name)
         controller.ready(name, value, uid=probe.SERVICE_UID if name == "hirewiz-document-inspector" else None)
-    probe.verify_caller_pins(clients, image, policy_sha256=policy)
+    if rescue_expired_v2:
+        transition.verify_rescue_caller_pins(clients, probe, image)
+    else:
+        probe.verify_caller_pins(clients, image, policy_sha256=policy)
 
 
 def object_name(uid: str) -> str:
@@ -296,21 +418,34 @@ def verify_claim(body: dict[str, Any], acknowledgment: dict[str, Any], build: An
 
 
 def prepare(directory: Path, history: Path | None, selected: str | None, *, refresh_module: Any,
-            resuming_original: Path | None = None, retire_expired_v2: bool = False) -> str | None:
+            resuming_original: Path | None = None, retire_expired_v2: bool = False,
+            rescue_expired_v2: bool = False,
+            rescue_prior_journal: Path | None = None) -> str | None:
     build = refresh_module
-    build.need(type(retire_expired_v2) is bool and
-               (not retire_expired_v2 or selected is None and resuming_original is None),
+    build.need(type(retire_expired_v2) is bool and type(rescue_expired_v2) is bool
+               and not (retire_expired_v2 and rescue_expired_v2)
+               and (not (retire_expired_v2 or rescue_expired_v2)
+                    or selected is None and resuming_original is None),
                "document_refresh_recovery_mode_invalid")
+    build.need((rescue_expired_v2 and rescue_prior_journal is not None or
+                not rescue_expired_v2 and rescue_prior_journal is None),
+               "document_rescue_prior_completed_journal_required")
     build.need(selected is None or type(selected) is str and JOB.fullmatch(selected), "document_refresh_recovery_exact_job_required")
     if history is None:
-        build.need(selected is None, "document_refresh_recovery_history_required")
+        build.need(selected is None and not rescue_expired_v2, "document_refresh_recovery_history_required")
         return None
     build.need(history.is_absolute() and history.is_dir() and not history.is_symlink(), "document_refresh_prior_history_refused")
+    if rescue_expired_v2:
+        assert rescue_prior_journal is not None
+        build.need(rescue_prior_journal.is_absolute() and not rescue_prior_journal.is_symlink()
+                   and rescue_prior_journal.parent.parent == history,
+                   "document_rescue_prior_completed_journal_required")
     runs = list(history.iterdir())
     build.need(len(runs) <= 3, "document_refresh_prior_history_bound")
     records: dict[str, Any] = {}
     pending: list[tuple[str, dict[str, bytes], Path]] = []
     pre_native: list[tuple[dict[str, bytes], Path]] = []
+    pre_native_receipts: list[tuple[str, str, dict[str, bytes], dict[str, Any]]] = []
     record_roots: list[Path] = []
     resume = None
     if resuming_original is not None:
@@ -319,6 +454,8 @@ def prepare(directory: Path, history: Path | None, selected: str | None, *, refr
         resume.partial_snapshot(resuming_original, build)
     consumed = None
     known_partials = 0
+    completed_count = 0
+    rescue_probe = build.infra("document_refresh_probe") if rescue_expired_v2 else None
     for run in runs:
         build.need(run.is_dir() and not run.is_symlink(), "document_refresh_prior_unknown_reconcile_only")
         root = run / "terminal-recoveries"
@@ -327,17 +464,38 @@ def prepare(directory: Path, history: Path | None, selected: str | None, *, refr
         result = run / "result.json"
         if result.exists():
             previous = build.decode(read(result, build))
-            build.need(previous.get("status") == "document_refresh_serving" and previous.get("admission_restored") is True,
+            build.need(type(previous) is dict and previous.get("status") == "document_refresh_serving"
+                       and previous.get("admission_restored") is True,
                        "document_refresh_prior_unknown_reconcile_only")
+            if rescue_expired_v2:
+                assert rescue_prior_journal is not None and rescue_probe is not None
+                completed_serving(run, previous, rescue_prior_journal, build, rescue_probe)
+                completed_count += 1
+            if os.path.lexists(run / "pre-native-reconciliations"):
+                # A completed successor can consume a Build-only predecessor.
+                # Its own binding must be a verified serving V2 receipt first.
+                if not rescue_expired_v2:
+                    completed_serving(run, previous, run / "native-proof", build,
+                                      build.infra("document_refresh_probe"))
+                binding = build.decode(read(run / "native-proof/binding.json", build))
+                successor = binding["build_identity"]["nonce"]
+                for prior, original, receipt in pre_native_reconciliations(run, build):
+                    pre_native_receipts.append((successor, prior, original, receipt))
         else:
-            if {entry.name for entry in run.iterdir()} == set(PRE_NATIVE_FILES):
-                pre_native.append((pre_native_snapshot(run, build), run))
+            names = {entry.name for entry in run.iterdir()}
+            if names in (set(PRE_NATIVE_FILES), set(PRE_NATIVE_FILES) | {"pre-native-reconciliations"}):
+                files = pre_native_snapshot(run, build, history_root=True)
+                pre_native.append((files, run))
+                if "pre-native-reconciliations" in names:
+                    successor = build.decode(files["native-build-identity.json"])["nonce"]
+                    for prior, original, receipt in pre_native_reconciliations(run, build):
+                        pre_native_receipts.append((successor, prior, original, receipt))
                 continue
             # Only the known pre-Job shape needs the additive resume reader;
             # ordinary V1/V2 failed journals keep their original verifier path.
             partial_shape = {"build-started.json", "source-upload-acknowledged.json", "build-create-started.json",
                              "build-acknowledged.json", "native-build-identity.json", "terminal-recoveries"}
-            if {entry.name for entry in run.iterdir()} == partial_shape:
+            if names == partial_shape:
                 if resume is None:
                     resume = build.infra("document_refresh_resume")
                 known = resume.original_partial(run, build)
@@ -362,6 +520,8 @@ def prepare(directory: Path, history: Path | None, selected: str | None, *, refr
             except Exception:  # noqa: BLE001 - partial journals never authorize a new mutation.
                 raise build.RefreshDenied("document_refresh_prior_unknown_reconcile_only") from None
             pending.append((job, files, run))
+    build.need(not rescue_expired_v2 or completed_count == 1,
+               "document_rescue_prior_completed_journal_required")
     # Only failures still present in the bounded retrieved history need a
     # disposition. Completed newer runs must not depend forever on old logs,
     # LROs or source objects reaching the end of their provider retention.
@@ -386,7 +546,7 @@ def prepare(directory: Path, history: Path | None, selected: str | None, *, refr
     for job, files, _ in pending:
         build.need(job == selected or job in records and records[job][0] == files,
                    "document_refresh_prior_unknown_reconcile_only")
-    if not records and selected is None and not pre_native:
+    if not records and selected is None and not pre_native and not pre_native_receipts:
         return None
     probe = build.infra("document_refresh_probe")
     clients = probe.Clients()
@@ -407,34 +567,29 @@ def prepare(directory: Path, history: Path | None, selected: str | None, *, refr
         if selected is not None:
             _, files, original = targets[0]
             chosen = verify_failed(original, files, clients, probe, build)
-        abandoned = [verify_pre_native(files, clients, probe, build) for files, _ in pre_native]
-        abandoned_nonces = {fact["nonce"] for fact in abandoned}
-        build.need(len(abandoned_nonces) == len(abandoned), "document_refresh_pre_native_duplicate_history")
+        open_rows, verified_pre_native, used_nonces = verify_pre_native_history(
+            pre_native, pre_native_receipts, clients, probe, build)
         failed_jobs = set(facts)
         if chosen is not None:
             assert selected is not None
             failed_jobs.add(selected)
-        if abandoned:
-            failed_jobs.update(fact["absent_native_job"].rsplit("/", 1)[-1] for fact in abandoned)
-            if retire_expired_v2:
-                joined(clients, probe, build, failed_jobs, {fact["image"] for fact in abandoned},
-                       retire_expired_v2=True)
-            else:
-                joined(clients, probe, build, failed_jobs, {fact["image"] for fact in abandoned})
+        mode = ({"retire_expired_v2": True} if retire_expired_v2 else
+                {"rescue_expired_v2": True} if rescue_expired_v2 else {})
+        if verified_pre_native:
+            failed_jobs.update(fact["absent_native_job"].rsplit("/", 1)[-1] for fact in verified_pre_native)
+            joined(clients, probe, build, failed_jobs, {fact["image"] for fact in verified_pre_native},
+                   **mode)
         else:
-            if retire_expired_v2:
-                joined(clients, probe, build, failed_jobs, retire_expired_v2=True)
-            else:
-                joined(clients, probe, build, failed_jobs)
-        nonce = uuid.uuid4().hex if chosen is not None or abandoned else None
-        build.need(nonce is None or nonce not in abandoned_nonces,
+            joined(clients, probe, build, failed_jobs, **mode)
+        nonce = uuid.uuid4().hex if chosen is not None or open_rows else None
+        build.need(nonce is None or nonce not in used_nonces,
                    "document_refresh_pre_native_successor_nonce_reused")
-        if abandoned:
+        if open_rows:
             assert nonce is not None
             root = directory / "pre-native-reconciliations"
             root.mkdir(mode=0o700)
-            for fact, (files, original) in zip(abandoned, pre_native, strict=True):
-                build.need(pre_native_snapshot(original, build) == files,
+            for fact, files, original in open_rows:
+                build.need(pre_native_snapshot(original, build, history_root=True) == files,
                            "document_refresh_pre_native_original_changed")
                 target = root / fact["nonce"]
                 target.mkdir(mode=0o700)

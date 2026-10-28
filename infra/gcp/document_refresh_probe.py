@@ -19,6 +19,7 @@ import stat
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from importlib.machinery import SourceFileLoader
@@ -418,7 +419,8 @@ def validate_worker_snapshot(clients: Any, snapshot: dict[str, Any], *, historic
     return image
 
 
-def verify_caller_pins(clients: Any, image: str, *, policy_sha256: str | None = None) -> None:
+def verify_caller_pins(clients: Any, image: str, *, policy_sha256: str | None = None,
+                       api_serving_validator: Callable[[Any, Any, str, str], dict[str, Any]] | None = None) -> None:
     """Old acceptance evidence is retained until both actual serving callers move."""
     candidate = load_source("hirewiz_document_candidate_profile", HERE / "document_candidate.py")
     if image == candidate.IMAGE or policy_sha256 == candidate.POLICY_SHA256:
@@ -447,7 +449,9 @@ def verify_caller_pins(clients: Any, image: str, *, policy_sha256: str | None = 
         containers = service.get("template", {}).get("containers", [])
         need(type(containers) is list and len(containers) == 1,
              "document_native_caller_pin_unverified")
-        revision = validate_serving(clients, service, containers[0].get("image"), name)
+        revision = (api_serving_validator(clients, service, containers[0].get("image"), name)
+                    if name == "ai-resume-parser" and api_serving_validator is not None else
+                    validate_serving(clients, service, containers[0].get("image"), name))
         for row in (containers[0], revision["containers"][0]):
             env = row.get("env", [])
             need(type(env) is list, "document_native_caller_pin_unverified")
@@ -785,6 +789,20 @@ def acceptance(clients: Clients, image: str, build: dict[str, Any], job: dict[st
         facts["definition_expires_at"], 1 if historical_v1 else 2, 6 if historical_v1 else 10)
 
 
+def verify_expired_v2_identity(clients: Clients, image: str, build: dict[str, Any],
+                               job: dict[str, Any], execution: dict[str, Any]) -> None:
+    """Check the old native V2 record without constructing serving acceptance."""
+    verify_renderer_build(build)
+    renderer_identity(image, build_identity=build)
+    validate_job(job, image, build["nonce"])
+    validate_execution(execution, job, image, build["nonce"])
+    facts = validate_payload(native_payload(clients, job, execution), image, execution["name"],
+                             datetime.now(UTC), require_fresh=False, build_identity=build)
+    expiry = datetime.fromisoformat(facts["definition_expires_at"])
+    need(expiry.tzinfo is not None and expiry <= datetime.now(UTC),
+         "document_native_retirement_requires_expired_v2")
+
+
 def run_successor(image: str, build_identity: dict[str, Any], journal: Path) -> NativeAcceptance:
     """One new synthetic native Job; existing journal/unknown mutation cannot replay."""
     clients = None
@@ -912,16 +930,10 @@ def _verify_current_successor(image: str, service_metadata: dict[str, Any], *, r
         validate_job(job, image, nonce, historical_v1=historical_v1)
         latest = job.get("latestCreatedExecution", {}).get("name")
         execution = clients.execution(execution_reference(job, latest))
-        result = acceptance(clients, image, build, job, execution, historical_v1=historical_v1,
-                            require_fresh=not retirement_only)
         if retirement_only:
-            # Only proof that this exact expired image can be retired escapes.
-            # A stale NativeAcceptance is never returned to the transition.
-            expiry = datetime.fromisoformat(result.definition_expires_at)
-            need(expiry.tzinfo is not None and expiry <= datetime.now(UTC),
-                 "document_native_retirement_requires_expired_v2")
+            verify_expired_v2_identity(clients, image, build, job, execution)
             return None
-        return result
+        return acceptance(clients, image, build, job, execution, historical_v1=historical_v1)
     except NativeProofDenied:
         raise
     except Exception:  # noqa: BLE001 - vendor errors may contain credential-bearing request details.
@@ -933,7 +945,7 @@ def _verify_current_successor(image: str, service_metadata: dict[str, Any], *, r
 
 def verify_expired_current_v2_for_retirement(image: str, service_metadata: dict[str, Any], *,
                                              read_only_release: bool = False) -> None:
-    """Exact current V2 proof; expired definitions authorize retirement only."""
+    """Exact currently serving V2 proof; stale definitions permit retirement only."""
     need(type(read_only_release) is bool, "document_native_retirement_mode_invalid")
     need(_verify_current_successor(image, service_metadata, read_only_release=read_only_release,
                                    retirement_only=True) is None,
