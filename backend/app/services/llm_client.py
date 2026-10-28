@@ -190,6 +190,12 @@ def _chat_with_budget(messages: list[dict], budget) -> str:
         saw_transient = False
         for model in _gemini_models(LLM_MODEL.strip("\"' \r\n")):
             require_generation()
+            from .ai_pilot import PilotUnavailable, require_budget_context
+
+            try:
+                require_budget_context(budget, "google", model, "https://generativelanguage.googleapis.com")
+            except PilotUnavailable as exc:
+                raise GenerationBudgetExhausted(str(exc)) from exc
             if budget.preflight is None or budget.before is None or budget.after is None:
                 raise GenerationBudgetExhausted("Optional AI generation requires a persisted operation budget.")
             api_base = "https://generativelanguage.googleapis.com"
@@ -253,6 +259,12 @@ def _chat_with_budget(messages: list[dict], budget) -> str:
     payload = {"model": LLM_MODEL, "messages": messages, "temperature": 0.3}
     while True:
         require_generation()
+        from .ai_pilot import PilotUnavailable, require_budget_context
+
+        try:
+            require_budget_context(budget, provider, LLM_MODEL, LLM_API_BASE)
+        except PilotUnavailable as exc:
+            raise GenerationBudgetExhausted(str(exc)) from exc
         record = budget.admit(provider, LLM_MODEL, messages, api_base=LLM_API_BASE)
         payload[record["output_limit_parameter"]] = record["max_output_tokens"]
         started = time.perf_counter()

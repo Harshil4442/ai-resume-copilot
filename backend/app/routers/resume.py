@@ -316,12 +316,12 @@ async def parse_resume(
     if not raw_text.strip():
         warnings.append("No readable text was found. A scanned or complex file may not support source-preserving tailoring. Keep the unchanged original/custom file, or upload an editable DOCX or TeX source; no ATS parsing guarantee is made.")
     from ..domains.credits.runtime import requires_unified_billing
-    from ..services.generation_gate import generation_enabled
+    from ..services.generation_gate import generation_available_for
 
     if enrich_skills and requires_unified_billing(db, owner_id):
         enrichment_state = "requires_review"
         warnings.append("Your original resume was parsed without AI. Review the optional enrichment quote for this saved resume before starting generation; no enrichment credits were charged.")
-    elif enrich_skills and not generation_enabled():
+    elif enrich_skills and not generation_available_for(owner_id, "resume_enrichment"):
         enrichment_state = "unavailable"
         warnings.append("Optional AI enrichment is temporarily paused. Your original resume was parsed without AI and no enrichment units were charged.")
     elif enrich_skills:

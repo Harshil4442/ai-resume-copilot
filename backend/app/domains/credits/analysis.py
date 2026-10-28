@@ -331,7 +331,7 @@ def maybe_create_paid_run(
     from ..analysis.models import AnalysisRequestKey
     from ..career.service import get_opportunity
 
-    check_generation_admission(payload.operation, normalized)
+    check_generation_admission(payload.operation, normalized, user_id=user_id, db=db)
     now = utcnow()
     run = models.AnalysisRun(
         id=public_id("run"),

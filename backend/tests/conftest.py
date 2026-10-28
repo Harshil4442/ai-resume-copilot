@@ -17,6 +17,9 @@ def model_cost_test_policy(monkeypatch):
 @pytest.fixture(autouse=True)
 def expense_cost_test_policy(monkeypatch):
     monkeypatch.setenv("APP_ENV", "test")
+    # Existing fixture tests exercise legacy paths explicitly. Production has
+    # no such bypass; new owner-pilot tests override this mode.
+    monkeypatch.setenv("HIREWIZ_AI_PILOT_MODE", "test_legacy_open")
     monkeypatch.setenv("HIREWIZ_EXPENSE_POLICY_JSON", json.dumps(synthetic_expense_policy()))
 
 

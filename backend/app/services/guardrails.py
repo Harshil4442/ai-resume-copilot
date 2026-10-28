@@ -52,10 +52,6 @@ def billable_operation(
             "message": "Use the reviewed credit quote for this service. This legacy route did not start work or charge analysis units.",
         })
 
-    from .generation_gate import check_generation_admission
-
-    check_generation_admission(operation, input_payload)
-
     from ..domains.employer.admissions import lock_application_set
 
     lock_application_set(db, user_id)
@@ -63,6 +59,12 @@ def billable_operation(
     # Lock before inserting the run: its FK otherwise takes a key-share owner
     # lock, and two concurrent requests can deadlock upgrading to FOR UPDATE.
     lock_entitlement_owner(db, user_id)
+    from .generation_gate import check_generation_admission, requires_generation
+
+    check_generation_admission(operation, input_payload, user_id=user_id, db=db)
+    from .ai_pilot import current_pilot
+
+    pilot = current_pilot() if requires_generation(operation, input_payload) else None
     payload = input_payload or {}
     now = utcnow()
     run = models.AnalysisRun(
@@ -77,6 +79,7 @@ def billable_operation(
         committed_units=0,
         usage_state="pending",
         attempt_count=1,
+        generation_attempt_limit=1 if pilot is not None else 3,
         created_at=now,
         updated_at=now,
         started_at=now,

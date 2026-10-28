@@ -57,14 +57,14 @@ def _route_available(route, user_id: int | None, email: str = "") -> bool:
     """A financial qualification does not override a product kill switch."""
     from ..domains.employer import config as employer_config
     from ..feature_flags import decide_feature
-    from ..services.generation_gate import generation_enabled
+    from ..services.generation_gate import generation_available_for
 
     asynchronous = {"enhanced_job_match", "interview_questions", "resume_tailor",
                     "resume_tailor_extended", "market_report"}
     synchronous = {"resume_enrichment", "bullet_rewrite", "enhanced_qa", "learning_strategy"}
     if route.operation not in asynchronous | synchronous | {"job_discovery_batch"}:
         return False  # A future tariff alone never makes a service purchasable.
-    if route.mode == "enhanced" and not generation_enabled():
+    if route.mode == "enhanced" and not generation_available_for(user_id, route.operation):
         return False
     if route.operation == "job_discovery_batch":
         return employer_config.discovery_enabled() and employer_config.paid_history_mode() == "indexed"

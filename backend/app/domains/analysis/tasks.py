@@ -92,12 +92,14 @@ def process_analysis_run(run_id: str) -> str:
         from ...services.generation_gate import require_operation_generation
 
         previous = db.query(
-            models.AnalysisRun.operation, models.AnalysisRun.input_payload, models.AnalysisRun.status,
+            models.AnalysisRun.operation, models.AnalysisRun.input_payload,
+            models.AnalysisRun.status, models.AnalysisRun.user_id,
         ).filter(models.AnalysisRun.id == run_id).first()
         if previous and previous.status not in TERMINAL_STATES:
             # Refuse before the claim/attempt increment; paused work and its
             # product reservation stay available for reviewed recovery.
-            require_operation_generation(previous.operation, previous.input_payload)
+            require_operation_generation(previous.operation, previous.input_payload,
+                                         user_id=previous.user_id)
         stale_before = utcnow() - timedelta(minutes=20)
         claimed = (
             db.query(models.AnalysisRun)

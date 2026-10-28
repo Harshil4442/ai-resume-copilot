@@ -40,13 +40,47 @@ def requires_generation(operation: str, payload: dict[str, Any] | None = None) -
     return operation in {"resume_enrichment", "match_question", "learning_strategy"} and data.get("mode") == "enhanced"
 
 
-def require_operation_generation(operation: str, payload: dict[str, Any] | None = None) -> None:
+def require_operation_generation(operation: str, payload: dict[str, Any] | None = None,
+                                 *, user_id: int | None = None) -> None:
     if requires_generation(operation, payload):
         require_generation()
+        from .ai_pilot import PilotUnavailable, require_owner
+
+        try:
+            require_owner(user_id, operation)
+        except PilotUnavailable as exc:
+            raise GenerationPaused(PAUSED_MESSAGE) from exc
 
 
-def check_generation_admission(operation: str, payload: dict[str, Any] | None = None) -> None:
+def check_generation_admission(operation: str, payload: dict[str, Any] | None = None,
+                               *, user_id: int | None = None, db: Any = None) -> None:
     try:
-        require_operation_generation(operation, payload)
+        require_operation_generation(operation, payload, user_id=user_id)
+        if requires_generation(operation, payload):
+            from .ai_pilot import PilotUnavailable, require_new_operation
+
+            if db is None or user_id is None:
+                # The test-only legacy mode can still exercise old fixture
+                # calls; production owner admission always needs a DB lock.
+                from .ai_pilot import current_pilot
+
+                if current_pilot() is not None:
+                    raise PilotUnavailable(PAUSED_MESSAGE)
+            else:
+                require_new_operation(db, user_id, operation)
     except GenerationPaused as exc:
         raise HTTPException(status_code=503, detail=PAUSED_MESSAGE) from exc
+    except PilotUnavailable as exc:
+        raise HTTPException(status_code=503, detail=PAUSED_MESSAGE) from exc
+
+
+def generation_available_for(user_id: int | None, operation: str) -> bool:
+    if not generation_enabled():
+        return False
+    from .ai_pilot import PilotUnavailable, require_owner
+
+    try:
+        require_owner(user_id, operation)
+    except PilotUnavailable:
+        return False
+    return True

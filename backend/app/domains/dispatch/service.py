@@ -392,10 +392,11 @@ def process_event(event_id: str) -> str | EmployerSearchContinuation:
         previous = db.get(DispatchOutbox, event_id)
         if previous and previous.topic == "analysis.run" and previous.status not in {"completed", "failed"}:
             run = db.query(
-                models.AnalysisRun.operation, models.AnalysisRun.input_payload, models.AnalysisRun.status,
+                models.AnalysisRun.operation, models.AnalysisRun.input_payload,
+                models.AnalysisRun.status, models.AnalysisRun.user_id,
             ).filter(models.AnalysisRun.id == previous.aggregate_id).first()
             if run and run.status not in {"succeeded", "failed", "cancelled"}:
-                require_operation_generation(run.operation, run.input_payload)
+                require_operation_generation(run.operation, run.input_payload, user_id=run.user_id)
         now = utcnow()
         claimed = db.query(DispatchOutbox).filter(
             DispatchOutbox.id == event_id,
