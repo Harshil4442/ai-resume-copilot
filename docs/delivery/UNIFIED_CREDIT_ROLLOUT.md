@@ -94,6 +94,20 @@ the new production API contract.
 6. Deploy the frontend only against the matching API contract. Public pricing
    uses server amounts. Unsupported/paused paid actions are unavailable, while
    saved-result lookup remains usable. Inspect mobile and desktop review flows.
+   The schema25 deployment deliberately keeps the earlier pilot admission flags
+   closed as well as the new credit flags. Do not describe resume upload,
+   employer discovery, browser assistance or optional AI as available merely
+   because the new services are healthy. The pre-maintenance snapshot records
+   what was running; it is not authorization to reopen a route under new code.
+   After the completed deployment, restore the captured queues, schedules and
+   coordinator first. Reopen only individually reviewed pilot routes through a
+   separate, journaled same-image native change tied to that exact deployment
+   and the fresh pre-maintenance snapshot. Require the prior flag to have been
+   `true`, the candidate revision to be healthy and 100% serving, current
+   document-worker/caller pins and quality/funding policy to pass, and an exact
+   readback after the change. Keep checkout, final employer submission and all
+   new unified-credit/free-core flags off. If this separate reopening cannot
+   be proved, leave the route closed and report the pilot as unavailable.
 7. Import a real, current runtime review only after the declared route envelope
    has passed quality and cost qualification. Use an explicitly funded opted-in
    cohort of at most 5% for the initial canary. Retain exact identities for all
@@ -111,6 +125,40 @@ the new production API contract.
     failure/unknown outcomes, refund rates and cash reserved for obligations.
 
 ## Native schema25 operator
+
+### Restore the existing pilot after base promotion
+
+`infra/gcp/schema25_pilot_reopen.py` is a separate, explicit operator. It does
+not run during schema migration or the three-service release. Capture its plan
+only **after** the exact schema25 deployment has completed, the maintenance
+queues and schedules have been restored, and the coordinator's original state
+has been restored. Supply the exact private plan paths, SHA-256 hashes and
+journals from all three phases, plus a new 32-hex nonce and an explicit comma
+separated list of pilot flags. A plan is not a customer entitlement or a new
+paid-route qualification.
+
+The capture reads the prior true flags from the exact fresh pre-maintenance
+revisions and verifies the current schema25 image, source, health and completed
+deployment journals. `advance` rechecks the retained restoration evidence and
+current policy; upload-related flags also require the current native document
+acceptance and exact caller pins. It changes only requested flags that were
+previously true, retaining the same image, source, secrets and all other
+configuration. The native PATCH is journaled once per service, workers before
+API; a lost acknowledgement requires `reconcile` with the same plan and journal
+before any remaining action. A changed etag, traffic allocation, source,
+revision, policy, scanner proof or resource state stops the operation. Confirm
+the new revision's health and the user's actual pilot journey before reporting
+it available. This operator cannot reopen optional AI, checkout, new credits,
+free-core processing or employer final submission.
+
+The permitted finite flag set is direct resume upload, employer discovery,
+browser assistance, its typed controls, attachments, native upload/pairing and
+candidate ingress. Review the exact selected flags against the captured
+pre-maintenance state before capture. If a needed feature is outside this set,
+leave it closed for a separate release; do not edit the captured plan or add a
+generic flag override. Preserve the original private journals as the rollback
+and audit record. The pre-activation schema25 traffic-only rollback remains
+separate and must be reviewed again after any pilot reopening.
 
 ### Maintenance before capture
 
