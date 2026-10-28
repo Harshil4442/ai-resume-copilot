@@ -135,7 +135,11 @@ def test_native_google_sdk_failure_has_one_attempt_without_fallback(prepared, mo
     from google.genai.errors import APIError
 
     factory, values = prepared
-    calls, clients = [], []
+    calls, clients, counts = [], [], []
+
+    def count_tokens(model, request_input, api_key):
+        counts.append(model)
+        return 10
 
     def generate(**kwargs):
         calls.append(kwargs)
@@ -146,9 +150,13 @@ def test_native_google_sdk_failure_has_one_attempt_without_fallback(prepared, mo
         clients.append(kwargs)
         return SimpleNamespace(models=SimpleNamespace(generate_content=generate), close=lambda: None)
 
+    # The generation request has a separate no-retry token-count preflight.
+    # Keep this transport test entirely synthetic and exercise that boundary.
+    monkeypatch.setattr(llm_client, "count_gemini_input", count_tokens)
     monkeypatch.setattr(genai, "Client", client)
     result = runner.execute(factory, **values, side="candidate", maximum_operations=1)
     assert list(result["outcomes"].values()) == ["failed"]
+    assert counts == ["gemini-3.6-flash"]
     assert len(calls) == len(clients) == 1
     assert calls[0]["model"] == "gemini-3.6-flash"
     with factory() as db:
