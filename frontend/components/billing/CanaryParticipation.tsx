@@ -75,11 +75,11 @@ export function CanaryParticipation({ onChange }: { onChange?: () => void }) {
       try { await apiPostJson<unknown>(enrollmentPath(), payload); acknowledged = true; }
       catch (error) { rejected = error instanceof ApiError && error.status === 409; }
       if (!mounted.current) return;
+      if (action === "opt_in" && !acknowledged && !rejected) {
+        setUnknownOptIn({ digest: review.review_sha256, sequence: review.sequence });
+      }
       const fresh = await confirmStatus(review);
       if (!mounted.current) return;
-      if (action === "opt_in" && !acknowledged && !rejected && fresh.sequence === review.sequence) {
-        setUnknownOptIn({ digest: fresh.review_sha256, sequence: fresh.sequence });
-      }
       setMessage(rejected ? "This choice was not accepted. Review the refreshed status before trying again." : acknowledged ? (fresh.status === "OPTED_IN" ? "Your current choice is opted in." : "Your current choice is not opted in.")
         : "The request response was unavailable. A delayed choice may still complete; check status or stop participation.");
     } catch {

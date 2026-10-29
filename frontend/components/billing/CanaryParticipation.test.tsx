@@ -75,7 +75,7 @@ it("keeps a retained paused review revocable and does not offer a new opt-in", a
   expect(screen.getByText(/New pilot services are currently paused/)).toBeInTheDocument();
 });
 
-it("sends no second choice for an unknown response and rechecks the exact retained review", async () => {
+it("retains an unknown opt-in through failed reads and an unchanged-revision recheck", async () => {
   let release!: () => void;
   fetcher.mockImplementation(async (path: string, init: RequestInit) => {
     if (init?.method === "POST") { posts.push(JSON.parse(init.body as string)); throw new Error("Lost response"); }
@@ -92,6 +92,9 @@ it("sends no second choice for an unknown response and rechecks the exact retain
   await act(async () => release());
   await screen.findByText("Your current recorded choice has been refreshed.");
   expect(posts).toHaveLength(1); expect(reads[2]).toContain(review.review_sha256);
+  expect(screen.getByText("Current participation is unconfirmed")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Stop participating" })).toBeEnabled();
+  expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
 });
 
 it("resets consent when the current invitation changes and never renders notice HTML", async () => {

@@ -122,7 +122,7 @@ def test_small_real_population_is_limited_by_actual_traffic_not_account_fraction
     with factory() as db:
         config, review, digest = prepare(db, monkeypatch, selected=(1,), population=1)
         assert len(review.members) == len(review.selected_owner_ids) == 1
-        consent(db, config, review, digest)
+        consent(db, config, review, digest, expected_sequence=0)
         db.commit()
         baseline(db, count=genuine_baseline, owner=1)
         row = source(db)
