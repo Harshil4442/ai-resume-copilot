@@ -1,9 +1,12 @@
 // Local startup presentation only. Never inspect, repair or replace device state.
 export const STARTUP_STATUS_TIMEOUT_MS = 60000;
 const PREFIX = "HW-COMPANION-START-";
+const KEY_PHASES = new Set(["OPEN-UNAVAILABLE", "OPEN-BLOCKED", "OPEN-ERROR", "OPEN-TIMEOUT", "TX-UNAVAILABLE", "TX-ABORT", "TX-ERROR", "TX-TIMEOUT", "MISSING-RETAINED", "IDENTITY-SHAPE", "KEY-TYPE", "KEY-ALGORITHM", "KEY-USAGES", "PUBLIC-SHAPE", "FINGERPRINT", "PUBLIC-IMPORT", "PROOF-SIGN", "PROOF-VERIFY", "CREATE", "OPTIONS"]);
+const KEY_HELP = "This browser's saved device identity could not be verified. Keep the extension installed and do not clear its storage.";
 const REASONS = Object.freeze({
   CONFIG: "The installed companion could not verify its fixed configuration. Keep this extension installed and inspect its error details.",
-  KEY: "This browser's saved device identity could not be verified. Keep the extension installed and do not clear its storage.",
+  KEY: KEY_HELP,
+  ...Object.fromEntries([...KEY_PHASES].map((phase) => [`KEY-${phase}`, KEY_HELP])),
   CHECKPOINT: "The saved browser connection needs inspection. Keep the extension and its saved connection unchanged.",
   STORAGE: "Chrome could not access the saved connection state. Keep the extension installed and do not clear its storage.",
   WORKER: "The companion's background worker did not respond. Inspect the extension's error details without reinstalling it.",
@@ -45,7 +48,8 @@ export async function startupStatus(sendMessage) {
       new Promise((_, reject) => { timer = setTimeout(() => reject(new StartupFailure("TIMEOUT")), STARTUP_STATUS_TIMEOUT_MS); }),
     ]);
     if (result?.ok !== true) {
-      const reason = result?.error == null ? "WORKER" : MESSAGES.get(result.error) ?? "UNKNOWN";
+      const phase = result?.error === "Device key storage is unavailable" && KEY_PHASES.has(result.device_phase) ? result.device_phase : null;
+      const reason = phase ? `KEY-${phase}` : result?.error == null ? "WORKER" : MESSAGES.get(result.error) ?? "UNKNOWN";
       throw new StartupFailure(reason);
     }
     return result.value;

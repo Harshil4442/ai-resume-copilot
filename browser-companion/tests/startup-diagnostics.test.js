@@ -126,6 +126,26 @@ test("only a numeric Chrome manifest version is shown", () => {
   assert.equal(startupDiagnostic(new Error(secret), "0.8.4").version, "0.8.4");
 });
 
+test("key phases require both the exact existing key error and a finite phase value", async (t) => {
+  for (const phase of ["OPEN-BLOCKED", "OPEN-ERROR", "OPEN-TIMEOUT", "TX-ERROR", "TX-ABORT", "TX-TIMEOUT", "MISSING-RETAINED", "IDENTITY-SHAPE", "KEY-TYPE", "KEY-ALGORITHM", "KEY-USAGES", "PUBLIC-SHAPE", "FINGERPRINT", "PUBLIC-IMPORT", "PROOF-SIGN", "PROOF-VERIFY"]) {
+    const failure = await captureFailure(() => startupStatus(async () => ({ ok: false, error: "Device key storage is unavailable", device_phase: phase })));
+    const document = fakeDocument(); showStartupFailure(document, failure, "0.8.4");
+    assertLocked(document, `KEY-${phase}`);
+  }
+  for (const [error, phase, expected] of [
+    ["Device key storage is unavailable", secret, "KEY"],
+    ["Device key storage is unavailable", "PROOF-SIGN " + secret, "KEY"],
+    ["Device key storage is unavailable", { toString() { throw new Error(secret); } }, "KEY"],
+    [secret, "PROOF-SIGN", "UNKNOWN"],
+    ["Device key storage is unavailable " + secret, "PROOF-SIGN", "UNKNOWN"],
+  ]) await t.test(expected, async () => {
+    const failure = await captureFailure(() => startupStatus(async () => ({ ok: false, error, device_phase: phase })));
+    const document = fakeDocument(); showStartupFailure(document, failure, "0.8.4");
+    assertLocked(document, expected);
+    assert.equal(document.getElementById("error").textContent.includes("synthetic-secret"), false);
+  });
+});
+
 test("failure hides already visible action regions and disables every existing control", () => {
   const document = fakeDocument();
   for (const element of document.elements.values()) { element.hidden = false; element.disabled = false; }
