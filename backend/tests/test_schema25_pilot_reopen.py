@@ -4,7 +4,7 @@ from __future__ import annotations
 import copy
 import importlib
 import sys
-from dataclasses import asdict, replace
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -14,6 +14,52 @@ from backend.tests.test_rolling_release import FixtureBoundary
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "infra/gcp"))
 pilot = importlib.import_module("schema25_pilot_reopen")
+
+
+@pytest.mark.parametrize("phase", ("capture", "advance", "reconcile"))
+@pytest.mark.parametrize("explicit_root", (False, True))
+def test_cli_binds_source_boundary_to_exact_candidate_root(
+    tmp_path, monkeypatch, phase, explicit_root
+):
+    @dataclass(frozen=True)
+    class Proof:
+        prior_sources: tuple = ()
+
+    proof = Proof()
+    digest = pilot.rolling.sha(asdict(proof))
+    plan = SimpleNamespace(
+        deployment_sha256=digest, maintenance_sha256=digest, coordinator_sha256=digest
+    )
+    plan_path = tmp_path / "pilot.json"
+    tmp_path.chmod(0o700)
+    candidate = tmp_path / "candidate"
+    arguments = ["pilot", phase, "--plan", str(plan_path), "--journal", str(tmp_path / "journal")]
+    for name in ("deployment", "maintenance", "coordinator"):
+        arguments.extend(("--" + name + "-plan", str(tmp_path / (name + ".json")),
+                          "--" + name + "-sha256", digest,
+                          "--" + name + "-journal", str(tmp_path / (name + "-journal"))))
+    if phase == "capture":
+        arguments.extend(("--nonce", "a" * 32, "--flags", "EMPLOYER_DISCOVERY_ENABLED"))
+    if explicit_root:
+        arguments.extend(("--root", str(candidate)))
+    monkeypatch.setattr(sys, "argv", arguments)
+    monkeypatch.setattr(pilot, "_pinned", lambda path, *_: plan if path == plan_path else proof)
+    monkeypatch.setattr(pilot.rolling, "Journal", lambda *_: object())
+    monkeypatch.setattr(pilot.native, "NativeRun", lambda: object())
+
+    class BoundaryReached(Exception):
+        pass
+
+    def boundary(root, schema, *prior_sources):
+        assert root == (candidate if explicit_root else ROOT)
+        assert schema == pilot.schema25.contract.SCHEMA
+        assert prior_sources == ((proof.prior_sources,) if phase == "capture" else ())
+        raise BoundaryReached
+
+    monkeypatch.setattr(pilot.schema25, "NativeSchema25Boundary", boundary)
+    with pytest.raises(BoundaryReached):
+        pilot.main()
+    assert not plan_path.exists()
 
 
 class Controls:

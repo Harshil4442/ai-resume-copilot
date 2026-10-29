@@ -527,6 +527,7 @@ def _pinned(path, sha, loader):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("phase", choices=("capture", "advance", "reconcile"))
+    parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[2])
     parser.add_argument("--plan", type=Path, required=True)
     parser.add_argument("--plan-sha256")
     parser.add_argument("--journal", type=Path)
@@ -554,7 +555,7 @@ def main():
         deployment_journal = rolling.Journal(args.deployment_journal, deployment)
         maintenance_journal = rolling.Journal(args.maintenance_journal, maintenance_plan)
         coordinator_journal = rolling.Journal(args.coordinator_journal, coordinator_plan)
-        boundary = schema25.NativeSchema25Boundary(Path(__file__).resolve().parents[2],
+        boundary = schema25.NativeSchema25Boundary(args.root,
                                                     schema25.contract.SCHEMA,
                                                     deployment.prior_sources)
         plan = capture(deployment, deployment_journal, maintenance_plan,
@@ -591,7 +592,7 @@ def main():
     coordinator_journal = rolling.Journal(args.coordinator_journal, coordinator_plan)
     journal = rolling.Journal(args.journal, plan)
     run = native.NativeRun()
-    boundary = schema25.NativeSchema25Boundary(Path(__file__).resolve().parents[2],
+    boundary = schema25.NativeSchema25Boundary(args.root,
                                                 schema25.contract.SCHEMA)
     def health(release_id, service, revision, tag):
         boundary.observer._verify_http_health(cast(Any, SimpleNamespace(release=release_id)),
