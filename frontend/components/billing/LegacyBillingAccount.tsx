@@ -185,7 +185,7 @@ export function LegacyBillingAccount({ onPendingChange }: { onPendingChange: (pe
     </div>
     {error ? <p role="alert" className="text-sm text-coral">{error}</p> : null}
     {recentRead === "failed" ? <Button variant="secondary" onClick={() => { setRecentRead("loading"); void readRecent(); }}>Check previous purchases</Button> : null}
-    <p className="text-xs leading-5 text-muted-foreground">After checkout, at most 8 automatic payment status reads run with increasing delays. Checks pause in a hidden tab or on capacity errors; manual status checks read once.</p>
+    <p className="text-xs leading-5 text-muted-foreground">Payment confirmation updates while this tab is visible. If checks pause, use Check payment status before trying another payment.</p>
     {message ? <p role="status" className="text-sm leading-6">{message}</p> : null}
     {order ? <section className="surface-panel space-y-4 p-5" aria-labelledby="legacy-payment-heading">
       <h3 id="legacy-payment-heading" className="font-display text-xl">{order.status === "paid" && order.fulfilled ? "Payment confirmed" : "Previous payment"}</h3>

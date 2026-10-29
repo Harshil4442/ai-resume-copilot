@@ -229,7 +229,7 @@ export function UnifiedBillingPanel({ legacyPending, requestedSku, participation
       {history ? history.items.length ? <ul className="mt-4 divide-y divide-border">{history.items.map((event) => <li key={event.id} className="grid gap-2 py-4 text-sm sm:grid-cols-[1fr_auto_auto]"><span>{event.event_type.replaceAll("_", " ")} · {formatCreditDate(event.created_at)}</span><span>{event.amount > 0 ? "+" : ""}{event.amount} credits</span><span>Balance {event.balance_after}</span></li>)}</ul> : <p className="mt-3 text-sm text-muted-foreground">No credit activity yet.</p> : <p className="mt-3 text-sm text-muted-foreground">{historyBusy ? "Loading credit history…" : "Credit history is unavailable."}</p>}
       {history?.next_cursor ? <Button variant="secondary" className="mt-4" disabled={historyBusy} onClick={() => { setHistoryBusy(true); void refreshHistory(history.next_cursor!); }}>Load older activity</Button> : null}
     </section>
-    <p className="text-xs leading-5 text-muted-foreground">After checkout, at most 8 automatic payment status reads run with increasing delays. Checks pause in a hidden tab or on capacity errors; manual status checks read once.</p>
+    <p className="text-xs leading-5 text-muted-foreground">Payment confirmation updates while this tab is visible. If checks pause, use Check payment status before trying another payment.</p>
     <p className="text-xs leading-6 text-muted-foreground">Seller: HireWiz, operated by SAVALIYA HARSHIL YOGESHBHAI. Payment credentials are entered only in Razorpay hosted checkout. <Link href="/contact" className="underline">Billing support</Link> · <Link href="/digital-delivery" className="underline">Digital delivery</Link>.</p>
   </section>;
 }
