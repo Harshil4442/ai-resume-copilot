@@ -144,3 +144,54 @@ def test_failed_column_geometry_probe_cannot_fall_back_to_interleaved_plaintext(
     monkeypatch.setattr(pdfplumber.page.Page, "find_tables", unavailable)
     with pytest.raises(parsing.PDFReadingOrderError, match="could not be verified"):
         parsing.extract_text_and_sections_from_pdf(source)
+
+
+@pytest.mark.parametrize("failure", ["edges", "table_bbox"])
+def test_failed_geometry_after_recognition_cannot_reach_plaintext_or_enrichment(monkeypatch, failure):
+    import pdfplumber
+
+    source = _document(lambda canvas: _columns(canvas, "row-painted"))
+    def unavailable(_):
+        raise RuntimeError("Synthetic geometry unavailable")
+    if failure == "edges":
+        monkeypatch.setattr(pdfplumber.page.Page, "find_tables", lambda _: [])
+        monkeypatch.setattr(pdfplumber.page.Page, "edges", property(unavailable))
+    else:
+        class UnavailableTable:
+            rows = columns = (None, None)
+            bbox = property(unavailable)
+        monkeypatch.setattr(pdfplumber.page.Page, "find_tables", lambda _: [UnavailableTable()])
+    monkeypatch.setattr(pdfplumber.page.Page, "extract_text", lambda *_: pytest.fail("No plaintext fallback"))
+    monkeypatch.setattr(parsing, "enrich_resume_skills", lambda *_: pytest.fail("No model enrichment"))
+    with pytest.raises(parsing.PDFReadingOrderError, match="geometry could not be verified"):
+        parsing.parse_resume_file(source, "resume.pdf", use_llm=True)
+
+
+def test_later_heading_pair_cannot_hide_earlier_unaligned_independent_sections():
+    def draw(canvas):
+        _line(canvas, 48, 752, "Morgan River", "Helvetica-Bold", 20)
+        _line(canvas, 48, 710, "EDUCATION", "Helvetica-Bold", 14)
+        _line(canvas, 330, 700, "EXPERIENCE", "Helvetica-Bold", 14)
+        _line(canvas, 48, 680, "North College 2015 - 2019")
+        _line(canvas, 330, 680, "Harbor Labs 2020 - 2022")
+        _line(canvas, 48, 660, "Degree in Computing")
+        _line(canvas, 330, 660, "Built 3 Python APIs")
+        _line(canvas, 48, 620, "PROJECTS", "Helvetica-Bold", 14)
+        _line(canvas, 330, 620, "SKILLS", "Helvetica-Bold", 14)
+        _line(canvas, 48, 600, "Built 2 billing checks")
+        _line(canvas, 330, 600, "Python, SQL, Docker")
+    source = _document(draw)
+    with pytest.raises(parsing.PDFReadingOrderError, match="earlier independent sections"):
+        parsing.extract_text_and_sections_from_pdf(source)
+
+
+def test_shared_contact_and_single_spanning_section_before_columns_remain_readable():
+    def draw(canvas):
+        _columns(canvas, "row-painted")
+        _line(canvas, 48, 715, "PROFILE", "Helvetica-Bold", 12)
+        _line(canvas, 48, 702, "Engineer focused on clear records, accountable work and reliable delivery.", size=10)
+    raw, sections, _, years, contact = parsing.parse_resume_file(_document(draw), "resume.pdf")
+    assert "morgan@example.test | https://portfolio.example.test/morgan" in raw
+    assert "Engineer focused on clear records, accountable work and reliable delivery." in raw
+    assert contact["name"] == "Morgan River" and contact["email"] == "morgan@example.test"
+    assert "Harbor Labs" in sections["experience"] and years == 2

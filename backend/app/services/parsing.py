@@ -92,6 +92,7 @@ def _pdf_reading_groups(page, words: list[dict], median_size: float) -> list[lis
     for word in words:
         rows.setdefault(round(word.get("top", 0) / 5) * 5, []).append(word)
     tables = None
+    previous_headers: list[list[dict]] = []
     for _, row in sorted(rows.items()):
         chunks: list[list[dict]] = []
         for word in sorted(row, key=lambda item: item["x0"]):
@@ -104,47 +105,69 @@ def _pdf_reading_groups(page, words: list[dict], median_size: float) -> list[lis
             if _pdf_header_candidate(text, chunk, median_size) and classify_section_header(text) != "other":
                 headers.append(chunk)
         if len(headers) < 2:
+            previous_headers.extend(headers)
             continue
-        top = min(word["top"] for header in headers for word in header)
-        left = min(word["x0"] for word in headers[0])
-        right = max(word["x1"] for word in headers[-1])
-        # A shared ruled table has row semantics, including labels/dates painted
-        # in separate passes. Keep its existing row extraction rather than
-        # reading each cell column as an unrelated resume section.
-        if tables is None:
-            try:
-                tables = page.find_tables()
-            except Exception as error:
-                raise PDFReadingOrderError("The PDF table and column flow could not be verified; use the original or an editable source.") from error
-        if any(len(table.rows) >= 2 and len(table.columns) >= 2 and table.bbox[0] <= left and table.bbox[2] >= right
-               and table.bbox[1] <= top and table.bbox[3] >= max(word["bottom"] for header in headers for word in header)
-               for table in tables):
-            continue
-        if len(headers) != 2:
-            raise PDFReadingOrderError("This independent-column PDF layout needs manual review; use the original or an editable source.")
-        right_start = min(word["x0"] for word in headers[1])
-        prelude = [word for word in words if word["top"] < top]
-        body = [word for word in words if word["top"] >= top]
-        left_words = [word for word in body if word["x0"] < right_start]
-        right_words = [word for word in body if word["x0"] >= right_start]
-        left_end = max(word["x1"] for word in left_words)
-        # Local table borders/underlines can extend beyond their text. Keep the
-        # cut in the actual gutter rather than slicing such a left-column box.
-        left_edges = [edge["x1"] for edge in page.edges if edge.get("orientation") == "h"
-                      and edge["top"] > top and edge["x0"] < right_start and edge["x1"] < right_start]
-        left_end = max(left_end, *left_edges) if left_edges else left_end
-        gap = min(word["x0"] for word in right_words) - left_end
-        # Require a full-body gutter. Spanning prose, outdented overlapping
-        # columns and mixed horizontal bands are deliberately not guessed.
-        if gap < max(12, median_size):
-            raise PDFReadingOrderError("The PDF columns overlap or span their gutter; use the original or an editable source.")
-        cut = left_end + gap / 2
-        if any(edge.get("orientation") == "h" and edge["x0"] < cut < edge["x1"]
-               and edge["top"] > top for edge in page.edges):
-            raise PDFReadingOrderError("The PDF mixes independent columns with spanning rules; use the original or an editable source.")
-        if min(len({round(word["top"] / 5) for word in side}) for side in (left_words, right_words)) < 2:
-            raise PDFReadingOrderError("The PDF column flow could not be verified; use the original or an editable source.")
-        return [prelude, left_words, right_words]
+        try:
+            top = min(word["top"] for header in headers for word in header)
+            left = min(word["x0"] for word in headers[0])
+            right = max(word["x1"] for word in headers[-1])
+            # A shared ruled table has row semantics, including labels/dates painted
+            # in separate passes. Keep its existing row extraction rather than
+            # reading each cell column as an unrelated resume section.
+            if tables is None:
+                try:
+                    tables = page.find_tables()
+                except Exception as error:
+                    raise PDFReadingOrderError("The PDF table and column flow could not be verified; use the original or an editable source.") from error
+            if any(len(table.rows) >= 2 and len(table.columns) >= 2 and table.bbox[0] <= left and table.bbox[2] >= right
+                   and table.bbox[1] <= top and table.bbox[3] >= max(word["bottom"] for header in headers for word in header)
+                   for table in tables):
+                continue
+            if len(headers) != 2:
+                raise PDFReadingOrderError("This independent-column PDF layout needs manual review; use the original or an editable source.")
+            right_start = min(word["x0"] for word in headers[1])
+            prelude = [word for word in words if word["top"] < top]
+            body = [word for word in words if word["top"] >= top]
+            left_words = [word for word in body if word["x0"] < right_start]
+            right_words = [word for word in body if word["x0"] >= right_start]
+            left_end = max(word["x1"] for word in left_words)
+            # Local table borders/underlines can extend beyond their text. Keep the
+            # cut in the actual gutter rather than slicing such a left-column box.
+            left_edges = [edge["x1"] for edge in page.edges if edge.get("orientation") == "h"
+                          and edge["top"] > top and edge["x0"] < right_start and edge["x1"] < right_start]
+            left_end = max(left_end, *left_edges) if left_edges else left_end
+            gap = min(word["x0"] for word in right_words) - left_end
+            # Require a full-body gutter. Spanning prose, outdented overlapping
+            # columns and mixed horizontal bands are deliberately not guessed.
+            if gap < max(12, median_size):
+                raise PDFReadingOrderError("The PDF columns overlap or span their gutter; use the original or an editable source.")
+            cut = left_end + gap / 2
+            if any(edge.get("orientation") == "h" and edge["x0"] < cut < edge["x1"]
+                   and edge["top"] > top for edge in page.edges):
+                raise PDFReadingOrderError("The PDF mixes independent columns with spanning rules; use the original or an editable source.")
+            # A later aligned pair cannot make earlier independent sections into
+            # shared header text. Do not infer an order for that unsupported shape.
+            earlier_sides = set()
+            for header in previous_headers:
+                x0, x1 = min(word["x0"] for word in header), max(word["x1"] for word in header)
+                y0, y1 = min(word["top"] for word in header), max(word["bottom"] for word in header)
+                if any(len(table.rows) >= 2 and len(table.columns) >= 2
+                       and table.bbox[0] < cut < table.bbox[2] and table.bbox[0] <= x0 <= x1 <= table.bbox[2]
+                       and table.bbox[1] <= y0 <= y1 <= table.bbox[3] for table in tables):
+                    continue  # Shared table cells retain their existing row semantics.
+                if x1 < cut:
+                    earlier_sides.add("left")
+                elif x0 > cut:
+                    earlier_sides.add("right")
+            if len(earlier_sides) == 2:
+                raise PDFReadingOrderError("The PDF has earlier independent sections with unaligned headings; use the original or an editable source.")
+            if min(len({round(word["top"] / 5) for word in side}) for side in (left_words, right_words)) < 2:
+                raise PDFReadingOrderError("The PDF column flow could not be verified; use the original or an editable source.")
+            return [prelude, left_words, right_words]
+        except PDFReadingOrderError:
+            raise
+        except Exception as error:
+            raise PDFReadingOrderError("The PDF column geometry could not be verified; use the original or an editable source.") from error
     return [words]
 
 

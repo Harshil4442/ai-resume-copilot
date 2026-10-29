@@ -31,6 +31,15 @@ existing plaintext fallback, so a recognized ambiguity cannot silently become
 interleaved facts. The original file or an editable/custom source remains the
 alternative.
 
+After paired headings are recognized, the entire table/edge/partition verification
+block owns its failures: unavailable edge data or malformed table geometry also
+becomes `PDFReadingOrderError`, rather than reaching plaintext fallback. A later
+aligned pair is insufficient if earlier separately styled recognized headings
+already occupy both sides of the discovered cut. That unsupported earlier layout
+is refused rather than treating those sections as shared prelude. Shared ruled
+table cells are excluded from that narrow check; full-width contact/header text
+and a single spanning section remain eligible prelude.
+
 The native processor maps this one typed parsing error to the existing permanent
 `document_inspection_refused` response. It exposes neither the source text nor the
 parser's exception detail. Unexpected parser failures still return the existing
@@ -67,7 +76,7 @@ geometry probe. They verify section ownership, dates, skills, contact facts,
 source-byte identity and the retained source hyperlink. They do not substitute
 expected text into the parser or serve as qualification-corpus replacements.
 
-The focused local command completed with **72 passed**:
+The focused local command completed with **76 passed**:
 
 ```sh
 backend/.venv/bin/pytest -q \
