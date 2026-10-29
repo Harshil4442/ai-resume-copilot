@@ -87,7 +87,14 @@ rewrite processing status or erase outstanding work to make it settleable.
 
 Use an owned canonical private directory (`0700`) and regular non-symlink files
 (`0600`). The database must be the explicitly selected PostgreSQL database at
-schema `20261028_0025`. Supply its existing operator credential through the
+schema `20261028_0025`. Production connections require certificate-verified TLS
+(`sslmode=verify-full`) and an observed TLS 1.2/1.3 channel. Unverified transport
+configuration is refused before opening a database connection. The captured
+identity includes the server-observed cluster identifier, database and namespace
+OIDs, actual PostgreSQL version and operator role, not just URL/database names.
+A same-named recreated database/schema or retargeted endpoint invalidates the
+plan. Only the existing dedicated loopback synthetic test databases may omit TLS.
+Supply its existing operator credential through the
 normal private environment; never paste it into a plan, terminal output or chat.
 
 ```sh

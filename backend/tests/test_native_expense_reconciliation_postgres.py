@@ -123,6 +123,30 @@ def test_native_cost_and_receipt_rollback_together_in_postgres(factory):
         assert db.query(AdminAuditEvent).count() == 0
 
 
+def test_recreated_same_named_schema_changes_native_identity_and_refuses_plan(factory):
+    with factory() as db:
+        hold, _ = paid(db)
+        reviewed = plan(db, receipt(hold.id))
+        engine = db.get_bind()
+        schema = db.execute(text("SELECT current_schema()")).scalar_one()
+        # Genuine server control/DB/schema identifiers are available; URL and
+        # version strings alone must not establish the captured identity.
+        assert db.execute(text("SELECT system_identifier FROM pg_catalog.pg_control_system()")).scalar_one()
+    retired = schema + "_old"
+    with engine.begin() as connection:
+        connection.execute(text(f'ALTER SCHEMA "{schema}" RENAME TO "{retired}"'))
+        connection.execute(text(f'CREATE SCHEMA "{schema}"'))
+        connection.execute(text(f'CREATE TABLE "{schema}".alembic_version (version_num varchar(32) PRIMARY KEY)'))
+        connection.execute(text(f'INSERT INTO "{schema}".alembic_version VALUES (:revision)'), {"revision": reconciliation.SCHEMA})
+    try:
+        with factory() as db, pytest.raises(reconciliation.ReconciliationDenied, match="database_changed"):
+            reconciliation.dry_run(db, plan=reviewed, now=STAMP)
+    finally:
+        with engine.begin() as connection:
+            connection.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
+            connection.execute(text(f'ALTER SCHEMA "{retired}" RENAME TO "{schema}"'))
+
+
 @pytest.mark.parametrize("kind", ["paid_native", "free_core"])
 def test_erasure_racing_native_reconciliation_preserves_exact_cost(factory, kind):
     with factory() as db:

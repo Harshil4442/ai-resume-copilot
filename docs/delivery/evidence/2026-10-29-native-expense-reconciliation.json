@@ -1,18 +1,19 @@
 {
   "schema_version": 1,
-  "observed_at": "2026-10-29T10:12:11.062125+00:00",
+  "observed_at": "2026-10-29T10:25:10.997114+00:00",
   "source_base_commit": "145276a95519c15e7fbb6d5d0c73f6d60c4b14df",
   "scope": "Local implementation and synthetic accounting verification only; existing Stage 2/6 remains in progress",
   "file_sha256": {
-    "backend/app/domains/credits/reconciliation.py": "afa12ed8aa9468c623498b9ec379967a44ae2fd47cfd7763af2a0e9a860d7a03",
+    "backend/app/domains/credits/reconciliation.py": "563dc238aea67cab13dc964c1635e639f51ae86b560ee515d014dbd278bdf6d5",
     "backend/app/domains/credits/admission.py": "5e62515e1941eb3b7f07a0964a9da0838e513cc567c1fb93716a5dd6f1788b6e",
-    "backend/scripts/reconcile_native_expenses.py": "905b6bd06ab4b37829bf901b8da952a517dfb8444291cdaa2a9f319a44f2b2b0",
+    "backend/scripts/reconcile_native_expenses.py": "2aecd167b99477a9ce1153f3e067ed85bcd65ae60181daeacf03e297e4ff92a0",
     "backend/tests/test_native_expense_reconciliation.py": "2f3e0951d88382b520e638f71601671b65ce0e2cd6c38870de89af162496d4bd",
-    "backend/tests/test_native_expense_reconciliation_postgres.py": "03fc0d7cf674660e5a9bf178af3dd75564f4bb686c92702d97e3658dac4ce6a7"
+    "backend/tests/test_native_expense_reconciliation_postgres.py": "d80cd79e95feec17068cf40a3b9138e0fce74a734ec26a19b6fbd9079faeb7bb",
+    "backend/tests/test_native_expense_operator_startup.py": "144d4481790669a3bf1f2354d9bf0ad15f5d1a840494e00386c43f61159fe84e"
   },
   "validation": {
-    "related_tests_passed": 92,
-    "genuine_postgres_tests": 8,
+    "related_tests_passed": 101,
+    "genuine_postgres_tests": 9,
     "postgres": "17.11, separate owned loopback cluster with private data directory and unique schemas",
     "owned_postgres_stopped": true,
     "ruff": "passed",
@@ -24,7 +25,10 @@
     "commit_rollback": "cost and audit both rolled back",
     "terminal_evidence": "exact operation correlation, false/running/ambiguous work refused",
     "unknown_model_liabilities": "remain protected",
-    "native_overrun": "actual amount retained; customer charge unchanged; affected paid route pauses"
+    "native_overrun": "actual amount retained; customer charge unchanged; affected paid route pauses",
+    "native_database_identity": "Server-observed cluster identifier, database/schema OIDs, actual PostgreSQL version and operator role; same-named recreated schema refused",
+    "operator_transport": "Certificate verification checked before connection; established remote TLS verified; dedicated loopback synthetic test exception only",
+    "private_startup": "Invalid DSN and configuration failures sanitized; help/module imports inert; synthetic secrets absent from stdout/stderr"
   },
   "production_mutations": 0,
   "existing_database_mutations": 0,

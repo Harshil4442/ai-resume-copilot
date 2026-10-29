@@ -142,20 +142,49 @@ class ReconciliationPlan(finance.Closed):
 
 
 def database_identity(db: Session) -> str:
-    """No credential values enter the binding or its emitted digest."""
+    """Bind observed server/cluster/catalog identities, never URL names alone.
+
+    No credential values or raw cluster identifiers leave the digest. The
+    operator transport must separately establish certificate-verified TLS.
+    """
     bind = db.get_bind()
     url = bind.url
     if bind.dialect.name == "postgresql":
-        database, schema = db.execute(text("SELECT current_database(), current_schema()")).one()
+        control = db.execute(text(
+            "SELECT p.oid,p.proowner,p.prosecdef,p.prosrc,l.lanname FROM pg_catalog.pg_proc p "
+            "JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace "
+            "JOIN pg_catalog.pg_language l ON l.oid=p.prolang "
+            "WHERE n.nspname='pg_catalog' AND p.proname='pg_control_system' "
+            "AND p.pronargs=0 LIMIT 2"
+        )).all()
+        _need([tuple(row) for row in control] == [(3441, 10, False, "pg_control_system", "internal")],
+              "database_native_control_unavailable")
+        observed = db.execute(text(
+            "SELECT d.datname,d.oid,n.nspname,n.oid,r.oid,current_user,session_user,"
+            "pg_catalog.current_setting('server_version_num'),"
+            "(SELECT system_identifier::text FROM pg_catalog.pg_control_system()) "
+            "FROM pg_catalog.pg_database d "
+            "JOIN pg_catalog.pg_namespace n ON n.nspname=pg_catalog.current_schema() "
+            "JOIN pg_catalog.pg_roles r ON r.rolname=current_user "
+            "WHERE d.datname=pg_catalog.current_database()"
+        )).one()
+        database, database_oid, schema, schema_oid, role_oid, actor, session_actor, version, cluster = observed
+        _need(type(cluster) is str and bool(cluster) and str(version).isdigit()
+              and int(version) >= 140000, "database_native_identity_unavailable")
+        native_identity = {"database_oid": database_oid, "schema_oid": schema_oid,
+            "role_oid": role_oid, "actor": actor, "session_actor": session_actor,
+            "server_version_num": version, "cluster_sha256": hashlib.sha256(cluster.encode()).hexdigest()}
         revisions = tuple(db.execute(text("SELECT version_num FROM alembic_version")).scalars())
         _need(revisions == (SCHEMA,), "database_schema_mismatch")
     elif bind.dialect.name == "sqlite":
         # Inert unit tests only; the operator CLI independently requires PG.
         database, schema, revisions = url.database, "main", (SCHEMA,)
+        native_identity = {"inert_sqlite_test_only": True}
     else:
         raise ReconciliationDenied("database_dialect_refused")
     return digest({"dialect": bind.dialect.name, "host": url.host, "port": url.port,
-                   "database": database, "schema": schema, "revisions": revisions})
+                   "database": database, "schema": schema, "revisions": revisions,
+                   "native_identity": native_identity})
 
 
 def _target(db: Session, receipt: NativeExpenseReceipt, *, lock: bool):
