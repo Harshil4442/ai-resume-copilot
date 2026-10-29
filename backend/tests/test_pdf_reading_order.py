@@ -367,6 +367,48 @@ def test_column_local_table_cannot_erase_an_outside_independent_stream(monkeypat
         parsing.extract_text_and_sections_from_pdf(_document(draw))
 
 
+def _centered_headings_with_side_field(canvas, side_text, *, floating=False):
+    for index, (heading, body) in enumerate((("PROFESSIONAL EXPERIENCE", "Harbor Labs"),
+                                            ("SKILLS", "Python, SQL, Docker"),
+                                            ("EDUCATION", "North College"))):
+        y = 740 - index * 100
+        canvas.setFont("Helvetica-Bold", 14)
+        canvas.drawCentredString(306, y, heading)
+        _line(canvas, 48, y - 24, body)
+        _line(canvas, 48, y - 42, "Recorded verified work and results.")
+        if index == 0:
+            canvas.setFont("Helvetica-Oblique", 10)
+            canvas.drawRightString(564, y - (32 if floating else 24), side_text)
+
+
+@pytest.mark.parametrize("date", ["2020 - 2022", "Jan 2020 - Mar 2022", "January 2020 to Present",
+                                  "Oct. 2026", "2022", "Current", "2020\u20132022"])
+def test_paired_date_only_right_field_preserves_centered_single_column_sections(date):
+    source = _document(lambda canvas: _centered_headings_with_side_field(canvas, date))
+    raw, sections = parsing.extract_text_and_sections_from_pdf(source)
+    assert sections["experience"] == "Harbor Labs " + date + "\nRecorded verified work and results."
+    assert sections["skills"] == "Python, SQL, Docker\nRecorded verified work and results."
+    assert sections["education"] == "North College\nRecorded verified work and results."
+    with pdfplumber.open(BytesIO(source)) as pdf:
+        words = pdf.pages[0].extract_words(x_tolerance_ratio=parsing.PDF_WORD_X_TOLERANCE_RATIO)
+        assert sorted(raw.split()) == sorted(" ".join(word["text"] for word in words).split())
+
+
+@pytest.mark.parametrize("claim", ["2020 - 2022 Built 3 APIs", "Jan 2020 to Present delivered results", "Foo 2020"])
+def test_date_plus_claim_is_never_excluded_from_body_ownership_proof(monkeypatch, claim):
+    source = _document(lambda canvas: _centered_headings_with_side_field(canvas, claim))
+    monkeypatch.setattr(pdfplumber.page.Page, "extract_text", lambda *_args, **_kw: pytest.fail("No mixed plaintext fallback"))
+    with pytest.raises(parsing.PDFReadingOrderError, match="independent-column"):
+        parsing.extract_text_and_sections_from_pdf(source)
+
+
+def test_floating_date_column_is_not_a_paired_body_date_field(monkeypatch):
+    source = _document(lambda canvas: _centered_headings_with_side_field(canvas, "2020 - 2022", floating=True))
+    monkeypatch.setattr(pdfplumber.page.Page, "extract_text", lambda *_args, **_kw: pytest.fail("No mixed plaintext fallback"))
+    with pytest.raises(parsing.PDFReadingOrderError, match="independent-column"):
+        parsing.extract_text_and_sections_from_pdf(source)
+
+
 def test_shared_contact_and_single_spanning_section_before_columns_remain_readable():
     def draw(canvas):
         _columns(canvas, "row-painted")

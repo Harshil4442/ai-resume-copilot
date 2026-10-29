@@ -138,7 +138,18 @@ def _pdf_single_aligned_heading_flow(headers: list[list[dict]], words: list[dict
             if not chunks or word["x0"] - chunks[-1][-1]["x1"] >= max(12, median_size):
                 chunks.append([])
             chunks[-1].append(word)
-        intervals.extend((min(word["x0"] for word in chunk), max(word["x1"] for word in chunk)) for chunk in chunks)
+        for index, chunk in enumerate(chunks):
+            text = " ".join(word["text"] for word in chunk)
+            # A date-only right field on the same physical row as ordinary body
+            # text does not establish a competing paragraph stream. This is
+            # proof-only: all date words remain in the actual row/output. A
+            # floating date or a date plus claim receives no exemption.
+            if (index == len(chunks) - 1 and index > 0 and _PDF_SIDE_DATE.fullmatch(text)
+                    and any(any(character.isalpha() for character in " ".join(word["text"] for word in other))
+                            and not _PDF_SIDE_DATE.fullmatch(" ".join(word["text"] for word in other))
+                            for other in chunks[:index])):
+                continue
+            intervals.append((min(word["x0"] for word in chunk), max(word["x1"] for word in chunk)))
     return bool(intervals) and max(left for left, _ in intervals) < min(right for _, right in intervals)
 
 
@@ -452,6 +463,12 @@ _DATE_RANGE = re.compile(
     rf"(?:(?P<start_month>{_MONTH_PAT})\s+)?(?P<start_year>20\d{{2}}|19\d{{2}})"
     rf"\s*(?:[-\u2013\u2014]|to)\s*"
     rf"(?:(?P<end_month>{_MONTH_PAT})\s+)?(?P<end_year>20\d{{2}}|19\d{{2}}|present|current|now)",
+    re.IGNORECASE,
+)
+_PDF_CALENDAR_POINT = rf"(?:(?:{_MONTH_PAT})\.?\s+)?(?:19|20)\d{{2}}"
+_PDF_SIDE_DATE = re.compile(
+    rf"(?:{_PDF_CALENDAR_POINT})(?:\s*(?:[-\u2013\u2014]|to)\s*(?:{_PDF_CALENDAR_POINT}|present|current|now))?"
+    rf"|(?:present|current|now)",
     re.IGNORECASE,
 )
 _MONTHS = {name: index for index, name in enumerate(
