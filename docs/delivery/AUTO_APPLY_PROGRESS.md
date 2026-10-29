@@ -1,6 +1,10 @@
 # HireWiz development and deployment progress
 
 Updated **29 October 2026 (IST)**. The schema25 base release is deployed.
+The active October27 goal implements the credit/cost/quality requirements across
+the existing eight stages in `UNIFIED_CREDIT_ROLLOUT.md`; it is not complete.
+The six accepted October26 pilot outcomes below are preserved history, not the
+completion definition for this later goal.
 Public mobile/desktop and SEO acceptance passed. Current signed-in account and
 companion acceptance remain pending: maintenance closed the native account
 lifecycle switch, and the first pilot reopening omitted it. The separately linked,
@@ -104,12 +108,13 @@ refuses oversized checkpoints. It never truncates history. Fresh signed EXPIRED/
 Start is a separate explicit action. The older 0.8.3 and 0.8.2 archives are retained. See the
 [package and existing-install update guide](../../browser-companion/README.md).
 
-The approved completion scope is the **free-prelaunch, twenty-origin,
-Razorpay/Greenhouse reviewed-browser pilot**, using GCP and Vercel Hobby until
-sales. No real payment or employer application is a smoke test. Paid activation,
-worldwide expansion, independent coverage assessment and commercial economics
-remain follow-on work. Mobile users retain the website and manual company-portal
-path; the companion requires Chrome desktop.
+The **October26 historical pilot** was bounded to twenty origins and
+Razorpay/Greenhouse reviewed-browser assistance. The active October27 requirements
+add the new credit, quality, cost and controlled-payment release work; their
+remaining gates still apply. GCP and Vercel Hobby are retained until sales. No
+real payment or employer application is a smoke test. Worldwide expansion and
+independent coverage assessment remain separately deferred. Mobile users retain
+the website and manual company-portal path; the companion requires Chrome desktop.
 
 Manual document maintenance run 40109020215 passed local/native acceptance and
 restored admission. Earlier natural expiry-monitor runs, including 40151669591,
@@ -118,6 +123,13 @@ succeeded without executing definition-refresh steps. The later scheduled run
 result and current pins were independently reconciled. This is one observed
 natural refresh. Stable unattended daily cadence and every condition-specific
 alert delivery remain unproven.
+
+On October29, monitor-only run `40868697702` observed the current immutable
+inspector, followed by successful natural scheduled monitor `40879201504`.
+Its native artifact reports fresh definitions through October31 06:24:17 UTC
+and no promotion. The daily refresh failure `40836620660` remains distinct:
+the reviewed consumed-history repair must be released and verified natively.
+Monitor success does not establish successful definition refresh or email delivery.
 
 Reliable original estimates and aggregate actual durations for the six outcomes
 were not retained. No expected-versus-actual totals or dependable completion ETA

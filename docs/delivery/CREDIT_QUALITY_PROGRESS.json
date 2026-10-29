@@ -3,7 +3,7 @@
   "requirement_version": "1.1",
   "source_sha256": "ac56be4838c8309fa9b1da3a717d53fab2bad85cfe0482d6aeedc4374a38fb4f",
   "baseline_commit": "f0f973c9c6d989553b8f58b275fc06fd5685497a",
-  "updated_at": "2026-10-29T11:19:38.825099+00:00",
+  "updated_at": "2026-10-29T13:52:42.658954+00:00",
   "authorization": "Owner authorized implementation, testing, deployment and payment activation subject to requirements gates on 2026-10-27.",
   "stages": [
     {
@@ -35,10 +35,11 @@
         "docs/delivery/evidence/2026-10-28-calibration-and-format-corrections.json",
         "docs/delivery/evidence/2026-10-28-reviewer-kit-and-capacity.json",
         "docs/delivery/evidence/2026-10-29-schema25-production-base.json",
-        "docs/delivery/evidence/2026-10-29-cost-quality-release-candidate.json"
+        "docs/delivery/evidence/2026-10-29-cost-quality-release-candidate.json",
+        "docs/delivery/evidence/2026-10-29-reviewed-release-integration.json"
       ],
-      "local_result": "Provider Gemini cap is verified at INR450. Receipt-based native expense reconciliation and prospective zero legacy signup grants are implemented and locally tested in a held combined candidate; retained balances remain unchanged. Exact-source CI/deployment, actual invoice, tax and payment reconciliation remain pending.",
-      "status_observed_at": "2026-10-29T11:19:38.825099+00:00"
+      "local_result": "Gemini provider cap remains INR450. Reviewed expense reconciliation and prospective zero legacy signup grants are integrated; existing balances preserved. Private primary receipts were located, but actual usage invoices, project allocation, tax/gateway reconciliation and release acceptance remain pending.",
+      "status_observed_at": "2026-10-29T13:28:48.083922+00:00"
     },
     {
       "number": 3,
@@ -73,10 +74,11 @@
         "docs/delivery/evidence/2026-10-28-interview-v7-exploratory.json",
         "docs/delivery/evidence/2026-10-28-interview-v8-exploratory.json",
         "docs/delivery/evidence/2026-10-29-schema25-production-base.json",
-        "docs/delivery/evidence/2026-10-29-cost-quality-release-candidate.json"
+        "docs/delivery/evidence/2026-10-29-cost-quality-release-candidate.json",
+        "docs/delivery/evidence/2026-10-29-reviewed-release-integration.json"
       ],
-      "status_observed_at": "2026-10-29T11:19:38.825099+00:00",
-      "local_result": "Native document-worker acceptance remains deployed. The held combined candidate adds scoped personal-claim validation and freezes route qualification against actual output contracts; no model route is qualified by these guards. Owner is Reviewer 1; Reviewer 2 and blinded scores remain pending. AI generation remains closed."
+      "status_observed_at": "2026-10-29T13:28:48.083922+00:00",
+      "local_result": "Current native inspector remains accepted. Scoped factuality/output-contract changes are reviewed; full-v2 evaluation still needs native input receipts, complex-layout reading-order correction, representative model outputs and independent human scoring. No model route is qualified by these guards; generation remains closed."
     },
     {
       "number": 5,
@@ -90,10 +92,11 @@
         "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json",
         "docs/delivery/evidence/2026-10-28-unified-credit-release-preparation.json",
         "docs/delivery/evidence/2026-10-28-reviewer-kit-and-capacity.json",
-        "docs/delivery/evidence/2026-10-29-schema25-production-base.json"
+        "docs/delivery/evidence/2026-10-29-schema25-production-base.json",
+        "docs/delivery/evidence/2026-10-29-reviewed-release-integration.json"
       ],
-      "status_observed_at": "2026-10-29T09:27:17.956790+00:00",
-      "local_result": "Current production public mobile/desktop layout, imagery, canonical metadata, robots and sitemap passed. Initial home mobile LCP 7.388s and focused diagnostic 1.452s are both retained; pricing mobile LCP 1.760s and CLS 0. Representative capacity and field p75 remain unqualified."
+      "status_observed_at": "2026-10-29T13:28:48.083922+00:00",
+      "local_result": "Duplicate employer catalog invalidations are removed in the reviewed candidate. Public responsive/SEO samples remain retained. Four distinct fresh Firestore metadata identity calls per ordinary authenticated read still exceed the native60/min quota at the one-million-request workload; provider determination or a separately reviewed equivalent design and actual capacity evidence remain pending."
     },
     {
       "number": 6,
@@ -108,10 +111,11 @@
         "docs/delivery/evidence/2026-10-28-unified-credit-release-preparation.json",
         "docs/delivery/evidence/2026-10-28-native-corpus-and-release-readiness.json",
         "docs/delivery/evidence/2026-10-29-schema25-production-base.json",
-        "docs/delivery/evidence/2026-10-29-cost-quality-release-candidate.json"
+        "docs/delivery/evidence/2026-10-29-cost-quality-release-candidate.json",
+        "docs/delivery/evidence/2026-10-29-reviewed-release-integration.json"
       ],
-      "status_observed_at": "2026-10-29T11:19:38.825099+00:00",
-      "local_result": "Schema25 and its 14 new tables remain deployed with preserved legacy data and ACLs. Candidate accounting tooling can reconcile reviewed terminal native expenses including erased owners; no production receipt applied. Seven-day/200-operation representative shadow and opted-in canary acceptance remain pending."
+      "status_observed_at": "2026-10-29T13:52:42.658954+00:00",
+      "local_result": "Schema25 remains deployed. Reviewed canary server and Billing controls require explicit owner consent, reject delayed stale choices and atomically cap actual eligible accepted traffic at5%. No twenty-account minimum is invented. No production activation or real consent is created by tests. Deployed opted-in acceptance and seven-day/200-operation representative shadow evidence remain pending."
     },
     {
       "number": 7,
@@ -127,10 +131,11 @@
         "docs/delivery/evidence/2026-10-28-reviewer-kit-and-capacity.json",
         "docs/delivery/evidence/2026-10-28-native-corpus-and-release-readiness.json",
         "docs/delivery/evidence/2026-10-29-schema25-production-base.json",
-        "docs/delivery/evidence/2026-10-29-cost-quality-release-candidate.json"
+        "docs/delivery/evidence/2026-10-29-cost-quality-release-candidate.json",
+        "docs/delivery/evidence/2026-10-29-reviewed-release-integration.json"
       ],
-      "local_result": "Production remains backend 8cb/frontend b0c with restored pilot account lifecycle. Combined candidate includes pilot sign-in messaging, cost/quality/signup safeguards and a distinct same-schema app release/recovery operator. Exact combined CI, immutable build, staging/promotion and current owner/companion acceptance remain pending. Paid/AI/submit gates stay closed.",
-      "status_observed_at": "2026-10-29T11:19:38.825099+00:00"
+      "local_result": "Production remains backend8cb/frontendb0c. Reviewed app25 release/recovery, canary, pilot sign-in, finance/factuality/signup and consumed-history changes are integrated locally. Prior exact-source CI76 failed one stale synthetic contract fixture after8103 tests passed; corrected exact-source CI, immutable build, staging/promotion, native refresh recovery and signed-in owner/companion acceptance remain pending. Scheduled monitor40879201504 passed; it was not an actual refresh.",
+      "status_observed_at": "2026-10-29T13:28:48.083922+00:00"
     },
     {
       "number": 8,
@@ -451,8 +456,10 @@
     {
       "id": "V04",
       "requirement": "Release and ongoing review. Progress through offline evaluation, shadow accounting, an opted-in canary and wider rollout. A confirmed critical factual, privacy or document-corruption defect disables the affected optimized route immediately. Baseline fallback is allowed only when funded. Keep customer corrections and refunds visible by route and cohort.",
-      "status": "pending",
-      "evidence": []
+      "status": "in_progress",
+      "evidence": [
+        "docs/delivery/evidence/2026-10-29-reviewed-release-integration.json"
+      ]
     },
     {
       "id": "C01",
@@ -692,8 +699,10 @@
     {
       "id": "R02",
       "requirement": "Shadow and canary. Propose at least seven days of representative shadow accounting and an initial opted-in cohort no larger than 5% of eligible traffic. Require at least 200 successful paid-equivalent operations across supported cohorts before widening; continue longer if coverage or statistical evidence is inadequate. Shadow calls and human review require a funded testing budget.",
-      "status": "pending",
-      "evidence": []
+      "status": "in_progress",
+      "evidence": [
+        "docs/delivery/evidence/2026-10-29-reviewed-release-integration.json"
+      ]
     },
     {
       "id": "R03",

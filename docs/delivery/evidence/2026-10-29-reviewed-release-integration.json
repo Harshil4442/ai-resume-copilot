@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "observed_at": "2026-10-29T13:52:42.658056+00:00",
+  "scope": "Existing Stages2,4,5,6,7; reviewed implementation, not release or commercial acceptance",
+  "production_unchanged": {
+    "backend": "8cbdfaeb9bb6cf6674c18ca8d59bc123fbf73a2a",
+    "frontend": "b0c4581fe66b88369fca0219cabca8d1229684ba",
+    "ai_generation": "closed",
+    "checkout": "closed",
+    "final_submit": "closed"
+  },
+  "reviewed_changes": {
+    "canary": {
+      "source": "aacac6eece177067e3a5de1030a78fde870a8ff6",
+      "independent_review": "clear",
+      "result": "Exact reviewed real census, explicit owner opt-in/revocation, owner-observed choice sequence, authenticated same-origin Billing controls, transactionally enforced actual five-percent traffic, accepted-work preservation and in-process internal-runner authority. The percentage applies to genuine accepted traffic, not account count. No review, consent, balance or activation created in production.",
+      "remaining": "Final exact-source CI (including the positive PostgreSQL runner-authority case), deployment and actual funded opted-in acceptance.",
+      "ui_source": "f783e8a1901a8c9eb4ec5194a288431641f76c91",
+      "choice_ordering_source": "24d955472f7704184a2119b7eb5d3e2b253b588d"
+    },
+    "document_refresh_history": {
+      "sources": [
+        "9cde49240165cb7f139a361fdae972ea1ef1f0a7",
+        "37a8ad2f02cb0c17f294fb09f224ec9350c15dab"
+      ],
+      "independent_review": "clear",
+      "result": "Recognizes exact consumed historical transition with original bytes and fresh native proofs; homogeneous current caller source/build/CI authority. No old transition replay.",
+      "remaining": "Release, actual application-source registry, reviewed obsolete private alias retirement, native audit and actual refresh/schedule acceptance."
+    },
+    "employer_navigation": {
+      "source": "e2a509e",
+      "result": "Removed duplicate catalog invalidations while retaining the navigation-owned refresh and per-application refresh.",
+      "remaining": "Current signed-in deployed acceptance."
+    },
+    "output_contract_regression": {
+      "result": "Positive service fixtures bind the service-specific current contract. A negative HTTP regression verifies wrong-contract quotes/orders close without provider purchase or accepting the earlier quote.",
+      "validation": "31 affected payment/output-contract tests passed in the integrated tree."
+    }
+  },
+  "failed_release_attempt": {
+    "run_id": 40866638342,
+    "source": "76c9564fe996e4b0aa604a021f39b8d70b83c22e",
+    "conclusion": "failure",
+    "backend_passed": 8103,
+    "backend_failed": 1,
+    "backend_skipped": 15,
+    "failure": "A synthetic bullet route retained the tailoring output-contract digest; fixture corrected, runtime qualification guard retained.",
+    "financial_concurrency": "Both earlier timeout cases passed in this run; original timeout cause remains unproved.",
+    "encrypted_diagnostics": "Decoded privately with no sampling errors; no lock waiter in this failure.",
+    "release_accepted": false
+  },
+  "natural_monitor": {
+    "run_id": 40879201504,
+    "event": "schedule",
+    "source": "b0c4581fe66b88369fca0219cabca8d1229684ba",
+    "conclusion": "success",
+    "artifact_id": 12898928192,
+    "artifact_sha256": "cd1eeabe79048fc7d8a3aa3c9aff66ab3526da784d251c6a2490b96ed7948fff",
+    "mode": "monitor",
+    "native_serving_pin_observed": true,
+    "promotion_performed": false,
+    "definitions_expire_utc": "2026-10-31T06:24:17+00:00",
+    "actual_refresh_or_alert_delivery_proven": false
+  },
+  "limits": {
+    "financial_receipts": "Primary payment/domain/subscription evidence reviewed privately; actual usage invoices, project allocations, taxes and gateway reconciliation remain pending.",
+    "capacity": "Native Firestore metadata quota remains60/min; ordinary authenticated read requires four separate identity observations. The one-million-request monthly assumption remains unqualified.",
+    "quality": "The full-v2 corpus retains all200 cases. Native input attestations, representative output execution, complex-layout reading-order correction and independent human review remain incomplete.",
+    "full_exact_source_ci": "pending",
+    "immutable_build": "pending",
+    "candidate_promotion": "pending",
+    "goal_complete": false
+  },
+  "integrated_verification": {
+    "backend_focused_passed": 173,
+    "frontend_focused_passed": 144,
+    "new_unknown_optin_regression_passed": true,
+    "openapi_and_typescript_regenerated": "no artifact drift",
+    "scoped_ruff_mypy_typecheck_eslint": "passed",
+    "app25_source_compatibility_sha256": "533fcdd8cfa73dfb39a162a5a986c26adbfa0a5eed3085b4114e9c5fc0a739b8",
+    "full_exact_source_ci": "pending",
+    "major_stage_completion_claimed": false
+  }
+}
