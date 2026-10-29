@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { chromium, expect } from "@playwright/test";
 import { nativeFixtureIdentity } from "../scripts/native-fixture-build.js";
 import { CONFIG } from "../extension/config.js";
+const sourceVersion = JSON.parse(await readFile(new URL("../extension/manifest.json", import.meta.url), "utf8")).version;
 
 const id = "12345678-1234-1234-1234-123456789abc";
 const old = { pairing_checkpoint: { version: 2, device_id: id, phase: "unknown", send_kind: "complete", marker: "retained-old-connection" },
@@ -35,6 +36,7 @@ async function fixture() {
     const open = async () => {
       await popup.goto(`chrome-extension://${identity.extensionId}/popup.html`);
       await expect(popup.locator("#error")).toContainText("HW-COMPANION-START-KEY-MISSING-RETAINED");
+      await expect(popup.locator("#error")).toContainText(`Installed version: ${sourceVersion}`);
     };
     return { context, worker, popup, probe, requests, open,
       async close() { await context.close(); await rm(directory, { recursive: true, force: true }); } };

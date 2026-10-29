@@ -1,6 +1,12 @@
 # HireWiz candidate-reviewed Chrome companion
 
-The 0.8.4 source package allows up to 40 seconds for pairing and assistance transport responses,
+The 0.8.5 source release adds safe startup support codes and an explicit local
+recovery path only when the retained browser signing key is genuinely missing.
+It is a prepared follow-on package; local verification is separate from publication
+and a fresh owner journey. The earlier diagnostic/recovery files tested under an
+unpacked 0.8.4 installation were private QA overrides, not the official 0.8.4 ZIP.
+
+The package retains the 0.8.4 allowance of up to 40 seconds for pairing and assistance transport responses,
 so a bounded native operation can settle before the outer request times out.
 Response bodies retain their separate three-second bounds: 16 KiB for pairing,
 64 KiB for assistance JSON and the exact reviewed size for binary delivery. Explicit
@@ -13,7 +19,7 @@ a 256 KiB checkpoint bound, preserving every existing record, native protocol 2
 and the admitted `companion_0_8_1` executor. These compatible patches preserve
 the same version-two checkpoint schema: employer execution, portal
 adapters, signed wire formats, public KMS pins and optional permissions are
-unchanged. There is no new native `companion_0_8_4` admission. The existing
+unchanged. There is no new native `companion_0_8_5` admission. The existing
 separately reviewed Razorpay/Greenhouse answer, attachment and final-submit
 capabilities retain their independent controls and approvals. Public pins and an
 UNCLAIMED inspection grant no account, device or application authority. Packaging
@@ -53,9 +59,24 @@ users complete applications directly on the company portal.
 
 For an existing unpacked install, replace its source files and reload that same
 extension. Keep the browser profile and extension storage; do not remove/reinstall
-or clear its retained key to recover a connection. The 0.8.4 patch keeps the same
+or clear its retained key to recover a connection. The 0.8.5 patch keeps the same
 native executor pin, so existing version-two checkpoints and their binding remain
 valid without migrating or replacing the browser key or history.
+
+Startup failures now display a finite support code and the actual installed
+version. Unknown errors are redacted. One 60-second initial status deadline keeps
+all application actions locked, and a late response cannot unlock them.
+
+Only `HW-COMPANION-START-KEY-MISSING-RETAINED` offers the separate local recovery
+review. Review the unresolved old records and existing old-device links, then
+personally confirm creation of a new nonextractable signing key. This one-time
+action preserves the old key slot, all three original checkpoint/evidence stores
+and a bounded exact quarantine. It uses separate empty operational stores, grants
+no application authority and does not revoke an old server device. A fresh Start
+and fingerprint approval remain separate actions. Interrupted recovery stays
+pending; detected drift permanently locks it. Inspection may write only a protective
+journal block. Automatic retry, rollback and a second recovery are unsupported and
+are disclosed before confirmation. See [the complete recovery boundaries](LOST-KEY-RECOVERY.md).
 
 Use the companion's connection inspection action. A matching, unexpired REQUESTED
 or CANDIDATE_CONFIRMED create can offer **Resume this existing connection**, which
@@ -85,6 +106,7 @@ Use Node.js 24 and locked dependencies for source validation:
 npm ci --ignore-scripts
 npm run check
 npm test
+npm run test:native-runtime
 npm run test:assistance
 npm run package:reviewed
 ```
@@ -103,7 +125,9 @@ in this artifact. See [the design decision](../docs/adr/007-reviewed-browser-ass
 for expiry, cancellation and database-restore limitations. Existing local synthetic
 and native experiment tests remain separate and do not constitute production proof.
 
-Configured 0.8.4 ZIP SHA-256: `a1324aeda3b168a519ed47ab7a2a13228c91d5e6aa5ab2bea9ab9ba0d09f8c40`.
+Configured 0.8.5 ZIP SHA-256: `039f0236d3f391b45e602c52de7970adbb1c8930511b813b49e6c3302f99555a`.
+The earlier official 0.8.4 archive remains unchanged at SHA-256
+`a1324aeda3b168a519ed47ab7a2a13228c91d5e6aa5ab2bea9ab9ba0d09f8c40`.
 The earlier 0.8.3 archive remains unchanged at SHA-256
 `8f5597efa2549fa0b6ecf76545ce4cbc9b78f9e1488f7ad8c1fd74ba6c051d45`.
 The earlier 0.8.2 archive remains unchanged at SHA-256
@@ -116,7 +140,7 @@ ordinary package command and CI `--check` reproduce the configured native archiv
 For a separately reviewed key update, `python3 scripts/package-reviewed.py
 --native-config /absolute/path/to/reviewed-public-pins.json` accepts bounded JSON with
 exactly `executorRevision: "companion_0_8_1"` and `authorityKey`, the actual public
-P-256 claim JWK from the configured KMS version. Package version 0.8.4 does not
+P-256 claim JWK from the configured KMS version. Package version 0.8.5 does not
 authorize changing either native value. Use the same argument with
 `--check`. This replaces only public `config.js` bytes in the archive; it supplies
 no account, device or action grant. Commit the same reviewed public values into
