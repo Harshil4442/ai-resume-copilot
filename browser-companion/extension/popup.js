@@ -1,6 +1,7 @@
 import { CONFIG } from "./config.js";
 import { decode64 } from "./protocol.js";
 import { nativeStorageOrigin } from "./greenhouse-native-network.js";
+import { showStartupFailure, startupStatus } from "./startup-diagnostics.js";
 const element = (id) => document.getElementById(id);
 let review = null; let artifactUrl = null;
 let connection = null;
@@ -199,7 +200,7 @@ assistanceAction("assistance-reconcile", "assistance_reconcile");
 assistanceAction("assistance-fill", "assistance_fill");
 assistanceAction("assistance-cancel", "assistance_cancel");
 try {
-  const status = await request({ type: "status" });
+  const status = await startupStatus((message) => chrome.runtime.sendMessage(message));
   element("mode").textContent = status.mode === "disabled" ? "Disabled: production authorization, real tenant permits and device enrollment are not available."
     : status.mode === "local_fixture" ? "Local synthetic fixtures only. No real employer adapter is enabled."
     : status.mode === "local_native_fixture" ? "Controlled local native connection test. Production remains disabled."
@@ -215,6 +216,8 @@ try {
     if (status.assistance) await showAssistance(status.assistance);
   } else if (status.mode === "reviewed_assistance") await showAssistance(status);
   if (status.checkpoint && ["action_in_progress", "unknown"].includes(status.checkpoint.status)) error("Previous fill may be incomplete. Inspect the portal; automatic recovery is disabled.");
-} catch {
-  element("mode").textContent = "Browser connection unavailable. No application action is enabled.";
+} catch (failure) {
+  let version;
+  try { version = chrome.runtime.getManifest().version; } catch { /* Keep unavailable metadata out of the diagnostic. */ }
+  showStartupFailure(document, failure, version);
 }
