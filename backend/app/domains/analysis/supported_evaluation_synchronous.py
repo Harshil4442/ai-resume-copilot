@@ -74,6 +74,12 @@ def _resource_review(operation):
     return hashlib.sha256(os.getenv("LEARNING_RESOURCE_REVIEW_JSON", "").encode()).hexdigest()
 
 
+def _generation_configuration(run):
+    from .supported_evaluation import declared_generation_configuration
+
+    return declared_generation_configuration(run)
+
+
 def _require_basic_match(db, run, resume, opportunity, identity):
     match = db.query(models.JobMatch).filter_by(id=identity, user_id=run.user_id, resume_id=resume.id).populate_existing().one_or_none()
     if match is None:
@@ -116,7 +122,8 @@ def prepare_inputs(db: Session, run) -> None:
         match_id = result["match_id"]
         _require_basic_match(db, run, resume, opportunity, match_id)
     payload = _request(run, resume, opportunity, match_id)
-    prepared = synchronous.owned_context(db, user_id=run.user_id, payload=payload)
+    prepared = synchronous.owned_context(db, user_id=run.user_id, payload=payload,
+        trusted_generation_configuration=_generation_configuration(run))
     synchronous.require_current_resources(prepared)
     run.input_payload = dict(run.input_payload) | {_KEY: {
         "version": VERSION, "request": payload.model_dump(), "context_sha256": prepared.fingerprint,
@@ -142,7 +149,8 @@ def _prepared(db, run):
     payload = _request(run, resume, opportunity, match_id)
     if binding["request"] != payload.model_dump():
         raise ValueError("The exact complete synchronous request changed")
-    prepared = synchronous.owned_context(db, user_id=run.user_id, payload=payload)
+    prepared = synchronous.owned_context(db, user_id=run.user_id, payload=payload,
+        trusted_generation_configuration=_generation_configuration(run))
     if binding["context_sha256"] != prepared.fingerprint:
         raise ValueError("The frozen complete synchronous context changed")
     synchronous.require_current_resources(prepared)
@@ -160,15 +168,20 @@ def fingerprint(db: Session, run) -> str:
 
 
 def execute(db: Session, run) -> dict:
+    from ...services import llm_client
     from .supported_evaluation import require_provider_authority
 
     require_provider_authority(db, run)
+    declared = _generation_configuration(run)
+    if llm_client.LLM_MODEL != declared["model"] or llm_client.LLM_API_BASE.rstrip("/") != declared["api_base"]:
+        raise ValueError("The actual model client differs from the reviewed synchronous side")
     budget = generation_budget.current_budget()
     if budget is None or budget.run_id != run.id or budget.before is None or budget.after is None or budget.preflight is None:
         raise ValueError("Synchronous evaluation requires its exact persistent model budget")
     payload, prepared = _prepared(db, run)
     result = synchronous.generate_prepared(prepared)
     require_provider_authority(db, run)
-    synchronous.require_current_inputs(db, user_id=run.user_id, payload=payload, prepared=prepared)
+    synchronous.require_current_inputs(db, user_id=run.user_id, payload=payload, prepared=prepared,
+        trusted_generation_configuration=declared)
     _prepared(db, run)
     return result

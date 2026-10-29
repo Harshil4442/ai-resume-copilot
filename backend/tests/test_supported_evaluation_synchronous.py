@@ -21,6 +21,7 @@ from app import models
 from app.database import Base
 from app.domains.analysis import supported_evaluation as core
 from app.domains.analysis import supported_evaluation_synchronous as adapter
+from app.domains.credits import synchronous
 from app.services import generation_budget, llm_client, model_cost_policy, synchronous_contracts
 from tests.expense_policy_fixtures import synthetic_expense_policy
 from tests.model_cost_fixtures import synthetic_policy
@@ -52,6 +53,15 @@ def local(monkeypatch):
     monkeypatch.setattr(llm_client, "LLM_MODEL", "gemini-3.6-flash")
     monkeypatch.setattr(llm_client, "LLM_API_BASE", "https://generativelanguage.googleapis.com")
     monkeypatch.setattr(llm_client, "_api_key", lambda: "synthetic-never-network")
+    # Only the projection is replaced in these adapter unit tests. The core
+    # integration separately validates the complete authorization, native DB,
+    # source corpus, selected side and funding before calling this helper.
+    def declared(run):
+        metadata = run.input_payload["_quality_evaluation"]
+        quote = metadata["authorization"]["routes"][metadata["side"]]["price"]
+        return {"model": quote["model"], "api_base": quote["api_base"],
+                "fallback_models": list(llm_client.GEMINI_FALLBACK_MODELS)}
+    monkeypatch.setattr(adapter, "_generation_configuration", declared)
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)
     factory = sessionmaker(engine, expire_on_commit=False)
@@ -72,15 +82,20 @@ def local(monkeypatch):
         engine.dispose()
 
 
-def seed(db, operation):
-    run = models.AnalysisRun(id="qev2_sync_" + operation, user_id=1, operation=operation,
-        opportunity_id="op-sync", idempotency_key="sync-eval-" + operation, input_fingerprint="pending",
+def seed(db, operation, *, side="candidate", prices=None):
+    selected = next(q for q in model_cost_policy.current_policy().pricing_quotes if q.model == llm_client.LLM_MODEL)
+    prices = prices or {name: selected.model_dump(mode="json") for name in ("reference", "candidate")}
+    run = models.AnalysisRun(id="qev2_sync_" + operation + "_" + side, user_id=1, operation=operation,
+        opportunity_id="op-sync", idempotency_key="sync-eval-" + operation + "_" + side, input_fingerprint="pending",
         status="running", usage_state="waived", estimated_units=0, committed_units=0,
         generation_attempt_limit=1, input_payload={"schema_version": core.VERSION,
-            "mode": "enhanced", "num_questions": 8, "resume_id": 1, "opportunity_id": "op-sync", "_quality_evaluation": {}})
+            "mode": "enhanced", "num_questions": 8, "resume_id": 1, "opportunity_id": "op-sync",
+            "_quality_evaluation": {"side": side, "authorization": {"routes": {
+                name: {"price": price} for name, price in prices.items()}}}})
     adapter.prepare_inputs(db, run)
     run.input_fingerprint = adapter.fingerprint(db, run)
     model_cost_policy.freeze_run_quote(run)
+    run.model_cost_quote = dict(run.model_cost_quote) | {"pricing_quotes": [prices[side]]}
     db.add(run)
     db.commit()
     return run
@@ -298,7 +313,7 @@ def test_complete_prompt_is_retained_or_refused_without_shortening(local):
         # A fresh preparation may refuse an unsupported complete context; it
         # must never produce an apparently successful truncated prompt.
         other = models.AnalysisRun(user_id=1, operation="enhanced_qa", opportunity_id="op-sync",
-            input_payload={"resume_id": 1, "opportunity_id": "op-sync"})
+            input_payload={"resume_id": 1, "opportunity_id": "op-sync", "_quality_evaluation": run.input_payload["_quality_evaluation"]})
         with pytest.raises(HTTPException, match="complete context exceeds"):
             adapter.prepare_inputs(db, other)
 
@@ -310,3 +325,37 @@ def test_legacy_alias_cost_ceiling_does_not_fund_new_catalog_operation(local, mo
     monkeypatch.setenv("LLM_MODEL_COST_POLICY_JSON", json.dumps(policy))
     with local() as db, pytest.raises(model_cost_policy.ModelCostUnavailable, match="no cost ceiling"):
         seed(db, operation)
+
+
+def test_both_declared_model_sides_prepare_without_rewriting_actual_client(local, monkeypatch):
+    monkeypatch.setattr(core, "require_provider_authority", lambda *_: None)
+    policy = json.loads(os.environ["LLM_MODEL_COST_POLICY_JSON"])
+    reference = next(q for q in policy["pricing_quotes"] if q["model"] == llm_client.LLM_MODEL)
+    candidate = next(q for q in policy["pricing_quotes"] if q["provider"] == "google" and q["model"] != reference["model"])
+    candidate["input_rate_micros_per_million"], candidate["output_rate_micros_per_million"] = 2_000_000, 3_000_000
+    monkeypatch.setenv("LLM_MODEL_COST_POLICY_JSON", json.dumps(policy))
+    prices = {"reference": reference, "candidate": candidate}
+    calls = synthetic_transport(monkeypatch, "enhanced_qa")
+    with local() as db:
+        runs = {side: seed(db, "enhanced_qa", side=side, prices=prices) for side in prices}
+        assert llm_client.LLM_MODEL == reference["model"]
+        contexts = {side: adapter._prepared(db, run)[1].context for side, run in runs.items()}
+        assert contexts["reference"]["generation_configuration"]["model"] == reference["model"]
+        assert contexts["candidate"]["generation_configuration"]["model"] == candidate["model"]
+        with generation_budget.persistent_run_budget(local, runs["reference"].id):
+            assert adapter.execute(db, runs["reference"])["answer"]
+        with generation_budget.persistent_run_budget(local, runs["candidate"].id), pytest.raises(ValueError, match="actual model client"):
+            adapter.execute(db, runs["candidate"])
+        assert len(calls) == 1
+        monkeypatch.setattr(llm_client, "LLM_MODEL", candidate["model"])
+        with generation_budget.persistent_run_budget(local, runs["candidate"].id):
+            assert adapter.execute(db, runs["candidate"])["answer"]
+        events = {event.analysis_run_id: event for event in db.query(models.ModelCallEvent)}
+        assert events[runs["reference"].id].model == reference["model"]
+        assert events[runs["reference"].id].estimated_cost_micros == 200
+        assert events[runs["candidate"].id].model == candidate["model"]
+        assert events[runs["candidate"].id].estimated_cost_micros == 500
+        assert len(calls) == 2
+        retail = synchronous.owned_context(db, user_id=1, payload=synchronous.SynchronousServiceRequest(
+            operation="resume_enrichment", input={"resume_id": 1}))
+        assert retail.context["generation_configuration"]["model"] == candidate["model"]

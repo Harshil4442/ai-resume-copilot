@@ -68,7 +68,8 @@ def normalized_request(payload: SynchronousServiceRequest) -> dict:
     return normalized
 
 
-def owned_context(db: Session, *, user_id: int, payload: SynchronousServiceRequest) -> PreparedSynchronous:
+def owned_context(db: Session, *, user_id: int, payload: SynchronousServiceRequest,
+                  trusted_generation_configuration: dict | None = None) -> PreparedSynchronous:
     from ...services import llm_client
 
     normalized = normalized_request(payload)
@@ -98,8 +99,13 @@ def owned_context(db: Session, *, user_id: int, payload: SynchronousServiceReque
             "category": item.category, "confidence": item.confidence,
             "provenance": item.provenance, "updated_at": item.updated_at.isoformat() if item.updated_at else None} for item in facts],
         "versions": dict(contracts.VERSIONS),
-        "generation_configuration": {"model": llm_client.LLM_MODEL, "api_base": llm_client.LLM_API_BASE,
-                                     "fallback_models": list(llm_client.GEMINI_FALLBACK_MODELS)},
+        # Internal paired evaluation prepares both sides before execution. Its
+        # independently validated caller can bind the declared side here; this
+        # is prompt input, never a statement about observed provider usage.
+        # Retail callers always use the actual server configuration below.
+        "generation_configuration": trusted_generation_configuration if trusted_generation_configuration is not None else {
+            "model": llm_client.LLM_MODEL, "api_base": llm_client.LLM_API_BASE,
+            "fallback_models": list(llm_client.GEMINI_FALLBACK_MODELS)},
     }
     from ...services.delivery_contracts import current_output_contract
 
@@ -171,8 +177,10 @@ def generate_prepared(prepared: PreparedSynchronous) -> dict:
 
 
 def require_current_inputs(db: Session, *, user_id: int, payload: SynchronousServiceRequest,
-                           prepared: PreparedSynchronous) -> PreparedSynchronous:
-    fresh = owned_context(db, user_id=user_id, payload=payload)
+                           prepared: PreparedSynchronous,
+                           trusted_generation_configuration: dict | None = None) -> PreparedSynchronous:
+    fresh = owned_context(db, user_id=user_id, payload=payload,
+                          trusted_generation_configuration=trusted_generation_configuration)
     if fresh.fingerprint != prepared.fingerprint:
         raise contracts.SynchronousOutputUnavailable(
             "The selected inputs changed during generation. Review a new quote; this attempt is not charged."
