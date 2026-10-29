@@ -493,11 +493,13 @@ def action(plan: RollingPlan, boundary: Boundary, journal: Journal, pin: Service
     need(phase in {"stage", "promote", "rollback"})
     name = phase + "." + pin.service
     started, ack, checked = (journal.read(name + suffix) for suffix in (".started", ".ack", ".checked"))
-    boundary.verify_global(plan)
     if checked is not None:
         need(started is not None)
         _readback(plan, boundary, pin, started)
         return True
+    # A checked action is read-only and has an exact live readback above. Keep
+    # the full global proof immediately before every new or unresolved action.
+    boundary.verify_global(plan)
     if started is None:
         need(not reconcile, "rolling_reconciliation_never_starts_a_mutation")
         current = boundary.service(pin.service)
@@ -597,6 +599,9 @@ def reconcile(plan: RollingPlan, boundary: Boundary, journal: Journal) -> dict[s
                         return {"status": "same_native_operation_pending", "phase": phase,
                                 "service": service, "replay_authorized": False}
                     break
+        # Checked-only reconciliation still finishes with one fresh joined
+        # source, policy, admission and financial proof.
+        boundary.verify_global(plan)
         return {"status": "existing_actions_reconciled_only", "native_mutations": 0,
                 "rolling_release_complete": False, "replay_authorized": False}
 
