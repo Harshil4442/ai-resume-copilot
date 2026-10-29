@@ -224,6 +224,17 @@ actions actually started by this maintenance are restored. Service restoration
 refuses after source/image/configuration drift, including a promoted new
 candidate, rather than overwrite it.
 
+Cloud Run can leave `latestReadyRevision` on the unserved maintenance-close
+revision after restoring physical traffic to the captured original revisions.
+The created restore revision can already be Ready but retired at zero traffic.
+Reconciliation accepts that shape only with the exact acknowledged restore
+generation, created revision and template, original physical traffic, and an
+independently Ready restore revision. It records the created restore revision
+without another PATCH. A later maintenance capture selects that Ready created
+template, verifies every physical serving/tagged revision has the same source,
+image, identity and configuration, and refuses if the stale ready revision is
+still serving.
+
 After a successful schema25 deployment, **do not use `restore-services`**.
 The `restore-queues` and `restore-schedules` phases instead accept
 `--deployment-plan`, `--deployment-plan-sha256` and `--deployment-journal` from
@@ -251,6 +262,15 @@ closes the master scan/cleanup admission flag on every active or tagged route.
 This does not prove existing invocations have finished: retain the independent
 SQL lease and queue-drain checks. Global observation and the immediate pre-DDL
 check both require fresh evidence that coordinator admission is closed.
+
+Coordinator restoration applies the same physical-traffic readiness checks as
+service maintenance: an unserved Ready restore revision may coexist with the
+previous pause revision in `latestReadyRevision`. Only those two exact names
+are accepted, with the created restore template and original physical routes
+independently verified. Retired prior revision status/etag changes are accepted
+only when the bounded immutable template, source, image, identity and original
+admission flag still match. Pilot reopening reuses these checks rather than
+requiring provider-owned status bytes to remain frozen.
 
 Capture the initial migration plan against schema21 and verify fresh disabled flags and
 drained work. `upgrade` preserves all old rows and permissions while adding the

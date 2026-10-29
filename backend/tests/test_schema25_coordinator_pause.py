@@ -151,6 +151,100 @@ def test_lost_restore_ack_recovers_prior_flag_and_traffic_without_a_third_write(
     assert pause.rolling.pinned_traffic(pause.SERVICE, reader.state) == list(plan.original_traffic)
 
 
+def retired_restore_context(tmp_path):
+    reader, plan, journal = context(tmp_path)
+    pause.action(plan, reader, journal, "pause")
+    reader.pending = True
+    assert pause.action(plan, reader, journal, "restore")["status"] == "coordinator_operation_pending"
+    reader.state["latestReadyRevision"] = pause.RESOURCE + "/revisions/" + plan.revision_name("pause")
+    reader.revisions[plan.revision_name("restore")]["conditions"] = [
+        {"type": "Ready", "state": "CONDITION_SUCCEEDED", "reason": "RETIRED"}]
+    for operation in reader.operations.values():
+        operation["done"] = True
+    reader.pending = False
+    return reader, plan, journal
+
+
+def test_retired_restore_reconciles_physical_traffic_without_another_patch(tmp_path):
+    reader, plan, journal = retired_restore_context(tmp_path)
+    assert pause.action(plan, reader, journal, "restore", reconcile=True)["status"] == "coordinator_restore_observed"
+    assert len(reader.writes) == 2
+    assert pause.rolling.pinned_traffic(pause.SERVICE, reader.state) == list(plan.original_traffic)
+    assert journal.read("coordinator.restore.checked")["revision"] == reader.state["latestCreatedRevision"]
+    next_plan = pause.capture(reader, "b" * 32)
+    assert next_plan.prior_revision == plan.revision_name("restore")
+    assert next_plan.original_traffic == plan.original_traffic
+    directory = tmp_path / "next"
+    directory.mkdir(mode=0o700)
+    next_journal = pause.rolling.Journal(directory, next_plan)
+    assert pause.action(next_plan, reader, next_journal, "pause")["status"] == "coordinator_pause_observed"
+    assert len(reader.writes) == 3
+
+
+@pytest.mark.parametrize("drift", ["ready", "created", "revision", "traffic"])
+def test_retired_restore_refuses_changed_state_without_replay(tmp_path, drift):
+    reader, plan, journal = retired_restore_context(tmp_path)
+    if drift == "ready":
+        reader.state["latestReadyRevision"] = pause.RESOURCE + "/revisions/" + pause.SERVICE + "-other"
+    elif drift == "created":
+        reader.state["latestCreatedRevision"] = reader.state["latestReadyRevision"]
+    elif drift == "revision":
+        reader.revisions[plan.revision_name("restore")]["conditions"][0]["state"] = "CONDITION_FAILED"
+    else:
+        reader.state["trafficStatuses"][0]["revision"] = plan.revision_name("pause")
+    with pytest.raises(pause.rolling.RollingDenied):
+        pause.action(plan, reader, journal, "restore", reconcile=True)
+    assert len(reader.writes) == 2
+    assert journal.read("coordinator.restore.checked") is None
+
+
+def status_revision_context(tmp_path):
+    reader, _plan, _journal = context(tmp_path)
+    row = reader.revisions[reader.original]
+    row.update({"service": pause.SERVICE, "uid": "f06bdf9e-e5e0-403a-8a3a-3c505623f2ba",
+                "generation": "1", "observedGeneration": "1", "etag": "original-etag"})
+    plan = pause.capture(reader, "c" * 32)
+    return reader, plan, pause.rolling.Journal(tmp_path, plan)
+
+
+def test_original_revision_status_only_drift_retains_exact_template_proof(tmp_path):
+    reader, plan, journal = status_revision_context(tmp_path)
+    pause.action(plan, reader, journal, "pause")
+    row = reader.revisions[reader.original]
+    row["etag"] = "retired-etag"
+    row["scalingStatus"] = {"desiredMinInstanceCount": 0}
+    row["conditions"][0]["reason"] = "RETIRED"
+    assert pause.action(plan, reader, journal, "restore")["status"] == "coordinator_restore_observed"
+    assert len(reader.writes) == 2
+
+
+@pytest.mark.parametrize("drift", ["source", "configuration", "unknown_field", "not_ready"])
+def test_original_revision_real_drift_refuses_restore_before_write(tmp_path, drift):
+    reader, plan, journal = status_revision_context(tmp_path)
+    pause.action(plan, reader, journal, "pause")
+    row = reader.revisions[reader.original]
+    if drift == "source":
+        pause.rolling.environment(row)["APP_RELEASE"]["value"] = "e" * 40
+    elif drift == "configuration":
+        row["maxInstanceRequestConcurrency"] = 99
+    elif drift == "unknown_field":
+        row["encryptionKey"] = "other-key"
+    else:
+        row["conditions"][0]["state"] = "CONDITION_FAILED"
+    with pytest.raises(pause.rolling.RollingDenied):
+        pause.action(plan, reader, journal, "restore")
+    assert len(reader.writes) == 1
+    assert journal.read("coordinator.restore.started") is None
+
+
+def test_capture_refuses_stale_ready_revision_still_serving(tmp_path):
+    reader, plan, _journal = retired_restore_context(tmp_path)
+    reader.state["trafficStatuses"][0]["revision"] = plan.revision_name("pause")
+    with pytest.raises(pause.rolling.RollingDenied, match="stale_ready_revision_serving"):
+        pause.capture(reader, "b" * 32)
+    assert len(reader.writes) == 2
+
+
 def test_concurrent_change_after_pause_refuses_restore_without_overwriting(tmp_path):
     reader, plan, journal = context(tmp_path)
     pause.action(plan, reader, journal, "pause")
