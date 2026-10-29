@@ -8,13 +8,16 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from typing import Any
 from urllib.parse import unquote, urlsplit
 
 import certifi
 import google.auth
 import requests
+from google.auth.exceptions import TransportError
 from google.auth.transport.requests import AuthorizedSession, Request
+from urllib3.exceptions import ProtocolError, ReadTimeoutError
 
 PROJECT = "ai-resume-parser-482412"
 REGION = "us-central1"
@@ -26,6 +29,9 @@ MAINTENANCE_ROLE = f"projects/{PROJECT}/roles/hirewizDocumentServiceMaintenance"
 CALLERS = ("ai-resume-parser", "hirewiz-analysis-worker", "hirewiz-resume-coordinator")
 SERVICES = ("hirewiz-document-inspector", *CALLERS)
 MAX_BODY = 1024 * 1024
+READ_ONLY_RETRY_SECONDS = 20
+READ_ONLY_RETRY_DELAY_SECONDS = 2
+TRANSIENT_READ_STATUSES = frozenset({429, 502, 503, 504})
 
 
 class IdentityDenied(RuntimeError):
@@ -114,7 +120,15 @@ class ServiceHttp:
         auth_session = requests.Session()
         self._harden(auth_session)
         auth_request = Request(session=auth_session)
-        credentials.refresh(lambda *a, **kw: auth_request(*a, **{**kw, "timeout": 5}))
+        refresh_deadline = time.monotonic() + READ_ONLY_RETRY_SECONDS
+        while True:
+            try:
+                credentials.refresh(lambda *a, **kw: auth_request(*a, **{**kw, "timeout": 5}))
+                break
+            except TransportError:
+                if time.monotonic() >= refresh_deadline:
+                    raise IdentityDenied("document_refresh_identity_transient_exhausted_reconcile_only") from None
+                time.sleep(min(READ_ONLY_RETRY_DELAY_SECONDS, max(0, refresh_deadline - time.monotonic())))
         need(getattr(credentials, "service_account_email", None) == ACCOUNT)
         self.session = AuthorizedSession(credentials, auth_request=auth_request, max_refresh_attempts=0)
         self._auth_session = auth_session
@@ -133,6 +147,8 @@ class ServiceHttp:
     def _harden(session: requests.Session) -> None:
         session.trust_env, session.max_redirects, session.verify = False, 0, certifi.where()
         for adapter in session.adapters.values():
+            if type(adapter) is not requests.adapters.HTTPAdapter:
+                raise IdentityDenied("document_refresh_transport_adapter_refused")
             adapter.max_retries = adapter.max_retries.__class__(total=0, connect=0, read=0, redirect=0, status=0)
 
     def request(self, uri: str, method: str = "GET", body: Any = None, headers: Any = None,
@@ -142,19 +158,39 @@ class ServiceHttp:
              and allowed(method, uri) and redirections == 0, "document_refresh_transport_scope_refused")
         need(body is None or type(body) in (bytes, str), "document_refresh_transport_body_refused")
         need(body is None or len(body) <= MAX_BODY, "document_refresh_transport_body_refused")
-        try:
-            response = self.session.request(method, uri, data=body, headers=headers or {},
-                timeout=(5, 30), allow_redirects=False, stream=True)
+        # Only the finite GET / read-only POST routes may retry. A write, even
+        # when its response is uncertain, always retains the original one-send
+        # behavior. Keep the deadline local to this single exact resource.
+        read_only = release_allowed(method, uri)
+        deadline = time.monotonic() + READ_ONLY_RETRY_SECONDS if read_only else 0.0
+        while True:
             try:
-                raw = response.raw.read(MAX_BODY + 1, decode_content=True)
-                need(len(raw) <= MAX_BODY and not 300 <= response.status_code < 400,
-                     "document_refresh_transport_response_refused")
-                result = Response({**dict(response.headers), "status": str(response.status_code)})
+                response = self.session.request(method, uri, data=body, headers=headers or {},
+                    timeout=(5, 30), allow_redirects=False, stream=True)
+                try:
+                    raw = response.raw.read(MAX_BODY + 1, decode_content=True)
+                    need(len(raw) <= MAX_BODY and not 300 <= response.status_code < 400,
+                         "document_refresh_transport_response_refused")
+                    status = response.status_code
+                    result = Response({**dict(response.headers), "status": str(status)})
+                finally:
+                    response.close()
+                if read_only and status in TRANSIENT_READ_STATUSES:
+                    if time.monotonic() < deadline:
+                        time.sleep(min(READ_ONLY_RETRY_DELAY_SECONDS, max(0, deadline - time.monotonic())))
+                        continue
+                    raise IdentityDenied("document_refresh_read_only_transient_exhausted_reconcile_only")
                 return result, raw
-            finally:
-                response.close()
-        except requests.RequestException:
-            raise IdentityDenied("document_refresh_transport_unavailable_reconcile_only") from None
+            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout,
+                    ProtocolError, ReadTimeoutError):
+                if read_only:
+                    if time.monotonic() < deadline:
+                        time.sleep(min(READ_ONLY_RETRY_DELAY_SECONDS, max(0, deadline - time.monotonic())))
+                        continue
+                    raise IdentityDenied("document_refresh_read_only_transient_exhausted_reconcile_only") from None
+                raise IdentityDenied("document_refresh_transport_unavailable_reconcile_only") from None
+            except requests.RequestException:
+                raise IdentityDenied("document_refresh_transport_unavailable_reconcile_only") from None
 
     def close(self) -> None:
         self.session.close()

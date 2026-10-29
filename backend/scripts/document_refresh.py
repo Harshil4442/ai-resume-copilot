@@ -35,6 +35,307 @@ ALERT_BEFORE = timedelta(hours=24)
 CANDIDATE_MAX_AGE = timedelta(hours=24)
 MAX_OUTPUT = 1024 * 1024
 
+# Exact source-owned codes safe for the private final-continuation failure
+# artifact. Vendor exception text and response bodies never enter this set.
+FINAL_READ_ONLY_FAILURE_CODES = frozenset("""
+    document_final_analysis_admission_changed
+    document_final_analysis_chain_changed
+    document_final_analysis_open_changed
+    document_final_analysis_open_revision_changed
+    document_final_analysis_pins_changed
+    document_final_analysis_request_changed
+    document_final_claim_ack_changed
+    document_final_claim_exists_or_unknown_reconcile_only
+    document_final_claim_preimages_changed
+    document_final_claim_readback_changed
+    document_final_claim_unknown_reconcile_only
+    document_final_coordinator_admission_changed
+    document_final_exact_artifact_required
+    document_final_native_acceptance_changed
+    document_final_original_flags_changed
+    document_final_preclaim_state_changed
+    document_final_previous_journal_changed
+    document_final_prewrite_read_deadline_reconcile_only
+    document_final_prewrite_state_changed
+    document_final_prior_claim_changed
+    document_final_second_claim_changed
+    document_final_second_claim_preimage_changed
+    document_final_state_changed
+    document_native_build_image_changed
+    document_native_caller_pin_unverified
+    document_native_caller_policy_unverified
+    document_native_caller_profile_worker_changed
+    document_native_cleanup_absence_unverified
+    document_native_cleanup_resource_remains
+    document_native_cleanup_unknown
+    document_native_cleanup_unknown_reconcile_only
+    document_native_client_mode_invalid
+    document_native_complete_logs_unavailable
+    document_native_contract_version_invalid
+    document_native_create_binding_changed
+    document_native_create_not_terminal
+    document_native_create_uid_unverified
+    document_native_current_execution_missing
+    document_native_current_execution_reference_invalid
+    document_native_current_job_must_be_retained
+    document_native_current_labels_invalid
+    document_native_current_service_changed
+    document_native_current_transient_exhausted
+    document_native_current_verification_unavailable
+    document_native_deadline_reconcile_only
+    document_native_definition_invalid
+    document_native_definitions_expired
+    document_native_event_scope_or_uniqueness_invalid
+    document_native_event_time_invalid
+    document_native_event_window_invalid
+    document_native_execution_not_singleton
+    document_native_execution_not_successful
+    document_native_existing_journal_reconcile_only
+    document_native_fresh_job_absence_unverified
+    document_native_historical_create_refused
+    document_native_historical_renderer_profile_refused
+    document_native_job_changed
+    document_native_job_exists_reconcile_only
+    document_native_job_previously_run
+    document_native_journal_binding_changed
+    document_native_journal_bound
+    document_native_journal_file_invalid
+    document_native_legacy_source_changed
+    document_native_legacy_source_invalid
+    document_native_log_page_bound
+    document_native_log_pagination_invalid
+    document_native_maintenance_authority_unverified
+    document_native_nonce_invalid
+    document_native_operation_changed
+    document_native_operation_failed_reconcile_only
+    document_native_operation_name_invalid
+    document_native_outcome_unknown_reconcile_only
+    document_native_parser_changed
+    document_native_payload_body_changed
+    document_native_payload_changed
+    document_native_payload_image_literal_changed
+    document_native_payload_shape_changed
+    document_native_policy_changed
+    document_native_private_journal_required
+    document_native_readonly_transient_exhausted
+    document_native_readonly_verification_unavailable
+    document_native_release_mutation_refused
+    document_native_renderer_build_profile_changed
+    document_native_renderer_or_fonts_changed
+    document_native_renderer_profile_invalid
+    document_native_required_cases_not_complete
+    document_native_required_event_missing
+    document_native_required_receipt_invalid
+    document_native_required_v2
+    document_native_response_bound
+    document_native_retirement_mode_invalid
+    document_native_retirement_proof_unavailable
+    document_native_retirement_requires_expired_v2
+    document_native_retirement_requires_v2
+    document_native_run_binding_changed
+    document_native_run_not_terminal
+    document_native_run_uid_unverified
+    document_native_runtime_broad_authority_refused
+    document_native_runtime_identity_changed
+    document_native_runtime_inventory_changed
+    document_native_runtime_policy_invalid
+    document_native_runtime_source_changed
+    document_native_scan_metadata_disagrees
+    document_native_sdk_redirect_budget_invalid
+    document_native_sdk_required
+    document_native_serving_image_changed
+    document_native_serving_not_ready
+    document_native_serving_policy_unverified
+    document_native_serving_revision_changed
+    document_native_serving_revision_unverified
+    document_native_serving_traffic_changed
+    document_native_six_case_v1
+    document_native_source_unavailable
+    document_native_successor_image_required
+    document_native_v2_successor_required_for_retirement
+    document_native_worker_configuration_changed
+    document_native_worker_image_unverified
+    document_native_worker_invokers_changed
+    document_partial_api_maintenance_close_changed
+    document_partial_api_maintenance_operation_changed
+    document_partial_api_open_chain_changed
+    document_partial_api_open_operation_changed
+    document_partial_api_open_revision_changed
+    document_partial_api_open_template_changed
+    document_partial_api_pins_changed
+    document_partial_caller_admission_changed
+    document_partial_claim_ack_changed
+    document_partial_claim_exists_or_unknown_reconcile_only
+    document_partial_claim_preimages_changed
+    document_partial_claim_readback_changed
+    document_partial_claim_unknown_reconcile_only
+    document_partial_exact_artifact_required
+    document_partial_final_join_changed
+    document_partial_native_acceptance_changed
+    document_partial_open_revision_already_exists
+    document_partial_operation_marker_changed
+    document_partial_operation_unresolved
+    document_partial_original_claim_changed
+    document_partial_original_flags_changed
+    document_partial_preclaim_state_changed
+    document_partial_prewrite_state_changed
+    document_partial_serving_phase_changed
+    document_partial_source_file_changed
+    document_partial_source_name_refused
+    document_partial_verified_marker_changed
+    document_refresh_identity_transient_exhausted_reconcile_only
+    document_refresh_read_only_transient_exhausted_reconcile_only
+    document_transition_ack_unknown_reconcile_only
+    document_transition_action_refused
+    document_transition_admission_flag_unverified
+    document_transition_already_current_reconcile_only
+    document_transition_caller_identity_changed
+    document_transition_container_changed
+    document_transition_current_acceptance_required
+    document_transition_deadline_reconcile_only
+    document_transition_environment_changed
+    document_transition_existing_journal_reconcile_only
+    document_transition_existing_mixed_pins_reconcile_only
+    document_transition_final_join_changed
+    document_transition_handle_changed
+    document_transition_handle_refused
+    document_transition_immutable_image_required
+    document_transition_journal_bound
+    document_transition_journal_name_refused
+    document_transition_journal_unverified
+    document_transition_native_metadata_invalid
+    document_transition_native_outcome_unknown_reconcile_only
+    document_transition_operation_failed_reconcile_only
+    document_transition_operation_refused
+    document_transition_pin_refused
+    document_transition_preimage_changed
+    document_transition_prewrite_read_deadline_reconcile_only
+    document_transition_private_journal_required
+    document_transition_private_rescue_journal_required
+    document_transition_readback_changed
+    document_transition_readback_deadline_reconcile_only
+    document_transition_rescue_acceptance_changed
+    document_transition_rescue_candidate_changed
+    document_transition_rescue_claim_ack_changed
+    document_transition_rescue_claim_exists_or_unknown_reconcile_only
+    document_transition_rescue_claim_preimages_changed
+    document_transition_rescue_claim_readback_changed
+    document_transition_rescue_claim_unknown_reconcile_only
+    document_transition_rescue_close_admission_changed
+    document_transition_rescue_close_journal_changed
+    document_transition_rescue_close_operation_unresolved
+    document_transition_rescue_close_readback_changed
+    document_transition_rescue_close_verification_changed
+    document_transition_rescue_flags_changed
+    document_transition_rescue_guarded_api_changed
+    document_transition_rescue_journal_file_changed
+    document_transition_rescue_journal_scope_changed
+    document_transition_rescue_mode_invalid
+    document_transition_rescue_predecessor_changed
+    document_transition_rescue_upload_preimage_changed
+    document_transition_rescue_v2_predecessor_required
+    document_transition_revision_read_deadline_reconcile_only
+    document_transition_revision_refused
+    document_transition_service_identity_changed
+    document_transition_service_refused
+    document_transition_serving_template_changed
+    document_transition_unrelated_configuration_changed
+    document_transition_worker_environment_changed
+    document_transition_worker_policy_unverified
+document_refresh_auth
+document_refresh_build_deadline_reconcile_only
+document_refresh_build_failed_reconcile_only
+document_refresh_build_identity_changed
+document_refresh_build_nonce_invalid
+document_refresh_build_outcome_unknown_reconcile_only
+document_refresh_build_recipe_changed
+document_refresh_built_header_mismatch
+document_refresh_candidate_not_fresh
+document_refresh_clamd_incomplete
+document_refresh_contract
+document_refresh_contract_unavailable
+document_refresh_contract_version_invalid
+document_refresh_corpus_incomplete
+document_refresh_definition_disagreement
+document_refresh_definition_header_invalid
+document_refresh_duplicate_json_key
+document_refresh_expired_v2_requires_dispatch
+document_refresh_expired_v2_requires_explicit_refresh
+document_refresh_expiry_alert
+document_refresh_explicit_native_build_required
+document_refresh_final
+document_refresh_fixed_base_changed
+document_refresh_fresh_output_directory_required
+document_refresh_future_definitions_refused
+document_refresh_historical_source_changed
+document_refresh_immutable_image_required
+document_refresh_layout_incomplete
+document_refresh_local_proof_unverified
+document_refresh_metadata_bound
+document_refresh_metadata_invalid
+document_refresh_module_refused
+document_refresh_module_unavailable
+document_refresh_monitor_status_refused
+document_refresh_native_build_execution_inputs_changed
+document_refresh_native_build_identity_unverified
+document_refresh_native_build_image_unverified
+document_refresh_native_build_invalid
+document_refresh_native_build_readback_changed
+document_refresh_native_build_steps_changed
+document_refresh_native_definition_time_invalid
+document_refresh_native_operation_unavailable_reconcile_only
+document_refresh_native_source_changed
+document_refresh_native_source_corpus_incomplete
+document_refresh_native_source_unavailable
+document_refresh_native_source_unverified
+document_refresh_nonfinite_json
+document_refresh_operation_unavailable
+document_refresh_partial
+document_refresh_prior_journal_bound
+document_refresh_prior_journal_refused
+document_refresh_prior_owned_history_unavailable
+document_refresh_probe
+document_refresh_pulled_digest_unverified
+document_refresh_recovery
+document_refresh_recovery_requires_explicit_refresh
+document_refresh_renderer_build_profile_changed
+document_refresh_renderer_changed_review_required
+document_refresh_resume
+document_refresh_serving_not_ready
+document_refresh_serving_pin_drift
+document_refresh_serving_successor_unverified
+document_refresh_serving_traffic_drift
+document_refresh_source_archive_bound
+document_refresh_source_archive_changed
+document_refresh_source_changed
+document_refresh_source_upload_identity_unverified
+document_refresh_source_upload_unknown_reconcile_only
+document_refresh_transition
+document_refresh_transition_journal_required
+document_refresh_unavailable
+document_rescue_exact_candidate_required
+document_rescue_exact_transition_mode_required
+document_rescue_original_artifact_private_required
+document_rescue_original_journal_changed
+document_rescue_prior_build_changed
+document_rescue_prior_history_required
+document_rescue_prior_job_changed
+document_rescue_prior_journal_invalid
+document_rescue_prior_owned_journal_required
+document_rescue_transition_arguments_mode_required
+document_resume_arguments_mode_required
+document_resume_original_candidate_required
+document_resume_other_history_required
+document_source_archive_bound
+document_source_archive_changed
+document_source_file_bound
+document_source_historical_profile_refused
+document_source_manifest_invalid
+document_source_path_invalid
+document_source_policy_changed
+document_source_recipe_changed
+""".split())
+
 
 class RefreshDenied(RuntimeError):
     """Fixed nonsecret refusal; never echo vendor output or exception text."""
@@ -1095,6 +1396,35 @@ def main() -> None:
         raise RefreshDenied("document_refresh_expiry_alert")
 
 
+def _final_failure_code(error: Exception) -> str:
+    """Return only a reviewed literal; never return vendor exception text."""
+    code = str(error)
+    if (type(error) is RefreshDenied
+            or type(error).__name__ in {"NativeProofDenied", "IdentityDenied", "TransitionDenied"}) \
+            and code in FINAL_READ_ONLY_FAILURE_CODES:
+        return code
+    return "document_refresh_unavailable"
+
+
+def _record_final_failure(code: str) -> None:
+    """Keep a private fixed-code receipt even when no transition marker exists."""
+    argv = sys.argv
+    if argv.count("--mode") != 1 or argv.count("--output-directory") != 1:
+        return
+    mode = argv.index("--mode") + 1
+    output = argv.index("--output-directory") + 1
+    if mode >= len(argv) or argv[mode] != "resume-final-v2-transition" or output >= len(argv):
+        return
+    directory = Path(argv[output])
+    if (not directory.is_absolute() or directory.is_symlink() or directory.resolve() != directory
+            or not directory.is_dir() or directory.stat().st_uid != os.getuid()
+            or stat.S_IMODE(directory.stat().st_mode) != 0o700):
+        return
+    write_new(directory / "failure.json", {"status": "maintenance_attention_required",
+        "fixed_code": code, "state_requires_read_only_reconciliation": True,
+        "automatic_replay": False})
+
+
 def run_cli() -> int:
     try:
         main()
@@ -1106,7 +1436,15 @@ def run_cli() -> int:
             emit_status({"mode": "monitor", "definitions": {"status": "unavailable"}})
         except Exception:
             pass
-        code = str(error) if type(error) is RefreshDenied else "document_refresh_unavailable"
+        mode_index = sys.argv.index("--mode") + 1 if sys.argv.count("--mode") == 1 else len(sys.argv)
+        final_mode = mode_index < len(sys.argv) and sys.argv[mode_index] == "resume-final-v2-transition"
+        code = (_final_failure_code(error) if final_mode else
+                str(error) if type(error) is RefreshDenied else "document_refresh_unavailable")
+        if final_mode:
+            try:
+                _record_final_failure(code)
+            except Exception:
+                pass
         print(json.dumps({"status": "maintenance_attention_required", "fixed_code": code,
                           "state_requires_read_only_reconciliation": True, "automatic_replay": False}))
         return 2

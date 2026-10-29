@@ -109,6 +109,151 @@ def test_session_ignores_proxy_ca_and_retry_environment(monkeypatch):
     session.close()
 
 
+class _OverriddenAdapter(auth.requests.adapters.HTTPAdapter):
+    def send(self, *args, **kwargs):
+        pytest.fail("unreviewed adapter send must never run")
+
+
+@pytest.mark.parametrize("adapter", [SimpleNamespace(close=lambda: None), _OverriddenAdapter()])
+def test_unexpected_session_adapter_is_refused_before_any_request(adapter):
+    session = auth.requests.Session()
+    session.adapters["https://"] = adapter
+    with pytest.raises(auth.IdentityDenied, match="^document_refresh_transport_adapter_refused$"):
+        auth.ServiceHttp._harden(session)
+    session.close()
+
+
+class _ReadResult:
+    def __init__(self, status: int):
+        self.status_code = status
+        self.headers = {"content-type": "application/json"}
+        self.raw = SimpleNamespace(read=lambda *args, **kwargs: b"{}")
+        self.closed = False
+
+    def close(self):
+        self.closed = True
+
+
+class _ReadSession:
+    def __init__(self, outcomes):
+        self.outcomes = iter(outcomes)
+        self.calls = []
+        self.responses = []
+
+    def request(self, method, uri, **kwargs):
+        self.calls.append((method, uri))
+        outcome = next(self.outcomes)
+        if isinstance(outcome, Exception):
+            raise outcome
+        response = _ReadResult(outcome)
+        self.responses.append(response)
+        return response
+
+
+@pytest.mark.parametrize(("method", "uri", "outcomes"), [
+    ("GET", "https://run.googleapis.com/v2/" + auth.PARENT + "/services/ai-resume-parser", [503, 200]),
+    ("GET", "https://cloudbuild.googleapis.com/v1/projects/" + auth.PROJECT
+     + "/locations/us-central1/builds/01234567-1234-1234-1234-0123456789ab", [502, 200]),
+    ("GET", "https://storage.googleapis.com/storage/v1/b/" + auth.PROJECT
+     + "_cloudbuild/o/hirewiz-document-refresh-source/5436da554bc5437cadccd296f3489bdd/"
+     + "final-transition-40788512340-12860975525.json", [504, 200]),
+    ("POST", "https://logging.googleapis.com/v2/entries:list", [429, 200]),
+    ("GET", "https://run.googleapis.com/v2/" + auth.PARENT + "/services/ai-resume-parser",
+     [auth.requests.exceptions.ConnectionError("private transport detail"), 200]),
+    ("GET", "https://run.googleapis.com/v2/" + auth.PARENT + "/services/ai-resume-parser",
+     [auth.requests.exceptions.Timeout("private timeout detail"), 200]),
+    ("GET", "https://run.googleapis.com/v2/" + auth.PARENT + "/services/ai-resume-parser",
+     [auth.ProtocolError("private truncated stream"), 200]),
+    ("GET", "https://run.googleapis.com/v2/" + auth.PARENT + "/services/ai-resume-parser",
+     [auth.ReadTimeoutError(None, "fixed-url", "private slow stream"), 200]),
+])
+def test_only_classified_native_reads_retry_without_exposing_vendor_text(monkeypatch, method, uri, outcomes):
+    monkeypatch.setattr(auth.time, "sleep", lambda _: None)
+    client = auth.ServiceHttp.__new__(auth.ServiceHttp)
+    client._verified = True
+    client.session = _ReadSession(outcomes)
+    response, raw = client.request(uri, method=method, redirections=0)
+    assert response.status == 200 and raw == b"{}"
+    assert len(client.session.calls) == 2
+    assert all(row.closed for row in client.session.responses)
+
+
+@pytest.mark.parametrize(("method", "uri", "status"), [
+    ("PATCH", "https://run.googleapis.com/v2/" + auth.PARENT + "/services/ai-resume-parser", 503),
+    ("POST", "https://run.googleapis.com/v2/" + auth.PARENT + "/jobs", 503),
+    ("POST", "https://storage.googleapis.com/upload/storage/v1/b/" + auth.PROJECT
+     + "_cloudbuild/o?" + urlencode({"uploadType": "media", "name": "hirewiz-document-refresh-source/"
+         "5436da554bc5437cadccd296f3489bdd/final-transition-40788512340-12860975525.json",
+         "ifGenerationMatch": "0"}), 503),
+    ("GET", "https://run.googleapis.com/v2/" + auth.PARENT + "/services/ai-resume-parser", 403),
+])
+def test_unknown_or_mutating_outcome_is_never_retried(method, uri, status):
+    client = auth.ServiceHttp.__new__(auth.ServiceHttp)
+    client._verified = True
+    client.session = _ReadSession([status])
+    response, _ = client.request(uri, method=method, redirections=0)
+    assert response.status == status and len(client.session.calls) == 1
+
+
+def test_read_retry_deadline_has_fixed_code_and_never_retries_write(monkeypatch):
+    monkeypatch.setattr(auth, "READ_ONLY_RETRY_SECONDS", 0)
+    client = auth.ServiceHttp.__new__(auth.ServiceHttp)
+    client._verified = True
+    client.session = _ReadSession([503])
+    uri = "https://run.googleapis.com/v2/" + auth.PARENT + "/services/ai-resume-parser"
+    with pytest.raises(auth.IdentityDenied, match="^document_refresh_read_only_transient_exhausted_reconcile_only$"):
+        client.request(uri, redirections=0)
+    assert len(client.session.calls) == 1 and client.session.responses[0].closed
+
+
+@pytest.mark.parametrize(("method", "uri"), [
+    ("PATCH", "https://run.googleapis.com/v2/" + auth.PARENT + "/services/ai-resume-parser"),
+    ("POST", "https://storage.googleapis.com/upload/storage/v1/b/" + auth.PROJECT
+     + "_cloudbuild/o?" + urlencode({"uploadType": "media", "name": "hirewiz-document-refresh-source/"
+         "5436da554bc5437cadccd296f3489bdd/final-transition-40788512340-12860975525.json",
+         "ifGenerationMatch": "0"})),
+])
+def test_uncertain_write_transport_never_retries(method, uri):
+    client = auth.ServiceHttp.__new__(auth.ServiceHttp)
+    client._verified = True
+    client.session = _ReadSession([auth.requests.exceptions.ConnectionError("private uncertain send")])
+    with pytest.raises(auth.IdentityDenied, match="^document_refresh_transport_unavailable_reconcile_only$"):
+        client.request(uri, method=method, redirections=0)
+    assert len(client.session.calls) == 1
+
+
+def test_nontransient_request_error_stops_without_retry(monkeypatch):
+    monkeypatch.setattr(auth.time, "sleep", lambda _: pytest.fail("must not wait"))
+    client = auth.ServiceHttp.__new__(auth.ServiceHttp)
+    client._verified = True
+    client.session = _ReadSession([auth.requests.RequestException("private permanent detail")])
+    uri = "https://run.googleapis.com/v2/" + auth.PARENT + "/services/ai-resume-parser"
+    with pytest.raises(auth.IdentityDenied, match="^document_refresh_transport_unavailable_reconcile_only$"):
+        client.request(uri, redirections=0)
+    assert len(client.session.calls) == 1
+
+
+def test_identity_refresh_retries_only_known_transport_failure(monkeypatch):
+    calls = []
+    def refresh(request):
+        calls.append("refresh")
+        if len(calls) == 1:
+            raise auth.TransportError("private WIF transport detail")
+    credential = SimpleNamespace(service_account_email=auth.ACCOUNT, refresh=refresh)
+    monkeypatch.setattr(auth.google.auth, "default", lambda **kw: (credential, auth.PROJECT))
+    monkeypatch.setattr(auth.requests, "Session", lambda: SimpleNamespace(close=lambda: None))
+    monkeypatch.setattr(auth, "Request", lambda **kw: None)
+    monkeypatch.setattr(auth, "AuthorizedSession", lambda *args, **kw: SimpleNamespace(close=lambda: None))
+    monkeypatch.setattr(auth.ServiceHttp, "_harden", staticmethod(lambda session: None))
+    monkeypatch.setattr(auth.time, "sleep", lambda _: None)
+    monkeypatch.setattr(auth.ServiceHttp, "request", lambda self, uri, **kw: (
+        auth.Response(status="200"), json.dumps({"email": auth.ACCOUNT,
+            "uniqueId": "123456789012345678901", "disabled": False}).encode()))
+    client = auth.ServiceHttp("123456789012345678901")
+    assert calls == ["refresh", "refresh"] and client.uid == "123456789012345678901"
+    client.close()
+
+
 @pytest.mark.parametrize("account", [auth.ACCOUNT, auth.WORKER_ACCOUNT, auth.COORDINATOR_ACCOUNT])
 def test_key_inventory_cannot_create_private_credentials(account):
     root = "https://iam.googleapis.com/v1/projects/" + auth.PROJECT + "/serviceAccounts/" + account
