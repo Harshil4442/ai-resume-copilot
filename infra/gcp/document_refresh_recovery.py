@@ -199,7 +199,7 @@ def completed_serving_v3(binding: Any, accepted: Any, transition_accepted: Any,
                and re.fullmatch(r"[a-f0-9]{64}", identity["source_archive_sha256"])
                and identity["policy_sha256"] == candidate.POLICY
                and identity["refresh_dockerfile_sha256"] == profile.REFRESH_SHA256
-               and identity["source_sha256"] == build.full_source_snapshot()[1]
+               and identity["source_sha256"] == build.infra("document_source_candidate").frozen_v3(build.ROOT)[1]["source_sha256"]
                and accepted["image"] == complete["image"] == result["image"] == image
                and accepted["build_id"] == identity["build_id"]
                and accepted["build_resource"] == identity["build_resource"]
@@ -233,6 +233,56 @@ def completed_serving_v3(binding: Any, accepted: Any, transition_accepted: Any,
                "document_refresh_prior_completed_v3_receipt_changed")
 
 
+def completed_serving_source(run, binding, accepted, transition_accepted, complete, result, build):
+    """Source-profile history is identity only; current authority is reread later."""
+    source_release = build.infra("document_source_release")
+    identity = binding.get("build_identity") if type(binding) is dict else None
+    build.need(type(binding) is dict and set(binding) == {"version", "image", "build_identity"}
+               and type(binding["version"]) is int and binding["version"] == 4,
+               "document_refresh_prior_completed_source_receipt_changed")
+    probe = source_release.SourceProbe(identity, root=build.ROOT, serving_read=True)
+    actual = build.verify_native_build(identity)
+    build.need(all(identity[key] == value for key, value in actual.items())
+               and sha(read(run / "local-native-proof.json", build)) == identity["local_native_proof_sha256"],
+               "document_refresh_prior_completed_source_build_changed")
+    complete_keys = {"status", "image", "prior_image", "native_acceptance_sha256", "all_three_caller_pins_verified",
+        "admission_restored", "synchronous_callers_drained", "current_native_proof_retained", "automatic_replay"}
+    added = {"source_commit", "renderer_contract_version", "required_case_count", "definition_expires_at",
+             "prior_evidence_retained", "prior_jobs_retained"}
+    image = identity["immutable_image"]
+    build.need(type(accepted) is dict and set(accepted) == set(source_release.prior.NativeAcceptance.__dataclass_fields__)
+        and transition_accepted == accepted and type(complete) is dict and set(complete) == complete_keys
+        and type(result) is dict and set(result) == complete_keys | added
+        and accepted["image"] == complete["image"] == binding["image"] == image
+        and accepted["build_id"] == identity["build_id"] and accepted["build_resource"] == identity["build_resource"]
+        and accepted["source_archive_sha256"] == identity["source_archive_sha256"]
+        and accepted["refresh_dockerfile_sha256"] == identity["refresh_dockerfile_sha256"]
+        and accepted["source_sha256"] == probe.source.sources and accepted["policy_sha256"] == probe.POLICY
+        and accepted["renderer_version"] == probe.profile.RENDERER and accepted["font_manifest_sha256"] == probe.profile.FONT
+        and type(accepted["contract_version"]) is int and accepted["contract_version"] == 4
+        and type(accepted["required_case_count"]) is int and accepted["required_case_count"] == 15
+        and accepted["job_name"] == source_release.prior.PARENT + "/jobs/hirewiz-doc-six-" + identity["nonce"][:12]
+        and accepted["probe_sha256"] == sha(probe._rendered(image).encode())
+        and sha(canonical(accepted)) == complete["native_acceptance_sha256"]
+        and complete["status"] == "document_refresh_serving" and complete["admission_restored"] is True
+        and complete["all_three_caller_pins_verified"] is True and complete["synchronous_callers_drained"] is False
+        and complete["current_native_proof_retained"] is True and complete["automatic_replay"] is False
+        and all(result[key] == value for key, value in complete.items())
+        and result["source_commit"] == identity["source_commit"]
+        and result["renderer_contract_version"] == 4 and type(result["renderer_contract_version"]) is int
+        and result["required_case_count"] == 15 and type(result["required_case_count"]) is int
+        and result["definition_expires_at"] == accepted["definition_expires_at"]
+        and result["prior_evidence_retained"] is True and result["prior_jobs_retained"] is True,
+        "document_refresh_prior_completed_source_receipt_changed")
+    intent = build.decode(read(run / "native-proof/transition.started.json", build))
+    build.need(set(intent) == {"build_identity_sha256", "transition_journal", "automatic_replay", "unknown_outcome"}
+        and intent["build_identity_sha256"] == sha(canonical(identity))
+        and type(intent["transition_journal"]) is str and Path(intent["transition_journal"]).is_absolute()
+        and Path(intent["transition_journal"]).name == "transition" and intent["automatic_replay"] is False
+        and intent["unknown_outcome"] == "read_only_reconcile_exact_transition_only",
+        "document_refresh_prior_completed_source_intent_changed")
+
+
 def completed_serving(run: Path, result: dict[str, Any], expected_journal: Path,
                       build: Any, probe: Any, *, allow_v3: bool = False) -> None:
     """The retained serving artifact is identity evidence, never fresh acceptance."""
@@ -247,6 +297,11 @@ def completed_serving(run: Path, result: dict[str, Any], expected_journal: Path,
     accepted = build.decode(read(native / "acceptance.json", build))
     transition_accepted = build.decode(read(transition / "native-acceptance.json", build))
     complete = build.decode(read(transition / "complete.json", build))
+    if type(binding) is dict and binding.get("version") == 4:
+        build.need(allow_v3 and not os.path.lexists(run / "prior-native-retirement"),
+                   "document_refresh_prior_completed_source_receipt_changed")
+        completed_serving_source(run, binding, accepted, transition_accepted, complete, result, build)
+        return
     if type(binding) is dict and binding.get("version") == 3:
         build.need(allow_v3 and not os.path.lexists(run / "prior-native-retirement"),
                    "document_refresh_prior_completed_v3_receipt_changed")

@@ -10,13 +10,13 @@ from types import SimpleNamespace
 from urllib.parse import parse_qs, unquote, urlsplit
 
 import pytest
-from scripts import document_refresh as refresh
-
 from backend.tests import test_document_refresh as local
 from backend.tests import test_document_refresh_transition as serving
 from infra.gcp import document_candidate_release as v3
 from infra.gcp import document_refresh_probe as probe
 from infra.gcp import document_refresh_recovery as recovery
+
+from scripts import document_refresh as refresh
 
 NONCE = "a" * 32
 NEXT_NONCE = "f" * 32
@@ -190,13 +190,13 @@ def completed_v3_history(stopped):
     identity["fixed_renderer_base"] = v3.profile.IMAGE
     identity["refresh_dockerfile_sha256"] = v3.profile.REFRESH_SHA256
     identity["policy_sha256"] = v3.POLICY
-    identity["source_sha256"] = refresh.full_source_snapshot()[1]
+    identity["source_sha256"] = refresh.infra("document_source_candidate").frozen_v3(refresh.ROOT)[1]["source_sha256"]
     identity["source_object"] = "hirewiz-document-refresh-source/" + identity["nonce"] + "/source.tar.gz"
     image = v3.prior.REPOSITORY + "@sha256:" + "9" * 64
     identity["immutable_image"] = image
     accepted = json.loads((native / "acceptance.json").read_bytes())
     accepted.update(image=image, refresh_dockerfile_sha256=v3.profile.REFRESH_SHA256,
-                    source_sha256=refresh.full_source_snapshot()[1],
+                    source_sha256=copy.deepcopy(identity["source_sha256"]),
                     probe_sha256=recovery.sha(v3.candidate.rendered_payload(image).encode()),
                     policy_sha256=v3.POLICY, font_manifest_sha256=v3.profile.FONT,
                     renderer_version=v3.profile.RENDERER, contract_version=3, required_case_count=11)

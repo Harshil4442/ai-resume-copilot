@@ -133,7 +133,9 @@ def policy_for_serving(metadata: Any, image: str) -> str:
     need(len(matches) == 1 and set(matches[0]) == {"name", "value"} and type(matches[0]["value"]) is str,
          "document_native_serving_policy_unverified")
     policy = matches[0]["value"]
-    need((policy == candidate.POLICY_SHA256 and type(image) is str and IMAGE.fullmatch(image))
+    from infra.gcp import document_source_candidate as source_revision
+    need((policy == source_revision.POLICY_SHA256 and image != candidate.IMAGE and type(image) is str and IMAGE.fullmatch(image))
+         or (policy == candidate.POLICY_SHA256 and type(image) is str and IMAGE.fullmatch(image))
          or (image != candidate.IMAGE and policy in {POLICY, LEGACY_POLICY}),
          "document_native_serving_policy_unverified")
     return matches[0]["value"]
@@ -410,10 +412,13 @@ def validate_worker_snapshot(clients: Any, snapshot: dict[str, Any], *, historic
     configuration = load_source("hirewiz_document_refresh_worker_contract", HERE / "document_worker.py")
     try:
         candidate = load_source("hirewiz_document_candidate_profile", HERE / "document_candidate.py")
-        candidate_v3 = policy_for_serving(service, image) == candidate.POLICY_SHA256
+        from infra.gcp import document_source_candidate as source_revision
+        observed_policy = policy_for_serving(service, image)
+        candidate_v3 = observed_policy == candidate.POLICY_SHA256
+        source_v4 = observed_policy == source_revision.POLICY_SHA256
         configuration.check_snapshot(snapshot, image, service.get("template", {}).get("labels", {}).get("hirewiz-source"),
                                      api_phase=True, coordinator_phase=True, historical_v1=historical_v1,
-                                     candidate_v3=candidate_v3)
+                                     candidate_v3=candidate_v3, source_revision=source_v4)
     except configuration.ConfigurationDenied:
         raise NativeProofDenied("document_native_worker_configuration_changed") from None
     return image
@@ -423,11 +428,15 @@ def verify_caller_pins(clients: Any, image: str, *, policy_sha256: str | None = 
                        api_serving_validator: Callable[[Any, Any, str, str], dict[str, Any]] | None = None,
                        caller_serving_validator: Callable[[Any, Any, str, str], dict[str, Any]] | None = None) -> None:
     """Old acceptance evidence is retained until both actual serving callers move."""
+    from infra.gcp import document_source_candidate as source_profile
+    if policy_sha256 == source_profile.POLICY_SHA256:
+        from infra.gcp.document_source_release import verify_caller_pins as source_pins
+        return source_pins(clients, image, caller_serving_validator=caller_serving_validator)
     candidate = load_source("hirewiz_document_candidate_profile", HERE / "document_candidate.py")
     if image == candidate.IMAGE or policy_sha256 == candidate.POLICY_SHA256:
-        need(caller_serving_validator is None, "document_native_candidate_app_context_review_required")
         adapter = load_source("hirewiz_document_candidate_release", HERE / "document_candidate_release.py")
-        return adapter.verify_caller_pins(clients, image, policy_sha256=policy_sha256)
+        return adapter.verify_caller_pins(clients, image, policy_sha256=policy_sha256,
+                                          caller_serving_validator=caller_serving_validator)
     policy = POLICY if policy_sha256 is None else policy_sha256
     need(type(policy) is str and policy in {POLICY, LEGACY_POLICY}, "document_native_caller_policy_unverified")
     identity = None
@@ -909,6 +918,12 @@ def _verify_successor_once(image: str, build_identity: dict[str, Any], journal: 
 
 def verify_current_successor(image: str, service_metadata: dict[str, Any]) -> NativeAcceptance:
     """Maintenance uses only the dedicated unattended service-account identity."""
+    from infra.gcp import document_source_candidate as source_profile
+    if policy_for_serving(service_metadata, image) == source_profile.POLICY_SHA256:
+        from infra.gcp.document_source_release import (
+            verify_current_successor as source_current,
+        )
+        return source_current(image, service_metadata, read_only_release=False)
     candidate = load_source("hirewiz_document_candidate_profile", HERE / "document_candidate.py")
     if policy_for_serving(service_metadata, image) == candidate.POLICY_SHA256:
         adapter = load_source("hirewiz_document_candidate_release", HERE / "document_candidate_release.py")
@@ -920,6 +935,12 @@ def verify_current_successor(image: str, service_metadata: dict[str, Any]) -> Na
 
 def verify_current_successor_for_release(image: str, service_metadata: dict[str, Any]) -> NativeAcceptance:
     """Ordinary release uses only the original, read-only retained SDK identity."""
+    from infra.gcp import document_source_candidate as source_profile
+    if policy_for_serving(service_metadata, image) == source_profile.POLICY_SHA256:
+        from infra.gcp.document_source_release import (
+            verify_current_successor as source_current,
+        )
+        return source_current(image, service_metadata, read_only_release=True)
     candidate = load_source("hirewiz_document_candidate_profile", HERE / "document_candidate.py")
     if policy_for_serving(service_metadata, image) == candidate.POLICY_SHA256:
         adapter = load_source("hirewiz_document_candidate_release", HERE / "document_candidate_release.py")

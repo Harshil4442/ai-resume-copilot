@@ -237,7 +237,7 @@ jobs:
           export EXPERIMENTAL_BUILDKIT_SOURCE_POLICY="$document_source_policy_path"
           document_test_report_path="$RUNNER_TEMP/document-engine-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.json"
           backend/.venv/bin/python backend/scripts/document_test_image.py \
-            --platform linux/amd64 --output "$document_test_report_path"
+            --platform linux/amd64 --source-revision --output "$document_test_report_path"
           printf 'HIREWIZ_DOCUMENT_TEST_REPORT=%s\n' "$document_test_report_path" >> "$GITHUB_ENV"
       - name: Save sanitized native document engine proof
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, verified official ref
