@@ -23,7 +23,7 @@ from urllib.parse import urlsplit
 from pydantic import Field, model_validator
 
 from ...services import document_ingestion as inspection
-from ...services import native_tex, native_tex_transport
+from ...services import native_project, native_tex, native_tex_transport
 from ...services.resume_layout import ResumeLayoutError, ResumeProcessingUnavailable
 from . import development_runner as legacy
 from . import quality_packet as packet
@@ -116,7 +116,7 @@ def plan(packet_root, native_root, auth, authorization_root):
             "actual_native_cost_minor": None, "authorization_sha256": inputs.digest(auth.model_dump(mode="json")),
             "tool_sha256": packet.file_digest(Path(__file__)),
             "client_sources_sha256": {Path(str(module.__file__)).name: packet.file_digest(Path(str(module.__file__)))
-                                      for module in (inspection, native_tex, native_tex_transport, native)},
+                                      for module in (inspection, native_tex, native_tex_transport, native, native_project)},
             "source_custody": "local_operator_http_capture_not_provider_attestation",
             "held_out_acquisition": "not_enabled_in_first_scope_requires_separate_locked_review",
             "provider_requests": 0, "authorizes_retail": False}
