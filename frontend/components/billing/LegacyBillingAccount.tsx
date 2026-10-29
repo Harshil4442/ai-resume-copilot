@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { ApiError, apiGet, apiPostJson } from "../../lib/api";
+import { boundedStatusChecks, newStatusReadBudget, type StatusReadBudget } from "../../lib/boundedStatusPolling";
 import { fetchOwnedProfile } from "../../lib/ownedBootstrapClient";
 import { isFiniteBundleSku } from "../../lib/billingProducts";
 import { formatCreditPrice, isUnifiedPassSku } from "../../lib/unifiedCredits";
@@ -35,6 +36,8 @@ function errorText(error: unknown, fallback: string) { return error instanceof E
 /** Existing purchases remain usable on their original terms; this component never sells a new legacy pack. */
 export function LegacyBillingAccount({ onPendingChange }: { onPendingChange: (pending: boolean) => void }) {
   const client = useQueryClient();
+  const statusWork = useRef<AbortController | null>(null);
+  const statusBudgets = useRef(new Map<string, StatusReadBudget>());
   const mounted = useRef(true), pollId = useRef(0), actionPending = useRef(false);
   const intent = useRef<{ orderId: string; key: string } | null>(null);
   const [profile, setProfile] = useState<{ tier?: string; ai_credits?: number; premium_until?: string | null } | null>(null);
@@ -83,24 +86,28 @@ export function LegacyBillingAccount({ onPendingChange }: { onPendingChange: (pe
   useEffect(() => {
     mounted.current = true;
     void Promise.allSettled([refreshBalances(), readRecent()]);
-    return () => { mounted.current = false; pollId.current += 1; };
+    return () => { mounted.current = false; pollId.current += 1; statusWork.current?.abort(); };
   }, [readRecent, refreshBalances]);
 
-  const checkStatus = useCallback(async (orderId: string) => {
+  const checkStatus = useCallback(async (orderId: string, automatic = false) => {
+    if (!mounted.current) return;
+    statusWork.current?.abort();
+    const work = new AbortController(); statusWork.current = work;
     const run = ++pollId.current;
+    const budget = statusBudgets.current.get(orderId) ?? newStatusReadBudget();
+    statusBudgets.current.set(orderId, budget);
     setBusy(true); setError(null);
     try {
-      for (let attempt = 0; attempt < 24; attempt++) {
-        if (!mounted.current || pollId.current !== run) return;
-        const value = await apiGet<LegacyOrder>(`/billing/orders/${encodeURIComponent(orderId)}`);
-        if (!mounted.current || pollId.current !== run) return;
-        if (value.order_id !== orderId || typeof value.sku !== "string" || isUnifiedPassSku(value.sku)) throw new Error("The original order could not be verified.");
-        await acceptStatus(value);
-        if (value.status !== "pending") return;
-        if (attempt < 23) await new Promise((resolve) => window.setTimeout(resolve, 2_500));
-      }
-      if (mounted.current) setMessage("Payment is still pending. If you were charged, do not pay again; check status or contact billing support.");
-    } catch (failure) { if (mounted.current) setError(errorText(failure, "Could not check the original payment.")); }
+      const outcome = await boundedStatusChecks({ budget, signal: work.signal, automatic,
+        read: async (signal) => {
+          const value = await apiGet<LegacyOrder>(`/billing/orders/${encodeURIComponent(orderId)}`, signal);
+          signal.throwIfAborted();
+          if (!mounted.current || pollId.current !== run) throw new DOMException("Status check stopped", "AbortError");
+          if (value.order_id !== orderId || typeof value.sku !== "string" || isUnifiedPassSku(value.sku)) throw new Error("The original order could not be verified.");
+          await acceptStatus(value); return value;
+        }, active: (value) => value.status === "pending" || (value.status === "paid" && !value.fulfilled) });
+      if (mounted.current && pollId.current === run && outcome !== "settled") setMessage("Payment is still pending. Automatic checks are paused; use Check payment status for one fresh read. If you were charged, do not pay again.");
+    } catch (failure) { if (mounted.current && pollId.current === run && !work.signal.aborted) setError(errorText(failure, "Could not check the original payment.")); }
     finally { if (mounted.current && pollId.current === run) setBusy(false); }
   }, [acceptStatus]);
 
@@ -140,9 +147,10 @@ export function LegacyBillingAccount({ onPendingChange }: { onPendingChange: (pe
       const checkout = new window.Razorpay({ key: result.key_id, amount: result.amount_minor, currency: result.currency,
         name: result.name, description: result.description, order_id: result.provider_order_id, prefill: result.prefill,
         handler: (callback) => {
+          if (callbackReceived || !mounted.current) return;
           callbackReceived = true;
           void apiPostJson(`/billing/orders/${encodeURIComponent(order.order_id)}/checkout-result`, callback).catch(() => {});
-          void checkStatus(order.order_id);
+          void checkStatus(order.order_id, true);
         },
         modal: { confirm_close: true, ondismiss: () => { if (!callbackReceived && mounted.current) {
           setBusy(false); setMessage("Checkout closed. No payment is assumed. Check the original payment status before trying again.");
@@ -177,6 +185,7 @@ export function LegacyBillingAccount({ onPendingChange }: { onPendingChange: (pe
     </div>
     {error ? <p role="alert" className="text-sm text-coral">{error}</p> : null}
     {recentRead === "failed" ? <Button variant="secondary" onClick={() => { setRecentRead("loading"); void readRecent(); }}>Check previous purchases</Button> : null}
+    <p className="text-xs leading-5 text-muted-foreground">After checkout, at most 8 automatic payment status reads run with increasing delays. Checks pause in a hidden tab or on capacity errors; manual status checks read once.</p>
     {message ? <p role="status" className="text-sm leading-6">{message}</p> : null}
     {order ? <section className="surface-panel space-y-4 p-5" aria-labelledby="legacy-payment-heading">
       <h3 id="legacy-payment-heading" className="font-display text-xl">{order.status === "paid" && order.fulfilled ? "Payment confirmed" : "Previous payment"}</h3>

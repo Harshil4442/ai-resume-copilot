@@ -101,7 +101,7 @@ describe("direct private resume upload contract", () => {
     let waiting!: () => void; const queued = new Promise<void>((resolve) => { waiting=resolve; });
     const phases: string[]=[];
     const result=uploadResumeFile(value, { onProgress: (p) => { phases.push(p.phase); if(p.phase==="queued") waiting(); } });
-    await queued; await vi.advanceTimersByTimeAsync(4000);
+    await queued; await vi.advanceTimersByTimeAsync(15_000);
     expect(await result).toEqual(resume); expect(phases).toContain("inspecting"); expect(checks).toBe(2); expect(puts()).toHaveLength(1);
   });
 
@@ -110,7 +110,7 @@ describe("direct private resume upload contract", () => {
     serve(value, { complete: async () => { if(++completed===1) throw new TypeError("synthetic completion reply lost"); return json(status()); }, get: async () => json(status("awaiting_upload")) });
     let waiting!: () => void; const queued=new Promise<void>((resolve)=>{waiting=resolve;});
     const result=uploadResumeFile(value, { onProgress:(p)=>{if(p.phase==="queued") waiting();} });
-    await queued; await vi.advanceTimersByTimeAsync(2000);
+    await queued; await vi.advanceTimersByTimeAsync(5000);
     expect(await result).toEqual(resume); expect(completed).toBe(2); expect(puts()).toHaveLength(1);
   });
 
@@ -121,8 +121,8 @@ describe("direct private resume upload contract", () => {
       ? json({}, 429, { "Retry-After": "8" }) : json({ ...status(), resume: saved }) });
     let waiting!: () => void; const queued = new Promise<void>((resolve) => { waiting = resolve; });
     const result = uploadResumeFile(value, { onProgress: (p) => { if (p.phase === "queued") waiting(); } });
-    await queued; await vi.advanceTimersByTimeAsync(2000); expect(gets()).toHaveLength(1);
-    await vi.advanceTimersByTimeAsync(7999); expect(gets()).toHaveLength(1);
+    await queued; await vi.advanceTimersByTimeAsync(5000); expect(gets()).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(9999); expect(gets()).toHaveLength(1);
     await vi.advanceTimersByTimeAsync(1); expect(await result).toEqual(saved);
     expect(puts()).toHaveLength(1); expect(completions()).toHaveLength(1); expect(deletes()).toHaveLength(0);
   });
@@ -143,23 +143,23 @@ describe("direct private resume upload contract", () => {
       get: async () => ++checks === 1 ? json({}, 429) : json(status("awaiting_upload")) });
     let waiting!: () => void; const queued = new Promise<void>((resolve) => { waiting = resolve; });
     const result = uploadResumeFile(value, { onProgress: (p) => { if (p.phase === "queued") waiting(); } });
-    await queued; await vi.advanceTimersByTimeAsync(2000); expect(completions()).toHaveLength(1);
-    await vi.advanceTimersByTimeAsync(4999); expect(completions()).toHaveLength(1); expect(gets()).toHaveLength(1);
+    await queued; await vi.advanceTimersByTimeAsync(5000); expect(completions()).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(59_999); expect(completions()).toHaveLength(1); expect(gets()).toHaveLength(1);
     await vi.advanceTimersByTimeAsync(1); expect(await result).toEqual(resume);
     expect(fetchMock.mock.calls.map(([, init]) => init?.method)).toEqual(["POST", "PUT", "POST", "GET", "GET", "POST"]);
     expect(puts()).toHaveLength(1); expect(deletes()).toHaveLength(0);
   });
 
   it.each([
-    { header: "0", wait: 5000 }, { header: "-1", wait: 5000 }, { header: "NaN", wait: 5000 },
-    { header: "https://synthetic-attacker.invalid/retry", wait: 5000 }, { header: "9".repeat(256), wait: 5000 },
-    { header: "9999999999", wait: 10_000 }, { header: "1e9", wait: 5000 },
+    { header: "0", wait: 60_000 }, { header: "-1", wait: 60_000 }, { header: "NaN", wait: 60_000 },
+    { header: "https://synthetic-attacker.invalid/retry", wait: 60_000 },
+    { header: "1e9", wait: 60_000 },
   ])("bounds an untrusted Retry-After $header without rapid polling or extending the deadline", async ({ header, wait }) => {
     vi.useFakeTimers(); const value = file(); let checks = 0;
     serve(value, { complete: async () => json(status("queued")), get: async () => ++checks === 1 ? json({}, 429, { "Retry-After": header }) : json(status()) });
     let waiting!: () => void; const queued = new Promise<void>((resolve) => { waiting = resolve; });
     const result = uploadResumeFile(value, { onProgress: (p) => { if (p.phase === "queued") waiting(); } });
-    await queued; await vi.advanceTimersByTimeAsync(2000 + wait - 1); expect(gets()).toHaveLength(1);
+    await queued; await vi.advanceTimersByTimeAsync(5000 + wait - 1); expect(gets()).toHaveLength(1);
     await vi.advanceTimersByTimeAsync(1); expect(await result).toEqual(resume);
     expect(completions()).toHaveLength(1); expect(puts()).toHaveLength(1); expect(deletes()).toHaveLength(0);
   });
@@ -170,7 +170,7 @@ describe("direct private resume upload contract", () => {
       ? json({}, 429, { "Retry-After": new Date(Date.now() + 8000).toUTCString() }) : json(status()) });
     let waiting!: () => void; const queued = new Promise<void>((resolve) => { waiting = resolve; });
     const result = uploadResumeFile(value, { onProgress: (p) => { if (p.phase === "queued") waiting(); } });
-    await queued; await vi.advanceTimersByTimeAsync(9999); expect(gets()).toHaveLength(1);
+    await queued; await vi.advanceTimersByTimeAsync(14_999); expect(gets()).toHaveLength(1);
     await vi.advanceTimersByTimeAsync(1); expect(await result).toEqual(resume); expect(deletes()).toHaveLength(0);
   });
 
@@ -180,22 +180,22 @@ describe("direct private resume upload contract", () => {
     let waiting!: () => void; const queued = new Promise<void>((resolve) => { waiting = resolve; });
     const result = uploadResumeFile(value, { onProgress: (p) => { if (p.phase === "queued") waiting(); } });
     const rejected = expect(result).rejects.toThrow("Your resume status could not be confirmed. Check your saved resumes.");
-    await queued; await vi.advanceTimersByTimeAsync(2000); await rejected;
+    await queued; await vi.advanceTimersByTimeAsync(5000); await rejected;
     expect(gets()).toHaveLength(1); expect(completions()).toHaveLength(1); expect(puts()).toHaveLength(1); expect(deletes()).toHaveLength(1);
   });
 
-  it("repeated 429 stays within the original four-minute deadline and requests cleanup only once", async () => {
+  it.each(["9999999999", "9".repeat(256)])("a long Retry-After%s stays within the four-minute deadline without an early GET", async (header) => {
     vi.useFakeTimers();
     vi.spyOn(AbortSignal, "timeout").mockImplementation((milliseconds) => {
       const controller = new AbortController(); setTimeout(() => controller.abort(new DOMException("Deadline", "TimeoutError")), milliseconds); return controller.signal;
     });
     const value = file();
-    serve(value, { complete: async () => json({}, 429, { "Retry-After": "9999999999" }), get: async () => json({}, 429, { "Retry-After": "9999999999" }) });
+    serve(value, { complete: async () => json({}, 429, { "Retry-After": header }), get: async () => json({}, 429, { "Retry-After": header }) });
     let waiting!: () => void; const queued = new Promise<void>((resolve) => { waiting = resolve; });
     const result = uploadResumeFile(value, { onProgress: (p) => { if (p.phase === "queued") waiting(); } });
     const rejected = expect(result).rejects.toThrow(/took too long.*check your saved resumes/i);
     await queued; await vi.advanceTimersByTimeAsync(240_000); await rejected;
-    expect(gets().length).toBeGreaterThan(0); expect(gets().length).toBeLessThanOrEqual(24);
+    expect(gets()).toHaveLength(0); // The valid long minimum extends beyond this flow deadline.
     expect(completions()).toHaveLength(1); expect(puts()).toHaveLength(1); expect(deletes()).toHaveLength(1);
   });
 
@@ -205,7 +205,7 @@ describe("direct private resume upload contract", () => {
     let waiting!: () => void; const queued = new Promise<void>((resolve) => { waiting = resolve; });
     const result = uploadResumeFile(value, { signal: controller.signal, onProgress: (p) => { if (p.phase === "queued") waiting(); } });
     const rejected = expect(result).rejects.toMatchObject({ name: "ResumeUploadCancelled", cleanup: "requested" });
-    await queued; await vi.advanceTimersByTimeAsync(2000); controller.abort(); await rejected;
+    await queued; await vi.advanceTimersByTimeAsync(5000); controller.abort(); await rejected;
     await vi.advanceTimersByTimeAsync(10_000);
     expect(gets()).toHaveLength(1); expect(completions()).toHaveLength(1); expect(puts()).toHaveLength(1); expect(deletes()).toHaveLength(1);
   });
@@ -381,5 +381,59 @@ describe("capability and size admission",()=>{
     vi.mocked(apiPostForm).mockReturnValue(new Promise(()=>undefined));
     const controller=new AbortController(); const result=uploadResumeFile(file(),{signal:controller.signal}); controller.abort();
     await expect(result).rejects.toBeInstanceOf(ResumeUploadCancelled); await expect(result).rejects.toMatchObject({cleanup:"legacy"});
+  });
+});
+
+describe("finite upload status budget", () => {
+  afterEach(() => vi.restoreAllMocks());
+  it("caps automatic status GETs at8 and keeps the original four-minute timeout and one cleanup", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(AbortSignal, "timeout").mockImplementation((milliseconds) => {
+      const controller = new AbortController(); setTimeout(() => controller.abort(new DOMException("Deadline", "TimeoutError")), milliseconds); return controller.signal;
+    });
+    const value = file(), start = Date.now(), times: number[] = [], phases: string[] = [];
+    serve(value, { complete: async () => json(status("queued")), get: async () => { times.push(Date.now() - start); return json(status("queued")); } });
+    let ready!: () => void; const queued = new Promise<void>((resolve) => { ready = resolve; });
+    const result = uploadResumeFile(value, { onProgress: ({ phase }) => { phases.push(phase); if (phase === "queued") ready(); } });
+    const rejected = expect(result).rejects.toThrow(/took too long.*check your saved resumes/i);
+    await queued; await vi.advanceTimersByTimeAsync(239_999);
+    expect(times).toEqual([5000, 15000, 35000, 65000, 95000, 125000, 155000, 185000]);
+    expect(phases).toContain("paused"); expect(deletes()).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(1); await rejected;
+    expect(gets()).toHaveLength(8); expect(puts()).toHaveLength(1); expect(completions()).toHaveLength(1); expect(deletes()).toHaveLength(1);
+  });
+  it("keeps a503 Retry-After120 minimum without replaying completion or upload", async () => {
+    vi.useFakeTimers(); const value = file(); let checks = 0;
+    serve(value, { complete: async () => json(status("queued")), get: async () => ++checks === 1 ? json({}, 503, { "Retry-After": "120" }) : json(status()) });
+    let ready!: () => void; const queued = new Promise<void>((resolve) => { ready = resolve; });
+    const result = uploadResumeFile(value, { onProgress: ({ phase }) => { if (phase === "queued") ready(); } });
+    await queued; await vi.advanceTimersByTimeAsync(124_999); expect(gets()).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1); expect(await result).toEqual(resume);
+    expect(gets()).toHaveLength(2); expect(puts()).toHaveLength(1); expect(completions()).toHaveLength(1);
+  });
+  it("waits while hidden and resumes one future read after a fresh delay, with no catch-up burst", async () => {
+    vi.useFakeTimers(); let visible = true;
+    vi.spyOn(document, "visibilityState", "get").mockImplementation(() => visible ? "visible" : "hidden");
+    const value = file(); serve(value, { complete: async () => json(status("queued")) });
+    let ready!: () => void; const queued = new Promise<void>((resolve) => { ready = resolve; });
+    const result = uploadResumeFile(value, { onProgress: ({ phase }) => { if (phase === "queued") ready(); } });
+    await queued; visible = false; document.dispatchEvent(new Event("visibilitychange"));
+    await vi.advanceTimersByTimeAsync(100_000); expect(gets()).toHaveLength(0);
+    visible = true; document.dispatchEvent(new Event("visibilitychange"));
+    await vi.advanceTimersByTimeAsync(4999); expect(gets()).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(1); expect(await result).toEqual(resume);
+    expect(gets()).toHaveLength(1); expect(puts()).toHaveLength(1); expect(completions()).toHaveLength(1);
+  });
+  it("cancels hidden-page waiting without any automatic status GET", async () => {
+    vi.useFakeTimers(); let visible = true;
+    vi.spyOn(document, "visibilityState", "get").mockImplementation(() => visible ? "visible" : "hidden");
+    const value = file(), controller = new AbortController(); serve(value, { complete: async () => json(status("queued")) });
+    let ready!: () => void; const queued = new Promise<void>((resolve) => { ready = resolve; });
+    const result = uploadResumeFile(value, { signal: controller.signal, onProgress: ({ phase }) => { if (phase === "queued") ready(); } });
+    const rejected = expect(result).rejects.toMatchObject({ name: "ResumeUploadCancelled", cleanup: "requested" });
+    await queued; visible = false; document.dispatchEvent(new Event("visibilitychange"));
+    await vi.advanceTimersByTimeAsync(10_000); controller.abort(); await rejected;
+    visible = true; document.dispatchEvent(new Event("visibilitychange")); await vi.advanceTimersByTimeAsync(200_000);
+    expect(gets()).toHaveLength(0); expect(completions()).toHaveLength(1); expect(deletes()).toHaveLength(1);
   });
 });

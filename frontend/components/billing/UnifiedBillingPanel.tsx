@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { ApiError, apiGet, apiPostJson } from "../../lib/api";
+import { boundedStatusChecks, newStatusReadBudget, type StatusReadBudget } from "../../lib/boundedStatusPolling";
 import {
   formatCreditDate, formatCreditPrice, parseUnifiedCheckoutOrder, parseUnifiedCreditCatalog,
   parseUnifiedCreditHistory, parseUnifiedCreditOrder, parseUnifiedPurchaseQuote,
@@ -21,6 +22,8 @@ const unsettled = (order: UnifiedCreditOrder | null) => order?.status === "pendi
 
 export function UnifiedBillingPanel({ legacyPending, requestedSku, participationRevision = 0 }: { legacyPending: boolean; requestedSku: string | null; participationRevision?: number }) {
   const client = useQueryClient();
+  const statusWork = useRef<AbortController | null>(null);
+  const statusBudgets = useRef(new Map<string, StatusReadBudget>());
   const mounted = useRef(true), actionPending = useRef(false), pollId = useRef(0);
   const catalogRead = useRef(0);
   const quoteIntent = useRef<{ sku: UnifiedPassSku; key: string } | null>(null);
@@ -71,8 +74,10 @@ export function UnifiedBillingPanel({ legacyPending, requestedSku, participation
       setMessage("This payment was not completed. Review a fresh quote before a new purchase."); setReconciliationHeld(false);
     }
   }, [refreshHistory, refreshWallet]);
-  const readOrder = useCallback(async (identity: string) => {
-    const value = parseUnifiedCreditOrder(await apiGet<unknown>(`/v1/credits/orders/${encodeURIComponent(identity)}`));
+  const readOrder = useCallback(async (identity: string, signal?: AbortSignal) => {
+    const value = parseUnifiedCreditOrder(await apiGet<unknown>(`/v1/credits/orders/${encodeURIComponent(identity)}`, signal));
+    signal?.throwIfAborted();
+    if (!mounted.current) throw new DOMException("Status check stopped", "AbortError");
     if (!value || value.order_id !== identity) throw new Error("The original payment status could not be verified.");
     await acceptStatus(value); return value;
   }, [acceptStatus]);
@@ -87,7 +92,7 @@ export function UnifiedBillingPanel({ legacyPending, requestedSku, participation
   useEffect(() => {
     mounted.current = true;
     void Promise.allSettled([refreshWallet(), refreshHistory(), readRecent()]);
-    return () => { mounted.current = false; pollId.current += 1; };
+    return () => { mounted.current = false; pollId.current += 1; statusWork.current?.abort(); };
   }, [readRecent, refreshHistory, refreshWallet]);
   useEffect(() => { void refreshCatalog(); }, [refreshCatalog, participationRevision]);
   useEffect(() => { if (quote) quoteSection.current?.focus(); }, [quote]);
@@ -105,18 +110,19 @@ export function UnifiedBillingPanel({ legacyPending, requestedSku, participation
     } catch (failure) { if (mounted.current) setError(messageOf(failure, "Could not prepare a purchase quote.")); }
     finally { actionPending.current = false; if (mounted.current) setReviewingSku(null); }
   }
-  const checkStatus = useCallback(async (identity: string) => {
+  const checkStatus = useCallback(async (identity: string, automatic = false) => {
+    if (!mounted.current) return;
+    statusWork.current?.abort();
+    const work = new AbortController(); statusWork.current = work;
     const run = ++pollId.current;
+    const budget = statusBudgets.current.get(identity) ?? newStatusReadBudget();
+    statusBudgets.current.set(identity, budget);
     setBusy(true); setError(null);
     try {
-      for (let attempt = 0; attempt < 24; attempt++) {
-        if (!mounted.current || run !== pollId.current) return;
-        const value = await readOrder(identity);
-        if (!mounted.current || run !== pollId.current || !unsettled(value)) return;
-        if (attempt < 23) await new Promise((resolve) => window.setTimeout(resolve, 2_500));
-      }
-      if (mounted.current) setMessage("Payment confirmation is taking longer. If you were charged, do not pay again. Check status or contact billing support.");
-    } catch (failure) { if (mounted.current) setError(messageOf(failure, "Could not verify payment.")); }
+      const outcome = await boundedStatusChecks({ budget, signal: work.signal, automatic,
+        read: (signal) => readOrder(identity, signal), active: (value) => Boolean(unsettled(value)) });
+      if (mounted.current && run === pollId.current && outcome !== "settled") setMessage("Payment confirmation is pending. Automatic checks are paused; use Check payment status for one fresh read. If you were charged, do not pay again.");
+    } catch (failure) { if (mounted.current && run === pollId.current && !work.signal.aborted) setError(messageOf(failure, "Could not verify payment.")); }
     finally { if (mounted.current && run === pollId.current) setBusy(false); }
   }, [readOrder]);
 
@@ -143,9 +149,10 @@ export function UnifiedBillingPanel({ legacyPending, requestedSku, participation
       const hosted = new window.Razorpay({ key: checkout.key_id, amount: checkout.amount_minor, currency: checkout.currency,
         name: checkout.name, description: checkout.description, order_id: checkout.provider_order_id, prefill: checkout.prefill ?? undefined,
         handler: (callback) => {
+          if (callbackReceived || !mounted.current) return;
           callbackReceived = true;
           void apiPostJson(`/billing/orders/${encodeURIComponent(checkout.order_id)}/checkout-result`, callback).catch(() => {});
-          void checkStatus(checkout.order_id);
+          void checkStatus(checkout.order_id, true);
         }, modal: { confirm_close: true, ondismiss: () => { if (!callbackReceived && mounted.current) {
           setBusy(false); setMessage("Checkout closed. No payment is assumed. Check the original payment before trying again.");
         } } }, retry: { enabled: true }, theme: { color: "#485c11" },
@@ -222,6 +229,7 @@ export function UnifiedBillingPanel({ legacyPending, requestedSku, participation
       {history ? history.items.length ? <ul className="mt-4 divide-y divide-border">{history.items.map((event) => <li key={event.id} className="grid gap-2 py-4 text-sm sm:grid-cols-[1fr_auto_auto]"><span>{event.event_type.replaceAll("_", " ")} · {formatCreditDate(event.created_at)}</span><span>{event.amount > 0 ? "+" : ""}{event.amount} credits</span><span>Balance {event.balance_after}</span></li>)}</ul> : <p className="mt-3 text-sm text-muted-foreground">No credit activity yet.</p> : <p className="mt-3 text-sm text-muted-foreground">{historyBusy ? "Loading credit history…" : "Credit history is unavailable."}</p>}
       {history?.next_cursor ? <Button variant="secondary" className="mt-4" disabled={historyBusy} onClick={() => { setHistoryBusy(true); void refreshHistory(history.next_cursor!); }}>Load older activity</Button> : null}
     </section>
+    <p className="text-xs leading-5 text-muted-foreground">After checkout, at most 8 automatic payment status reads run with increasing delays. Checks pause in a hidden tab or on capacity errors; manual status checks read once.</p>
     <p className="text-xs leading-6 text-muted-foreground">Seller: HireWiz, operated by SAVALIYA HARSHIL YOGESHBHAI. Payment credentials are entered only in Razorpay hosted checkout. <Link href="/contact" className="underline">Billing support</Link> · <Link href="/digital-delivery" className="underline">Digital delivery</Link>.</p>
   </section>;
 }
