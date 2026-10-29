@@ -449,6 +449,16 @@ class Controller:
         expected_revision = PARENT + "/services/" + service + "/revisions/" + template["revision"]
         prior_created = before["latestCreatedRevision"]
         prior_ready = before["latestReadyRevision"]
+        # Cloud Run v2 may return a short revision name in trafficStatuses,
+        # even while latestReadyRevision is fully qualified. Accept only the
+        # exact basename of either known revision during reconciliation.
+        def status_revision(value: Any) -> Any:
+            if value == prior_ready.rsplit("/", 1)[-1]:
+                return prior_ready
+            if value == expected_revision.rsplit("/", 1)[-1]:
+                return expected_revision
+            return value
+
         expected_labels = body.get("labels", before.get("labels", {}))
         ignored = {"template", "traffic", "labels", "etag", "generation", "observedGeneration", "updateTime",
                    "lastModifier", "reconciling", "terminalCondition", "conditions", "latestReadyRevision",
@@ -488,14 +498,15 @@ class Controller:
                 need(type(statuses) is list and len(statuses) <= 2
                      and (statuses or reconciling is True)
                      and all(type(row) is dict
-                             and row.get("revision") in {prior_ready, expected_revision}
+                             and status_revision(row.get("revision")) in {prior_ready, expected_revision}
                              and type(row.get("percent")) is int
                              and 0 <= row["percent"] <= 100 for row in statuses)
-                     and len({row["revision"] for row in statuses}) == len(statuses)
+                     and len({status_revision(row["revision"]) for row in statuses}) == len(statuses)
                      and (not statuses or sum(row["percent"] for row in statuses) == 100)
                      and (len(statuses) <= 1 or reconciling is True),
                      "document_transition_readback_changed")
-                serving = (len(statuses) == 1 and statuses[0]["revision"] == expected_revision
+                serving = (len(statuses) == 1
+                           and status_revision(statuses[0]["revision"]) == expected_revision
                            and statuses[0]["percent"] == 100 and not statuses[0].get("tag"))
                 need(ready != expected_revision or created == expected_revision
                      or created is None and reconciling is True,

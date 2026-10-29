@@ -582,6 +582,25 @@ def test_done_before_ready_service_get_polls_without_another_patch(monkeypatch, 
     assert [name for name, _ in http.writes[10:]] == [coordinator]
 
 
+def test_final_open_accepts_exact_short_cloud_run_traffic_status(monkeypatch, tmp_path):
+    http, source, previous = failed_partial_after_analysis_ack(monkeypatch, tmp_path)
+    coordinator = transition.CALLERS[2]
+    request = http.request
+
+    def short_status(uri, *, method, body=None, headers=None, redirections):
+        response, raw = request(uri, method=method, body=body, headers=headers,
+                                redirections=redirections)
+        if method == 'PATCH' and urlsplit(uri).path.endswith('/services/' + coordinator):
+            live = http.services[coordinator]
+            live['trafficStatuses'][0]['revision'] = live['latestReadyRevision'].rsplit('/', 1)[-1]
+        return response, raw
+
+    monkeypatch.setattr(http, 'request', short_status)
+    result = continue_final(http, source, previous, tmp_path)
+    assert result['status'] == 'document_refresh_final_caller_restoration_observed'
+    assert [name for name, _ in http.writes[10:]] == [coordinator]
+
+
 @pytest.mark.parametrize('pending_status', ['prior', 'empty_reconciling', 'split_reconciling'])
 def test_done_before_latest_created_status_polls_known_state(monkeypatch, tmp_path, pending_status):
     http, source, previous = failed_partial_after_analysis_ack(monkeypatch, tmp_path)

@@ -297,6 +297,28 @@ def test_final_continuation_failure_retains_only_allowlisted_fixed_diagnostic(
     assert "private credential" not in (output / "failure.json").read_text()
 
 
+@pytest.mark.parametrize("equals_spelling", [False, True])
+def test_final_readback_failure_never_writes_cloud_logging(monkeypatch, capsys, tmp_path, equals_spelling):
+    import json
+    import sys
+
+    output = tmp_path / "read-only-result"
+    output.mkdir(mode=0o700)
+    argv = (["document_refresh.py", "--mode=reconcile-final-v2-transition",
+             "--output-directory=" + str(output)] if equals_spelling else
+            ["document_refresh.py", "--mode", "reconcile-final-v2-transition",
+             "--output-directory", str(output)])
+    monkeypatch.setattr(sys, "argv", argv)
+    monkeypatch.setattr(refresh, "main", lambda: (_ for _ in ()).throw(
+        refresh.RefreshDenied("document_final_readback_state_changed")))
+    monkeypatch.setattr(refresh, "emit_status",
+                        lambda value: pytest.fail("read-only failure must not write a heartbeat"))
+    assert refresh.run_cli() == 2
+    receipt = json.loads((output / "failure.json").read_text())
+    assert receipt["fixed_code"] == "document_final_readback_state_changed"
+    assert json.loads(capsys.readouterr().out)["fixed_code"] == receipt["fixed_code"]
+
+
 @pytest.mark.parametrize("full_source", [False, True])
 def test_prior_unknown_run_blocks_new_build_before_any_external_action(monkeypatch, tmp_path, full_source):
     history = tmp_path / "history"
@@ -521,6 +543,7 @@ def test_workflow_initializes_runner_paths_after_job_expression_validation(tmp_p
         f"TRANSITION_DIRECTORY={runner_temp}/document-refresh-original-40771705772",
         f"PARTIAL_DIRECTORY={runner_temp}/document-refresh-original-40781707554",
         f"FINAL_DIRECTORY={runner_temp}/document-refresh-original-40788512340",
+        f"READBACK_DIRECTORY={runner_temp}/document-refresh-original-40805300453",
         f"HISTORY_DIRECTORY={runner_temp}/document-refresh-history",
         f"OUTPUT_DIRECTORY={runner_temp}/document-refresh-42-2",
     ]
@@ -536,7 +559,8 @@ def test_full_source_workflow_reuses_trusted_scope_and_retained_history_without_
     trigger = workflow.get("on", workflow.get(True))
     assert trigger["workflow_dispatch"]["inputs"]["mode"]["options"] == [
         "monitor", "refresh", "full-source-refresh", "resume-full-source-refresh",
-        "resume-expired-v2-transition", "resume-partial-v2-transition", "resume-final-v2-transition"]
+        "resume-expired-v2-transition", "resume-partial-v2-transition", "resume-final-v2-transition",
+        "reconcile-final-v2-transition"]
     job = workflow["jobs"]["maintenance"]
     assert job["if"] == (
         "github.repository == 'Harshil4442/ai-resume-copilot' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)")
@@ -584,6 +608,16 @@ def test_full_source_workflow_reuses_trusted_scope_and_retained_history_without_
     assert final_step["if"] == "env.REFRESH_MODE == 'resume-final-v2-transition'"
     assert "--mode resume-final-v2-transition" in final_step["run"]
     assert "--publish-candidate" not in final_step["run"]
+    readback_artifact = next(step for step in job["steps"] if step.get("name") ==
+                             "Retrieve the exact acknowledged third continuation for read-only reconciliation")
+    assert readback_artifact["if"] == "env.REFRESH_MODE == 'reconcile-final-v2-transition'"
+    assert "12868086986" in readback_artifact["run"] and "40805300453" in readback_artifact["run"]
+    assert "sha256:2704e3657731002c1ba008a18cd995d14c227d1a89dbc1f13fb4f03af7df02f6" in readback_artifact["run"]
+    readback_step = next(step for step in job["steps"] if step.get("name") ==
+                         "Prove the acknowledged coordinator open without another write")
+    assert readback_step["if"] == "env.REFRESH_MODE == 'reconcile-final-v2-transition'"
+    assert "--mode reconcile-final-v2-transition" in readback_step["run"]
+    assert "--publish-candidate" not in readback_step["run"]
     guard = next(step for step in job["steps"] if step.get("name") == "Require explicitly provisioned maintenance identity")
     assert 'test "$REFRESH_MODE" = refresh || test "$REFRESH_MODE" = full-source-refresh' in guard["run"]
     artifact = next(step for step in job["steps"] if step.get("name") == "Retain bounded maintenance evidence")
