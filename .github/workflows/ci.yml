@@ -378,6 +378,7 @@ jobs:
           PAIRING_PASSWORD_TEST_POSTGRES_REQUIRED: "true"
           EMPLOYER_PACING_TEST_REDIS_URL: redis://127.0.0.1:56379/0
           HIREWIZ_AUTHORITY_EMULATOR_REQUIRED: "true"
+          HIREWIZ_OWNED_REDIS_SERVER: ${{ steps.native-metadata-redis.outputs.binary }}
           HIREWIZ_CI_LOCK_DIAGNOSTICS: "1"
         run: |
           .venv/bin/python scripts/run_prompt_evals.py
