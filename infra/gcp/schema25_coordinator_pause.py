@@ -30,7 +30,7 @@ REVISION_READ_OUTPUTS = frozenset({
 class NativeCoordinatorRun(native.NativeRun):
     """Reuse the stock one-send SDK adapter with a different fixed singleton scope."""
 
-    SERVICES = (SERVICE,)  # type: ignore[assignment]  # Intentional narrower native write scope.
+    SERVICES = (SERVICE,)  # Intentional narrower native write scope.
 
 
 def need(value, code):
