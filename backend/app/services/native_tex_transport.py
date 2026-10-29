@@ -12,6 +12,19 @@ from .resume_layout import ResumeLayoutError, ResumeProcessingUnavailable
 
 
 def remote_compile(payload: bytes, *, url: str, image: str, policy: str) -> dict:
+    return _remote_compile(payload, url=url, image=image, policy=policy)[0]
+
+
+def remote_compile_capture(payload: bytes, *, url: str, image: str, policy: str) -> bytes:
+    """Retain the actual successful HTTP body through the unchanged transport.
+
+    Internal acquisition only; this is neither a provider signature nor an
+    idempotent operation. A lost response must never cause another POST.
+    """
+    return _remote_compile(payload, url=url, image=image, policy=policy)[1]
+
+
+def _remote_compile(payload: bytes, *, url: str, image: str, policy: str) -> tuple[dict, bytes]:
     try:
         target = urlsplit(url)
         invalid = (target.scheme != "https" or not re.fullmatch(r"[a-z0-9.-]+\.run\.app", target.hostname or "")
@@ -55,7 +68,7 @@ def remote_compile(payload: bytes, *, url: str, image: str, policy: str) -> dict
                 or data.get("request_sha256") != hashlib.sha256(payload).hexdigest()
                 or data.get("renderer_image") != image or data.get("isolation_policy_sha256") != policy):
             raise ValueError("worker_contract_mismatch")
-        return data
+        return data, bytes(output)
     except ResumeLayoutError:
         raise
     except Exception as exc:
