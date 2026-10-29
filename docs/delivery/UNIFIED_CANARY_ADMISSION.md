@@ -30,7 +30,12 @@ frozen census against current SQL values. Identity changes or deletion invalidat
 new admission and need a new reviewed audience. No cross-request authority cache
 is introduced. The bounded first implementation supports at most 2,000 eligible
 accounts; larger or ambiguous reads fail closed instead of accepting a partial
-census. The selected cohort must satisfy `20 × selected_count <= eligible_count`.
+census. The selected cohort must be a nonempty subset of that real census, with
+at most 100 selected owners. R02 limits **accepted traffic**, not the fraction of
+accounts invited: it does not require twenty registered users before a pilot can
+begin. A small real population still needs nineteen genuine eligible baseline
+acceptances for its first canary operation; registration, invitation and consent
+alone provide no traffic allowance.
 
 `UNIFIED_CREDIT_CANARY_OWNER_IDS` no longer authorizes any owner. Canary execution
 requires both `UNIFIED_CREDIT_CANARY_REVIEW_ID` and the exact recorded

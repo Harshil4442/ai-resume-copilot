@@ -17,9 +17,9 @@ from pydantic import ValidationError
 assert factory
 
 
-def baseline(db, *, start=0, count=19, duplicate=False, shadow=False, internal=False):
+def baseline(db, *, start=0, count=19, duplicate=False, shadow=False, internal=False, owner=40):
     for number in range(start, start + count):
-        db.add(models.AnalysisRun(id=f"{'dev_' if internal else 'run_'}baseline_{number}", user_id=40,
+        db.add(models.AnalysisRun(id=f"{'dev_' if internal else 'run_'}baseline_{number}", user_id=owner,
             operation="skill_roi", status="succeeded", idempotency_key=f"baseline-key-{number}",
             input_fingerprint=payload_fingerprint("duplicate" if duplicate else number),
             input_payload={"schema_version": "synthetic-interview-development-v1"} if internal else {"shadow": shadow},
@@ -27,10 +27,10 @@ def baseline(db, *, start=0, count=19, duplicate=False, shadow=False, internal=F
     db.flush()
 
 
-def prepare(db, monkeypatch, *, selected=(1, 2), now=NOW, config=None, review_id="fixture-canary-v1"):
+def prepare(db, monkeypatch, *, selected=(1, 2), now=NOW, config=None, review_id="fixture-canary-v1", population=40):
     # These are simulated genuine accounts in an isolated test DB; no fixture
     # review, invoice or consent is represented as real production evidence.
-    for identity in range(1, 41):
+    for identity in range(1, population + 1):
         user = db.get(models.User, identity)
         if user is None:
             user = models.User(id=identity, email=f"fixture-business-{identity}@example.com")
@@ -101,10 +101,12 @@ def test_raw_unbounded_env_ids_never_grant_audience_or_fabricate_consent(realm, 
         assert runtime.requires_unified_billing(db, 40)  # No currency fallback on unverifiable configuration.
 
 
-def test_selected_cohort_requires_real_integer_five_percent_and_immutable_review(realm):
+def test_selected_cohort_requires_a_bounded_real_subset_and_immutable_review(realm):
     maker, config, review, _ = realm
     with pytest.raises(ValidationError):
-        canary.CanaryReview.model_validate(review.model_dump() | {"selected_owner_ids": (1, 2, 3)})
+        canary.CanaryReview.model_validate(review.model_dump() | {"selected_owner_ids": (1, 2, 41)})
+    with pytest.raises(ValidationError):
+        canary.CanaryReview.model_validate(review.model_dump() | {"selected_owner_ids": tuple(range(1, 102))})
     with pytest.raises(ValidationError):
         canary.CanaryReview.model_validate(review.model_dump() | {"real_business_accounts_and_exclusions_reviewed": 1})
     with maker() as db:
@@ -112,6 +114,31 @@ def test_selected_cohort_requires_real_integer_five_percent_and_immutable_review
             canary.save_review(db, review.model_copy(update={"notice": review.notice + " changed"}), runtime=config, now=NOW)
         db.rollback()
         assert db.query(models.AdminAuditEvent).filter_by(action=canary.REVIEW_ACTION).count() == 1
+
+
+@pytest.mark.parametrize("genuine_baseline", [0, 4, 18, 19])
+def test_small_real_population_is_limited_by_actual_traffic_not_account_fraction(factory, monkeypatch, genuine_baseline):
+    monkeypatch.setenv("APP_ENV", "test")
+    with factory() as db:
+        config, review, digest = prepare(db, monkeypatch, selected=(1,), population=1)
+        assert len(review.members) == len(review.selected_owner_ids) == 1
+        consent(db, config, review, digest)
+        db.commit()
+        baseline(db, count=genuine_baseline, owner=1)
+        row = source(db)
+        if genuine_baseline < 19:
+            with pytest.raises(finance.FundingUnavailable):
+                accept(db, config, row)
+            db.rollback()
+            assert db.query(models.AdminAuditEvent).filter_by(action=canary.ACCEPT_ACTION).count() == 0
+        else:
+            proof = accept(db, config, row)
+            assert (proof["canary_acceptances"], proof["eligible_business_acceptances"]) == (1, 20)
+            db.commit()
+            with pytest.raises(finance.FundingUnavailable):
+                accept(db, config, source(db, identity="run_small_population_second"))
+            db.rollback()
+            assert db.query(models.AdminAuditEvent).filter_by(action=canary.ACCEPT_ACTION).count() == 1
 
 
 def test_explicit_owner_choice_is_idempotent_revocable_and_not_reenabled_by_replay(realm):

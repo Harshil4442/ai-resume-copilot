@@ -70,7 +70,7 @@ class CanaryReview(Closed):
     valid_from: datetime
     expires_at: datetime
     traffic_started_at: datetime
-    members: tuple[Member, ...] = Field(min_length=20, max_length=MAX_CENSUS)
+    members: tuple[Member, ...] = Field(min_length=1, max_length=MAX_CENSUS)
     selected_owner_ids: tuple[Owner, ...] = Field(min_length=1, max_length=100)
     excluded_owner_ids: tuple[Owner, ...] = Field(max_length=MAX_CENSUS)
     families: tuple[str, ...] = Field(min_length=1, max_length=10)
@@ -94,11 +94,10 @@ class CanaryReview(Closed):
                 or self.excluded_owner_ids != tuple(sorted(set(self.excluded_owner_ids)))
                 or not set(self.selected_owner_ids) <= set(ids)
                 or set(ids) & set(self.excluded_owner_ids)
-                or 20 * len(self.selected_owner_ids) > len(ids)
                 or self.families != tuple(sorted(set(self.families)))
                 or not set(self.families) <= FAMILIES
                 or hashlib.sha256(self.notice.encode()).hexdigest() != self.notice_sha256):
-            raise ValueError("A finite reviewed real census, exact notice, scope and five-percent audience are required")
+            raise ValueError("A finite reviewed real census, exact notice and bounded selected scope are required")
         return self
 
 
