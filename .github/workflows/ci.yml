@@ -99,7 +99,12 @@ jobs:
           tests/test_gcp_password_reset_emulator.py
           tests/test_monetary_cutover_schema11_postgres.py
           tests/test_monetary_cutover_schema13_postgres.py
-          app/billing/cost_policy.py tests/expense_policy_fixtures.py tests/test_expense_policy.py
+          app/billing/cost_policy.py app/billing/signup.py tests/expense_policy_fixtures.py tests/test_expense_policy.py
+          tests/test_auth_security.py
+          tests/test_native_expense_reconciliation.py tests/test_native_expense_reconciliation_postgres.py
+          tests/test_native_expense_operator_startup.py
+          app/services/personal_claims.py app/services/delivery_contracts.py app/services/tailoring_contract.py
+          tests/test_personal_claims.py tests/test_delivery_contract_freeze.py
           app/routers/credits.py app/services/interview_contract.py app/services/synchronous_contracts.py
           tests/test_unified_credit_finance.py tests/test_unified_credit_http.py tests/test_unified_credit_migrations.py
           tests/test_unified_credit_migrations_postgres.py tests/test_unified_credit_payments.py
@@ -164,7 +169,9 @@ jobs:
           app/services/model_cost_policy.py app/services/generation_budget.py app/services/llm_client.py app/services/result_commit.py
           app/services/generation_gate.py
           scripts/monetary_cutover_preflight.py scripts/native_tex_test_image.py
-          app/billing/cost_policy.py
+          app/billing/cost_policy.py app/billing/signup.py
+          app/services/personal_claims.py app/services/delivery_contracts.py app/services/tailoring_contract.py
+          scripts/reconcile_native_expenses.py
           app/routers/credits.py app/services/interview_contract.py app/services/synchronous_contracts.py
           app/routers/candidate_accounts.py app/routers/sensitive_auth.py app/routers/candidate_ingress.py
           app/routers/password_reset.py
