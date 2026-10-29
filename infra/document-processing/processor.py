@@ -1067,8 +1067,11 @@ def inspect(payload: bytes) -> dict:
                 contact = {name: None for name in ("name", "email", "phone", "linkedin", "github")}
             else:
                 (validate_pdf if kind == "pdf" else validate_docx)(content)
-                from app.services.parsing import parse_resume_file
-                raw_text, sections, skills, experience, contact = parse_resume_file(content, filename="original." + kind, use_llm=False)
+                from app.services.parsing import PDFReadingOrderError, parse_resume_file
+                try:
+                    raw_text, sections, skills, experience, contact = parse_resume_file(content, filename="original." + kind, use_llm=False)
+                except PDFReadingOrderError:
+                    raise InspectionDenied() from None
             parsed = {"raw_text": raw_text, "sections": sections, "skills": skills,
                       "experience_years": experience, "contact_info": contact}
             if (not isinstance(raw_text, str) or type(sections) is not dict
