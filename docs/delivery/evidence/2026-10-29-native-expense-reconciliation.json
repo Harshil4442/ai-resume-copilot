@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "observed_at": "2026-10-29T10:12:11.062125+00:00",
+  "source_base_commit": "145276a95519c15e7fbb6d5d0c73f6d60c4b14df",
+  "scope": "Local implementation and synthetic accounting verification only; existing Stage 2/6 remains in progress",
+  "file_sha256": {
+    "backend/app/domains/credits/reconciliation.py": "afa12ed8aa9468c623498b9ec379967a44ae2fd47cfd7763af2a0e9a860d7a03",
+    "backend/app/domains/credits/admission.py": "5e62515e1941eb3b7f07a0964a9da0838e513cc567c1fb93716a5dd6f1788b6e",
+    "backend/scripts/reconcile_native_expenses.py": "905b6bd06ab4b37829bf901b8da952a517dfb8444291cdaa2a9f319a44f2b2b0",
+    "backend/tests/test_native_expense_reconciliation.py": "2f3e0951d88382b520e638f71601671b65ce0e2cd6c38870de89af162496d4bd",
+    "backend/tests/test_native_expense_reconciliation_postgres.py": "03fc0d7cf674660e5a9bf178af3dd75564f4bb686c92702d97e3658dac4ce6a7"
+  },
+  "validation": {
+    "related_tests_passed": 92,
+    "genuine_postgres_tests": 8,
+    "postgres": "17.11, separate owned loopback cluster with private data directory and unique schemas",
+    "owned_postgres_stopped": true,
+    "ruff": "passed",
+    "mypy": "passed",
+    "diff_check": "passed",
+    "synthetic_receipts_only": true,
+    "account_erasure_races": "paid and free verified",
+    "same_amount_conflicting_receipts": "one accepted; immutable first provenance preserved",
+    "commit_rollback": "cost and audit both rolled back",
+    "terminal_evidence": "exact operation correlation, false/running/ambiguous work refused",
+    "unknown_model_liabilities": "remain protected",
+    "native_overrun": "actual amount retained; customer charge unchanged; affected paid route pauses"
+  },
+  "production_mutations": 0,
+  "existing_database_mutations": 0,
+  "schema_migrations": 0,
+  "provider_calls": 0,
+  "invoice_qualification": false,
+  "payment_activation": false,
+  "stage_completed": null,
+  "remaining": [
+    "Independent final code review and CI",
+    "Actual reviewed supplier usage/invoice and terminal-worker artifacts before any production reconciliation",
+    "Representative seven-day/200-operation shadow and financial release gates"
+  ],
+  "effort": {
+    "estimated": null,
+    "actual": null,
+    "note": "Partial existing Stage 2/6 work; no completed checkpoint or invented overall effort."
+  }
+}

@@ -47,6 +47,11 @@ The future application-submission tariff does not enable final submission.
 - `credits.privacy` erases owner-bound quote/discovery data before employer and
   user records are removed. It detaches retained accounting without erasing
   unknown obligations. Telemetry contains aggregate amounts, not resume text.
+- `credits.reconciliation` supplies a private, receipt-bound native-expense
+  capture/readback/apply operator, including detached owners. The first expense
+  receipt is retained atomically in the existing privileged audit history;
+  unknown model costs stay held. See `NATIVE_EXPENSE_RECONCILIATION.md`. This
+  tooling does not qualify invoices or complete the shadow-accounting gate.
 
 ## Eight existing delivery stages
 

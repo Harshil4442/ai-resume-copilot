@@ -222,6 +222,10 @@ def assert_headroom(
     if route_id not in budgets.monthly_route_minor:
         raise finance.FundingUnavailable("This route has no funded execution budget")
     lock_money(db)
+    if db.query(CreditExecutionHold.id).filter_by(route_id=route_id, state="overrun").first():
+        raise finance.FundingUnavailable(
+            "This route is paused while its actual expense overrun is reviewed"
+        )
     outcomes = [
         row[0]
         for row in db.query(CreditExecutionHold.delivery_state)
