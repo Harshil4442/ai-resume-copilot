@@ -8,13 +8,13 @@ from types import SimpleNamespace
 from urllib.parse import parse_qs, unquote, urlencode, urlsplit
 
 import pytest
-from scripts import document_refresh as refresh
-
 from backend.tests import test_document_refresh as local
 from backend.tests import test_document_refresh_probe as native
 from backend.tests import test_document_refresh_transition as transition
 from infra.gcp import document_refresh_auth as auth
 from infra.gcp import document_refresh_recovery as recovery
+
+from scripts import document_refresh as refresh
 
 p = native.p
 NEW_NONCE = "f" * 32

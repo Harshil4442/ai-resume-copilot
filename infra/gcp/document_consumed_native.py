@@ -1,6 +1,8 @@
 """Read-only native authority for one consumed document-transition history.
 
-No Build, Job, claim, PATCH, heartbeat or retry entrypoint exists here. Historical
+No Build, Job, claim, PATCH, heartbeat or mutation-retry entrypoint exists here.
+The direct historical wrapper permits only GET. Current native proof reuses the
+existing read-only IAM/Logging POST APIs and bounded read retries. Historical
 consumption is proved separately from the application's current serving state.
 """
 from __future__ import annotations

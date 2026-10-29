@@ -7,13 +7,13 @@ from datetime import timedelta
 from types import SimpleNamespace
 
 import pytest
-from fastapi import HTTPException
-from scripts import document_refresh as orchestrator
-
 from backend.tests import test_document_refresh_probe as native_fixtures
 from backend.tests import test_document_refresh_transition as fixtures
+from fastapi import HTTPException
 from infra.gcp import document_candidate_release as candidate_release
 from infra.gcp import document_refresh_probe as old_probe
+
+from scripts import document_refresh as orchestrator
 
 V2_POLICY = "d3baf46026934f48b8def219b48d348d7b03bc3b4d0cb713a6f222c7299df7f2"
 V3_POLICY = "8ed5f38142d88d88883129681953e939e79157e8b92e3efc516920d2e4409c9f"

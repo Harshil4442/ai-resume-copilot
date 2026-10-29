@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
+
 from scripts import document_refresh as refresh
 
 NOW = datetime(2026, 10, 16, 6, 24, 15, tzinfo=UTC)
@@ -730,7 +731,6 @@ def test_retained_candidate_workflow_sends_only_fixed_resume_argv(tmp_path):
     import sys
 
     import yaml
-
     from infra.gcp import document_renderer_profiles as profile
 
     workflow = yaml.safe_load((refresh.ROOT / ".github/workflows/document-refresh.yml").read_text())

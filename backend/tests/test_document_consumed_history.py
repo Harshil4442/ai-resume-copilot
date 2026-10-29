@@ -13,6 +13,7 @@ from types import SimpleNamespace
 
 import pytest
 import test_document_refresh_transition as fixture
+
 from scripts import document_refresh as refresh
 from scripts import retrieve_consumed_document_history as retrieval
 

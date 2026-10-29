@@ -5,6 +5,10 @@ controller runs and then independently read back. It does not retry that
 transition. It creates no Build, Job, object claim, service PATCH or heartbeat.
 An audit report is inert JSON; only the freshly reconstructed typed disposition
 can enter the bounded ordinary-refresh history reader in the same process.
+The direct historical claim/LRO/build wrapper is GET-only. The unchanged native
+current-document proof also uses semantically read-only IAM `getIamPolicy` and
+Logging `entries:list` POST APIs and their existing bounded read retries. These
+are reads, and do not authorize any mutation or replay.
 
 ## Exact historical chain
 
