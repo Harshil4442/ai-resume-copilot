@@ -3,6 +3,7 @@ import { candidateIngressFetch } from "./candidateIngressFetch";
 import { getToken } from "next-auth/jwt";
 import { AUTH_BODY_LIMIT, candidateAuthSecret, csrfMatches, websiteOrigin } from "./candidateAuthServer";
 import { boundedPairingBytes } from "./browserPairingGateway";
+import { parseOwnedBootstrap } from "./ownedBootstrapContract";
 
 export const runtime = "nodejs";
 const HEADERS = { "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" };
@@ -17,6 +18,7 @@ const OPERATIONS: Record<string, { path: string; methods: string[] }> = {
   register: { path: "register", methods: ["POST"] }, profile: { path: "profile", methods: ["GET", "PUT"] },
   me: { path: "me", methods: ["GET"] }, export: { path: "export-account", methods: ["GET"] },
   delete: { path: "delete-account", methods: ["POST"] },
+  bootstrap: { path: "bootstrap", methods: ["GET"] },
 };
 const PRIVATE_FIELDS = new Set(["access_token", "accesstoken", "refresh_token", "browser_pairing_session", "browserpairingsession",
   "candidate_lifetime", "candidatelogoutrequest", "password_hash"]);
@@ -42,6 +44,8 @@ export async function handleAccount(request: NextRequest, operation: string, leg
   const canonical = legacyAlias && policy ? `/api/backend/auth/${policy.path}` : `/api/account/${operation}`;
   if (!policy || request.nextUrl.search || request.nextUrl.pathname !== canonical) return failed(404);
   if (!policy.methods.includes(request.method)) return failed(405);
+  if (operation === "bootstrap" && (request.headers.has("content-encoding") || request.headers.has("transfer-encoding")
+    || (request.headers.get("content-length") || "0") !== "0")) return failed(422);
   const mutation = request.method !== "GET";
   if (mutation && (request.headers.get("origin") !== websiteOrigin(request)
       || request.headers.get("sec-fetch-site") === "cross-site"
@@ -65,9 +69,14 @@ export async function handleAccount(request: NextRequest, operation: string, leg
       signal: AbortSignal.timeout(20000), headers: { "Content-Type": "application/json",
         ...(operation !== "register" ? { Authorization: `Bearer ${token!.accessToken}` } : {}) }, body: raw ? new Uint8Array(raw).buffer : undefined });
     if (!response.ok) return failed([401, 409, 422, 429].includes(response.status) ? response.status : 503);
-    const bytes = await boundedPairingBytes(response.body, operation === "export" ? ACCOUNT_EXPORT_LIMIT : ACCOUNT_REPLY_LIMIT);
+    const bytes = await boundedPairingBytes(response.body, operation === "export" ? ACCOUNT_EXPORT_LIMIT
+      : operation === "bootstrap" ? 2 * 1024 * 1024 : ACCOUNT_REPLY_LIMIT);
     const data: unknown = JSON.parse(new TextDecoder("utf8", { fatal: true }).decode(bytes));
     if (!object(data) || !noAuthority(data)) return failed();
+    if (operation === "bootstrap") {
+      const bootstrap = parseOwnedBootstrap(data);
+      return bootstrap ? NextResponse.json(bootstrap, { headers: HEADERS }) : failed();
+    }
     if (operation === "register") {
       if (!exactFields(data, ME_REPLY) || !Number.isSafeInteger(data.id) || (data.id as number) <= 0) return failed();
       return NextResponse.json({ status: "REGISTERED" }, { headers: HEADERS });

@@ -1,16 +1,19 @@
 import os
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from ..billing.signup import NEW_ACCOUNT_LEGACY_ANALYSIS_UNITS, NEW_ACCOUNT_LEGACY_SERVICE_CREDITS
 from ..database import get_db
+from ..domains.candidate_accounts.bootstrap import OwnedBootstrapView, bootstrap_view
 from ..domains.candidate_accounts.google import google_id_token as google_id_token
+from ..domains.candidate_accounts.profile_view import profile_view
 from ..domains.notifications import enqueue_notification
 from ..domains.recovery.native_metadata_admission import MetadataAdmissionError
+from ..domains.recovery.store import GuardDenied
 from ..models import (
     AdminAuditEvent,
     AnalysisRun,
@@ -321,8 +324,23 @@ def get_profile(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    profile = _get_or_create_profile(db, current_user)
-    return _profile_response(profile, current_user.email)
+    try:
+        return profile_view(db, current_user)
+    except GuardDenied:
+        raise HTTPException(401, "Not authenticated") from None
+
+
+@router.get("/bootstrap", response_model=OwnedBootstrapView)
+def get_owned_bootstrap(request: Request, response: Response,
+                        db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if (request.url.query or request.headers.get("content-encoding") or request.headers.get("transfer-encoding")
+            or request.headers.get("content-length", "0") != "0"):
+        raise HTTPException(422, "Owned bootstrap accepts only an empty GET")
+    response.headers.update({"Cache-Control": "private, no-store", "Pragma": "no-cache"})
+    try:
+        return bootstrap_view(db, current_user)
+    except GuardDenied:
+        raise HTTPException(401, "Not authenticated") from None
 
 @router.put("/profile", response_model=UserProfileResponse)
 def update_profile(

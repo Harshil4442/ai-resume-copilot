@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { ApiError, apiGet, apiPostJson } from "../../lib/api";
 import {
   formatCreditDate, formatCreditPrice, parseUnifiedCheckoutOrder, parseUnifiedCreditCatalog,
-  parseUnifiedCreditHistory, parseUnifiedCreditOrder, parseUnifiedCreditWallet, parseUnifiedPurchaseQuote,
+  parseUnifiedCreditHistory, parseUnifiedCreditOrder, parseUnifiedPurchaseQuote,
   sameUnifiedPurchaseQuote, type UnifiedCreditCatalog, type UnifiedCreditHistory, type UnifiedCreditOrder,
   type UnifiedCreditWallet, type UnifiedPassSku, type UnifiedPurchaseQuote,
 } from "../../lib/unifiedCredits";
@@ -13,11 +14,13 @@ import { Button } from "../ui/Button";
 import { LoadingBlock } from "../ui/LoadingBlock";
 import { EligibleCreditServices, UnifiedCreditPacks, UnifiedPurchaseQuoteReview } from "./UnifiedCreditPacks";
 import { loadHostedCheckout } from "./hostedCheckout";
+import { fetchOwnedWallet } from "../../lib/ownedBootstrapClient";
 
 const messageOf = (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback;
 const unsettled = (order: UnifiedCreditOrder | null) => order?.status === "pending" || (order?.status === "paid" && !order.fulfilled);
 
 export function UnifiedBillingPanel({ legacyPending, requestedSku, participationRevision = 0 }: { legacyPending: boolean; requestedSku: string | null; participationRevision?: number }) {
+  const client = useQueryClient();
   const mounted = useRef(true), actionPending = useRef(false), pollId = useRef(0);
   const catalogRead = useRef(0);
   const quoteIntent = useRef<{ sku: UnifiedPassSku; key: string } | null>(null);
@@ -41,10 +44,10 @@ export function UnifiedBillingPanel({ legacyPending, requestedSku, participation
   }).catch(() => { if (mounted.current && read === catalogRead.current) setCatalog(null); })
     .finally(() => { if (mounted.current && read === catalogRead.current) setCatalogLoading(false); });
   }, []);
-  const refreshWallet = useCallback(() => apiGet<unknown>("/v1/credits/wallet").then((raw) => {
-    if (mounted.current) setWallet(parseUnifiedCreditWallet(raw));
+  const refreshWallet = useCallback((force = false) => fetchOwnedWallet(client, force).then((value) => {
+    if (mounted.current) setWallet(value);
   }).catch(() => { if (mounted.current) setWallet(null); })
-    .finally(() => { if (mounted.current) setWalletLoading(false); }), []);
+    .finally(() => { if (mounted.current) setWalletLoading(false); }), [client]);
   const refreshHistory = useCallback((cursor?: string) => apiGet<unknown>(`/v1/credits/history?limit=20${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`).then((raw) => {
     const value = parseUnifiedCreditHistory(raw);
     if (!value) throw new Error("Credit history could not be verified.");
@@ -58,11 +61,11 @@ export function UnifiedBillingPanel({ legacyPending, requestedSku, participation
       setError(null); setMessage("Payment confirmed. Your purchased credits have been delivered."); setReconciliationHeld(false);
       setQuote(null); quoteIntent.current = null; orderIntent.current = null;
       window.dispatchEvent(new Event("refresh_unified_credits"));
-      await Promise.allSettled([refreshWallet(), refreshHistory()]);
+      await Promise.allSettled([refreshWallet(true), refreshHistory()]);
     } else if (value.status === "refunded") {
       setQuote(null); quoteIntent.current = null; orderIntent.current = null; setIndiaConfirmed(false);
       setMessage("This payment was refunded. Review the refund and balance in your history."); setReconciliationHeld(false);
-      await Promise.allSettled([refreshWallet(), refreshHistory()]);
+      await Promise.allSettled([refreshWallet(true), refreshHistory()]);
     } else if (value.status === "failed") {
       setQuote(null); quoteIntent.current = null; orderIntent.current = null; setIndiaConfirmed(false);
       setMessage("This payment was not completed. Review a fresh quote before a new purchase."); setReconciliationHeld(false);

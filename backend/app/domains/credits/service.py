@@ -431,12 +431,12 @@ def fulfill_purchase_quote(
     )
 
 
-def wallet(db: Session, *, user_id: int, now: datetime | None = None) -> CreditWalletView:
+def wallet(db: Session, *, user_id: int, now: datetime | None = None, max_lots: int | None = None) -> CreditWalletView:
     """Read-only view excludes expired unused lots without mutating historical events."""
     stamp = _stamp(now)
     account = db.get(CreditAccount, user_id)
     debt = int(account.debt_credits) if account is not None else 0
-    lots = (
+    lots_query = (
         db.query(CreditGrant)
         .filter(
             CreditGrant.user_id == user_id,
@@ -444,8 +444,14 @@ def wallet(db: Session, *, user_id: int, now: datetime | None = None) -> CreditW
             or_(CreditGrant.expires_at.is_(None), CreditGrant.expires_at > stamp),
         )
         .order_by(CreditGrant.expires_at.asc().nulls_last(), CreditGrant.issued_at, CreditGrant.id)
-        .all()
     )
+    if max_lots is not None:
+        if type(max_lots) is not int or not 1 <= max_lots <= 5000:
+            raise ValueError("Invalid finite wallet read bound")
+        lots_query = lots_query.limit(max_lots + 1)
+    lots = lots_query.all()
+    if max_lots is not None and len(lots) > max_lots:
+        raise ValueError("Wallet exceeds the supported complete read bound")
     reserved = int(
         db.query(func.coalesce(func.sum(CreditReservation.reserved_credits), 0))
         .filter_by(user_id=user_id, state="reserved")

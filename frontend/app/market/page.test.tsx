@@ -1,3 +1,4 @@
+import { ownedBootstrapFixture } from "../../lib/fixtures/ownedBootstrap";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -13,7 +14,7 @@ const quote = { schema_version: "unified-service-quote-v1", quote_id: "csq_marke
 beforeEach(() => {
   client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   state.get.mockReset().mockImplementation(async (path) => path === "/resume/list" ? { resumes: [{ id: 1, filename: "selected.pdf" }] }
-    : path === "/v1/credits/availability" ? { catalog_enabled: true, execution_enabled: true, supported_operations: ["market_report"] }
+    : path === "/auth/bootstrap" ? ownedBootstrapFixture({ availability: { catalog_enabled: true, execution_enabled: true, supported_operations: ["market_report"] } })
     : { id: "run-market", operation: "market_analysis", status: "cancelled", billing_currency: "credits", committed_units: 0, usage_state: "released" });
   state.post.mockReset().mockImplementation(async (path) => path === "/v1/credits/analysis-reuse" ? { reused_run: null }
     : path === "/v1/credits/service-quotes" ? quote : { id: "run-market", operation: "market_analysis", status: "queued" });
@@ -43,7 +44,7 @@ it("requires a fresh review if the market query changes", async () => {
 
 it("finds unchanged saved reports while new paid reports are unavailable without requesting a quote", async () => {
   state.get.mockImplementation(async (path) => path === "/resume/list" ? { resumes: [{ id: 1, filename: "selected.pdf" }] }
-    : path === "/v1/credits/availability" ? { catalog_enabled: true, execution_enabled: false, supported_operations: [] }
+    : path === "/auth/bootstrap" ? ownedBootstrapFixture({ availability: { catalog_enabled: true, execution_enabled: false, supported_operations: [] } })
     : { id: "saved-market", operation: "market_analysis", status: "cancelled", billing_currency: "credits", committed_units: 0, usage_state: "released" });
   state.post.mockResolvedValue({ reused_run: { id: "saved-market", operation: "market_analysis", status: "succeeded" } });
   render(<QueryClientProvider client={client}><MarketPage /></QueryClientProvider>);

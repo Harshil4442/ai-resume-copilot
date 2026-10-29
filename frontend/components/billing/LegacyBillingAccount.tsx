@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { ApiError, apiGet, apiPostJson } from "../../lib/api";
-import { ownerProfileQueryOptions } from "../../lib/ownerProfile";
+import { fetchOwnedProfile } from "../../lib/ownedBootstrapClient";
 import { isFiniteBundleSku } from "../../lib/billingProducts";
 import { formatCreditPrice, isUnifiedPassSku } from "../../lib/unifiedCredits";
 import { Button } from "../ui/Button";
@@ -50,7 +50,7 @@ export function LegacyBillingAccount({ onPendingChange }: { onPendingChange: (pe
 
   const refreshBalances = useCallback(async (force = false) => {
     await Promise.allSettled([
-      client.fetchQuery({ ...ownerProfileQueryOptions(), ...(force ? { staleTime: 0 } : {}) }).then((value) => {
+      fetchOwnedProfile(client, force).then((value) => {
         if (mounted.current) setProfile(value);
       }),
       apiGet<{ job_service_credits?: unknown }>("/auth/me").then((value) => {

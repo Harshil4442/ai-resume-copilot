@@ -1,3 +1,4 @@
+import { ownedBootstrapFixture } from "../../../lib/fixtures/ownedBootstrap";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -21,7 +22,7 @@ function opportunity() {
     resume_versions: [], notes: "", job_description: "Build reliable services.", created_at: stamp, updated_at: stamp };
 }
 function read(url: string) {
-  if (url === "/v1/credits/availability") return Promise.resolve({ catalog_enabled: false, execution_enabled: false, supported_operations: [] });
+  if (url === "/auth/bootstrap") return Promise.resolve(ownedBootstrapFixture());
   if (url === "/public/billing/catalog") return Promise.resolve(quote);
   if (url === "/resume/list") return Promise.resolve({ resumes: [1, 2].map((id) => ({ id, filename: `synthetic-${id}.pdf`, source_available: true, source_format: "pdf" })) });
   if (url === `/v1/opportunities/${state.id}`) return Promise.resolve(opportunity());
@@ -142,8 +143,8 @@ const serviceQuote = { schema_version: "unified-service-quote-v1", quote_id: "cs
   deliverable: "A tailored resume that preserves its original layout.", supported_limits: { max_pages: 2, max_edits: 5 },
   created_at: "2026-10-27T10:00:00Z", expires_at: "2026-10-27T10:15:00Z", server_time: "2026-10-27T10:00:00Z" };
 function enableCreditExecution(operations = ["resume_tailor", "resume_tailor_extended", "interview_questions", "enhanced_job_match"]) {
-  state.get.mockImplementation((url: string) => url === "/v1/credits/availability"
-    ? Promise.resolve({ catalog_enabled: true, execution_enabled: operations.length > 0, supported_operations: operations }) : read(url));
+  state.get.mockImplementation((url: string) => url === "/auth/bootstrap"
+    ? Promise.resolve(ownedBootstrapFixture({ availability: { catalog_enabled: true, execution_enabled: operations.length > 0, supported_operations: operations } })) : read(url));
   state.post.mockImplementation(async (url, body) => {
     if (url === "/v1/credits/analysis-reuse") return { reused_run: null };
     if (url === "/v1/credits/service-quotes") return { ...serviceQuote, operation: body.operation === "job_match" ? "enhanced_job_match" : body.operation === "resume_tailor" && body.input.tailoring_scope === "extended" ? "resume_tailor_extended" : body.operation,
@@ -231,9 +232,9 @@ it("recovers a quote already attached to a run by reading that run", async () =>
 
 it("labels basic comparison free only when the server supplies its funded allowance", async () => {
   state.tab = "overview";
-  state.get.mockImplementation((url: string) => url === "/v1/credits/availability" ? Promise.resolve({ catalog_enabled: false,
+  state.get.mockImplementation((url: string) => url === "/auth/bootstrap" ? Promise.resolve(ownedBootstrapFixture({ availability: { catalog_enabled: false,
     execution_enabled: false, supported_operations: [], free_core_operations: ["basic_match"],
-    free_core_limits: { basic_match: { per_account_30_days: 10, max_input_bytes: 10000, max_source_records: 100 } } }) : read(url));
+    free_core_limits: { basic_match: { per_account_30_days: 10, max_input_bytes: 10000, max_source_records: 100 } } } })) : read(url));
   await page(); expect(screen.getByRole("combobox", { name: "Match mode · 0 credits" })).toBeVisible();
   expect(screen.getByText(/Basic comparison allowance: up to 10 new requests in a rolling 30-day period/)).toBeVisible();
   expect(state.post).not.toHaveBeenCalled();
@@ -246,4 +247,26 @@ it("routes the empty-state enhanced match action through the same credit review"
   const buttons = screen.getAllByRole("button", { name: "Run match" }); fireEvent.click(buttons[buttons.length - 1]);
   expect(await screen.findByRole("button", { name: "Approve 8 credits" })).toBeVisible();
   expect(requests()).toHaveLength(0);
+});
+
+it("refreshes one shared account snapshot once for a completed tailoring run without cancelling the pending read", async () => {
+  const pending: ((value: unknown) => void)[] = [];
+  const signals: AbortSignal[] = [];
+  state.get.mockImplementation((url: string, signal?: AbortSignal) => {
+    if (url === "/auth/bootstrap" && state.get.mock.calls.filter(([path]) => path === url).length > 1) {
+      signals.push(signal!);
+      return new Promise((resolve) => { pending.push(resolve); });
+    }
+    if (url.endsWith("/result")) return Promise.resolve({ result: {} });
+    if (url.startsWith("/v1/analysis-runs/")) return Promise.resolve({ id: "run-one", opportunity_id: state.id,
+      operation: "resume_tailor", status: "succeeded", estimated_units: 7, committed_units: 7 });
+    return read(url);
+  });
+  state.post.mockResolvedValue({ id: "run-one", operation: "resume_tailor", status: "queued", estimated_units: 7 });
+  await page(); await waitFor(() => expect(generate()).toBeEnabled()); fireEvent.click(generate());
+  await waitFor(() => expect(state.get.mock.calls.filter(([path]) => path === "/auth/bootstrap")).toHaveLength(2));
+  expect(signals).toHaveLength(1); expect(signals[0].aborted).toBe(false);
+  await act(async () => { pending.forEach((finish) => finish(ownedBootstrapFixture())); });
+  expect(state.get.mock.calls.filter(([path]) => path === "/auth/bootstrap")).toHaveLength(2);
+  expect(requests()).toHaveLength(1);
 });

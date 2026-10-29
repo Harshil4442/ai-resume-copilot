@@ -12,7 +12,7 @@ import { LoadingBlock } from "../../components/ui/LoadingBlock";
 import { resetAnalyticsIdentity, trackEvent } from "../../lib/analytics";
 import { apiDownload, apiPostJson, apiPutJson } from "../../lib/api";
 import type { UserProfile } from "../../lib/types";
-import { ownerProfileQueryKey, ownerProfileQueryOptions } from "../../lib/ownerProfile";
+import { fetchOwnedProfile, updateOwnedProfile } from "../../lib/ownedBootstrapClient";
 
 type ProfileForm = Omit<UserProfile, "email" | "profile_completeness" | "missing_fields" | "skills" | "tier" | "ai_credits"> & { skills_text: string };
 
@@ -51,10 +51,12 @@ export default function ProfilePage() {
   const [confirmEndPremium, setConfirmEndPremium] = useState(false);
 
   useEffect(() => {
-    queryClient.fetchQuery(ownerProfileQueryOptions())
-      .then((response) => { setProfile(response); setForm(toForm(response)); })
-      .catch((loadError) => setError(loadError instanceof Error ? loadError.message : "Failed to load profile"))
-      .finally(() => setLoading(false));
+    let active = true;
+    fetchOwnedProfile(queryClient)
+      .then((response) => { if (active) { setProfile(response); setForm(toForm(response)); } })
+      .catch((loadError) => { if (active) setError(loadError instanceof Error ? loadError.message : "Failed to load profile"); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
   }, [queryClient]);
 
   const skills = useMemo(() => splitSkills(form.skills_text), [form.skills_text]);
@@ -70,7 +72,7 @@ export default function ProfilePage() {
     try {
       const { skills_text, ...values } = form;
       const response = await apiPutJson<UserProfile>("/auth/profile", { ...values, skills: splitSkills(skills_text), years_experience: Number(values.years_experience || 0) });
-      queryClient.setQueryData(ownerProfileQueryKey, response);
+      updateOwnedProfile(queryClient, response);
       setProfile(response);
       setForm(toForm(response));
       setSaved(true);
@@ -89,7 +91,7 @@ export default function ProfilePage() {
     try {
       await apiPostJson("/billing/end-premium", {});
       window.dispatchEvent(new Event("refresh_analysis_units"));
-      const response = await queryClient.fetchQuery({ ...ownerProfileQueryOptions(), staleTime: 0 });
+      const response = await fetchOwnedProfile(queryClient, true);
       setProfile(response);
       setConfirmEndPremium(false);
       trackEvent("premium_access_ended");

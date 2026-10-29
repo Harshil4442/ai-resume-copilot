@@ -2972,6 +2972,60 @@
         "title": "ExecuteCreate",
         "type": "object"
       },
+      "FeatureView": {
+        "additionalProperties": false,
+        "properties": {
+          "bucket": {
+            "exclusiveMaximum": 100.0,
+            "minimum": 0.0,
+            "title": "Bucket",
+            "type": "integer"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "key": {
+            "pattern": "^[a-z][a-z0-9_]{0,63}$",
+            "title": "Key",
+            "type": "string"
+          },
+          "reason": {
+            "enum": [
+              "kill_switch",
+              "internal",
+              "invited",
+              "percentage"
+            ],
+            "title": "Reason",
+            "type": "string"
+          },
+          "rollout_percent": {
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Rollout Percent",
+            "type": "integer"
+          },
+          "variant": {
+            "enum": [
+              "on",
+              "off"
+            ],
+            "title": "Variant",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "enabled",
+          "variant",
+          "rollout_percent",
+          "bucket",
+          "reason"
+        ],
+        "title": "FeatureView",
+        "type": "object"
+      },
       "FreeCoreLimitView": {
         "additionalProperties": false,
         "properties": {
@@ -5276,6 +5330,83 @@
           "recommended_bullet"
         ],
         "title": "OptimizeBulletResponse",
+        "type": "object"
+      },
+      "OwnedBootstrapView": {
+        "additionalProperties": false,
+        "properties": {
+          "credit_availability": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CreditAvailabilityView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "credit_wallet": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CreditWalletView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "features": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/FeatureView"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Features"
+          },
+          "profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserProfileResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "schema_version": {
+            "const": "owned-bootstrap-v1",
+            "default": "owned-bootstrap-v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "unavailable": {
+            "items": {
+              "enum": [
+                "profile",
+                "features",
+                "credit_availability",
+                "credit_wallet"
+              ],
+              "type": "string"
+            },
+            "title": "Unavailable",
+            "type": "array"
+          }
+        },
+        "required": [
+          "profile",
+          "features",
+          "credit_availability",
+          "credit_wallet",
+          "unavailable"
+        ],
+        "title": "OwnedBootstrapView",
         "type": "object"
       },
       "PackageUpdate": {
@@ -8555,6 +8686,32 @@
         "summary": "Analytics Summary",
         "tags": [
           "analytics"
+        ]
+      }
+    },
+    "/api/auth/bootstrap": {
+      "get": {
+        "operationId": "get_owned_bootstrap_api_auth_bootstrap_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnedBootstrapView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Owned Bootstrap",
+        "tags": [
+          "auth"
         ]
       }
     },

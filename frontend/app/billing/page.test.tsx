@@ -1,3 +1,4 @@
+import { ownedBootstrapFixture } from "../../lib/fixtures/ownedBootstrap";
 const eligibleServices = [{ operation: "resume_tailor", credits: 8, deliverable: "Tailored resume with preserved source layout.", supported_limits: { max_pages: 2 }, source_formats: ["pdf", "docx"], route_version: "reviewed-v1" }];
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -33,6 +34,7 @@ const legacyCheckout = { order_id: "order_legacy", provider: "razorpay", provide
 const openCheckout = vi.fn();
 const hostedCheckout = vi.fn(function (options: RazorpayOptions) { void options; return { open: openCheckout, on: vi.fn() }; });
 function read(url: string): Promise<unknown> {
+  if (url === "/auth/bootstrap") return Promise.resolve(ownedBootstrapFixture({ profile: { ai_credits: 13 }, wallet }));
   if (url === "/v1/credits/canary-enrollment") return Promise.resolve({ status: "NOT_AVAILABLE" });
   if (url === "/v1/credits/catalog") return Promise.resolve(catalog);
   if (url === "/v1/credits/wallet") return Promise.resolve(wallet);
@@ -73,7 +75,7 @@ describe("unified billing account", () => {
     expect(screen.queryByText("20 credits")).not.toBeInTheDocument(); expect(state.post).not.toHaveBeenCalled();
   });
   it.each([undefined, null, -1, "3", 1.5])("does not invent a wallet balance for malformed data %j", async (available_credits) => {
-    state.get.mockImplementation((url: string) => url === "/v1/credits/wallet" ? Promise.resolve({ ...wallet, available_credits }) : read(url));
+    state.get.mockImplementation((url: string) => url === "/auth/bootstrap" ? Promise.resolve(ownedBootstrapFixture({ profile: { ai_credits: 13 }, wallet: { ...wallet, available_credits } })) : read(url));
     render(<BillingPage />); await screen.findByText(/Your credit balance is unavailable/); expect(screen.queryByText("Available credits")).not.toBeInTheDocument();
   });
   it("never falls back to selling old packs when unified pricing is unavailable", async () => {
@@ -256,7 +258,8 @@ it("refreshes only the pass eligibility after an explicitly confirmed participat
   fireEvent.click(screen.getByRole("button", { name: "Confirm participation" }));
   await waitFor(() => expect(screen.getByRole("button", { name: "Review Starter pass" })).toBeEnabled());
   expect(state.get.mock.calls.filter(([url]) => url === "/v1/credits/catalog")).toHaveLength(2);
-  expect(state.get.mock.calls.filter(([url]) => url === "/v1/credits/wallet")).toHaveLength(1);
+  expect(state.get.mock.calls.some(([url]) => url === "/v1/credits/wallet")).toBe(false);
+  expect(state.get.mock.calls.filter(([url]) => url === "/auth/bootstrap")).toHaveLength(1);
   expect(state.get.mock.calls.filter(([url]) => url === "/v1/credits/history?limit=20")).toHaveLength(1);
   expect(state.post.mock.calls.map(([url]) => url)).toEqual(["/v1/credits/canary-enrollment"]);
   noCheckout();
