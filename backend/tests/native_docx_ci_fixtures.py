@@ -49,6 +49,42 @@ def _complete_corpus(report: dict, contracts: list) -> tuple[list, list]:
     return corpus, layouts
 
 
+def _report_policy(report: dict) -> str:
+    """Select one known profile from its complete corpus and source binding.
+
+    A renderer-supplied digest cannot select policy. Old reports retain the
+    legacy default only when their complete source map is genuinely legacy;
+    removing the source corpus cannot downgrade the new parser/runtime.
+    """
+    from infra.gcp import document_candidate as legacy
+
+    if "pdf_reading_order_corpus" in report:
+        from infra.gcp import document_source_candidate as profile
+        from infra.gcp.document_source_payload import EXTRA_CASES
+
+        rows = report["pdf_reading_order_corpus"]
+        if (type(rows) is not list or len(rows) != len(EXTRA_CASES)
+                or any(type(row) is not dict or set(row) != {"case", "passed"}
+                       or row.get("passed") is not True for row in rows)
+                or tuple(row["case"] for row in rows) != EXTRA_CASES):
+            raise AssertionError("The complete known source-profile corpus is required.")
+        path, expected = engine.ROOT / profile.POLICY_PATH, profile.POLICY_SHA256
+    else:
+        path, expected = engine.ROOT / legacy.POLICY_PATH, legacy.POLICY_SHA256
+    if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= 256 * 1024:
+        raise AssertionError("The known native test policy is unavailable.")
+    raw = path.read_bytes()
+    if hashlib.sha256(raw).hexdigest() != expected:
+        raise AssertionError("The known native test policy changed.")
+    if "pdf_reading_order_corpus" in report:
+        sources = profile.validate_policy(raw, root=engine.ROOT)
+    else:
+        sources = json.loads(raw).get("source_sha256")
+    if type(sources) is not dict or sources != report.get("source_sha256"):
+        raise AssertionError("The native report source map does not match its known policy profile.")
+    return expected
+
+
 @lru_cache(maxsize=1)
 def _runtime(report_path: str) -> dict:
     if not report_path:
@@ -69,7 +105,7 @@ def _runtime(report_path: str) -> dict:
     fit = next(row for row in layouts if row["case"] == "styled_multipage_fit")
     identity = fit["layout"]["renderer"]
     image = report["image_id"]
-    policy = hashlib.sha256((engine.ROOT / "infra/document-processing/policy.json").read_bytes()).hexdigest()
+    policy = _report_policy(report)
     if (identity["image_digest"] != "local-document-image@" + image
             or identity["policy_sha256"] != policy):
         raise AssertionError("The observed renderer identity is not joined to the native image/policy.")
