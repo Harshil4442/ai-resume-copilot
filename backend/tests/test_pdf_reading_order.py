@@ -306,6 +306,67 @@ def test_failed_anchor_geometry_never_returns_mixed_plaintext(monkeypatch):
         parsing.extract_text_and_sections_from_pdf(source)
 
 
+@pytest.mark.parametrize("heading_alignment", ["center", "right"])
+@pytest.mark.parametrize("body_alignment", ["left", "center", "right"])
+def test_heading_widths_do_not_invent_columns_in_one_aligned_body_flow(heading_alignment, body_alignment):
+    rows = [("PROFESSIONAL EXPERIENCE", "Harbor Labs 2020 - 2022"),
+            ("SKILLS", "Python, SQL, Docker"), ("EDUCATION", "North College 2015 - 2019")]
+    def draw(canvas):
+        for index, (heading, body) in enumerate(rows):
+            y = 740 - index * 100
+            canvas.setFont("Helvetica-Bold", 14)
+            (canvas.drawCentredString if heading_alignment == "center" else canvas.drawRightString)(
+                306 if heading_alignment == "center" else 564, y, heading)
+            canvas.setFont("Helvetica", 11)
+            draw_body = {"left": canvas.drawString, "center": canvas.drawCentredString,
+                         "right": canvas.drawRightString}[body_alignment]
+            x = {"left": 48, "center": 306, "right": 564}[body_alignment]
+            draw_body(x, y - 24, body)
+            draw_body(x, y - 42, "Recorded verified work and results.")
+    raw, sections = parsing.extract_text_and_sections_from_pdf(_document(draw))
+    assert raw.splitlines() == [value for heading, body in rows
+        for value in (heading, body, "Recorded verified work and results.")]
+    assert sections == {name: body + "\nRecorded verified work and results."
+        for name, (_, body) in zip(("experience", "skills", "education"), rows, strict=True)}
+
+
+@pytest.mark.parametrize("heading_alignment", ["center", "right"])
+def test_aligned_global_headings_do_not_exempt_competing_body_streams(monkeypatch, heading_alignment):
+    def draw(canvas):
+        for y, heading in ((740, "PROFESSIONAL EXPERIENCE"), (600, "SKILLS"), (460, "EDUCATION")):
+            canvas.setFont("Helvetica-Bold", 14)
+            (canvas.drawCentredString if heading_alignment == "center" else canvas.drawRightString)(
+                306 if heading_alignment == "center" else 564, y, heading)
+            for offset in (24, 42):
+                _line(canvas, 48, y - offset, "Left independent paragraph.", size=10)
+                _line(canvas, 330, y - offset, "Right independent paragraph.", size=10)
+    monkeypatch.setattr(pdfplumber.page.Page, "extract_text", lambda *_args, **_kw: pytest.fail("No mixed plaintext fallback"))
+    with pytest.raises(parsing.PDFReadingOrderError, match="independent-column"):
+        parsing.extract_text_and_sections_from_pdf(_document(draw))
+
+
+@pytest.mark.parametrize("outside_header_above_table", [False, True])
+def test_column_local_table_cannot_erase_an_outside_independent_stream(monkeypatch, outside_header_above_table):
+    def draw(canvas):
+        _line(canvas, 48, 750 if outside_header_above_table else 690, "SUMMARY", "Helvetica-Bold", 14)
+        _line(canvas, 48, 670, "Python engineer with verified work.", size=10)
+        _line(canvas, 48, 650, "Recorded distinct measured results.", size=10)
+        _line(canvas, 48, 550 if outside_header_above_table else 620, "EXPERIENCE", "Helvetica-Bold", 14)
+        _line(canvas, 48, 530 if outside_header_above_table else 600, "Harbor Labs 2020 - 2022", size=10)
+        canvas.rect(325, 570, 250, 140)
+        canvas.line(445, 570, 445, 710)
+        canvas.line(325, 640, 575, 640)
+        for x, y, heading, body in ((335, 690, "SKILLS", "Python, SQL"),
+                                   (455, 690, "EDUCATION", "North College"),
+                                   (335, 620, "PROJECTS", "Built API tools"),
+                                   (455, 620, "AWARDS", "Won 2 awards")):
+            _line(canvas, x, y, heading, "Helvetica-Bold", 11)
+            _line(canvas, x, y - 20, body, size=10)
+    monkeypatch.setattr(pdfplumber.page.Page, "extract_text", lambda *_args, **_kw: pytest.fail("No mixed plaintext fallback"))
+    with pytest.raises(parsing.PDFReadingOrderError, match="independent-column"):
+        parsing.extract_text_and_sections_from_pdf(_document(draw))
+
+
 def test_shared_contact_and_single_spanning_section_before_columns_remain_readable():
     def draw(canvas):
         _columns(canvas, "row-painted")

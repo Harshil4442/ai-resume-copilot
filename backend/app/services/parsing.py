@@ -115,6 +115,33 @@ def _pdf_header_anchors(headers: list[list[dict]], median_size: float) -> list[l
     return anchors
 
 
+def _pdf_single_aligned_heading_flow(headers: list[list[dict]], words: list[dict], median_size: float) -> bool | None:
+    """Different heading widths do not create columns in a single body stream.
+
+    Centered/right-aligned headings share a geometric alignment even though
+    their left edges differ. Require their body chunks to share one horizontal
+    interval too; actual competing body streams cannot use this exemption.
+    """
+    bounds = [(min(word["x0"] for word in header), max(word["x1"] for word in header)) for header in headers]
+    tolerance = max(2.0, min(5.0, median_size * .3))
+    centers = [(left + right) / 2 for left, right in bounds]
+    rights = [right for _, right in bounds]
+    if min(max(centers) - min(centers), max(rights) - min(rights)) > tolerance:
+        return None
+    heading_words = {id(word) for header in headers for word in header}
+    top = min(word["top"] for header in headers for word in header)
+    body = [word for word in words if id(word) not in heading_words and word["top"] >= top]
+    intervals = []
+    for row in _pdf_physical_rows(body, median_size):
+        chunks: list[list[dict]] = []
+        for word in sorted(row, key=lambda item: item["x0"]):
+            if not chunks or word["x0"] - chunks[-1][-1]["x1"] >= max(12, median_size):
+                chunks.append([])
+            chunks[-1].append(word)
+        intervals.extend((min(word["x0"] for word in chunk), max(word["x1"] for word in chunk)) for chunk in chunks)
+    return bool(intervals) and max(left for left, _ in intervals) < min(right for _, right in intervals)
+
+
 def _pdf_reading_groups(page, words: list[dict], median_size: float) -> list[list[dict]]:
     """Split only demonstrably independent two-column sections, never date rows.
 
@@ -148,6 +175,12 @@ def _pdf_reading_groups(page, words: list[dict], median_size: float) -> list[lis
                  min(word["x0"] for word in anchors[-1][0]) -
                  min(word["x0"] for word in anchors[0][0]) >= max(72, median_size * 8))
     paired_rows = [headers for headers in header_rows if len(headers) >= 2]
+    if not paired_rows and len(anchors) >= 2:
+        single_flow = _pdf_single_aligned_heading_flow(all_headers, words, median_size)
+        if single_flow is True:
+            return [words]
+        if single_flow is False:
+            raise PDFReadingOrderError("This independent-column PDF body needs manual review; use the original or an editable source.")
     if not paired_rows and not separated:
         return [words]
 
@@ -177,6 +210,12 @@ def _pdf_reading_groups(page, words: list[dict], median_size: float) -> list[lis
         shared_headers = set()
         for table in tables:
             if len(table.rows) < 2 or len(table.columns) < 2:
+                continue
+            # A column-local table must not erase an independent stream beside
+            # it. Shared row semantics apply only if its entire vertical band has
+            # no competing outside text, including text from an earlier heading.
+            if any(word["top"] < table.bbox[3] and word["bottom"] > table.bbox[1]
+                   and (word["x0"] < table.bbox[0] or word["x1"] > table.bbox[2]) for word in words):
                 continue
             inside = [header for header in all_headers
                       if table.bbox[0] <= min(word["x0"] for word in header)
