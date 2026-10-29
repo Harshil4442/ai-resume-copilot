@@ -1,7 +1,7 @@
 """Strict limits/Redis dispatch with an inert Lua endpoint, not a Redis service.
 
 The installed RedisStorage and its exact TLS/retry configuration are real. Its
-TIME/Lua endpoints are explicitly intercepted, so these tests do not establish
+atomic Lua endpoint is explicitly intercepted, so these tests do not establish
 provider atomicity, runtime reachability or Redis command allowance.
 """
 from __future__ import annotations
@@ -31,19 +31,17 @@ from tests.test_candidate_production_factory import PASSWORD, configured, regist
 def inert_shared_redis(monkeypatch, *, project="local-proof", budget=40):
     storage = RedisStorage("rediss://synthetic.invalid:6379/0", socket_timeout=1.0,
         socket_connect_timeout=1.0, retry=Retry(NoBackoff(), 0), retry_on_timeout=False)
-    storage.storage.time = Mock(return_value=(1_800_000_000, 123456))
     state = SimpleNamespace(storage=storage, calls=[], entries={}, grants=0, lock=Lock())
-    def acquire(keys, args):
+    def acquire(_storage, key, amount):
         with state.lock:
-            state.calls.append((keys, args))
-            assert len(keys) == 1 and args[2:] == [60, 1]
-            count = state.entries.get(keys[0], 0)
-            if count >= args[1]:
+            state.calls.append(([key], [amount]))
+            count = state.entries.get(key, 0)
+            if count >= amount:
                 return 0
-            state.entries[keys[0]] = count + 1
+            state.entries[key] = count + 1
             state.grants += 1
             return 1
-    storage.lua_acquire_moving_window = acquire
+    monkeypatch.setattr(admission, "_acquire", acquire)
     monkeypatch.setattr(admission, "_shared_storage", lambda: storage)
     monkeypatch.setenv("CANDIDATE_METADATA_ADMISSION_ENABLED", "true")
     monkeypatch.setenv("CANDIDATE_METADATA_CALLS_PER_MINUTE", str(budget))
@@ -68,7 +66,7 @@ def test_atomic_script_uses_one_project_namespace_fixed_one_cost_and_server_time
         admission.before_metadata_rpc("local-proof")
     assert state.grants == 40 and len(state.calls) == 41
     assert len({row[0][0] for row in state.calls}) == 1
-    assert state.calls[0][1] == [1_800_000_000.123456, 40, 60, 1]
+    assert state.calls[0][1] == [40]
     assert "local-proof" in state.calls[0][0][0]
 
 
@@ -108,37 +106,31 @@ def test_missing_or_unreviewed_budget_never_reaches_storage(monkeypatch, value):
 
 @pytest.mark.parametrize("ack", [None, True, False, -1, 2, "1", b"1", {}])
 def test_unknown_lua_ack_is_not_a_grant_or_automatic_retry(monkeypatch, ack):
-    state = inert_shared_redis(monkeypatch)
+    inert_shared_redis(monkeypatch)
     execute = Mock(return_value=ack)
-    state.storage.lua_acquire_moving_window = execute
+    monkeypatch.setattr(admission, "_acquire", execute)
     with pytest.raises(MetadataAdmissionUnavailable):
         admission.before_metadata_rpc("local-proof")
     execute.assert_called_once()
 
 
-@pytest.mark.parametrize("stage", ["time", "script"])
-def test_unknown_storage_failure_is_fixed_private_and_never_retried(monkeypatch, stage):
-    state = inert_shared_redis(monkeypatch)
+def test_unknown_storage_failure_is_fixed_private_and_never_retried(monkeypatch):
+    inert_shared_redis(monkeypatch)
     failure = Mock(side_effect=RedisConnectionError("synthetic-untrusted-provider-detail"))
-    if stage == "time":
-        state.storage.storage.time = failure
-    else:
-        state.storage.lua_acquire_moving_window = failure
+    monkeypatch.setattr(admission, "_acquire", failure)
     with pytest.raises(MetadataAdmissionUnavailable) as caught:
         admission.before_metadata_rpc("local-proof")
     failure.assert_called_once()
     assert "provider-detail" not in str(caught.value)
 
 
-@pytest.mark.parametrize("changed", ["memory", "retry", "timeout", "tls", "certificate", "hostname", "project", "clock"])
+@pytest.mark.parametrize("changed", ["memory", "retry", "timeout", "tls", "certificate", "hostname", "project"])
 def test_unbounded_or_nonshared_configuration_is_not_a_fallback(monkeypatch, changed):
     state = inert_shared_redis(monkeypatch)
     if changed == "memory":
         monkeypatch.setattr(admission, "_shared_storage", lambda: MemoryStorage())
     elif changed == "project":
         monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "other-proof")
-    elif changed == "clock":
-        state.storage.storage.time.return_value = (1_800_000_000, 1_000_000)
     elif changed == "tls":
         from redis.connection import Connection
         state.storage.storage.connection_pool.connection_class = Connection
@@ -153,6 +145,17 @@ def test_unbounded_or_nonshared_configuration_is_not_a_fallback(monkeypatch, cha
     with pytest.raises(MetadataAdmissionUnavailable):
         admission.before_metadata_rpc("local-proof")
     assert not state.calls
+
+
+def test_atomic_script_preserves_exact_installed_body_and_refuses_unreviewed_dependency(monkeypatch):
+    body = RedisStorage.SCRIPT_ACQUIRE_MOVING_WINDOW
+    script = admission._atomic_window_script()
+    assert script.count(b"redis.call('TIME')") == 1
+    assert body in script
+    assert b"if result == false then return 0 end" in script
+    monkeypatch.setattr(RedisStorage, "SCRIPT_ACQUIRE_MOVING_WINDOW", body + b"\n")
+    with pytest.raises(MetadataAdmissionUnavailable):
+        admission._atomic_window_script()
 
 
 @pytest.mark.parametrize("error,status,retry", [(MetadataCapacityUnavailable(), 429, "60"), (MetadataAdmissionUnavailable(), 503, "30")])

@@ -60,8 +60,12 @@ It reserves exactly one unit on one fixed project key. Budget changes cannot
 create another counter namespace. Explicit
 `CANDIDATE_METADATA_CALLS_PER_MINUTE` must be between 1 and the reviewed source cap
 of 40; absent, malformed or larger values refuse admission. Redis server TIME
-supplies the common clock. Unlike the library's permissive Boolean coercion, the
-adapter accepts only an exact integer 0/1 script acknowledgement. Unknown outcomes
+executes inside the same atomic Lua invocation as the exact SHA-pinned installed
+moving-window body. No client-supplied timestamp can become stale during a pause.
+The installed body returns Lua true/false (RESP2 integer 1/nil); a narrow wrapper
+converts those definite results to integer 1/0. Unlike the library's permissive
+Boolean coercion, the adapter accepts only that exact integer acknowledgement.
+An unreviewed installed script checksum refuses admission. Unknown outcomes
 are never retried or refunded. No identity or successful admission survives the
 call. Existing scope cache hits consume no new quota because they make no RPC.
 
@@ -82,13 +86,16 @@ other metadata use. Even the no-other-traffic 30-day ceiling is only 864,000
 ordinary validations, below a one-million-request monthly target. It is not a
 10,000-user activation qualification. Inventory all reachable
 callers and old revisions first: an unpaced old revision can still consume the
-shared provider quota. Redis TIME plus Lua normally adds two commands per physical
-metadata call, with extra definite-NOSCRIPT loading on first use; do not assume this
-fits the current free provider allowance. Redis command allowance, concurrent-window behavior,
+shared provider quota. One Lua dispatch now includes server TIME, with extra
+definite-NOSCRIPT loading on first use; the provider may meter commands executed
+inside scripts separately. Do not assume this fits the current free provider
+allowance. Redis command allowance, concurrent-window behavior,
 late refusals, realistic page bursts and aggregate traffic must be measured.
 Consolidating genuinely related owned reads within one authenticated HTTP request
 may reduce demand; sharing a successful identity across separate requests may not.
 If the measured budget cannot support intended demand, keep activation gated.
+Active analysis polling and browser-companion status polling must be included in
+that journey-level demand; those callers alone may exhaust a 40-unit budget.
 
 ## Verification scope
 
@@ -98,6 +105,15 @@ brackets per ordinary validation, unchanged dependent GCS/session checks,
 replacement/partial-list refusal, sticky failure, abort invalidation and preserved
 legacy/lifecycle behavior. They do not prove IAM, provider consistency under a
 destructive restore, real quota headroom, live latency or deployment compatibility.
+The separate `test_native_metadata_admission_redis.py` suite starts and terminates
+only its own isolated loopback TLS/RESP2 Redis process. It proves the installed
+body's nil denial, the integer wrapper's typed capacity refusal, actual concurrent
+40-of-80 admission, and paused/out-of-order clock behavior. It never accepts a
+provider/shared URI. Set `HIREWIZ_OWNED_REDIS_SERVER` to a TLS-enabled executable;
+the mandatory compatibility environment refuses a missing executable. Local proof
+used official Redis 7.2.7 source, built privately with the existing OpenSSL tooling.
+It is not an Upstash TIME/EVAL, command-allowance or runtime-service-account proof.
+The earlier split-TIME/inert-only pacing commit is superseded and must not activate.
 Any frozen native/source compatibility change requires independent review and
 the normal immutable release acceptance; do not silently repin an older protocol.
 
