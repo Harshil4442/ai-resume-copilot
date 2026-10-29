@@ -33,6 +33,7 @@ import fresh_cutover_writes as writes
 import rolling_native as native
 import rolling_release as rolling
 import schema25_coordinator_pause as coordinator
+import schema25_migration_metadata as migration_metadata
 from browser_schema19_release import PriorSource, bootstrap_identity, verify_permissions
 
 from scripts import unified_credit_schema25_contract as contract
@@ -363,12 +364,15 @@ def migration(
                 )
                 started = journal.read("schema25-migration.started")
                 with engine.connect() as connection, connection.begin():
-                    result = step.upgrade_transaction(
-                        connection,
-                        identity,
-                        root=boundary.root,
-                        flags=flags,
-                    )
+                    with migration_metadata.initialized_metadata(
+                        boundary.root, boundary.observer, plan.runtime_secret
+                    ):
+                        result = step.upgrade_transaction(
+                            connection,
+                            identity,
+                            root=boundary.root,
+                            flags=flags,
+                        )
                     rolling.need(
                         result["retained_sha256"] == before_hash
                         and result["schema_acl"] == before_acl,
@@ -750,6 +754,9 @@ def coordinator_main(args) -> None:
 # arbitrary message never becomes an operator-visible diagnostic.
 SAFE_REFUSAL_CODES = frozenset(
     {
+        "schema25_metadata_fresh_process_required",
+        "schema25_metadata_source_changed",
+        "schema25_metadata_runtime_connection_refused",
         "rolling_active_traffic_not_prior_revision",
         "rolling_candidate_policy_numeric_refs_required",
         "rolling_candidate_policy_pair_invalid",

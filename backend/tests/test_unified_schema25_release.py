@@ -302,6 +302,7 @@ def test_lost25_ddl_acknowledgement_is_reconciled_without_replaying_or_adopting_
             raise reviewed.rolling.RollingDenied("inert_fresh_configuration_changed")
 
     monkeypatch.setattr(reviewed.NativeSchema25Boundary, "verify_global", global_gate)
+    monkeypatch.setattr(reviewed.migration_metadata, "initialized_metadata", lambda *args: transaction())
     def coordinator_gate(*args):
         if coordinator_reopened:
             raise reviewed.rolling.RollingDenied("schema25_coordinator_admission_not_closed")

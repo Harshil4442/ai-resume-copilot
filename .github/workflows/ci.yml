@@ -113,7 +113,9 @@ jobs:
           tests/test_unified_schema25_source.py tests/test_unified_schema25_contract_postgres.py
           tests/test_unified_schema25_release.py tests/test_unified_schema25_step_postgres.py
           tests/test_schema25_coordinator_pause.py tests/test_schema25_maintenance.py
+          tests/test_schema25_migration_metadata.py tests/test_schema25_migration_recovery.py
           ../infra/gcp/unified_credit_schema25_release.py ../infra/gcp/schema25_coordinator_pause.py ../infra/gcp/schema25_maintenance.py
+          ../infra/gcp/schema25_migration_metadata.py ../infra/gcp/schema25_migration_recovery.py
           tests/test_expense_budget.py tests/test_expense_budget_postgres.py
           tests/test_migration_logging_postgres.py
           tests/test_fresh_user_no_ai_journey.py
@@ -186,6 +188,7 @@ jobs:
           scripts/materialize_quality_sources.py
           scripts/unified_credit_schema25_contract.py scripts/unified_credit_schema25_step.py
           ../infra/gcp/unified_credit_schema25_release.py ../infra/gcp/schema25_coordinator_pause.py ../infra/gcp/schema25_maintenance.py
+          ../infra/gcp/schema25_migration_metadata.py ../infra/gcp/schema25_migration_recovery.py
           ../infra/gcp/email_password_schema21_release.py
       - name: Compile backend
         run: backend/.venv/bin/python -m compileall -q backend/app
