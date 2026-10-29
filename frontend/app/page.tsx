@@ -192,9 +192,10 @@ export default function HomePage() {
               </Link>
             </div>
             <p className="mx-auto mt-5 max-w-[900px] text-center text-xs leading-5 text-muted-foreground">
-              Discovery pilot: 20 reviewed employer origins. Candidate-reviewed
-              application assistance for Razorpay’s Greenhouse portal. Availability
-              and supported actions are shown before you approve.
+              Limited pilot: 20 reviewed employer origins and candidate-reviewed
+              assistance for Razorpay’s Greenhouse portal. AI generation and credit
+              purchases are currently unavailable. Supported actions are shown
+              before you approve.
             </p>
           </FadeIn>
           <div className={styles.heroVisual}>
@@ -440,9 +441,9 @@ export default function HomePage() {
             A clearer path starts here.
           </h2>
           <p>
-            Create your free account and start with 50 analysis units.
-            <br className={styles.desktopBreak} /> Choose a finite prepaid pack
-            when you’re ready.
+            Create your free account to explore the limited pilot.
+            <br className={styles.desktopBreak} /> AI generation and credit
+            purchases are currently unavailable.
           </p>
           <Link href="/register" className="button-primary">
             Build your workspace <ArrowUpRight size={17} />
