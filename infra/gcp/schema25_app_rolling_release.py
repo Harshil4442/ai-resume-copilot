@@ -16,7 +16,7 @@ import stat
 import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Literal, cast
 
 sys.path[:0] = [str(Path(__file__).resolve().parent), str(Path(__file__).resolve().parents[2] / "backend")]
 import rolling_native as native  # noqa: E402
@@ -31,6 +31,7 @@ from browser_schema19_release import (  # noqa: E402
 )
 
 from scripts import schema25_app_release_contract as contract  # noqa: E402
+from scripts import schema25_app_release_contract_v2 as contract_v2  # noqa: E402
 
 SERVICES = rolling.release.SERVICES
 PILOT_FLAGS = frozenset({"RESUME_DIRECT_UPLOAD_ENABLED", "EMPLOYER_DISCOVERY_ENABLED",
@@ -41,6 +42,9 @@ CLOSED_FLAGS = tuple(sorted(set(initial.OFF) - PILOT_FLAGS))
 PRIOR = PriorSource(contract.PRIOR_RELEASE,
     "sha256:956735cd476c1159397ef21143b497f0b4d40df4d47f6b5d54cd8818a544eafa",
     "45473be6-d177-49e1-a8a3-7970df8271db", 40784200833)
+PRIOR_V2 = PriorSource(contract_v2.PRIOR_RELEASE,
+    "sha256:acfb2c50c96cdcd8cc1823217e030128b92ae809c3b33eabc9b60fcc264b7645",
+    "3da6ce3e-b592-4955-9027-f1e64663d259", 40896668321)
 EXTERNAL_SERVICES = ("hirewiz-document-inspector", "hirewiz-native-tex", coordinator.SERVICE)
 
 
@@ -64,8 +68,8 @@ class ReachablePin:
 
 @dataclass(frozen=True)
 class App25Plan(rolling.RollingPlan):
-    schema_contract: Literal["hirewiz_schema25_app_rolling_v1"] = contract.CONTRACT
-    database_schema: Literal["20261028_0025"] = contract.schema25.SCHEMA
+    schema_contract: Literal["hirewiz_schema25_app_rolling_v1"] = cast(Literal["hirewiz_schema25_app_rolling_v1"], contract.CONTRACT)
+    database_schema: Literal["20261028_0025"] = cast(Literal["20261028_0025"], contract.schema25.SCHEMA)
     prior_source: PriorSource = PRIOR
     compatibility_sha256: str = ""
     resources: tuple[ResourcePin, ...] = ()
@@ -82,23 +86,55 @@ class App25Plan(rolling.RollingPlan):
              and self.candidate_policies is None
              and rolling.HASH.fullmatch(self.compatibility_sha256)
              and all(pin.prior_release == PRIOR.release for pin in self.services), "plan_invalid")
-        expected = {(kind, name) for kind, names in maintenance.RESOURCE_NAMES.items() for name in names}
-        expected |= {("service", name) for name in EXTERNAL_SERVICES}
-        need({(row.kind, row.name) for row in self.resources} == expected
-             and len(self.resources) == len(expected)
-             and all(rolling.HASH.fullmatch(row.fingerprint) for row in self.resources), "resource_pins_invalid")
-        need(len(self.protected_liabilities) <= 256
-             and len({row[0] for row in self.protected_liabilities}) == len(self.protected_liabilities)
-             and all(re.fullmatch(r"[A-Za-z0-9_:-]{1,64}", identity) and rolling.HASH.fullmatch(digest)
-                     and type(amount) is int and amount > 0
-                     for identity, digest, amount in self.protected_liabilities), "liability_pins_invalid")
-        reachable = {(pin.service, row["revision"]) for pin in self.services for row in pin.traffic}
-        need(3 <= len(self.reachable_revisions) <= 60
-             and {(row.service, row.revision) for row in self.reachable_revisions} == reachable
-             and len(self.reachable_revisions) == len(reachable)
-             and all(rolling.short_revision(row.revision, row.service) == row.revision
-                     and rolling.HASH.fullmatch(row.template_sha256) for row in self.reachable_revisions),
-             "reachable_prior_pins_invalid")
+        validate_extensions(self)
+
+
+def validate_extensions(plan):
+    expected = {(kind, name) for kind, names in maintenance.RESOURCE_NAMES.items() for name in names}
+    expected |= {("service", name) for name in EXTERNAL_SERVICES}
+    need({(row.kind, row.name) for row in plan.resources} == expected
+         and len(plan.resources) == len(expected)
+         and all(rolling.HASH.fullmatch(row.fingerprint) for row in plan.resources), "resource_pins_invalid")
+    need(len(plan.protected_liabilities) <= 256
+         and len({row[0] for row in plan.protected_liabilities}) == len(plan.protected_liabilities)
+         and all(re.fullmatch(r"[A-Za-z0-9_:-]{1,64}", identity) and rolling.HASH.fullmatch(digest)
+                 and type(amount) is int and amount > 0
+                 for identity, digest, amount in plan.protected_liabilities), "liability_pins_invalid")
+    reachable = {(pin.service, row["revision"]) for pin in plan.services for row in pin.traffic}
+    need(3 <= len(plan.reachable_revisions) <= 60
+         and {(row.service, row.revision) for row in plan.reachable_revisions} == reachable
+         and len(plan.reachable_revisions) == len(reachable)
+         and all(rolling.short_revision(row.revision, row.service) == row.revision
+                 and rolling.HASH.fullmatch(row.template_sha256) for row in plan.reachable_revisions),
+         "reachable_prior_pins_invalid")
+
+
+@dataclass(frozen=True)
+class App25V2Plan(rolling.RollingPlan):
+    schema_contract: Literal["hirewiz_schema25_app_rolling_v2"] = "hirewiz_schema25_app_rolling_v2"
+    database_schema: Literal["20261028_0025"] = "20261028_0025"
+    prior_source: PriorSource = PRIOR_V2
+    compatibility_sha256: str = ""
+    resources: tuple[ResourcePin, ...] = ()
+    protected_liabilities: tuple[tuple[str, str, int], ...] = ()
+    reachable_revisions: tuple[ReachablePin, ...] = ()
+
+    def disabled_flags(self):
+        return CLOSED_FLAGS
+
+    def validate(self):
+        super().validate()
+        need(type(self) is App25V2Plan and self.schema_contract == contract_v2.CONTRACT
+             and self.database_schema == contract.schema25.SCHEMA and self.prior_source == PRIOR_V2
+             and self.candidate_policies is None and rolling.HASH.fullmatch(self.compatibility_sha256)
+             and all(pin.prior_release == PRIOR_V2.release for pin in self.services), "v2_plan_invalid")
+        validate_extensions(self)
+
+
+def v2_flags(template):
+    env = rolling.environment(template)
+    need(all(flag not in env or env[flag] == {"name": flag, "value": "false"}
+             for flag in contract_v2.STAGE5_FLAGS), "v2_stage5_activation_outside_release")
 
 
 def observed_flags(template, service):
@@ -110,15 +146,15 @@ def observed_flags(template, service):
              "pilot_or_closed_flag_changed")
 
 
-def reachable_pin(service, revision, value, baseline=None):
+def reachable_pin(service, revision, value, baseline=None, *, prior_source=PRIOR):
     """No existing tagged URL can hide an unknown source or paid/AI admission."""
     need(value is not None and value.get("name") == rolling.PARENT + "/services/" + service + "/revisions/" + revision
          and any(row.get("type") == "Ready" and row.get("state") == "CONDITION_SUCCEEDED"
                  for row in value.get("conditions", [])), "reachable_prior_revision_unready")
     env = rolling.environment(value)
     need(value.get("serviceAccount") == rolling.RUNTIME
-         and env.get("APP_RELEASE") == {"name": "APP_RELEASE", "value": PRIOR.release}
-         and value["containers"][0].get("image") == f"{rolling.release.REGION}-docker.pkg.dev/{rolling.release.PROJECT}/cloud-run-source-deploy/hirewiz@{PRIOR.image_digest}"
+         and env.get("APP_RELEASE") == {"name": "APP_RELEASE", "value": prior_source.release}
+         and value["containers"][0].get("image") == f"{rolling.release.REGION}-docker.pkg.dev/{rolling.release.PROJECT}/cloud-run-source-deploy/hirewiz@{prior_source.image_digest}"
          and all(env.get(name, {"value": "false"}).get("value") == "false" for name in CLOSED_FLAGS),
          "reachable_prior_source_or_admission_changed")
     template = {key: item for key, item in value.items() if key not in maintenance.REVISION_READ_OUTPUTS}
@@ -141,6 +177,8 @@ def reachable_pin(service, revision, value, baseline=None):
 def candidate_template(plan, pin, current):
     """Reuse the standard stage body, then prove its *entire* permitted diff."""
     observed_flags(current["template"], pin.service)
+    if type(plan) is App25V2Plan:
+        v2_flags(current["template"])
     body = rolling.stage_body(plan, pin, current)
     expected = copy.deepcopy(current["template"])
     expected["revision"] = plan.revision(pin.service)
@@ -208,19 +246,25 @@ def compatibility_source(root):
 
 class NativeApp25Boundary(native.NativeRollingBoundary):
     """CLI constructs this exact native class; no provider/plugin injection."""
+    plan_type: type[rolling.RollingPlan] = App25Plan
+    prior_source = PRIOR
     def __init__(self, root):
         super().__init__(root)
         self.observer = initial.Source25Boundary(self.root)
 
     def _compatibility(self, plan):
-        need(compatibility_source(self.root) == plan.compatibility_sha256, "compatibility_source_changed")
+        fingerprint = (compatibility_source(self.root) if self.plan_type is App25Plan else
+            contract_v2.source_fingerprint(self.root, initial.prior_app_files(self.root, self.prior_source.release)))
+        need(fingerprint == plan.compatibility_sha256, "compatibility_source_changed")
         run = rolling.release._json(self.observer._command("gh", "run", "view", str(plan.ci_run_id),
             "--repo", rolling.release.REPOSITORY, "--json", "jobs"))
         jobs = [row for row in run.get("jobs", []) if row.get("name") == "backend"]
-        steps = [step for job in jobs for step in job.get("steps", [])
-                 if step.get("name") == contract.COMPATIBILITY_STEP]
-        need(len(jobs) == len(steps) == 1 and steps[0].get("status") == "completed"
-             and steps[0].get("conclusion") == "success", "compatibility_rehearsal_not_successful")
+        names = ((contract.COMPATIBILITY_STEP,) if self.plan_type is App25Plan else
+                 (contract_v2.COMPATIBILITY_STEP, contract_v2.PROTOCOL_STEP))
+        steps = [step for job in jobs for step in job.get("steps", []) if step.get("name") in names]
+        need(len(jobs) == 1 and len(steps) == len(names) and {step.get("name") for step in steps} == set(names)
+             and all(step.get("status") == "completed" and step.get("conclusion") == "success" for step in steps),
+             "compatibility_rehearsal_not_successful")
 
     def _database(self, runtime_secret, observer_secret, retired_secret, *, expected=None):
         """Normal retained credential manager; native TLS/OID/roles and read-only SQL."""
@@ -343,14 +387,21 @@ class NativeApp25Boundary(native.NativeRollingBoundary):
             rolling.sha({key: revision.get(key) for key in keys}), keys,
             tuple(rolling.pinned_traffic(name, current)), tuple(sorted(secrets, key=lambda row: row.environment_name)))
         rolling._ready(current, pin)
-        need(pin.prior_release == PRIOR.release and revision["containers"][0]["image"].endswith("@" + PRIOR.image_digest),
+        need(pin.prior_release == self.prior_source.release and revision["containers"][0]["image"].endswith("@" + self.prior_source.image_digest),
              "actual_prior_source_unqualified")
         return pin
 
     def _reachable(self, pins):
-        return tuple(reachable_pin(pin.service, name, self.revision(pin.service, name),
-                                   self.revision(pin.service, pin.prior_revision))
-            for pin in pins for name in sorted({row["revision"] for row in pin.traffic}))
+        result = []
+        for pin in pins:
+            for name in sorted({row["revision"] for row in pin.traffic}):
+                value = self.revision(pin.service, name)
+                if self.plan_type is App25V2Plan:
+                    need(value is not None, "reachable_prior_revision_unready")
+                    v2_flags(value)
+                result.append(reachable_pin(pin.service, name, value,
+                    self.revision(pin.service, pin.prior_revision), prior_source=self.prior_source))
+        return tuple(result)
 
     def capture_app(self, *, release, image_digest, build_id, ci_run_id, nonce,
                     observer_secret, retired_migration_secret, workers_release):
@@ -364,9 +415,10 @@ class NativeApp25Boundary(native.NativeRollingBoundary):
             refs["LLM_API_KEY"], env["LLM_MODEL"]["value"], env["LLM_API_BASE"]["value"])
         account = self.observer._cloud("iam", "service-accounts", "describe", rolling.RUNTIME)
         signature, liabilities = self._database(refs["DATABASE_URL"], observer_secret, retired_migration_secret)
-        plan = App25Plan(release, image_digest, build_id, ci_run_id, nonce, account["uniqueId"],
+        plan = self.plan_type(release, image_digest, build_id, ci_run_id, nonce, account["uniqueId"],
             refs["DATABASE_URL"], observer_secret, retired_migration_secret, workers_release,
-            signature, policies, pins, compatibility_sha256=compatibility_source(self.root),
+            signature, policies, pins, compatibility_sha256=(compatibility_source(self.root) if self.plan_type is App25Plan else
+                contract_v2.source_fingerprint(self.root, initial.prior_app_files(self.root, self.prior_source.release))),
             resources=self._resources(workers_release), protected_liabilities=liabilities,
             reachable_revisions=self._reachable(pins))
         plan.validate()
@@ -378,11 +430,11 @@ class NativeApp25Boundary(native.NativeRollingBoundary):
 
     def verify_global(self, plan):
         plan.validate()
-        need(type(plan) is App25Plan, "distinct_app_plan_required")
+        need(type(plan) is self.plan_type, "distinct_app_plan_required")
         self.observer.verify_source_image(release=plan.release, image_digest=plan.image_digest,
             build_id=plan.build_id, ci_run_id=plan.ci_run_id)
-        self.observer._verify_source_image_provenance(release=PRIOR.release, image_digest=PRIOR.image_digest,
-            build_id=PRIOR.build_id, ci_run_id=PRIOR.ci_run_id)
+        self.observer._verify_source_image_provenance(release=self.prior_source.release, image_digest=self.prior_source.image_digest,
+            build_id=self.prior_source.build_id, ci_run_id=self.prior_source.ci_run_id)
         self._compatibility(plan)
         self.observer.verify_policy_configuration(plan.policies)
         self._identity(plan.runtime_uid)
@@ -398,7 +450,7 @@ class NativeApp25Boundary(native.NativeRollingBoundary):
                  and rolling.static_sha(current) == pin.static_sha256, "identity_or_static_configuration_changed")
             rolling._old_revision(self, pin)
             prior = self.revision(pin.service, pin.prior_revision)
-            need(prior["containers"][0]["image"] == plan.image.split("@")[0] + "@" + PRIOR.image_digest,
+            need(prior["containers"][0]["image"] == plan.image.split("@")[0] + "@" + self.prior_source.image_digest,
                  "prior_image_changed")
             original = {key: prior.get(key) for key in pin.revision_keys}
             if rolling.template_sha(original, pin.service) != pin.template_sha256:
@@ -410,6 +462,8 @@ class NativeApp25Boundary(native.NativeRollingBoundary):
             current_phase(plan, pin, current, target)
             for template in (current["template"], prior):
                 observed_flags(template, pin.service)
+                if self.plan_type is App25V2Plan:
+                    v2_flags(template)
                 rolling.verify_policy_bindings(plan.policies, pin, template)
                 rows = rolling.environment(template)
                 for secret in pin.secrets:
@@ -434,6 +488,29 @@ def load(raw):
         pins.append(rolling.ServicePin(**row))
     value["services"] = tuple(pins)
     plan = App25Plan(**value)
+    plan.validate()
+    return plan
+
+
+class NativeApp25BoundaryV2(NativeApp25Boundary):
+    plan_type, prior_source = App25V2Plan, PRIOR_V2
+
+
+def load_v2(raw):
+    value = rolling.release._json(raw)
+    need(value.get("schema_contract") == contract_v2.CONTRACT, "distinct_app_plan_required")
+    value["policies"] = rolling.PolicyPins(**value["policies"])
+    value["prior_source"] = PriorSource(**value["prior_source"])
+    value["resources"] = tuple(ResourcePin(**row) for row in value["resources"])
+    value["reachable_revisions"] = tuple(ReachablePin(**row) for row in value["reachable_revisions"])
+    value["protected_liabilities"] = tuple(tuple(row) for row in value["protected_liabilities"])
+    pins = []
+    for row in value["services"]:
+        row["secrets"] = tuple(rolling.SecretPin(**secret) for secret in row["secrets"])
+        row["revision_keys"], row["traffic"] = tuple(row["revision_keys"]), tuple(row["traffic"])
+        pins.append(rolling.ServicePin(**row))
+    value["services"] = tuple(pins)
+    plan = App25V2Plan(**value)
     plan.validate()
     return plan
 
@@ -470,7 +547,7 @@ def rollback_app(plan, boundary, journal, *, reconcile=False):
     with journal.locked():
         if journal.read(ROLLBACK_INTENT) is None:
             need(not reconcile, "rollback_intent_required")
-            journal.record(ROLLBACK_INTENT, {"prior_release": PRIOR.release,
+            journal.record(ROLLBACK_INTENT, {"prior_release": plan.prior_source.release,
                 "candidate_health_required": False, "prior_health_required": True,
                 "forward_continuation_authorized": False, "replay_authorized": False})
         for name in (SERVICES[0], *reversed(SERVICES[1:])):
@@ -549,7 +626,7 @@ def rollback_app(plan, boundary, journal, *, reconcile=False):
 
 
 def execute(phase, plan, boundary, journal):
-    need(type(plan) is App25Plan and type(journal) is rolling.Journal
+    need(type(plan) in {App25Plan, App25V2Plan} and type(journal) is rolling.Journal
          and journal.plan_hash == rolling.sha(asdict(plan)), "original_app_plan_journal_required")
     plan.validate()
     if phase in {"stage", "advance"}:
@@ -579,14 +656,18 @@ def execute(phase, plan, boundary, journal):
     # Shared engine's legacy status strings never become false schema18/closed
     # queue or broad recovery claims for this distinct application contract.
     result = {key: value for key, value in result.items() if key not in {"status", "schema", "queue_admission"}}
-    return {**result, "status": status, "schema": contract.schema25.SCHEMA,
+    output = {**result, "status": status, "schema": contract.schema25.SCHEMA,
         "pilot_admission": "preserved", "migrations": 0, "resource_access_changes": 0,
         "disaster_recovery_rto_qualified": False}
+    if type(plan) is App25V2Plan:
+        output.update(frontend_recovery_qualified=False, frontend_rollout_order="api_then_frontend",
+                      frontend_rollback_order="retained_frontend_then_api")
+    return output
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("phase", choices=("capture", "observe", "stage", "advance", "reconcile", "rollback"))
+    parser.add_argument("phase", choices=("capture", "observe", "stage", "advance", "reconcile", "rollback", "aliases-capture", "aliases-observe", "aliases-send", "aliases-reconcile"))
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[2])
     parser.add_argument("--plan", type=Path, required=True)
     parser.add_argument("--plan-sha256")
@@ -594,8 +675,19 @@ def main():
     for name in ("release", "image-digest", "build-id", "nonce", "observer-secret", "retired-migration-secret", "workers-release"):
         parser.add_argument("--" + name)
     parser.add_argument("--ci-run-id", type=int)
+    parser.add_argument("--contract", choices=(contract.CONTRACT, contract_v2.CONTRACT), default=contract.CONTRACT)
     args = parser.parse_args()
-    boundary = NativeApp25Boundary(args.root)
+    if args.phase.startswith("aliases-"):
+        from schema25_app_alias_retirement import main as aliases_main
+        aliases_main(args)
+        return
+    if args.phase != "capture":
+        raw = initial._read_pinned(args.plan, args.plan_sha256)
+        selected = rolling.release._json(raw).get("schema_contract")
+    else:
+        selected = args.contract
+    need(selected in {contract.CONTRACT, contract_v2.CONTRACT}, "distinct_app_plan_required")
+    boundary = (NativeApp25Boundary(args.root) if selected == contract.CONTRACT else NativeApp25BoundaryV2(args.root))
     if args.phase == "capture":
         need(all(getattr(args, name) is not None for name in ("release", "image_digest", "build_id", "ci_run_id",
             "nonce", "observer_secret", "retired_migration_secret", "workers_release")), "capture_arguments_required")
@@ -612,7 +704,7 @@ def main():
             os.fsync(stream.fileno())
         print(json.dumps({"status": "schema25_app_plan_captured", "plan_sha256": hashlib.sha256(raw).hexdigest(), "native_mutations": 0}))
         return
-    plan = load(initial._read_pinned(args.plan, args.plan_sha256))
+    plan = load(raw) if selected == contract.CONTRACT else load_v2(raw)
     if args.phase == "observe":
         boundary.verify_global(plan)
         print(json.dumps({"status": "schema25_app_readonly_observed", "native_mutations": 0}))

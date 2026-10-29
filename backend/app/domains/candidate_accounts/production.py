@@ -8,7 +8,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from threading import Lock
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING, TypeVar, cast
 from uuid import UUID
 
 from pydantic import ConfigDict, model_validator
@@ -257,7 +257,7 @@ class ConfiguredCandidateAccounts:
         if mode == "false":
             self._invoke(lambda service: service.validate(context, auth_generation=auth_generation))
             return
-        from ..recovery.gcp_rpc import FirestoreIdentityList
+        from ..recovery.gcp_rpc import FirestoreIdentityList, FirestoreRpc
         from ..recovery.native_identity_observation import identity_observation_scope
         from ..recovery.native_metadata_admission import require_enabled
 
@@ -266,7 +266,9 @@ class ConfiguredCandidateAccounts:
         fixed = CandidateNativeConfiguration.model_validate_json(self._raw)
         bindings = ((current.lifetime.registry.rpc, fixed.execution_witness_pin.registry),
                     (current.scoped.publication.registry.rpc, fixed.publication_resource.pin.authority.registry))
-        batch = FirestoreIdentityList(tuple(rpc for rpc, _ in bindings))
+        # The constructor validates exact arity, concrete RPC types and shared
+        # transport before accessing either generic registry protocol object.
+        batch = FirestoreIdentityList(cast(tuple[FirestoreRpc, FirestoreRpc], tuple(rpc for rpc, _ in bindings)))
         with identity_observation_scope(bindings, batch=batch):
             # Only ordinary validation is read-only. Lifecycle mutations and
             # signing retain their existing fresh, independent native barriers.

@@ -94,8 +94,12 @@ late refusals, realistic page bursts and aggregate traffic must be measured.
 Consolidating genuinely related owned reads within one authenticated HTTP request
 may reduce demand; sharing a successful identity across separate requests may not.
 If the measured budget cannot support intended demand, keep activation gated.
-Active analysis polling and browser-companion status polling must be included in
-that journey-level demand; those callers alone may exhaust a 40-unit budget.
+Active analysis polling must be included in that journey-level demand. The
+companion connection-status loop is local extension messaging and does not
+automatically poll the owned HTTP account endpoints; its explicit authenticated
+actions still count when they reach those endpoints. The existing payment poll
+can request 24 times at 2.5-second intervals: 48 List operations per minute for
+that journey alone exceeds a 40-call budget and remains an activation blocker.
 
 ## Verification scope
 

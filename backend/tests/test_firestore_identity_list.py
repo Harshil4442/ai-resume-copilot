@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from contextvars import copy_context
+from types import SimpleNamespace
 from unittest.mock import Mock
 from uuid import uuid4
 
@@ -170,3 +171,12 @@ def test_caught_failed_batch_never_revives_prior_identities(sdk):  # noqa: F811
                 rpcs[1].identity()
     assert len(sdk.calls["list_databases"]) == 3
     assert not sdk.calls["get_database"]
+
+
+def test_generic_registry_protocol_cannot_borrow_a_concrete_list_transport(sdk):  # noqa: F811
+    rpcs, _, _ = setup(sdk)
+    foreign = SimpleNamespace(admin=rpcs[1].admin, database_resource=rpcs[1].database_resource,
+        rpc_timeout=rpcs[1].rpc_timeout, identity=rpcs[1].identity)
+    with pytest.raises(GuardUnavailable, match="Exact shared metadata transport"):
+        FirestoreIdentityList((rpcs[0], foreign))
+    assert not sdk.calls["list_databases"] and not sdk.calls["get_database"]
