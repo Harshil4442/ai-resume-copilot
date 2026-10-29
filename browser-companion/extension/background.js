@@ -1,6 +1,6 @@
 import { CONFIG } from "./config.js";
 import { Companion } from "./protocol.js";
-import { deviceIdentity } from "./device.js";
+import { deviceFailurePhase, deviceIdentity } from "./device.js";
 import { FixtureTransport } from "./transport.js";
 import { localAdapter } from "./local-adapter.js";
 import { PairingTransport } from "./pairing-transport.js";
@@ -290,6 +290,9 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     if (message.type === "fill") return current.approveAndFill(message.command_id, message.review_digest, message.acknowledged === true);
     if (message.type === "cancel") return current.cancel();
     throw new Error("Unsupported companion operation");
-  })().then((value) => respond({ ok: true, value }), (error) => respond({ ok: false, error: error.message }));
+  })().then((value) => respond({ ok: true, value }), (error) => {
+    const phase = message?.type === "status" ? deviceFailurePhase(error) : null;
+    respond({ ok: false, error: error.message, ...(phase ? { device_phase: phase } : {}) });
+  });
   return true;
 });
