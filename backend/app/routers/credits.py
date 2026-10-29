@@ -55,6 +55,7 @@ class CanaryChoiceRequest(BaseModel):
     review_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     notice_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     choice: Literal["opt_in", "revoke"]
+    expected_sequence: int = Field(strict=True, ge=0, le=2**31 - 2)
     confirmed_notice: bool = Field(strict=True, default=False)
     idempotency_key: str = Field(min_length=8, max_length=160)
 
@@ -67,6 +68,7 @@ class CanaryEnrollmentView(BaseModel):
     notice_sha256: str | None = None
     expires_at: datetime | None = None
     runtime_sha256: str | None = None
+    sequence: int | None = Field(default=None, strict=True, ge=0, le=2**31 - 1)
     can_opt_in: bool | None = None
     execution_flag_enabled: bool | None = None
     accepted_work_survives_revocation: bool | None = None
@@ -117,7 +119,8 @@ def choose_canary(payload: CanaryChoiceRequest, request: Request, response: Resp
                       if payload.choice == "opt_in" else None)
         receipt = canary.choose(db, user_id=current_user.id, review_id=payload.review_id,
             review_sha256=payload.review_sha256, notice_sha256=payload.notice_sha256,
-            choice=payload.choice, idempotency_key=payload.idempotency_key, runtime=configured)
+            choice=payload.choice, idempotency_key=payload.idempotency_key,
+            expected_sequence=payload.expected_sequence, runtime=configured)
         db.commit()
         return {"status": "CHOICE_RECORDED", "choice": receipt["choice"], "sequence": receipt["sequence"],
                 "review_sha256": receipt["review_sha256"], "idempotency_key": payload.idempotency_key}

@@ -46,7 +46,7 @@ def reviewed_canary(monkeypatch, factory, configuration, identity):
         _, review, digest = prepare(db, monkeypatch, selected=(1,), now=now,
             config=configuration, review_id=identity)
         canary.choose(db, user_id=1, review_id=review.id, review_sha256=digest,
-            notice_sha256=review.notice_sha256, choice="opt_in", idempotency_key="simulated-buy-consent",
+            notice_sha256=review.notice_sha256, choice="opt_in", idempotency_key="simulated-buy-consent", expected_sequence=0,
             runtime=configuration, now=now)
         db.commit()
 

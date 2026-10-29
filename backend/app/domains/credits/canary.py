@@ -257,26 +257,28 @@ def _consents(db: Session, review: CanaryReview, digest: str, user_id: int) -> l
 
 def choose(db: Session, *, user_id: int, review_id: str, review_sha256: str,
            notice_sha256: str, choice: Literal["opt_in", "revoke"], idempotency_key: str,
-           runtime=None, now: datetime | None = None) -> dict:
+           expected_sequence: int, runtime=None, now: datetime | None = None) -> dict:
     """Authenticated same-owner explicit choice; never a Terms or testing-permission inference."""
-    need(8 <= len(idempotency_key) <= 160 and choice in {"opt_in", "revoke"})
+    need(8 <= len(idempotency_key) <= 160 and choice in {"opt_in", "revoke"}
+         and type(expected_sequence) is int and 0 <= expected_sequence <= 2**31 - 2)
     user = db.query(User).filter_by(id=user_id).with_for_update().populate_existing().one_or_none()
     need(user is not None)
     _lock(db)
     review, digest = stored_review(db, review_id, review_sha256)
     need((review.id, digest, review.notice_sha256) == (review_id, review_sha256, notice_sha256)
          and user_id in review.selected_owner_ids)
-    request_hash = payload_fingerprint([digest, user_id, choice, notice_sha256, idempotency_key])
+    request_hash = payload_fingerprint([digest, user_id, choice, notice_sha256, idempotency_key, expected_sequence])
     identity = _audit_id("consent", review.id, user_id, idempotency_key)
     existing = db.get(AdminAuditEvent, identity)
     if existing is not None:
         need(existing.action == CONSENT_ACTION and existing.after_state.get("request_sha256") == request_hash)
         return existing.after_state
+    values = _consents(db, review, digest, user_id)
+    need(expected_sequence == (values[-1]["sequence"] if values else 0))
     if choice == "opt_in":
         need(runtime is not None)
         active, active_digest = _live(db, runtime, now=stamp(now))
         need((active.id, active_digest) == (review.id, digest))
-    values = _consents(db, review, digest, user_id)
     value = {"review_sha256": digest, "user_id": user_id, "choice": choice,
         "sequence": values[-1]["sequence"] + 1 if values else 1, "previous_sha256": payload_fingerprint(values[-1]) if values else None,
         "request_sha256": request_hash}
@@ -330,6 +332,7 @@ def enrollment(db: Session, *, user_id: int, runtime=None, now: datetime | None 
         "review_id": review.id, "review_sha256": digest, "notice": review.notice,
         "notice_sha256": review.notice_sha256, "expires_at": review.expires_at.isoformat(),
         "runtime_sha256": review.runtime_sha256, "can_opt_in": can_opt_in,
+        "sequence": choices[-1]["sequence"] if choices else 0,
         "execution_flag_enabled": os.getenv("UNIFIED_CREDIT_EXECUTION_ENABLED", "").lower() == "true",
         "accepted_work_survives_revocation": True}
 

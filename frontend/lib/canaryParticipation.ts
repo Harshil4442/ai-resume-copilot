@@ -7,7 +7,7 @@ const owned = z.object({
   status: z.enum(["NOT_OPTED_IN", "OPTED_IN"]), review_id: reviewId, review_sha256: digest,
   notice: z.string().min(40).max(2000), notice_sha256: digest,
   expires_at: z.string().datetime({ offset: true }), runtime_sha256: digest,
-  can_opt_in: z.boolean(), execution_flag_enabled: z.boolean(), accepted_work_survives_revocation: z.literal(true),
+  sequence: z.number().int().min(0).max(2 ** 31 - 1), can_opt_in: z.boolean(), execution_flag_enabled: z.boolean(), accepted_work_survives_revocation: z.literal(true),
 }).strict();
 const enrollment = z.union([owned, z.object({ status: z.literal("NOT_AVAILABLE") }).strict()]);
 export type CanaryEnrollment = z.infer<typeof enrollment>;
@@ -30,7 +30,7 @@ export function validCanarySelectors(query: URLSearchParams): boolean {
     && digest.safeParse(query.get("review_sha256")).success);
 }
 const choice = z.object({ review_id: reviewId, review_sha256: digest, notice_sha256: digest,
-  choice: z.enum(["opt_in", "revoke"]), confirmed_notice: z.boolean().optional(),
+  choice: z.enum(["opt_in", "revoke"]), expected_sequence: z.number().int().min(0).max(2 ** 31 - 2), confirmed_notice: z.boolean().optional(),
   idempotency_key: z.string().min(8).max(160),
 }).strict().refine((value) => value.choice === "revoke" || value.confirmed_notice === true);
 export function validCanaryChoice(value: unknown): boolean { return choice.safeParse(value).success; }

@@ -15,7 +15,7 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from threading import Barrier
+from threading import Barrier, Event
 from uuid import uuid4
 
 import pytest
@@ -115,8 +115,8 @@ def factory(request):
 def test_two_owners_racing_for_one_literal_traffic_slot_accept_only_one(factory, monkeypatch):
     with factory() as db:
         config, review, digest = prepare(db, monkeypatch)
-        consent(db, config, review, digest, owner=1)
-        consent(db, config, review, digest, owner=2)
+        consent(db, config, review, digest, expected_sequence=0, owner=1)
+        consent(db, config, review, digest, expected_sequence=0, owner=2)
         baseline(db)
         db.commit()
     ready = Barrier(2)
@@ -147,15 +147,19 @@ def test_same_owner_consent_race_forms_one_valid_monotonic_chain(factory, monkey
     def action(choice):
         ready.wait(timeout=10)
         with factory() as db:
-            value = consent(db, config, review, digest, choice=choice, key="racing-" + choice)
-            db.commit()
-            return value
+            try:
+                value = consent(db, config, review, digest, expected_sequence=0, choice=choice, key="racing-" + choice)
+                db.commit()
+                return value
+            except finance.FundingUnavailable:
+                db.rollback()
+                return None
     with ThreadPoolExecutor(max_workers=2) as pool:
         results = list(pool.map(action, ("opt_in", "revoke")))
-    assert sorted(item["sequence"] for item in results) == [1, 2]
+    assert [item["sequence"] for item in results if item is not None] == [1]
     with factory() as db:
         values = canary._consents(db, review, digest, 1)
-        assert len(values) == 2
+        assert len(values) == 1
         assert canary.enrollment(db, user_id=1, runtime=config, now=NOW)["status"] == (
             "OPTED_IN" if values[-1]["choice"] == "opt_in" else "NOT_OPTED_IN")
 
@@ -167,12 +171,12 @@ def test_actual_canary_endpoint_settlement_refund_and_saved_reads_survive_revoca
     config = checks.configure(monkeypatch, "enhanced_qa")
     with factory() as db:
         _, review, digest = prepare(db, monkeypatch, config=config)
-        consent(db, config, review, digest)
+        consent(db, config, review, digest, expected_sequence=0)
         baseline(db)
         db.commit()
     def revoke_after_request_started():
         with factory() as db:
-            consent(db, config, review, digest, choice="revoke", key="revoke-after-provider-start")
+            consent(db, config, review, digest, expected_sequence=1, choice="revoke", key="revoke-after-provider-start")
             db.commit()
         monkeypatch.setenv("UNIFIED_CREDIT_EXECUTION_ENABLED", "false")
     calls = checks.provider(monkeypatch, "enhanced_qa", raw={} if invalid_output else None,
@@ -260,7 +264,7 @@ def test_locked_census_identity_cannot_leave_stale_acceptance_or_partial_wallet_
     config = checks.configure(monkeypatch, "enhanced_qa")
     with factory() as db:
         _, review, digest = prepare(db, monkeypatch, config=config)
-        consent(db, config, review, digest)
+        consent(db, config, review, digest, expected_sequence=0)
         baseline(db)
         db.commit()
         request = checks.payload("enhanced_qa")
@@ -324,7 +328,7 @@ def test_traffic_numerator_is_utc_stable_across_postgres_session_timezones(facto
     with factory() as db:
         db.execute(text("SET LOCAL TIME ZONE 'Asia/Kolkata'"))
         config, review, digest = prepare(db, monkeypatch)
-        consent(db, config, review, digest)
+        consent(db, config, review, digest, expected_sequence=0)
         baseline(db)
         proof = accept(db, config, source(db))
         db.commit()
@@ -337,3 +341,62 @@ def test_traffic_numerator_is_utc_stable_across_postgres_session_timezones(facto
             accept(db, config, candidate)
         db.rollback()
         assert db.query(models.AdminAuditEvent).filter_by(action=canary.ACCEPT_ACTION).count() == 1
+
+
+
+@pytest.mark.parametrize("delayed,newer", [("opt_in", "revoke"), ("revoke", "opt_in")])
+def test_delayed_choice_cannot_overwrite_newer_committed_owner_revision(factory, monkeypatch, delayed, newer):
+    with factory() as db:
+        config, review, digest = prepare(db, monkeypatch)
+        db.commit()
+    observed, deliver = Event(), Event()
+    def delayed_request():
+        with factory() as db:
+            seen = canary.enrollment(db, user_id=1, runtime=config, now=NOW)
+            assert seen["sequence"] == 0 and seen["status"] == "NOT_OPTED_IN"
+        observed.set()
+        assert deliver.wait(10)
+        with factory() as db:
+            with pytest.raises(finance.FundingUnavailable):
+                consent(db, config, review, digest, expected_sequence=seen["sequence"],
+                    choice=delayed, key="delayed-original-choice")
+            db.rollback()
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        old = pool.submit(delayed_request)
+        assert observed.wait(10)
+        with factory() as db:
+            latest = consent(db, config, review, digest, expected_sequence=0, choice=newer, key="newer-owner-choice")
+            assert latest["sequence"] == 1
+            db.commit()
+        deliver.set()
+        old.result(timeout=10)
+    with factory() as db:
+        actual = canary.enrollment(db, user_id=1, runtime=config, now=NOW)
+        assert actual["sequence"] == 1
+        assert actual["status"] == ("NOT_OPTED_IN" if newer == "revoke" else "OPTED_IN")
+        assert db.query(models.AdminAuditEvent).filter_by(action=canary.CONSENT_ACTION).count() == 1
+        assert db.query(models.ModelCallEvent).count() == db.query(models.ModelCostLiability).count() == 0
+        assert db.query(CreditReservation).count() == 0
+
+
+def test_identical_concurrent_choice_replay_keeps_receipt_after_later_revocation(factory, monkeypatch):
+    with factory() as db:
+        config, review, digest = prepare(db, monkeypatch)
+        db.commit()
+    ready = Barrier(2)
+    def same_request(_):
+        ready.wait(timeout=10)
+        with factory() as db:
+            value = consent(db, config, review, digest, expected_sequence=0, key="identical-owner-intent")
+            db.commit()
+            return value
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(same_request, (1, 2)))
+    assert results[0] == results[1] and results[0]["sequence"] == 1
+    with factory() as db:
+        consent(db, config, review, digest, expected_sequence=1, choice="revoke", key="later-explicit-stop")
+        db.commit()
+        assert consent(db, config, review, digest, expected_sequence=0, key="identical-owner-intent") == results[0]
+        assert canary.enrollment(db, user_id=1, runtime=config, now=NOW)["sequence"] == 2
+        assert canary.enrollment(db, user_id=1, runtime=config, now=NOW)["status"] == "NOT_OPTED_IN"
+        assert db.query(models.AdminAuditEvent).filter_by(action=canary.CONSENT_ACTION).count() == 2

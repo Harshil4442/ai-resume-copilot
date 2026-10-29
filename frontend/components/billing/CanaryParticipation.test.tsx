@@ -1,12 +1,13 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, QueryObserver } from "@tanstack/react-query";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { creditAvailabilityKey } from "../../lib/unifiedCreditClient";
 import { CanaryParticipation } from "./CanaryParticipation";
 
 const review = { status: "NOT_OPTED_IN", review_id: "fixture-canary-v1", review_sha256: "a".repeat(64),
   notice: "Participation is voluntary. Review every service price and keep control of your applications. Stop any time.\nYour existing work remains available.",
   notice_sha256: "b".repeat(64), runtime_sha256: "c".repeat(64), expires_at: "2030-10-29T00:00:00Z",
-  can_opt_in: true, execution_flag_enabled: true, accepted_work_survives_revocation: true };
+  sequence: 0, can_opt_in: true, execution_flag_enabled: true, accepted_work_survives_revocation: true };
 let current: Record<string, unknown>, posts: Record<string, unknown>[], reads: string[], query: QueryClient;
 const fetcher = vi.fn(), changed = vi.fn();
 const response = (value: unknown) => new Response(JSON.stringify(value), { headers: { "content-type": "application/json" } });
@@ -25,7 +26,7 @@ beforeEach(() => {
     expect(url.pathname).toBe("/api/backend/v1/credits/canary-enrollment");
     if (init?.method === "POST") {
       const payload = JSON.parse(init.body as string); posts.push(payload);
-      current = { ...current, status: payload.choice === "opt_in" ? "OPTED_IN" : "NOT_OPTED_IN" };
+      current = { ...current, sequence: Number(current.sequence) + 1, status: payload.choice === "opt_in" ? "OPTED_IN" : "NOT_OPTED_IN" };
       return response({ status: "CHOICE_RECORDED", ...payload, sequence: posts.length });
     }
     reads.push(url.search);
@@ -48,7 +49,7 @@ it("shows the full plain-text notice and requires unchecked choice plus separate
   await screen.findByRole("button", { name: "Stop participating" });
   expect(posts).toHaveLength(1);
   expect(posts[0]).toEqual({ review_id: review.review_id, review_sha256: review.review_sha256,
-    notice_sha256: review.notice_sha256, choice: "opt_in", confirmed_notice: true, idempotency_key: expect.any(String) });
+    notice_sha256: review.notice_sha256, choice: "opt_in", expected_sequence: 0, confirmed_notice: true, idempotency_key: expect.any(String) });
   expect(reads).toEqual(["", `?review_id=${review.review_id}&review_sha256=${review.review_sha256}`]);
   expect(changed).toHaveBeenCalledOnce();
 });
@@ -65,10 +66,11 @@ it("does not infer opt-in from a successful receipt when the fresh owned record 
 });
 
 it("keeps a retained paused review revocable and does not offer a new opt-in", async () => {
-  current = { ...review, status: "OPTED_IN", can_opt_in: false, execution_flag_enabled: false };
+  current = { ...review, sequence: 1, status: "OPTED_IN", can_opt_in: false, execution_flag_enabled: false };
   mount(); fireEvent.click(await screen.findByRole("button", { name: "Stop participating" }));
   await screen.findByText("Your current choice is not opted in.");
   expect(posts[0].choice).toBe("revoke"); expect(posts[0].confirmed_notice).toBe(false);
+  expect(posts[0].expected_sequence).toBe(1);
   expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
   expect(screen.getByText(/New pilot services are currently paused/)).toBeInTheDocument();
 });
@@ -117,4 +119,61 @@ it("does not continue reads or callbacks after its owner surface unmounts", asyn
   const view = mount(); await confirm(); await waitFor(() => expect(posts).toHaveLength(1));
   view.unmount(); await act(async () => complete(response({ status: "CHOICE_RECORDED" })));
   expect(reads).toHaveLength(1); expect(changed).not.toHaveBeenCalled();
+});
+
+
+it("allows an explicit stop at the observed revision after an unknown delayed opt-in", async () => {
+  fetcher.mockImplementation(async (path: string, init: RequestInit) => {
+    if (init?.method === "POST") {
+      const payload = JSON.parse(init.body as string); posts.push(payload);
+      if (payload.choice === "opt_in") throw new Error("Original response lost while delivery is delayed");
+      current = { ...current, sequence: 1, status: "NOT_OPTED_IN" };
+      return response({ status: "CHOICE_RECORDED", sequence: 1 });
+    }
+    reads.push(path); return response(current);
+  });
+  mount(); await confirm();
+  expect(await screen.findByText(/An earlier opt-in may still be pending/)).toBeVisible();
+  expect(screen.getByText("Current participation is unconfirmed")).toBeVisible();
+  expect(posts).toHaveLength(1);
+  fireEvent.click(screen.getByRole("button", { name: "Stop participating" }));
+  await screen.findByText("Your current choice is not opted in.");
+  expect(posts.map((value) => [value.choice, value.expected_sequence])).toEqual([["opt_in", 0], ["revoke", 0]]);
+  expect(screen.queryByText(/An earlier opt-in may still be pending/)).not.toBeInTheDocument();
+  expect(posts[0].idempotency_key).not.toBe(posts[1].idempotency_key);
+});
+
+it("does not call the old owner callback after unmount during availability invalidation", async () => {
+  let finishAvailability!: (value: unknown) => void;
+  const availability = vi.fn(() => new Promise((resolve) => { finishAvailability = resolve; }));
+  query.setQueryData(creditAvailabilityKey, { supported_operations: [] });
+  const observer = new QueryObserver(query, { queryKey: creditAvailabilityKey, queryFn: availability, staleTime: Infinity });
+  const unsubscribe = observer.subscribe(() => undefined);
+  try {
+    const view = mount(); await confirm();
+    await waitFor(() => expect(availability).toHaveBeenCalledOnce());
+    expect(changed).not.toHaveBeenCalled();
+    view.unmount();
+    await act(async () => finishAvailability({ supported_operations: [] }));
+    expect(changed).not.toHaveBeenCalled();
+  } finally { unsubscribe(); }
+});
+
+
+it("refetches a stale409 choice without retrying or inheriting the previous confirmation", async () => {
+  fetcher.mockImplementation(async (path: string, init: RequestInit) => {
+    if (init?.method === "POST") {
+      posts.push(JSON.parse(init.body as string));
+      current = { ...current, sequence: 1, status: "NOT_OPTED_IN" };
+      return new Response(JSON.stringify({ detail: "A newer choice already exists" }), {
+        status: 409, headers: { "content-type": "application/json" },
+      });
+    }
+    reads.push(path); return response(current);
+  });
+  mount(); await confirm();
+  await screen.findByText("This choice was not accepted. Review the refreshed status before trying again.");
+  expect(posts).toHaveLength(1); expect(posts[0].expected_sequence).toBe(0);
+  expect(reads).toHaveLength(2); expect(screen.getByRole("checkbox")).not.toBeChecked();
+  expect(screen.queryByRole("button", { name: "Confirm participation" })).not.toBeInTheDocument();
 });

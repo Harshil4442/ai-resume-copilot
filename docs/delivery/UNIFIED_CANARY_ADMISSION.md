@@ -64,12 +64,15 @@ current runtime or environment pointer; it does not authorize execution.
 
 Authenticated `POST /v1/credits/canary-enrollment` takes `review_id`,
 `review_sha256`, `notice_sha256`, `choice` (`opt_in` or `revoke`) and an
-`idempotency_key`. Opt-in additionally requires explicit `confirmed_notice: true`.
+`idempotency_key` and required integer `expected_sequence` observed from enrollment
+(`sequence: 0` initially). Opt-in additionally requires explicit `confirmed_notice: true`.
 The owner comes only from authentication; extra owner IDs are rejected. A new
 opt-in must match the current exact live review/runtime. A revocation may select
 an older immutable review without using the current environment pointer. Each
-choice appends a monotonic hash-linked audit record under the existing owner and
-financial locks. Operator review, a testing allowance, accepting Terms or a saved
+choice compares that observed sequence under the existing owner and financial
+locks before appending its next hash-linked audit record. A delayed opt-in or
+revocation from an older revision returns 409 and cannot overwrite a newer choice;
+this uses no timestamp, expiry or new table. Operator review, a testing allowance, accepting Terms or a saved
 password never grants participation. Revocation does not require an enabled
 runtime or fresh funding. Replaying an old opt-in request returns that old receipt
 and cannot overwrite a later revocation.
@@ -79,7 +82,10 @@ unchecked choice and a separate explicit keyboard-accessible confirmation. It
 shows Stop participating for current/retained opt-ins, including paused reviews,
 and reads the exact owned review after a choice before reporting current status.
 An unknown response permits read-only status checking instead of automatic POST
-retries. Changed notices reset confirmation. The panel appears only for a valid
+retries. An unknown opt-in whose readback is still the old revision remains
+visibly uncertain and offers an explicit Stop at that revision; the server rejects
+the original delayed opt-in after a newer Stop commits. Changed notices or choice
+revisions reset confirmation. The panel appears only for a valid
 owned invitation or retained choice and uses the existing owner-scoped query
 boundary; unmounting stops further reads/callbacks from the old surface.
 

@@ -284,7 +284,7 @@ describe("resume upload deadline", () => {
 describe("exact owned canary participation transport", () => {
   const endpoint = ["v1", "credits", "canary-enrollment"];
   const payload = { review_id: "fixture-canary-v1", review_sha256: "a".repeat(64), notice_sha256: "b".repeat(64),
-    choice: "opt_in", confirmed_notice: true, idempotency_key: "explicit-fixture-choice" };
+    choice: "opt_in", expected_sequence: 0, confirmed_notice: true, idempotency_key: "explicit-fixture-choice" };
   function canaryRequest(method: string, body: unknown = payload, query = "", headers: Record<string, string> = {}) {
     return new NextRequest(`${site}/api/backend/v1/credits/canary-enrollment${query}`, {
       method, headers: { origin: site, "content-type": "application/json", ...headers },
@@ -306,6 +306,8 @@ describe("exact owned canary participation transport", () => {
     expect(String(fetchBackend.mock.calls[0][0])).toBe(`https://backend.example.test/api/v1/credits/canary-enrollment${query}`);
   });
   it.each([
+    { ...payload, expected_sequence: undefined }, { ...payload, expected_sequence: -1 },
+    { ...payload, expected_sequence: true }, { ...payload, expected_sequence: "0" }, { ...payload, expected_sequence: 0.5 },
     { ...payload, user_id: 2 }, { ...payload, choice: "approve" }, { ...payload, confirmed_notice: false },
     { ...payload, review_sha256: "invalid" }, { ...payload, idempotency_key: "tiny" },
     { ...payload, notice: "unreviewed" }, { ...payload, idempotency_key: "a".repeat(3000) },

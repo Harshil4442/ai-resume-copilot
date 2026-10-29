@@ -2638,6 +2638,8 @@ export interface components {
              * @default false
              */
             confirmed_notice: boolean;
+            /** Expected Sequence */
+            expected_sequence: number;
             /** Idempotency Key */
             idempotency_key: string;
             /** Notice Sha256 */
@@ -2686,6 +2688,8 @@ export interface components {
             review_sha256?: string | null;
             /** Runtime Sha256 */
             runtime_sha256?: string | null;
+            /** Sequence */
+            sequence?: number | null;
             /**
              * Status
              * @enum {string}

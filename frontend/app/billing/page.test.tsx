@@ -240,7 +240,7 @@ it("refreshes only the pass eligibility after an explicitly confirmed participat
   const invitation = { status: "NOT_OPTED_IN", review_id: "fixture-canary-v1", review_sha256: "a".repeat(64),
     notice_sha256: "b".repeat(64), runtime_sha256: "c".repeat(64), expires_at: "2030-10-29T00:00:00Z",
     notice: "Participation is voluntary. Review each price, keep control of applications and stop at any time.",
-    can_opt_in: true, execution_flag_enabled: true, accepted_work_survives_revocation: true };
+    sequence: 0, can_opt_in: true, execution_flag_enabled: true, accepted_work_survives_revocation: true };
   state.get.mockImplementation((url: string) => url.startsWith("/v1/credits/canary-enrollment")
     ? Promise.resolve({ ...invitation, status: optedIn ? "OPTED_IN" : "NOT_OPTED_IN" })
     : url === "/v1/credits/catalog" ? Promise.resolve({ ...catalog, checkout_enabled: optedIn }) : read(url));
@@ -267,7 +267,7 @@ it("does not let an earlier slow eligible catalog overwrite the refreshed stoppe
   const invitation = { status: "OPTED_IN", review_id: "fixture-canary-v1", review_sha256: "a".repeat(64),
     notice_sha256: "b".repeat(64), runtime_sha256: "c".repeat(64), expires_at: "2030-10-29T00:00:00Z",
     notice: "Participation is voluntary. Review each price, keep control of applications and stop at any time.",
-    can_opt_in: false, execution_flag_enabled: false, accepted_work_survives_revocation: true };
+    sequence: 1, can_opt_in: false, execution_flag_enabled: false, accepted_work_survives_revocation: true };
   state.get.mockImplementation((url: string) => {
     if (url.startsWith("/v1/credits/canary-enrollment")) return Promise.resolve({ ...invitation, status: optedIn ? "OPTED_IN" : "NOT_OPTED_IN" });
     if (url === "/v1/credits/catalog") {

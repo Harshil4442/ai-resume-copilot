@@ -37,9 +37,9 @@ def api(factory, monkeypatch):
         yield client, factory, config, review, digest
 
 
-def choice(review, digest, *, action="opt_in", key="explicit-fixture-choice"):
+def choice(review, digest, *, action="opt_in", key="explicit-fixture-choice", expected_sequence=0):
     return {"review_id": review.id, "review_sha256": digest, "notice_sha256": review.notice_sha256,
-        "choice": action, "confirmed_notice": True, "idempotency_key": key}
+        "choice": action, "confirmed_notice": True, "idempotency_key": key, "expected_sequence": expected_sequence}
 
 
 def test_owner_must_actually_opt_in_to_exact_notice_and_cannot_choose_for_another_account(api, monkeypatch):
@@ -63,7 +63,7 @@ def test_owner_must_actually_opt_in_to_exact_notice_and_cannot_choose_for_anothe
     paused = client.get("/api/v1/credits/canary-enrollment").json()
     assert paused["status"] == "OPTED_IN" and paused["can_opt_in"] is False
     assert paused["execution_flag_enabled"] is False
-    revoked = client.post("/api/v1/credits/canary-enrollment", json=choice(review, digest, action="revoke", key="explicit-fixture-revoke"))
+    revoked = client.post("/api/v1/credits/canary-enrollment", json=choice(review, digest, action="revoke", key="explicit-fixture-revoke", expected_sequence=1))
     assert revoked.status_code == 200 and revoked.json()["sequence"] == 2
     with factory() as db:
         assert db.query(AdminAuditEvent).filter_by(action=canary.CONSENT_ACTION).count() == 2
@@ -116,7 +116,7 @@ def test_old_review_remains_owned_readable_revocable_after_pointer_change(api, m
     assert client.get("/api/v1/credits/canary-enrollment", params=selectors,
         headers={"fixture-owner": "40"}).json() == {"status": "NOT_AVAILABLE"}
     revoked = client.post("/api/v1/credits/canary-enrollment", json=choice(
-        review, digest, action="revoke", key="after-current-pointer-rotation"))
+        review, digest, action="revoke", key="after-current-pointer-rotation", expected_sequence=1))
     assert revoked.status_code == 200 and revoked.json()["sequence"] == 2
     assert client.post("/api/v1/credits/canary-enrollment", json=original).status_code == 200  # receipt, not reenrollment
     assert client.get("/api/v1/credits/canary-enrollment", params=selectors).json()["status"] == "NOT_OPTED_IN"
@@ -127,3 +127,25 @@ def test_old_review_remains_owned_readable_revocable_after_pointer_change(api, m
     with factory() as db:
         assert db.query(AdminAuditEvent).filter_by(action=canary.CONSENT_ACTION).count() == 2
         assert db.query(CreditReservation).count() == 0
+
+
+
+def test_owner_choice_requires_observed_sequence_and_stale_choice_returns_conflict(api):
+    client, factory, _, review, digest = api
+    path = "/api/v1/credits/canary-enrollment"
+    initial = client.get(path).json()
+    assert initial["sequence"] == 0
+    missing = choice(review, digest)
+    missing.pop("expected_sequence")
+    assert client.post(path, json=missing).status_code == 422
+    for malformed in (True, -1, 0.5, "0", 2**31):
+        assert client.post(path, json=choice(review, digest) | {"expected_sequence": malformed}).status_code == 422
+    stopped = choice(review, digest, action="revoke", key="stop-before-delayed-opt-in", expected_sequence=0)
+    assert client.post(path, json=stopped).status_code == 200
+    delayed = choice(review, digest, key="delayed-opt-in-after-read-zero", expected_sequence=initial["sequence"])
+    assert client.post(path, json=delayed).status_code == 409
+    actual = client.get(path).json()
+    assert (actual["sequence"], actual["status"]) == (1, "NOT_OPTED_IN")
+    with factory() as db:
+        assert db.query(AdminAuditEvent).filter_by(action=canary.CONSENT_ACTION).count() == 1
+        assert db.query(CreditReservation).count() == db.query(ModelCallEvent).count() == 0

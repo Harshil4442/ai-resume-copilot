@@ -57,9 +57,9 @@ def prepare(db, monkeypatch, *, selected=(1, 2), now=NOW, config=None, review_id
     return config, review, digest
 
 
-def consent(db, config, review, digest, *, owner=1, choice="opt_in", key="explicit-owner-choice"):
+def consent(db, config, review, digest, *, expected_sequence, owner=1, choice="opt_in", key="explicit-owner-choice"):
     return canary.choose(db, user_id=owner, review_id=review.id, review_sha256=digest,
-        notice_sha256=review.notice_sha256, choice=choice, idempotency_key=key, runtime=config, now=NOW)
+        notice_sha256=review.notice_sha256, choice=choice, idempotency_key=key, expected_sequence=expected_sequence, runtime=config, now=NOW)
 
 
 def source(db, *, identity="run_candidate_1", owner=1, fingerprint=None):
@@ -92,7 +92,7 @@ def test_raw_unbounded_env_ids_never_grant_audience_or_fabricate_consent(realm, 
         assert not runtime.enabled_for(1, db=db, now=NOW)
         assert not runtime.enabled_for(40, db=db, now=NOW)
         assert runtime.requires_unified_billing(db, 1)
-        consent(db, config, review, digest)
+        consent(db, config, review, digest, expected_sequence=0)
         db.commit()
         assert runtime.enabled_for(1, db=db, now=NOW)
         assert not runtime.enabled_for(40, db=db, now=NOW)
@@ -144,24 +144,24 @@ def test_small_real_population_is_limited_by_actual_traffic_not_account_fraction
 def test_explicit_owner_choice_is_idempotent_revocable_and_not_reenabled_by_replay(realm):
     maker, config, review, digest = realm
     with maker() as db:
-        first = consent(db, config, review, digest)
-        assert consent(db, config, review, digest) == first
+        first = consent(db, config, review, digest, expected_sequence=0)
+        assert consent(db, config, review, digest, expected_sequence=0) == first
         db.commit()
         assert canary.require_participation(db, user_id=1, runtime=config, now=NOW)["consent_sequence"] == 1
-        consent(db, config, review, digest, choice="revoke", key="explicit-revocation")
+        consent(db, config, review, digest, expected_sequence=1, choice="revoke", key="explicit-revocation")
         db.commit()
-        assert consent(db, config, review, digest) == first
+        assert consent(db, config, review, digest, expected_sequence=0) == first
         assert not runtime.enabled_for(1, db=db, now=NOW)
         assert db.query(models.AdminAuditEvent).filter_by(action=canary.CONSENT_ACTION).count() == 2
         with pytest.raises(finance.FundingUnavailable):
-            consent(db, config, review, digest, owner=3)
+            consent(db, config, review, digest, expected_sequence=0, owner=3)
 
 
 @pytest.mark.parametrize("change", ["account", "runtime", "output_contract", "expired", "notice", "missing_record"])
 def test_new_quote_participation_rechecks_actual_census_consent_runtime_and_expiry(realm, change, monkeypatch):
     maker, config, review, digest = realm
     with maker() as db:
-        consent(db, config, review, digest)
+        consent(db, config, review, digest, expected_sequence=0)
         db.commit()
         selected = config
         now = NOW
@@ -178,7 +178,7 @@ def test_new_quote_participation_rechecks_actual_census_consent_runtime_and_expi
         elif change == "notice":
             with pytest.raises(finance.FundingUnavailable):
                 canary.choose(db, user_id=1, review_id=review.id, review_sha256=digest,
-                    notice_sha256="f" * 64, choice="opt_in", idempotency_key="different-notice", runtime=config, now=NOW)
+                    notice_sha256="f" * 64, choice="opt_in", idempotency_key="different-notice", expected_sequence=1, runtime=config, now=NOW)
             return
         else:
             db.query(models.AdminAuditEvent).filter_by(action=canary.CONSENT_ACTION).delete()
@@ -190,7 +190,7 @@ def test_new_quote_participation_rechecks_actual_census_consent_runtime_and_expi
 def test_nineteen_genuine_basic_acceptances_enable_one_canary_and_not_a_second(realm):
     maker, config, review, digest = realm
     with maker() as db:
-        consent(db, config, review, digest)
+        consent(db, config, review, digest, expected_sequence=0)
         baseline(db)
         row = source(db)
         proof = accept(db, config, row)
@@ -211,7 +211,7 @@ def test_nineteen_genuine_basic_acceptances_enable_one_canary_and_not_a_second(r
 def test_forecast_synthetic_shadow_duplicate_and_unrelated_activity_never_inflate_denominator(realm, invalid):
     maker, config, review, digest = realm
     with maker() as db:
-        consent(db, config, review, digest)
+        consent(db, config, review, digest, expected_sequence=0)
         if invalid != "reads_only":
             baseline(db, duplicate=invalid == "duplicates", shadow=invalid == "shadow", internal=invalid == "internal")
             if invalid == "other_owner":
@@ -232,7 +232,7 @@ def test_forecast_synthetic_shadow_duplicate_and_unrelated_activity_never_inflat
 def test_a_transaction_failure_does_not_consume_traffic_and_accepted_work_survives_optout(realm, monkeypatch):
     maker, config, review, digest = realm
     with maker() as db:
-        consent(db, config, review, digest)
+        consent(db, config, review, digest, expected_sequence=0)
         baseline(db)
         db.commit()
         row = source(db)
@@ -242,7 +242,7 @@ def test_a_transaction_failure_does_not_consume_traffic_and_accepted_work_surviv
         row = source(db)
         proof = accept(db, config, row)
         db.commit()
-        consent(db, config, review, digest, choice="revoke", key="revoke-after-accept")
+        consent(db, config, review, digest, expected_sequence=1, choice="revoke", key="revoke-after-accept")
         db.commit()
         monkeypatch.setenv("UNIFIED_CREDIT_EXECUTION_ENABLED", "false")
         assert not runtime.enabled_for(1, db=db, now=NOW)
@@ -335,8 +335,8 @@ def test_many_owner_choices_never_make_revocation_unavailable(realm):
     maker, config, review, digest = realm
     with maker() as db:
         for number in range(130):
-            consent(db, config, review, digest, key=f"distinct-explicit-choice-{number}")
-        revoked = consent(db, config, review, digest, choice="revoke", key="final-explicit-stop")
+            consent(db, config, review, digest, expected_sequence=number, key=f"distinct-explicit-choice-{number}")
+        revoked = consent(db, config, review, digest, expected_sequence=130, choice="revoke", key="final-explicit-stop")
         assert revoked["sequence"] == 131
         assert canary.enrollment(db, user_id=1, runtime=config, now=NOW)["status"] == "NOT_OPTED_IN"
         with pytest.raises(finance.FundingUnavailable):
@@ -348,7 +348,7 @@ def test_cleared_or_invalid_public_configuration_never_erases_rollout_currency_o
 
     maker, config, review, digest = realm
     with maker() as db:
-        consent(db, config, review, digest)
+        consent(db, config, review, digest, expected_sequence=0)
         db.commit()
     monkeypatch.delenv("UNIFIED_CREDIT_CANARY_REVIEW_ID")
     monkeypatch.delenv("UNIFIED_CREDIT_CANARY_REVIEW_SHA256")
