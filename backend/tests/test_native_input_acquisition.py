@@ -218,6 +218,35 @@ def test_exclusive_journal_prevents_second_concurrent_sender(capture):
     assert len(capture["transport"].calls) == 1
 
 
+def test_native_project_only_drift_blocks_a_pending_tex_send(capture, monkeypatch):
+    source = Path(acquisition.native_project.__file__)
+    copied = capture["tmp"] / "native_project.py"
+    copied.write_bytes(source.read_bytes())
+    monkeypatch.setattr(acquisition.native_project, "__file__", str(copied))
+    report = acquisition.plan(*capture["common"])
+    assert report["client_sources_sha256"]["native_project.py"] == packet.file_digest(source)
+    first = True
+    for _ in range(report["maximum_http_requests"]):
+        status = run(capture, initialize=first)
+        first = False
+        if any(r["phases"].get("source", {}).get("state") == "captured_unreviewed"
+               and r["phases"].get("compile", {}).get("state") == "never_sent" for r in status["cases"]):
+            break
+    else:
+        pytest.fail("No pending TeX compile in the fixed development scope")
+    old_plan = (capture["journal"] / "plan.json").read_bytes()
+    prior_calls = list(capture["transport"].calls)
+    copied.write_bytes(copied.read_bytes() + b"\n# Synthetic native-project-only source drift.\n")
+    changed = acquisition.plan(*capture["common"])
+    assert changed["client_sources_sha256"]["native_project.py"] != report["client_sources_sha256"]["native_project.py"]
+    assert {k: v for k, v in changed.items() if k != "client_sources_sha256"} == {
+        k: v for k, v in report.items() if k != "client_sources_sha256"}
+    with pytest.raises(ValueError, match="plan_changed"):
+        run(capture)
+    assert capture["transport"].calls == prior_calls
+    assert (capture["journal"] / "plan.json").read_bytes() == old_plan
+
+
 @pytest.mark.parametrize("change", ["draft", "expired", "other_journal", "insufficient_reserve", "held_out"])
 def test_unfunded_or_different_authority_never_sends(capture, change):
     auth = capture["auth"]
