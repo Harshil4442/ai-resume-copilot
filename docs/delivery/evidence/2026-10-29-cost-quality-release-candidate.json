@@ -64,8 +64,8 @@
     "first_combined_ci_attempt": {
       "run_id": 40865167342,
       "head": "854db9fdb71b97179e8b4710bb50227ead454b22",
-      "known_failure": "cold-no-ai browser line319 retained old expected52; no production defect or full CI acceptance inferred",
-      "disposition": "Correct assertions and validate a new exact source; never count failed attempt as release acceptance"
+      "known_failure": "Cold browser retained old expected52; early genuine-tailoring smoke retained old prompt version resume-source-v6 instead of current v8. Full backend suite did not run. No production or lock-resolution claim.",
+      "disposition": "Correct both fresh-account balance and current prompt-version assertions; validate a new exact source. Failed attempt never counts as release acceptance."
     },
     "frontend_journey_typecheck_eslint": "passed locally"
   },
