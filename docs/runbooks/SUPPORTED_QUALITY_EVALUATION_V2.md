@@ -94,6 +94,32 @@ Inputs are original native bytes from the pinned materialization manifest plus:
    paragraphs must occur in source order; positive JSON pass booleans cannot
    override interleaving or truncation.
 
+TeX and TeX ZIP require a **composite capture**. The original source inspector
+response must have the production blank admission shape: no text, sections,
+skills, experience or non-null contact facts. It does not supply résumé content.
+The per-case registry's `compilation` object must additionally contain:
+
+- `source_sha256` of the exact original source/project and its own
+  `request_correlation_id`;
+- `worker_response: {path, sha256}` for the existing compiler response, including
+  its exact request digest, renderer/image/policy and PDF bytes/hash/size;
+- `pdf: {path, sha256}` for those identical compiled PDF bytes;
+- `pdf_inspection_response: {path, sha256}` for the separate original native
+  inspector response over that PDF.
+
+Authorization separately pins `compiler_image` and `compiler_policy_sha256`.
+The pure import reconstructs the unchanged compiler request from the original
+validated project and verifies its request hash plus response contract. It does
+not compile anything or invent a worker receipt. The compiled PDF inspection
+provides the parsed tuple, and its exact text must equal the reviewed extraction.
+The native validation record must bind `inspected_artifact_sha256` to that actual
+PDF, while its original source/artifact hashes continue to identify the uploaded
+TeX project. All source/compile/PDF-inspection/review artifacts remain under the
+same explicit operator-reviewed capture trust; they are not provider signatures.
+Missing compilation provenance, nonblank source-admission facts, a substituted
+PDF or reading-order failure refuses the run. No native image/protocol changes
+or source-text fallback are introduced.
+
 The real Resume row is seeded from that decoded native output, **not** the
 expected fixture's raw text. Existing Resume, Opportunity and approved Evidence
 rows are then used by the actual production operation. Each call revalidates
@@ -164,3 +190,8 @@ genuine native/provider/human acceptance. The fixture verifies its own data
 directory, PID and native server identifier before stopping only its server. It
 never uses existing servers on 55433/55434. Retain local test evidence separately
 from real evaluation receipts and leave public quality/checkout flags unchanged.
+The TeX positive tests run the real native processor/parser over development
+fixture bytes, with explicit synthetic scanner/compiler transports; the source
+response stays blank and actual inspected PDF text is seeded into PostgreSQL.
+They establish contract integration, not genuine AV/compilation/render/human
+acceptance. The actual two-column parser refusal is retained as a negative test.

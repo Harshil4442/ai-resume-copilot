@@ -14,9 +14,10 @@ from typing import Literal
 
 from pydantic import Field, model_validator
 
-from ...services import document_ingestion, llm_client, model_cost_policy
+from ...services import llm_client, model_cost_policy
 from . import development_runner as legacy
 from . import quality_packet as packet
+from . import supported_evaluation_native as native_import
 
 VERSION = "supported-quality-evaluation-v2"
 MANIFEST_SHA = "9fb7672f0a809d5d0d18dabb515a2afd32054f27411691ac5a85e34cd8d11bc6"
@@ -63,6 +64,8 @@ class Authorization(legacy.Authorization):
     held_out_lock: legacy.Artifact | None = None
     worker_image: str = Field(pattern=r"^us-central1-docker\.pkg\.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz-document-inspector@sha256:[a-f0-9]{64}$")
     worker_policy_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    compiler_image: str = Field(pattern=r"^us-central1-docker\.pkg\.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz-native-tex@sha256:[a-f0-9]{64}$")
+    compiler_policy_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
 
     @model_validator(mode="after")
     def separated(self):
@@ -216,11 +219,14 @@ def native_inputs(packet_root: Path, native_root: Path, authorization: Authoriza
             packet._native_receipt(native_receipts.parent, record,
                 source_sha=row["input_artifact"]["sha256"], target_sha=row["input_artifact"]["sha256"],
                 errors=errors, label=identity)
-            raw_path = legacy._artifact(registry_root, legacy.Artifact.model_validate(capture["worker_response"]))
-            config = document_ingestion.WorkerConfig("", "", authorization.worker_image, authorization.worker_policy_sha256)
-            inspected = document_ingestion._decode_receipt(raw_path.read_bytes(), source_bytes, case["source_format"], config)
+            imported = native_import.decode(registry_root, capture, source_bytes, case["source_format"],
+                worker_image=authorization.worker_image, worker_policy=authorization.worker_policy_sha256,
+                compiler_image=authorization.compiler_image, compiler_policy=authorization.compiler_policy_sha256)
+            inspected = imported.extraction
             validation_path = legacy._artifact(native_receipts.parent, legacy.Artifact.model_validate(record))
             validation = json.loads(validation_path.read_bytes())
+            if case["source_format"] in {"tex", "texzip"} and validation.get("inspected_artifact_sha256") != inspected.sha256:
+                errors.append("Native review is not bound to the actual inspected compiled PDF: " + identity)
             extracted = legacy._artifact(native_receipts.parent, legacy.Artifact.model_validate(validation["extracted_text"]))
             if extracted.read_text() != inspected.parsed[0]:
                 errors.append("Reviewed text differs from the actual native response: " + identity)

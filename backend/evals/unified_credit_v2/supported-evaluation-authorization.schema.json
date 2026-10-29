@@ -212,6 +212,16 @@
       "title": "Authorized By",
       "type": "string"
     },
+    "compiler_image": {
+      "pattern": "^us-central1-docker\\.pkg\\.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz-native-tex@sha256:[a-f0-9]{64}$",
+      "title": "Compiler Image",
+      "type": "string"
+    },
+    "compiler_policy_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Compiler Policy Sha256",
+      "type": "string"
+    },
     "database": {
       "$ref": "#/$defs/DatabasePin"
     },
@@ -384,7 +394,9 @@
     "native_currency",
     "native_runtime_sha256",
     "worker_image",
-    "worker_policy_sha256"
+    "worker_policy_sha256",
+    "compiler_image",
+    "compiler_policy_sha256"
   ],
   "title": "Authorization",
   "type": "object"

@@ -1,6 +1,7 @@
 """Synthetic local fixtures only: never native/provider/reviewer qualification."""
 from __future__ import annotations
 
+import base64
 import copy
 import json
 import os
@@ -19,6 +20,7 @@ import reportlab
 from app.domains.analysis import quality_materialization as materialize
 from app.domains.analysis import quality_packet as packet
 from app.domains.analysis import supported_evaluation as runner
+from app.domains.analysis import supported_evaluation_native as native_import
 from app.domains.analysis import supported_evaluation_plan as inputs
 from app.services import interview_contract, llm_client, model_cost_policy
 from tests.model_cost_fixtures import synthetic_policy
@@ -88,6 +90,35 @@ def evaluation(tmp_path, monkeypatch):
             "parsed": {"raw_text": raw, "sections": {s["heading"]: s["text"] for s in case["resume"]["sections"]},
                        "skills": [], "experience_years": 0, "contact_info": {}}})
         captures[identity] = {"source_sha256": sha, "request_correlation_id": "synthetic-not-attested-" + identity, "worker_response": response}
+        if kind in {"tex", "texzip"}:
+            # Real source admission is blank. This synthetic compiler/parser
+            # transport fixture is NOT production extraction/format evidence.
+            # A separate test below runs the actual parser over the PDF bytes.
+            source_response = json.loads((evidence / response["path"]).read_bytes())
+            source_response["parsed"] = {"raw_text": "", "sections": {}, "skills": [], "experience_years": 0,
+                "contact_info": dict.fromkeys(("name", "email", "phone", "linkedin", "github"))}
+            captures[identity]["worker_response"] = write(evidence, response["path"], source_response)
+            fixture = copy.deepcopy(case)
+            fixture["source_recipe"]["font"] = "Bitstream Vera Sans"
+            pdf = materialize._pdf(fixture, {"Bitstream Vera Sans": Path(reportlab.__file__).parent / "fonts/Vera.ttf"})
+            pdf_path = evidence / (identity + ".compiled.pdf")
+            pdf_path.write_bytes(pdf)
+            pdf_sha = packet.file_digest(pdf_path)
+            pdf_response = source_response | {"sha256": pdf_sha, "size_bytes": len(pdf), "source_format": "pdf",
+                "parsed": {"raw_text": raw, "sections": {s["heading"]: s["text"] for s in case["resume"]["sections"]},
+                           "skills": [], "experience_years": 0, "contact_info": {}}}
+            captures[identity]["compilation"] = {"source_sha256": sha,
+                "request_correlation_id": "synthetic-compiler-not-attested-" + identity,
+                "pdf": {"path": pdf_path.name, "sha256": pdf_sha},
+                "pdf_inspection_response": write(evidence, identity + ".pdf-worker.json", pdf_response),
+                "worker_response": write(evidence, identity + ".compiler.json", {
+                    "protocol": "hirewiz-tex-v1", "pdf": base64.b64encode(pdf).decode(), "sha256": pdf_sha, "size": len(pdf),
+                    "renderer": "pdftex-no-shell-escape-v1", "request_sha256": packet.digest(native_import.compile_request(content, kind)),
+                    "renderer_image": "us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz-native-tex@sha256:" + "c" * 64,
+                    "isolation_policy_sha256": "d" * 64})}
+            validation = json.loads((evidence / receipts[identity]["path"]).read_bytes())
+            validation["inspected_artifact_sha256"] = pdf_sha
+            receipts[identity] = write(evidence, receipts[identity]["path"], validation)
     write(source_root, "materialization-manifest.json", {"packet_manifest_sha256": inputs.MANIFEST_SHA,
         "corpus_sha256": inputs.CORPUS_SHA, "cases": rows})
     write(evidence, "native-map.json", receipts)
@@ -113,7 +144,9 @@ def evaluation(tmp_path, monkeypatch):
         "native_capture_registry": registry, "native_reserve_minor_per_run": 10, "maximum_native_reserved_minor": 800,
         "native_currency": "INR", "native_runtime_sha256": runner.native_runtime_digest(),
         "worker_image": "us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz-document-inspector@sha256:" + "a" * 64,
-        "worker_policy_sha256": "b" * 64})
+        "worker_policy_sha256": "b" * 64,
+        "compiler_image": "us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz-native-tex@sha256:" + "c" * 64,
+        "compiler_policy_sha256": "d" * 64})
     return {"packet_root": ROOT, "native_root": source_root, "auth": auth,
             "authorization_root": evidence, "native_receipts": evidence / "native-map.json"}
 
@@ -262,6 +295,122 @@ def test_native_runtime_change_stops_before_any_generation(evaluation, monkeypat
     monkeypatch.setenv("DOCUMENT_WORKER_POLICY_SHA256", "f" * 64)
     with pytest.raises(ValueError, match="runtime deployment"):
         runner.preflight(**evaluation, active=True)
+
+
+def actual_composite_capture(evaluation, monkeypatch, *, kind, columns):
+    """Real inspector/parser over fixture bytes; synthetic AV/compiler transport.
+
+    This is not a live compiler, scanner or native qualification receipt. It
+    demonstrates the unchanged source-admission/PDF-extraction contracts.
+    """
+    from tests.test_document_processor import load, payload
+
+    processor = load("processor")
+    monkeypatch.setattr(processor, "scan_original", lambda path: {
+        "engine": "ClamAV", "version": "synthetic-test-only", "definitions": "not-native-AV-proof"})
+    case = next(c for c in inputs.selected_cases(ROOT, "development")[1]
+                if c["source_format"] == kind and c["source_recipe"]["columns"] == columns)
+    identity, evidence, auth = case["case_id"], evaluation["authorization_root"], evaluation["auth"]
+    registry = json.loads((evidence / "capture-registry.json").read_bytes())
+    capture = registry["captures"][identity]
+    source = (evaluation["native_root"] / (identity + "." + kind)).read_bytes()
+    pdf = (evidence / capture["compilation"]["pdf"]["path"]).read_bytes()
+    source_response = processor.inspect(payload(source, kind)) | {"worker_image": auth.worker_image, "policy_sha256": auth.worker_policy_sha256}
+    pdf_response = processor.inspect(payload(pdf, "pdf")) | {"worker_image": auth.worker_image, "policy_sha256": auth.worker_policy_sha256}
+    assert source_response["parsed"]["raw_text"] == "" and source_response["parsed"]["sections"] == {}
+    assert pdf_response["parsed"]["raw_text"]
+    capture["worker_response"] = write(evidence, capture["worker_response"]["path"], source_response)
+    capture["compilation"]["pdf_inspection_response"] = write(evidence,
+        capture["compilation"]["pdf_inspection_response"]["path"], pdf_response)
+    native_map = json.loads(evaluation["native_receipts"].read_bytes())
+    validation = json.loads((evidence / native_map[identity]["path"]).read_bytes())
+    text_path = evidence / validation["extracted_text"]["path"]
+    text_path.write_text(pdf_response["parsed"]["raw_text"])
+    validation["extracted_text"]["sha256"] = packet.file_digest(text_path)
+    native_map[identity] = write(evidence, native_map[identity]["path"], validation)
+    write(evidence, "native-map.json", native_map)
+    registry_record = write(evidence, "capture-registry.json", registry)
+    evaluation["auth"] = auth.model_copy(update={
+        "native_capture_registry": inputs.legacy.Artifact.model_validate(registry_record),
+        "native_receipts_sha256": packet.file_digest(evaluation["native_receipts"])})
+    return case, capture, source, pdf, pdf_response["parsed"]
+
+
+@pytest.mark.parametrize("kind", ["tex", "texzip"])
+def test_tex_real_blank_source_admission_uses_actual_pdf_parser_output(evaluation, monkeypatch, kind):
+    case, capture, source, pdf, parsed = actual_composite_capture(evaluation, monkeypatch, kind=kind, columns=1)
+    rows, issues = inputs.native_inputs(evaluation["packet_root"], evaluation["native_root"], evaluation["auth"], evaluation["authorization_root"], evaluation["native_receipts"])
+    row = next(row for row in rows if row["case_id"] == case["case_id"])
+    assert row["native_input_ready"] and issues == []
+    assert row["source_bytes"] == source and row["source_format"] == kind
+    assert row["parsed"][0] == parsed["raw_text"]
+    assert row["parsed"][1] == parsed["sections"]
+    assert row["parsed"][0] != case["resume"]["raw_text"], "Do not seed expected fixture text"
+    # Exercise exact production request serialization/decoder with a synthetic
+    # compiler transport. No compiler, token acquisition or network is invoked.
+    from app.services import native_project, native_tex, native_tex_transport
+
+    evidence, auth = evaluation["authorization_root"], evaluation["auth"]
+    response = json.loads((evidence / capture["compilation"]["worker_response"]["path"]).read_bytes())
+    monkeypatch.setenv("NATIVE_TEX_COMPILER_URL", "https://synthetic.run.app/compile")
+    monkeypatch.setenv("NATIVE_TEX_IMAGE_DIGEST", auth.compiler_image)
+    monkeypatch.setenv("NATIVE_TEX_ISOLATION_POLICY_SHA256", auth.compiler_policy_sha256)
+
+    def transport(payload, **kwargs):
+        assert payload == native_import.compile_request(source, kind)
+        assert kwargs["image"] == auth.compiler_image and kwargs["policy"] == auth.compiler_policy_sha256
+        return response
+
+    monkeypatch.setattr(native_tex_transport, "remote_compile", transport)
+    assert native_tex._compile_project(native_project.read_project(source, kind)) == (pdf, auth.compiler_image, auth.compiler_policy_sha256)
+
+
+def test_real_two_column_pdf_reading_order_failure_remains_a_refusal(evaluation, monkeypatch):
+    case, _, _, _, parsed = actual_composite_capture(evaluation, monkeypatch, kind="tex", columns=2)
+    assert not inputs.reading_order(case, parsed["raw_text"])
+    rows, issues = inputs.native_inputs(evaluation["packet_root"], evaluation["native_root"], evaluation["auth"], evaluation["authorization_root"], evaluation["native_receipts"])
+    assert not next(r for r in rows if r["case_id"] == case["case_id"])["native_input_ready"]
+    assert any("interleaved reading order" in issue for issue in issues)
+
+
+@pytest.mark.parametrize("changed", ["missing_compilation", "fake_source_text", "source_sha", "request_sha", "renderer", "policy", "compiled_pdf", "pdf_inspection", "native_review_pdf"])
+def test_composite_tex_capture_tampering_fails_closed(evaluation, changed):
+    evidence, auth = evaluation["authorization_root"], evaluation["auth"]
+    registry = json.loads((evidence / "capture-registry.json").read_bytes())
+    identity = next(k for k, value in registry["captures"].items() if "compilation" in value)
+    capture = registry["captures"][identity]
+    if changed == "missing_compilation":
+        del capture["compilation"]
+    elif changed == "fake_source_text":
+        value = json.loads((evidence / capture["worker_response"]["path"]).read_bytes())
+        value["parsed"]["raw_text"] = "Impossible parsed TeX source facts"
+        capture["worker_response"] = write(evidence, capture["worker_response"]["path"], value)
+    elif changed == "source_sha":
+        capture["compilation"]["source_sha256"] = "f" * 64
+    elif changed in {"request_sha", "renderer", "policy"}:
+        value = json.loads((evidence / capture["compilation"]["worker_response"]["path"]).read_bytes())
+        value[{"request_sha": "request_sha256", "renderer": "renderer_image", "policy": "isolation_policy_sha256"}[changed]] = "f" * 64
+        capture["compilation"]["worker_response"] = write(evidence, capture["compilation"]["worker_response"]["path"], value)
+    elif changed == "compiled_pdf":
+        path = evidence / capture["compilation"]["pdf"]["path"]
+        path.write_bytes(path.read_bytes() + b"changed")
+        capture["compilation"]["pdf"]["sha256"] = packet.file_digest(path)
+    elif changed == "pdf_inspection":
+        value = json.loads((evidence / capture["compilation"]["pdf_inspection_response"]["path"]).read_bytes())
+        value["sha256"] = "f" * 64
+        capture["compilation"]["pdf_inspection_response"] = write(evidence, capture["compilation"]["pdf_inspection_response"]["path"], value)
+    else:
+        native_map = json.loads(evaluation["native_receipts"].read_bytes())
+        value = json.loads((evidence / native_map[identity]["path"]).read_bytes())
+        value["inspected_artifact_sha256"] = "f" * 64
+        native_map[identity] = write(evidence, native_map[identity]["path"], value)
+        write(evidence, "native-map.json", native_map)
+        auth = auth.model_copy(update={"native_receipts_sha256": packet.file_digest(evaluation["native_receipts"])})
+    registry_record = write(evidence, "capture-registry.json", registry)
+    evaluation["auth"] = auth.model_copy(update={"native_capture_registry": inputs.legacy.Artifact.model_validate(registry_record)})
+    assert runner.preflight(**evaluation)["state"] == "blocked"
+    with pytest.raises(ValueError, match="Genuine native"):
+        runner.prepare(None, **evaluation)
 
 
 def test_cli_help_and_initialization_error_are_private(evaluation, tmp_path):

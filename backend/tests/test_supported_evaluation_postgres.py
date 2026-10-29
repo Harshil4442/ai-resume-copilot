@@ -25,7 +25,7 @@ from app.domains.analysis import supported_evaluation_plan as inputs
 from app.domains.credits import canary
 from app.domains.free_core.models import FreeCoreReservation
 from app.services import llm_client
-from tests.test_supported_evaluation import ROOT, evaluation  # noqa: F401
+from tests.test_supported_evaluation import ROOT, actual_composite_capture, evaluation  # noqa: F401
 
 
 @pytest.fixture(scope="module")
@@ -333,3 +333,30 @@ def test_real_account_erase_retains_detached_model_and_native_obligations(prepar
         assert all(r.user_id is None and r.settled_minor is None and r.reserved_minor > 0 for r in db.query(FreeCoreReservation))
     with pytest.raises(ValueError, match="erased experiment"):
         runner.prepare(factory, **values)
+
+
+@pytest.mark.parametrize("kind", ["tex", "texzip"])
+def test_real_pg_tex_input_uses_actual_pdf_inspection_in_production_operation(evaluation, owned_postgres, monkeypatch, kind):  # noqa: F811
+    case, _, source, _, parsed = actual_composite_capture(evaluation, monkeypatch, kind=kind, columns=1)
+    values = evaluation | {"auth": evaluation["auth"].model_copy(update={"database": inputs.DatabasePin.model_validate(owned_postgres["pin"])})}
+    factory = runner.local_factory(owned_postgres["url"], values["auth"])
+    try:
+        runner.prepare(factory, **values)
+        identity = runner._run_id(values["auth"], "candidate", case["case_id"])
+        with factory() as db:
+            run = db.get(models.AnalysisRun, identity)
+            resume = db.get(models.Resume, run.input_payload["resume_id"])
+            assert resume.source_format == kind and resume.source_document == source
+            assert resume.raw_text == parsed["raw_text"] and resume.sections == parsed["sections"]
+            assert resume.raw_text != case["resume"]["raw_text"]
+            db.query(models.AnalysisRun).filter(models.AnalysisRun.id != identity).update({"status": "running"})
+            db.commit()
+        calls = provider(monkeypatch)
+        assert runner.execute(factory, **values, side="candidate")["outcomes"] == {identity: "succeeded"}
+        assert len(calls) == 1
+        with factory() as db:
+            assert db.query(models.ModelCostLiability).one().cost_state == "settled"
+            assert db.query(FreeCoreReservation).count() == 80
+            assert all(r.settled_minor is None for r in db.query(FreeCoreReservation))
+    finally:
+        factory.kw["bind"].dispose()

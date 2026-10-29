@@ -20,6 +20,7 @@ from sqlalchemy.orm import sessionmaker
 from ...services import generation_budget, interview_contract, llm_client, model_cost_policy
 from . import development_runner as legacy
 from . import quality_packet as packet
+from . import supported_evaluation_native as native_import
 from . import supported_evaluation_plan as inputs
 
 VERSION = inputs.VERSION
@@ -56,7 +57,7 @@ def contract_digest(operation):
     modules = (operations, service, generation_budget, model_cost_policy, llm_client,
                interview_contract, tailoring_contract, personal_claims, prompt_privacy,
                resume_artifacts, resume_layout, inputs, canary, document_ingestion,
-               docx_artifact, native_tex, delivery_contracts, result_commit, generation_gate)
+               docx_artifact, native_tex, delivery_contracts, result_commit, generation_gate, native_import)
     return inputs.digest({"operation": operation, "runner": packet.file_digest(Path(__file__)),
                           "sources": {m.__name__: packet.file_digest(Path(str(m.__file__))) for m in modules}})
 
@@ -200,7 +201,6 @@ def require_provider_authority(db, run):
 def _frozen_inputs(db, run, auth, root, case, resume):
     """Stored labels/fingerprints cannot substitute for the authorized sources."""
     from ... import models
-    from ...services.document_ingestion import WorkerConfig, _decode_receipt
 
     registry_path = legacy._artifact(root, auth.native_capture_registry)
     registry = json.loads(registry_path.read_bytes())
@@ -208,9 +208,9 @@ def _frozen_inputs(db, run, auth, root, case, resume):
     metadata = run.input_payload["_quality_evaluation"]
     if capture["source_sha256"] != metadata["source_sha256"]:
         raise ValueError("The authorized native source changed")
-    response = legacy._artifact(registry_path.parent, legacy.Artifact.model_validate(capture["worker_response"]))
-    parsed = _decode_receipt(response.read_bytes(), resume.source_document, resume.source_format,
-                             WorkerConfig("", "", auth.worker_image, auth.worker_policy_sha256)).parsed
+    parsed = native_import.decode(registry_path.parent, capture, resume.source_document, resume.source_format,
+        worker_image=auth.worker_image, worker_policy=auth.worker_policy_sha256,
+        compiler_image=auth.compiler_image, compiler_policy=auth.compiler_policy_sha256).extraction.parsed
     if parsed != (resume.raw_text, resume.sections, resume.skills, resume.experience_years, resume.contact_info):
         raise ValueError("The actual native parsing result changed")
     opportunity = db.get(models.Opportunity, run.opportunity_id)
