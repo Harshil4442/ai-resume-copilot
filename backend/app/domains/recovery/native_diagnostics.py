@@ -16,7 +16,7 @@ _STAGES = {
     "execution_witness": frozenset({"check", "identity", "closure"}),
     "protected_publication": frozenset({"identity", "root", "closure"}),
     "witness_bytes": frozenset({"live_metadata", "exact_metadata", "bounded_media"}),
-    "firestore_rpc": frozenset({"identity"}),
+    "firestore_rpc": frozenset({"identity", "identity_list"}),
 }
 _TYPES = frozenset({
     "Exception", "ValueError", "TypeError", "KeyError", "AssertionError", "RuntimeError",

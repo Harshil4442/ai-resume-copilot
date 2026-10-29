@@ -40,7 +40,7 @@ class _Dependency:
 
 
 class _ObservationScope:
-    def __init__(self, bindings: tuple[tuple[Any, RegistryPin], ...]):
+    def __init__(self, bindings: tuple[tuple[Any, RegistryPin], ...], *, batch=None):
         if type(bindings) is not tuple or len(bindings) != 2:
             raise GuardUnavailable(FAILURE)
         self.dependencies: dict[int, _Dependency] = {}
@@ -49,6 +49,12 @@ class _ObservationScope:
                     or getattr(rpc, "database_resource", None) != pin.database):
                 raise GuardUnavailable(FAILURE)
             self.dependencies[id(rpc)] = _Dependency(rpc, pin)
+        if batch is not None:
+            from .gcp_rpc import FirestoreIdentityList
+
+            if (type(batch) is not FirestoreIdentityList or tuple(d.rpc for d in self.dependencies.values()) != batch.rpcs):
+                raise GuardUnavailable(FAILURE)
+        self.batch = batch
         self.thread, self.task = current_thread(), _task()
         self.deadline = monotonic() + MAX_OBSERVATION_SECONDS
         self.token: Token[_ObservationScope | None] | None = None
@@ -86,6 +92,24 @@ class _ObservationScope:
         if self.poisoned and not exiting:
             self.reject()
         self.valid = False
+        if self.batch is not None:
+            try:
+                values = self.batch.identities()
+                if type(values) is not dict or set(values) != set(self.dependencies):
+                    raise GuardUnavailable(FAILURE)
+                for key, dependency in self.dependencies.items():
+                    dependency.value = self.checked(dependency, values[key])
+                if monotonic() >= self.deadline:
+                    raise GuardUnavailable(FAILURE)
+            except BaseException:
+                self.poisoned = True
+                for dependency in self.dependencies.values():
+                    dependency.value = None
+                raise
+            if self.poisoned and not preserve_error:
+                self.reject()
+            self.valid = True
+            return
         failure: Exception | None = None
         for dependency in self.dependencies.values():
             try:
@@ -121,7 +145,7 @@ class _ObservationScope:
                     getattr(dependency.fresh, "__func__", None) is not getattr(fresh, "__func__", None))):
             self.reject()
         dependency.fresh = fresh
-        if self.initializing:
+        if self.initializing and self.batch is None:
             try:
                 dependency.value = self.checked(dependency, fresh())
             except Exception:
@@ -148,6 +172,8 @@ class _ObservationScope:
         self.active = self.initializing = True
         self.token = _current.set(self)
         try:
+            if self.batch is not None:
+                self.refresh()
             for dependency in self.dependencies.values():
                 dependency.rpc.identity()
             self.owner()
@@ -190,12 +216,13 @@ class _ObservationScope:
         self.active = self.valid = False
         self.callbacks.clear()
         self.dependencies.clear()
+        self.batch = None
         self.token = None
 
 
 @contextmanager
-def identity_observation_scope(bindings: tuple[tuple[Any, RegistryPin], ...]) -> Iterator[None]:
-    scope = _ObservationScope(bindings)
+def identity_observation_scope(bindings: tuple[tuple[Any, RegistryPin], ...], *, batch=None) -> Iterator[None]:
+    scope = _ObservationScope(bindings, batch=batch)
     scope.enter()
     error: BaseException | None = None
     try:

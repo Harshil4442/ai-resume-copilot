@@ -20,7 +20,69 @@ from .store import GuardDenied, GuardUnavailable
 
 MAX_DOCUMENTS = 64
 MAX_BODY_BYTES = 128 * 1024
+MAX_IDENTITY_LIST_DATABASES = 100
+MAX_IDENTITY_LIST_BYTES = 512 * 1024
 _DATABASE = re.compile(r"projects/[a-z][a-z0-9-]{4,28}[a-z0-9]/databases/[a-z][a-z0-9-]{2,61}[a-z0-9]")
+
+
+class FirestoreIdentityList:
+    """One uncached native project List for exactly two configured RPC clients.
+
+    This batches metadata transport only. The existing observation scope checks
+    each returned immutable UID against its separate deployment pin, before and
+    after all dependent reads. No database contents or identity result is cached.
+    """
+
+    def __init__(self, rpcs: tuple[FirestoreRpc, FirestoreRpc]):
+        if (type(rpcs) is not tuple or len(rpcs) != 2 or rpcs[0] is rpcs[1]
+                or any(type(rpc) is not FirestoreRpc for rpc in rpcs)
+                or rpcs[0].admin is not rpcs[1].admin):
+            raise GuardUnavailable("Exact shared metadata transport is required")
+        names = tuple(rpc.database_resource for rpc in rpcs)
+        parents = tuple(name.split("/databases/", 1)[0] for name in names)
+        if len(set(names)) != 2 or parents[0] != parents[1]:
+            raise GuardUnavailable("Identity List must bind two databases in one project")
+        self.rpcs, self.names, self.parent = rpcs, names, parents[0]
+        self.admin = rpcs[0].admin
+        self.timeout = min(rpc.rpc_timeout for rpc in rpcs)
+
+    def identities(self) -> dict[int, dict]:
+        from google.cloud.firestore_admin_v1.types import (
+            Database,
+            ListDatabasesRequest,
+            ListDatabasesResponse,
+        )
+
+        try:
+            if any(rpc.admin is not self.admin or rpc.database_resource != name
+                   for rpc, name in zip(self.rpcs, self.names, strict=True)):
+                raise ValueError("Identity List transport or resource changed")
+            with native_phase("firestore_rpc", "identity_list"):
+                response = self.admin.list_databases(request=ListDatabasesRequest(parent=self.parent, show_deleted=False),
+                    retry=None, timeout=self.timeout)
+            if (not isinstance(response, ListDatabasesResponse) or response.unreachable
+                    or not 2 <= len(response.databases) <= MAX_IDENTITY_LIST_DATABASES
+                    or len(ListDatabasesResponse.pb(response).SerializeToString()) > MAX_IDENTITY_LIST_BYTES):
+                raise ValueError("Complete bounded live database metadata is required")
+            found = {}
+            for database in response.databases:
+                name = database.name
+                if (not name.startswith(self.parent + "/databases/") or name in found
+                        or not name.removeprefix(self.parent + "/databases/")
+                        or "/" in name.removeprefix(self.parent + "/databases/")
+                        or Database.pb(database).HasField("delete_time")):
+                    raise ValueError("Ambiguous or deleted database metadata")
+                found[name] = database
+            result = {}
+            for rpc, name in zip(self.rpcs, self.names, strict=True):
+                database = found.get(name)
+                if (database is None or database.type_ != Database.DatabaseType.FIRESTORE_NATIVE
+                        or str(UUID(database.uid)) != database.uid or UUID(database.uid).version != 4):
+                    raise ValueError("The exact live native database is unavailable")
+                result[id(rpc)] = {"name": name, "uid": database.uid, "type": "FIRESTORE_NATIVE"}
+            return result
+        except Exception as exc:
+            raise GuardUnavailable("Complete pinned database List is unavailable") from exc
 
 
 def _body(raw: bytes) -> bytes:

@@ -251,7 +251,26 @@ class ConfiguredCandidateAccounts:
         return self._invoke(lambda service: service.login(email=email, password=password))
 
     def validate(self, context: CandidateWebSession, *, auth_generation: int) -> None:
-        self._invoke(lambda service: service.validate(context, auth_generation=auth_generation))
+        mode = os.environ.get("CANDIDATE_ACCOUNT_LIST_IDENTITY_ENABLED", "false")
+        if mode not in {"true", "false"}:
+            raise GuardUnavailable("Candidate account identity observation mode is unavailable")
+        if mode == "false":
+            self._invoke(lambda service: service.validate(context, auth_generation=auth_generation))
+            return
+        from ..recovery.gcp_rpc import FirestoreIdentityList
+        from ..recovery.native_identity_observation import identity_observation_scope
+
+        current = self._composition()
+        fixed = CandidateNativeConfiguration.model_validate_json(self._raw)
+        bindings = ((current.lifetime.registry.rpc, fixed.execution_witness_pin.registry),
+                    (current.scoped.publication.registry.rpc, fixed.publication_resource.pin.authority.registry))
+        batch = FirestoreIdentityList(tuple(rpc for rpc, _ in bindings))
+        with identity_observation_scope(bindings, batch=batch):
+            # Only ordinary validation is read-only. Lifecycle mutations and
+            # signing retain their existing fresh, independent native barriers.
+            self._invoke(lambda service: service.validate(context, auth_generation=auth_generation))
+            if os.environ.get("CANDIDATE_ACCOUNT_LIST_IDENTITY_ENABLED", "false") != mode:
+                raise GuardUnavailable("Candidate account identity observation mode changed")
 
     def logout(self, context: CandidateWebSession) -> None:
         self._invoke(lambda service: service.logout(context))
