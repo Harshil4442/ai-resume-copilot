@@ -3,7 +3,7 @@
   "requirement_version": "1.1",
   "source_sha256": "ac56be4838c8309fa9b1da3a717d53fab2bad85cfe0482d6aeedc4374a38fb4f",
   "baseline_commit": "f0f973c9c6d989553b8f58b275fc06fd5685497a",
-  "updated_at": "2026-10-29T14:55:01.133288+00:00",
+  "updated_at": "2026-10-29T20:33:48.603570+00:00",
   "authorization": "Owner authorized implementation, testing, deployment and payment activation subject to requirements gates on 2026-10-27.",
   "stages": [
     {
@@ -17,10 +17,11 @@
       "evidence": [
         "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json",
         "docs/delivery/evidence/2026-10-28-reviewer-kit-and-capacity.json",
-        "docs/delivery/evidence/2026-10-29-schema25-production-base.json"
+        "docs/delivery/evidence/2026-10-29-schema25-production-base.json",
+        "docs/delivery/evidence/2026-10-30-baseline-and-candidate-status.json"
       ],
-      "local_result": "Current five-service production configuration and public pilot disclosures were observed after schema25 deployment. Current account acceptance, representative workload and final vendor allocation remain pending.",
-      "status_observed_at": "2026-10-29T09:27:17.956790+00:00"
+      "local_result": "Current schema25 ab2 production and existing signed-in profile/search/application reads were verified. One synthetic PDF upload, preview and exact original download passed with existing seven legacy analysis units retained. Representative workload and final vendor allocation remain pending.",
+      "status_observed_at": "2026-10-29T20:33:48.603570+00:00"
     },
     {
       "number": 2,
@@ -52,10 +53,11 @@
       "evidence": [
         "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json",
         "docs/delivery/evidence/2026-10-28-unified-credit-release-preparation.json",
-        "docs/delivery/evidence/2026-10-28-calibration-and-format-corrections.json"
+        "docs/delivery/evidence/2026-10-28-calibration-and-format-corrections.json",
+        "docs/delivery/evidence/2026-10-30-baseline-and-candidate-status.json"
       ],
-      "status_observed_at": "2026-10-27T20:26:15.481922+00:00",
-      "local_result": "Saved analysis lookup works independently of paid generation availability and never creates a quote on a read-only miss. Deployed verification remains pending."
+      "status_observed_at": "2026-10-29T20:33:48.603570+00:00",
+      "local_result": "Deterministic parsing and saved-source delivery work on the deployed baseline. Reviewed bootstrap/reuse and bounded polling changes are integrated in the next candidate; their production rollout remains pending."
     },
     {
       "number": 4,
@@ -75,10 +77,11 @@
         "docs/delivery/evidence/2026-10-28-interview-v8-exploratory.json",
         "docs/delivery/evidence/2026-10-29-schema25-production-base.json",
         "docs/delivery/evidence/2026-10-29-cost-quality-release-candidate.json",
-        "docs/delivery/evidence/2026-10-29-reviewed-release-integration.json"
+        "docs/delivery/evidence/2026-10-29-reviewed-release-integration.json",
+        "docs/delivery/evidence/2026-10-30-baseline-and-candidate-status.json"
       ],
-      "status_observed_at": "2026-10-29T13:28:48.083922+00:00",
-      "local_result": "Current native inspector remains accepted. Scoped factuality/output-contract changes are reviewed; full-v2 evaluation still needs native input receipts, complex-layout reading-order correction, representative model outputs and independent human scoring. No model route is qualified by these guards; generation remains closed."
+      "status_observed_at": "2026-10-29T20:33:48.603570+00:00",
+      "local_result": "The deployed native inspector remains accepted. New generic PDF geometry passes 34 of 40 development examples, with six failures retained truthfully; current source candidate still needs real native Build/corpus acceptance, full representative quality and independent human scoring. Generation remains closed."
     },
     {
       "number": 5,
@@ -93,10 +96,11 @@
         "docs/delivery/evidence/2026-10-28-unified-credit-release-preparation.json",
         "docs/delivery/evidence/2026-10-28-reviewer-kit-and-capacity.json",
         "docs/delivery/evidence/2026-10-29-schema25-production-base.json",
-        "docs/delivery/evidence/2026-10-29-reviewed-release-integration.json"
+        "docs/delivery/evidence/2026-10-29-reviewed-release-integration.json",
+        "docs/delivery/evidence/2026-10-30-baseline-and-candidate-status.json"
       ],
-      "status_observed_at": "2026-10-29T13:28:48.083922+00:00",
-      "local_result": "Duplicate employer catalog invalidations are removed in the reviewed candidate. Public responsive/SEO samples remain retained. Four distinct fresh Firestore metadata identity calls per ordinary authenticated read still exceed the native60/min quota at the one-million-request workload; provider determination or a separately reviewed equivalent design and actual capacity evidence remain pending."
+      "status_observed_at": "2026-10-29T20:33:48.603570+00:00",
+      "local_result": "104 local responsive browser checks at widths320 and1440 and the full responsive CI job passed. Both connected cold billing journeys passed with synthetic provider captures. Native List permission was verified, but shared Upstash wire and representative capacity qualification remain pending; Stage5 activation flags remain false."
     },
     {
       "number": 6,
@@ -132,10 +136,11 @@
         "docs/delivery/evidence/2026-10-28-native-corpus-and-release-readiness.json",
         "docs/delivery/evidence/2026-10-29-schema25-production-base.json",
         "docs/delivery/evidence/2026-10-29-cost-quality-release-candidate.json",
-        "docs/delivery/evidence/2026-10-29-reviewed-release-integration.json"
+        "docs/delivery/evidence/2026-10-29-reviewed-release-integration.json",
+        "docs/delivery/evidence/2026-10-30-baseline-and-candidate-status.json"
       ],
-      "local_result": "Production remains backend8cb/frontendb0c. Reviewed app25 release/recovery, canary consent/CAS, finance/factuality/signup, sign-in and consumed-history changes are integrated. CI108 finished with8202 backend passes and2 test-configuration failures; browser mocks also lacked the enrollment GET. Reviewed test-only corrections preserve runtime guards; corrected exact-source CI and immutable build remain pending. Native app/resource/database/ACL preflight passed; no app promotion or new paid/AI/submit admission occurred. Owner/companion acceptance and actual refresh recovery remain pending.",
-      "status_observed_at": "2026-10-29T14:55:01.133288+00:00"
+      "local_result": "All three app services now serve immutable ab2 at100%; compatible existing frontend remains canonical. Exact original-source owner acceptance passed and temporary health IAM was removed. The next candidate is not deployed: backend fixture/environment and finite release-tooling corrections require complete exact-source CI, immutable Build and native worker qualification before API-first promotion. Companion review/cancel/revoke and commercial release gates remain pending.",
+      "status_observed_at": "2026-10-29T20:33:48.603570+00:00"
     },
     {
       "number": 8,

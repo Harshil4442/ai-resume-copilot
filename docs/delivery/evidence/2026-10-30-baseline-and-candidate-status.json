@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "observed_at": "2026-10-29T20:33:48.603570+00:00",
+  "scope": "Existing eight delivery stages; production baseline and pending candidate distinguished",
+  "production": {
+    "app_source": "ab2deadd1b1cecbe9cb10c73806dbcde851bf5e2",
+    "frontend_source": "7b63ba67a19c6ec00a659082d1ad8487515e037b",
+    "schema": "20261028_0025",
+    "all_three_app_services_percent": 100,
+    "immutable_build": "3da6ce3e-b592-4955-9027-f1e64663d259",
+    "image_digest": "sha256:acfb2c50c96cdcd8cc1823217e030128b92ae809c3b33eabc9b60fcc264b7645",
+    "temporary_health_iam_removed": true,
+    "new_ai_wallet_checkout_final_submission_enabled": false
+  },
+  "owner_acceptance": {
+    "existing_signed_in_reads": "passed",
+    "synthetic_pdf_upload_preview_original_download": "passed",
+    "source_and_download_sha256": "bbc5f3ea247a159db7df3596ab3e202539b4c1eb5f52e25e177ba73da940b562",
+    "source_bytes": 2160,
+    "legacy_analysis_units_preserved": 7,
+    "real_model_calls": 0,
+    "employer_submission_or_autofill": false,
+    "capacity_proof": false
+  },
+  "candidate": {
+    "source_at_observed_browser_ci": "7f40314a5aa74d48c4a0c01960b6c532a2ac88e9",
+    "pull_request": 73,
+    "deployed": false,
+    "responsive_local_checks_passed": 104,
+    "responsive_css_widths": [
+      320,
+      1440
+    ],
+    "connected_cold_browser_journeys": "both passed in real CI; synthetic payment-provider captures",
+    "overall_ci_qualified": false,
+    "remaining": "Combined backend fixture/environment and finite release-tooling corrections require exact-source complete CI and immutable Build"
+  },
+  "native_document_candidate": {
+    "source_policy_sha256": "6a080773cc96cd7eca35160ef2e20e299d8dc458e8696b782f40b722d30c2fb1",
+    "development_examples_passed": 34,
+    "development_examples_total": 40,
+    "native_candidate_accepted": false,
+    "full_200_case_quality_qualified": false,
+    "independent_human_review_complete": false
+  },
+  "scope_limits": [
+    "20 reviewed employer origins and Razorpay/Greenhouse browser-assistance pilot",
+    "No worldwide coverage or final automatic submission acceptance",
+    "No 10000-user capacity qualification",
+    "Seven-day and 200-operation shadow evidence remains incomplete",
+    "Actual invoice, tax, commercial hosting and paid launch gates remain open"
+  ],
+  "goal_complete": false
+}
