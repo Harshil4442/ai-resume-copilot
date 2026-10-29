@@ -4,11 +4,16 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime, timedelta
 
+from backend.app.domains.common import payload_fingerprint
+from backend.app.domains.credits.finance import FinancialPolicy
+
 
 def environment() -> dict[str, str]:
     now = datetime.now(UTC)
-    dates = {"valid_from": (now-timedelta(hours=1)).isoformat(), "expires_at": (now+timedelta(days=1)).isoformat()}
-    financial = {"version": "cold-synthetic-finance", "provenance": "synthetic_test", "evidence_sha256": "a"*64, **dates}
+    dates = {"valid_from": (now-timedelta(hours=1)).isoformat().replace("+00:00", "Z"),
+        "expires_at": (now+timedelta(days=1)).isoformat().replace("+00:00", "Z")}
+    financial = FinancialPolicy.model_validate({"version": "cold-synthetic-finance", "provenance": "synthetic_test",
+        "evidence_sha256": "a"*64, **dates}).model_dump(mode="json")
     operations = {name: {"route_id": f"cold.free.{name}", "reserved_minor": 20, "max_input_bytes": 8*1024*1024,
         "max_source_records": 1000, "max_attempts": 1, "per_account_30_days": limit}
         for name, limit in (("resume_parse", 1), ("basic_match", 10), ("curated_interview", 5), ("skill_roi", 5))}
@@ -23,18 +28,27 @@ def environment() -> dict[str, str]:
         "deliverable": "Up to five new verified employer jobs; a completed nonempty batch costs one credit.",
         "supported_limits": {"context_bytes": 32768, "candidate_limit": 1000, "candidate_content_bytes": 2_000_000, "maximum_results": 5},
         "supported_source_formats": ["docx"], "qualification_id": "synthetic-cold-browser-only",
+        "output_contract_sha256": None,
         "qualification_evidence_sha256": "c"*64, "qualified_from": dates["valid_from"], "qualified_until": dates["expires_at"],
         "native_cost_evidence_sha256": "d"*64, "native_processing_minor": 5, "worker_processing_minor": 8, "model_quotes": []}
+    evidence = {name: "e"*64 for name in ("quality", "legacy_rights", "commercial_hosting", "invoices", "security", "shadow_accounting", "delivery_routes")}
     review = {"catalog_version": "inr-unified-2026-10-27-v1", "policy": financial, "reviewed_by": "synthetic-local-browser-only",
-        "evidence": {name: "e"*64 for name in ("quality", "legacy_rights", "commercial_hosting", "invoices", "security", "shadow_accounting", "delivery_routes")},
+        "evidence": evidence,
         "shadow_started_at": (now-timedelta(days=8)).isoformat(), "shadow_ended_at": (now-timedelta(days=1)).isoformat(),
         "shadow_successful_operations": 200, "monthly_shared_minor": 3_500_000, "monthly_additional_business_minor": 0,
         "planning_paid_packs": 2000, "funded_runway_minor": 3_500_000}
     free = {"version": "cold-synthetic-free", "provenance": "synthetic_test", "funding_period_id": "cold-synthetic-period",
         "evidence_sha256": "f"*64, **dates, "shared_period_funded_minor": 10_000, "free_allocation_minor": 10_000,
         "global_30_day_operations": 1000, "financial_policy": financial, "execution_budgets": budgets, "operations": operations}
+    # This cold journey exercises fresh public purchase/delivery state, not
+    # canary enrollment. Bind its synthetic review to the complete runtime;
+    # raw owner-ID environment values provide no participation authority.
+    # Keep this complete fixture independent of app.database: the standalone
+    # journey prepares its isolated child environment before loading the app.
+    runtime = {"policy": financial, "budgets": budgets, "routes": [route]}
+    evidence["delivery_routes"] = payload_fingerprint(runtime)
     return {"UNIFIED_CREDITS_ENABLED": "true", "UNIFIED_CREDIT_EXECUTION_ENABLED": "true",
-        "UNIFIED_CREDIT_EXECUTION_AUDIENCE": "canary", "UNIFIED_CREDIT_CANARY_OWNER_IDS": "2",
+        "UNIFIED_CREDIT_EXECUTION_AUDIENCE": "reviewed_public",
         "UNIFIED_CREDIT_RELEASE_REVIEW_JSON": json.dumps(review),
-        "UNIFIED_CREDIT_RUNTIME_REVIEW_JSON": json.dumps({"policy": financial, "budgets": budgets, "routes": [route]}),
+        "UNIFIED_CREDIT_RUNTIME_REVIEW_JSON": json.dumps(runtime),
         "FREE_CORE_ENABLED": "true", "FREE_CORE_POLICY_JSON": json.dumps(free), "EMPLOYER_PAID_HISTORY_MODE": "indexed"}
